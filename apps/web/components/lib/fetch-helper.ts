@@ -17,7 +17,9 @@ export class ApiError extends Error {
 }
 
 export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promise<Response> => {
-  if (path.includes("://")) {
+  const rawPath = path.trim();
+  const isAbsolute = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(rawPath) || rawPath.startsWith("//");
+  if (isAbsolute) {
     throw new Error(
       `fetchWithAuth expects a path (e.g. "/api/foo"), but received an absolute URL: ${path}`
     );
@@ -29,7 +31,7 @@ export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promi
     headers.set("authorization", `Bearer ${token}`);
   }
 
-  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const normalizedPath = rawPath.startsWith("/") ? rawPath : `/${rawPath}`;
   const url =
     normalizedPath === "/api" || normalizedPath.startsWith("/api/")
       ? normalizedPath
