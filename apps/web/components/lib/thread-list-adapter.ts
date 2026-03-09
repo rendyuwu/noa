@@ -83,17 +83,15 @@ export const threadListAdapter: RemoteThreadListAdapter = {
     };
   },
 
-  async generateTitle(_remoteId, messages) {
+  async generateTitle(remoteId, messages) {
     return createAssistantStream(async (controller) => {
-      const firstUserText = messages
-        .filter((message) => message.role === "user")
-        .flatMap((message) => message.content)
-        .filter((part) => part.type === "text")
-        .map((part) => part.text)
-        .join(" ")
-        .trim();
-
-      const title = firstUserText.length > 0 ? firstUserText.slice(0, 48) : "New Thread";
+      const response = await fetchWithAuth(`/threads/${remoteId}/title`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages }),
+      });
+      const payload = await jsonOrThrow<{ title: string }>(response);
+      const title = payload.title?.trim() ? payload.title.trim() : "New Thread";
       controller.appendText(title);
     }) as any;
   },

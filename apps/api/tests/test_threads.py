@@ -262,3 +262,70 @@ async def test_threads_routes_reject_oversized_title() -> None:
         response = await client.post("/threads", json={"title": "x" * 256})
 
     assert response.status_code == 422
+
+
+async def test_threads_title_endpoint_generates_title_for_owner_thread() -> None:
+    app = FastAPI()
+    app.include_router(threads_router)
+
+    service = _FakeThreadService()
+    owner_id = uuid4()
+    app.dependency_overrides[get_thread_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=owner_id,
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["member"],
+        tools=[],
+    )
+
+    thread, _ = await service.create_thread(owner_user_id=owner_id, title=None)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/threads/{thread.id}/title",
+            json={
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": "Summarize quarterly operations report and risks",
+                            }
+                        ],
+                    }
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Summarize quarterly operations report and risks"
+
+
+async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
+    app = FastAPI()
+    app.include_router(threads_router)
+
+    service = _FakeThreadService()
+    owner_id = uuid4()
+    app.dependency_overrides[get_thread_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=owner_id,
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["member"],
+        tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            f"/threads/{uuid4()}/title",
+            json={"messages": [{"role": "user", "content": [{"type": "text", "text": "Hi"}]}]},
+        )
+
+    assert response.status_code == 404

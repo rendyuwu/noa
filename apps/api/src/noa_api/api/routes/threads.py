@@ -73,6 +73,14 @@ class UpdateThreadRequest(BaseModel):
         return value
 
 
+class GenerateTitleRequest(BaseModel):
+    messages: list[dict[str, object]] = Field(default_factory=list)
+
+
+class GenerateTitleResponse(BaseModel):
+    title: str
+
+
 class SQLThreadRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -299,3 +307,35 @@ async def delete_thread(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/threads/{id}/title", response_model=GenerateTitleResponse)
+async def generate_thread_title(
+    id: UUID,
+    payload: GenerateTitleRequest,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> GenerateTitleResponse:
+    thread = await thread_service.get_thread(owner_user_id=current_user.user_id, thread_id=id)
+    if thread is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+
+    text_chunks: list[str] = []
+    for message in payload.messages:
+        if message.get("role") != "user":
+            continue
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") != "text":
+                continue
+            text_value = part.get("text")
+            if isinstance(text_value, str) and text_value.strip():
+                text_chunks.append(text_value.strip())
+
+    candidate = " ".join(text_chunks).strip()
+    title = (candidate[:80] if candidate else "New Thread").strip()
+    return GenerateTitleResponse(title=title)

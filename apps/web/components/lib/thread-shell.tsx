@@ -1,5 +1,7 @@
 "use client";
 
+import type { ReactNode } from "react";
+
 import {
   ComposerPrimitive,
   MessagePrimitive,
@@ -52,6 +54,31 @@ const RequestApprovalToolUI = makeAssistantToolUI({
   },
 });
 
+const ToolGroup = ({ children }: { children?: ReactNode }) => {
+  return (
+    <div className="panel" style={{ padding: 8, marginTop: 6, borderStyle: "dashed" }}>
+      <div className="muted" style={{ marginBottom: 6 }}>
+        Tool activity
+      </div>
+      {children}
+    </div>
+  );
+};
+
+const ToolFallback = ({ toolName, status, argsText, result }: any) => {
+  const statusText = typeof status?.type === "string" ? status.type : "unknown";
+  return (
+    <div className="panel" style={{ padding: 8, marginTop: 6 }}>
+      <strong>{toolName ?? "tool"}</strong>
+      <div className="muted">Status: {statusText}</div>
+      {argsText ? <pre style={{ margin: "6px 0", whiteSpace: "pre-wrap" }}>{argsText}</pre> : null}
+      {result !== undefined ? (
+        <pre style={{ margin: 0, whiteSpace: "pre-wrap" }}>{JSON.stringify(result, null, 2)}</pre>
+      ) : null}
+    </div>
+  );
+};
+
 const UserMessage = () => {
   return (
     <MessagePrimitive.Root className="row" style={{ justifyContent: "flex-end", marginBottom: 10 }}>
@@ -66,7 +93,7 @@ const AssistantMessage = () => {
   return (
     <MessagePrimitive.Root style={{ marginBottom: 10 }}>
       <div className="panel" style={{ padding: "8px 10px", maxWidth: "80%" }}>
-        <MessagePrimitive.Parts />
+        <MessagePrimitive.Parts components={{ ToolGroup, tools: { Fallback: ToolFallback } }} />
       </div>
     </MessagePrimitive.Root>
   );
