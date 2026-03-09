@@ -13,6 +13,19 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade",
 ]);
 
+function getConnectionHeaderNames(headers: Headers) {
+  const value = headers.get("connection");
+  const out = new Set<string>();
+  if (!value) return out;
+
+  for (const raw of value.split(",")) {
+    const token = raw.trim().toLowerCase();
+    if (token) out.add(token);
+  }
+
+  return out;
+}
+
 function getBackendBaseUrl() {
   const url = process.env.NOA_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
   if (!url) {
@@ -31,9 +44,11 @@ function joinPaths(a: string, b: string) {
 
 function filterRequestHeaders(src: Headers) {
   const out = new Headers();
+  const connectionHeaderNames = getConnectionHeaderNames(src);
   for (const [key, value] of src) {
     const k = key.toLowerCase();
     if (HOP_BY_HOP_HEADERS.has(k)) continue;
+    if (connectionHeaderNames.has(k)) continue;
     if (k === "host") continue;
     if (k === "content-length") continue;
     out.append(key, value);
@@ -43,9 +58,11 @@ function filterRequestHeaders(src: Headers) {
 
 function filterResponseHeaders(src: Headers) {
   const out = new Headers();
+  const connectionHeaderNames = getConnectionHeaderNames(src);
   for (const [key, value] of src) {
     const k = key.toLowerCase();
     if (HOP_BY_HOP_HEADERS.has(k)) continue;
+    if (connectionHeaderNames.has(k)) continue;
     if (k === "set-cookie") continue;
     out.append(key, value);
   }
@@ -86,17 +103,22 @@ async function proxy(
   const upstreamResponse = await fetch(upstreamUrl.toString(), init);
 
   const responseHeaders = filterResponseHeaders(upstreamResponse.headers);
+  const responseConnectionHeaderNames = getConnectionHeaderNames(
+    upstreamResponse.headers
+  );
   const getSetCookie = (upstreamResponse.headers as unknown as {
     getSetCookie?: () => string[];
   }).getSetCookie;
 
-  if (getSetCookie) {
-    for (const cookie of getSetCookie()) {
-      responseHeaders.append("set-cookie", cookie);
+  if (!responseConnectionHeaderNames.has("set-cookie")) {
+    if (getSetCookie) {
+      for (const cookie of getSetCookie()) {
+        responseHeaders.append("set-cookie", cookie);
+      }
+    } else {
+      const setCookie = upstreamResponse.headers.get("set-cookie");
+      if (setCookie) responseHeaders.append("set-cookie", setCookie);
     }
-  } else {
-    const setCookie = upstreamResponse.headers.get("set-cookie");
-    if (setCookie) responseHeaders.append("set-cookie", setCookie);
   }
 
   return new Response(upstreamResponse.body, {
