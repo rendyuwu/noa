@@ -17,6 +17,12 @@ export class ApiError extends Error {
 }
 
 export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promise<Response> => {
+  if (path.includes("://")) {
+    throw new Error(
+      `fetchWithAuth expects a path (e.g. "/api/foo"), but received an absolute URL: ${path}`
+    );
+  }
+
   const token = getAuthToken();
   const headers = new Headers(init.headers ?? {});
   if (token) {
@@ -24,8 +30,12 @@ export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promi
   }
 
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+  const url =
+    normalizedPath === "/api" || normalizedPath.startsWith("/api/")
+      ? normalizedPath
+      : `${getApiUrl()}${normalizedPath}`;
 
-  const response = await fetch(`${getApiUrl()}${normalizedPath}`, {
+  const response = await fetch(url, {
     ...init,
     headers,
   });
