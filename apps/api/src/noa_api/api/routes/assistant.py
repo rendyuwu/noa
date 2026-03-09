@@ -395,6 +395,7 @@ class AssistantService:
         self,
         *,
         owner_user_id: UUID,
+        owner_user_email: str | None,
         thread_id: UUID,
         available_tool_names: set[str],
     ) -> AgentRunnerResult:
@@ -408,6 +409,25 @@ class AssistantService:
         )
         for message in result.messages:
             await self._repository.create_message(thread_id=thread_id, role=message.role, parts=message.parts)
+            for part in message.parts:
+                if part.get("type") != "tool-call" or part.get("toolName") != "request_approval":
+                    continue
+                args = part.get("args")
+                if not isinstance(args, dict):
+                    continue
+                action_request_id = args.get("actionRequestId")
+                tool_name = args.get("toolName")
+                if not isinstance(action_request_id, str) or not isinstance(tool_name, str):
+                    continue
+                await self._repository.create_audit_log(
+                    event_type="action_requested",
+                    actor_email=owner_user_email,
+                    tool_name=tool_name,
+                    metadata={
+                        "thread_id": str(thread_id),
+                        "action_request_id": action_request_id,
+                    },
+                )
         return result
 
     async def _execute_tool(self, *, tool: Any, args: dict[str, object]) -> dict[str, object]:
@@ -520,6 +540,7 @@ async def assistant_transport(
 
             runner_output = await assistant_service.run_agent_turn(
                 owner_user_id=current_user.user_id,
+                owner_user_email=current_user.email,
                 thread_id=payload.thread_id,
                 available_tool_names=allowed_tools,
             )
@@ -552,6 +573,8 @@ async def _stream_assistant_text(controller: RunController, text_deltas: list[st
     controller.state["messages"] = base_messages
 
     for chunk in text_deltas:
+        if _controller_is_cancelled(controller):
+            raise asyncio.CancelledError
         task = asyncio.current_task()
         if task is not None and task.cancelled():
             raise asyncio.CancelledError
@@ -562,3 +585,13 @@ async def _stream_assistant_text(controller: RunController, text_deltas: list[st
             await asyncio.sleep(0)
         except asyncio.CancelledError:
             raise
+
+
+def _controller_is_cancelled(controller: RunController) -> bool:
+    value = getattr(controller, "is_cancelled", False)
+    if callable(value):
+        try:
+            return bool(value())
+        except Exception:
+            return False
+    return bool(value)

@@ -100,11 +100,13 @@ class _FakeAssistantService:
         self,
         *,
         owner_user_id: UUID,
+        owner_user_email: str | None,
         thread_id: UUID,
         available_tool_names: set[str],
     ) -> AgentRunnerResult:
         assert owner_user_id == self.owner_user_id
         assert thread_id == self.thread_id
+        _ = owner_user_email
         self.seen_available_tools = set(available_tool_names)
         for message in self.runner_messages:
             self.messages.append({"id": str(uuid4()), "role": message.role, "parts": message.parts})
@@ -437,6 +439,20 @@ async def test_streaming_loop_stops_on_cancellation(monkeypatch: pytest.MonkeyPa
     import asyncio
 
     monkeypatch.setattr(asyncio, "sleep", _cancelled_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await _stream_assistant_text(_Controller(), ["a", "b"])
+
+
+async def test_streaming_loop_respects_controller_is_cancelled_flag() -> None:
+    class _Controller:
+        state: dict[str, object] | None
+        is_cancelled = True
+
+        def __init__(self) -> None:
+            self.state = {"messages": []}
+
+    import asyncio
 
     with pytest.raises(asyncio.CancelledError):
         await _stream_assistant_text(_Controller(), ["a", "b"])

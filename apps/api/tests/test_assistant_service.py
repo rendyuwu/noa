@@ -21,6 +21,35 @@ class _FakeRunner:
 
 
 @dataclass
+class _ProposalRunner:
+    async def run_turn(self, **kwargs):
+        _ = kwargs
+        from noa_api.core.agent.runner import AgentMessage, AgentRunnerResult
+
+        return AgentRunnerResult(
+            messages=[
+                AgentMessage(
+                    role="assistant",
+                    parts=[
+                        {
+                            "type": "tool-call",
+                            "toolName": "request_approval",
+                            "toolCallId": "request-approval-1",
+                            "args": {
+                                "actionRequestId": str(uuid4()),
+                                "toolName": "set_demo_flag",
+                                "risk": "CHANGE",
+                                "arguments": {"key": "feature_x", "value": True},
+                            },
+                        }
+                    ],
+                )
+            ],
+            text_deltas=[],
+        )
+
+
+@dataclass
 class _FakeSession:
     added: list[object] = field(default_factory=list)
 
@@ -349,6 +378,28 @@ async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() 
 
     assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
     assert assistant_repo.messages[-1]["role"] == "tool"
+
+
+async def test_assistant_service_run_agent_turn_emits_action_requested_audit() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _ProposalRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    await service.run_agent_turn(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        available_tool_names={"set_demo_flag"},
+    )
+
+    assert any(event["event_type"] == "action_requested" for event in assistant_repo.audits)
 
 
 async def _allow() -> bool:
