@@ -60,6 +60,11 @@
 }
 
 @layer components {
+  .wrap-break-word {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
   .page-shell {
     @apply min-h-dvh p-4;
   }
