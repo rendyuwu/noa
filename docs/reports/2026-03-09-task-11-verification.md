@@ -1,19 +1,19 @@
 # Task 11 Verification Report (2026-03-09)
 
+## Handoff Metadata
+
+- Branch: `feature/project-noa-mvp`
+- Worktree path: `/home/ubuntu/noa/noa/.worktrees/project-noa-mvp`
+- Verification report baseline commit: `1317a61`
+- Verification timestamp (UTC): `2026-03-09T17:08:43Z`
+
 ## Scope
 
-Verification target: Task 11 in `/home/ubuntu/noa/noa/.worktrees/project-noa-mvp`.
-
-Requested checks:
+Task 11 verification target in `/home/ubuntu/noa/noa/.worktrees/project-noa-mvp`:
 1. Start DB (`docker compose up -d postgres`)
 2. Run migrations from `apps/api` (`alembic upgrade head` via available tooling)
 3. Run API + Web smoke checks as far as possible
-4. Perform manual/simulated smoke validation for:
-   - login flow baseline
-   - thread create/list
-   - READ tool behavior
-   - CHANGE tool approval request path
-   - admin disable impact
+4. Manual/simulated smoke validation for login, thread create/list, READ behavior, CHANGE approval path, and admin disable impact
 
 ---
 
@@ -25,33 +25,38 @@ Requested checks:
 - `alembic` CLI not installed
 - `pytest` not installed
 - `uvicorn` not installed
-- `pip`/venv bootstrap unavailable (`ensurepip` missing)
+- `pip` not available (`python3 -m pip` fails)
+- `venv` bootstrap unavailable (`ensurepip` missing)
 
-These constraints blocked full DB-backed/API runtime verification.
+These constraints block DB-backed migrations and API runtime/test execution.
+
+---
+
+## Acceptance Criteria Matrix
+
+| Task 11 Step | Status | Evidence | Blocker | Next action |
+|---|---|---|---|---|
+| 1) Start DB (`docker compose up -d postgres`) | Blocked | Command error: `docker: command not found` | Docker/Compose unavailable | Install Docker Engine + Compose plugin, rerun command and confirm `postgres` container is `Up` |
+| 2) Run migrations from `apps/api` | Blocked | `uv` missing; `alembic` missing; `python3 -m alembic` fails | Python tooling/deps unavailable | Install `uv` and project deps (`uv sync`), rerun `uv run alembic upgrade head` and confirm head revision applied |
+| 3) API smoke checks as far as possible | Partial | `python3 -m compileall src tests` succeeds (syntax) | `uvicorn`/`pytest` not installed; no DB | Run `uv run pytest -q` and `uv run uvicorn noa_api.main:app --port 8000`, then hit health/auth/thread endpoints |
+| 3) Web smoke checks as far as possible | Validated | `npm install` success; `npm run build` success; route HTTP smoke `/login` `/assistant` `/admin`=200, `/`=307 | None for static/startup smoke | Run with live API wired to confirm interactive flows |
+| 4) Manual/simulated core flows | Partial (simulated only for backend-dependent flows) | Exact test case references listed below; all marked not executed in this environment | No runnable API+DB test/runtime stack | After prerequisites, execute referenced tests and E2E manual flows |
 
 ---
 
 ## Exact Commands Attempted and Outcomes
 
-### 1) DB startup
-
-Working directory: repo root
+### 1) DB startup (repo root)
 
 ```bash
 docker compose up -d postgres
 ```
 
-Outcome:
-
 ```text
 /bin/bash: line 1: docker: command not found
 ```
 
-Status: **Blocked**
-
-### 2) Migrations (`apps/api`)
-
-Working directory: `apps/api`
+### 2) Migration attempts (`apps/api`)
 
 ```bash
 uv run alembic upgrade head
@@ -85,11 +90,7 @@ alembic upgrade head
 /bin/bash: line 1: alembic: command not found
 ```
 
-Status: **Blocked**
-
 ### 3) API smoke attempts (`apps/api`)
-
-Working directory: `apps/api`
 
 ```bash
 python3 -m uvicorn noa_api.main:app --port 8000
@@ -108,6 +109,14 @@ python3 -m pytest -q
 ```
 
 ```bash
+python3 -m pip --version
+```
+
+```text
+/usr/bin/python3: No module named pip
+```
+
+```bash
 python3 -m venv .venv
 ```
 
@@ -123,155 +132,122 @@ package using the following command.
 python3 -m compileall src tests
 ```
 
-Outcome: completed without compile errors (syntax smoke only; does not verify runtime behavior).
-
-Status: **Partially validated (syntax only), runtime blocked**
+Outcome: completed with no compile errors (syntax-only signal).
 
 ### 4) Web smoke checks (`apps/web`)
-
-Working directory: `apps/web`
 
 ```bash
 npm install
 ```
 
-Outcome: success (`added 3 packages`, `found 0 vulnerabilities`).
+Outcome excerpt:
+
+```text
+added 3 packages, and audited 112 packages in 3s
+found 0 vulnerabilities
+```
 
 ```bash
 npm run build
 ```
 
-Outcome: success. Next.js build completed and generated routes including `/`, `/login`, `/assistant`, `/admin`.
+Outcome excerpt:
 
-```bash
-npm run start >/tmp/noa-web-start.log 2>&1 & WEB_PID=$!; sleep 5; \
-curl -s -o /tmp/noa-root.out -w 'ROOT:%{http_code}\n' http://127.0.0.1:3000/; \
-curl -s -o /tmp/noa-login.out -w 'LOGIN:%{http_code}\n' http://127.0.0.1:3000/login; \
-curl -s -o /tmp/noa-assistant.out -w 'ASSISTANT:%{http_code}\n' http://127.0.0.1:3000/assistant; \
-curl -s -o /tmp/noa-admin.out -w 'ADMIN:%{http_code}\n' http://127.0.0.1:3000/admin; \
-kill $WEB_PID; wait $WEB_PID
+```text
+✓ Compiled successfully
+Route (app)
+┌ ○ /
+├ ○ /admin
+├ ○ /assistant
+└ ○ /login
 ```
 
-HTTP outcomes:
+```bash
+npm run start >/tmp/noa-web-start.log 2>&1 & WEB_PID=$!; sleep 5; curl -s -o /tmp/noa-root.out -w 'ROOT:%{http_code}\n' http://127.0.0.1:3000/; curl -s -o /tmp/noa-login.out -w 'LOGIN:%{http_code}\n' http://127.0.0.1:3000/login; curl -s -o /tmp/noa-assistant.out -w 'ASSISTANT:%{http_code}\n' http://127.0.0.1:3000/assistant; curl -s -o /tmp/noa-admin.out -w 'ADMIN:%{http_code}\n' http://127.0.0.1:3000/admin; kill $WEB_PID; wait $WEB_PID
+```
+
+Durable inline excerpt of observed results:
 
 ```text
 ROOT:307
 LOGIN:200
 ASSISTANT:200
 ADMIN:200
-```
-
-Server startup log (`/tmp/noa-web-start.log`):
-
-```text
 ✓ Ready in 730ms
 ```
 
-Status: **Validated (web build/start/route-level smoke)**
+Durable inline excerpt of `/login` HTML response content:
 
----
-
-## Manual/Simulated Evidence for Core Flows
-
-Because API runtime + DB were blocked, the following uses reachable web behavior plus code/test evidence.
-
-### A) Login flow baseline
-
-Validated:
-- `GET /login` returned HTTP 200 during live smoke.
-- Captured HTML (`/tmp/noa-login.out`) contains:
-  - Login heading and LDAP sign-in text
-  - email/password fields
-  - sign-in button
-
-Pending:
-- Actual `/auth/login` backend success/failure flows (401/403/200) were not executable in this environment.
-
-### B) Thread create/list
-
-Simulated evidence:
-- Web adapter uses thread endpoints for list/create/get/archive/unarchive/delete/title generation in:
-  - `apps/web/components/lib/thread-list-adapter.ts`
-- API behavior is covered by route tests in:
-  - `apps/api/tests/test_threads.py`
-  - includes create/list/idempotent local ID behavior/owner scoping/archive/unarchive/delete
-
-Pending:
-- Live create/list against running API + Postgres.
-
-### C) READ tool behavior
-
-Simulated evidence:
-- Tool registry risk assertions in:
-  - `apps/api/tests/test_tools_registry.py`
-  - `get_current_time` and `get_current_date` are asserted as `READ`.
-
-Pending:
-- Live execution of READ tool through running assistant backend.
-
-### D) CHANGE tool approval request path
-
-Simulated evidence:
-- Lifecycle transitions in:
-  - `apps/api/tests/test_action_tool_run_lifecycle.py`
-  - includes `CHANGE` risk action requests with `PENDING` and approve/deny transitions.
-- Assistant command handling evidence in:
-  - `apps/api/tests/test_assistant.py`
-  - includes `approve-action` and `deny-action` command paths.
-
-Pending:
-- Live end-to-end approval/deny flow over API with persisted action requests.
-
-### E) Admin disable impact
-
-Simulated evidence:
-- RBAC coverage in:
-  - `apps/api/tests/test_rbac.py`
-  - includes disabled user permission denial and admin route authorization checks.
-
-Pending:
-- Live verification against running API where a user is disabled and then re-evaluated in auth/tool access.
-
----
-
-## Validated vs Blocked Summary
-
-### Validated
-
-- Web dependencies install (`npm install`)
-- Web production build (`npm run build`)
-- Web server startup (`npm run start`)
-- Route-level HTTP smoke for `/login`, `/assistant`, `/admin` (200), `/` redirect (307)
-- API codebase syntax compile pass (`python3 -m compileall src tests`)
-
-### Blocked
-
-- DB startup (`docker` missing)
-- Alembic migrations (`uv` and `alembic` unavailable)
-- API runtime (`uvicorn` unavailable)
-- API tests (`pytest` unavailable)
-- Python environment bootstrapping in-repo (`ensurepip`/`python3-venv` unavailable)
-
----
-
-## Remaining Work to Reach Full Task 11 Verification
-
-Once tooling is available, run:
-
-```bash
-# repo root
-docker compose up -d postgres
-
-# apps/api
-uv sync
-uv run alembic upgrade head
-uv run pytest -q
-uv run uvicorn noa_api.main:app --port 8000
-
-# apps/web
-npm install
-npm run build
-npm run dev
+```text
+<h1>Login</h1>
+Sign in with your LDAP credentials.
+type="email"
+type="password"
+Sign in
 ```
 
-Then execute end-to-end manual checks against live API+DB for all five core flows listed above.
+---
+
+## Manual/Simulated Core Flow Evidence (Not Executed via pytest in this environment)
+
+Reason for not executing tests: `python3 -m pytest -q` fails with `No module named pytest`.
+
+### Login flow baseline
+
+- Live web smoke verified `/login` (HTTP 200) and login form markup.
+- Simulated/API test evidence (not executed):
+  - `test_login_route_maps_auth_errors_and_success` in `apps/api/tests/test_auth_login.py`
+  - `test_me_route_returns_user_payload_for_valid_bearer_token` in `apps/api/tests/test_auth_login.py`
+  - `test_me_route_rejects_invalid_token` in `apps/api/tests/test_auth_login.py`
+  - `test_me_route_rejects_inactive_user` in `apps/api/tests/test_auth_login.py`
+
+### Thread create/list
+
+- API endpoint wiring evidence: `apps/web/components/lib/thread-list-adapter.ts` calls `/threads` create/list/get/archive/unarchive/delete/title paths.
+- Simulated/API test evidence (not executed):
+  - `test_threads_routes_archive_unarchive_and_delete` in `apps/api/tests/test_threads.py`
+  - `test_threads_routes_initialize_is_idempotent_per_user_local_id` in `apps/api/tests/test_threads.py`
+  - `test_threads_routes_enforce_owner_scoping` in `apps/api/tests/test_threads.py`
+
+### READ tool behavior
+
+- Simulated/API test evidence (not executed):
+  - `test_tool_registry_contains_demo_tools_with_expected_risk` in `apps/api/tests/test_tools_registry.py`
+  - `test_read_demo_tools_return_time_and_date_payloads` in `apps/api/tests/test_tools_registry.py`
+
+### CHANGE tool approval request path
+
+- Simulated/API test evidence (not executed):
+  - `test_action_tool_run_service_transitions_core_states` in `apps/api/tests/test_action_tool_run_lifecycle.py`
+  - `test_action_tool_run_service_rejects_re_deciding_action_request` in `apps/api/tests/test_action_tool_run_lifecycle.py`
+  - `test_assistant_route_streams_canonical_state_and_applies_commands` in `apps/api/tests/test_assistant.py` (includes `approve-action` and `deny-action` commands)
+
+### Admin disable impact
+
+- Simulated/API test evidence (not executed):
+  - `test_authorization_service_disabled_user_has_zero_permissions` in `apps/api/tests/test_rbac.py`
+  - `test_admin_routes_forbid_non_admin_users` in `apps/api/tests/test_rbac.py`
+  - `test_admin_routes_allow_admin_management_operations` in `apps/api/tests/test_rbac.py`
+
+---
+
+## Final Unblock Checklist
+
+1. Install runtime prerequisites
+   - Docker + Compose plugin available in PATH (`docker --version`, `docker compose version` succeed)
+   - Python packaging tooling available (`python3 -m pip --version` succeeds)
+   - Virtualenv bootstrap available (`python3 -m venv .venv` succeeds)
+   - `uv` installed (`uv --version` succeeds)
+2. Bring up DB and migrate
+   - Run `docker compose up -d postgres`
+   - Run `uv sync` in `apps/api`
+   - Run `uv run alembic upgrade head`
+   - Expected success signal: migration exits 0 and DB schema is current
+3. Verify API runtime + tests
+   - Run `uv run pytest -q` in `apps/api`
+   - Run `uv run uvicorn noa_api.main:app --port 8000`
+   - Expected success signals: tests pass; API process starts without import/runtime errors
+4. Verify web against live API
+   - Run `npm install && npm run build && npm run dev` in `apps/web`
+   - Re-run route and flow smoke for login/threads/tools/admin
+   - Expected success signals: flows work end-to-end (not only static route reachability)
