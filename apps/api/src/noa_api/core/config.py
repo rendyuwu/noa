@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     ldap_base_dn: str = "dc=example,dc=com"
     ldap_user_filter: str = "(|(mail={email})(userPrincipalName={email}))"
     ldap_timeout_seconds: int = 5
+    llm_model: str = "gpt-4o-mini"
+    llm_base_url: str | None = None
+    llm_api_key: SecretStr | None = None
+    llm_system_prompt: str = "You are NOA. Use tools when they help answer the user request."
 
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":

@@ -9,9 +9,14 @@ from httpx import ASGITransport, AsyncClient
 
 pytest.importorskip("assistant_stream")
 
+from noa_api.core.agent.runner import AgentMessage, AgentRunnerResult
 from noa_api.api.routes.assistant import get_assistant_service
 from noa_api.api.routes.assistant import router as assistant_router
-from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
+from noa_api.core.auth.authorization import (
+    AuthorizationUser,
+    get_authorization_service,
+    get_current_auth_user,
+)
 
 
 @dataclass
@@ -19,6 +24,9 @@ class _FakeAssistantService:
     owner_user_id: UUID
     thread_id: UUID
     messages: list[dict[str, object]] = field(default_factory=list)
+    runner_messages: list[AgentMessage] = field(default_factory=list)
+    runner_text_deltas: list[str] = field(default_factory=list)
+    seen_available_tools: set[str] = field(default_factory=set)
 
     async def thread_exists(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
         return owner_user_id == self.owner_user_id and thread_id == self.thread_id
@@ -81,12 +89,40 @@ class _FakeAssistantService:
         assert owner_user_id == self.owner_user_id
         assert thread_id == self.thread_id
 
+    async def run_agent_turn(
+        self,
+        *,
+        owner_user_id: UUID,
+        thread_id: UUID,
+        available_tool_names: set[str],
+    ) -> AgentRunnerResult:
+        assert owner_user_id == self.owner_user_id
+        assert thread_id == self.thread_id
+        self.seen_available_tools = set(available_tool_names)
+        for message in self.runner_messages:
+            self.messages.append({"id": str(uuid4()), "role": message.role, "parts": message.parts})
+        return AgentRunnerResult(messages=self.runner_messages, text_deltas=self.runner_text_deltas)
 
-def _build_app(service: _FakeAssistantService, current_user: AuthorizationUser) -> FastAPI:
+
+@dataclass
+class _FakeAuthorizationService:
+    allowed_tools: set[str] = field(default_factory=set)
+
+    async def authorize_tool_access(self, user: AuthorizationUser, tool_name: str) -> bool:
+        _ = user
+        return tool_name in self.allowed_tools
+
+
+def _build_app(
+    service: _FakeAssistantService,
+    current_user: AuthorizationUser,
+    authorization_service: _FakeAuthorizationService | None = None,
+) -> FastAPI:
     app = FastAPI()
     app.include_router(assistant_router)
     app.dependency_overrides[get_assistant_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: current_user
+    app.dependency_overrides[get_authorization_service] = lambda: authorization_service or _FakeAuthorizationService()
     return app
 
 
@@ -291,3 +327,53 @@ async def test_assistant_route_rejects_unknown_command_type() -> None:
     detail = response.json().get("detail")
     assert isinstance(detail, list)
     assert detail[0]["loc"][:2] == ["body", "commands"]
+
+
+async def test_assistant_route_runs_agent_with_rbac_filtered_tools() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        runner_messages=[
+            AgentMessage(
+                role="assistant",
+                parts=[{"type": "text", "text": "I'll check that for you."}],
+            )
+        ],
+        runner_text_deltas=["I'll check", " that for you."],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        authorization_service=_FakeAuthorizationService(allowed_tools={"get_current_time"}),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "What time is it?"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assert "I'll check that for you." in response.text
+    assert service.seen_available_tools == {"get_current_time"}
