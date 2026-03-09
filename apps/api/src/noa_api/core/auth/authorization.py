@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.auth.auth_service import AuthService
@@ -29,6 +29,14 @@ class UnknownToolError(Exception):
         super().__init__(f"Unknown tools: {', '.join(self.unknown_tools)}")
 
 
+class LastActiveAdminError(Exception):
+    pass
+
+
+class SelfDeactivateAdminError(Exception):
+    pass
+
+
 @dataclass
 class AuthorizationUser:
     user_id: UUID
@@ -47,6 +55,8 @@ class AuthorizationRepositoryProtocol(Protocol):
     async def get_user_by_id(self, user_id: UUID) -> User | None: ...
 
     async def update_user_active(self, user_id: UUID, *, is_active: bool) -> User | None: ...
+
+    async def count_active_admin_users(self) -> int: ...
 
     async def get_role_names(self, user_id: UUID) -> list[str]: ...
 
@@ -97,6 +107,15 @@ class SQLAuthorizationRepository:
         user.is_active = is_active
         await self._session.flush()
         return user
+
+    async def count_active_admin_users(self) -> int:
+        result = await self._session.execute(
+            select(func.count(func.distinct(User.id)))
+            .join(UserRole, UserRole.user_id == User.id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(User.is_active.is_(True), Role.name == "admin")
+        )
+        return int(result.scalar_one() or 0)
 
     async def get_role_names(self, user_id: UUID) -> list[str]:
         result = await self._session.execute(
@@ -196,11 +215,30 @@ class AuthorizationService:
             )
         return result
 
-    async def set_user_active(self, user_id: UUID, *, is_active: bool, actor_email: str | None = None) -> AuthorizationUser | None:
+    async def set_user_active(
+        self,
+        user_id: UUID,
+        *,
+        is_active: bool,
+        actor_email: str | None = None,
+        actor_user_id: UUID | None = None,
+    ) -> AuthorizationUser | None:
+        user = await self._repository.get_user_by_id(user_id)
+        if user is None:
+            return None
+
+        roles = await self._repository.get_role_names(user.id)
+        is_admin_user = "admin" in roles
+        if user.is_active and not is_active and is_admin_user:
+            if actor_user_id is not None and actor_user_id == user_id:
+                raise SelfDeactivateAdminError("Admins cannot disable their own account")
+            if await self._repository.count_active_admin_users() <= 1:
+                raise LastActiveAdminError("Cannot disable the last active admin")
+
         user = await self._repository.update_user_active(user_id, is_active=is_active)
         if user is None:
             return None
-        roles = await self._repository.get_role_names(user.id)
+
         tools = await self._repository.get_user_allowlist_tools(user.id)
         await self._repository.create_audit_log(
             event_type="admin_user_status_updated",

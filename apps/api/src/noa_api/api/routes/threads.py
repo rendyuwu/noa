@@ -81,6 +81,39 @@ class GenerateTitleResponse(BaseModel):
     title: str
 
 
+def _extract_text_chunks(value: object) -> list[str]:
+    if isinstance(value, str):
+        normalized = value.strip()
+        return [normalized] if normalized else []
+    if isinstance(value, dict):
+        if value.get("type") == "text":
+            text_value = value.get("text")
+            if isinstance(text_value, str):
+                normalized = text_value.strip()
+                return [normalized] if normalized else []
+        nested_content = value.get("content")
+        if nested_content is not None:
+            return _extract_text_chunks(nested_content)
+        return []
+    if isinstance(value, list):
+        chunks: list[str] = []
+        for item in value:
+            chunks.extend(_extract_text_chunks(item))
+        return chunks
+    return []
+
+
+def _message_text_chunks(message: dict[str, object]) -> list[str]:
+    parts = message.get("parts")
+    if parts is not None:
+        chunks = _extract_text_chunks(parts)
+        if chunks:
+            return chunks
+
+    content = message.get("content")
+    return _extract_text_chunks(content)
+
+
 class SQLThreadRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -320,22 +353,16 @@ async def generate_thread_title(
     if thread is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
 
-    text_chunks: list[str] = []
+    user_text_chunks: list[str] = []
+    fallback_text_chunks: list[str] = []
     for message in payload.messages:
-        if message.get("role") != "user":
+        text_chunks = _message_text_chunks(message)
+        if not text_chunks:
             continue
-        content = message.get("content")
-        if not isinstance(content, list):
-            continue
-        for part in content:
-            if not isinstance(part, dict):
-                continue
-            if part.get("type") != "text":
-                continue
-            text_value = part.get("text")
-            if isinstance(text_value, str) and text_value.strip():
-                text_chunks.append(text_value.strip())
+        fallback_text_chunks.extend(text_chunks)
+        if message.get("role") == "user":
+            user_text_chunks.extend(text_chunks)
 
-    candidate = " ".join(text_chunks).strip()
+    candidate = " ".join(user_text_chunks or fallback_text_chunks).strip()
     title = (candidate[:80] if candidate else "New Thread").strip()
     return GenerateTitleResponse(title=title)

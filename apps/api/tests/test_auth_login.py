@@ -235,3 +235,23 @@ def test_settings_generates_jwt_secret_in_dev_environment() -> None:
     cfg = Settings(environment="development")
     assert cfg.auth_jwt_secret is not None
     assert len(cfg.auth_jwt_secret.get_secret_value()) >= 32
+
+
+def test_settings_rejects_insecure_ldap_transport_in_production() -> None:
+    try:
+        Settings(
+            environment="production",
+            auth_jwt_secret="x" * 32,
+            ldap_server_uri="ldap://ldap.example.com:389",
+        )
+        assert False, "Expected insecure LDAP transport to fail in production"
+    except ValueError:
+        pass
+
+
+def test_settings_allows_insecure_ldap_transport_in_development() -> None:
+    cfg = Settings(
+        environment="development",
+        ldap_server_uri="ldap://localhost:389",
+    )
+    assert cfg.ldap_server_uri.startswith("ldap://")

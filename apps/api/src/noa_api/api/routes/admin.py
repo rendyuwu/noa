@@ -6,6 +6,8 @@ from pydantic import BaseModel
 from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
+    LastActiveAdminError,
+    SelfDeactivateAdminError,
     UnknownToolError,
     get_authorization_service,
     get_current_auth_user,
@@ -76,7 +78,15 @@ async def update_user_active(
     admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> UpdateUserResponse:
-    user = await authorization_service.set_user_active(id, is_active=payload.is_active, actor_email=admin_user.email)
+    try:
+        user = await authorization_service.set_user_active(
+            id,
+            is_active=payload.is_active,
+            actor_email=admin_user.email,
+            actor_user_id=admin_user.user_id,
+        )
+    except (LastActiveAdminError, SelfDeactivateAdminError) as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UpdateUserResponse(user=_to_user_response(user))

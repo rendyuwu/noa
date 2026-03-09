@@ -8,6 +8,8 @@ from noa_api.api.routes.admin import router as admin_router
 from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
+    LastActiveAdminError,
+    SelfDeactivateAdminError,
     UnknownToolError,
     get_authorization_service,
     get_current_auth_user,
@@ -48,6 +50,15 @@ class _InMemoryAuthorizationRepository:
             return None
         user.is_active = is_active
         return user
+
+    async def count_active_admin_users(self) -> int:
+        total = 0
+        for user in self.users.values():
+            if not user.is_active:
+                continue
+            if "admin" in self.user_roles.get(user.id, set()):
+                total += 1
+        return total
 
     async def get_role_names(self, user_id: UUID) -> list[str]:
         return sorted(self.user_roles.get(user_id, set()))
@@ -110,7 +121,14 @@ class _FakeAuthorizationService:
     async def list_users(self) -> list[AuthorizationUser]:
         return self.users
 
-    async def set_user_active(self, user_id: UUID, *, is_active: bool, actor_email: str | None = None) -> AuthorizationUser | None:
+    async def set_user_active(
+        self,
+        user_id: UUID,
+        *,
+        is_active: bool,
+        actor_email: str | None = None,
+        actor_user_id: UUID | None = None,
+    ) -> AuthorizationUser | None:
         self.last_is_active = is_active
         if user_id != self.target_user_id:
             return None
@@ -254,6 +272,47 @@ async def test_authorization_service_writes_audit_events_for_admin_changes() -> 
     ]
 
 
+async def test_authorization_service_blocks_disabling_last_active_admin() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    admin_id = uuid4()
+    repo.users[admin_id] = _RepoUser(id=admin_id, email="admin@example.com", display_name="Admin", is_active=True)
+    repo.user_roles[admin_id] = {"admin"}
+    service = AuthorizationService(repository=repo)
+
+    try:
+        await service.set_user_active(admin_id, is_active=False, actor_email="owner@example.com")
+        assert False, "Expected LastActiveAdminError"
+    except LastActiveAdminError:
+        pass
+
+
+async def test_authorization_service_blocks_admin_self_deactivation() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    admin_id = uuid4()
+    other_admin_id = uuid4()
+    repo.users[admin_id] = _RepoUser(id=admin_id, email="admin@example.com", display_name="Admin", is_active=True)
+    repo.users[other_admin_id] = _RepoUser(
+        id=other_admin_id,
+        email="backup-admin@example.com",
+        display_name="Backup Admin",
+        is_active=True,
+    )
+    repo.user_roles[admin_id] = {"admin"}
+    repo.user_roles[other_admin_id] = {"admin"}
+    service = AuthorizationService(repository=repo)
+
+    try:
+        await service.set_user_active(
+            admin_id,
+            is_active=False,
+            actor_email="admin@example.com",
+            actor_user_id=admin_id,
+        )
+        assert False, "Expected SelfDeactivateAdminError"
+    except SelfDeactivateAdminError:
+        pass
+
+
 async def test_admin_routes_forbid_non_admin_users() -> None:
     app = FastAPI()
     app.include_router(admin_router)
@@ -341,3 +400,31 @@ async def test_admin_route_rejects_unknown_tools_with_400() -> None:
 
     assert response.status_code == 400
     assert response.json() == {"detail": "Unknown tools: unknown-tool"}
+
+
+async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None:
+    app = FastAPI()
+    app.include_router(admin_router)
+
+    repo = _InMemoryAuthorizationRepository()
+    admin_id = uuid4()
+    repo.users[admin_id] = _RepoUser(id=admin_id, email="admin@example.com", display_name="Admin", is_active=True)
+    repo.user_roles[admin_id] = {"admin"}
+    service = AuthorizationService(repository=repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch(f"/admin/users/{admin_id}", json={"is_active": False})
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Cannot disable the last active admin"}

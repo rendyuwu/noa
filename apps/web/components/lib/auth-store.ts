@@ -17,11 +17,28 @@ export const getAuthToken = (): string | null => {
   if (typeof window === "undefined") {
     return null;
   }
-  return window.localStorage.getItem(TOKEN_KEY);
+
+  const sessionToken = window.sessionStorage.getItem(TOKEN_KEY);
+  if (sessionToken) {
+    return sessionToken;
+  }
+
+  const legacyToken = window.localStorage.getItem(TOKEN_KEY);
+  if (!legacyToken) {
+    return null;
+  }
+
+  window.sessionStorage.setItem(TOKEN_KEY, legacyToken);
+  window.localStorage.removeItem(TOKEN_KEY);
+  return legacyToken;
 };
 
 export const setAuthToken = (token: string): void => {
-  window.localStorage.setItem(TOKEN_KEY, token);
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.sessionStorage.setItem(TOKEN_KEY, token);
+  window.localStorage.removeItem(TOKEN_KEY);
 };
 
 export const setAuthUser = (user: AuthUser | null): void => {
@@ -53,6 +70,7 @@ export const clearAuth = (): void => {
   if (typeof window === "undefined") {
     return;
   }
+  window.sessionStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
   window.location.href = "/login";
