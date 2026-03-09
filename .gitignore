@@ -1,5 +1,6 @@
 .agents/
 skills-lock.json
+.worktrees/
 
 # Node / Next.js
 node_modules/
