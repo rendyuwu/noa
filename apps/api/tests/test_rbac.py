@@ -100,10 +100,10 @@ class _FakeAuthorizationService:
                 display_name="Member",
                 is_active=True,
                 roles=["member"],
-                tools=["search"],
+                tools=["get_current_time"],
             )
         ]
-        self.all_tools = ["search", "summarize"]
+        self.all_tools = ["get_current_time", "get_current_date", "set_demo_flag"]
         self.last_set_tools: list[str] | None = None
         self.last_is_active: bool | None = None
 
@@ -156,7 +156,7 @@ async def test_authorization_service_admin_bypasses_tool_checks() -> None:
 
 async def test_authorization_service_disabled_user_has_zero_permissions() -> None:
     repo = _InMemoryAuthorizationRepository()
-    repo.role_tools["member"] = {"search"}
+    repo.role_tools["member"] = {"get_current_time"}
     service = AuthorizationService(repository=repo)
     allowed = await service.authorize_tool_access(
         AuthorizationUser(
@@ -167,14 +167,14 @@ async def test_authorization_service_disabled_user_has_zero_permissions() -> Non
             roles=["admin", "member"],
             tools=[],
         ),
-        "search",
+        "get_current_time",
     )
     assert allowed is False
 
 
 async def test_authorization_service_non_admin_depends_on_tool_permissions() -> None:
     repo = _InMemoryAuthorizationRepository()
-    repo.role_tools["member"] = {"search"}
+    repo.role_tools["member"] = {"get_current_time"}
     service = AuthorizationService(repository=repo)
     user = AuthorizationUser(
         user_id=uuid4(),
@@ -184,8 +184,8 @@ async def test_authorization_service_non_admin_depends_on_tool_permissions() -> 
         roles=["member"],
         tools=[],
     )
-    assert await service.authorize_tool_access(user, "search") is True
-    assert await service.authorize_tool_access(user, "summarize") is False
+    assert await service.authorize_tool_access(user, "get_current_time") is True
+    assert await service.authorize_tool_access(user, "set_demo_flag") is False
 
 
 async def test_authorization_service_lists_canonical_tools() -> None:
@@ -193,7 +193,7 @@ async def test_authorization_service_lists_canonical_tools() -> None:
     repo.role_tools["member"] = {"db-only"}
     service = AuthorizationService(repository=repo)
 
-    assert await service.list_tools() == ["search", "summarize"]
+    assert await service.list_tools() == ["get_current_time", "get_current_date", "set_demo_flag"]
 
 
 async def test_authorization_service_rejects_unknown_tool_updates() -> None:
@@ -203,7 +203,7 @@ async def test_authorization_service_rejects_unknown_tool_updates() -> None:
     service = AuthorizationService(repository=repo)
 
     try:
-        await service.set_user_tools(user_id, ["search", "unknown-tool"], actor_email="admin@example.com")
+        await service.set_user_tools(user_id, ["get_current_time", "unknown-tool"], actor_email="admin@example.com")
         assert False, "Expected UnknownToolError"
     except UnknownToolError as exc:
         assert exc.unknown_tools == ["unknown-tool"]
@@ -223,9 +223,9 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
         tools=[],
     )
 
-    assert await service.authorize_tool_access(user, "search") is False
+    assert await service.authorize_tool_access(user, "get_current_time") is False
 
-    updated = await service.set_user_tools(user_id, ["search"], actor_email="admin@example.com")
+    updated = await service.set_user_tools(user_id, ["get_current_time"], actor_email="admin@example.com")
     assert updated is not None
 
     updated_user = AuthorizationUser(
@@ -236,7 +236,7 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
         roles=updated.roles,
         tools=updated.tools,
     )
-    assert await service.authorize_tool_access(updated_user, "search") is True
+    assert await service.authorize_tool_access(updated_user, "get_current_time") is True
 
 
 async def test_authorization_service_writes_audit_events_for_admin_changes() -> None:
@@ -246,7 +246,7 @@ async def test_authorization_service_writes_audit_events_for_admin_changes() -> 
     service = AuthorizationService(repository=repo)
 
     await service.set_user_active(user_id, is_active=False, actor_email="admin@example.com")
-    await service.set_user_tools(user_id, ["search"], actor_email="admin@example.com")
+    await service.set_user_tools(user_id, ["get_current_time"], actor_email="admin@example.com")
 
     assert [event["event_type"] for event in repo.audit_events] == [
         "admin_user_status_updated",
@@ -300,22 +300,22 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
         )
         put_response = await client.put(
             f"/admin/users/{service.target_user_id}/tools",
-            json={"tools": ["summarize", "search"]},
+            json={"tools": ["set_demo_flag", "get_current_date"]},
         )
 
     assert users_response.status_code == 200
     assert users_response.json()["users"][0]["email"] == "member@example.com"
 
     assert tools_response.status_code == 200
-    assert tools_response.json() == {"tools": ["search", "summarize"]}
+    assert tools_response.json() == {"tools": ["get_current_time", "get_current_date", "set_demo_flag"]}
 
     assert patch_response.status_code == 200
     assert patch_response.json()["user"]["is_active"] is False
     assert service.last_is_active is False
 
     assert put_response.status_code == 200
-    assert put_response.json()["user"]["tools"] == ["search", "summarize"]
-    assert service.last_set_tools == ["summarize", "search"]
+    assert put_response.json()["user"]["tools"] == ["get_current_date", "set_demo_flag"]
+    assert service.last_set_tools == ["set_demo_flag", "get_current_date"]
 
 
 async def test_admin_route_rejects_unknown_tools_with_400() -> None:
@@ -336,7 +336,7 @@ async def test_admin_route_rejects_unknown_tools_with_400() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.put(
             f"/admin/users/{service.target_user_id}/tools",
-            json={"tools": ["search", "unknown-tool"]},
+            json={"tools": ["get_current_time", "unknown-tool"]},
         )
 
     assert response.status_code == 400

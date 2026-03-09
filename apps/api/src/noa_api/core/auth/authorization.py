@@ -14,13 +14,13 @@ from noa_api.core.auth.auth_service import AuthService
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.errors import AuthInvalidCredentialsError
 from noa_api.core.auth.jwt_service import JWTService
+from noa_api.core.tools.catalog import get_tool_catalog
 from noa_api.storage.postgres.client import create_engine, create_session_factory
 from noa_api.storage.postgres.models import AuditLog, Role, RoleToolPermission, User, UserRole
 
 _engine = create_engine()
 _session_factory = create_session_factory(_engine)
 _bearer_scheme = HTTPBearer(auto_error=False)
-KNOWN_TOOLS = ("search", "summarize")
 
 
 class UnknownToolError(Exception):
@@ -168,6 +168,7 @@ class SQLAuthorizationRepository:
 class AuthorizationService:
     def __init__(self, *, repository: AuthorizationRepositoryProtocol) -> None:
         self._repository = repository
+        self._known_tools = set(get_tool_catalog())
 
     async def authorize_tool_access(self, user: AuthorizationUser, tool_name: str) -> bool:
         if not user.is_active:
@@ -217,7 +218,7 @@ class AuthorizationService:
         )
 
     async def list_tools(self) -> list[str]:
-        return list(KNOWN_TOOLS)
+        return list(get_tool_catalog())
 
     async def set_user_tools(
         self,
@@ -231,7 +232,7 @@ class AuthorizationService:
             return None
 
         normalized = sorted({name.strip() for name in tool_names if name.strip()})
-        unknown = [name for name in normalized if name not in KNOWN_TOOLS]
+        unknown = [name for name in normalized if name not in self._known_tools]
         if unknown:
             raise UnknownToolError(unknown)
 
