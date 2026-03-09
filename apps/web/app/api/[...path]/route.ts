@@ -1,10 +1,12 @@
 import type { NextRequest } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 const HOP_BY_HOP_HEADERS = new Set([
   "connection",
   "keep-alive",
+  "proxy-connection",
   "proxy-authenticate",
   "proxy-authorization",
   "te",
@@ -86,7 +88,7 @@ async function proxy(
   upstreamUrl.search = incomingUrl.search;
 
   const method = request.method.toUpperCase();
-  const hasBody = method !== "GET" && method !== "HEAD";
+  const canHaveBody = method !== "GET" && method !== "HEAD";
 
   const init: (RequestInit & { duplex?: "half" }) = {
     method,
@@ -95,7 +97,7 @@ async function proxy(
     cache: "no-store",
   };
 
-  if (hasBody) {
+  if (canHaveBody && request.body) {
     init.body = request.body;
     init.duplex = "half";
   }
@@ -117,6 +119,7 @@ async function proxy(
       }
     } else {
       const setCookie = upstreamResponse.headers.get("set-cookie");
+      // Best-effort fallback: `headers.get("set-cookie")` may be lossy if the upstream sent multiple Set-Cookie headers.
       if (setCookie) responseHeaders.append("set-cookie", setCookie);
     }
   }
@@ -129,6 +132,20 @@ async function proxy(
 }
 
 export function GET(
+  request: NextRequest,
+  ctx: { params: Promise<{ path: string[] }> }
+) {
+  return proxy(request, ctx);
+}
+
+export function HEAD(
+  request: NextRequest,
+  ctx: { params: Promise<{ path: string[] }> }
+) {
+  return proxy(request, ctx);
+}
+
+export function OPTIONS(
   request: NextRequest,
   ctx: { params: Promise<{ path: string[] }> }
 ) {
