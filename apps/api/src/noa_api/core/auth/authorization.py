@@ -15,11 +15,18 @@ from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.errors import AuthInvalidCredentialsError
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.storage.postgres.client import create_engine, create_session_factory
-from noa_api.storage.postgres.models import Role, RoleToolPermission, User, UserRole
+from noa_api.storage.postgres.models import AuditLog, Role, RoleToolPermission, User, UserRole
 
 _engine = create_engine()
 _session_factory = create_session_factory(_engine)
 _bearer_scheme = HTTPBearer(auto_error=False)
+KNOWN_TOOLS = ("search", "summarize")
+
+
+class UnknownToolError(Exception):
+    def __init__(self, unknown_tools: list[str]) -> None:
+        self.unknown_tools = sorted({name.strip() for name in unknown_tools if name.strip()})
+        super().__init__(f"Unknown tools: {', '.join(self.unknown_tools)}")
 
 
 @dataclass
@@ -51,7 +58,14 @@ class AuthorizationRepositoryProtocol(Protocol):
 
     async def get_user_allowlist_tools(self, user_id: UUID) -> list[str]: ...
 
-    async def list_all_tools(self) -> list[str]: ...
+    async def create_audit_log(
+        self,
+        *,
+        event_type: str,
+        actor_email: str | None,
+        tool_name: str | None,
+        metadata: dict[str, object],
+    ) -> None: ...
 
 
 class SQLAuthorizationRepository:
@@ -132,9 +146,23 @@ class SQLAuthorizationRepository:
         )
         return sorted({str(name) for name in result.scalars().all()})
 
-    async def list_all_tools(self) -> list[str]:
-        result = await self._session.execute(select(RoleToolPermission.tool_name))
-        return sorted({str(name) for name in result.scalars().all()})
+    async def create_audit_log(
+        self,
+        *,
+        event_type: str,
+        actor_email: str | None,
+        tool_name: str | None,
+        metadata: dict[str, object],
+    ) -> None:
+        self._session.add(
+            AuditLog(
+                event_type=event_type,
+                user_email=actor_email,
+                tool_name=tool_name,
+                meta_data=metadata,
+            )
+        )
+        await self._session.flush()
 
 
 class AuthorizationService:
@@ -167,12 +195,18 @@ class AuthorizationService:
             )
         return result
 
-    async def set_user_active(self, user_id: UUID, *, is_active: bool) -> AuthorizationUser | None:
+    async def set_user_active(self, user_id: UUID, *, is_active: bool, actor_email: str | None = None) -> AuthorizationUser | None:
         user = await self._repository.update_user_active(user_id, is_active=is_active)
         if user is None:
             return None
         roles = await self._repository.get_role_names(user.id)
         tools = await self._repository.get_user_allowlist_tools(user.id)
+        await self._repository.create_audit_log(
+            event_type="admin_user_status_updated",
+            actor_email=actor_email,
+            tool_name=None,
+            metadata={"target_user_id": str(user.id), "is_active": is_active},
+        )
         return AuthorizationUser(
             user_id=user.id,
             email=user.email,
@@ -183,20 +217,37 @@ class AuthorizationService:
         )
 
     async def list_tools(self) -> list[str]:
-        return await self._repository.list_all_tools()
+        return list(KNOWN_TOOLS)
 
-    async def set_user_tools(self, user_id: UUID, tool_names: list[str]) -> AuthorizationUser | None:
+    async def set_user_tools(
+        self,
+        user_id: UUID,
+        tool_names: list[str],
+        *,
+        actor_email: str | None = None,
+    ) -> AuthorizationUser | None:
         user = await self._repository.get_user_by_id(user_id)
         if user is None:
             return None
 
+        normalized = sorted({name.strip() for name in tool_names if name.strip()})
+        unknown = [name for name in normalized if name not in KNOWN_TOOLS]
+        if unknown:
+            raise UnknownToolError(unknown)
+
         role_name = f"user:{user_id}"
         await self._repository.ensure_role(role_name)
         await self._repository.assign_role(user_id, role_name)
-        await self._repository.replace_role_tool_permissions(role_name, tool_names)
+        await self._repository.replace_role_tool_permissions(role_name, normalized)
 
         roles = await self._repository.get_role_names(user.id)
         tools = await self._repository.get_user_allowlist_tools(user.id)
+        await self._repository.create_audit_log(
+            event_type="admin_user_tools_updated",
+            actor_email=actor_email,
+            tool_name=None,
+            metadata={"target_user_id": str(user.id), "tools": tools},
+        )
         return AuthorizationUser(
             user_id=user.id,
             email=user.email,

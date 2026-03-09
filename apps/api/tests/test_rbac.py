@@ -8,6 +8,7 @@ from noa_api.api.routes.admin import router as admin_router
 from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
+    UnknownToolError,
     get_authorization_service,
     get_current_auth_user,
 )
@@ -27,6 +28,7 @@ class _InMemoryAuthorizationRepository:
         self.roles: set[str] = set()
         self.user_roles: dict[UUID, set[str]] = {}
         self.role_tools: dict[str, set[str]] = {}
+        self.audit_events: list[dict[str, object | None]] = []
 
     async def get_role_tool_names(self, role_names: list[str]) -> list[str]:
         tools: set[str] = set()
@@ -70,6 +72,23 @@ class _InMemoryAuthorizationRepository:
             all_tools.update(tools)
         return sorted(all_tools)
 
+    async def create_audit_log(
+        self,
+        *,
+        event_type: str,
+        actor_email: str | None,
+        tool_name: str | None,
+        metadata: dict[str, object],
+    ) -> None:
+        self.audit_events.append(
+            {
+                "event_type": event_type,
+                "actor_email": actor_email,
+                "tool_name": tool_name,
+                "metadata": metadata,
+            }
+        )
+
 
 class _FakeAuthorizationService:
     def __init__(self) -> None:
@@ -91,7 +110,7 @@ class _FakeAuthorizationService:
     async def list_users(self) -> list[AuthorizationUser]:
         return self.users
 
-    async def set_user_active(self, user_id: UUID, *, is_active: bool) -> AuthorizationUser | None:
+    async def set_user_active(self, user_id: UUID, *, is_active: bool, actor_email: str | None = None) -> AuthorizationUser | None:
         self.last_is_active = is_active
         if user_id != self.target_user_id:
             return None
@@ -101,7 +120,16 @@ class _FakeAuthorizationService:
     async def list_tools(self) -> list[str]:
         return self.all_tools
 
-    async def set_user_tools(self, user_id: UUID, tool_names: list[str]) -> AuthorizationUser | None:
+    async def set_user_tools(
+        self,
+        user_id: UUID,
+        tool_names: list[str],
+        *,
+        actor_email: str | None = None,
+    ) -> AuthorizationUser | None:
+        unknown = [name for name in tool_names if name not in self.all_tools]
+        if unknown:
+            raise UnknownToolError(unknown)
         self.last_set_tools = tool_names
         if user_id != self.target_user_id:
             return None
@@ -158,6 +186,72 @@ async def test_authorization_service_non_admin_depends_on_tool_permissions() -> 
     )
     assert await service.authorize_tool_access(user, "search") is True
     assert await service.authorize_tool_access(user, "summarize") is False
+
+
+async def test_authorization_service_lists_canonical_tools() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    repo.role_tools["member"] = {"db-only"}
+    service = AuthorizationService(repository=repo)
+
+    assert await service.list_tools() == ["search", "summarize"]
+
+
+async def test_authorization_service_rejects_unknown_tool_updates() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    user_id = uuid4()
+    repo.users[user_id] = _RepoUser(id=user_id, email="member@example.com", display_name="Member", is_active=True)
+    service = AuthorizationService(repository=repo)
+
+    try:
+        await service.set_user_tools(user_id, ["search", "unknown-tool"], actor_email="admin@example.com")
+        assert False, "Expected UnknownToolError"
+    except UnknownToolError as exc:
+        assert exc.unknown_tools == ["unknown-tool"]
+
+
+async def test_authorization_service_permission_updates_take_effect_immediately() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    user_id = uuid4()
+    repo.users[user_id] = _RepoUser(id=user_id, email="member@example.com", display_name="Member", is_active=True)
+    service = AuthorizationService(repository=repo)
+    user = AuthorizationUser(
+        user_id=user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        roles=[],
+        tools=[],
+    )
+
+    assert await service.authorize_tool_access(user, "search") is False
+
+    updated = await service.set_user_tools(user_id, ["search"], actor_email="admin@example.com")
+    assert updated is not None
+
+    updated_user = AuthorizationUser(
+        user_id=user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        roles=updated.roles,
+        tools=updated.tools,
+    )
+    assert await service.authorize_tool_access(updated_user, "search") is True
+
+
+async def test_authorization_service_writes_audit_events_for_admin_changes() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    user_id = uuid4()
+    repo.users[user_id] = _RepoUser(id=user_id, email="member@example.com", display_name="Member", is_active=True)
+    service = AuthorizationService(repository=repo)
+
+    await service.set_user_active(user_id, is_active=False, actor_email="admin@example.com")
+    await service.set_user_tools(user_id, ["search"], actor_email="admin@example.com")
+
+    assert [event["event_type"] for event in repo.audit_events] == [
+        "admin_user_status_updated",
+        "admin_user_tools_updated",
+    ]
 
 
 async def test_admin_routes_forbid_non_admin_users() -> None:
@@ -222,3 +316,28 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
     assert put_response.status_code == 200
     assert put_response.json()["user"]["tools"] == ["search", "summarize"]
     assert service.last_set_tools == ["summarize", "search"]
+
+
+async def test_admin_route_rejects_unknown_tools_with_400() -> None:
+    app = FastAPI()
+    app.include_router(admin_router)
+    service = _FakeAuthorizationService()
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            f"/admin/users/{service.target_user_id}/tools",
+            json={"tools": ["search", "unknown-tool"]},
+        )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Unknown tools: unknown-tool"}

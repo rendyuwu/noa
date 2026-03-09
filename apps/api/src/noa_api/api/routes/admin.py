@@ -3,7 +3,13 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from noa_api.core.auth.authorization import AuthorizationService, AuthorizationUser, get_authorization_service, get_current_auth_user
+from noa_api.core.auth.authorization import (
+    AuthorizationService,
+    AuthorizationUser,
+    UnknownToolError,
+    get_authorization_service,
+    get_current_auth_user,
+)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -67,10 +73,10 @@ async def list_users(
 async def update_user_active(
     id: UUID,
     payload: UpdateUserRequest,
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> UpdateUserResponse:
-    user = await authorization_service.set_user_active(id, is_active=payload.is_active)
+    user = await authorization_service.set_user_active(id, is_active=payload.is_active, actor_email=admin_user.email)
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UpdateUserResponse(user=_to_user_response(user))
@@ -89,10 +95,13 @@ async def list_tools(
 async def set_user_tools(
     id: UUID,
     payload: SetUserToolsRequest,
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> UpdateUserResponse:
-    user = await authorization_service.set_user_tools(id, payload.tools)
+    try:
+        user = await authorization_service.set_user_tools(id, payload.tools, actor_email=admin_user.email)
+    except UnknownToolError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
     return UpdateUserResponse(user=_to_user_response(user))
