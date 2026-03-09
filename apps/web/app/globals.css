@@ -1,86 +1,100 @@
+@config "../tailwind.config.ts";
+@import "tailwindcss";
+
 :root {
-  --bg: #f5f7fb;
-  --panel: #ffffff;
-  --text: #1a2433;
-  --muted: #65758b;
-  --line: #d9e0eb;
-  --accent: #0f6cbd;
-  --danger: #b42318;
-  --success: #027a48;
+  /* Claude-style warm neutrals + orange accent */
+  --bg: 35 45% 96%;
+  --surface: 0 0% 100%;
+  --surface-2: 34 28% 93%;
+  --border: 33 18% 82%;
+  --text: 25 25% 14%;
+  --muted: 25 12% 38%;
+  --accent: 22 90% 54%;
+  --accent-ink: 22 96% 20%;
+
+  /* Compatibility: older styles referenced --line */
+  --line: var(--border);
+
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.10);
+
+  /* Serif-forward base typography */
+  --font-body: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
 }
 
-* {
-  box-sizing: border-box;
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: hsl(var(--text));
+    background:
+      radial-gradient(1200px circle at 18% -10%, hsl(22 92% 92%), transparent 60%),
+      radial-gradient(900px circle at 92% 0%, hsl(35 55% 93%), transparent 55%),
+      hsl(var(--bg));
+    font-family: var(--font-body);
+    text-rendering: optimizeLegibility;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
 }
 
-html,
-body {
-  margin: 0;
-  min-height: 100%;
-  font-family: "Source Sans 3", "Segoe UI", sans-serif;
-  color: var(--text);
-  background: radial-gradient(circle at top right, #dbeafe 0%, #f5f7fb 35%, #f8fafc 100%);
-}
+@layer components {
+  .page-shell {
+    @apply min-h-dvh p-4;
+  }
 
-a {
-  color: inherit;
-}
+  .panel {
+    @apply rounded-xl border border-border bg-surface shadow-sm;
+  }
 
-button,
-input,
-textarea {
-  font: inherit;
-}
+  .row {
+    @apply flex gap-3;
+  }
 
-.page-shell {
-  min-height: 100vh;
-  padding: 1rem;
-}
+  .button {
+    @apply inline-flex items-center justify-center rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text shadow-sm transition-colors hover:bg-surface-2;
+  }
 
-.panel {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 12px;
-}
+  .button-primary {
+    @apply border-transparent bg-accent text-white hover:bg-accent/90;
+  }
 
-.row {
-  display: flex;
-  gap: 0.75rem;
-}
+  .button-danger {
+    @apply border-red-200 bg-red-50 text-red-800 hover:bg-red-100;
+  }
 
-.button {
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.5rem 0.8rem;
-  background: #fff;
-  cursor: pointer;
-}
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text shadow-sm outline-none placeholder:text-muted focus:border-accent/50 focus:ring-2 focus:ring-accent/30;
+  }
 
-.button-primary {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
-}
+  .muted {
+    @apply text-sm text-muted;
+  }
 
-.button-danger {
-  background: #fff5f5;
-  color: var(--danger);
-  border-color: #f5c2c7;
-}
-
-.input {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0.55rem 0.7rem;
-}
-
-.muted {
-  color: var(--muted);
-}
-
-.error {
-  color: var(--danger);
+  .error {
+    @apply text-sm text-red-700;
+  }
 }
 
 @media (max-width: 900px) {
