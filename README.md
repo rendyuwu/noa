@@ -2,15 +2,27 @@
 
 AI operations workspace: chat UI + controlled tools.
 
+## Prerequisites
+
+- Docker + Docker Compose
+- Python 3.11+ and `uv` (for API; added in later tasks)
+- Node.js 20+ and npm (for web; added in later tasks)
+
 ## Dev Quickstart
 
-### 1) Start Postgres
+### Current branch state (Task 1)
+
+Only Postgres is available right now. The `apps/api` and `apps/web` projects are added in later tasks.
 
 ```bash
 docker compose up -d postgres
 ```
 
-### 2) Start API
+### Intended workflow once API and web are scaffolded
+
+Run API and web in separate terminals.
+
+#### Terminal 1: API
 
 ```bash
 cd apps/api
@@ -18,7 +30,7 @@ uv sync
 uv run uvicorn noa_api.main:app --reload --port 8000
 ```
 
-### 3) Start Web
+#### Terminal 2: Web
 
 ```bash
 cd apps/web
