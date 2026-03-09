@@ -3,11 +3,12 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from noa_api.storage.postgres.base import Base
+from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 
 
 class User(Base):
@@ -91,8 +92,17 @@ class ActionRequest(Base):
     thread_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), index=True)
     tool_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     args: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default="'{}'::jsonb")
-    risk: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    risk: Mapped[ToolRisk] = mapped_column(
+        Enum(ToolRisk, name="action_request_risk", native_enum=False, validate_strings=True),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[ActionRequestStatus] = mapped_column(
+        Enum(ActionRequestStatus, name="action_request_status", native_enum=False, validate_strings=True),
+        nullable=False,
+        index=True,
+        server_default=ActionRequestStatus.PENDING.value,
+    )
     requested_by_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
     decided_by_user_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
@@ -113,7 +123,12 @@ class ToolRun(Base):
     thread_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), index=True)
     tool_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
     args: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default="'{}'::jsonb")
-    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    status: Mapped[ToolRunStatus] = mapped_column(
+        Enum(ToolRunStatus, name="tool_run_status", native_enum=False, validate_strings=True),
+        nullable=False,
+        index=True,
+        server_default=ToolRunStatus.STARTED.value,
+    )
     result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     action_request_id: Mapped[UUID | None] = mapped_column(

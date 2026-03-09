@@ -19,6 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    action_request_risk = sa.Enum("READ", "CHANGE", name="action_request_risk", native_enum=False)
+    action_request_status = sa.Enum("PENDING", "APPROVED", "DENIED", name="action_request_status", native_enum=False)
+    tool_run_status = sa.Enum("STARTED", "COMPLETED", "FAILED", name="tool_run_status", native_enum=False)
+
     op.create_table(
         "action_requests",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
@@ -30,8 +34,8 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'{}'::jsonb"),
         ),
-        sa.Column("risk", sa.String(length=20), nullable=False),
-        sa.Column("status", sa.String(length=20), nullable=False),
+        sa.Column("risk", action_request_risk, nullable=False),
+        sa.Column("status", action_request_status, nullable=False, server_default=sa.text("'PENDING'")),
         sa.Column("requested_by_user_id", postgresql.UUID(as_uuid=True), nullable=False),
         sa.Column("decided_by_user_id", postgresql.UUID(as_uuid=True), nullable=True),
         sa.Column("decided_at", sa.DateTime(timezone=True), nullable=True),
@@ -60,7 +64,7 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'{}'::jsonb"),
         ),
-        sa.Column("status", sa.String(length=20), nullable=False),
+        sa.Column("status", tool_run_status, nullable=False, server_default=sa.text("'STARTED'")),
         sa.Column("result", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
         sa.Column("error", sa.Text(), nullable=True),
         sa.Column("action_request_id", postgresql.UUID(as_uuid=True), nullable=True),

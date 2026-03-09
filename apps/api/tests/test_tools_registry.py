@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import cast
 
+from noa_api.core.tools import catalog
 from noa_api.core.tools.catalog import get_tool_catalog
 from noa_api.core.tools.demo_tools import get_current_date, get_current_time, set_demo_flag
 from noa_api.core.tools.registry import get_tool_definition, get_tool_registry
@@ -33,6 +34,38 @@ async def test_tool_registry_contains_demo_tools_with_expected_risk() -> None:
     assert risks["set_demo_flag"] == "CHANGE"
     assert get_tool_definition("set_demo_flag") is not None
     assert get_tool_definition("unknown_tool") is None
+
+
+async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> None:
+    by_name = {tool.name: tool for tool in get_tool_registry()}
+
+    assert by_name["get_current_time"].parameters_schema == {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    }
+    assert by_name["get_current_date"].parameters_schema == {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": False,
+    }
+    assert by_name["set_demo_flag"].parameters_schema == {
+        "type": "object",
+        "properties": {
+            "key": {"type": "string"},
+            "value": {},
+        },
+        "required": ["key", "value"],
+        "additionalProperties": False,
+    }
+
+
+async def test_tools_catalog_is_sourced_live_from_registry(monkeypatch) -> None:
+    monkeypatch.setattr(catalog, "get_tool_names", lambda: ("dynamic_tool",))
+
+    assert catalog.get_tool_catalog() == ("dynamic_tool",)
 
 
 async def test_read_demo_tools_return_time_and_date_payloads() -> None:
