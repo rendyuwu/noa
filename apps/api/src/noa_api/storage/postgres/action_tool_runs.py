@@ -13,6 +13,8 @@ from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 
 class ActionToolRunRepositoryProtocol(Protocol):
+    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None: ...
+
     async def create_action_request(
         self,
         *,
@@ -41,6 +43,8 @@ class ActionToolRunRepositoryProtocol(Protocol):
         requested_by_user_id: UUID | None,
     ) -> ToolRun: ...
 
+    async def get_tool_run(self, *, tool_run_id: UUID) -> ToolRun | None: ...
+
     async def finish_tool_run(
         self,
         *,
@@ -54,6 +58,10 @@ class ActionToolRunRepositoryProtocol(Protocol):
 class SQLActionToolRunRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
+
+    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None:
+        result = await self._session.execute(select(ActionRequest).where(ActionRequest.id == action_request_id))
+        return result.scalar_one_or_none()
 
     async def create_action_request(
         self,
@@ -83,8 +91,7 @@ class SQLActionToolRunRepository:
         decided_by_user_id: UUID,
         status: ActionRequestStatus,
     ) -> ActionRequest | None:
-        result = await self._session.execute(select(ActionRequest).where(ActionRequest.id == action_request_id))
-        action_request = result.scalar_one_or_none()
+        action_request = await self.get_action_request(action_request_id=action_request_id)
         if action_request is None:
             return None
 
@@ -115,6 +122,10 @@ class SQLActionToolRunRepository:
         await self._session.flush()
         return tool_run
 
+    async def get_tool_run(self, *, tool_run_id: UUID) -> ToolRun | None:
+        result = await self._session.execute(select(ToolRun).where(ToolRun.id == tool_run_id))
+        return result.scalar_one_or_none()
+
     async def finish_tool_run(
         self,
         *,
@@ -123,8 +134,7 @@ class SQLActionToolRunRepository:
         result: dict[str, object] | None,
         error: str | None,
     ) -> ToolRun | None:
-        db_result = await self._session.execute(select(ToolRun).where(ToolRun.id == tool_run_id))
-        tool_run = db_result.scalar_one_or_none()
+        tool_run = await self.get_tool_run(tool_run_id=tool_run_id)
         if tool_run is None:
             return None
 
@@ -158,6 +168,11 @@ class ActionToolRunService:
         )
 
     async def approve_action_request(self, *, action_request_id: UUID, decided_by_user_id: UUID) -> ActionRequest | None:
+        action_request = await self._repository.get_action_request(action_request_id=action_request_id)
+        if action_request is None:
+            return None
+        if action_request.status != ActionRequestStatus.PENDING:
+            raise ValueError("Action request has already been decided")
         return await self._repository.decide_action_request(
             action_request_id=action_request_id,
             decided_by_user_id=decided_by_user_id,
@@ -165,6 +180,11 @@ class ActionToolRunService:
         )
 
     async def deny_action_request(self, *, action_request_id: UUID, decided_by_user_id: UUID) -> ActionRequest | None:
+        action_request = await self._repository.get_action_request(action_request_id=action_request_id)
+        if action_request is None:
+            return None
+        if action_request.status != ActionRequestStatus.PENDING:
+            raise ValueError("Action request has already been decided")
         return await self._repository.decide_action_request(
             action_request_id=action_request_id,
             decided_by_user_id=decided_by_user_id,
@@ -189,6 +209,11 @@ class ActionToolRunService:
         )
 
     async def complete_tool_run(self, *, tool_run_id: UUID, result: Mapping[str, object]) -> ToolRun | None:
+        tool_run = await self._repository.get_tool_run(tool_run_id=tool_run_id)
+        if tool_run is None:
+            return None
+        if tool_run.status in {ToolRunStatus.COMPLETED, ToolRunStatus.FAILED}:
+            raise ValueError("Tool run is already terminal")
         return await self._repository.finish_tool_run(
             tool_run_id=tool_run_id,
             status=ToolRunStatus.COMPLETED,
@@ -197,6 +222,11 @@ class ActionToolRunService:
         )
 
     async def fail_tool_run(self, *, tool_run_id: UUID, error: str) -> ToolRun | None:
+        tool_run = await self._repository.get_tool_run(tool_run_id=tool_run_id)
+        if tool_run is None:
+            return None
+        if tool_run.status in {ToolRunStatus.COMPLETED, ToolRunStatus.FAILED}:
+            raise ValueError("Tool run is already terminal")
         return await self._repository.finish_tool_run(
             tool_run_id=tool_run_id,
             status=ToolRunStatus.FAILED,

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
+import pytest
+
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
@@ -24,6 +26,9 @@ async def test_lifecycle_enums_define_machine_stable_values() -> None:
 class _FakeActionToolRunRepository:
     action_requests: dict[UUID, ActionRequest]
     tool_runs: dict[UUID, ToolRun]
+
+    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None:
+        return self.action_requests.get(action_request_id)
 
     async def create_action_request(
         self,
@@ -90,6 +95,9 @@ class _FakeActionToolRunRepository:
         )
         self.tool_runs[started.id] = started
         return started
+
+    async def get_tool_run(self, *, tool_run_id: UUID) -> ToolRun | None:
+        return self.tool_runs.get(tool_run_id)
 
     async def finish_tool_run(
         self,
@@ -168,3 +176,59 @@ async def test_action_tool_run_service_can_fail_tool_run() -> None:
     assert failed.status == ToolRunStatus.FAILED
     assert failed.result is None
     assert failed.error == "boom"
+
+
+async def test_action_tool_run_service_rejects_re_deciding_action_request() -> None:
+    repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
+    service = ActionToolRunService(repository=repo)
+    thread_id = uuid4()
+    actor_id = uuid4()
+
+    request = await service.create_action_request(
+        thread_id=thread_id,
+        tool_name="set_demo_flag",
+        args={"key": "k", "value": "v"},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=actor_id,
+    )
+    _ = await service.approve_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
+
+    with pytest.raises(ValueError, match="already been decided"):
+        await service.approve_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
+
+    with pytest.raises(ValueError, match="already been decided"):
+        await service.deny_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
+
+
+async def test_action_tool_run_service_rejects_complete_then_failed_transition() -> None:
+    repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
+    service = ActionToolRunService(repository=repo)
+
+    run = await service.start_tool_run(
+        thread_id=uuid4(),
+        tool_name="set_demo_flag",
+        args={"key": "k", "value": "v"},
+        action_request_id=None,
+        requested_by_user_id=None,
+    )
+    _ = await service.complete_tool_run(tool_run_id=run.id, result={"ok": True})
+
+    with pytest.raises(ValueError, match="already terminal"):
+        await service.fail_tool_run(tool_run_id=run.id, error="should-not-transition")
+
+
+async def test_action_tool_run_service_rejects_failed_then_completed_transition() -> None:
+    repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
+    service = ActionToolRunService(repository=repo)
+
+    run = await service.start_tool_run(
+        thread_id=uuid4(),
+        tool_name="set_demo_flag",
+        args={"key": "k", "value": "v"},
+        action_request_id=None,
+        requested_by_user_id=None,
+    )
+    _ = await service.fail_tool_run(tool_run_id=run.id, error="boom")
+
+    with pytest.raises(ValueError, match="already terminal"):
+        await service.complete_tool_run(tool_run_id=run.id, result={"ok": True})
