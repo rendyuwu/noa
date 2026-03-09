@@ -1,9 +1,12 @@
 "use client";
 
 import type { PropsWithChildren } from "react";
+import { useCallback } from "react";
 import {
   AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
+  useAssistantApi,
+  useAssistantState,
   useAssistantTransportRuntime,
 } from "@assistant-ui/react";
 
@@ -27,22 +30,50 @@ const converter = (state: AssistantState, connectionMetadata: { pendingCommands:
   };
 };
 
+function useThreadAwareAssistantTransportRuntime() {
+  const api = useAssistantApi();
+  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+
+  const ensureThreadId = useCallback(async () => {
+    if (remoteId) {
+      return remoteId;
+    }
+
+    const threadListItem = api.threadListItem();
+    const current = threadListItem.getState();
+    if (current.remoteId) {
+      return current.remoteId;
+    }
+
+    if (current.status === "new") {
+      const initialized = await threadListItem.initialize();
+      return initialized.remoteId;
+    }
+
+    throw new Error("Unable to resolve thread id before sending assistant commands");
+  }, [api, remoteId]);
+
+  return useAssistantTransportRuntime({
+    api: `${getApiUrl()}/assistant`,
+    initialState: {
+      messages: [],
+      isRunning: false,
+    },
+    converter,
+    body: async () => ({
+      threadId: await ensureThreadId(),
+    }),
+    headers: async () => {
+      const token = getAuthToken();
+      return token ? { authorization: `Bearer ${token}` } : {};
+    },
+  });
+}
+
 export function NoaAssistantRuntimeProvider({ children }: PropsWithChildren) {
   const runtime = useRemoteThreadListRuntime({
     adapter: threadListAdapter,
-    runtimeHook: () =>
-      useAssistantTransportRuntime({
-        api: `${getApiUrl()}/assistant`,
-        initialState: {
-          messages: [],
-          isRunning: false,
-        },
-        converter,
-        headers: async () => {
-          const token = getAuthToken();
-          return token ? { authorization: `Bearer ${token}` } : {};
-        },
-      }),
+    runtimeHook: () => useThreadAwareAssistantTransportRuntime(),
   });
 
   return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>;
