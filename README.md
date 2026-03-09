@@ -2,27 +2,86 @@
 
 AI operations workspace: chat UI + controlled tools.
 
+The goal is a natural-language control center for infrastructure and operations.
+The model interprets and proposes actions; the platform enforces permissions, approvals, and auditability.
+
+Docs:
+- `ARCHITECTURE.md`
+- `docs/STATUS.md`
+- `docs/plans/2026-03-09-project-noa-mvp-design.md`
+- `docs/reports/2026-03-09-task-11-verification.md`
+
+## Repo Layout
+
+- `apps/api`: FastAPI backend (LDAP auth, RBAC, tools, Assistant Transport)
+- `apps/web`: Next.js frontend (assistant-ui)
+- `docker-compose.yml`: Postgres (dev)
+
 ## Prerequisites
 
 - Docker + Docker Compose
-- Python 3.11+ and `uv` (for API; added in later tasks)
-- Node.js 20+ and npm (for web; added in later tasks)
+- Python 3.11+ and `uv` (API)
+- Node.js 20+ and npm (web)
 
 ## Dev Quickstart
 
-### Current branch state (Task 1)
+Run API and web in separate terminals.
 
-Only Postgres is available right now. The `apps/api` and `apps/web` projects are added in later tasks.
+### 1) Start Postgres
 
 ```bash
 docker compose up -d postgres
 ```
 
-### Intended workflow once API and web are scaffolded
+### 2) Configure + run API
 
-Run API and web in separate terminals.
+Create `apps/api/.env` from `apps/api/.env.example` (do not commit `.env`; it is gitignored).
 
-#### Terminal 1: API
+```bash
+cd apps/api
+cp .env.example .env
+uv sync --extra ldap
+uv run alembic upgrade head
+uv run uvicorn noa_api.main:app --reload --port 8000
+```
+
+Notes:
+- `AUTH_BOOTSTRAP_ADMIN_EMAILS` and `API_CORS_ALLOWED_ORIGINS` must be JSON arrays (see examples).
+- `python-ldap` may require OS packages to build (Ubuntu example: `sudo apt-get install -y libldap2-dev libsasl2-dev libssl-dev`).
+
+### 3) Configure + run web
+
+Create `apps/web/.env.local` from `apps/web/.env.example`.
+
+```bash
+cd ../web
+cp .env.example .env.local
+npm install
+npm run dev
+```
+
+Open: http://localhost:3000
+
+## Manual Smoke Test
+
+1) Login via LDAP at `/login` using a user in `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
+2) In `/assistant`, create a thread and ask: `what time is it` (READ tool).
+3) Ask: `set demo flag foo=bar` (CHANGE tool) and approve/deny the action card.
+4) Visit `/admin` to enable/disable users and update tool allowlists.
+
+## What’s Implemented (MVP)
+
+- LDAP-only auth + JWT session; new users default to pending approval
+- Admin RBAC: enable/disable users, assign tool allowlists
+- Thread persistence (list/create/rename/archive/delete) backed by Postgres
+- Assistant Transport streaming endpoint (`POST /assistant`)
+- Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools
+
+## Known Limitations
+
+- No real infrastructure integrations yet (demo tools only)
+- LLM token streaming is not implemented; assistant text is chunked after completion
+- No multi-tenant orgs or shared threads (threads are owner-scoped)
 
 ```bash
 cd apps/api
