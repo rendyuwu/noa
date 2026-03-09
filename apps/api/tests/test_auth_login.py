@@ -5,10 +5,11 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from noa_api.api.routes.auth import router as auth_router
-from noa_api.core.auth.auth_service import AuthResult, AuthService
+from noa_api.core.auth.auth_service import AuthResult, AuthService, AuthUser
 from noa_api.core.auth.errors import AuthInvalidCredentialsError, AuthPendingApprovalError
+from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.ldap_service import LdapUser
-from noa_api.core.auth.deps import get_auth_service
+from noa_api.core.config import Settings
 
 
 @dataclass
@@ -72,6 +73,13 @@ class _FakeJWTService:
     def create_access_token(self, email: str, user_id: UUID) -> tuple[str, int]:
         return f"token:{email}:{user_id}", 3600
 
+    def decode_token(self, token: str) -> dict[str, str]:
+        if token == "good-token":
+            return {"sub": "user@example.com"}
+        if token == "inactive-token":
+            return {"sub": "inactive@example.com"}
+        raise AuthInvalidCredentialsError("Invalid token")
+
 
 class _FakeRouteAuthService:
     def __init__(self, *, mode: str) -> None:
@@ -86,6 +94,23 @@ class _FakeRouteAuthService:
         return AuthResult(
             access_token="jwt-token",
             expires_in=3600,
+            user_id=uuid4(),
+            email=email,
+            display_name="Route User",
+            is_active=True,
+            roles=["admin"],
+        )
+
+    async def get_user_by_email(self, *, email: str) -> AuthUser:
+        if email == "inactive@example.com":
+            return AuthUser(
+                user_id=uuid4(),
+                email=email,
+                display_name="Inactive User",
+                is_active=False,
+                roles=["viewer"],
+            )
+        return AuthUser(
             user_id=uuid4(),
             email=email,
             display_name="Route User",
@@ -154,3 +179,59 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     assert payload["access_token"] == "jwt-token"
     assert payload["token_type"] == "bearer"
     assert payload["user"]["email"] == "user@example.com"
+
+
+async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
+    app = FastAPI()
+    app.include_router(auth_router)
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/auth/me", headers={"Authorization": "Bearer good-token"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user"]["email"] == "user@example.com"
+    assert payload["user"]["roles"] == ["admin"]
+
+
+async def test_me_route_rejects_invalid_token() -> None:
+    app = FastAPI()
+    app.include_router(auth_router)
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/auth/me", headers={"Authorization": "Bearer bad-token"})
+
+    assert response.status_code == 401
+
+
+async def test_me_route_rejects_inactive_user() -> None:
+    app = FastAPI()
+    app.include_router(auth_router)
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/auth/me", headers={"Authorization": "Bearer inactive-token"})
+
+    assert response.status_code == 403
+
+
+def test_settings_requires_jwt_secret_in_non_dev_environment() -> None:
+    try:
+        Settings(environment="production")
+        assert False, "Expected missing JWT secret to fail in production"
+    except ValueError:
+        pass
+
+
+def test_settings_generates_jwt_secret_in_dev_environment() -> None:
+    cfg = Settings(environment="development")
+    assert cfg.auth_jwt_secret is not None
+    assert len(cfg.auth_jwt_secret.get_secret_value()) >= 32

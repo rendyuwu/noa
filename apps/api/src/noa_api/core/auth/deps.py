@@ -21,5 +21,13 @@ async def get_auth_service() -> AsyncGenerator[AuthService, None]:
             jwt_service=_jwt_service,
             bootstrap_admin_emails=settings.auth_bootstrap_admin_emails,
         )
-        yield service
-        await session.commit()
+        try:
+            yield service
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+def get_jwt_service() -> JWTService:
+    return _jwt_service

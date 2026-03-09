@@ -37,7 +37,7 @@ class JWTService:
                 "iat": now,
                 "exp": now + timedelta(seconds=ttl),
             },
-            self._settings.auth_jwt_secret.get_secret_value(),
+            self._get_secret(),
             algorithm=self._settings.auth_jwt_algorithm,
         )
         return str(token), ttl
@@ -49,7 +49,7 @@ class JWTService:
         try:
             payload = jwt.decode(
                 token,
-                self._settings.auth_jwt_secret.get_secret_value(),
+                self._get_secret(),
                 algorithms=[self._settings.auth_jwt_algorithm],
             )
         except ExpiredSignatureError as exc:
@@ -58,3 +58,11 @@ class JWTService:
             raise AuthInvalidCredentialsError("Invalid token") from exc
 
         return dict(payload)
+
+    def _get_secret(self) -> str:
+        if self._settings.auth_jwt_secret is None:
+            raise AuthConfigurationError("auth_jwt_secret is not configured")
+        value = self._settings.auth_jwt_secret.get_secret_value()
+        if not value:
+            raise AuthConfigurationError("auth_jwt_secret is empty")
+        return value

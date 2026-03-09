@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,19 +24,42 @@ class AuthResult:
     roles: list[str]
 
 
-class AuthRepositoryProtocol(Protocol):
-    async def get_user_by_email(self, email: str) -> User | object | None: ...
+@dataclass
+class AuthUser:
+    user_id: UUID
+    email: str
+    display_name: str | None
+    is_active: bool
+    roles: list[str]
 
-    async def create_user(self, *, email: str, ldap_dn: str | None, display_name: str | None, is_active: bool) -> User | object: ...
+
+class AuthUserRecord(Protocol):
+    id: UUID
+    email: str
+    display_name: str | None
+    is_active: bool
+
+
+class AuthRepositoryProtocol(Protocol):
+    async def get_user_by_email(self, email: str) -> AuthUserRecord | None: ...
+
+    async def create_user(
+        self,
+        *,
+        email: str,
+        ldap_dn: str | None,
+        display_name: str | None,
+        is_active: bool,
+    ) -> AuthUserRecord: ...
 
     async def update_user(
         self,
-        user: User | object,
+        user: Any,
         *,
         ldap_dn: str | None = None,
         display_name: str | None = None,
         is_active: bool | None = None,
-    ) -> User | object: ...
+    ) -> AuthUserRecord: ...
 
     async def ensure_role(self, name: str) -> str: ...
 
@@ -156,6 +179,21 @@ class AuthService:
         return AuthResult(
             access_token=access_token,
             expires_in=expires_in,
+            user_id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            is_active=user.is_active,
+            roles=role_names,
+        )
+
+    async def get_user_by_email(self, *, email: str) -> AuthUser:
+        normalized_email = email.strip().lower()
+        user = await self._auth_repository.get_user_by_email(normalized_email)
+        if user is None:
+            raise AuthInvalidCredentialsError("Invalid token")
+
+        role_names = await self._auth_repository.get_role_names(user.id)
+        return AuthUser(
             user_id=user.id,
             email=user.email,
             display_name=user.display_name,
