@@ -82,3 +82,51 @@ class Message(Base):
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[list[dict[str, object]]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+
+
+class ActionRequest(Base):
+    __tablename__ = "action_requests"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    thread_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), index=True)
+    tool_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    args: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default="'{}'::jsonb")
+    risk: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    requested_by_user_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    decided_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ToolRun(Base):
+    __tablename__ = "tool_runs"
+
+    id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid())
+    thread_id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), index=True)
+    tool_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    args: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False, server_default="'{}'::jsonb")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    result: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    action_request_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("action_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    requested_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now(), index=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
