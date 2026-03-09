@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
-from typing import Annotated, Any, Literal, cast
+from inspect import signature
+from typing import Annotated, Any, Awaitable, Callable, Literal, cast
 from uuid import UUID
 
 from assistant_stream import RunController, create_run
@@ -19,14 +20,24 @@ from noa_api.core.auth.authorization import (
     get_authorization_service,
     get_current_auth_user,
 )
-from noa_api.core.tools.registry import get_tool_registry
+from noa_api.core.tools.registry import get_tool_definition, get_tool_registry
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService, SQLActionToolRunRepository
 from noa_api.storage.postgres.client import create_engine, create_session_factory
-from noa_api.storage.postgres.models import Message, Thread
+from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
+from noa_api.storage.postgres.models import AuditLog, Message, Thread
 
 router = APIRouter(tags=["assistant"])
 _engine = create_engine()
 _session_factory = create_session_factory(_engine)
+
+
+def _parse_uuid(raw: str | None, *, label: str) -> UUID:
+    if raw is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Missing {label}")
+    try:
+        return UUID(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid {label}") from exc
 
 
 class AssistantMessage(BaseModel):
@@ -103,11 +114,38 @@ class SQLAssistantRepository:
         await self._session.flush()
         return message
 
+    async def create_audit_log(
+        self,
+        *,
+        event_type: str,
+        actor_email: str | None,
+        tool_name: str | None,
+        metadata: dict[str, object],
+    ) -> None:
+        self._session.add(
+            AuditLog(
+                event_type=event_type,
+                user_email=actor_email,
+                tool_name=tool_name,
+                meta_data=metadata,
+            )
+        )
+        await self._session.flush()
+
 
 class AssistantService:
-    def __init__(self, repository: SQLAssistantRepository, runner: AgentRunner) -> None:
+    def __init__(
+        self,
+        repository: SQLAssistantRepository,
+        runner: AgentRunner,
+        *,
+        action_tool_run_service: ActionToolRunService,
+        session: AsyncSession,
+    ) -> None:
         self._repository = repository
         self._runner = runner
+        self._action_tool_run_service = action_tool_run_service
+        self._session = session
 
     async def load_state(self, *, owner_user_id: UUID, thread_id: UUID) -> dict[str, object]:
         thread = await self._repository.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
@@ -142,41 +180,216 @@ class AssistantService:
         self,
         *,
         owner_user_id: UUID,
+        owner_user_email: str | None,
         thread_id: UUID,
         tool_call_id: str,
         result: dict[str, Any],
     ) -> None:
-        _ = owner_user_id, thread_id
+        tool_run_id = _parse_uuid(tool_call_id, label="toolCallId")
+        tool_run = await self._action_tool_run_service.get_tool_run(tool_run_id=tool_run_id)
+        if tool_run is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unknown tool call id")
+        if tool_run.thread_id != thread_id or tool_run.requested_by_user_id != owner_user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Tool call not found")
+        if tool_run.status != ToolRunStatus.STARTED:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tool call is not awaiting result")
+
+        _ = await self._action_tool_run_service.complete_tool_run(tool_run_id=tool_run_id, result=result)
         await self._repository.create_message(
             thread_id=thread_id,
             role="tool",
             parts=[
                 {
                     "type": "tool-result",
+                    "toolName": tool_run.tool_name,
                     "toolCallId": tool_call_id,
                     "result": result,
                     "isError": False,
                 }
             ],
         )
+        await self._repository.create_audit_log(
+            event_type="tool_completed",
+            actor_email=owner_user_email,
+            tool_name=tool_run.tool_name,
+            metadata={"thread_id": str(thread_id), "tool_run_id": str(tool_run.id), "source": "add-tool-result"},
+        )
 
     async def approve_action(
         self,
         *,
         owner_user_id: UUID,
+        owner_user_email: str | None,
         thread_id: UUID,
         action_request_id: str | None,
+        is_user_active: bool,
+        authorize_tool_access: Callable[[str], Awaitable[bool]],
     ) -> None:
-        _ = owner_user_id, thread_id, action_request_id
+        if not is_user_active:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User pending approval")
+
+        parsed_id = _parse_uuid(action_request_id, label="actionRequestId")
+        request = await self._action_tool_run_service.get_action_request(action_request_id=parsed_id)
+        if request is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action request not found")
+        if request.thread_id != thread_id or request.requested_by_user_id != owner_user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action request not found")
+        if request.status != ActionRequestStatus.PENDING:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Action request already decided")
+        if request.risk != ToolRisk.CHANGE:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Only CHANGE actions require approval")
+        if not await authorize_tool_access(request.tool_name):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tool access denied")
+
+        try:
+            approved = await self._action_tool_run_service.approve_action_request(
+                action_request_id=parsed_id,
+                decided_by_user_id=owner_user_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Action request already decided") from exc
+        if approved is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action request not found")
+
+        await self._repository.create_audit_log(
+            event_type="action_approved",
+            actor_email=owner_user_email,
+            tool_name=approved.tool_name,
+            metadata={"thread_id": str(thread_id), "action_request_id": str(approved.id)},
+        )
+
+        started = await self._action_tool_run_service.start_tool_run(
+            thread_id=thread_id,
+            tool_name=approved.tool_name,
+            args=approved.args,
+            action_request_id=approved.id,
+            requested_by_user_id=owner_user_id,
+        )
+        tool_call_id = str(started.id)
+        await self._repository.create_audit_log(
+            event_type="tool_started",
+            actor_email=owner_user_email,
+            tool_name=approved.tool_name,
+            metadata={"thread_id": str(thread_id), "tool_run_id": str(started.id), "action_request_id": str(approved.id)},
+        )
+        await self._repository.create_message(
+            thread_id=thread_id,
+            role="assistant",
+            parts=[
+                {
+                    "type": "tool-call",
+                    "toolName": approved.tool_name,
+                    "toolCallId": tool_call_id,
+                    "args": approved.args,
+                }
+            ],
+        )
+
+        tool = get_tool_definition(approved.tool_name)
+        if tool is None:
+            _ = await self._action_tool_run_service.fail_tool_run(tool_run_id=started.id, error="Unknown tool")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Requested tool is unavailable")
+        if tool.risk != ToolRisk.CHANGE:
+            _ = await self._action_tool_run_service.fail_tool_run(tool_run_id=started.id, error="Tool risk mismatch")
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Approved tool risk mismatch")
+
+        try:
+            result = await self._execute_tool(tool=tool, args=approved.args)
+            _ = await self._action_tool_run_service.complete_tool_run(tool_run_id=started.id, result=result)
+            await self._repository.create_message(
+                thread_id=thread_id,
+                role="tool",
+                parts=[
+                    {
+                        "type": "tool-result",
+                        "toolName": approved.tool_name,
+                        "toolCallId": tool_call_id,
+                        "result": result,
+                        "isError": False,
+                    }
+                ],
+            )
+            await self._repository.create_audit_log(
+                event_type="tool_completed",
+                actor_email=owner_user_email,
+                tool_name=approved.tool_name,
+                metadata={
+                    "thread_id": str(thread_id),
+                    "tool_run_id": str(started.id),
+                    "action_request_id": str(approved.id),
+                },
+            )
+        except Exception as exc:
+            _ = await self._action_tool_run_service.fail_tool_run(tool_run_id=started.id, error=str(exc))
+            await self._repository.create_message(
+                thread_id=thread_id,
+                role="tool",
+                parts=[
+                    {
+                        "type": "tool-result",
+                        "toolName": approved.tool_name,
+                        "toolCallId": tool_call_id,
+                        "result": {"error": str(exc)},
+                        "isError": True,
+                    }
+                ],
+            )
+            await self._repository.create_audit_log(
+                event_type="tool_failed",
+                actor_email=owner_user_email,
+                tool_name=approved.tool_name,
+                metadata={
+                    "thread_id": str(thread_id),
+                    "tool_run_id": str(started.id),
+                    "action_request_id": str(approved.id),
+                    "error": str(exc),
+                },
+            )
+            raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Approved action execution failed")
 
     async def deny_action(
         self,
         *,
         owner_user_id: UUID,
+        owner_user_email: str | None,
         thread_id: UUID,
         action_request_id: str | None,
     ) -> None:
-        _ = owner_user_id, thread_id, action_request_id
+        parsed_id = _parse_uuid(action_request_id, label="actionRequestId")
+        request = await self._action_tool_run_service.get_action_request(action_request_id=parsed_id)
+        if request is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action request not found")
+        if request.thread_id != thread_id or request.requested_by_user_id != owner_user_id:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action request not found")
+        if request.status != ActionRequestStatus.PENDING:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Action request already decided")
+
+        try:
+            denied = await self._action_tool_run_service.deny_action_request(
+                action_request_id=parsed_id,
+                decided_by_user_id=owner_user_id,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Action request already decided") from exc
+        if denied is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action request not found")
+
+        await self._repository.create_message(
+            thread_id=thread_id,
+            role="assistant",
+            parts=[
+                {
+                    "type": "text",
+                    "text": f"Denied action request for tool '{denied.tool_name}'.",
+                }
+            ],
+        )
+        await self._repository.create_audit_log(
+            event_type="action_denied",
+            actor_email=owner_user_email,
+            tool_name=denied.tool_name,
+            metadata={"thread_id": str(thread_id), "action_request_id": str(denied.id)},
+        )
 
     async def run_agent_turn(
         self,
@@ -197,6 +410,11 @@ class AssistantService:
             await self._repository.create_message(thread_id=thread_id, role=message.role, parts=message.parts)
         return result
 
+    async def _execute_tool(self, *, tool: Any, args: dict[str, object]) -> dict[str, object]:
+        if self._session is not None and "session" in signature(tool.execute).parameters:
+            return await tool.execute(session=self._session, **args)
+        return await tool.execute(**args)
+
 
 async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
     async with _session_factory() as session:
@@ -207,6 +425,8 @@ async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
                 action_tool_run_service=ActionToolRunService(repository=SQLActionToolRunRepository(session)),
                 session=session,
             ),
+            action_tool_run_service=ActionToolRunService(repository=SQLActionToolRunRepository(session)),
+            session=session,
         )
         try:
             yield service
@@ -235,6 +455,11 @@ async def assistant_transport(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Editing existing messages is not supported yet",
             )
+        if isinstance(command, AddMessageCommand) and command.message.role != "user":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Only user add-message commands are allowed",
+            )
 
     async def run_callback(controller: RunController) -> None:
         if controller.state is None:
@@ -258,18 +483,26 @@ async def assistant_transport(
             elif isinstance(command, ApproveActionCommand):
                 await assistant_service.approve_action(
                     owner_user_id=current_user.user_id,
+                    owner_user_email=current_user.email,
                     thread_id=payload.thread_id,
                     action_request_id=command.action_request_id,
+                    is_user_active=current_user.is_active,
+                    authorize_tool_access=lambda tool_name: authorization_service.authorize_tool_access(
+                        current_user,
+                        tool_name,
+                    ),
                 )
             elif isinstance(command, DenyActionCommand):
                 await assistant_service.deny_action(
                     owner_user_id=current_user.user_id,
+                    owner_user_email=current_user.email,
                     thread_id=payload.thread_id,
                     action_request_id=command.action_request_id,
                 )
             elif isinstance(command, AddToolResultCommand):
                 await assistant_service.add_tool_result(
                     owner_user_id=current_user.user_id,
+                    owner_user_email=current_user.email,
                     thread_id=payload.thread_id,
                     tool_call_id=command.tool_call_id,
                     result=command.result,
@@ -319,7 +552,13 @@ async def _stream_assistant_text(controller: RunController, text_deltas: list[st
     controller.state["messages"] = base_messages
 
     for chunk in text_deltas:
+        task = asyncio.current_task()
+        if task is not None and task.cancelled():
+            raise asyncio.CancelledError
         cast_part = streaming_message["parts"][0]
         cast_part["text"] += chunk
         controller.state["messages"] = base_messages
-        await asyncio.sleep(0)
+        try:
+            await asyncio.sleep(0)
+        except asyncio.CancelledError:
+            raise

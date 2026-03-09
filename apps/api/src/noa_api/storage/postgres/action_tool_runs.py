@@ -171,6 +171,9 @@ class ActionToolRunService:
             requested_by_user_id=requested_by_user_id,
         )
 
+    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None:
+        return await self._repository.get_action_request(action_request_id=action_request_id)
+
     async def approve_action_request(self, *, action_request_id: UUID, decided_by_user_id: UUID) -> ActionRequest | None:
         action_request = await self._repository.get_action_request(action_request_id=action_request_id)
         if action_request is None:
@@ -211,6 +214,9 @@ class ActionToolRunService:
             action_request_id=action_request_id,
             requested_by_user_id=requested_by_user_id,
         )
+
+    async def get_tool_run(self, *, tool_run_id: UUID) -> ToolRun | None:
+        return await self._repository.get_tool_run(tool_run_id=tool_run_id)
 
     async def complete_tool_run(self, *, tool_run_id: UUID, result: Mapping[str, object]) -> ToolRun | None:
         tool_run = await self._repository.get_tool_run(tool_run_id=tool_run_id)
