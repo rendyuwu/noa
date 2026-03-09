@@ -19,6 +19,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+
     op.create_table(
         "users",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
@@ -56,8 +58,6 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("idx_audit_log_event_type", "audit_log", ["event_type"], unique=False)
-    op.create_index("idx_audit_log_created_at", "audit_log", ["created_at"], unique=False)
     op.create_index("ix_audit_log_event_type", "audit_log", ["event_type"], unique=False)
     op.create_index("ix_audit_log_user_email", "audit_log", ["user_email"], unique=False)
     op.create_index("ix_audit_log_created_at", "audit_log", ["created_at"], unique=False)
@@ -125,8 +125,6 @@ def downgrade() -> None:
     op.drop_index("ix_audit_log_created_at", table_name="audit_log")
     op.drop_index("ix_audit_log_user_email", table_name="audit_log")
     op.drop_index("ix_audit_log_event_type", table_name="audit_log")
-    op.drop_index("idx_audit_log_created_at", table_name="audit_log")
-    op.drop_index("idx_audit_log_event_type", table_name="audit_log")
     op.drop_table("audit_log")
 
     op.drop_index("ix_roles_name", table_name="roles")
