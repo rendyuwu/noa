@@ -1,0 +1,35 @@
+name: API Scaffold Verification
+
+on:
+  push:
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/api-scaffold-verify.yml"
+  pull_request:
+    paths:
+      - "apps/api/**"
+      - ".github/workflows/api-scaffold-verify.yml"
+
+jobs:
+  api-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Sync dependencies
+        run: uv sync
+
+      - name: Run tests
+        run: uv run pytest -q
