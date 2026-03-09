@@ -29,11 +29,9 @@ function getConnectionHeaderNames(headers: Headers) {
 }
 
 function getBackendBaseUrl() {
-  const url = process.env.NOA_API_URL ?? process.env.NEXT_PUBLIC_API_URL;
+  const url = process.env.NOA_API_URL;
   if (!url) {
-    throw new Error(
-      "Missing NOA_API_URL (temporary fallback: NEXT_PUBLIC_API_URL)"
-    );
+    throw new Error("Missing NOA_API_URL");
   }
   return url;
 }

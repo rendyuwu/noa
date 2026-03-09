@@ -3,7 +3,8 @@
 import { getAuthToken, clearAuth } from "@/components/lib/auth-store";
 
 export const getApiUrl = (): string => {
-  return process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+  // Always use same-origin API routes from the browser.
+  return "/api";
 };
 
 export class ApiError extends Error {
@@ -22,7 +23,9 @@ export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promi
     headers.set("authorization", `Bearer ${token}`);
   }
 
-  const response = await fetch(`${getApiUrl()}${path}`, {
+  const normalizedPath = path.startsWith("/") ? path : `/${path}`;
+
+  const response = await fetch(`${getApiUrl()}${normalizedPath}`, {
     ...init,
     headers,
   });
