@@ -6,6 +6,7 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
@@ -275,7 +276,7 @@ async def create_thread(
     response = _to_thread_response(thread)
     if created:
         return JSONResponse(
-            content=response.model_dump(by_alias=True),
+            content=jsonable_encoder(response.model_dump(by_alias=True)),
             status_code=status.HTTP_201_CREATED,
         )
     return response

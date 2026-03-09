@@ -211,7 +211,8 @@ async def test_assistant_route_streams_canonical_state_and_applies_commands() ->
     assert "From DB" in response.text
     assert "Hello from command" in response.text
     assert "Bogus" not in response.text
-    assert '"isRunning":false' in response.text
+    assert '"isRunning"' in response.text
+    assert '"value": false' in response.text
 
 
 async def test_assistant_route_rejects_edit_style_add_message() -> None:
