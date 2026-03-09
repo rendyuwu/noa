@@ -66,12 +66,14 @@ def upgrade() -> None:
         "threads",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False, server_default=sa.text("gen_random_uuid()")),
         sa.Column("owner_user_id", postgresql.UUID(as_uuid=True), nullable=False),
+        sa.Column("external_id", sa.String(length=255), nullable=True),
         sa.Column("title", sa.String(length=255), nullable=True),
         sa.Column("is_archived", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
         sa.ForeignKeyConstraint(["owner_user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("owner_user_id", "external_id", name="uq_threads_owner_external_id"),
     )
     op.create_index("ix_threads_owner_user_id", "threads", ["owner_user_id"], unique=False)
 

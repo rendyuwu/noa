@@ -2,12 +2,15 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import IntegrityError
 
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
 from noa_api.storage.postgres.client import create_engine, create_session_factory
@@ -20,10 +23,15 @@ _session_factory = create_session_factory(_engine)
 
 class ThreadResponse(BaseModel):
     id: str
+    remote_id: str = Field(alias="remoteId")
+    external_id: str | None = Field(alias="externalId")
+    status: Literal["regular", "archived"]
     title: str | None
     is_archived: bool
     created_at: datetime
     updated_at: datetime
+
+    model_config = {"populate_by_name": True}
 
 
 class ThreadListResponse(BaseModel):
@@ -31,14 +39,38 @@ class ThreadListResponse(BaseModel):
 
 
 class CreateThreadRequest(BaseModel):
-    title: str | None = None
-    local_id: str | None = Field(default=None, alias="localId")
+    title: str | None = Field(default=None, max_length=255)
+    local_id: str | None = Field(default=None, alias="localId", max_length=255)
 
     model_config = {"populate_by_name": True}
 
+    @field_validator("title", "local_id", mode="before")
+    @classmethod
+    def _normalize_optional_text(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized == "":
+                return None
+            return normalized
+        return value
+
 
 class UpdateThreadRequest(BaseModel):
-    title: str | None = None
+    title: str | None = Field(default=None, max_length=255)
+
+    @field_validator("title", mode="before")
+    @classmethod
+    def _normalize_title(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            if normalized == "":
+                return None
+            return normalized
+        return value
 
 
 class SQLThreadRepository:
@@ -53,11 +85,37 @@ class SQLThreadRepository:
         )
         return list(result.scalars().all())
 
-    async def create_thread(self, *, owner_user_id: UUID, title: str | None = None) -> Thread:
-        thread = Thread(owner_user_id=owner_user_id, title=title)
+    async def create_thread(
+        self,
+        *,
+        owner_user_id: UUID,
+        title: str | None = None,
+        external_id: str | None = None,
+    ) -> tuple[Thread, bool]:
+        if external_id is not None:
+            existing = await self.get_thread_by_external_id(owner_user_id=owner_user_id, external_id=external_id)
+            if existing is not None:
+                return existing, False
+
+        thread = Thread(owner_user_id=owner_user_id, title=title, external_id=external_id)
         self._session.add(thread)
-        await self._session.flush()
-        return thread
+        try:
+            await self._session.flush()
+        except IntegrityError:
+            await self._session.rollback()
+            if external_id is None:
+                raise
+            existing = await self.get_thread_by_external_id(owner_user_id=owner_user_id, external_id=external_id)
+            if existing is None:
+                raise
+            return existing, False
+        return thread, True
+
+    async def get_thread_by_external_id(self, *, owner_user_id: UUID, external_id: str) -> Thread | None:
+        result = await self._session.execute(
+            select(Thread).where(Thread.owner_user_id == owner_user_id, Thread.external_id == external_id)
+        )
+        return result.scalar_one_or_none()
 
     async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> Thread | None:
         result = await self._session.execute(
@@ -97,8 +155,14 @@ class ThreadService:
     async def list_threads(self, *, owner_user_id: UUID) -> list[Thread]:
         return await self._repository.list_threads(owner_user_id=owner_user_id)
 
-    async def create_thread(self, *, owner_user_id: UUID, title: str | None = None) -> Thread:
-        return await self._repository.create_thread(owner_user_id=owner_user_id, title=title)
+    async def create_thread(
+        self,
+        *,
+        owner_user_id: UUID,
+        title: str | None = None,
+        external_id: str | None = None,
+    ) -> tuple[Thread, bool]:
+        return await self._repository.create_thread(owner_user_id=owner_user_id, title=title, external_id=external_id)
 
     async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> Thread | None:
         return await self._repository.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
@@ -120,6 +184,9 @@ class ThreadService:
 def _to_thread_response(thread: Thread) -> ThreadResponse:
     return ThreadResponse(
         id=str(thread.id),
+        remoteId=str(thread.id),
+        externalId=thread.external_id,
+        status="archived" if thread.is_archived else "regular",
         title=thread.title,
         is_archived=thread.is_archived,
         created_at=thread.created_at,
@@ -153,17 +220,24 @@ async def list_threads(
     return ThreadListResponse(threads=[_to_thread_response(thread) for thread in threads])
 
 
-@router.post("/threads", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/threads", response_model=ThreadResponse)
 async def create_thread(
     payload: CreateThreadRequest | None = None,
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
-) -> ThreadResponse:
-    thread = await thread_service.create_thread(
+) -> ThreadResponse | Response:
+    thread, created = await thread_service.create_thread(
         owner_user_id=current_user.user_id,
         title=None if payload is None else payload.title,
+        external_id=None if payload is None else payload.local_id,
     )
-    return _to_thread_response(thread)
+    response = _to_thread_response(thread)
+    if created:
+        return JSONResponse(
+            content=response.model_dump(by_alias=True),
+            status_code=status.HTTP_201_CREATED,
+        )
+    return response
 
 
 @router.get("/threads/{id}", response_model=ThreadResponse)
