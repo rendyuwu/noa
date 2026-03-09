@@ -1,0 +1,227 @@
+from __future__ import annotations
+
+from collections.abc import AsyncGenerator
+from datetime import datetime
+from uuid import UUID
+
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from pydantic import BaseModel, Field
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
+from noa_api.storage.postgres.client import create_engine, create_session_factory
+from noa_api.storage.postgres.models import Thread
+
+router = APIRouter(tags=["threads"])
+_engine = create_engine()
+_session_factory = create_session_factory(_engine)
+
+
+class ThreadResponse(BaseModel):
+    id: str
+    title: str | None
+    is_archived: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ThreadListResponse(BaseModel):
+    threads: list[ThreadResponse]
+
+
+class CreateThreadRequest(BaseModel):
+    title: str | None = None
+    local_id: str | None = Field(default=None, alias="localId")
+
+    model_config = {"populate_by_name": True}
+
+
+class UpdateThreadRequest(BaseModel):
+    title: str | None = None
+
+
+class SQLThreadRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def list_threads(self, *, owner_user_id: UUID) -> list[Thread]:
+        result = await self._session.execute(
+            select(Thread)
+            .where(Thread.owner_user_id == owner_user_id)
+            .order_by(Thread.updated_at.desc(), Thread.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+    async def create_thread(self, *, owner_user_id: UUID, title: str | None = None) -> Thread:
+        thread = Thread(owner_user_id=owner_user_id, title=title)
+        self._session.add(thread)
+        await self._session.flush()
+        return thread
+
+    async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> Thread | None:
+        result = await self._session.execute(
+            select(Thread).where(Thread.id == thread_id, Thread.owner_user_id == owner_user_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def update_thread_title(self, *, owner_user_id: UUID, thread_id: UUID, title: str | None) -> Thread | None:
+        thread = await self.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
+        if thread is None:
+            return None
+        thread.title = title
+        await self._session.flush()
+        return thread
+
+    async def set_archived(self, *, owner_user_id: UUID, thread_id: UUID, is_archived: bool) -> Thread | None:
+        thread = await self.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
+        if thread is None:
+            return None
+        thread.is_archived = is_archived
+        await self._session.flush()
+        return thread
+
+    async def delete_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
+        result = await self._session.execute(
+            delete(Thread)
+            .where(Thread.id == thread_id, Thread.owner_user_id == owner_user_id)
+            .returning(Thread.id)
+        )
+        return result.scalar_one_or_none() is not None
+
+
+class ThreadService:
+    def __init__(self, repository: SQLThreadRepository) -> None:
+        self._repository = repository
+
+    async def list_threads(self, *, owner_user_id: UUID) -> list[Thread]:
+        return await self._repository.list_threads(owner_user_id=owner_user_id)
+
+    async def create_thread(self, *, owner_user_id: UUID, title: str | None = None) -> Thread:
+        return await self._repository.create_thread(owner_user_id=owner_user_id, title=title)
+
+    async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> Thread | None:
+        return await self._repository.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
+
+    async def update_thread_title(self, *, owner_user_id: UUID, thread_id: UUID, title: str | None) -> Thread | None:
+        return await self._repository.update_thread_title(owner_user_id=owner_user_id, thread_id=thread_id, title=title)
+
+    async def set_archived(self, *, owner_user_id: UUID, thread_id: UUID, is_archived: bool) -> Thread | None:
+        return await self._repository.set_archived(
+            owner_user_id=owner_user_id,
+            thread_id=thread_id,
+            is_archived=is_archived,
+        )
+
+    async def delete_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
+        return await self._repository.delete_thread(owner_user_id=owner_user_id, thread_id=thread_id)
+
+
+def _to_thread_response(thread: Thread) -> ThreadResponse:
+    return ThreadResponse(
+        id=str(thread.id),
+        title=thread.title,
+        is_archived=thread.is_archived,
+        created_at=thread.created_at,
+        updated_at=thread.updated_at,
+    )
+
+
+async def get_thread_service() -> AsyncGenerator[ThreadService, None]:
+    async with _session_factory() as session:
+        service = ThreadService(SQLThreadRepository(session))
+        try:
+            yield service
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
+
+
+async def _require_active_user(current_user: AuthorizationUser = Depends(get_current_auth_user)) -> AuthorizationUser:
+    if not current_user.is_active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User pending approval")
+    return current_user
+
+
+@router.get("/threads", response_model=ThreadListResponse)
+async def list_threads(
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> ThreadListResponse:
+    threads = await thread_service.list_threads(owner_user_id=current_user.user_id)
+    return ThreadListResponse(threads=[_to_thread_response(thread) for thread in threads])
+
+
+@router.post("/threads", response_model=ThreadResponse, status_code=status.HTTP_201_CREATED)
+async def create_thread(
+    payload: CreateThreadRequest | None = None,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> ThreadResponse:
+    thread = await thread_service.create_thread(
+        owner_user_id=current_user.user_id,
+        title=None if payload is None else payload.title,
+    )
+    return _to_thread_response(thread)
+
+
+@router.get("/threads/{id}", response_model=ThreadResponse)
+async def get_thread(
+    id: UUID,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> ThreadResponse:
+    thread = await thread_service.get_thread(owner_user_id=current_user.user_id, thread_id=id)
+    if thread is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return _to_thread_response(thread)
+
+
+@router.patch("/threads/{id}", response_model=ThreadResponse)
+async def patch_thread(
+    id: UUID,
+    payload: UpdateThreadRequest,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> ThreadResponse:
+    thread = await thread_service.update_thread_title(owner_user_id=current_user.user_id, thread_id=id, title=payload.title)
+    if thread is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return _to_thread_response(thread)
+
+
+@router.post("/threads/{id}/archive", response_model=ThreadResponse)
+async def archive_thread(
+    id: UUID,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> ThreadResponse:
+    thread = await thread_service.set_archived(owner_user_id=current_user.user_id, thread_id=id, is_archived=True)
+    if thread is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return _to_thread_response(thread)
+
+
+@router.post("/threads/{id}/unarchive", response_model=ThreadResponse)
+async def unarchive_thread(
+    id: UUID,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> ThreadResponse:
+    thread = await thread_service.set_archived(owner_user_id=current_user.user_id, thread_id=id, is_archived=False)
+    if thread is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return _to_thread_response(thread)
+
+
+@router.delete("/threads/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_thread(
+    id: UUID,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    thread_service: ThreadService = Depends(get_thread_service),
+) -> Response:
+    deleted = await thread_service.delete_thread(owner_user_id=current_user.user_id, thread_id=id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
