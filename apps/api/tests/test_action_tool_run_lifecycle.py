@@ -137,9 +137,8 @@ async def test_action_tool_run_service_transitions_core_states() -> None:
     assert approved is not None
     assert approved.status == ActionRequestStatus.APPROVED
 
-    denied = await service.deny_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
-    assert denied is not None
-    assert denied.status == ActionRequestStatus.DENIED
+    with pytest.raises(ValueError, match="already been decided"):
+        await service.deny_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
 
     run = await service.start_tool_run(
         thread_id=thread_id,

@@ -94,6 +94,8 @@ class SQLActionToolRunRepository:
         action_request = await self.get_action_request(action_request_id=action_request_id)
         if action_request is None:
             return None
+        if action_request.status != ActionRequestStatus.PENDING:
+            raise ValueError("Action request has already been decided")
 
         action_request.status = status
         action_request.decided_by_user_id = decided_by_user_id
@@ -137,6 +139,8 @@ class SQLActionToolRunRepository:
         tool_run = await self.get_tool_run(tool_run_id=tool_run_id)
         if tool_run is None:
             return None
+        if tool_run.status in {ToolRunStatus.COMPLETED, ToolRunStatus.FAILED}:
+            raise ValueError("Tool run is already terminal")
 
         tool_run.status = status
         tool_run.result = result
