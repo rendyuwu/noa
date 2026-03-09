@@ -1,0 +1,38 @@
+.agents/
+skills-lock.json
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
