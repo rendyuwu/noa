@@ -48,8 +48,16 @@ class DenyActionCommand(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AddToolResultCommand(BaseModel):
+    type: Literal["add-tool-result"]
+    tool_call_id: str = Field(alias="toolCallId")
+    result: dict[str, Any]
+
+    model_config = {"populate_by_name": True}
+
+
 AssistantCommand = Annotated[
-    AddMessageCommand | ApproveActionCommand | DenyActionCommand,
+    AddMessageCommand | ApproveActionCommand | DenyActionCommand | AddToolResultCommand,
     Field(discriminator="type"),
 ]
 
@@ -91,9 +99,6 @@ class AssistantService:
     def __init__(self, repository: SQLAssistantRepository) -> None:
         self._repository = repository
 
-    async def thread_exists(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
-        return await self._repository.get_thread(owner_user_id=owner_user_id, thread_id=thread_id) is not None
-
     async def load_state(self, *, owner_user_id: UUID, thread_id: UUID) -> dict[str, object]:
         thread = await self._repository.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
         if thread is None:
@@ -120,10 +125,18 @@ class AssistantService:
         role: str,
         parts: list[dict[str, Any]],
     ) -> None:
-        thread = await self._repository.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
-        if thread is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+        _ = owner_user_id
         await self._repository.create_message(thread_id=thread_id, role=role, parts=parts)
+
+    async def add_tool_result(
+        self,
+        *,
+        owner_user_id: UUID,
+        thread_id: UUID,
+        tool_call_id: str,
+        result: dict[str, Any],
+    ) -> None:
+        _ = owner_user_id, thread_id, tool_call_id, result
 
     async def approve_action(
         self,
@@ -167,8 +180,12 @@ async def assistant_transport(
     current_user: AuthorizationUser = Depends(_require_active_user),
     assistant_service: AssistantService = Depends(get_assistant_service),
 ) -> DataStreamResponse:
-    if not await assistant_service.thread_exists(owner_user_id=current_user.user_id, thread_id=payload.thread_id):
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found")
+    for command in payload.commands:
+        if isinstance(command, AddMessageCommand) and (command.parent_id is not None or command.source_id is not None):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Editing existing messages is not supported yet",
+            )
 
     async def run_callback(controller: RunController) -> None:
         if controller.state is None:
@@ -200,6 +217,13 @@ async def assistant_transport(
                     owner_user_id=current_user.user_id,
                     thread_id=payload.thread_id,
                     action_request_id=command.action_request_id,
+                )
+            elif isinstance(command, AddToolResultCommand):
+                await assistant_service.add_tool_result(
+                    owner_user_id=current_user.user_id,
+                    thread_id=payload.thread_id,
+                    tool_call_id=command.tool_call_id,
+                    result=command.result,
                 )
 
         updated_state = await assistant_service.load_state(

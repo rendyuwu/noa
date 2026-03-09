@@ -49,6 +49,18 @@ class _FakeAssistantService:
             }
         )
 
+    async def add_tool_result(
+        self,
+        *,
+        owner_user_id: UUID,
+        thread_id: UUID,
+        tool_call_id: str,
+        result: dict[str, object],
+    ) -> None:
+        assert owner_user_id == self.owner_user_id
+        assert thread_id == self.thread_id
+        _ = tool_call_id, result
+
     async def approve_action(
         self,
         *,
@@ -155,3 +167,127 @@ async def test_assistant_route_streams_canonical_state_and_applies_commands() ->
     assert "Hello from command" in response.text
     assert "Bogus" not in response.text
     assert '"isRunning":false' in response.text
+
+
+async def test_assistant_route_rejects_edit_style_add_message() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "parentId": "parent-1",
+                "sourceId": "source-1",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Edited"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Editing existing messages is not supported yet"
+
+
+async def test_assistant_route_accepts_add_tool_result_command() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        messages=[
+            {
+                "id": str(uuid4()),
+                "role": "assistant",
+                "parts": [{"type": "text", "text": "From DB"}],
+            }
+        ],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-tool-result",
+                "toolCallId": "tool-call-1",
+                "result": {"ok": True},
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assert "aui-state:" in response.text
+    assert "From DB" in response.text
+
+
+async def test_assistant_route_rejects_unknown_command_type() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "unknown-command",
+                "value": "x",
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 422
+    detail = response.json().get("detail")
+    assert isinstance(detail, list)
+    assert detail[0]["loc"][:2] == ["body", "commands"]
