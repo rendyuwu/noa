@@ -157,8 +157,8 @@ function useThreadAwareAssistantTransportRuntime() {
       return current.remoteId;
     }
 
-    if (current.status === "new") {
-      const initialized = await threadListItem.initialize();
+    const initialized = await threadListItem.initialize();
+    if (initialized.remoteId) {
       return initialized.remoteId;
     }
 
@@ -178,6 +178,9 @@ function useThreadAwareAssistantTransportRuntime() {
     headers: async () => {
       const token = getAuthToken();
       return token ? { authorization: `Bearer ${token}` } : {};
+    },
+    onError: (error, { commands }) => {
+      console.error("Assistant transport error", error, { commands: commands.length });
     },
   });
 }
