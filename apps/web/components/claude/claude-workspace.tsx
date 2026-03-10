@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
@@ -14,6 +14,24 @@ export function ClaudeWorkspace() {
 
   const openSidebar = useCallback(() => setOpen(true), []);
   const closeSidebar = useCallback(() => setOpen(false), []);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(min-width: 768px)");
+
+    const closeOnDesktop = (event: MediaQueryList | MediaQueryListEvent) => {
+      if (event.matches) setOpen(false);
+    };
+
+    closeOnDesktop(mediaQuery);
+
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", closeOnDesktop);
+      return () => mediaQuery.removeEventListener("change", closeOnDesktop);
+    }
+
+    mediaQuery.addListener(closeOnDesktop);
+    return () => mediaQuery.removeListener(closeOnDesktop);
+  }, []);
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
