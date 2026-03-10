@@ -20,6 +20,20 @@ from noa_api.core.auth.authorization import (
 )
 
 
+def _iter_assistant_transport_events(payload: str) -> list[dict[str, object]]:
+    events: list[dict[str, object]] = []
+    for line in payload.splitlines():
+        if not line.startswith("data: "):
+            continue
+        raw = line[len("data: ") :]
+        if raw == "[DONE]":
+            continue
+        event = json.loads(raw)
+        assert isinstance(event, dict)
+        events.append(event)
+    return events
+
+
 def _apply_assistant_stream_patches(
     state: dict[str, object], patches: list[dict[str, object]]
 ) -> None:
@@ -46,6 +60,26 @@ def _state_contains_user_text(state: dict[str, object], text: str) -> bool:
         if not isinstance(message, dict):
             continue
         if message.get("role") != "user":
+            continue
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") != "text":
+                continue
+            if part.get("text") == text:
+                return True
+    return False
+
+
+def _state_contains_text(state: dict[str, object], text: str) -> bool:
+    messages = state.get("messages")
+    if not isinstance(messages, list):
+        return False
+    for message in messages:
+        if not isinstance(message, dict):
             continue
         parts = message.get("parts")
         if not isinstance(parts, list):
@@ -208,6 +242,39 @@ async def test_assistant_route_rejects_missing_thread_id() -> None:
     assert response.status_code == 422
 
 
+async def test_assistant_route_uses_assistant_transport_sse() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text.rstrip().endswith("data: [DONE]")
+    events = _iter_assistant_transport_events(response.text)
+    assert any(event.get("type") == "update-state" for event in events)
+
+
 async def test_assistant_route_streams_canonical_state_and_applies_commands() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
@@ -264,12 +331,25 @@ async def test_assistant_route_streams_canonical_state_and_applies_commands() ->
         response = await client.post("/assistant", json=payload)
 
     assert response.status_code == 200
-    assert "aui-state:" in response.text
-    assert "From DB" in response.text
-    assert "Hello from command" in response.text
-    assert "Bogus" not in response.text
-    assert '"isRunning"' in response.text
-    assert '"value": false' in response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    state: dict[str, object] = {}
+    for event in _iter_assistant_transport_events(response.text):
+        if event.get("type") != "update-state":
+            continue
+        operations = event.get("operations") or event.get("patches")
+        if isinstance(operations, list):
+            _apply_assistant_stream_patches(state, operations)
+            continue
+        event_state = event.get("state")
+        if isinstance(event_state, dict):
+            state.clear()
+            state.update(event_state)
+
+    assert _state_contains_text(state, "From DB")
+    assert _state_contains_text(state, "Hello from command")
+    assert not _state_contains_text(state, "Bogus")
+    assert state.get("isRunning") is False
 
 
 async def test_assistant_route_rejects_edit_style_add_message() -> None:
@@ -355,8 +435,22 @@ async def test_assistant_route_accepts_add_tool_result_command() -> None:
         response = await client.post("/assistant", json=payload)
 
     assert response.status_code == 200
-    assert "aui-state:" in response.text
-    assert "From DB" in response.text
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    state: dict[str, object] = {}
+    for event in _iter_assistant_transport_events(response.text):
+        if event.get("type") != "update-state":
+            continue
+        operations = event.get("operations") or event.get("patches")
+        if isinstance(operations, list):
+            _apply_assistant_stream_patches(state, operations)
+            continue
+        event_state = event.get("state")
+        if isinstance(event_state, dict):
+            state.clear()
+            state.update(event_state)
+
+    assert _state_contains_text(state, "From DB")
 
 
 async def test_assistant_route_rejects_unknown_command_type() -> None:
@@ -494,12 +588,19 @@ async def test_assistant_route_keeps_user_message_in_streaming_state() -> None:
     saw_running_state = False
     saw_running_state_with_user_message = False
 
-    for line in response.text.splitlines():
-        if not line.startswith("aui-state:"):
+    for event in _iter_assistant_transport_events(response.text):
+        if event.get("type") != "update-state":
             continue
-        patches = json.loads(line[len("aui-state:") :])
-        assert isinstance(patches, list)
-        _apply_assistant_stream_patches(state, patches)
+
+        operations = event.get("operations") or event.get("patches")
+        if isinstance(operations, list):
+            _apply_assistant_stream_patches(state, operations)
+        else:
+            event_state = event.get("state")
+            assert isinstance(event_state, dict)
+            state.clear()
+            state.update(event_state)
+
         if state.get("isRunning") is True:
             saw_running_state = True
             if _state_contains_user_text(state, user_text):
