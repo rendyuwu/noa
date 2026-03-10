@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
@@ -37,19 +38,47 @@ def _iter_assistant_transport_events(payload: str) -> list[dict[str, object]]:
 def _apply_assistant_stream_patches(
     state: dict[str, object], patches: list[dict[str, object]]
 ) -> None:
+    def _set_path(path: list[object], value: object) -> None:
+        if not path:
+            assert isinstance(value, dict)
+            state.clear()
+            state.update(value)
+            return
+
+        current: object = state
+        for key in path[:-1]:
+            key_str = str(key)
+            if isinstance(current, list):
+                idx = int(key_str)
+                while idx >= len(current):
+                    current.append({})
+                current = current[idx]
+                continue
+
+            assert isinstance(current, dict)
+            if key_str not in current or not isinstance(current[key_str], (dict, list)):
+                current[key_str] = {}
+            current = current[key_str]
+
+        last = str(path[-1])
+        if isinstance(current, list):
+            idx = int(last)
+            while idx >= len(current):
+                current.append(None)
+            current[idx] = value
+            return
+
+        assert isinstance(current, dict)
+        current[last] = value
+
     for patch in patches:
         if patch.get("type") != "set":
             continue
         path = patch.get("path")
-        if not isinstance(path, list) or not path:
+        if not isinstance(path, list):
             continue
 
-        if path == ["messages"]:
-            state["messages"] = patch.get("value")
-            continue
-        if path == ["isRunning"]:
-            state["isRunning"] = patch.get("value")
-            continue
+        _set_path(path, patch.get("value"))
 
 
 def _state_contains_user_text(state: dict[str, object], text: str) -> bool:
@@ -180,6 +209,7 @@ class _FakeAssistantService:
         owner_user_email: str | None,
         thread_id: UUID,
         available_tool_names: set[str],
+        on_text_delta=None,
     ) -> AgentRunnerResult:
         assert owner_user_id == self.owner_user_id
         assert thread_id == self.thread_id
@@ -189,6 +219,11 @@ class _FakeAssistantService:
             self.messages.append(
                 {"id": str(uuid4()), "role": message.role, "parts": message.parts}
             )
+
+        if on_text_delta is not None:
+            for delta in self.runner_text_deltas:
+                await on_text_delta(delta)
+                await asyncio.sleep(0)
         return AgentRunnerResult(
             messages=self.runner_messages, text_deltas=self.runner_text_deltas
         )
@@ -608,6 +643,97 @@ async def test_assistant_route_keeps_user_message_in_streaming_state() -> None:
 
     assert saw_running_state
     assert saw_running_state_with_user_message
+
+
+async def test_assistant_route_streams_assistant_text_incrementally() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        runner_messages=[
+            AgentMessage(
+                role="assistant",
+                parts=[{"type": "text", "text": "Hello world"}],
+            )
+        ],
+        runner_text_deltas=["Hello", " ", "world"],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        authorization_service=_FakeAuthorizationService(allowed_tools=set()),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Hi"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+
+    state: dict[str, object] = {}
+    observed_text_by_event: list[str | None] = []
+
+    def _extract_streaming_text() -> str | None:
+        messages = state.get("messages")
+        if not isinstance(messages, list):
+            return None
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            if message.get("id") != "assistant-streaming":
+                continue
+            parts = message.get("parts")
+            if not isinstance(parts, list) or not parts:
+                return None
+            first = parts[0]
+            if not isinstance(first, dict):
+                return None
+            text = first.get("text")
+            return text if isinstance(text, str) else None
+        return None
+
+    for event in _iter_assistant_transport_events(response.text):
+        if event.get("type") != "update-state":
+            continue
+
+        operations = event.get("operations") or event.get("patches")
+        if not isinstance(operations, list):
+            continue
+        _apply_assistant_stream_patches(state, operations)
+        observed_text_by_event.append(_extract_streaming_text())
+
+    observed = [text for text in observed_text_by_event if isinstance(text, str)]
+    assert observed
+
+    # Ensure the placeholder assistant message is visible before the first token.
+    assert observed[0] == ""
+
+    # Ensure the streaming message grows incrementally.
+    assert observed[-1] == "Hello world"
+    assert "Hello" in observed
+    assert len(set(observed)) >= 3
 
 
 async def test_assistant_route_rejects_non_user_add_message_role() -> None:

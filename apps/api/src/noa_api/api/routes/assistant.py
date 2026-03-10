@@ -512,6 +512,7 @@ class AssistantService:
         owner_user_email: str | None,
         thread_id: UUID,
         available_tool_names: set[str],
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> AgentRunnerResult:
         state = await self.load_state(owner_user_id=owner_user_id, thread_id=thread_id)
         thread_messages = cast(list[dict[str, object]], state["messages"])
@@ -520,6 +521,7 @@ class AssistantService:
             available_tool_names=available_tool_names,
             thread_id=thread_id,
             requested_by_user_id=owner_user_id,
+            on_text_delta=on_text_delta,
         )
         for message in result.messages:
             await self._repository.create_message(
@@ -685,14 +687,59 @@ async def assistant_transport(
                 ):
                     allowed_tools.add(tool_name)
 
-            runner_output = await assistant_service.run_agent_turn(
+            base_messages_obj = canonical_state.get("messages")
+            base_messages: list[object] = (
+                list(base_messages_obj) if isinstance(base_messages_obj, list) else []
+            )
+
+            def _make_streaming_message(text: str) -> dict[str, object]:
+                return {
+                    "id": "assistant-streaming",
+                    "role": "assistant",
+                    "parts": [{"type": "text", "text": text}],
+                }
+
+            # Emit a running assistant message immediately so the UI can show
+            # a first-token loading state before any text arrives.
+            controller.state["messages"] = [
+                *base_messages,
+                _make_streaming_message(""),
+            ]
+
+            # Flush pending state updates before the first delta.
+            state_manager = getattr(controller, "_state_manager", None)
+            if state_manager is not None:
+                state_manager.flush()
+            await asyncio.sleep(0)
+
+            streamed_text = ""
+
+            async def _on_text_delta(delta: str) -> None:
+                nonlocal streamed_text
+                if not delta:
+                    return
+                if _controller_is_cancelled(controller):
+                    raise asyncio.CancelledError
+                task = asyncio.current_task()
+                if task is not None and task.cancelled():
+                    raise asyncio.CancelledError
+
+                streamed_text += delta
+                controller.state["messages"] = [
+                    *base_messages,
+                    _make_streaming_message(streamed_text),
+                ]
+                state_manager = getattr(controller, "_state_manager", None)
+                if state_manager is not None:
+                    state_manager.flush()
+                await asyncio.sleep(0)
+
+            _ = await assistant_service.run_agent_turn(
                 owner_user_id=current_user.user_id,
                 owner_user_email=current_user.email,
                 thread_id=payload.thread_id,
                 available_tool_names=allowed_tools,
-            )
-            await _stream_assistant_text(
-                controller=controller, text_deltas=runner_output.text_deltas
+                on_text_delta=_on_text_delta,
             )
 
         updated_state = await assistant_service.load_state(

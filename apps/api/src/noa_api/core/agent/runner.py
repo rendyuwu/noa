@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from dataclasses import dataclass
 from inspect import signature
-from typing import Protocol
+from typing import Any, Awaitable, Callable, Protocol, cast
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.config import settings
-from noa_api.core.tools.registry import ToolDefinition, get_tool_definition, get_tool_registry
+from noa_api.core.tools.registry import (
+    ToolDefinition,
+    get_tool_definition,
+    get_tool_registry,
+)
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
 
@@ -28,7 +33,13 @@ class LLMTurnResponse:
 
 
 class LLMClientProtocol(Protocol):
-    async def run_turn(self, *, messages: list[dict[str, object]], tools: list[dict[str, object]]) -> LLMTurnResponse: ...
+    async def run_turn(
+        self,
+        *,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMTurnResponse: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,7 +55,13 @@ class AgentRunnerResult:
 
 
 class RuleBasedLLMClient:
-    async def run_turn(self, *, messages: list[dict[str, object]], tools: list[dict[str, object]]) -> LLMTurnResponse:
+    async def run_turn(
+        self,
+        *,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMTurnResponse:
         _ = tools
         last_user_text = ""
         for message in reversed(messages):
@@ -64,37 +81,55 @@ class RuleBasedLLMClient:
 
         lowered = last_user_text.lower()
         if "time" in lowered:
-            return LLMTurnResponse(
+            turn = LLMTurnResponse(
                 text="I'll check the current server time.",
                 tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
             )
-        if "date" in lowered:
-            return LLMTurnResponse(
+        elif "date" in lowered:
+            turn = LLMTurnResponse(
                 text="I'll check today's server date.",
                 tool_calls=[LLMToolCall(name="get_current_date", arguments={})],
             )
-        if "demo flag" in lowered:
+        elif "demo flag" in lowered:
             key, value = _extract_demo_flag_args(last_user_text)
-            return LLMTurnResponse(
+            turn = LLMTurnResponse(
                 text="I can set that demo flag after your approval.",
-                tool_calls=[LLMToolCall(name="set_demo_flag", arguments={"key": key, "value": value})],
+                tool_calls=[
+                    LLMToolCall(
+                        name="set_demo_flag", arguments={"key": key, "value": value}
+                    )
+                ],
+            )
+        else:
+            turn = LLMTurnResponse(
+                text="I can help with date/time checks and demo flag requests in this MVP.",
+                tool_calls=[],
             )
 
-        return LLMTurnResponse(
-            text="I can help with date/time checks and demo flag requests in this MVP.",
-            tool_calls=[],
-        )
+        if on_text_delta is not None and turn.text:
+            for chunk in _split_text_deltas(turn.text):
+                await on_text_delta(chunk)
+                await asyncio.sleep(0)
+        return turn
 
 
 class OpenAICompatibleLLMClient:
-    def __init__(self, *, model: str, api_key: str, base_url: str | None, system_prompt: str) -> None:
+    def __init__(
+        self, *, model: str, api_key: str, base_url: str | None, system_prompt: str
+    ) -> None:
         from openai import AsyncOpenAI
 
         self._model = model
         self._system_prompt = system_prompt
         self._client = AsyncOpenAI(api_key=api_key, base_url=base_url)
 
-    async def run_turn(self, *, messages: list[dict[str, object]], tools: list[dict[str, object]]) -> LLMTurnResponse:
+    async def run_turn(
+        self,
+        *,
+        messages: list[dict[str, object]],
+        tools: list[dict[str, object]],
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> LLMTurnResponse:
         llm_messages: list[dict[str, str]] = []
         if self._system_prompt.strip():
             llm_messages.append({"role": "system", "content": self._system_prompt})
@@ -118,21 +153,97 @@ class OpenAICompatibleLLMClient:
                 continue
             llm_messages.append({"role": role, "content": "\n".join(text_parts)})
 
-        response = await self._client.chat.completions.create(
-            model=self._model,
-            temperature=0,
-            messages=llm_messages,
-            tools=tools or None,
-            tool_choice="auto" if tools else None,
-        )
+        if on_text_delta is None:
+            request_kwargs: dict[str, Any] = {
+                "model": self._model,
+                "temperature": 0,
+                "messages": cast(Any, llm_messages),
+            }
+            if tools:
+                request_kwargs["tools"] = cast(Any, tools)
+                request_kwargs["tool_choice"] = "auto"
 
-        choice = response.choices[0].message
-        text = choice.content or ""
+            response: Any = await self._client.chat.completions.create(**request_kwargs)
+
+            choice: Any = response.choices[0].message
+            text = getattr(choice, "content", "") or ""
+            tool_calls: list[LLMToolCall] = []
+            for call in getattr(choice, "tool_calls", None) or []:
+                function = getattr(call, "function", None)
+                if function is None:
+                    continue
+                name = getattr(function, "name", None)
+                if not isinstance(name, str) or not name:
+                    continue
+                args_raw = getattr(function, "arguments", None)
+                args = _safe_json_object(
+                    args_raw if isinstance(args_raw, str) else None
+                )
+                tool_calls.append(LLMToolCall(name=name, arguments=args))
+
+            return LLMTurnResponse(text=text, tool_calls=tool_calls)
+
+        request_kwargs = {
+            "model": self._model,
+            "temperature": 0,
+            "messages": cast(Any, llm_messages),
+            "stream": True,
+        }
+        if tools:
+            request_kwargs["tools"] = cast(Any, tools)
+            request_kwargs["tool_choice"] = "auto"
+
+        stream: Any = await self._client.chat.completions.create(**request_kwargs)
+
+        text_chunks: list[str] = []
+        tool_call_acc: dict[int, dict[str, str]] = {}
+
+        async for chunk in stream:
+            choices = getattr(chunk, "choices", None)
+            if not isinstance(choices, list) or not choices:
+                continue
+            choice = choices[0]
+            delta = getattr(choice, "delta", None)
+            if delta is None:
+                continue
+
+            content = getattr(delta, "content", None)
+            if isinstance(content, str) and content:
+                text_chunks.append(content)
+                await on_text_delta(content)
+
+            delta_tool_calls = getattr(delta, "tool_calls", None)
+            if not isinstance(delta_tool_calls, list) or not delta_tool_calls:
+                continue
+
+            for call in delta_tool_calls:
+                index = getattr(call, "index", None)
+                if index is None:
+                    continue
+                try:
+                    idx = int(index)
+                except (TypeError, ValueError):
+                    continue
+
+                acc = tool_call_acc.setdefault(idx, {"name": "", "arguments": ""})
+                function = getattr(call, "function", None)
+                if function is None:
+                    continue
+
+                name = getattr(function, "name", None)
+                if isinstance(name, str) and name:
+                    acc["name"] = name
+                arguments = getattr(function, "arguments", None)
+                if isinstance(arguments, str) and arguments:
+                    acc["arguments"] += arguments
+
+        text = "".join(text_chunks)
         tool_calls: list[LLMToolCall] = []
-        for call in choice.tool_calls or []:
-            name = call.function.name
-            args_raw = call.function.arguments
-            args = _safe_json_object(args_raw)
+        for _, value in sorted(tool_call_acc.items()):
+            name = value.get("name")
+            if not name:
+                continue
+            args = _safe_json_object(value.get("arguments"))
             tool_calls.append(LLMToolCall(name=name, arguments=args))
 
         return LLMTurnResponse(text=text, tool_calls=tool_calls)
@@ -157,10 +268,23 @@ class AgentRunner:
         available_tool_names: set[str],
         thread_id: UUID,
         requested_by_user_id: UUID,
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> AgentRunnerResult:
-        allowed_tools = [tool for tool in get_tool_registry() if tool.name in available_tool_names]
+        allowed_tools = [
+            tool for tool in get_tool_registry() if tool.name in available_tool_names
+        ]
         llm_tools = [_to_openai_tool_schema(tool) for tool in allowed_tools]
-        llm_response = await self._llm_client.run_turn(messages=thread_messages, tools=llm_tools)
+        if on_text_delta is None:
+            llm_response = await self._llm_client.run_turn(
+                messages=thread_messages,
+                tools=llm_tools,
+            )
+        else:
+            llm_response = await self._llm_client.run_turn(
+                messages=thread_messages,
+                tools=llm_tools,
+                on_text_delta=on_text_delta,
+            )
 
         output_messages: list[AgentMessage] = []
         text = llm_response.text.strip()
@@ -268,7 +392,9 @@ class AgentRunner:
 
         try:
             result = await self._execute_tool(tool=tool, args=args)
-            _ = await self._action_tool_run_service.complete_tool_run(tool_run_id=started.id, result=result)
+            _ = await self._action_tool_run_service.complete_tool_run(
+                tool_run_id=started.id, result=result
+            )
             result_message = AgentMessage(
                 role="tool",
                 parts=[
@@ -283,7 +409,9 @@ class AgentRunner:
             )
             return [call_message, result_message]
         except Exception as exc:
-            _ = await self._action_tool_run_service.fail_tool_run(tool_run_id=started.id, error=str(exc))
+            _ = await self._action_tool_run_service.fail_tool_run(
+                tool_run_id=started.id, error=str(exc)
+            )
             error_message = AgentMessage(
                 role="tool",
                 parts=[
@@ -298,14 +426,23 @@ class AgentRunner:
             )
             return [call_message, error_message]
 
-    async def _execute_tool(self, *, tool: ToolDefinition, args: dict[str, object]) -> dict[str, object]:
-        if self._session is not None and "session" in signature(tool.execute).parameters:
+    async def _execute_tool(
+        self, *, tool: ToolDefinition, args: dict[str, object]
+    ) -> dict[str, object]:
+        if (
+            self._session is not None
+            and "session" in signature(tool.execute).parameters
+        ):
             return await tool.execute(session=self._session, **args)
         return await tool.execute(**args)
 
 
 def create_default_llm_client() -> LLMClientProtocol:
-    api_key = settings.llm_api_key.get_secret_value() if settings.llm_api_key is not None else ""
+    api_key = (
+        settings.llm_api_key.get_secret_value()
+        if settings.llm_api_key is not None
+        else ""
+    )
     if api_key:
         return OpenAICompatibleLLMClient(
             model=settings.llm_model,
@@ -342,11 +479,15 @@ def _to_openai_tool_schema(tool: ToolDefinition) -> dict[str, object]:
 def _split_text_deltas(text: str, *, chunk_size: int = 24) -> list[str]:
     if not text:
         return []
-    return [text[index : index + chunk_size] for index in range(0, len(text), chunk_size)]
+    return [
+        text[index : index + chunk_size] for index in range(0, len(text), chunk_size)
+    ]
 
 
 def _extract_demo_flag_args(text: str) -> tuple[str, object]:
-    match = re.search(r"demo\s+flag\s+([a-zA-Z0-9_.-]+)\s*=\s*(.+)$", text, flags=re.IGNORECASE)
+    match = re.search(
+        r"demo\s+flag\s+([a-zA-Z0-9_.-]+)\s*=\s*(.+)$", text, flags=re.IGNORECASE
+    )
     if not match:
         return "demo_flag", True
     key = match.group(1)
