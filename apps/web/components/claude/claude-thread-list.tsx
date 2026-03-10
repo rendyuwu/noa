@@ -17,7 +17,7 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
       <div className="flex items-center gap-2 rounded-lg px-2 py-2 transition hover:bg-[#ffffff80] dark:hover:bg-[#1f1e1b]/60">
         <ThreadListItemPrimitive.Trigger
           onClick={onSelect}
-          className="min-w-0 flex-1 text-left text-sm text-[#1a1a18] outline-none dark:text-[#eee]"
+          className="min-w-0 flex-1 rounded-md text-left text-sm text-[#1a1a18] outline-none focus-visible:ring-2 focus-visible:ring-[#ae5630]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5F5F0] dark:text-[#eee] dark:focus-visible:ring-offset-[#2b2a27]"
         >
           <span className="block truncate">
             <ThreadListItemPrimitive.Title fallback="Untitled" />
@@ -25,7 +25,7 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
         </ThreadListItemPrimitive.Trigger>
 
         <ThreadListItemPrimitive.Delete
-          className="flex h-7 w-7 items-center justify-center rounded-md text-[#6b6a68] opacity-0 transition hover:bg-[#f5f5f0] hover:text-[#1a1a18] group-hover:opacity-100 dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
+          className="flex h-7 w-7 items-center justify-center rounded-md text-[#6b6a68] opacity-0 transition hover:bg-[#f5f5f0] hover:text-[#1a1a18] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ae5630]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5F5F0] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee] dark:focus-visible:ring-offset-[#2b2a27]"
           aria-label="Delete thread"
         >
           <TrashIcon width={16} height={16} />
@@ -39,7 +39,10 @@ export function ClaudeThreadList({ onSelectThread }: { onSelectThread?: () => vo
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col bg-[#F5F5F0] font-serif dark:bg-[#2b2a27]">
       <div className="px-4 pt-4">
-        <ThreadListPrimitive.New className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ae5630] px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#c4633a] active:scale-[0.99]">
+        <ThreadListPrimitive.New
+          onClick={onSelectThread}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ae5630] px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#c4633a] active:scale-[0.99]"
+        >
           <PlusIcon width={16} height={16} />
           New chat
         </ThreadListPrimitive.New>

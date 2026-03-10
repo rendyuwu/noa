@@ -78,6 +78,7 @@ export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar
             <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
               <ComposerPrimitive.Input
                 placeholder="How can I help you today?"
+                aria-label="Message input"
                 className="block min-h-6 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
               />
             </div>
@@ -115,7 +116,10 @@ export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar
               <ChevronDownIcon width={20} height={20} className="opacity-75" />
             </DisabledIconButton>
 
-            <ComposerPrimitive.Send className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#ae5630] transition-colors hover:bg-[#c4633a] active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:bg-[#ae5630] dark:hover:bg-[#c4633a]">
+            <ComposerPrimitive.Send
+              aria-label="Send message"
+              className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#ae5630] transition-colors hover:bg-[#c4633a] active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:bg-[#ae5630] dark:hover:bg-[#c4633a]"
+            >
               <ArrowUpIcon width={16} height={16} className="text-white" />
             </ComposerPrimitive.Send>
           </div>
@@ -186,10 +190,13 @@ const ChatMessage: FC = () => {
             <ActionBarPrimitive.Root
               hideWhenRunning
               autohide="not-last"
-              className="pointer-events-auto flex w-full translate-y-full flex-col items-end px-2 pt-2 transition"
+              className="pointer-events-auto flex w-full translate-y-4 flex-col items-end px-2 pt-2 opacity-0 transition group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
             >
               <div className="flex items-center text-[#6b6a68] dark:text-[#9a9893]">
-                <ActionBarPrimitive.Copy className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95">
+                <ActionBarPrimitive.Copy
+                  aria-label="Copy message"
+                  className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95"
+                >
                   <ClipboardIcon width={20} height={20} />
                 </ActionBarPrimitive.Copy>
 
