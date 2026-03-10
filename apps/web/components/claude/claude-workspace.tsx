@@ -35,7 +35,7 @@ export function ClaudeWorkspace() {
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <section className="relative h-[calc(100dvh-2rem)] min-h-[640px] overflow-hidden rounded-2xl border border-[#00000010] bg-[#F5F5F0] shadow-[0_0.5rem_2rem_rgba(0,0,0,0.06)] dark:border-[#6c6a6040] dark:bg-[#2b2a27]">
+      <section className="relative h-dvh w-full overflow-hidden bg-[#F5F5F0] dark:bg-[#2b2a27]">
         <RequestApprovalToolUI />
 
         <div className="grid h-full grid-cols-1 md:grid-cols-[320px_minmax(0,1fr)]">

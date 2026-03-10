@@ -12,7 +12,7 @@ export default function AssistantPage() {
   }
 
   return (
-    <main className="page-shell">
+    <main className="min-h-dvh bg-[#F5F5F0] p-0 dark:bg-[#2b2a27]">
       <NoaAssistantRuntimeProvider>
         <ClaudeWorkspace />
       </NoaAssistantRuntimeProvider>
