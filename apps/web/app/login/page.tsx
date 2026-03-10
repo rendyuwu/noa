@@ -13,6 +13,10 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const labelClass = "block text-sm font-medium text-[#1a1a18] dark:text-[#eee]";
+  const inputClass =
+    "mt-1 w-full rounded-xl border border-[#00000015] bg-white/80 px-3 py-2.5 text-sm text-[#1a1a18] shadow-sm outline-none placeholder:text-[#6b6a68] focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70 dark:border-[#6c6a6040] dark:bg-[#2b2a27] dark:text-[#eee] dark:placeholder:text-[#9a9893]";
+
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setSubmitting(true);
@@ -56,7 +60,7 @@ export default function LoginPage() {
 
           <div className="mt-6 space-y-4 font-ui">
             <div>
-              <label htmlFor="login-email" className="block text-sm font-medium text-[#1a1a18] dark:text-[#eee]">
+              <label htmlFor="login-email" className={labelClass}>
                 Email
               </label>
               <input
@@ -64,29 +68,29 @@ export default function LoginPage() {
                 name="email"
                 autoComplete="username"
                 inputMode="email"
-                className="mt-1 w-full rounded-xl border border-[#00000015] bg-white/80 px-3 py-2.5 text-sm text-[#1a1a18] shadow-sm outline-none placeholder:text-[#6b6a68] focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70 dark:border-[#6c6a6040] dark:bg-[#2b2a27] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
+                className={inputClass}
                 required
                 type="email"
                 value={email}
-                aria-invalid={error ? true : undefined}
+                disabled={submitting}
                 aria-describedby={error ? "login-error" : undefined}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
 
             <div>
-              <label htmlFor="login-password" className="block text-sm font-medium text-[#1a1a18] dark:text-[#eee]">
+              <label htmlFor="login-password" className={labelClass}>
                 Password
               </label>
               <input
                 id="login-password"
                 name="password"
                 autoComplete="current-password"
-                className="mt-1 w-full rounded-xl border border-[#00000015] bg-white/80 px-3 py-2.5 text-sm text-[#1a1a18] shadow-sm outline-none placeholder:text-[#6b6a68] focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70 dark:border-[#6c6a6040] dark:bg-[#2b2a27] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
+                className={inputClass}
                 required
                 type="password"
                 value={password}
-                aria-invalid={error ? true : undefined}
+                disabled={submitting}
                 aria-describedby={error ? "login-error" : undefined}
                 onChange={(e) => setPassword(e.target.value)}
               />
