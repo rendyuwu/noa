@@ -108,13 +108,14 @@ async function proxy(
   const responseConnectionHeaderNames = getConnectionHeaderNames(
     upstreamResponse.headers
   );
-  const getSetCookie = (upstreamResponse.headers as unknown as {
+  const upstreamHeaders = upstreamResponse.headers as unknown as {
     getSetCookie?: () => string[];
-  }).getSetCookie;
+  };
 
   if (!responseConnectionHeaderNames.has("set-cookie")) {
-    if (getSetCookie) {
-      for (const cookie of getSetCookie()) {
+    if (typeof upstreamHeaders.getSetCookie === "function") {
+      // In some runtimes, calling getSetCookie() without the Headers object as `this` throws (ERR_INVALID_THIS).
+      for (const cookie of upstreamHeaders.getSetCookie()) {
         responseHeaders.append("set-cookie", cookie);
       }
     } else {
