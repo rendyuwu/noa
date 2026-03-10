@@ -61,7 +61,7 @@
 
 @layer components {
   .wrap-break-word {
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     word-break: break-word;
   }
 
