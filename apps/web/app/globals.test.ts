@@ -11,10 +11,10 @@ describe("globals.css", () => {
     const css = readFileSync(path.join(dirname, "globals.css"), "utf8");
 
     expect(css).not.toMatch(
-      /\\.wrap-break-word\\s*\\{[\\s\\S]*overflow-wrap:\\s*anywhere\\s*;/,
+      /\.wrap-break-word\s*\{[\s\S]*overflow-wrap:\s*anywhere\s*;/,
     );
     expect(css).toMatch(
-      /\\.wrap-break-word\\s*\\{[\\s\\S]*overflow-wrap:\\s*break-word\\s*;/,
+      /\.wrap-break-word\s*\{[\s\S]*overflow-wrap:\s*break-word\s*;/,
     );
   });
 });
