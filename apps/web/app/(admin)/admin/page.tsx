@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { clearAuth, useRequireAuth } from "@/components/lib/auth-store";
@@ -16,13 +16,19 @@ type AdminUser = {
 };
 
 export default function AdminPage() {
+  const buttonBase =
+    "inline-flex items-center justify-center rounded-lg px-3 py-2 font-ui text-sm font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
+  const focusRingAccent = "focus-visible:ring-accent/30";
+  const focusRingDanger = "focus-visible:ring-red-300/60";
+  const primaryBtn = `${buttonBase} border border-transparent bg-accent text-white hover:bg-accent/90 ${focusRingAccent}`;
+  const secondaryBtn = `${buttonBase} border border-border bg-surface text-text hover:bg-surface-2 ${focusRingAccent}`;
+  const dangerBtn = `${buttonBase} border border-red-200 bg-red-50 text-red-800 hover:bg-red-100 ${focusRingDanger}`;
+
   const ready = useRequireAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [tools, setTools] = useState<string[]>([]);
   const [draftTools, setDraftTools] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-
-  const draftById = useMemo(() => draftTools, [draftTools]);
 
   const load = async () => {
     setError(null);
@@ -65,7 +71,7 @@ export default function AdminPage() {
   };
 
   const saveTools = async (userId: string) => {
-    const draft = draftById[userId] ?? "";
+    const draft = draftTools[userId] ?? "";
     const parsed = draft
       .split(",")
       .map((value) => value.trim())
@@ -99,13 +105,13 @@ export default function AdminPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              className="inline-flex items-center justify-center rounded-lg border border-transparent bg-accent px-3 py-2 font-ui text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+              className={primaryBtn}
               href="/assistant"
             >
               Assistant
             </Link>
             <button
-              className="inline-flex items-center justify-center rounded-lg border border-border bg-surface px-3 py-2 font-ui text-sm font-medium text-text shadow-sm transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+              className={secondaryBtn}
               onClick={clearAuth}
               type="button"
             >
@@ -143,7 +149,6 @@ export default function AdminPage() {
 
           {error ? (
             <div
-              aria-live="polite"
               className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
               role="alert"
             >
@@ -154,7 +159,10 @@ export default function AdminPage() {
           <div className="mt-4 grid gap-3">
             {users.map((user) => {
               const inputId = `tool-allowlist-${user.id}`;
-              const draftValue = draftById[user.id] ?? "";
+              const draftValue = draftTools[user.id] ?? "";
+              const userDescriptor = user.display_name
+                ? `${user.display_name} (${user.email})`
+                : user.email;
               return (
                 <article className="rounded-xl border border-border bg-surface p-4 shadow-sm" key={user.id}>
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -166,11 +174,8 @@ export default function AdminPage() {
                     </div>
 
                     <button
-                      className={
-                        user.is_active
-                          ? "inline-flex items-center justify-center rounded-lg border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm font-medium text-red-800 shadow-sm transition-colors hover:bg-red-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-300/60 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-                          : "inline-flex items-center justify-center rounded-lg border border-transparent bg-accent px-3 py-2 font-ui text-sm font-medium text-white shadow-sm transition-colors hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-                      }
+                      aria-label={`${user.is_active ? "Disable" : "Enable"} ${userDescriptor}`}
+                      className={user.is_active ? dangerBtn : primaryBtn}
                       onClick={() => toggleUser(user.id, !user.is_active)}
                       type="button"
                     >
@@ -201,12 +206,13 @@ export default function AdminPage() {
                     />
                   </div>
 
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <p className="font-ui text-xs text-muted">
+                  <div className="mt-3 flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="min-w-0 whitespace-normal break-words font-ui text-xs text-muted sm:truncate">
                       Current: {user.tools.join(", ") || "none"}
                     </p>
                     <button
-                      className="inline-flex items-center justify-center rounded-lg border border-border bg-surface px-3 py-2 font-ui text-sm font-medium text-text shadow-sm transition-colors hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                      aria-label={`Save tools for ${userDescriptor}`}
+                      className={`${secondaryBtn} w-full sm:w-auto`}
                       onClick={() => saveTools(user.id)}
                       type="button"
                     >
