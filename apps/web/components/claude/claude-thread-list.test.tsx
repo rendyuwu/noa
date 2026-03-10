@@ -56,7 +56,9 @@ describe("ClaudeThreadList", () => {
     render(<ClaudeThreadList />);
 
     for (const label of ["Search", "Customize", "Projects", "Artifacts", "Code"]) {
-      expect(screen.getByRole("button", { name: label })).toBeDisabled();
+      const button = screen.getByRole("button", { name: label });
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(button).not.toBeDisabled();
     }
   });
 
@@ -70,5 +72,15 @@ describe("ClaudeThreadList", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a neutral account fallback when auth user data is missing", () => {
+    mocks.user = null;
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.getByText("NOA User")).toBeInTheDocument();
+    expect(screen.getByText("Signed in")).toBeInTheDocument();
+    expect(screen.getByText("N")).toBeInTheDocument();
   });
 });

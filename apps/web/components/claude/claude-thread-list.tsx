@@ -16,10 +16,10 @@ function DisabledNavItem({ label }: { label: string }) {
   return (
     <button
       type="button"
-      disabled
       aria-disabled="true"
       title="Coming soon"
-      className="flex w-full items-center justify-start gap-3 rounded-lg px-3 py-2 font-ui text-sm text-[#6b6a68] opacity-70 transition hover:bg-[#ffffff80] hover:text-[#1a1a18] disabled:pointer-events-none dark:text-[#9a9893] dark:hover:bg-[#1f1e1b]/60 dark:hover:text-[#eee]"
+      onClick={(event) => event.preventDefault()}
+      className="flex w-full items-center justify-start gap-3 rounded-lg px-3 py-2 font-ui text-sm text-[#6b6a68] opacity-70 transition hover:bg-[#ffffff80] hover:text-[#1a1a18] dark:text-[#9a9893] dark:hover:bg-[#1f1e1b]/60 dark:hover:text-[#eee]"
     >
       {label}
     </button>
@@ -52,7 +52,7 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
 
 export function ClaudeThreadList({ onSelectThread }: { onSelectThread?: () => void }) {
   const user = getAuthUser();
-  const name = formatClaudeGreetingName(user);
+  const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
   const secondary = user?.email?.trim() || user?.roles?.join(", ") || "Signed in";
 
