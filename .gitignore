@@ -5,6 +5,7 @@ skills-lock.json
 # Node / Next.js
 node_modules/
 .next/
+next-env.d.ts
 out/
 dist/
 .turbo/
