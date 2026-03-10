@@ -14,7 +14,7 @@ Docs:
 ## Repo Layout
 
 - `apps/api`: FastAPI backend (LDAP auth, RBAC, tools, Assistant Transport)
-- `apps/web`: Next.js frontend (assistant-ui)
+- `apps/web`: Next.js frontend (assistant-ui) with a same-origin `/api/*` proxy to the backend
 - `docker-compose.yml`: Postgres (dev)
 
 ## Prerequisites
@@ -53,6 +53,10 @@ Notes:
 
 Create `apps/web/.env.local` from `apps/web/.env.example`.
 
+Notes:
+- The browser never calls the FastAPI backend directly. The web app calls same-origin `/api/...`, and a Next route handler proxies those requests server-side.
+- Configure the proxy with `NOA_API_URL=http://localhost:8000` (server-side; used by Next). `NEXT_PUBLIC_API_URL` is a legacy fallback; prefer `NOA_API_URL`.
+
 ```bash
 cd ../web
 cp .env.example .env.local
@@ -82,6 +86,7 @@ Open: http://localhost:3000
 - No real infrastructure integrations yet (demo tools only)
 - LLM token streaming is not implemented; assistant text is chunked after completion
 - No multi-tenant orgs or shared threads (threads are owner-scoped)
+- The assistant workspace is intentionally styled as a Claude-like UI; some controls are visible-but-disabled ("Coming soon") for layout parity: Edit/Reload, attachments, tools menu, extended thinking toggle, model selector, feedback.
 
 ```bash
 cd apps/api
