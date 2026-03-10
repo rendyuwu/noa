@@ -180,4 +180,20 @@ describe("ClaudeThread", () => {
     expect(viewport).toHaveClass("overflow-y-auto");
     expect(viewport).toHaveAttribute("data-auto-scroll", "true");
   });
+
+  it("right-aligns user messages and omits the avatar bubble", () => {
+    mockThreadIsEmpty = false;
+    mockAssistantMessage = {
+      role: "user",
+      isLast: true,
+      status: { type: "complete", reason: "stop" },
+      content: [{ type: "text", text: "Hi" }],
+    };
+
+    render(<ClaudeThread />);
+
+    const user = screen.getByTestId("user-message");
+    expect(user).toHaveClass("ml-auto");
+    expect(screen.queryByText("U")).not.toBeInTheDocument();
+  });
 });
