@@ -11,7 +11,7 @@ export const MarkdownText = (_props: any) => {
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
       components={{
-        table: ({ className, ...props }) => (
+        table: ({ className, node: _node, ...props }: any) => (
           <div
             data-testid="md-table-scroll"
             className="my-2 w-full overflow-x-auto overflow-y-hidden rounded-xl border border-[#00000015] bg-white/60 shadow-sm backdrop-blur-sm dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/40"
