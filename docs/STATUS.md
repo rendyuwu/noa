@@ -45,7 +45,7 @@ This is a living checklist of what is implemented in the MVP and what is intenti
 ## Known Rough Edges
 
 - Environment variable parsing for list/set fields requires JSON arrays (e.g. `API_CORS_ALLOWED_ORIGINS=["http://localhost:3000"]`).
-- LDAP dependency is optional (`uv sync --extra ldap`) and may require system libraries.
+- LDAP dependency is installed by default via `uv sync` and may require system libraries.
 
 ## Suggested Next Steps
 

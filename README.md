@@ -40,7 +40,7 @@ Create `apps/api/.env` from `apps/api/.env.example` (do not commit `.env`; it is
 ```bash
 cd apps/api
 cp .env.example .env
-uv sync --extra ldap
+uv sync
 uv run alembic upgrade head
 uv run uvicorn noa_api.main:app --reload --port 8000
 ```

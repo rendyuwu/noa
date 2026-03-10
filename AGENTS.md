@@ -22,8 +22,6 @@ Setup deps:
 cd apps/api
 cp .env.example .env
 uv sync
-# If you need LDAP support locally:
-uv sync --extra ldap
 ```
 
 DB migrations:
