@@ -100,6 +100,43 @@
   .error {
     @apply text-sm text-red-700;
   }
+
+  @keyframes claude-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .claude-landing-anim-1,
+  .claude-landing-anim-2,
+  .claude-landing-anim-3 {
+    opacity: 0;
+    animation: claude-fade-up 420ms cubic-bezier(0.165, 0.85, 0.45, 1) forwards;
+  }
+
+  .claude-landing-anim-2 {
+    animation-delay: 90ms;
+  }
+
+  .claude-landing-anim-3 {
+    animation-delay: 170ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .claude-landing-anim-1,
+    .claude-landing-anim-2,
+    .claude-landing-anim-3 {
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+  }
 }
 
 @media (max-width: 900px) {
