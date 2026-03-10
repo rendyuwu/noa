@@ -123,7 +123,7 @@ function EmptyLanding() {
   };
 
   return (
-    <div className="flex min-h-[calc(100dvh-12rem)] w-full flex-col items-center justify-center px-3 pb-10">
+    <div className="flex min-h-full w-full flex-1 flex-col items-center justify-center px-3 py-10">
       <div className="claude-landing-anim-1 flex items-center gap-3 text-[#1a1a18] dark:text-[#eee]">
         <span aria-hidden="true" className="text-2xl leading-none text-[#c4633a]">
           *
@@ -141,7 +141,7 @@ function EmptyLanding() {
                 ref={inputRef}
                 placeholder="How can I help you today?"
                 aria-label="Message input"
-                className="block min-h-10 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee]"
+                className="block min-h-10 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
               />
             </div>
 
