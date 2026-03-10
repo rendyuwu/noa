@@ -178,7 +178,7 @@ function EmptyLanding() {
 
 export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar }) => {
   return (
-    <ThreadPrimitive.Root className="relative flex h-full flex-col items-stretch bg-[#F5F5F0] p-4 pt-14 font-serif dark:bg-[#2b2a27]">
+    <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-[#F5F5F0] p-4 pt-14 font-serif dark:bg-[#2b2a27]">
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2 md:hidden">
         <button
           type="button"
@@ -190,7 +190,15 @@ export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar
         </button>
       </div>
 
-      <ThreadPrimitive.Viewport className="flex grow flex-col overflow-y-scroll">
+      <ThreadPrimitive.Viewport
+        autoScroll
+        scrollToBottomOnRunStart
+        scrollToBottomOnInitialize
+        scrollToBottomOnThreadSwitch
+        data-testid="thread-viewport"
+        data-auto-scroll="true"
+        className="min-h-0 flex grow flex-col overflow-y-auto"
+      >
         <ThreadPrimitive.Empty>
           <EmptyLanding />
         </ThreadPrimitive.Empty>

@@ -80,4 +80,18 @@ describe("/assistant full-bleed shell", () => {
     expect(section!).not.toHaveClass("border");
     expect(section!.className).not.toMatch(/\bshadow/);
   });
+
+  it("lets the Claude thread column shrink and scroll", () => {
+    render(<ClaudeWorkspace />);
+
+    const thread = screen.getByTestId("claude-thread");
+    const host = thread.parentElement;
+    expect(host).not.toBeNull();
+    expect(host!).toHaveClass("min-h-0");
+    expect(host!).toHaveClass("min-w-0");
+
+    const grid = host!.parentElement;
+    expect(grid).not.toBeNull();
+    expect(grid!).toHaveClass("min-h-0");
+  });
 });

@@ -38,12 +38,12 @@ export function ClaudeWorkspace() {
       <section className="relative h-dvh w-full overflow-hidden bg-[#F5F5F0] dark:bg-[#2b2a27]">
         <RequestApprovalToolUI />
 
-        <div className="grid h-full grid-cols-1 md:grid-cols-[320px_minmax(0,1fr)]">
-          <aside className="hidden h-full border-[#00000010] border-r md:block dark:border-[#6c6a6040]">
+        <div className="grid h-full min-h-0 grid-cols-1 md:grid-cols-[320px_minmax(0,1fr)]">
+          <aside className="hidden h-full min-h-0 border-[#00000010] border-r md:block dark:border-[#6c6a6040]">
             <ClaudeThreadList />
           </aside>
 
-          <div className="h-full min-w-0">
+          <div className="h-full min-h-0 min-w-0">
             <ClaudeThread onOpenSidebar={openSidebar} />
           </div>
         </div>

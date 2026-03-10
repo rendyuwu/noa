@@ -28,7 +28,12 @@ vi.mock("@/components/claude/request-approval-tool-ui", () => ({
 vi.mock("@assistant-ui/react", async () => {
   const React = await import("react");
 
-  const passthrough = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
+  const passthrough = ({
+    children,
+    ...props
+  }: React.ComponentPropsWithoutRef<"div"> & { children?: ReactNode }) => (
+    <div {...props}>{children}</div>
+  );
 
   return {
     ActionBarPrimitive: {
@@ -163,5 +168,16 @@ describe("ClaudeThread", () => {
     expect(screen.queryByText(/Morning, Casey/)).not.toBeInTheDocument();
     expect(screen.getByTestId("bottom-composer")).toBeInTheDocument();
     expect(screen.queryByTestId("landing-composer")).not.toBeInTheDocument();
+  });
+
+  it("makes the thread viewport the scroll container", () => {
+    mockThreadIsEmpty = false;
+
+    render(<ClaudeThread />);
+
+    const viewport = screen.getByTestId("thread-viewport");
+    expect(viewport).toHaveClass("min-h-0");
+    expect(viewport).toHaveClass("overflow-y-auto");
+    expect(viewport).toHaveAttribute("data-auto-scroll", "true");
   });
 });
