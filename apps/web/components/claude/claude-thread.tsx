@@ -10,6 +10,7 @@ import {
   MessagePrimitive,
   ThreadPrimitive,
   useAssistantApi,
+  useAssistantState,
 } from "@assistant-ui/react";
 import * as Avatar from "@radix-ui/react-avatar";
 import {
@@ -218,7 +219,41 @@ export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar
   );
 };
 
+function ClaudeThinkingIndicator() {
+  return (
+    <div
+      role="status"
+      aria-label="Claude is thinking"
+      className="inline-flex items-center gap-2 text-[#6b6a68] text-sm dark:text-[#9a9893]"
+    >
+      <span
+        aria-hidden="true"
+        className="h-2 w-2 animate-pulse rounded-full bg-current opacity-70"
+      />
+      <span
+        aria-hidden="true"
+        className="h-2 w-2 animate-pulse rounded-full bg-current opacity-40 [animation-delay:150ms]"
+      />
+      <span
+        aria-hidden="true"
+        className="h-2 w-2 animate-pulse rounded-full bg-current opacity-25 [animation-delay:300ms]"
+      />
+      <span className="font-ui">Thinking...</span>
+    </div>
+  );
+}
+
 const ChatMessage: FC = () => {
+  const showLoading = useAssistantState(({ message }: any) => {
+    if (message?.role !== "assistant") return false;
+    if (message?.status?.type !== "running") return false;
+    const content = Array.isArray(message.content) ? message.content : [];
+    return content.every((part: any) => {
+      if (part?.type !== "text") return true;
+      return typeof part.text === "string" ? part.text.trim() === "" : true;
+    });
+  });
+
   return (
     <MessagePrimitive.Root className="group relative mx-auto mt-1 mb-1 block w-full max-w-3xl">
       <AssistantIf condition={(s) => s.message.role === "user"}>
@@ -264,6 +299,7 @@ const ChatMessage: FC = () => {
           <div className="relative leading-[1.65rem]">
             <div className="grid grid-cols-1 gap-2.5">
               <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-[#1a1a18] dark:text-[#eee]">
+                {showLoading ? <ClaudeThinkingIndicator /> : null}
                 <MessagePrimitive.Parts
                   components={{
                     Text: MarkdownText,

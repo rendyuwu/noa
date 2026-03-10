@@ -4,6 +4,12 @@ import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockThreadIsEmpty = true;
+let mockAssistantMessage: any = {
+  role: "assistant",
+  isLast: true,
+  status: { type: "complete", reason: "stop" },
+  content: [{ type: "text", text: "" }],
+};
 const setText = vi.fn();
 
 vi.mock("@/components/lib/auth-store", () => ({
@@ -43,12 +49,12 @@ vi.mock("@assistant-ui/react", async () => {
         message,
       }: {
         thread: { isEmpty: boolean };
-        message: { role: "assistant"; isLast: boolean };
+        message: any;
       }) => boolean;
     }) =>
       condition?.({
         thread: { isEmpty: mockThreadIsEmpty },
-        message: { role: "assistant", isLast: true },
+        message: mockAssistantMessage,
       }) ?? true ? (
         <>{children}</>
       ) : null,
@@ -80,11 +86,13 @@ vi.mock("@assistant-ui/react", async () => {
       Viewport: passthrough,
       Empty: ({ children }: { children?: ReactNode }) =>
         mockThreadIsEmpty ? <div data-testid="thread-empty">{children}</div> : null,
-      Messages: () => null,
+      Messages: ({ components }: { components: { Message: React.ComponentType } }) =>
+        mockThreadIsEmpty ? null : <components.Message />,
     },
     useAssistantApi: () => ({
       composer: () => ({ setText }),
     }),
+    useAssistantState: (selector: any) => selector({ message: mockAssistantMessage }),
   };
 });
 
@@ -93,6 +101,12 @@ import { ClaudeThread } from "./claude-thread";
 describe("ClaudeThread", () => {
   beforeEach(() => {
     mockThreadIsEmpty = true;
+    mockAssistantMessage = {
+      role: "assistant",
+      isLast: true,
+      status: { type: "complete", reason: "stop" },
+      content: [{ type: "text", text: "" }],
+    };
     setText.mockReset();
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 2, 10, 9, 0));
@@ -125,6 +139,20 @@ describe("ClaudeThread", () => {
 
     expect(setText).toHaveBeenCalledWith("Help me write code for...");
     expect(input).toHaveFocus();
+  });
+
+  it("shows a loading indicator for a running assistant message before first token", () => {
+    mockThreadIsEmpty = false;
+    mockAssistantMessage = {
+      role: "assistant",
+      isLast: true,
+      status: { type: "running" },
+      content: [{ type: "text", text: "" }],
+    };
+
+    render(<ClaudeThread />);
+
+    expect(screen.getByLabelText("Claude is thinking")).toBeInTheDocument();
   });
 
   it("returns to the standard bottom composer once the thread has messages", () => {
