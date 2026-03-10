@@ -1,6 +1,7 @@
 "use client";
 
 import type { FC, ReactNode } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import {
   ActionBarPrimitive,
@@ -8,6 +9,7 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useAssistantApi,
 } from "@assistant-ui/react";
 import * as Avatar from "@radix-ui/react-avatar";
 import {
@@ -23,7 +25,12 @@ import {
 } from "@radix-ui/react-icons";
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
+import {
+  formatClaudeGreetingName,
+  getClaudeTimeGreeting,
+} from "@/components/claude/claude-greeting";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/claude/request-approval-tool-ui";
+import { getAuthUser } from "@/components/lib/auth-store";
 
 function DisabledIconButton({
   children,
@@ -48,6 +55,126 @@ function DisabledIconButton({
   );
 }
 
+const LANDING_PROMPTS = [
+  { label: "Code", text: "Help me write code for..." },
+  { label: "Write", text: "Help me write..." },
+  { label: "Learn", text: "Teach me about..." },
+  { label: "Life stuff", text: "I want advice about..." },
+  { label: "Claude's choice", text: "What would you suggest I do next?" },
+];
+
+function ComposerControlsRow() {
+  return (
+    <div className="flex w-full items-center gap-2">
+      <div className="relative flex min-w-0 flex-1 shrink items-center gap-2">
+        <DisabledIconButton
+          label="Add attachment"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
+        >
+          <PlusIcon width={16} height={16} />
+        </DisabledIconButton>
+
+        <DisabledIconButton
+          label="Open tools menu"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
+        >
+          <MixerHorizontalIcon width={16} height={16} />
+        </DisabledIconButton>
+
+        <DisabledIconButton
+          label="Extended thinking"
+          className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
+        >
+          <ReloadIcon width={16} height={16} />
+        </DisabledIconButton>
+      </div>
+
+      <DisabledIconButton
+        label="Model selector"
+        className="flex h-8 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 pr-2 pl-2.5 text-[#1a1a18] text-xs transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-[#f5f5f0] active:scale-[0.985] disabled:pointer-events-none disabled:opacity-70 dark:text-[#eee] dark:hover:bg-[#393937]"
+      >
+        <span className="font-serif text-[14px]">Sonnet 4.5</span>
+        <ChevronDownIcon width={20} height={20} className="opacity-75" />
+      </DisabledIconButton>
+
+      <ComposerPrimitive.Send
+        aria-label="Send message"
+        className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#ae5630] transition-colors hover:bg-[#c4633a] active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:bg-[#ae5630] dark:hover:bg-[#c4633a]"
+      >
+        <ArrowUpIcon width={16} height={16} className="text-white" />
+      </ComposerPrimitive.Send>
+    </div>
+  );
+}
+
+function EmptyLanding() {
+  const api = useAssistantApi();
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const [activeChip, setActiveChip] = useState<string | null>(null);
+
+  const user = useMemo(() => getAuthUser(), []);
+  const name = useMemo(() => formatClaudeGreetingName(user), [user]);
+  const timeGreeting = useMemo(() => getClaudeTimeGreeting(), []);
+
+  const setPrompt = (label: string, text: string) => {
+    setActiveChip(label);
+    api.composer().setText(text);
+    requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  return (
+    <div className="flex min-h-[calc(100dvh-12rem)] w-full flex-col items-center justify-center px-3 pb-10">
+      <div className="claude-landing-anim-1 flex items-center gap-3 text-[#1a1a18] dark:text-[#eee]">
+        <span aria-hidden="true" className="text-2xl leading-none text-[#c4633a]">
+          *
+        </span>
+        <h1 className="text-center text-4xl font-medium tracking-[-0.02em] sm:text-5xl">
+          {timeGreeting}, {name}
+        </h1>
+      </div>
+
+      <div className="claude-landing-anim-2 mt-8 w-full max-w-2xl">
+        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-2xl border border-transparent bg-white p-0.5 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.05),0_0_0_0.5px_rgba(0,0,0,0.1)] dark:bg-[#1f1e1b]">
+          <div className="m-4 flex flex-col gap-3.5">
+            <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
+              <ComposerPrimitive.Input
+                ref={inputRef}
+                placeholder="How can I help you today?"
+                aria-label="Message input"
+                className="block min-h-10 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee]"
+              />
+            </div>
+
+            <ComposerControlsRow />
+          </div>
+        </ComposerPrimitive.Root>
+      </div>
+
+      <div className="claude-landing-anim-3 mt-4 w-full max-w-2xl overflow-x-auto">
+        <div className="flex w-max items-center gap-2 px-1 pb-1">
+          {LANDING_PROMPTS.map((chip) => (
+            <button
+              key={chip.label}
+              type="button"
+              onClick={() => setPrompt(chip.label, chip.text)}
+              aria-pressed={activeChip === chip.label}
+              className={[
+                "inline-flex items-center gap-2 rounded-full border border-[#00000015] bg-white/70 px-3 py-1.5 font-ui text-sm text-[#1a1a18] shadow-sm transition",
+                "hover:bg-white active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ae5630]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+                "dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/70 dark:text-[#eee]",
+                activeChip === chip.label ? "border-[#ae5630]/40" : "",
+              ].join(" ")}
+              title="Prefill prompt"
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar }) => {
   return (
     <ThreadPrimitive.Root className="relative flex h-full flex-col items-stretch bg-[#F5F5F0] p-4 pt-14 font-serif dark:bg-[#2b2a27]">
@@ -64,67 +191,29 @@ export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar
 
       <ThreadPrimitive.Viewport className="flex grow flex-col overflow-y-scroll">
         <ThreadPrimitive.Empty>
-          <div className="mx-auto mt-8 w-full max-w-3xl px-2 text-[#6b6a68] dark:text-[#9a9893]">
-            Start a new conversation.
-          </div>
+          <EmptyLanding />
         </ThreadPrimitive.Empty>
         <ThreadPrimitive.Messages components={{ Message: ChatMessage }} />
         <div aria-hidden="true" className="h-4" />
       </ThreadPrimitive.Viewport>
 
-      <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border border-transparent bg-white p-0.5 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)] transition-shadow duration-200 focus-within:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.075),0_0_0_0.5px_rgba(0,0,0,0.15)] hover:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.05),0_0_0_0.5px_rgba(0,0,0,0.12)] dark:bg-[#1f1e1b] dark:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.4),0_0_0_0.5px_rgba(108,106,96,0.15)] dark:hover:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.4),0_0_0_0.5px_rgba(108,106,96,0.3)] dark:focus-within:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.5),0_0_0_0.5px_rgba(108,106,96,0.3)]">
-        <div className="m-3.5 flex flex-col gap-3.5">
-          <div className="relative">
-            <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
-              <ComposerPrimitive.Input
-                placeholder="How can I help you today?"
-                aria-label="Message input"
-                className="block min-h-6 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
-              />
-            </div>
-          </div>
-
-          <div className="flex w-full items-center gap-2">
-            <div className="relative flex min-w-0 flex-1 shrink items-center gap-2">
-              <DisabledIconButton
-                label="Add attachment"
-                className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
-              >
-                <PlusIcon width={16} height={16} />
-              </DisabledIconButton>
-
-              <DisabledIconButton
-                label="Open tools menu"
-                className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
-              >
-                <MixerHorizontalIcon width={16} height={16} />
-              </DisabledIconButton>
-
-              <DisabledIconButton
-                label="Extended thinking"
-                className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
-              >
-                <ReloadIcon width={16} height={16} />
-              </DisabledIconButton>
+      <AssistantIf condition={({ thread }) => !thread.isEmpty}>
+        <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border border-transparent bg-white p-0.5 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)] transition-shadow duration-200 focus-within:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.075),0_0_0_0.5px_rgba(0,0,0,0.15)] hover:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.05),0_0_0_0.5px_rgba(0,0,0,0.12)] dark:bg-[#1f1e1b] dark:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.4),0_0_0_0.5px_rgba(108,106,96,0.15)] dark:hover:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.4),0_0_0_0.5px_rgba(108,106,96,0.3)] dark:focus-within:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.5),0_0_0_0.5px_rgba(108,106,96,0.3)]">
+          <div className="m-3.5 flex flex-col gap-3.5">
+            <div className="relative">
+              <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
+                <ComposerPrimitive.Input
+                  placeholder="How can I help you today?"
+                  aria-label="Message input"
+                  className="block min-h-6 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
+                />
+              </div>
             </div>
 
-            <DisabledIconButton
-              label="Model selector"
-              className="flex h-8 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 pr-2 pl-2.5 text-[#1a1a18] text-xs transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-[#f5f5f0] active:scale-[0.985] disabled:pointer-events-none disabled:opacity-70 dark:text-[#eee] dark:hover:bg-[#393937]"
-            >
-              <span className="font-serif text-[14px]">Sonnet 4.5</span>
-              <ChevronDownIcon width={20} height={20} className="opacity-75" />
-            </DisabledIconButton>
-
-            <ComposerPrimitive.Send
-              aria-label="Send message"
-              className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#ae5630] transition-colors hover:bg-[#c4633a] active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:bg-[#ae5630] dark:hover:bg-[#c4633a]"
-            >
-              <ArrowUpIcon width={16} height={16} className="text-white" />
-            </ComposerPrimitive.Send>
+            <ComposerControlsRow />
           </div>
-        </div>
-      </ComposerPrimitive.Root>
+        </ComposerPrimitive.Root>
+      </AssistantIf>
     </ThreadPrimitive.Root>
   );
 };
