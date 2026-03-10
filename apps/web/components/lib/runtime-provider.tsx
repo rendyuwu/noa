@@ -120,6 +120,8 @@ const converter = (
   state: AssistantState,
   connectionMetadata: { pendingCommands: Array<any>; isSending: boolean },
 ) => {
+  const transportIsRunning = Boolean(state.isRunning) || connectionMetadata.isSending;
+
   const optimisticMessages: ThreadMessage[] = connectionMetadata.pendingCommands
     .filter((command) => command.type === "add-message")
     .map((command, index) =>
@@ -136,9 +138,21 @@ const converter = (
     toThreadMessage(message, `persisted-${index}`),
   );
 
+  if (transportIsRunning) {
+    for (let index = persistedMessages.length - 1; index >= 0; index -= 1) {
+      const message = persistedMessages[index];
+      if (message?.role !== "assistant") continue;
+      persistedMessages[index] = {
+        ...message,
+        status: { type: "running" },
+      };
+      break;
+    }
+  }
+
   return {
     messages: [...persistedMessages, ...optimisticMessages],
-    isRunning: Boolean(state.isRunning) || connectionMetadata.isSending,
+    isRunning: transportIsRunning,
   };
 };
 
@@ -167,6 +181,7 @@ function useThreadAwareAssistantTransportRuntime() {
 
   return useAssistantTransportRuntime({
     api: `${getApiUrl()}/assistant`,
+    protocol: "assistant-transport",
     initialState: {
       messages: [],
       isRunning: false,
