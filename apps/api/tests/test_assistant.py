@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from uuid import UUID, uuid4
 
@@ -19,6 +20,46 @@ from noa_api.core.auth.authorization import (
 )
 
 
+def _apply_assistant_stream_patches(
+    state: dict[str, object], patches: list[dict[str, object]]
+) -> None:
+    for patch in patches:
+        if patch.get("type") != "set":
+            continue
+        path = patch.get("path")
+        if not isinstance(path, list) or not path:
+            continue
+
+        if path == ["messages"]:
+            state["messages"] = patch.get("value")
+            continue
+        if path == ["isRunning"]:
+            state["isRunning"] = patch.get("value")
+            continue
+
+
+def _state_contains_user_text(state: dict[str, object], text: str) -> bool:
+    messages = state.get("messages")
+    if not isinstance(messages, list):
+        return False
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        if message.get("role") != "user":
+            continue
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") != "text":
+                continue
+            if part.get("text") == text:
+                return True
+    return False
+
+
 @dataclass
 class _FakeAssistantService:
     owner_user_id: UUID
@@ -31,7 +72,9 @@ class _FakeAssistantService:
     async def thread_exists(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
         return owner_user_id == self.owner_user_id and thread_id == self.thread_id
 
-    async def load_state(self, *, owner_user_id: UUID, thread_id: UUID) -> dict[str, object]:
+    async def load_state(
+        self, *, owner_user_id: UUID, thread_id: UUID
+    ) -> dict[str, object]:
         assert owner_user_id == self.owner_user_id
         assert thread_id == self.thread_id
         return {
@@ -109,15 +152,21 @@ class _FakeAssistantService:
         _ = owner_user_email
         self.seen_available_tools = set(available_tool_names)
         for message in self.runner_messages:
-            self.messages.append({"id": str(uuid4()), "role": message.role, "parts": message.parts})
-        return AgentRunnerResult(messages=self.runner_messages, text_deltas=self.runner_text_deltas)
+            self.messages.append(
+                {"id": str(uuid4()), "role": message.role, "parts": message.parts}
+            )
+        return AgentRunnerResult(
+            messages=self.runner_messages, text_deltas=self.runner_text_deltas
+        )
 
 
 @dataclass
 class _FakeAuthorizationService:
     allowed_tools: set[str] = field(default_factory=set)
 
-    async def authorize_tool_access(self, user: AuthorizationUser, tool_name: str) -> bool:
+    async def authorize_tool_access(
+        self, user: AuthorizationUser, tool_name: str
+    ) -> bool:
         _ = user
         return tool_name in self.allowed_tools
 
@@ -131,7 +180,9 @@ def _build_app(
     app.include_router(assistant_router)
     app.dependency_overrides[get_assistant_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: current_user
-    app.dependency_overrides[get_authorization_service] = lambda: authorization_service or _FakeAuthorizationService()
+    app.dependency_overrides[get_authorization_service] = lambda: (
+        authorization_service or _FakeAuthorizationService()
+    )
     return app
 
 
@@ -185,7 +236,13 @@ async def test_assistant_route_streams_canonical_state_and_applies_commands() ->
 
     payload = {
         "state": {
-            "messages": [{"id": "client-only", "role": "assistant", "parts": [{"type": "text", "text": "Bogus"}]}],
+            "messages": [
+                {
+                    "id": "client-only",
+                    "role": "assistant",
+                    "parts": [{"type": "text", "text": "Bogus"}],
+                }
+            ],
             "isRunning": False,
         },
         "commands": [
@@ -363,7 +420,9 @@ async def test_assistant_route_runs_agent_with_rbac_filtered_tools() -> None:
             roles=["member"],
             tools=[],
         ),
-        authorization_service=_FakeAuthorizationService(allowed_tools={"get_current_time"}),
+        authorization_service=_FakeAuthorizationService(
+            allowed_tools={"get_current_time"}
+        ),
     )
 
     payload = {
@@ -387,6 +446,67 @@ async def test_assistant_route_runs_agent_with_rbac_filtered_tools() -> None:
     assert response.status_code == 200
     assert "I'll check that for you." in response.text
     assert service.seen_available_tools == {"get_current_time"}
+
+
+async def test_assistant_route_keeps_user_message_in_streaming_state() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        runner_text_deltas=["Hello", " world"],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        authorization_service=_FakeAuthorizationService(allowed_tools=set()),
+    )
+
+    user_text = "Hi"
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": user_text}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+
+    state: dict[str, object] = {}
+    saw_running_state = False
+    saw_running_state_with_user_message = False
+
+    for line in response.text.splitlines():
+        if not line.startswith("aui-state:"):
+            continue
+        patches = json.loads(line[len("aui-state:") :])
+        assert isinstance(patches, list)
+        _apply_assistant_stream_patches(state, patches)
+        if state.get("isRunning") is True:
+            saw_running_state = True
+            if _state_contains_user_text(state, user_text):
+                saw_running_state_with_user_message = True
+
+    assert saw_running_state
+    assert saw_running_state_with_user_message
 
 
 async def test_assistant_route_rejects_non_user_add_message_role() -> None:
@@ -427,7 +547,9 @@ async def test_assistant_route_rejects_non_user_add_message_role() -> None:
     assert response.json()["detail"] == "Only user add-message commands are allowed"
 
 
-async def test_streaming_loop_stops_on_cancellation(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_streaming_loop_stops_on_cancellation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     class _Controller:
         state: dict[str, object] | None
 

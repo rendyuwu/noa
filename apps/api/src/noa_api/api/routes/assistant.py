@@ -485,12 +485,11 @@ async def assistant_transport(
         if controller.state is None:
             controller.state = {}
 
-        canonical_state = await assistant_service.load_state(
+        # Ensure the thread exists and belongs to the current user before applying commands.
+        await assistant_service.load_state(
             owner_user_id=current_user.user_id,
             thread_id=payload.thread_id,
         )
-        controller.state["messages"] = canonical_state["messages"]
-        controller.state["isRunning"] = True
 
         for command in payload.commands:
             if isinstance(command, AddMessageCommand):
@@ -527,6 +526,13 @@ async def assistant_transport(
                     tool_call_id=command.tool_call_id,
                     result=command.result,
                 )
+
+        canonical_state = await assistant_service.load_state(
+            owner_user_id=current_user.user_id,
+            thread_id=payload.thread_id,
+        )
+        controller.state["messages"] = canonical_state["messages"]
+        controller.state["isRunning"] = True
 
         should_run_agent = any(
             isinstance(command, AddMessageCommand) and command.message.role == "user" for command in payload.commands
