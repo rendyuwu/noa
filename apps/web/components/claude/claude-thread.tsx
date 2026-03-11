@@ -12,7 +12,6 @@ import {
   useAssistantApi,
   useAssistantState,
 } from "@assistant-ui/react";
-import * as Avatar from "@radix-ui/react-avatar";
 import {
   ArrowUpIcon,
   ChevronDownIcon,
@@ -20,7 +19,6 @@ import {
   HamburgerMenuIcon,
   HandIcon,
   MixerHorizontalIcon,
-  Pencil1Icon,
   PlusIcon,
   ReloadIcon,
 } from "@radix-ui/react-icons";
