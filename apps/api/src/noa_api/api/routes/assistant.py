@@ -108,6 +108,19 @@ class AssistantRequest(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AssistantThreadStateMessage(BaseModel):
+    id: str
+    role: str
+    parts: list[dict[str, Any]]
+
+
+class AssistantThreadStateResponse(BaseModel):
+    messages: list[AssistantThreadStateMessage]
+    is_running: bool = Field(alias="isRunning")
+
+    model_config = {"populate_by_name": True}
+
+
 class SQLAssistantRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -604,16 +617,20 @@ async def _require_active_user(
     return current_user
 
 
-@router.get("/assistant/threads/{thread_id}/state")
+@router.get(
+    "/assistant/threads/{thread_id}/state",
+    response_model=AssistantThreadStateResponse,
+)
 async def get_thread_state(
     thread_id: UUID,
     current_user: AuthorizationUser = Depends(_require_active_user),
     assistant_service: AssistantService = Depends(get_assistant_service),
-) -> dict[str, object]:
-    return await assistant_service.load_state(
+) -> AssistantThreadStateResponse:
+    state = await assistant_service.load_state(
         owner_user_id=current_user.user_id,
         thread_id=thread_id,
     )
+    return AssistantThreadStateResponse.model_validate(state)
 
 
 @router.post("/assistant")
