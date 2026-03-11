@@ -95,4 +95,22 @@ describe("/assistant full-bleed shell", () => {
     expect(grid).not.toBeNull();
     expect(grid!).toHaveClass("min-h-0");
   });
+
+  it("sets the desktop sidebar column to 18rem", () => {
+    render(<ClaudeWorkspace />);
+
+    const thread = screen.getByTestId("claude-thread");
+    const grid = thread.parentElement?.parentElement;
+    expect(grid).not.toBeNull();
+    expect(grid!).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+  });
+
+  it("sets the mobile drawer width to 18rem (capped to 86vw)", () => {
+    render(<ClaudeWorkspace />);
+
+    const drawer = screen.getByText("Chats").parentElement;
+    expect(drawer).not.toBeNull();
+    expect(drawer!).toHaveClass("w-[18rem]");
+    expect(drawer!).toHaveClass("max-w-[86vw]");
+  });
 });

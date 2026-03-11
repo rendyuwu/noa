@@ -46,7 +46,7 @@ export function ClaudeWorkspace() {
         <div
           className={[
             "grid h-full min-h-0 grid-cols-1",
-            desktopSidebarOpen ? "md:grid-cols-[320px_minmax(0,1fr)]" : "md:grid-cols-1",
+            desktopSidebarOpen ? "md:grid-cols-[18rem_minmax(0,1fr)]" : "md:grid-cols-1",
           ].join(" ")}
         >
           {desktopSidebarOpen ? (
@@ -68,7 +68,7 @@ export function ClaudeWorkspace() {
 
           <Dialog.Content
             className={[
-              "fixed inset-y-0 left-0 z-50 w-[86vw] max-w-[360px]",
+              "fixed inset-y-0 left-0 z-50 w-[18rem] max-w-[86vw]",
               "bg-bg shadow-[0_1rem_3rem_rgba(0,0,0,0.22)]",
               "transition-transform duration-200 ease-out",
               "data-[state=open]:translate-x-0 data-[state=closed]:-translate-x-full",
