@@ -52,8 +52,8 @@ describe("NoaAssistantRuntimeProvider", () => {
     useAssistantTransportRuntime.mockClear();
     unstable_useRemoteThreadListRuntime.mockClear();
     unstable_loadExternalState.mockClear();
-    fetchWithAuth.mockClear();
-    jsonOrThrow.mockClear();
+    fetchWithAuth.mockReset();
+    jsonOrThrow.mockReset();
   });
 
   it("passes assistant-transport protocol to the runtime", () => {
@@ -133,7 +133,12 @@ describe("NoaAssistantRuntimeProvider", () => {
       isRunning: false,
     };
 
-    const response = { ok: true, json: vi.fn(async () => persistedState) } as any;
+    const response = new Response(JSON.stringify(persistedState), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
     fetchWithAuth.mockResolvedValue(response);
     jsonOrThrow.mockResolvedValue(persistedState);
 
@@ -155,8 +160,11 @@ describe("NoaAssistantRuntimeProvider", () => {
     );
 
     await waitFor(() => {
-      expect(fetchWithAuth).toHaveBeenCalled();
-      expect(fetchWithAuth.mock.calls.at(-1)?.[0]).toBe("/assistant/threads/thread-1/state");
+      expect(fetchWithAuth).toHaveBeenCalledWith("/assistant/threads/thread-1/state");
+    });
+
+    await waitFor(() => {
+      expect(jsonOrThrow).toHaveBeenCalledWith(response);
     });
 
     await waitFor(() => {
