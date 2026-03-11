@@ -40,7 +40,7 @@ export function ClaudeWorkspace() {
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
-      <section className="relative h-dvh w-full overflow-hidden bg-[#F5F5F0] dark:bg-[#2b2a27]">
+      <section className="relative h-dvh w-full overflow-hidden bg-bg">
         <RequestApprovalToolUI />
 
         <div
@@ -69,11 +69,10 @@ export function ClaudeWorkspace() {
           <Dialog.Content
             className={[
               "fixed inset-y-0 left-0 z-50 w-[86vw] max-w-[360px]",
-              "bg-[#F5F5F0] shadow-[0_1rem_3rem_rgba(0,0,0,0.22)]",
+              "bg-bg shadow-[0_1rem_3rem_rgba(0,0,0,0.22)]",
               "transition-transform duration-200 ease-out",
               "data-[state=open]:translate-x-0 data-[state=closed]:-translate-x-full",
               "outline-none",
-              "dark:bg-[#2b2a27]",
               "md:hidden",
             ].join(" ")}
           >

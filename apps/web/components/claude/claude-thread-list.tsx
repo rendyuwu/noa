@@ -75,7 +75,7 @@ export function ClaudeThreadList({
   const secondary = user?.email?.trim() || user?.roles?.join(", ") || "Signed in";
 
   return (
-    <ThreadListPrimitive.Root className="flex h-full flex-col bg-[#F5F5F0] dark:bg-[#2b2a27]">
+    <ThreadListPrimitive.Root className="flex h-full flex-col bg-bg">
       <div className="px-3 pt-3 font-ui">
         <div className="flex items-center justify-between px-1">
           <div className="font-serif text-lg font-semibold tracking-[-0.01em] text-[#1a1a18] dark:text-[#eee]">

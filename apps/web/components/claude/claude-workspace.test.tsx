@@ -67,7 +67,7 @@ describe("/assistant full-bleed shell", () => {
     const main = screen.getByRole("main");
     expect(main).not.toHaveClass("page-shell");
     expect(main).toHaveClass("min-h-dvh");
-    expect(main).toHaveClass("bg-[#F5F5F0]");
+    expect(main).toHaveClass("bg-bg");
   });
 
   it("renders ClaudeWorkspace without the framed card shell", () => {

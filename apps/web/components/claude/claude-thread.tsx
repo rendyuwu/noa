@@ -218,7 +218,7 @@ export const ClaudeThread: FC<{
   ].join(" ");
 
   return (
-    <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-[#F5F5F0] p-4 pt-14 font-serif dark:bg-[#2b2a27]">
+    <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg p-4 pt-14 font-serif">
       {onOpenSidebar ? (
         <div className={sidebarButtonClassName}>
           <button
