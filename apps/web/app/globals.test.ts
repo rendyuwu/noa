@@ -21,6 +21,6 @@ describe("globals.css", () => {
   it("defines global --bg token for #1F1E1D", () => {
     const css = readFileSync(path.join(dirname, "globals.css"), "utf8");
 
-    expect(css).toMatch(/\:root\s*\{[\s\S]*--bg:\s*30\s+3\.3%\s+11\.8%\s*;/);
+    expect(css).toMatch(/:root\s*\{[^}]*--bg:\s*30\s+3\.3%\s+11\.8%\s*;/);
   });
 });
