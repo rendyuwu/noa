@@ -7,8 +7,28 @@ const unstable_useRemoteThreadListRuntime = vi.fn(
   ({ runtimeHook }: { runtimeHook: () => unknown }) => runtimeHook(),
 );
 const unstable_loadExternalState = vi.fn();
+const generateTitle = vi.fn();
+const threadsItem = vi.fn(() => ({ generateTitle }));
 const fetchWithAuth = vi.fn();
 const jsonOrThrow = vi.fn();
+
+let assistantState: any;
+
+const runtime = {
+  thread: {
+    unstable_loadExternalState,
+  },
+};
+
+const api = {
+  threadListItem: () => ({
+    getState: () => assistantState.threadListItem,
+    initialize: async () => ({ remoteId: assistantState.threadListItem.remoteId }),
+  }),
+  threads: () => ({
+    item: (...args: any[]) => threadsItem(...args),
+  }),
+};
 
 vi.mock("@assistant-ui/react", async () => {
   const React = await import("react");
@@ -17,16 +37,9 @@ vi.mock("@assistant-ui/react", async () => {
     AssistantRuntimeProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
     unstable_useRemoteThreadListRuntime: (...args: any[]) =>
       unstable_useRemoteThreadListRuntime(...args),
-    useAssistantApi: () => ({
-      threadListItem: () => ({
-        getState: () => ({ remoteId: "thread-1" }),
-        initialize: async () => ({ remoteId: "thread-1" }),
-      }),
-      thread: () => ({
-        unstable_loadExternalState,
-      }),
-    }),
-    useAssistantState: (selector: any) => selector({ threadListItem: { remoteId: "thread-1" } }),
+    useAssistantApi: () => api,
+    useAssistantRuntime: () => runtime,
+    useAssistantState: (selector: any) => selector(assistantState),
     useAssistantTransportRuntime: (...args: any[]) => useAssistantTransportRuntime(...args),
   };
 });
@@ -52,8 +65,35 @@ describe("NoaAssistantRuntimeProvider", () => {
     useAssistantTransportRuntime.mockClear();
     unstable_useRemoteThreadListRuntime.mockClear();
     unstable_loadExternalState.mockClear();
+    generateTitle.mockClear();
+    threadsItem.mockClear();
     fetchWithAuth.mockReset();
     jsonOrThrow.mockReset();
+
+    assistantState = {
+      threadListItem: {
+        id: "thread-local-1",
+        remoteId: "thread-1",
+        title: undefined,
+        status: "regular",
+      },
+      thread: {
+        messages: [],
+      },
+      threads: {
+        threadItems: [],
+      },
+    };
+
+    const emptyState = { messages: [], isRunning: false };
+    const response = new Response(JSON.stringify(emptyState), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+    fetchWithAuth.mockResolvedValue(response);
+    jsonOrThrow.mockResolvedValue(emptyState);
   });
 
   it("passes assistant-transport protocol to the runtime", () => {
@@ -169,6 +209,31 @@ describe("NoaAssistantRuntimeProvider", () => {
 
     await waitFor(() => {
       expect(unstable_loadExternalState).toHaveBeenCalledWith(persistedState);
+    });
+  });
+
+  it("generates titles for thread list items missing titles", async () => {
+    assistantState.threads.threadItems = [
+      {
+        id: "thread-local-1",
+        remoteId: "thread-1",
+        title: undefined,
+        status: "regular",
+      },
+    ];
+
+    render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(threadsItem).toHaveBeenCalledWith({ id: "thread-local-1" });
+    });
+
+    await waitFor(() => {
+      expect(generateTitle).toHaveBeenCalled();
     });
   });
 });

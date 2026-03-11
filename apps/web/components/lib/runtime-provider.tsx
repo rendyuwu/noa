@@ -1,11 +1,12 @@
 "use client";
 
 import type { PropsWithChildren } from "react";
-import { useCallback, useEffect } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import {
   AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
   useAssistantApi,
+  useAssistantRuntime,
   useAssistantState,
   useAssistantTransportRuntime,
   type ThreadMessage,
@@ -156,12 +157,24 @@ const converter = (
   };
 };
 
-function useThreadAwareAssistantTransportRuntime() {
+function ThreadListMaintenance() {
   const api = useAssistantApi();
+  const runtime = useAssistantRuntime();
   const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+  const messageCount = useAssistantState(({ thread }) => thread.messages.length);
+  const threadItems = useAssistantState(({ threads }) => threads.threadItems);
+
+  const hydratedRemoteId = useRef<string | null>(null);
+  const generatedTitles = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     if (!remoteId) return;
+
+    if (hydratedRemoteId.current === remoteId) return;
+
+    // Switching threads is asynchronous. Wait until the thread runtime is empty
+    // so we don't accidentally hydrate into the previous thread.
+    if (messageCount > 0) return;
 
     let cancelled = false;
 
@@ -169,7 +182,9 @@ function useThreadAwareAssistantTransportRuntime() {
       const response = await fetchWithAuth(`/assistant/threads/${remoteId}/state`);
       const persistedState = await jsonOrThrow<AssistantState>(response);
       if (cancelled) return;
-      api.thread().unstable_loadExternalState(persistedState);
+
+      runtime.thread.unstable_loadExternalState(persistedState);
+      hydratedRemoteId.current = remoteId;
     })().catch((error) => {
       console.error("Failed to hydrate persisted thread state", error);
     });
@@ -177,7 +192,30 @@ function useThreadAwareAssistantTransportRuntime() {
     return () => {
       cancelled = true;
     };
-  }, [api, remoteId]);
+  }, [messageCount, remoteId, runtime]);
+
+  useEffect(() => {
+    let remaining = 3;
+
+    for (const item of threadItems) {
+      if (remaining <= 0) break;
+      if (!item.remoteId) continue;
+      if (item.status !== "regular") continue;
+      if (item.title && item.title.trim()) continue;
+      if (generatedTitles.current.has(item.id)) continue;
+
+      generatedTitles.current.add(item.id);
+      api.threads().item({ id: item.id }).generateTitle();
+      remaining -= 1;
+    }
+  }, [api, threadItems]);
+
+  return null;
+}
+
+function useThreadAwareAssistantTransportRuntime() {
+  const api = useAssistantApi();
+  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
 
   const ensureThreadId = useCallback(async () => {
     if (remoteId) {
@@ -225,5 +263,10 @@ export function NoaAssistantRuntimeProvider({ children }: PropsWithChildren) {
     runtimeHook: () => useThreadAwareAssistantTransportRuntime(),
   });
 
-  return <AssistantRuntimeProvider runtime={runtime}>{children}</AssistantRuntimeProvider>;
+  return (
+    <AssistantRuntimeProvider runtime={runtime}>
+      <ThreadListMaintenance />
+      {children}
+    </AssistantRuntimeProvider>
+  );
 }
