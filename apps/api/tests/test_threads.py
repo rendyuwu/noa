@@ -7,8 +7,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from noa_api.api.routes.threads import ThreadService, router as threads_router
-from noa_api.api.routes.threads import get_thread_service
+from noa_api.api.routes.threads import get_thread_service, router as threads_router
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
 
 
@@ -23,14 +22,18 @@ class _ThreadRecord:
     updated_at: datetime
 
 
-class _FakeThreadService(ThreadService):
+class _FakeThreadService:
     def __init__(self) -> None:
         self._threads: dict[UUID, _ThreadRecord] = {}
         self._thread_by_external_id: dict[tuple[UUID, str], UUID] = {}
 
     async def list_threads(self, *, owner_user_id: UUID) -> list[_ThreadRecord]:
         return sorted(
-            [record for record in self._threads.values() if record.owner_user_id == owner_user_id],
+            [
+                record
+                for record in self._threads.values()
+                if record.owner_user_id == owner_user_id
+            ],
             key=lambda record: record.created_at,
             reverse=True,
         )
@@ -42,9 +45,13 @@ class _FakeThreadService(ThreadService):
         title: str | None = None,
         external_id: str | None = None,
     ) -> tuple[_ThreadRecord, bool]:
-        normalized_external_id = external_id.strip() if external_id is not None else None
+        normalized_external_id = (
+            external_id.strip() if external_id is not None else None
+        )
         if normalized_external_id:
-            existing_id = self._thread_by_external_id.get((owner_user_id, normalized_external_id))
+            existing_id = self._thread_by_external_id.get(
+                (owner_user_id, normalized_external_id)
+            )
             if existing_id is not None:
                 return self._threads[existing_id], False
 
@@ -60,16 +67,22 @@ class _FakeThreadService(ThreadService):
         )
         self._threads[record.id] = record
         if normalized_external_id:
-            self._thread_by_external_id[(owner_user_id, normalized_external_id)] = record.id
+            self._thread_by_external_id[(owner_user_id, normalized_external_id)] = (
+                record.id
+            )
         return record, True
 
-    async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> _ThreadRecord | None:
+    async def get_thread(
+        self, *, owner_user_id: UUID, thread_id: UUID
+    ) -> _ThreadRecord | None:
         record = self._threads.get(thread_id)
         if record is None or record.owner_user_id != owner_user_id:
             return None
         return record
 
-    async def update_thread_title(self, *, owner_user_id: UUID, thread_id: UUID, title: str | None) -> _ThreadRecord | None:
+    async def update_thread_title(
+        self, *, owner_user_id: UUID, thread_id: UUID, title: str | None
+    ) -> _ThreadRecord | None:
         record = await self.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
         if record is None:
             return None
@@ -77,7 +90,19 @@ class _FakeThreadService(ThreadService):
         record.updated_at = datetime.now(UTC)
         return record
 
-    async def set_archived(self, *, owner_user_id: UUID, thread_id: UUID, is_archived: bool) -> _ThreadRecord | None:
+    async def set_thread_title_if_missing(
+        self, *, owner_user_id: UUID, thread_id: UUID, title: str
+    ) -> bool:
+        record = await self.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
+        if record is None or record.title is not None:
+            return False
+        record.title = title
+        record.updated_at = datetime.now(UTC)
+        return True
+
+    async def set_archived(
+        self, *, owner_user_id: UUID, thread_id: UUID, is_archived: bool
+    ) -> _ThreadRecord | None:
         record = await self.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
         if record is None:
             return None
@@ -102,8 +127,12 @@ async def test_threads_routes_enforce_owner_scoping() -> None:
     service = _FakeThreadService()
     owner_id = uuid4()
     other_id = uuid4()
-    owner_thread, _ = await service.create_thread(owner_user_id=owner_id, title="Owner thread")
-    other_thread, _ = await service.create_thread(owner_user_id=other_id, title="Other thread")
+    owner_thread, _ = await service.create_thread(
+        owner_user_id=owner_id, title="Owner thread"
+    )
+    other_thread, _ = await service.create_thread(
+        owner_user_id=other_id, title="Other thread"
+    )
 
     current_user = AuthorizationUser(
         user_id=owner_id,
@@ -120,8 +149,12 @@ async def test_threads_routes_enforce_owner_scoping() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         list_response = await client.get("/threads")
         get_other_response = await client.get(f"/threads/{other_thread.id}")
-        patch_other_response = await client.patch(f"/threads/{other_thread.id}", json={"title": "Nope"})
-        archive_other_response = await client.post(f"/threads/{other_thread.id}/archive")
+        patch_other_response = await client.patch(
+            f"/threads/{other_thread.id}", json={"title": "Nope"}
+        )
+        archive_other_response = await client.post(
+            f"/threads/{other_thread.id}/archive"
+        )
         delete_other_response = await client.delete(f"/threads/{other_thread.id}")
 
     assert list_response.status_code == 200
@@ -222,8 +255,12 @@ async def test_threads_routes_initialize_is_idempotent_per_user_local_id() -> No
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        first_response = await client.post("/threads", json={"localId": "local-123", "title": "First"})
-        second_response = await client.post("/threads", json={"localId": "local-123", "title": "Second"})
+        first_response = await client.post(
+            "/threads", json={"localId": "local-123", "title": "First"}
+        )
+        second_response = await client.post(
+            "/threads", json={"localId": "local-123", "title": "Second"}
+        )
         list_response = await client.get("/threads")
 
     assert first_response.status_code == 201
@@ -305,7 +342,9 @@ async def test_threads_title_endpoint_generates_title_for_owner_thread() -> None
     assert response.json()["title"] == "Summarize quarterly operations report and risks"
 
 
-async def test_threads_title_endpoint_persists_generated_title_for_later_list_fetch() -> None:
+async def test_threads_title_endpoint_persists_generated_title_for_later_list_fetch() -> (
+    None
+):
     app = FastAPI()
     app.include_router(threads_router)
 
@@ -342,6 +381,129 @@ async def test_threads_title_endpoint_persists_generated_title_for_later_list_fe
     assert threads_by_id[str(thread.id)]["title"] == expected_title
 
 
+async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch() -> None:
+    app = FastAPI()
+    app.include_router(threads_router)
+
+    service = _FakeThreadService()
+    owner_id = uuid4()
+    app.dependency_overrides[get_thread_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=owner_id,
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["member"],
+        tools=[],
+    )
+
+    thread, _ = await service.create_thread(owner_user_id=owner_id, title=None)
+    renamed_title = "User renamed title"
+    generated_title = "Need a deployment rollback checklist"
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        patch_response = await client.patch(
+            f"/threads/{thread.id}", json={"title": renamed_title}
+        )
+        title_response = await client.post(
+            f"/threads/{thread.id}/title",
+            json={"messages": [{"role": "user", "content": generated_title}]},
+        )
+        list_response = await client.get("/threads")
+
+    assert patch_response.status_code == 200
+    assert patch_response.json()["title"] == renamed_title
+
+    assert title_response.status_code == 200
+    assert title_response.json()["title"] == renamed_title
+
+    assert list_response.status_code == 200
+    threads = list_response.json()["threads"]
+    threads_by_id = {item["id"]: item for item in threads}
+    assert str(thread.id) in threads_by_id
+    assert threads_by_id[str(thread.id)]["title"] == renamed_title
+
+
+async def test_threads_title_endpoint_returns_stored_title_when_set_during_generation() -> (
+    None
+):
+    app = FastAPI()
+    app.include_router(threads_router)
+
+    class _RaceyThreadService(_FakeThreadService):
+        def __init__(self) -> None:
+            super().__init__()
+            self._pending_rename: dict[UUID, str] = {}
+
+        def rename_before_next_write(self, *, thread_id: UUID, title: str) -> None:
+            self._pending_rename[thread_id] = title
+
+        async def update_thread_title(
+            self, *, owner_user_id: UUID, thread_id: UUID, title: str | None
+        ) -> _ThreadRecord | None:
+            pending = self._pending_rename.pop(thread_id, None)
+            if pending is not None:
+                record = await self.get_thread(
+                    owner_user_id=owner_user_id, thread_id=thread_id
+                )
+                if record is not None:
+                    record.title = pending
+                    record.updated_at = datetime.now(UTC)
+            return await super().update_thread_title(
+                owner_user_id=owner_user_id, thread_id=thread_id, title=title
+            )
+
+        async def set_thread_title_if_missing(
+            self, *, owner_user_id: UUID, thread_id: UUID, title: str
+        ) -> bool:
+            pending = self._pending_rename.pop(thread_id, None)
+            if pending is not None:
+                record = await self.get_thread(
+                    owner_user_id=owner_user_id, thread_id=thread_id
+                )
+                if record is not None:
+                    record.title = pending
+                    record.updated_at = datetime.now(UTC)
+            return await super().set_thread_title_if_missing(
+                owner_user_id=owner_user_id, thread_id=thread_id, title=title
+            )
+
+    service = _RaceyThreadService()
+    owner_id = uuid4()
+    app.dependency_overrides[get_thread_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=owner_id,
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["member"],
+        tools=[],
+    )
+
+    thread, _ = await service.create_thread(owner_user_id=owner_id, title=None)
+    stored_title = "Renamed in-flight"
+    generated_title = "Create an incident response runbook"
+    service.rename_before_next_write(thread_id=thread.id, title=stored_title)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        title_response = await client.post(
+            f"/threads/{thread.id}/title",
+            json={"messages": [{"role": "user", "content": generated_title}]},
+        )
+        list_response = await client.get("/threads")
+
+    assert title_response.status_code == 200
+    assert title_response.json()["title"] == stored_title
+
+    assert list_response.status_code == 200
+    threads = list_response.json()["threads"]
+    threads_by_id = {item["id"]: item for item in threads}
+    assert str(thread.id) in threads_by_id
+    assert threads_by_id[str(thread.id)]["title"] == stored_title
+
+
 async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
     app = FastAPI()
     app.include_router(threads_router)
@@ -362,7 +524,11 @@ async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             f"/threads/{uuid4()}/title",
-            json={"messages": [{"role": "user", "content": [{"type": "text", "text": "Hi"}]}]},
+            json={
+                "messages": [
+                    {"role": "user", "content": [{"type": "text", "text": "Hi"}]}
+                ]
+            },
         )
 
     assert response.status_code == 404
@@ -431,7 +597,11 @@ async def test_threads_title_endpoint_supports_string_content_shape() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
             f"/threads/{thread.id}/title",
-            json={"messages": [{"role": "user", "content": "Need a deployment rollback checklist"}]},
+            json={
+                "messages": [
+                    {"role": "user", "content": "Need a deployment rollback checklist"}
+                ]
+            },
         )
 
     assert response.status_code == 200

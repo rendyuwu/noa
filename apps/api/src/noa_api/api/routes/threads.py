@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
@@ -189,6 +189,21 @@ class SQLThreadRepository:
         await self._session.flush()
         return thread
 
+    async def set_thread_title_if_missing(
+        self, *, owner_user_id: UUID, thread_id: UUID, title: str
+    ) -> bool:
+        result = await self._session.execute(
+            update(Thread)
+            .where(
+                Thread.id == thread_id,
+                Thread.owner_user_id == owner_user_id,
+                Thread.title.is_(None),
+            )
+            .values(title=title, updated_at=func.now())
+            .returning(Thread.id)
+        )
+        return result.scalar_one_or_none() is not None
+
     async def set_archived(
         self, *, owner_user_id: UUID, thread_id: UUID, is_archived: bool
     ) -> Thread | None:
@@ -238,6 +253,15 @@ class ThreadService:
     ) -> Thread | None:
         return await self._repository.update_thread_title(
             owner_user_id=owner_user_id, thread_id=thread_id, title=title
+        )
+
+    async def set_thread_title_if_missing(
+        self, *, owner_user_id: UUID, thread_id: UUID, title: str
+    ) -> bool:
+        return await self._repository.set_thread_title_if_missing(
+            owner_user_id=owner_user_id,
+            thread_id=thread_id,
+            title=title,
         )
 
     async def set_archived(
@@ -408,17 +432,6 @@ async def generate_thread_title(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> GenerateTitleResponse:
-    thread = await thread_service.get_thread(
-        owner_user_id=current_user.user_id, thread_id=id
-    )
-    if thread is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
-
-    if thread.title is not None:
-        return GenerateTitleResponse(title=thread.title)
-
     user_text_chunks: list[str] = []
     fallback_text_chunks: list[str] = []
     for message in payload.messages:
@@ -432,11 +445,19 @@ async def generate_thread_title(
     candidate = " ".join(user_text_chunks or fallback_text_chunks).strip()
     title = (candidate[:80] if candidate else "New Thread").strip()
 
-    updated = await thread_service.update_thread_title(
-        owner_user_id=current_user.user_id, thread_id=id, title=title
+    did_set = await thread_service.set_thread_title_if_missing(
+        owner_user_id=current_user.user_id,
+        thread_id=id,
+        title=title,
     )
-    if updated is None:
+    if did_set:
+        return GenerateTitleResponse(title=title)
+
+    stored = await thread_service.get_thread(
+        owner_user_id=current_user.user_id, thread_id=id
+    )
+    if stored is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
         )
-    return GenerateTitleResponse(title=title)
+    return GenerateTitleResponse(title=stored.title or title)
