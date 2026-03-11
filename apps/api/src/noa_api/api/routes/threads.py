@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
 from noa_api.storage.postgres.client import create_engine, create_session_factory
-from noa_api.storage.postgres.models import Thread
+from noa_api.storage.postgres.models import Message, Thread
 
 router = APIRouter(tags=["threads"])
 _engine = create_engine()
@@ -179,6 +179,20 @@ class SQLThreadRepository:
         )
         return result.scalar_one_or_none()
 
+    async def list_messages(
+        self, *, owner_user_id: UUID, thread_id: UUID, limit: int = 50
+    ) -> list[Message]:
+        result = await self._session.execute(
+            select(Message)
+            .join(Thread, Message.thread_id == Thread.id)
+            .where(
+                Message.thread_id == thread_id, Thread.owner_user_id == owner_user_id
+            )
+            .order_by(Message.created_at.asc(), Message.id.asc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def update_thread_title(
         self, *, owner_user_id: UUID, thread_id: UUID, title: str | None
     ) -> Thread | None:
@@ -199,7 +213,7 @@ class SQLThreadRepository:
                 Thread.owner_user_id == owner_user_id,
                 Thread.title.is_(None),
             )
-            .values(title=title, updated_at=func.now())
+            .values(title=title)
             .returning(Thread.id)
         )
         return result.scalar_one_or_none() is not None
@@ -247,6 +261,20 @@ class ThreadService:
         return await self._repository.get_thread(
             owner_user_id=owner_user_id, thread_id=thread_id
         )
+
+    async def list_thread_messages_for_title(
+        self, *, owner_user_id: UUID, thread_id: UUID, limit: int = 50
+    ) -> list[dict[str, object]]:
+        messages = await self._repository.list_messages(
+            owner_user_id=owner_user_id, thread_id=thread_id, limit=limit
+        )
+        return [
+            {
+                "role": message.role,
+                "parts": message.content,
+            }
+            for message in messages
+        ]
 
     async def update_thread_title(
         self, *, owner_user_id: UUID, thread_id: UUID, title: str | None
@@ -432,6 +460,16 @@ async def generate_thread_title(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> GenerateTitleResponse:
+    stored = await thread_service.get_thread(
+        owner_user_id=current_user.user_id, thread_id=id
+    )
+    if stored is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
+        )
+    if stored.title is not None:
+        return GenerateTitleResponse(title=stored.title)
+
     user_text_chunks: list[str] = []
     fallback_text_chunks: list[str] = []
     for message in payload.messages:
@@ -443,6 +481,21 @@ async def generate_thread_title(
             user_text_chunks.extend(text_chunks)
 
     candidate = " ".join(user_text_chunks or fallback_text_chunks).strip()
+
+    if not candidate:
+        persisted_messages = await thread_service.list_thread_messages_for_title(
+            owner_user_id=current_user.user_id,
+            thread_id=id,
+        )
+        for message in persisted_messages:
+            text_chunks = _message_text_chunks(message)
+            if not text_chunks:
+                continue
+            fallback_text_chunks.extend(text_chunks)
+            if message.get("role") == "user":
+                user_text_chunks.extend(text_chunks)
+        candidate = " ".join(user_text_chunks or fallback_text_chunks).strip()
+
     title = (candidate[:80] if candidate else "New Thread").strip()
 
     did_set = await thread_service.set_thread_title_if_missing(
@@ -453,11 +506,11 @@ async def generate_thread_title(
     if did_set:
         return GenerateTitleResponse(title=title)
 
-    stored = await thread_service.get_thread(
+    refreshed = await thread_service.get_thread(
         owner_user_id=current_user.user_id, thread_id=id
     )
-    if stored is None:
+    if refreshed is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
         )
-    return GenerateTitleResponse(title=stored.title or title)
+    return GenerateTitleResponse(title=refreshed.title or title)
