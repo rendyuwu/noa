@@ -52,6 +52,16 @@ describe("ClaudeThreadList", () => {
     };
   });
 
+  it("renders a Claude-inspired NOA sidebar with a recents label and cleaner account actions", () => {
+    render(<ClaudeThreadList />);
+
+    expect(screen.getByText("Recents")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Admin" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Logout" })).toBeInTheDocument();
+  });
+
   it("renders disabled Claude-style nav items under the new chat button", () => {
     render(<ClaudeThreadList />);
 
