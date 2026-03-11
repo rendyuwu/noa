@@ -1,7 +1,7 @@
 "use client";
 
 import type { PropsWithChildren } from "react";
-import { useCallback } from "react";
+import { useCallback, useEffect } from "react";
 import {
   AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
@@ -12,7 +12,7 @@ import {
 } from "@assistant-ui/react";
 
 import { getAuthToken } from "@/components/lib/auth-store";
-import { getApiUrl } from "@/components/lib/fetch-helper";
+import { fetchWithAuth, getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { threadListAdapter } from "@/components/lib/thread-list-adapter";
 
 type AssistantState = {
@@ -159,6 +159,25 @@ const converter = (
 function useThreadAwareAssistantTransportRuntime() {
   const api = useAssistantApi();
   const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+
+  useEffect(() => {
+    if (!remoteId) return;
+
+    let cancelled = false;
+
+    void (async () => {
+      const response = await fetchWithAuth(`/assistant/threads/${remoteId}/state`);
+      const persistedState = await jsonOrThrow<AssistantState>(response);
+      if (cancelled) return;
+      api.thread().unstable_loadExternalState(persistedState);
+    })().catch((error) => {
+      console.error("Failed to hydrate persisted thread state", error);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, remoteId]);
 
   const ensureThreadId = useCallback(async () => {
     if (remoteId) {
