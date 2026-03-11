@@ -262,41 +262,20 @@ const ChatMessage: FC = () => {
     });
   });
 
+  const UserText = ({ part }: { part: { text: string } }) => {
+    return <span className="whitespace-pre-wrap">{part.text}</span>;
+  };
+
   return (
     <MessagePrimitive.Root className="group relative mx-auto mt-1 mb-1 block w-full max-w-3xl">
       <AssistantIf condition={(s) => s.message.role === "user"}>
-        <div className="group/user wrap-break-word relative inline-flex max-w-[75ch] flex-col gap-2 rounded-xl bg-[#DDD9CE] py-2.5 pr-6 pl-2.5 text-[#1a1a18] transition-all dark:bg-[#393937] dark:text-[#eee]">
-          <div className="relative flex flex-row gap-2">
-            <div className="shrink-0 self-start transition-all duration-300">
-              <Avatar.Root className="flex h-7 w-7 shrink-0 select-none items-center justify-center rounded-full bg-[#1a1a18] font-bold text-[12px] text-white dark:bg-[#eee] dark:text-[#2b2a27]">
-                <Avatar.Fallback>U</Avatar.Fallback>
-              </Avatar.Root>
-            </div>
-            <div className="flex-1">
-              <div className="relative grid grid-cols-1 gap-2 py-0.5">
-                <div className="wrap-break-word whitespace-pre-wrap">
-                  <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="pointer-events-none absolute right-2 bottom-0">
-            <div className="pointer-events-auto min-w-max translate-x-1 translate-y-4 rounded-lg border-[#00000015] border-[0.5px] bg-white/80 p-0.5 opacity-0 shadow-sm backdrop-blur-sm transition group-hover/user:translate-x-0.5 group-hover/user:opacity-100 dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/80">
-              <div className="flex items-center text-[#6b6a68] dark:text-[#9a9893]">
-                <DisabledIconButton
-                  label="Reload"
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95 disabled:pointer-events-none disabled:opacity-60"
-                >
-                  <ReloadIcon width={20} height={20} />
-                </DisabledIconButton>
-                <DisabledIconButton
-                  label="Edit"
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95 disabled:pointer-events-none disabled:opacity-60"
-                >
-                  <Pencil1Icon width={20} height={20} />
-                </DisabledIconButton>
-              </div>
+        <div className="flex w-full justify-end">
+          <div
+            data-testid="user-message"
+            className="ml-auto max-w-[75ch] rounded-2xl bg-[#DDD9CE] px-4 py-3 text-[#1a1a18] shadow-sm ring-1 ring-[#00000010] dark:bg-[#393937] dark:text-[#eee] dark:ring-[#6c6a6040]"
+          >
+            <div className="wrap-break-word">
+              <MessagePrimitive.Parts components={{ Text: UserText }} />
             </div>
           </div>
         </div>
