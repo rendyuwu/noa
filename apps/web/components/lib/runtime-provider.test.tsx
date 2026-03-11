@@ -1,4 +1,4 @@
-import { render } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -6,6 +6,9 @@ const useAssistantTransportRuntime = vi.fn(() => ({}));
 const unstable_useRemoteThreadListRuntime = vi.fn(
   ({ runtimeHook }: { runtimeHook: () => unknown }) => runtimeHook(),
 );
+const unstable_loadExternalState = vi.fn();
+const fetchWithAuth = vi.fn();
+const jsonOrThrow = vi.fn();
 
 vi.mock("@assistant-ui/react", async () => {
   const React = await import("react");
@@ -19,6 +22,9 @@ vi.mock("@assistant-ui/react", async () => {
         getState: () => ({ remoteId: "thread-1" }),
         initialize: async () => ({ remoteId: "thread-1" }),
       }),
+      thread: () => ({
+        unstable_loadExternalState,
+      }),
     }),
     useAssistantState: (selector: any) => selector({ threadListItem: { remoteId: "thread-1" } }),
     useAssistantTransportRuntime: (...args: any[]) => useAssistantTransportRuntime(...args),
@@ -31,6 +37,8 @@ vi.mock("@/components/lib/auth-store", () => ({
 
 vi.mock("@/components/lib/fetch-helper", () => ({
   getApiUrl: () => "http://example.test",
+  fetchWithAuth: (...args: any[]) => fetchWithAuth(...args),
+  jsonOrThrow: (...args: any[]) => jsonOrThrow(...args),
 }));
 
 vi.mock("@/components/lib/thread-list-adapter", () => ({
@@ -43,6 +51,9 @@ describe("NoaAssistantRuntimeProvider", () => {
   beforeEach(() => {
     useAssistantTransportRuntime.mockClear();
     unstable_useRemoteThreadListRuntime.mockClear();
+    unstable_loadExternalState.mockClear();
+    fetchWithAuth.mockClear();
+    jsonOrThrow.mockClear();
   });
 
   it("passes assistant-transport protocol to the runtime", () => {
@@ -108,5 +119,48 @@ describe("NoaAssistantRuntimeProvider", () => {
 
     expect(result.messages.at(-1)?.role).toBe("user");
     expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Hi" }]);
+  });
+
+  it("hydrates persisted thread state into the runtime after remount", async () => {
+    const persistedState = {
+      messages: [
+        {
+          id: "server-1",
+          role: "assistant",
+          parts: [{ type: "text", text: "Hello" }],
+        },
+      ],
+      isRunning: false,
+    };
+
+    const response = { ok: true, json: vi.fn(async () => persistedState) } as any;
+    fetchWithAuth.mockResolvedValue(response);
+    jsonOrThrow.mockResolvedValue(persistedState);
+
+    const { unmount } = render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    unmount();
+    fetchWithAuth.mockClear();
+    jsonOrThrow.mockClear();
+    unstable_loadExternalState.mockClear();
+
+    render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(fetchWithAuth).toHaveBeenCalled();
+      expect(fetchWithAuth.mock.calls.at(-1)?.[0]).toBe("/assistant/threads/thread-1/state");
+    });
+
+    await waitFor(() => {
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(persistedState);
+    });
   });
 });
