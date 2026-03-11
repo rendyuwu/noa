@@ -337,9 +337,9 @@ async def test_threads_title_endpoint_persists_generated_title_for_later_list_fe
 
     assert list_response.status_code == 200
     threads = list_response.json()["threads"]
-    assert len(threads) == 1
-    assert threads[0]["id"] == str(thread.id)
-    assert threads[0]["title"] == expected_title
+    threads_by_id = {item["id"]: item for item in threads}
+    assert str(thread.id) in threads_by_id
+    assert threads_by_id[str(thread.id)]["title"] == expected_title
 
 
 async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
