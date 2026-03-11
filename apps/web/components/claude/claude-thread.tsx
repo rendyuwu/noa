@@ -260,8 +260,8 @@ const ChatMessage: FC = () => {
     });
   });
 
-  const UserText = ({ part }: { part: { text: string } }) => {
-    return <span className="whitespace-pre-wrap">{part.text}</span>;
+  const UserText = ({ text }: any) => {
+    return <span className="whitespace-pre-wrap">{text}</span>;
   };
 
   return (
