@@ -3,12 +3,12 @@
 
 :root {
   /* Claude-style warm neutrals + orange accent */
-  --bg: 35 45% 96%;
-  --surface: 0 0% 100%;
-  --surface-2: 34 28% 93%;
-  --border: 33 18% 82%;
-  --text: 25 25% 14%;
-  --muted: 25 12% 38%;
+  --bg: 30 3.3% 11.8%;
+  --surface: 30 3% 14.5%;
+  --surface-2: 30 3% 18%;
+  --border: 30 3% 26%;
+  --text: 30 9% 92%;
+  --muted: 30 5% 70%;
   --accent: 22 90% 54%;
   --accent-ink: 22 96% 20%;
 
@@ -18,8 +18,8 @@
   --radius-lg: 10px;
   --radius-xl: 14px;
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.10);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.55);
 
   /* Serif-forward base typography */
   --font-body: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
@@ -40,10 +40,7 @@
   body {
     margin: 0;
     color: hsl(var(--text));
-    background:
-      radial-gradient(1200px circle at 18% -10%, hsl(22 92% 92%), transparent 60%),
-      radial-gradient(900px circle at 92% 0%, hsl(35 55% 93%), transparent 55%),
-      hsl(var(--bg));
+    background-color: hsl(var(--bg));
     font-family: var(--font-body);
     text-rendering: optimizeLegibility;
   }
