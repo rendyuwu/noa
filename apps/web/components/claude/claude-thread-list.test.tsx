@@ -24,10 +24,18 @@ vi.mock("@assistant-ui/react", () => ({
   ThreadListPrimitive: {
     Root: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     New: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => <button {...props}>{children}</button>,
-    Items: () => <div data-testid="thread-items" />,
+    Items: ({ components }: { components?: { ThreadListItem?: (props: any) => ReactNode } }) => {
+      const ThreadListItem = components?.ThreadListItem;
+
+      return <div data-testid="thread-items">{ThreadListItem ? <ThreadListItem /> : null}</div>;
+    },
   },
   ThreadListItemPrimitive: {
-    Root: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    Root: ({ children, ...props }: React.ComponentPropsWithoutRef<"div">) => (
+      <div {...props} data-active="true">
+        {children}
+      </div>
+    ),
     Trigger: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => <button {...props}>{children}</button>,
     Title: ({ fallback }: { fallback?: string }) => <span>{fallback ?? "Untitled"}</span>,
     Delete: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => <button {...props}>{children}</button>,
@@ -74,6 +82,16 @@ describe("ClaudeThreadList", () => {
       expect(button).toHaveAttribute("aria-disabled", "true");
       expect(button).not.toBeDisabled();
     }
+  });
+
+  it("applies active styling to the selected thread row", () => {
+    render(<ClaudeThreadList />);
+
+    const trigger = screen.getByRole("button", { name: "Untitled" });
+    const row = trigger.closest("[data-active]");
+
+    expect(row).not.toBeNull();
+    expect(row!).toHaveClass("data-[active]:bg-surface-2/60");
   });
 
   it("renders a user footer with avatar initial, name, email, and logout action", () => {

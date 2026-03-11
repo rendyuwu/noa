@@ -40,24 +40,22 @@ function DisabledNavItem({ icon, label }: { icon: ReactNode; label: string }) {
 
 const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
   return (
-    <ThreadListItemPrimitive.Root className="group">
-      <div className="flex items-center gap-2 rounded-lg px-4 py-2 transition-colors hover:bg-surface-2/60">
-        <ThreadListItemPrimitive.Trigger
-          onClick={onSelect}
-          className="min-w-0 flex-1 rounded-md text-left font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        >
-          <span className="block truncate">
-            <ThreadListItemPrimitive.Title fallback="Untitled" />
-          </span>
-        </ThreadListItemPrimitive.Trigger>
+    <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-lg px-4 py-2 transition-colors hover:bg-surface-2/60 data-[active]:bg-surface-2/60">
+      <ThreadListItemPrimitive.Trigger
+        onClick={onSelect}
+        className="min-w-0 flex-1 rounded-md text-left font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+      >
+        <span className="block truncate">
+          <ThreadListItemPrimitive.Title fallback="Untitled" />
+        </span>
+      </ThreadListItemPrimitive.Trigger>
 
-        <ThreadListItemPrimitive.Delete
-          className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-2/60 hover:text-text group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-          aria-label="Delete thread"
-        >
-          <TrashIcon width={16} height={16} />
-        </ThreadListItemPrimitive.Delete>
-      </div>
+      <ThreadListItemPrimitive.Delete
+        className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-2/60 hover:text-text group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+        aria-label="Delete thread"
+      >
+        <TrashIcon width={16} height={16} />
+      </ThreadListItemPrimitive.Delete>
     </ThreadListItemPrimitive.Root>
   );
 };
