@@ -10,11 +10,11 @@ import {
 import {
   ArchiveIcon,
   CodeIcon,
-  DotsHorizontalIcon,
   GearIcon,
   LayersIcon,
   MagnifyingGlassIcon,
   PlusIcon,
+  TrashIcon,
 } from "@radix-ui/react-icons";
 
 import { formatClaudeGreetingName } from "@/components/claude/claude-greeting";
@@ -54,7 +54,7 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
           className="flex h-7 w-7 items-center justify-center rounded-md text-[#6b6a68] opacity-0 transition hover:bg-[#ffffff80] hover:text-[#1a1a18] group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ae5630]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-[#F5F5F0] dark:text-[#9a9893] dark:hover:bg-[#1f1e1b]/60 dark:hover:text-[#eee] dark:focus-visible:ring-offset-[#2b2a27]"
           aria-label="Delete thread"
         >
-          <DotsHorizontalIcon width={16} height={16} />
+          <TrashIcon width={16} height={16} />
         </ThreadListItemPrimitive.Delete>
       </div>
     </ThreadListItemPrimitive.Root>
