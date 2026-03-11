@@ -277,6 +277,43 @@ async def test_assistant_route_rejects_missing_thread_id() -> None:
     assert response.status_code == 422
 
 
+async def test_thread_state_route_hydrates_persisted_state() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    saved_messages = [
+        {
+            "id": str(uuid4()),
+            "role": "assistant",
+            "parts": [{"type": "text", "text": "From DB"}],
+        }
+    ]
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        messages=saved_messages,
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/assistant/threads/{thread_id}/state")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["messages"] == saved_messages
+    assert data["isRunning"] is False
+
+
 async def test_assistant_route_uses_assistant_transport_sse() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
