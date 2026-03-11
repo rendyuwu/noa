@@ -18,9 +18,9 @@ describe("globals.css", () => {
     );
   });
 
-  it("defines dark background token", () => {
+  it("defines --bg token for dark theme", () => {
     const css = readFileSync(path.join(dirname, "globals.css"), "utf8");
 
-    expect(css).toContain("--bg: 30 3.3% 11.8%;");
+    expect(css).toMatch(/--bg:\s*30\s+3\.3%\s+11\.8%\s*;/);
   });
 });
