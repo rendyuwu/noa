@@ -135,7 +135,7 @@ export function ClaudeThreadList({
 
       <div className="border-border border-t px-4 py-3 font-ui">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#1a1a18] text-sm font-semibold text-white dark:bg-[#eee] dark:text-[#2b2a27]">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-text text-sm font-semibold text-bg">
             {initial}
           </div>
 
