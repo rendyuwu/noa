@@ -1,4 +1,7 @@
-.agents/
+# Agent skills (commit skills, ignore everything else)
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 skills-lock.json
 .worktrees/
 
