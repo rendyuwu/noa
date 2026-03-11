@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import AsyncGenerator
+from datetime import UTC, datetime
 from inspect import signature
 from typing import Annotated, Any, Awaitable, Callable, Literal, cast
 from uuid import UUID
@@ -132,7 +133,12 @@ class SQLAssistantRepository:
     async def create_message(
         self, *, thread_id: UUID, role: str, parts: list[dict[str, Any]]
     ) -> Message:
-        message = Message(thread_id=thread_id, role=role, content=parts)
+        message = Message(
+            thread_id=thread_id,
+            role=role,
+            content=parts,
+            created_at=datetime.now(UTC),
+        )
         self._session.add(message)
         await self._session.flush()
         return message
