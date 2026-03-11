@@ -4,6 +4,8 @@ import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 let mockThreadIsEmpty = true;
+let mockThreadListItemStatus: "archived" | "regular" | "new" | "deleted" = "new";
+let mockIsHydrating = false;
 let mockAssistantMessage: any = {
   role: "assistant",
   isLast: true,
@@ -23,6 +25,10 @@ vi.mock("@/components/lib/auth-store", () => ({
 vi.mock("@/components/claude/request-approval-tool-ui", () => ({
   ClaudeToolFallback: () => null,
   ClaudeToolGroup: () => null,
+}));
+
+vi.mock("@/components/lib/thread-hydration", () => ({
+  useThreadHydration: () => ({ isHydrating: mockIsHydrating }),
 }));
 
 vi.mock("@assistant-ui/react", async () => {
@@ -97,7 +103,13 @@ vi.mock("@assistant-ui/react", async () => {
     useAssistantApi: () => ({
       composer: () => ({ setText }),
     }),
-    useAssistantState: (selector: any) => selector({ message: mockAssistantMessage }),
+    useAssistantState: (selector: any) =>
+      selector({
+        message: mockAssistantMessage,
+        threadListItem: {
+          status: mockThreadListItemStatus,
+        },
+      }),
   };
 });
 
@@ -106,6 +118,8 @@ import { ClaudeThread } from "./claude-thread";
 describe("ClaudeThread", () => {
   beforeEach(() => {
     mockThreadIsEmpty = true;
+    mockThreadListItemStatus = "new";
+    mockIsHydrating = false;
     mockAssistantMessage = {
       role: "assistant",
       isLast: true,
@@ -195,5 +209,16 @@ describe("ClaudeThread", () => {
     const user = screen.getByTestId("user-message");
     expect(user).toHaveClass("ml-auto");
     expect(screen.queryByText("U")).not.toBeInTheDocument();
+  });
+
+  it("shows a skeleton placeholder while hydrating an existing thread", () => {
+    mockThreadIsEmpty = true;
+    mockThreadListItemStatus = "regular";
+    mockIsHydrating = true;
+
+    render(<ClaudeThread />);
+
+    expect(screen.getByLabelText("Loading conversation")).toBeInTheDocument();
+    expect(screen.queryByText(/Morning, Casey/)).not.toBeInTheDocument();
   });
 });

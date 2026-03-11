@@ -30,6 +30,7 @@ import {
 } from "@/components/claude/claude-greeting";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/claude/request-approval-tool-ui";
 import { getAuthUser } from "@/components/lib/auth-store";
+import { useThreadHydration } from "@/components/lib/thread-hydration";
 
 function DisabledIconButton({
   children,
@@ -174,7 +175,40 @@ function EmptyLanding() {
   );
 }
 
+function ThreadHydrationSkeleton() {
+  return (
+    <div
+      role="status"
+      aria-label="Loading conversation"
+      className="flex min-h-full w-full flex-1 flex-col px-4 py-10"
+    >
+      <div className="mx-auto w-full max-w-3xl">
+        <div className="flex justify-end">
+          <div className="h-10 w-40 animate-pulse rounded-2xl bg-black/5 dark:bg-white/10" />
+        </div>
+
+        <div className="mt-12 space-y-3">
+          <div className="h-5 w-5/6 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+          <div className="h-5 w-full animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+          <div className="h-5 w-11/12 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+          <div className="h-5 w-4/6 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+          <div className="h-5 w-10/12 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+          <div className="h-5 w-3/6 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+        </div>
+      </div>
+
+      <div className="mt-auto w-full">
+        <div className="mx-auto h-16 w-full max-w-3xl animate-pulse rounded-2xl bg-black/5 dark:bg-white/10" />
+      </div>
+    </div>
+  );
+}
+
 export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar }) => {
+  const { isHydrating } = useThreadHydration();
+  const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
+  const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
+
   return (
     <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-[#F5F5F0] p-4 pt-14 font-serif dark:bg-[#2b2a27]">
       <div className="absolute top-3 left-3 z-10 flex items-center gap-2 md:hidden">
@@ -198,7 +232,7 @@ export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar
         className="min-h-0 flex grow flex-col overflow-y-auto"
       >
         <ThreadPrimitive.Empty>
-          <EmptyLanding />
+          {showHydrationSkeleton ? <ThreadHydrationSkeleton /> : <EmptyLanding />}
         </ThreadPrimitive.Empty>
         <ThreadPrimitive.Messages components={{ Message: ChatMessage }} />
         <div aria-hidden="true" className="h-4" />

@@ -1,7 +1,7 @@
 "use client";
 
 import type { PropsWithChildren } from "react";
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
@@ -14,6 +14,7 @@ import {
 
 import { getAuthToken } from "@/components/lib/auth-store";
 import { fetchWithAuth, getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
+import { ThreadHydrationProvider } from "@/components/lib/thread-hydration";
 import { threadListAdapter } from "@/components/lib/thread-list-adapter";
 
 type AssistantState = {
@@ -157,42 +158,42 @@ const converter = (
   };
 };
 
-function ThreadListMaintenance() {
+function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
   const api = useAssistantApi();
   const runtime = useAssistantRuntime();
   const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
   const messageCount = useAssistantState(({ thread }) => thread.messages.length);
   const threadItems = useAssistantState(({ threads }) => threads.threadItems);
 
-  const hydratedRemoteId = useRef<string | null>(null);
+  const [hydratedRemoteId, setHydratedRemoteId] = useState<string | null>(null);
   const generatedTitles = useRef<Set<string>>(new Set());
+
+  const shouldHydrate = Boolean(remoteId) && messageCount === 0 && hydratedRemoteId !== remoteId;
 
   useEffect(() => {
     if (!remoteId) return;
-
-    if (hydratedRemoteId.current === remoteId) return;
-
-    // Switching threads is asynchronous. Wait until the thread runtime is empty
-    // so we don't accidentally hydrate into the previous thread.
-    if (messageCount > 0) return;
+    if (!shouldHydrate) return;
 
     let cancelled = false;
 
     void (async () => {
-      const response = await fetchWithAuth(`/assistant/threads/${remoteId}/state`);
-      const persistedState = await jsonOrThrow<AssistantState>(response);
-      if (cancelled) return;
+      try {
+        const response = await fetchWithAuth(`/assistant/threads/${remoteId}/state`);
+        const persistedState = await jsonOrThrow<AssistantState>(response);
+        if (cancelled) return;
 
-      runtime.thread.unstable_loadExternalState(persistedState);
-      hydratedRemoteId.current = remoteId;
-    })().catch((error) => {
-      console.error("Failed to hydrate persisted thread state", error);
-    });
+        runtime.thread.unstable_loadExternalState(persistedState);
+      } catch (error) {
+        console.error("Failed to hydrate persisted thread state", error);
+      } finally {
+        if (!cancelled) setHydratedRemoteId(remoteId);
+      }
+    })();
 
     return () => {
       cancelled = true;
     };
-  }, [messageCount, remoteId, runtime]);
+  }, [remoteId, runtime, shouldHydrate]);
 
   useEffect(() => {
     let remaining = 3;
@@ -210,7 +211,7 @@ function ThreadListMaintenance() {
     }
   }, [api, threadItems]);
 
-  return null;
+  return <ThreadHydrationProvider isHydrating={shouldHydrate}>{children}</ThreadHydrationProvider>;
 }
 
 function useThreadAwareAssistantTransportRuntime() {
@@ -265,8 +266,7 @@ export function NoaAssistantRuntimeProvider({ children }: PropsWithChildren) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <ThreadListMaintenance />
-      {children}
+      <ThreadMaintenanceProvider>{children}</ThreadMaintenanceProvider>
     </AssistantRuntimeProvider>
   );
 }

@@ -128,6 +128,20 @@ Files:
 
 Rationale: `useAssistantTransportRuntime` does not auto-load existing history; we need an explicit hydration step for persisted threads.
 
+### 6a) Avoid empty-state flash during thread hydration
+
+Files:
+
+- `apps/web/components/lib/runtime-provider.tsx`
+- `apps/web/components/claude/claude-thread.tsx`
+
+- When switching to an existing thread, there is an unavoidable short window where the thread runtime is empty while the persisted state fetch completes.
+- Replace the current greeting-style empty landing flash with a neutral Claude-like skeleton placeholder during this hydration window.
+- Only show the skeleton when the current thread is not a `new` thread (i.e., existing threads) and hydration is in-flight.
+- Keep the greeting-style empty landing for truly new chats.
+
+Rationale: users interpret the greeting landing as "new chat" state; flashing it during thread switches feels glitchy even if the conversation hydrates correctly.
+
 ### 7) Error handling
 
 - `401` should continue to follow the existing auth-expiry path.
