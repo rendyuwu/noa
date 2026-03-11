@@ -12,6 +12,7 @@ vi.mock("@radix-ui/react-dialog", async () => {
     Overlay: (props: React.ComponentPropsWithoutRef<"div">) => <div {...props} />,
     Content: (props: React.ComponentPropsWithoutRef<"div">) => <div {...props} />,
     Title: (props: React.ComponentPropsWithoutRef<"h2">) => <h2 {...props} />,
+    Description: (props: React.ComponentPropsWithoutRef<"p">) => <p {...props} />,
     Close: ({ children }: WrapperProps) => <>{children}</>,
   };
 });

@@ -204,23 +204,33 @@ function ThreadHydrationSkeleton() {
   );
 }
 
-export const ClaudeThread: FC<{ onOpenSidebar?: () => void }> = ({ onOpenSidebar }) => {
+export const ClaudeThread: FC<{
+  onOpenSidebar?: () => void;
+  showOpenSidebarButtonOnDesktop?: boolean;
+}> = ({ onOpenSidebar, showOpenSidebarButtonOnDesktop }) => {
   const { isHydrating } = useThreadHydration();
   const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
   const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
 
+  const sidebarButtonClassName = [
+    "absolute top-3 left-3 z-10 flex items-center gap-2",
+    showOpenSidebarButtonOnDesktop ? "" : "md:hidden",
+  ].join(" ");
+
   return (
     <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-[#F5F5F0] p-4 pt-14 font-serif dark:bg-[#2b2a27]">
-      <div className="absolute top-3 left-3 z-10 flex items-center gap-2 md:hidden">
-        <button
-          type="button"
-          onClick={onOpenSidebar}
-          className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#00000015] bg-white/70 text-[#6b6a68] shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-[#1a1a18] active:scale-[0.98] dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/70 dark:text-[#9a9893] dark:hover:bg-[#1f1e1b] dark:hover:text-[#eee]"
-          aria-label="Open sidebar"
-        >
-          <HamburgerMenuIcon width={18} height={18} />
-        </button>
-      </div>
+      {onOpenSidebar ? (
+        <div className={sidebarButtonClassName}>
+          <button
+            type="button"
+            onClick={onOpenSidebar}
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#00000015] bg-white/70 text-[#6b6a68] shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-[#1a1a18] active:scale-[0.98] dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/70 dark:text-[#9a9893] dark:hover:bg-[#1f1e1b] dark:hover:text-[#eee]"
+            aria-label="Open sidebar"
+          >
+            <HamburgerMenuIcon width={18} height={18} />
+          </button>
+        </div>
+      ) : null}
 
       <ThreadPrimitive.Viewport
         autoScroll

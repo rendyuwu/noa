@@ -9,6 +9,7 @@ import {
 } from "@assistant-ui/react";
 import {
   ArchiveIcon,
+  ColumnsIcon,
   CodeIcon,
   GearIcon,
   LayersIcon,
@@ -61,7 +62,13 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
   );
 };
 
-export function ClaudeThreadList({ onSelectThread }: { onSelectThread?: () => void }) {
+export function ClaudeThreadList({
+  onSelectThread,
+  onCloseSidebar,
+}: {
+  onSelectThread?: () => void;
+  onCloseSidebar?: () => void;
+}) {
   const user = getAuthUser();
   const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
@@ -70,20 +77,46 @@ export function ClaudeThreadList({ onSelectThread }: { onSelectThread?: () => vo
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col bg-[#F5F5F0] dark:bg-[#2b2a27]">
       <div className="px-3 pt-3 font-ui">
-        <ThreadListPrimitive.New
-          onClick={onSelectThread}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[#ae5630] px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-[#c4633a] active:scale-[0.99]"
-        >
-          <PlusIcon width={16} height={16} />
-          New chat
-        </ThreadListPrimitive.New>
+        <div className="flex items-center justify-between px-1">
+          <div className="font-serif text-lg font-semibold tracking-[-0.01em] text-[#1a1a18] dark:text-[#eee]">
+            NOA
+          </div>
+
+          {onCloseSidebar ? (
+            <button
+              type="button"
+              onClick={onCloseSidebar}
+              aria-label="Close sidebar"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-[#6b6a68] transition hover:bg-[#ffffff80] hover:text-[#1a1a18] active:scale-[0.98] dark:text-[#9a9893] dark:hover:bg-[#1f1e1b]/60 dark:hover:text-[#eee]"
+            >
+              <ColumnsIcon width={18} height={18} />
+            </button>
+          ) : (
+            <div aria-hidden="true" className="h-9 w-9" />
+          )}
+        </div>
 
         <div className="mt-3 px-1">
+          <ThreadListPrimitive.New
+            onClick={onSelectThread}
+            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 font-ui text-sm text-[#1a1a18] transition hover:bg-[#ffffff80] active:scale-[0.99] dark:text-[#eee] dark:hover:bg-[#1f1e1b]/60"
+          >
+            <span
+              aria-hidden="true"
+              className="flex h-6 w-6 items-center justify-center rounded-full border border-[#00000015] bg-white/60 text-[#6b6a68] dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/60 dark:text-[#9a9893]"
+            >
+              <PlusIcon width={14} height={14} />
+            </span>
+            New chat
+          </ThreadListPrimitive.New>
+
+          <div className="mt-2">
           <DisabledNavItem icon={<MagnifyingGlassIcon width={16} height={16} />} label="Search" />
           <DisabledNavItem icon={<GearIcon width={16} height={16} />} label="Customize" />
           <DisabledNavItem icon={<LayersIcon width={16} height={16} />} label="Projects" />
           <DisabledNavItem icon={<ArchiveIcon width={16} height={16} />} label="Artifacts" />
           <DisabledNavItem icon={<CodeIcon width={16} height={16} />} label="Code" />
+          </div>
         </div>
       </div>
 
