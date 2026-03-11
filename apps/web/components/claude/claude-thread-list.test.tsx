@@ -56,7 +56,11 @@ describe("ClaudeThreadList", () => {
     render(<ClaudeThreadList />);
 
     expect(screen.getByText("Recents")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "New chat" })).toBeInTheDocument();
+
+    const newChatButton = screen.getByRole("button", { name: "New chat" });
+    expect(newChatButton).toBeInTheDocument();
+    expect(newChatButton).toHaveClass("px-4");
+
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Admin" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Logout" })).toBeInTheDocument();
