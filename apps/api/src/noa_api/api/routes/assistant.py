@@ -604,6 +604,18 @@ async def _require_active_user(
     return current_user
 
 
+@router.get("/assistant/threads/{thread_id}/state")
+async def get_thread_state(
+    thread_id: UUID,
+    current_user: AuthorizationUser = Depends(_require_active_user),
+    assistant_service: AssistantService = Depends(get_assistant_service),
+) -> dict[str, object]:
+    return await assistant_service.load_state(
+        owner_user_id=current_user.user_id,
+        thread_id=thread_id,
+    )
+
+
 @router.post("/assistant")
 async def assistant_transport(
     payload: AssistantRequest,
