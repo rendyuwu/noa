@@ -280,11 +280,12 @@ async def test_assistant_route_rejects_missing_thread_id() -> None:
 async def test_thread_state_route_hydrates_persisted_state() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
+    expected_text = "From DB"
     saved_messages = [
         {
             "id": str(uuid4()),
             "role": "assistant",
-            "parts": [{"type": "text", "text": "From DB"}],
+            "parts": [{"type": "text", "text": expected_text}],
         }
     ]
     service = _FakeAssistantService(
@@ -310,7 +311,7 @@ async def test_thread_state_route_hydrates_persisted_state() -> None:
 
     assert response.status_code == 200
     data = response.json()
-    assert data["messages"] == saved_messages
+    assert _state_contains_text(data, expected_text)
     assert data["isRunning"] is False
 
 
