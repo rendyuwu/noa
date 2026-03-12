@@ -15,20 +15,20 @@ function Actions({ args }: { args: Record<string, unknown> }) {
 
   if (!actionRequestId) {
     return (
-      <div className="mt-2 rounded-lg border border-[#00000015] bg-white/70 p-3 text-sm text-[#6b6a68] dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/70 dark:text-[#9a9893]">
+      <div className="mt-2 rounded-lg border border-border bg-surface/70 p-3 text-sm text-muted">
         Missing action request id.
       </div>
     );
   }
 
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-[#00000015] bg-white shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)] dark:border-[#6c6a6040] dark:bg-[#1f1e1b]">
-      <div className="flex items-start justify-between gap-3 border-[#00000015] border-b bg-[#f5f5f0] px-4 py-3 dark:border-[#6c6a6040] dark:bg-[#393937]">
+    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
+      <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-[#1a1a18] dark:text-[#eee]">
+          <div className="text-sm font-semibold text-text">
             Approval requested
           </div>
-          <div className="mt-0.5 text-xs text-[#6b6a68] dark:text-[#9a9893]">
+          <div className="mt-0.5 text-xs text-muted">
             Tool: <code className="text-[11px]">{toolName}</code>
           </div>
         </div>
@@ -38,7 +38,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           <button
             type="button"
             onClick={() => sendCommand({ type: "approve-action", actionRequestId })}
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-[#ae5630] px-3 text-xs font-medium text-white transition-colors hover:bg-[#c4633a] active:scale-[0.98]"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 active:scale-[0.98]"
           >
             <CheckIcon width={16} height={16} />
             Approve
@@ -46,7 +46,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           <button
             type="button"
             onClick={() => sendCommand({ type: "deny-action", actionRequestId })}
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[#00000015] bg-transparent px-3 text-xs font-medium text-[#1a1a18] transition-all hover:bg-[#f5f5f0] active:scale-[0.98] dark:border-[#6c6a6040] dark:text-[#eee] dark:hover:bg-[#393937]"
+            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-text transition-all hover:bg-surface-2 active:scale-[0.98]"
           >
             <Cross2Icon width={16} height={16} />
             Deny
@@ -67,8 +67,8 @@ export const RequestApprovalToolUI = makeAssistantToolUI({
 export function ClaudeToolGroup({ children }: { children?: ReactNode }) {
   if (!children) return null;
   return (
-    <div className="mt-3 rounded-xl border border-[#00000015] bg-white/60 p-3 shadow-sm dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/60">
-      <div className="text-[#8a8985] text-[0.7rem] uppercase tracking-wide dark:text-[#b8b5a9]">
+    <div className="mt-3 rounded-xl border border-border bg-surface/60 p-3 shadow-sm">
+      <div className="text-[0.7rem] uppercase tracking-wide text-muted">
         Tool activity
       </div>
       <div className="mt-2">{children}</div>
@@ -81,13 +81,13 @@ export function ClaudeToolFallback({ toolName, status, argsText, result, isError
   const statusText = typeof status?.type === "string" ? status.type : "unknown";
 
   return (
-    <div className="rounded-xl border border-[#00000015] bg-white p-3 text-sm shadow-sm dark:border-[#6c6a6040] dark:bg-[#1f1e1b]">
+    <div className="rounded-xl border border-border bg-surface p-3 text-sm shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 font-medium text-[#1a1a18] dark:text-[#eee]">{name}</div>
+        <div className="min-w-0 font-medium text-text">{name}</div>
         <div
           className={[
             "shrink-0 rounded-md px-2 py-0.5 text-[11px]",
-            isError ? "bg-red-50 text-red-800" : "bg-[#f5f5f0] text-[#6b6a68] dark:bg-[#393937] dark:text-[#9a9893]",
+            isError ? "bg-red-50 text-red-800" : "bg-surface-2 text-muted",
           ].join(" ")}
         >
           {statusText}
@@ -95,13 +95,13 @@ export function ClaudeToolFallback({ toolName, status, argsText, result, isError
       </div>
 
       {argsText ? (
-        <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-[#00000015] bg-[#f5f5f0] p-2 text-[12px] text-[#1a1a18] dark:border-[#6c6a6040] dark:bg-[#393937] dark:text-[#eee]">
+        <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-border bg-surface-2 p-2 text-[12px] text-text">
           {argsText}
         </pre>
       ) : null}
 
       {result !== undefined ? (
-        <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-[#00000015] bg-white p-2 text-[12px] text-[#1a1a18] dark:border-[#6c6a6040] dark:bg-[#1f1e1b] dark:text-[#eee]">
+        <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-border bg-surface p-2 text-[12px] text-text">
           {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
         </pre>
       ) : null}
