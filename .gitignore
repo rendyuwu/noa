@@ -36,6 +36,9 @@ htmlcov/
 # Logs
 *.log
 
+# Local artifacts
+.artifacts/
+
 # IDE
 .vscode/
 .idea/
