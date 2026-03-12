@@ -70,14 +70,17 @@ describe("ClaudeThreadList", () => {
     expect(newChatButton).toHaveClass("px-4");
 
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Admin" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Users" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Logout" })).toBeInTheDocument();
   });
 
   it("renders disabled Claude-style nav items under the new chat button", () => {
     render(<ClaudeThreadList />);
 
-    for (const label of ["Search", "Customize", "Projects", "Artifacts", "Code"]) {
+    expect(screen.queryByRole("button", { name: "Customize" })).not.toBeInTheDocument();
+
+    for (const label of ["Search", "Projects", "Artifacts", "Code"]) {
       const button = screen.getByRole("button", { name: label });
       expect(button).toHaveAttribute("aria-disabled", "true");
       expect(button).not.toBeDisabled();
@@ -100,10 +103,19 @@ describe("ClaudeThreadList", () => {
     expect(screen.getByText("C")).toBeInTheDocument();
     expect(screen.getByText("Casey Rivers")).toBeInTheDocument();
     expect(screen.getByText("casey@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Admin" })).toHaveAttribute("href", "/admin");
+    expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the Users footer link for non-admin users", () => {
+    mocks.user.roles = ["member"];
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
   });
 
   it("uses a neutral account fallback when auth user data is missing", () => {
