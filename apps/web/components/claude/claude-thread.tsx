@@ -69,21 +69,21 @@ function ComposerControlsRow() {
       <div className="relative flex min-w-0 flex-1 shrink items-center gap-2">
         <DisabledIconButton
           label="Add attachment"
-          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted transition-all hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <PlusIcon width={16} height={16} />
         </DisabledIconButton>
 
         <DisabledIconButton
           label="Open tools menu"
-          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted transition-all hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <MixerHorizontalIcon width={16} height={16} />
         </DisabledIconButton>
 
         <DisabledIconButton
           label="Extended thinking"
-          className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-[#00000015] bg-transparent px-1.5 text-[#6b6a68] transition-all hover:bg-[#f5f5f0] hover:text-[#1a1a18] active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 dark:border-[#6c6a6040] dark:text-[#9a9893] dark:hover:bg-[#393937] dark:hover:text-[#eee]"
+          className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted transition-all hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <ReloadIcon width={16} height={16} />
         </DisabledIconButton>
@@ -91,7 +91,7 @@ function ComposerControlsRow() {
 
       <DisabledIconButton
         label="Model selector"
-        className="flex h-8 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 pr-2 pl-2.5 text-[#1a1a18] text-xs transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-[#f5f5f0] active:scale-[0.985] disabled:pointer-events-none disabled:opacity-70 dark:text-[#eee] dark:hover:bg-[#393937]"
+        className="flex h-8 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 pr-2 pl-2.5 text-text text-xs transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-surface-2 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-70"
       >
         <span className="font-serif text-[14px]">Sonnet 4.5</span>
         <ChevronDownIcon width={20} height={20} className="opacity-75" />
@@ -99,7 +99,7 @@ function ComposerControlsRow() {
 
       <ComposerPrimitive.Send
         aria-label="Send message"
-        className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#ae5630] transition-colors hover:bg-[#c4633a] active:scale-95 disabled:pointer-events-none disabled:opacity-50 dark:bg-[#ae5630] dark:hover:bg-[#c4633a]"
+        className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent transition-colors hover:bg-accent/90 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
       >
         <ArrowUpIcon width={16} height={16} className="text-white" />
       </ComposerPrimitive.Send>
@@ -124,8 +124,8 @@ function EmptyLanding() {
 
   return (
     <div className="flex min-h-full w-full flex-1 flex-col items-center justify-center px-3 py-10">
-      <div className="claude-landing-anim-1 flex items-center gap-3 text-[#1a1a18] dark:text-[#eee]">
-        <span aria-hidden="true" className="text-2xl leading-none text-[#c4633a]">
+      <div className="claude-landing-anim-1 flex items-center gap-3 text-text">
+        <span aria-hidden="true" className="text-2xl leading-none text-accent">
           *
         </span>
         <h1 className="text-center text-4xl font-medium tracking-[-0.02em] sm:text-5xl">
@@ -134,14 +134,14 @@ function EmptyLanding() {
       </div>
 
       <div className="claude-landing-anim-2 mt-8 w-full max-w-2xl">
-        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-2xl border border-transparent bg-white p-0.5 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.05),0_0_0_0.5px_rgba(0,0,0,0.1)] dark:bg-[#1f1e1b]">
+        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-md">
           <div className="m-4 flex flex-col gap-3.5">
             <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
               <ComposerPrimitive.Input
                 ref={inputRef}
                 placeholder="How can I help you today?"
                 aria-label="Message input"
-                className="block min-h-10 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
+                className="block min-h-10 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
               />
             </div>
 
@@ -159,10 +159,9 @@ function EmptyLanding() {
               onClick={() => setPrompt(chip.label, chip.text)}
               aria-pressed={activeChip === chip.label}
               className={[
-                "inline-flex items-center gap-2 rounded-full border border-[#00000015] bg-white/70 px-3 py-1.5 font-ui text-sm text-[#1a1a18] shadow-sm transition",
-                "hover:bg-white active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#ae5630]/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-                "dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/70 dark:text-[#eee]",
-                activeChip === chip.label ? "border-[#ae5630]/40" : "",
+                "inline-flex items-center gap-2 rounded-full border border-border bg-surface/70 px-3 py-1.5 font-ui text-sm text-text shadow-sm transition",
+                "hover:bg-surface active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+                activeChip === chip.label ? "border-accent/40" : "",
               ].join(" ")}
               title="Prefill prompt"
             >
@@ -184,21 +183,21 @@ function ThreadHydrationSkeleton() {
     >
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex justify-end">
-          <div className="h-10 w-40 animate-pulse rounded-2xl bg-black/5 dark:bg-white/10" />
+          <div className="h-10 w-40 animate-pulse rounded-2xl bg-surface-2" />
         </div>
 
         <div className="mt-12 space-y-3">
-          <div className="h-5 w-5/6 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
-          <div className="h-5 w-full animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
-          <div className="h-5 w-11/12 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
-          <div className="h-5 w-4/6 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
-          <div className="h-5 w-10/12 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
-          <div className="h-5 w-3/6 animate-pulse rounded-lg bg-black/5 dark:bg-white/10" />
+          <div className="h-5 w-5/6 animate-pulse rounded-lg bg-surface-2" />
+          <div className="h-5 w-full animate-pulse rounded-lg bg-surface-2" />
+          <div className="h-5 w-11/12 animate-pulse rounded-lg bg-surface-2" />
+          <div className="h-5 w-4/6 animate-pulse rounded-lg bg-surface-2" />
+          <div className="h-5 w-10/12 animate-pulse rounded-lg bg-surface-2" />
+          <div className="h-5 w-3/6 animate-pulse rounded-lg bg-surface-2" />
         </div>
       </div>
 
       <div className="mt-auto w-full">
-        <div className="mx-auto h-16 w-full max-w-3xl animate-pulse rounded-2xl bg-black/5 dark:bg-white/10" />
+        <div className="mx-auto h-16 w-full max-w-3xl animate-pulse rounded-2xl bg-surface-2" />
       </div>
     </div>
   );
@@ -224,7 +223,7 @@ export const ClaudeThread: FC<{
           <button
             type="button"
             onClick={onOpenSidebar}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#00000015] bg-white/70 text-[#6b6a68] shadow-sm backdrop-blur-sm transition hover:bg-white hover:text-[#1a1a18] active:scale-[0.98] dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/70 dark:text-[#9a9893] dark:hover:bg-[#1f1e1b] dark:hover:text-[#eee]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface/70 text-muted shadow-sm backdrop-blur-sm transition hover:bg-surface hover:text-text active:scale-[0.98]"
             aria-label="Open sidebar"
           >
             <HamburgerMenuIcon width={18} height={18} />
@@ -249,14 +248,14 @@ export const ClaudeThread: FC<{
       </ThreadPrimitive.Viewport>
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
-        <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border border-transparent bg-white p-0.5 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)] transition-shadow duration-200 focus-within:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.075),0_0_0_0.5px_rgba(0,0,0,0.15)] hover:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.05),0_0_0_0.5px_rgba(0,0,0,0.12)] dark:bg-[#1f1e1b] dark:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.4),0_0_0_0.5px_rgba(108,106,96,0.15)] dark:hover:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.4),0_0_0_0.5px_rgba(108,106,96,0.3)] dark:focus-within:shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.5),0_0_0_0.5px_rgba(108,106,96,0.3)]">
+        <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
           <div className="m-3.5 flex flex-col gap-3.5">
             <div className="relative">
               <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
                 <ComposerPrimitive.Input
                   placeholder="How can I help you today?"
                   aria-label="Message input"
-                  className="block min-h-6 w-full resize-none bg-transparent text-[#1a1a18] outline-none placeholder:text-[#9a9893] dark:text-[#eee] dark:placeholder:text-[#9a9893]"
+                  className="block min-h-6 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
                 />
               </div>
             </div>
@@ -274,7 +273,7 @@ function ClaudeThinkingIndicator() {
     <div
       role="status"
       aria-label="Claude is thinking"
-      className="inline-flex items-center gap-2 text-[#6b6a68] text-sm dark:text-[#9a9893]"
+      className="inline-flex items-center gap-2 text-muted text-sm"
     >
       <span
         aria-hidden="true"
@@ -314,7 +313,7 @@ const ChatMessage: FC = () => {
         <div className="flex w-full justify-end">
           <div
             data-testid="user-message"
-            className="ml-auto max-w-[75ch] rounded-2xl bg-[#DDD9CE] px-4 py-3 text-[#1a1a18] shadow-sm ring-1 ring-[#00000010] dark:bg-[#393937] dark:text-[#eee] dark:ring-[#6c6a6040]"
+            className="ml-auto max-w-[75ch] rounded-2xl bg-surface-2 px-4 py-3 text-text shadow-sm ring-1 ring-border/40"
           >
             <div className="wrap-break-word">
               <MessagePrimitive.Parts components={{ Text: UserText }} />
@@ -327,7 +326,7 @@ const ChatMessage: FC = () => {
         <div className="relative mb-12 font-serif">
           <div className="relative leading-[1.65rem]">
             <div className="grid grid-cols-1 gap-2.5">
-              <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-[#1a1a18] dark:text-[#eee]">
+              <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-text">
                 {showLoading ? <ClaudeThinkingIndicator /> : null}
                 <MessagePrimitive.Parts
                   components={{
@@ -346,7 +345,7 @@ const ChatMessage: FC = () => {
               autohide="not-last"
               className="pointer-events-auto flex w-full translate-y-4 flex-col items-end px-2 pt-2 opacity-0 transition group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
             >
-              <div className="flex items-center text-[#6b6a68] dark:text-[#9a9893]">
+              <div className="flex items-center text-muted">
                 <ActionBarPrimitive.Copy
                   aria-label="Copy message"
                   className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95"
@@ -375,7 +374,7 @@ const ChatMessage: FC = () => {
               </div>
 
               <AssistantIf condition={(s) => s.message.isLast}>
-                <p className="mt-2 w-full text-right text-[#8a8985] text-[0.65rem] leading-[0.85rem] opacity-90 sm:text-[0.75rem] dark:text-[#b8b5a9]">
+                <p className="mt-2 w-full text-right text-muted text-[0.65rem] leading-[0.85rem] opacity-90 sm:text-[0.75rem]">
                   Claude can make mistakes. Please double-check responses.
                 </p>
               </AssistantIf>
