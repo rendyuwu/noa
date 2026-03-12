@@ -79,13 +79,13 @@ export function ClaudeToolGroup({ children }: { children?: ReactNode }) {
 const TOOL_COPY: Record<string, { label: string; doing: string; done: string }> = {
   get_current_time: {
     label: "Current time",
-    doing: "Checking now",
-    done: "Checked",
+    doing: "Checking the current time",
+    done: "Checked the current time",
   },
   get_current_date: {
     label: "Today's date",
-    doing: "Checking now",
-    done: "Checked",
+    doing: "Checking today's date",
+    done: "Checked today's date",
   },
 };
 
@@ -116,7 +116,7 @@ function humanizeToolName(toolName: string): string {
     .join(" ");
 }
 
-export function ClaudeToolFallback({ toolName, status, isError }: any) {
+export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
   const rawName = typeof toolName === "string" && toolName ? toolName : "tool";
   const copy =
     TOOL_COPY[rawName] ??
@@ -127,15 +127,19 @@ export function ClaudeToolFallback({ toolName, status, isError }: any) {
     } as const);
 
   const rawStatus = typeof status?.type === "string" ? status.type : undefined;
-  const statusType =
+  const hasKnownStatus =
     rawStatus === "running" ||
     rawStatus === "complete" ||
     rawStatus === "incomplete" ||
-    rawStatus === "requires-action"
+    rawStatus === "requires-action";
+  const statusType =
+    hasKnownStatus
       ? rawStatus
       : isError
         ? "incomplete"
-        : "complete";
+        : result !== undefined
+          ? "complete"
+          : "running";
   const badge = STATUS_BADGE[statusType] ?? STATUS_BADGE.incomplete;
 
   const activityText =
@@ -150,12 +154,15 @@ export function ClaudeToolFallback({ toolName, status, isError }: any) {
   return (
     <details className="rounded-xl border border-border bg-surface text-sm shadow-sm">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
-        <div className="min-w-0 font-medium text-text">{copy.label}</div>
+        <div className="min-w-0">
+          <div className="font-medium text-text">{copy.label}</div>
+          <div className="text-xs text-muted">{activityText}</div>
+        </div>
         <div className={["shrink-0 rounded-md px-2 py-0.5 text-[11px]", badge.className].join(" ")}>
           {badge.label}
         </div>
       </summary>
-      <div className="border-t border-border px-3 py-2 text-xs text-muted">{activityText}</div>
+      <div className="border-t border-border px-3 py-2 text-xs text-muted">Tool activity</div>
     </details>
   );
 }
