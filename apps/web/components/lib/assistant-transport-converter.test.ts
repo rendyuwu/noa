@@ -37,6 +37,7 @@ describe("convertAssistantState", () => {
     const message = converted.messages[0];
     expect(message?.role).toBe("assistant");
     const toolPart = (message as any)?.content?.find?.((p: any) => p?.type === "tool-call");
+    expect(toolPart).toBeDefined();
     expect(typeof toolPart?.argsText).toBe("string");
     expect(toolPart?.argsText).toBe("{}");
   });
