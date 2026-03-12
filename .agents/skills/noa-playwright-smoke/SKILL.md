@@ -20,7 +20,8 @@ If you touched user-facing behavior (routes, auth, UI, tools, persistence), trea
 - DO NOT print them.
 - DO NOT write them to disk.
 - DO NOT interpolate them into tool call text (bash strings, fill_form values, logs).
-- Prefer ONE `playwright_browser_run_code` snippet that reads `process.env` inside the tool runtime.
+- Preferred: ONE `playwright_browser_run_code` snippet that reads `process.env` inside the tool runtime.
+- If `process.env` is NOT available in the Playwright tool runtime (eg, `ReferenceError: process is not defined`), use the **auth-helper fallback** (below) to avoid ever pasting credentials.
 - DO NOT write/print/interpolate any other credentials (API keys, access tokens, session cookies).
 - Artifacts (screenshots, server logs, network capture) can include cookies/tokens and other sensitive data; keep them local and never commit or share raw artifacts.
 
@@ -132,7 +133,8 @@ kill -KILL "$WEB_PID" "$API_PID" 2>/dev/null || true
 
 ### 0) Preconditions
 
-- `NOA_TEST_USER` and `NOA_TEST_PASSWORD` are available to the Playwright MCP tool runtime (`process.env`).
+- `NOA_TEST_USER` and `NOA_TEST_PASSWORD` are set in the shell environment.
+- The Playwright MCP tool runtime MAY or MAY NOT expose `process.env`.
 - Dependencies are installed (`uv sync` in `apps/api`, `npm install` in `apps/web`).
 - If the API needs a DB, bring up Postgres + migrations first (see `AGENTS.md`).
 
@@ -191,6 +193,12 @@ Goal:
 - wait for `/assistant`
 - assert `[data-testid="thread-viewport"]` exists
 
+Always start by validating `/login` loads and `#login-email` exists.
+
+Then choose ONE auth strategy:
+
+#### Strategy A: UI login (when `process.env` works)
+
 Use `playwright_browser_run_code` and read credentials from `process.env` inside the tool runtime.
 
 ```js
@@ -217,6 +225,123 @@ async (page) => {
   await page.waitForSelector('[data-testid="thread-viewport"]', {
     timeout: 60_000,
   });
+};
+```
+
+#### Strategy B: Auth-helper fallback (when `process.env` is NOT available)
+
+If you see `ReferenceError: process is not defined`, do NOT paste credentials anywhere. Instead:
+
+1) Start a local auth-helper that reads env vars in the shell and exchanges them for a token via the API.
+
+```bash
+(
+ARTIFACTS="$(cat ".artifacts/noa-playwright-smoke/LAST_ARTIFACTS")"
+
+python3 - <<'PY' >"$ARTIFACTS/auth-helper.log" 2>&1 &
+import json
+import os
+import urllib.error
+import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+API_LOGIN_URL = "http://127.0.0.1:8000/auth/login"
+HOST = "127.0.0.1"
+PORT = 4555
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        return
+
+    def _send_json(self, status: int, payload: dict):
+        body = json.dumps(payload).encode("utf-8")
+        self.send_response(status)
+        self.send_header("content-type", "application/json")
+        self.send_header("content-length", str(len(body)))
+        self.send_header("access-control-allow-origin", "*")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        if self.path != "/token":
+            self._send_json(404, {"detail": "not found"})
+            return
+
+        email = os.environ.get("NOA_TEST_USER")
+        password = os.environ.get("NOA_TEST_PASSWORD")
+        if not email or not password:
+            self._send_json(
+                500,
+                {"detail": "Missing NOA_TEST_USER/NOA_TEST_PASSWORD env vars (values must not be printed)."},
+            )
+            return
+
+        data = json.dumps({"email": email, "password": password}).encode("utf-8")
+        req = urllib.request.Request(
+            API_LOGIN_URL,
+            data=data,
+            headers={"content-type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                raw = resp.read()
+                status = resp.getcode()
+        except urllib.error.HTTPError as e:
+            status = e.code
+            raw = e.read()
+        except Exception:
+            self._send_json(502, {"detail": "Auth helper failed to reach API"})
+            return
+
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            payload = {"detail": "API login response was not valid JSON"}
+            status = 502
+
+        self._send_json(status, payload if isinstance(payload, dict) else {"detail": "invalid payload"})
+
+HTTPServer((HOST, PORT), Handler).serve_forever()
+PY
+
+printf "%s\n" "$!" >"$ARTIFACTS/auth-helper.pid"
+)
+```
+
+2) In Playwright, fetch the token from the helper (no secrets), inject it into storage, then load `/assistant`.
+
+```js
+async (page) => {
+  const tokenResponse = await page.request.get("http://127.0.0.1:4555/token");
+  const payload = await tokenResponse.json();
+  const ok = typeof tokenResponse.ok === "function" ? tokenResponse.ok() : tokenResponse.ok;
+  const status = typeof tokenResponse.status === "function" ? tokenResponse.status() : tokenResponse.status;
+  if (!ok) {
+    throw new Error(`Auth helper returned ${status}`);
+  }
+
+  const token = payload?.access_token;
+  const user = payload?.user;
+  if (typeof token !== "string" || !token) {
+    throw new Error("Auth helper response missing access_token");
+  }
+
+  await page.addInitScript(
+    ({ token, user }) => {
+      try {
+        window.sessionStorage.setItem("noa.jwt", token);
+      } catch {}
+      try {
+        window.localStorage.setItem("noa.user", JSON.stringify(user ?? null));
+      } catch {}
+    },
+    { token, user },
+  );
+
+  await page.goto("http://localhost:3000/assistant", { waitUntil: "domcontentloaded" });
+  await page.waitForSelector('[data-testid="thread-viewport"]', { timeout: 60_000 });
 };
 ```
 
@@ -247,6 +372,21 @@ Do not rely on shell variables persisting. Load `ARTIFACTS` from `.artifacts/noa
 
 Use step 4 from the Run recipe.
 
+If you started the auth-helper fallback, also terminate it:
+
+```bash
+(
+ARTIFACTS="$(cat ".artifacts/noa-playwright-smoke/LAST_ARTIFACTS")"
+if [ -f "$ARTIFACTS/auth-helper.pid" ]; then
+  HELPER_PID="$(cat "$ARTIFACTS/auth-helper.pid")"
+  case "$HELPER_PID" in (''|*[!0-9]*) exit 0;; esac
+  kill -TERM "$HELPER_PID" 2>/dev/null || true
+  sleep 1
+  kill -KILL "$HELPER_PID" 2>/dev/null || true
+fi
+)
+```
+
 ### 7) Final report (REQUIRED)
 
 Return:
@@ -268,3 +408,4 @@ Return:
 - Ports already in use (8000/3000): stop conflicting processes and re-run.
 - Missing Postgres/migrations: bring up DB and migrate (see `AGENTS.md`).
 - Missing env vars: set `NOA_TEST_USER` + `NOA_TEST_PASSWORD` (do not paste values into chat/tool calls).
+- `process is not defined` inside `playwright_browser_run_code`: use the auth-helper fallback strategy.
