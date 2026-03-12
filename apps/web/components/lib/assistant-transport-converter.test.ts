@@ -70,4 +70,71 @@ describe("convertAssistantState", () => {
     expect(toolPart?.toolCallId).toBe("toolcall-m1-0");
     expect(toolPart?.argsText).toBe("{}");
   });
+
+  it("merges tool-result messages onto the matching tool-call part", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [
+              {
+                type: "tool-call",
+                toolName: "get_current_time",
+                toolCallId: "tool-call-1",
+                args: {},
+              },
+            ],
+          },
+          {
+            id: "m2",
+            role: "tool",
+            parts: [
+              {
+                type: "tool-result",
+                toolName: "get_current_time",
+                toolCallId: "tool-call-1",
+                result: { time: "10:00" },
+                isError: false,
+              },
+            ],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    expect(converted.messages).toHaveLength(1);
+    const toolPart = (converted.messages[0] as any).content.find((p: any) => p.type === "tool-call");
+    expect(toolPart?.result).toEqual({ time: "10:00" });
+    expect(toolPart?.isError).toBe(false);
+  });
+
+  it("drops proposal tool calls", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [
+              {
+                type: "tool-call",
+                toolName: "set_demo_flag",
+                toolCallId: "proposal-123",
+                args: { key: "demo_flag", value: true },
+              },
+            ],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    const content = (converted.messages[0] as any).content;
+    expect(content.some((p: any) => p.type === "tool-call")).toBe(false);
+  });
 });

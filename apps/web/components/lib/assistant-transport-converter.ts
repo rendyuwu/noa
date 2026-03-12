@@ -15,7 +15,17 @@ const coerceRecord = (value: unknown): Record<string, unknown> | undefined => {
     : undefined;
 };
 
-const partsToContent = (parts: Array<Record<string, unknown>>, messageId: string) => {
+type ToolResultData = {
+  result: unknown;
+  isError: boolean | undefined;
+  artifact: unknown;
+};
+
+const partsToContent = (
+  parts: Array<Record<string, unknown>>,
+  messageId: string,
+  toolResultsByCallId: Map<string, ToolResultData>,
+) => {
   const content: Array<Record<string, unknown>> = [];
 
   for (const [partIndex, part] of parts.entries()) {
@@ -37,32 +47,20 @@ const partsToContent = (parts: Array<Record<string, unknown>>, messageId: string
     if (type === "tool-call") {
       const toolName = coerceString(part.toolName) ?? "unknown";
       const toolCallId = coerceString(part.toolCallId) ?? `toolcall-${messageId}-${partIndex}`;
+      if (toolCallId.startsWith("proposal-")) {
+        continue;
+      }
       const args = coerceRecord(part.args) ?? {};
       const rawArgsText = coerceString(part.argsText);
       const argsText = rawArgsText && rawArgsText.trim() ? rawArgsText : JSON.stringify(args);
+      const toolResultData = toolResultsByCallId.get(toolCallId);
       content.push({
         type: "tool-call",
         toolName,
         toolCallId,
         args,
         argsText,
-      });
-      continue;
-    }
-
-    // Server persists tool results as standalone "tool" messages.
-    // assistant-ui expects tool results to live on a "tool-call" part.
-    if (type === "tool-result") {
-      const toolName = coerceString(part.toolName) ?? "unknown";
-      const toolCallId = coerceString(part.toolCallId);
-      const isError = typeof part.isError === "boolean" ? part.isError : undefined;
-      content.push({
-        type: "tool-call",
-        toolName,
-        ...(toolCallId ? { toolCallId } : {}),
-        argsText: "{}",
-        result: part.result,
-        ...(isError !== undefined ? { isError } : {}),
+        ...(toolResultData ?? {}),
       });
       continue;
     }
@@ -74,11 +72,12 @@ const partsToContent = (parts: Array<Record<string, unknown>>, messageId: string
 const toThreadMessage = (
   raw: { id?: string; role: string; parts: Array<Record<string, unknown>> },
   fallbackId: string,
+  toolResultsByCallId: Map<string, ToolResultData>,
 ): ThreadMessage => {
   const createdAt = new Date();
   const id = raw.id ?? fallbackId;
   const role = raw.role === "tool" ? "assistant" : raw.role;
-  const content = partsToContent(raw.parts ?? [], id);
+  const content = partsToContent(raw.parts ?? [], id, toolResultsByCallId);
 
   if (role === "user") {
     return {
@@ -113,6 +112,30 @@ export function convertAssistantState(
   connectionMetadata: { pendingCommands: Array<any>; isSending: boolean },
 ) {
   const transportIsRunning = Boolean(state.isRunning) || connectionMetadata.isSending;
+  const toolResultsByCallId = new Map<string, ToolResultData>();
+
+  for (const message of state.messages ?? []) {
+    if (message.role !== "tool") {
+      continue;
+    }
+
+    for (const part of message.parts ?? []) {
+      if (coerceString(part.type) !== "tool-result") {
+        continue;
+      }
+
+      const toolCallId = coerceString(part.toolCallId);
+      if (!toolCallId) {
+        continue;
+      }
+
+      toolResultsByCallId.set(toolCallId, {
+        result: part.result,
+        isError: typeof part.isError === "boolean" ? part.isError : undefined,
+        artifact: part.artifact,
+      });
+    }
+  }
 
   const optimisticMessages: ThreadMessage[] = connectionMetadata.pendingCommands
     .filter((command) => command.type === "add-message")
@@ -123,12 +146,19 @@ export function convertAssistantState(
           parts: command.message?.parts ?? [],
         },
         `optimistic-${index}`,
+        toolResultsByCallId,
       ),
     );
 
-  const persistedMessages: ThreadMessage[] = (state.messages ?? []).map((message, index) =>
-    toThreadMessage(message, `persisted-${index}`),
-  );
+  const persistedMessages: ThreadMessage[] = (state.messages ?? [])
+    .filter((message) => {
+      if (message.role !== "tool") {
+        return true;
+      }
+
+      return !(message.parts ?? []).some((part) => coerceString(part.type) === "tool-result");
+    })
+    .map((message, index) => toThreadMessage(message, `persisted-${index}`, toolResultsByCallId));
 
   if (transportIsRunning) {
     for (let index = persistedMessages.length - 1; index >= 0; index -= 1) {
