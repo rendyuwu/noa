@@ -710,7 +710,9 @@ async def assistant_transport(
         controller.state["isRunning"] = True
 
         should_run_agent = any(
-            isinstance(command, AddMessageCommand) and command.message.role == "user"
+            (isinstance(command, AddMessageCommand) and command.message.role == "user")
+            or isinstance(command, ApproveActionCommand)
+            or isinstance(command, AddToolResultCommand)
             for command in payload.commands
         )
         if should_run_agent:

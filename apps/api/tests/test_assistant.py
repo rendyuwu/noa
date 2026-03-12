@@ -526,6 +526,111 @@ async def test_assistant_route_accepts_add_tool_result_command() -> None:
     assert _state_contains_text(state, "From DB")
 
 
+async def test_assistant_route_runs_agent_after_add_tool_result_command() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        messages=[
+            {
+                "id": str(uuid4()),
+                "role": "assistant",
+                "parts": [{"type": "text", "text": "From DB"}],
+            }
+        ],
+        runner_messages=[
+            AgentMessage(
+                role="assistant",
+                parts=[{"type": "text", "text": "Follow-up after tool result"}],
+            )
+        ],
+        runner_text_deltas=["Follow-up"],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-tool-result",
+                "toolCallId": "tool-call-1",
+                "result": {"ok": True},
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assert "Follow-up after tool result" in response.text
+
+
+async def test_assistant_route_runs_agent_after_approve_action_command() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        messages=[
+            {
+                "id": str(uuid4()),
+                "role": "assistant",
+                "parts": [{"type": "text", "text": "From DB"}],
+            }
+        ],
+        runner_messages=[
+            AgentMessage(
+                role="assistant",
+                parts=[{"type": "text", "text": "Follow-up after approval"}],
+            )
+        ],
+        runner_text_deltas=["Follow-up"],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "approve-action",
+                "actionRequestId": "ar-1",
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assert "Follow-up after approval" in response.text
+
+
 async def test_assistant_route_rejects_unknown_command_type() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
