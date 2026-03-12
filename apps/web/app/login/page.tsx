@@ -13,9 +13,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  const labelClass = "block text-sm font-medium text-[#1a1a18] dark:text-[#eee]";
+  const labelClass = "block text-sm font-medium text-text";
   const inputClass =
-    "mt-1 w-full rounded-xl border border-[#00000015] bg-white/80 px-3 py-2.5 text-sm text-[#1a1a18] shadow-sm outline-none placeholder:text-[#6b6a68] focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70 dark:border-[#6c6a6040] dark:bg-[#2b2a27] dark:text-[#eee] dark:placeholder:text-[#9a9893]";
+    "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70";
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -50,10 +50,10 @@ export default function LoginPage() {
       <form
         onSubmit={onSubmit}
         aria-busy={submitting}
-        className="w-full max-w-[420px] overflow-hidden rounded-2xl border border-[#00000010] bg-white/70 shadow-[0_0.5rem_2rem_rgba(0,0,0,0.06)] backdrop-blur-sm dark:border-[#6c6a6040] dark:bg-[#1f1e1b]/70"
+        className="w-full max-w-[420px] overflow-hidden rounded-2xl border border-border bg-surface/70 shadow-[0_0.5rem_2rem_rgba(0,0,0,0.06)] backdrop-blur-sm"
       >
         <div className="p-6 sm:p-7">
-          <h1 className="text-3xl font-semibold leading-tight tracking-[-0.02em] text-[#1a1a18] dark:text-[#eee]">
+          <h1 className="text-3xl font-semibold leading-tight tracking-[-0.02em] text-text">
             Login
           </h1>
           <p className="mt-2 font-ui text-sm text-muted">Sign in with your LDAP credentials.</p>
@@ -97,7 +97,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="mt-6 border-t border-[#00000010] pt-5 dark:border-[#6c6a6040]">
+          <div className="mt-6 border-t border-border pt-5">
             <button
               className="inline-flex w-full items-center justify-center rounded-xl bg-accent px-4 py-2.5 font-ui text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.99]"
               disabled={submitting}
