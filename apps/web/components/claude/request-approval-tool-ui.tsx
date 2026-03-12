@@ -66,14 +66,7 @@ export const RequestApprovalToolUI = makeAssistantToolUI({
 
 export function ClaudeToolGroup({ children }: { children?: ReactNode }) {
   if (!children) return null;
-  return (
-    <div className="mt-3 rounded-xl border border-border bg-surface/60 p-3 shadow-sm">
-      <div className="text-[0.7rem] uppercase tracking-wide text-muted">
-        Tool activity
-      </div>
-      <div className="mt-2">{children}</div>
-    </div>
-  );
+  return <>{children}</>;
 }
 
 const TOOL_COPY: Record<string, { label: string; doing: string; done: string }> = {
@@ -151,18 +144,20 @@ export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
           ? `Waiting for approval before continuing ${copy.label.toLowerCase()}`
           : copy.doing;
 
+  if (statusType === "complete" && !isError) {
+    return null;
+  }
+
   return (
-    <details className="rounded-xl border border-border bg-surface text-sm shadow-sm">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
-        <div className="min-w-0">
-          <div className="font-medium text-text">{copy.label}</div>
-          <div className="text-xs text-muted">{activityText}</div>
-        </div>
-        <div className={["shrink-0 rounded-md px-2 py-0.5 text-[11px]", badge.className].join(" ")}>
-          {badge.label}
-        </div>
-      </summary>
-      <div className="border-t border-border px-3 py-2 text-xs text-muted">Tool activity</div>
-    </details>
+    <div className="flex items-center justify-between gap-2 rounded-md bg-surface/40 px-2 py-1.5 text-xs">
+      <div className="min-w-0 truncate text-muted">
+        <span className="font-medium text-text">{copy.label}</span>
+        <span className="mx-1.5 text-muted">-</span>
+        <span>{activityText}</span>
+      </div>
+      <div className={["shrink-0 rounded px-1.5 py-0.5 text-[10px]", badge.className].join(" ")}>
+        {badge.label}
+      </div>
+    </div>
   );
 }
