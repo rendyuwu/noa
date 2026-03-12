@@ -41,4 +41,33 @@ describe("convertAssistantState", () => {
     expect(typeof toolPart?.argsText).toBe("string");
     expect(toolPart?.argsText).toBe("{}");
   });
+
+  it("uses deterministic fallback toolCallId when missing", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [
+              {
+                type: "tool-call",
+                toolName: "get_current_time",
+                args: {},
+              },
+            ],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    const message = converted.messages[0];
+    expect(message?.role).toBe("assistant");
+    const toolPart = (message as any)?.content?.find?.((p: any) => p?.type === "tool-call");
+    expect(toolPart).toBeDefined();
+    expect(toolPart?.toolCallId).toBe("toolcall-m1-0");
+    expect(toolPart?.argsText).toBe("{}");
+  });
 });
