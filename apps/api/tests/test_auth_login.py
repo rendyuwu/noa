@@ -8,6 +8,7 @@ from httpx import ASGITransport, AsyncClient
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.core.auth.auth_service import AuthResult, AuthService, AuthUser
 from noa_api.core.auth.errors import (
+    AuthError,
     AuthInvalidCredentialsError,
     AuthPendingApprovalError,
 )
@@ -113,6 +114,8 @@ class _FakeRouteAuthService:
             raise AuthInvalidCredentialsError("Invalid credentials")
         if self.mode == "pending":
             raise AuthPendingApprovalError("Pending approval")
+        if self.mode == "auth_error":
+            raise AuthError("LDAP authentication failed")
 
         return AuthResult(
             access_token="jwt-token",
@@ -214,6 +217,23 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     assert payload["access_token"] == "jwt-token"
     assert payload["token_type"] == "bearer"
     assert payload["user"]["email"] == "user@example.com"
+
+
+async def test_login_route_maps_auth_service_failure_to_503() -> None:
+    app = FastAPI()
+    app.include_router(auth_router)
+
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="auth_error"
+    )
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Authentication service unavailable"}
 
 
 async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:

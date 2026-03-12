@@ -11,9 +11,9 @@ import {
   ArchiveIcon,
   ColumnsIcon,
   CodeIcon,
-  GearIcon,
   LayersIcon,
   MagnifyingGlassIcon,
+  PersonIcon,
   PlusIcon,
   TrashIcon,
 } from "@radix-ui/react-icons";
@@ -35,6 +35,28 @@ function DisabledNavItem({ icon, label }: { icon: ReactNode; label: string }) {
       </span>
       {label}
     </button>
+  );
+}
+
+function NavLinkItem({
+  icon,
+  label,
+  href,
+}: {
+  icon: ReactNode;
+  label: string;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-ui text-sm text-muted transition-colors hover:bg-surface-2/60 hover:text-text active:scale-[0.99]"
+    >
+      <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">
+        {icon}
+      </span>
+      {label}
+    </Link>
   );
 }
 
@@ -71,6 +93,7 @@ export function ClaudeThreadList({
   const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
   const secondary = user?.email?.trim() || user?.roles?.join(", ") || "Signed in";
+  const isAdmin = user?.roles?.includes("admin") ?? false;
 
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col bg-bg">
@@ -110,7 +133,9 @@ export function ClaudeThreadList({
 
           <div className="mt-2">
             <DisabledNavItem icon={<MagnifyingGlassIcon width={16} height={16} />} label="Search" />
-            <DisabledNavItem icon={<GearIcon width={16} height={16} />} label="Customize" />
+            {isAdmin ? (
+              <NavLinkItem icon={<PersonIcon width={16} height={16} />} label="Users" href="/admin/users" />
+            ) : null}
             <DisabledNavItem icon={<LayersIcon width={16} height={16} />} label="Projects" />
             <DisabledNavItem icon={<ArchiveIcon width={16} height={16} />} label="Artifacts" />
             <DisabledNavItem icon={<CodeIcon width={16} height={16} />} label="Code" />
@@ -143,13 +168,7 @@ export function ClaudeThreadList({
           </div>
         </div>
 
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <Link
-            href="/admin"
-            className="text-sm text-text underline decoration-border/60 underline-offset-4 hover:decoration-border"
-          >
-            Admin
-          </Link>
+        <div className="mt-2 flex items-center justify-end gap-3">
           <button
             type="button"
             onClick={clearAuth}

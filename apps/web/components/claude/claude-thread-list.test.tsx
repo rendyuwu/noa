@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -70,18 +70,45 @@ describe("ClaudeThreadList", () => {
     expect(newChatButton).toHaveClass("px-4");
 
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Admin" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Logout" })).toBeInTheDocument();
   });
 
   it("renders disabled Claude-style nav items under the new chat button", () => {
     render(<ClaudeThreadList />);
 
-    for (const label of ["Search", "Customize", "Projects", "Artifacts", "Code"]) {
-      const button = screen.getByRole("button", { name: label });
+    const newChatButton = screen.getByRole("button", { name: "New chat" });
+    expect(newChatButton.parentElement).not.toBeNull();
+    const navSection = within(newChatButton.parentElement as HTMLElement);
+
+    expect(navSection.queryByRole("button", { name: "Customize" })).not.toBeInTheDocument();
+
+    for (const label of ["Search", "Projects", "Artifacts", "Code"]) {
+      const button = navSection.getByRole("button", { name: label });
       expect(button).toHaveAttribute("aria-disabled", "true");
       expect(button).not.toBeDisabled();
     }
+  });
+
+  it("renders a Users nav link under the new chat section for admin users", () => {
+    render(<ClaudeThreadList />);
+
+    const newChatButton = screen.getByRole("button", { name: "New chat" });
+    expect(newChatButton.parentElement).not.toBeNull();
+    const navSection = within(newChatButton.parentElement as HTMLElement);
+
+    expect(navSection.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
+  });
+
+  it("renders the Users nav link when roles include admin among others", () => {
+    mocks.user.roles = ["member", "admin"];
+
+    render(<ClaudeThreadList />);
+
+    const newChatButton = screen.getByRole("button", { name: "New chat" });
+    expect(newChatButton.parentElement).not.toBeNull();
+    const navSection = within(newChatButton.parentElement as HTMLElement);
+
+    expect(navSection.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
   });
 
   it("applies active styling to the selected thread row", () => {
@@ -100,10 +127,38 @@ describe("ClaudeThreadList", () => {
     expect(screen.getByText("C")).toBeInTheDocument();
     expect(screen.getByText("Casey Rivers")).toBeInTheDocument();
     expect(screen.getByText("casey@example.com")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Admin" })).toHaveAttribute("href", "/admin");
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("hides the Users nav link for non-admin users", () => {
+    mocks.user.roles = ["member"];
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+  });
+
+  it("hides the Users nav link when roles are empty or missing", () => {
+    mocks.user.roles = [];
+
+    const { unmount } = render(<ClaudeThreadList />);
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    unmount();
+
+    delete (mocks.user as any).roles;
+    render(<ClaudeThreadList />);
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+  });
+
+  it("hides the Users nav link when auth user data is missing", () => {
+    mocks.user = null;
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
   });
 
   it("uses a neutral account fallback when auth user data is missing", () => {
