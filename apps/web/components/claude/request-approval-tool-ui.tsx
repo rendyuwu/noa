@@ -76,35 +76,86 @@ export function ClaudeToolGroup({ children }: { children?: ReactNode }) {
   );
 }
 
-export function ClaudeToolFallback({ toolName, status, argsText, result, isError }: any) {
-  const name = typeof toolName === "string" && toolName ? toolName : "tool";
-  const statusText = typeof status?.type === "string" ? status.type : "unknown";
+const TOOL_COPY: Record<string, { label: string; doing: string; done: string }> = {
+  get_current_time: {
+    label: "Current time",
+    doing: "Checking now",
+    done: "Checked",
+  },
+  get_current_date: {
+    label: "Today's date",
+    doing: "Checking now",
+    done: "Checked",
+  },
+};
+
+const STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  running: {
+    label: "running",
+    className: "bg-surface-2 text-muted",
+  },
+  complete: {
+    label: "complete",
+    className: "bg-emerald-50 text-emerald-800",
+  },
+  incomplete: {
+    label: "incomplete",
+    className: "bg-red-50 text-red-800",
+  },
+  "requires-action": {
+    label: "requires-action",
+    className: "bg-amber-50 text-amber-800",
+  },
+};
+
+function humanizeToolName(toolName: string): string {
+  return toolName
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+export function ClaudeToolFallback({ toolName, status, isError }: any) {
+  const rawName = typeof toolName === "string" && toolName ? toolName : "tool";
+  const copy =
+    TOOL_COPY[rawName] ??
+    ({
+      label: humanizeToolName(rawName),
+      doing: `Running ${humanizeToolName(rawName).toLowerCase()}`,
+      done: `Finished ${humanizeToolName(rawName).toLowerCase()}`,
+    } as const);
+
+  const rawStatus = typeof status?.type === "string" ? status.type : undefined;
+  const statusType =
+    rawStatus === "running" ||
+    rawStatus === "complete" ||
+    rawStatus === "incomplete" ||
+    rawStatus === "requires-action"
+      ? rawStatus
+      : isError
+        ? "incomplete"
+        : "complete";
+  const badge = STATUS_BADGE[statusType] ?? STATUS_BADGE.incomplete;
+
+  const activityText =
+    statusType === "complete"
+      ? copy.done
+      : statusType === "incomplete"
+        ? `Could not complete ${copy.label.toLowerCase()}`
+        : statusType === "requires-action"
+          ? `Waiting for approval before continuing ${copy.label.toLowerCase()}`
+          : copy.doing;
 
   return (
-    <div className="rounded-xl border border-border bg-surface p-3 text-sm shadow-sm">
-      <div className="flex items-center justify-between gap-3">
-        <div className="min-w-0 font-medium text-text">{name}</div>
-        <div
-          className={[
-            "shrink-0 rounded-md px-2 py-0.5 text-[11px]",
-            isError ? "bg-red-50 text-red-800" : "bg-surface-2 text-muted",
-          ].join(" ")}
-        >
-          {statusText}
+    <details className="rounded-xl border border-border bg-surface text-sm shadow-sm">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2">
+        <div className="min-w-0 font-medium text-text">{copy.label}</div>
+        <div className={["shrink-0 rounded-md px-2 py-0.5 text-[11px]", badge.className].join(" ")}>
+          {badge.label}
         </div>
-      </div>
-
-      {argsText ? (
-        <pre className="mt-2 max-h-48 overflow-auto rounded-lg border border-border bg-surface-2 p-2 text-[12px] text-text">
-          {argsText}
-        </pre>
-      ) : null}
-
-      {result !== undefined ? (
-        <pre className="mt-2 max-h-64 overflow-auto rounded-lg border border-border bg-surface p-2 text-[12px] text-text">
-          {typeof result === "string" ? result : JSON.stringify(result, null, 2)}
-        </pre>
-      ) : null}
-    </div>
+      </summary>
+      <div className="border-t border-border px-3 py-2 text-xs text-muted">{activityText}</div>
+    </details>
   );
 }
