@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Cross2Icon } from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
@@ -33,11 +33,18 @@ function toErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
+function sanitizeIdPart(value: string): string {
+  return value.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
 export function UsersAdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const loadSeqRef = useRef(0);
+  const openerRef = useRef<HTMLElement | null>(null);
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const selectedUser = useMemo(() => {
@@ -50,55 +57,40 @@ export function UsersAdminPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
-  useEffect(() => {
-    let ignore = false;
+  const loadData = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+    setLoading(true);
+    setLoadError(null);
 
-    const load = async () => {
-      setLoading(true);
-      setLoadError(null);
+    try {
+      const [usersResponse, toolsResponse] = await Promise.all([
+        fetchWithAuth("/admin/users"),
+        fetchWithAuth("/admin/tools"),
+      ]);
 
-      try {
-        const [usersResponse, toolsResponse] = await Promise.all([
-          fetchWithAuth("/admin/users"),
-          fetchWithAuth("/admin/tools"),
-        ]);
+      const [usersPayload, toolsPayload] = await Promise.all([
+        jsonOrThrow<AdminUsersResponse>(usersResponse),
+        jsonOrThrow<AdminToolsResponse>(toolsResponse),
+      ]);
 
-        const [usersPayload, toolsPayload] = await Promise.all([
-          jsonOrThrow<AdminUsersResponse>(usersResponse),
-          jsonOrThrow<AdminToolsResponse>(toolsResponse),
-        ]);
-
-        if (ignore) return;
-        setUsers(Array.isArray(usersPayload.users) ? usersPayload.users : []);
-        setAvailableTools(coerceStringArray(toolsPayload.tools));
-      } catch (error) {
-        if (ignore) return;
-        setLoadError(toErrorMessage(error, "Unable to load users"));
-      } finally {
-        if (ignore) return;
-        setLoading(false);
-      }
-    };
-
-    void load();
-    return () => {
-      ignore = true;
-    };
+      if (seq !== loadSeqRef.current) return;
+      setUsers(Array.isArray(usersPayload.users) ? usersPayload.users : []);
+      setAvailableTools(coerceStringArray(toolsPayload.tools));
+    } catch (error) {
+      if (seq !== loadSeqRef.current) return;
+      setLoadError(toErrorMessage(error, "Unable to load users"));
+    } finally {
+      if (seq !== loadSeqRef.current) return;
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (!selectedUser) {
-      setToolFilter("");
-      setToolAllowlist([]);
-      setSaveError(null);
-      setSaving(false);
-      return;
-    }
-
-    setToolFilter("");
-    setToolAllowlist(coerceStringArray(selectedUser.tools));
-    setSaveError(null);
-  }, [selectedUser?.id]);
+    void loadData();
+    return () => {
+      loadSeqRef.current += 1;
+    };
+  }, [loadData]);
 
   const allToolNames = useMemo(() => {
     const merged = new Set<string>([...coerceStringArray(availableTools), ...coerceStringArray(toolAllowlist)]);
@@ -111,8 +103,22 @@ export function UsersAdminPage() {
     return allToolNames.filter((name) => name.toLowerCase().includes(needle));
   }, [allToolNames, toolFilter]);
 
-  const closePanel = () => setSelectedUserId(null);
-  const openPanelForUser = (userId: string) => setSelectedUserId(userId);
+  const closePanel = () => {
+    setSelectedUserId(null);
+    setToolFilter("");
+    setToolAllowlist([]);
+    setSaveError(null);
+    setSaving(false);
+  };
+
+  const openPanelForUser = (user: AdminUser, opener: HTMLElement | null) => {
+    openerRef.current = opener;
+    setSelectedUserId(user.id);
+    setToolFilter("");
+    setToolAllowlist(coerceStringArray(user.tools));
+    setSaveError(null);
+    setSaving(false);
+  };
 
   const toggleTool = (toolName: string) => {
     setToolAllowlist((prev) => {
@@ -152,12 +158,37 @@ export function UsersAdminPage() {
   };
 
   return (
-    <Dialog.Root open={selectedUserId !== null} onOpenChange={(open) => (!open ? closePanel() : undefined)}>
+    <Dialog.Root
+      open={selectedUserId !== null}
+      onOpenChange={(open) => {
+        if (!open) closePanel();
+      }}
+    >
       <main className="min-h-dvh bg-bg p-6">
         <div className="flex items-end justify-between gap-3">
           <h1 className="text-2xl font-semibold">Users</h1>
           {loading ? <div className="muted font-ui">Loading...</div> : null}
         </div>
+
+        {loadError ? (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">{loadError}</div>
+              <button
+                type="button"
+                className="button shrink-0"
+                disabled={loading}
+                onClick={() => void loadData()}
+              >
+                Retry
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <div className="panel mt-6 overflow-hidden">
           <table className="w-full font-ui text-sm">
@@ -172,7 +203,11 @@ export function UsersAdminPage() {
               {users.length === 0 ? (
                 <tr>
                   <td className="px-4 py-4 text-sm text-muted" colSpan={3}>
-                    {loadError ? loadError : loading ? "Loading users..." : "No users found."}
+                    {loading
+                      ? "Loading users..."
+                      : loadError
+                        ? "Unable to load users."
+                        : "No users found."}
                   </td>
                 </tr>
               ) : (
@@ -183,8 +218,17 @@ export function UsersAdminPage() {
                   return (
                     <tr
                       key={user.id}
-                      className="cursor-pointer transition-colors hover:bg-surface-2/60"
-                      onClick={() => openPanelForUser(user.id)}
+                      tabIndex={0}
+                      aria-haspopup="dialog"
+                      aria-label={`Edit tools for ${user.email}`}
+                      className="cursor-pointer transition-colors hover:bg-surface-2/60 focus-visible:bg-surface-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
+                      onClick={(event) => openPanelForUser(user, event.currentTarget)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
+                          event.preventDefault();
+                          openPanelForUser(user, event.currentTarget);
+                        }
+                      }}
                     >
                       <td className="px-4 py-3">
                         <div className="font-medium text-text">{user.email}</div>
@@ -212,6 +256,10 @@ export function UsersAdminPage() {
               "data-[state=open]:translate-x-0 data-[state=closed]:translate-x-full",
               "outline-none",
             ].join(" ")}
+            onCloseAutoFocus={(event) => {
+              event.preventDefault();
+              openerRef.current?.focus();
+            }}
           >
             <Dialog.Title className="sr-only">Edit user tools</Dialog.Title>
             <Dialog.Description className="sr-only">
@@ -233,7 +281,6 @@ export function UsersAdminPage() {
                     type="button"
                     className="button"
                     aria-label="Close"
-                    onClick={() => closePanel()}
                   >
                     <Cross2Icon width={16} height={16} />
                   </button>
@@ -271,9 +318,9 @@ export function UsersAdminPage() {
                         <ul className="space-y-1">
                           {filteredToolNames.map((toolName) => {
                             const checked = toolAllowlist.includes(toolName);
-                            const inputId = selectedUser
-                              ? `tool-${selectedUser.id}-${toolName}`
-                              : `tool-${toolName}`;
+                            const toolIdPart = sanitizeIdPart(toolName);
+                            const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
+                            const inputId = `tool-${userIdPart}-${toolIdPart}`;
 
                             return (
                               <li key={toolName}>
