@@ -82,7 +82,7 @@ const ToolFallback = ({ toolName, status, argsText, result }: any) => {
 const UserMessage = () => {
   return (
     <MessagePrimitive.Root className="row" style={{ justifyContent: "flex-end", marginBottom: 10 }}>
-      <div className="panel" style={{ padding: "8px 10px", maxWidth: "80%", background: "#e6f2ff" }}>
+      <div className="panel bg-surface-2" style={{ padding: "8px 10px", maxWidth: "80%" }}>
         <MessagePrimitive.Parts />
       </div>
     </MessagePrimitive.Root>

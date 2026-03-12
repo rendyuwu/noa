@@ -50,7 +50,7 @@ export function ClaudeWorkspace() {
           ].join(" ")}
         >
           {desktopSidebarOpen ? (
-            <aside className="hidden h-full min-h-0 border-[#00000010] border-r md:block dark:border-[#6c6a6040]">
+            <aside className="hidden h-full min-h-0 border-border border-r md:block">
               <ClaudeThreadList onCloseSidebar={closeDesktopSidebar} />
             </aside>
           ) : null}
