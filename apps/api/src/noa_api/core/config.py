@@ -8,12 +8,17 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     environment: str = "development"
-    postgres_url: PostgresDsn = "postgresql+asyncpg://postgres:postgres@localhost:5432/noa"
+    postgres_url: PostgresDsn = (
+        "postgresql+asyncpg://postgres:postgres@localhost:5432/noa"
+    )
     auth_jwt_secret: SecretStr | None = None
     auth_jwt_algorithm: str = "HS256"
     auth_jwt_access_token_ttl_seconds: int = 3600
     auth_bootstrap_admin_emails: set[str] = Field(default_factory=set)
-    api_cors_allowed_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    auth_dev_bypass_ldap: bool = False
+    api_cors_allowed_origins: list[str] = Field(
+        default_factory=lambda: ["http://localhost:3000"]
+    )
     api_cors_allow_credentials: bool = True
     ldap_server_uri: str = "ldap://localhost:389"
     ldap_allow_insecure_transport: bool = False
@@ -25,7 +30,9 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str | None = None
     llm_api_key: SecretStr | None = None
-    llm_system_prompt: str = "You are NOA. Use tools when they help answer the user request."
+    llm_system_prompt: str = (
+        "You are NOA. Use tools when they help answer the user request."
+    )
 
     @field_validator("api_cors_allowed_origins", mode="before")
     @classmethod
@@ -39,21 +46,39 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
         env = self.environment.lower()
-        secret_value = self.auth_jwt_secret.get_secret_value() if self.auth_jwt_secret is not None else ""
+        secret_value = (
+            self.auth_jwt_secret.get_secret_value()
+            if self.auth_jwt_secret is not None
+            else ""
+        )
+
+        if self.auth_dev_bypass_ldap and env not in {"development", "dev", "test"}:
+            raise ValueError(
+                "auth_dev_bypass_ldap can only be enabled in development/test environments"
+            )
 
         if not secret_value:
             if env in {"development", "dev", "test"}:
                 self.auth_jwt_secret = SecretStr(secrets.token_urlsafe(48))
                 return self
-            raise ValueError("auth_jwt_secret is required outside development/test environments")
+            raise ValueError(
+                "auth_jwt_secret is required outside development/test environments"
+            )
 
         if len(secret_value) < 32 and env not in {"development", "dev", "test"}:
-            raise ValueError("auth_jwt_secret must be at least 32 characters in non-development environments")
+            raise ValueError(
+                "auth_jwt_secret must be at least 32 characters in non-development environments"
+            )
 
         if env not in {"development", "dev", "test"}:
             server_uri = self.ldap_server_uri.lower().strip()
-            if server_uri.startswith("ldap://") and not self.ldap_allow_insecure_transport:
-                raise ValueError("ldaps:// is required for LDAP in non-development environments")
+            if (
+                server_uri.startswith("ldap://")
+                and not self.ldap_allow_insecure_transport
+            ):
+                raise ValueError(
+                    "ldaps:// is required for LDAP in non-development environments"
+                )
 
         return self
 

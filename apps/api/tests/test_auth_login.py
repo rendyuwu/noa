@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -12,8 +13,12 @@ from noa_api.core.auth.errors import (
     AuthPendingApprovalError,
 )
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
-from noa_api.core.auth.ldap_service import LdapUser
+from noa_api.core.auth.ldap_service import LDAPService, LdapUser
 from noa_api.core.config import Settings
+
+
+def _settings(**kwargs: Any) -> Settings:
+    return Settings(**kwargs, _env_file=None)  # type: ignore[call-arg]
 
 
 @dataclass
@@ -144,8 +149,8 @@ async def test_auth_service_auto_provisions_pending_user() -> None:
     repo = _InMemoryAuthRepository()
     service = AuthService(
         auth_repository=repo,
-        ldap_service=_FakeLDAPService(),
-        jwt_service=_FakeJWTService(),
+        ldap_service=cast(Any, _FakeLDAPService()),
+        jwt_service=cast(Any, _FakeJWTService()),
         bootstrap_admin_emails=set(),
     )
 
@@ -162,8 +167,8 @@ async def test_auth_service_bootstrap_admin_auto_active_and_issues_jwt() -> None
     repo = _InMemoryAuthRepository()
     service = AuthService(
         auth_repository=repo,
-        ldap_service=_FakeLDAPService(),
-        jwt_service=_FakeJWTService(),
+        ldap_service=cast(Any, _FakeLDAPService()),
+        jwt_service=cast(Any, _FakeJWTService()),
         bootstrap_admin_emails={"admin@example.com"},
     )
 
@@ -287,25 +292,24 @@ async def test_me_route_rejects_inactive_user() -> None:
 
 def test_settings_requires_jwt_secret_in_non_dev_environment() -> None:
     try:
-        Settings(environment="production", _env_file=None)
+        _settings(environment="production")
         assert False, "Expected missing JWT secret to fail in production"
     except ValueError:
         pass
 
 
 def test_settings_generates_jwt_secret_in_dev_environment() -> None:
-    cfg = Settings(environment="development", _env_file=None)
+    cfg = _settings(environment="development")
     assert cfg.auth_jwt_secret is not None
     assert len(cfg.auth_jwt_secret.get_secret_value()) >= 32
 
 
 def test_settings_rejects_insecure_ldap_transport_in_production() -> None:
     try:
-        Settings(
+        _settings(
             environment="production",
             auth_jwt_secret="x" * 32,
             ldap_server_uri="ldap://ldap.example.com:389",
-            _env_file=None,
         )
         assert False, "Expected insecure LDAP transport to fail in production"
     except ValueError:
@@ -313,9 +317,39 @@ def test_settings_rejects_insecure_ldap_transport_in_production() -> None:
 
 
 def test_settings_allows_insecure_ldap_transport_in_development() -> None:
-    cfg = Settings(
+    cfg = _settings(
         environment="development",
         ldap_server_uri="ldap://localhost:389",
-        _env_file=None,
     )
     assert cfg.ldap_server_uri.startswith("ldap://")
+
+
+def test_settings_rejects_auth_dev_bypass_ldap_in_production() -> None:
+    try:
+        _settings(
+            environment="production",
+            auth_jwt_secret="x" * 32,
+            ldap_server_uri="ldaps://ldap.example.com:636",
+            auth_dev_bypass_ldap=True,
+        )
+        assert False, "Expected auth_dev_bypass_ldap to be rejected in production"
+    except ValueError:
+        pass
+
+
+async def test_ldap_service_dev_bypass_authenticates_without_ldap_server() -> None:
+    cfg = _settings(
+        environment="development",
+        ldap_server_uri="ldap://127.0.0.1:1",
+        ldap_timeout_seconds=1,
+        auth_dev_bypass_ldap=True,
+    )
+    service = LDAPService(cfg)
+
+    try:
+        user = await service.authenticate(email="user@example.com", password="secret")
+    except Exception as exc:
+        assert False, f"Expected dev-bypass LDAP auth to succeed, got: {exc!r}"
+
+    assert user.email == "user@example.com"
+    assert "user@example.com" in user.dn
