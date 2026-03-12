@@ -31,6 +31,11 @@ export default function LoginPage() {
 
       const payload = await response.json();
       if (!response.ok) {
+        if (payload?.detail === "User pending approval") {
+          setError("Your account is pending approval. Ask an admin to enable it.");
+          return;
+        }
+
         setError(payload?.detail ?? "Login failed");
         return;
       }
