@@ -9,10 +9,16 @@ const coerceString = (value: unknown): string | undefined => {
   return typeof value === "string" ? value : undefined;
 };
 
-const partsToContent = (parts: Array<Record<string, unknown>>) => {
+const coerceRecord = (value: unknown): Record<string, unknown> | undefined => {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+};
+
+const partsToContent = (parts: Array<Record<string, unknown>>, messageId: string) => {
   const content: Array<Record<string, unknown>> = [];
 
-  for (const part of parts) {
+  for (const [partIndex, part] of parts.entries()) {
     const type = coerceString(part.type);
     if (!type) continue;
 
@@ -30,15 +36,16 @@ const partsToContent = (parts: Array<Record<string, unknown>>) => {
 
     if (type === "tool-call") {
       const toolName = coerceString(part.toolName) ?? "unknown";
-      const toolCallId = coerceString(part.toolCallId);
-      const args = typeof part.args === "object" && part.args !== null ? part.args : undefined;
-      const argsText = coerceString(part.argsText);
+      const toolCallId = coerceString(part.toolCallId) ?? `toolcall-${messageId}-${partIndex}`;
+      const args = coerceRecord(part.args) ?? {};
+      const rawArgsText = coerceString(part.argsText);
+      const argsText = rawArgsText && rawArgsText.trim() ? rawArgsText : JSON.stringify(args);
       content.push({
         type: "tool-call",
         toolName,
-        ...(toolCallId ? { toolCallId } : {}),
-        ...(args ? { args } : {}),
-        ...(argsText ? { argsText } : {}),
+        toolCallId,
+        args,
+        argsText,
       });
       continue;
     }
@@ -71,7 +78,7 @@ const toThreadMessage = (
   const createdAt = new Date();
   const id = raw.id ?? fallbackId;
   const role = raw.role === "tool" ? "assistant" : raw.role;
-  const content = partsToContent(raw.parts ?? []);
+  const content = partsToContent(raw.parts ?? [], id);
 
   if (role === "user") {
     return {
