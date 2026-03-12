@@ -6,7 +6,11 @@ from httpx import ASGITransport, AsyncClient
 
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.core.auth.auth_service import AuthResult, AuthService, AuthUser
-from noa_api.core.auth.errors import AuthInvalidCredentialsError, AuthPendingApprovalError
+from noa_api.core.auth.errors import (
+    AuthError,
+    AuthInvalidCredentialsError,
+    AuthPendingApprovalError,
+)
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.ldap_service import LdapUser
 from noa_api.core.config import Settings
@@ -30,8 +34,21 @@ class _InMemoryAuthRepository:
     async def get_user_by_email(self, email: str) -> _User | None:
         return self.users.get(email)
 
-    async def create_user(self, *, email: str, ldap_dn: str | None, display_name: str | None, is_active: bool) -> _User:
-        user = _User(id=uuid4(), email=email, ldap_dn=ldap_dn, display_name=display_name, is_active=is_active)
+    async def create_user(
+        self,
+        *,
+        email: str,
+        ldap_dn: str | None,
+        display_name: str | None,
+        is_active: bool,
+    ) -> _User:
+        user = _User(
+            id=uuid4(),
+            email=email,
+            ldap_dn=ldap_dn,
+            display_name=display_name,
+            is_active=is_active,
+        )
         self.users[email] = user
         return user
 
@@ -44,7 +61,9 @@ class _InMemoryAuthRepository:
         is_active: bool | None = None,
     ) -> _User:
         user.ldap_dn = ldap_dn if ldap_dn is not None else user.ldap_dn
-        user.display_name = display_name if display_name is not None else user.display_name
+        user.display_name = (
+            display_name if display_name is not None else user.display_name
+        )
         user.is_active = is_active if is_active is not None else user.is_active
         return user
 
@@ -90,6 +109,8 @@ class _FakeRouteAuthService:
             raise AuthInvalidCredentialsError("Invalid credentials")
         if self.mode == "pending":
             raise AuthPendingApprovalError("Pending approval")
+        if self.mode == "auth_error":
+            raise AuthError("LDAP authentication failed")
 
         return AuthResult(
             access_token="jwt-token",
@@ -158,22 +179,34 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     app = FastAPI()
     app.include_router(auth_router)
 
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="invalid")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="invalid"
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        invalid_response = await client.post("/auth/login", json={"email": "user@example.com", "password": "bad"})
+        invalid_response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "bad"}
+        )
     assert invalid_response.status_code == 401
 
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="pending")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="pending"
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        pending_response = await client.post("/auth/login", json={"email": "user@example.com", "password": "ok"})
+        pending_response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
     assert pending_response.status_code == 403
 
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        success_response = await client.post("/auth/login", json={"email": "user@example.com", "password": "ok"})
+        success_response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
     assert success_response.status_code == 200
     payload = success_response.json()
     assert payload["access_token"] == "jwt-token"
@@ -181,15 +214,36 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     assert payload["user"]["email"] == "user@example.com"
 
 
+async def test_login_route_maps_auth_service_failure_to_503() -> None:
+    app = FastAPI()
+    app.include_router(auth_router)
+
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="auth_error"
+    )
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "Authentication service unavailable"}
+
+
 async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
     app = FastAPI()
     app.include_router(auth_router)
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/auth/me", headers={"Authorization": "Bearer good-token"})
+        response = await client.get(
+            "/auth/me", headers={"Authorization": "Bearer good-token"}
+        )
 
     assert response.status_code == 200
     payload = response.json()
@@ -200,12 +254,16 @@ async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
 async def test_me_route_rejects_invalid_token() -> None:
     app = FastAPI()
     app.include_router(auth_router)
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/auth/me", headers={"Authorization": "Bearer bad-token"})
+        response = await client.get(
+            "/auth/me", headers={"Authorization": "Bearer bad-token"}
+        )
 
     assert response.status_code == 401
 
@@ -213,12 +271,16 @@ async def test_me_route_rejects_invalid_token() -> None:
 async def test_me_route_rejects_inactive_user() -> None:
     app = FastAPI()
     app.include_router(auth_router)
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/auth/me", headers={"Authorization": "Bearer inactive-token"})
+        response = await client.get(
+            "/auth/me", headers={"Authorization": "Bearer inactive-token"}
+        )
 
     assert response.status_code == 403
 
