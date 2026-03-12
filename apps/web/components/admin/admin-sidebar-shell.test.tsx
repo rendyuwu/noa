@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -14,13 +14,30 @@ vi.mock("next/navigation", () => ({
 vi.mock("@radix-ui/react-dialog", async () => {
   const React = await import("react");
 
+  type DialogState = {
+    open: boolean;
+    onOpenChange?: (open: boolean) => void;
+  };
   type WrapperProps = { children?: React.ReactNode };
+  type RootProps = WrapperProps & DialogState;
+
+  const DialogContext = React.createContext<DialogState>({
+    open: false,
+  });
 
   return {
-    Root: ({ children }: WrapperProps) => <div>{children}</div>,
-    Portal: ({ children }: WrapperProps) => <div>{children}</div>,
+    Root: ({ children, open, onOpenChange }: RootProps) => (
+      <DialogContext.Provider value={{ open, onOpenChange }}>{children}</DialogContext.Provider>
+    ),
+    Portal: ({ children }: WrapperProps) => {
+      const dialog = React.useContext(DialogContext);
+      if (!dialog.open) return null;
+      return <div>{children}</div>;
+    },
     Overlay: (props: React.ComponentPropsWithoutRef<"div">) => <div {...props} />,
-    Content: (props: React.ComponentPropsWithoutRef<"div">) => <div {...props} />,
+    Content: (props: React.ComponentPropsWithoutRef<"div">) => (
+      <div data-testid="dialog-content" {...props} />
+    ),
     Title: (props: React.ComponentPropsWithoutRef<"h2">) => <h2 {...props} />,
     Description: (props: React.ComponentPropsWithoutRef<"p">) => <p {...props} />,
     Close: ({ children }: WrapperProps) => <>{children}</>,
@@ -48,19 +65,59 @@ vi.mock("@/components/claude/claude-thread-list", () => ({
 
 import { AdminSidebarShell } from "./admin-sidebar-shell";
 
+const DESKTOP_QUERY = "(min-width: 768px)";
+
+type MatchMediaChangeListener = (event: MediaQueryList | MediaQueryListEvent) => void;
+
+function createMatchMediaController(initialDesktopMatch = true) {
+  let desktopMatch = initialDesktopMatch;
+  const listeners = new Set<MatchMediaChangeListener>();
+
+  const matchMedia = vi.fn((query: string): MediaQueryList => ({
+    get matches() {
+      return query === DESKTOP_QUERY ? desktopMatch : false;
+    },
+    media: query,
+    onchange: null,
+    addEventListener: (eventName: string, listener: EventListenerOrEventListenerObject) => {
+      if (eventName !== "change") return;
+      listeners.add(listener as MatchMediaChangeListener);
+    },
+    removeEventListener: (eventName: string, listener: EventListenerOrEventListenerObject) => {
+      if (eventName !== "change") return;
+      listeners.delete(listener as MatchMediaChangeListener);
+    },
+    addListener: (listener: MatchMediaChangeListener) => {
+      listeners.add(listener);
+    },
+    removeListener: (listener: MatchMediaChangeListener) => {
+      listeners.delete(listener);
+    },
+    dispatchEvent: () => true,
+  }));
+
+  const setDesktopMatch = (matches: boolean) => {
+    desktopMatch = matches;
+    const event = {
+      matches,
+      media: DESKTOP_QUERY,
+    } as MediaQueryListEvent;
+    listeners.forEach((listener) => listener(event));
+  };
+
+  return {
+    matchMedia,
+    setDesktopMatch,
+  };
+}
+
 describe("AdminSidebarShell", () => {
+  let mediaController: ReturnType<typeof createMatchMediaController>;
+
   beforeEach(() => {
     mocks.push.mockReset();
-    vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: /\(min-width:\s*768px\)/.test(query),
-      media: query,
-      onchange: null,
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      addListener: () => {},
-      removeListener: () => {},
-      dispatchEvent: () => false,
-    }));
+    mediaController = createMatchMediaController(true);
+    vi.stubGlobal("matchMedia", mediaController.matchMedia);
   });
 
   afterEach(() => {
@@ -109,5 +166,44 @@ describe("AdminSidebarShell", () => {
 
     expect(mocks.push).toHaveBeenCalledTimes(1);
     expect(mocks.push).toHaveBeenCalledWith("/assistant");
+  });
+
+  it("keeps the open trigger available on mobile after open, close, and reopen", () => {
+    mediaController.setDesktopMatch(false);
+
+    render(
+      <AdminSidebarShell>
+        <div>Admin content</div>
+      </AdminSidebarShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
+
+    const dialog = screen.getByTestId("dialog-content");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close sidebar" }));
+
+    const reopenButton = screen.getByRole("button", { name: "Open sidebar" });
+    expect(reopenButton).toBeInTheDocument();
+
+    fireEvent.click(reopenButton);
+    expect(screen.getByTestId("dialog-content")).toBeInTheDocument();
+  });
+
+  it("shows the open trigger after transitioning from desktop to mobile", () => {
+    render(
+      <AdminSidebarShell>
+        <div>Admin content</div>
+      </AdminSidebarShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
+
+    mediaController.setDesktopMatch(false);
+
+    const openButton = screen.getByRole("button", { name: "Open sidebar" });
+    expect(openButton).toBeInTheDocument();
+
+    fireEvent.click(openButton);
+    expect(screen.getByTestId("dialog-content")).toBeInTheDocument();
   });
 });

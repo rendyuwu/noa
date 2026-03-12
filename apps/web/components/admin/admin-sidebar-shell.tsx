@@ -60,47 +60,48 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
       ) : null}
 
       <div className="relative h-full min-h-0 min-w-0">
-        {!desktopSidebarOpen ? (
-          <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
-            <button
-              type="button"
-              onClick={openSidebar}
-              className="flex h-9 items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 font-ui text-sm text-muted shadow-sm backdrop-blur-sm transition hover:bg-surface hover:text-text active:scale-[0.98]"
-            >
-              <HamburgerMenuIcon width={16} height={16} />
-              Open sidebar
-            </button>
-          </div>
-        ) : null}
+        <div
+          className={[
+            "absolute top-3 left-3 z-10 flex items-center gap-2",
+            desktopSidebarOpen ? "md:hidden" : "",
+          ].join(" ")}
+        >
+          <button
+            type="button"
+            onClick={openSidebar}
+            className="flex h-9 items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 font-ui text-sm text-muted shadow-sm backdrop-blur-sm transition hover:bg-surface hover:text-text active:scale-[0.98]"
+          >
+            <HamburgerMenuIcon width={16} height={16} />
+            Open sidebar
+          </button>
+        </div>
 
         <div className="h-full min-h-0 overflow-auto">{children}</div>
       </div>
 
       <Dialog.Root open={open} onOpenChange={setOpen}>
-        {open ? (
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0 md:hidden" />
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0 md:hidden" />
 
-            <Dialog.Content
-              className={[
-                "fixed inset-y-0 left-0 z-50 w-[18rem] max-w-[86vw]",
-                "bg-bg shadow-[0_1rem_3rem_rgba(0,0,0,0.22)]",
-                "transition-transform duration-200 ease-out",
-                "data-[state=open]:translate-x-0 data-[state=closed]:-translate-x-full",
-                "outline-none",
-                "md:hidden",
-              ].join(" ")}
-            >
-              <Dialog.Title className="sr-only">Chats</Dialog.Title>
-              <Dialog.Description className="sr-only">
-                Browse recent conversations and start a new chat.
-              </Dialog.Description>
-              <div className="h-full">
-                <ClaudeThreadList onSelectThread={selectThread} onCloseSidebar={closeSidebar} />
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        ) : null}
+          <Dialog.Content
+            className={[
+              "fixed inset-y-0 left-0 z-50 w-[18rem] max-w-[86vw]",
+              "bg-bg shadow-[0_1rem_3rem_rgba(0,0,0,0.22)]",
+              "transition-transform duration-200 ease-out",
+              "data-[state=open]:translate-x-0 data-[state=closed]:-translate-x-full",
+              "outline-none",
+              "md:hidden",
+            ].join(" ")}
+          >
+            <Dialog.Title className="sr-only">Chats</Dialog.Title>
+            <Dialog.Description className="sr-only">
+              Browse recent conversations and start a new chat.
+            </Dialog.Description>
+            <div className="h-full">
+              <ClaudeThreadList onSelectThread={selectThread} onCloseSidebar={closeSidebar} />
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
       </Dialog.Root>
     </div>
   );
