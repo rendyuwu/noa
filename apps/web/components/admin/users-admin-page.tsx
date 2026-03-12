@@ -44,13 +44,19 @@ export function UsersAdminPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadSeqRef = useRef(0);
+  const panelSeqRef = useRef(0);
   const openerRef = useRef<HTMLElement | null>(null);
+  const selectedUserIdRef = useRef<string | null>(null);
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const selectedUser = useMemo(() => {
     if (!selectedUserId) return null;
     return users.find((u) => u.id === selectedUserId) ?? null;
   }, [selectedUserId, users]);
+
+  useEffect(() => {
+    selectedUserIdRef.current = selectedUserId;
+  }, [selectedUserId]);
 
   const [toolFilter, setToolFilter] = useState("");
   const [toolAllowlist, setToolAllowlist] = useState<string[]>([]);
@@ -107,6 +113,8 @@ export function UsersAdminPage() {
   }, [allToolNames, toolFilter]);
 
   const closePanel = () => {
+    panelSeqRef.current += 1;
+    selectedUserIdRef.current = null;
     setSelectedUserId(null);
     setToolFilter("");
     setToolAllowlist([]);
@@ -117,7 +125,9 @@ export function UsersAdminPage() {
   };
 
   const openPanelForUser = (user: AdminUser, opener: HTMLElement | null) => {
+    panelSeqRef.current += 1;
     openerRef.current = opener;
+    selectedUserIdRef.current = user.id;
     setSelectedUserId(user.id);
     setToolFilter("");
     setToolAllowlist(coerceStringArray(user.tools));
@@ -134,45 +144,60 @@ export function UsersAdminPage() {
     });
   };
 
+  const panelStillMatches = (seq: number, userId: string) => {
+    return panelSeqRef.current === seq && selectedUserIdRef.current === userId;
+  };
+
   const saveTools = async () => {
     if (!selectedUser) return;
+
+    const seq = panelSeqRef.current;
+    const userId = selectedUser.id;
+    const requestedTools = toolAllowlist.slice();
+
     setSaving(true);
     setSaveError(null);
-    setStatusError(null);
 
     try {
-      const response = await fetchWithAuth(`/admin/users/${selectedUser.id}/tools`, {
+      const response = await fetchWithAuth(`/admin/users/${userId}/tools`, {
         method: "PUT",
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ tools: toolAllowlist }),
+        body: JSON.stringify({ tools: requestedTools }),
       });
 
       await jsonOrThrow(response);
 
       setUsers((prev) =>
         prev.map((u) => {
-          if (u.id !== selectedUser.id) return u;
-          return { ...u, tools: toolAllowlist };
+          if (u.id !== userId) return u;
+          return { ...u, tools: requestedTools };
         })
       );
-      closePanel();
+      if (panelStillMatches(seq, userId)) {
+        closePanel();
+      }
     } catch (error) {
-      setSaveError(toErrorMessage(error, "Unable to save tool allowlist"));
+      if (panelStillMatches(seq, userId)) {
+        setSaveError(toErrorMessage(error, "Unable to save tool allowlist"));
+      }
     } finally {
-      setSaving(false);
+      if (panelStillMatches(seq, userId)) {
+        setSaving(false);
+      }
     }
   };
 
   const toggleUserStatus = async () => {
     if (!selectedUser) return;
+
+    const seq = panelSeqRef.current;
     const userId = selectedUser.id;
     const nextIsActive = selectedUser.is_active === false;
 
     setStatusSaving(true);
     setStatusError(null);
-    setSaveError(null);
 
     try {
       const response = await fetchWithAuth(`/admin/users/${userId}`, {
@@ -192,9 +217,13 @@ export function UsersAdminPage() {
         })
       );
     } catch (error) {
-      setStatusError(toErrorMessage(error, "Unable to update user status"));
+      if (panelStillMatches(seq, userId)) {
+        setStatusError(toErrorMessage(error, "Unable to update user status"));
+      }
     } finally {
-      setStatusSaving(false);
+      if (panelStillMatches(seq, userId)) {
+        setStatusSaving(false);
+      }
     }
   };
 
@@ -332,96 +361,104 @@ export function UsersAdminPage() {
               </div>
 
               <div className="flex-1 overflow-hidden p-4 font-ui">
-                {statusError || saveError ? (
+                <div className="rounded-xl border border-border bg-surface px-3 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Status</div>
+                      <div className="mt-1 text-sm text-text">
+                        {selectedUser?.is_active === false ? "Inactive" : "Active"}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!selectedUser || statusSaving}
+                      className={[
+                        "button shrink-0",
+                        selectedUser?.is_active === false ? "button-primary" : "button-danger",
+                        "disabled:cursor-not-allowed disabled:opacity-60",
+                      ].join(" ")}
+                      onClick={() => void toggleUserStatus()}
+                    >
+                      {selectedUser?.is_active === false ? "Enable" : "Disable"}
+                    </button>
+                  </div>
+                </div>
+
+                {statusError ? (
                   <p
                     role="alert"
                     aria-live="assertive"
-                    className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
                   >
-                    {statusError ?? saveError}
+                    {statusError}
                   </p>
                 ) : null}
 
-                <div className={statusError || saveError ? "mt-4" : ""}>
-                  <div className="rounded-xl border border-border bg-surface px-3 py-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold uppercase tracking-wide text-muted">Status</div>
-                        <div className="mt-1 text-sm text-text">
-                          {selectedUser?.is_active === false ? "Inactive" : "Active"}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={!selectedUser || statusSaving}
-                        className={[
-                          "button shrink-0",
-                          selectedUser?.is_active === false ? "button-primary" : "button-danger",
-                          "disabled:cursor-not-allowed disabled:opacity-60",
-                        ].join(" ")}
-                        onClick={() => void toggleUserStatus()}
-                      >
-                        {selectedUser?.is_active === false ? "Enable" : "Disable"}
-                      </button>
+                <div className="mt-4">
+                  {saveError ? (
+                    <p
+                      role="alert"
+                      aria-live="assertive"
+                      className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                    >
+                      {saveError}
+                    </p>
+                  ) : null}
+
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="tool-filter">
+                    Tool allowlist
+                  </label>
+                  <input
+                    id="tool-filter"
+                    className="input mt-2"
+                    placeholder="Filter tools..."
+                    value={toolFilter}
+                    onChange={(e) => setToolFilter(e.target.value)}
+                  />
+
+                  <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
+                    <div className="max-h-[62vh] overflow-auto p-2">
+                      {filteredToolNames.length === 0 ? (
+                        <div className="px-2 py-3 text-sm text-muted">No matching tools.</div>
+                      ) : (
+                        <ul className="space-y-1">
+                          {filteredToolNames.map((toolName) => {
+                            const checked = toolAllowlist.includes(toolName);
+                            const toolIdPart = sanitizeIdPart(toolName);
+                            const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
+                            const inputId = `tool-${userIdPart}-${toolIdPart}`;
+
+                            return (
+                              <li key={toolName}>
+                                <label
+                                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
+                                  htmlFor={inputId}
+                                >
+                                  <input
+                                    id={inputId}
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => toggleTool(toolName)}
+                                  />
+                                  <span className="text-sm text-text">{toolName}</span>
+                                </label>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
                     </div>
                   </div>
 
-                  <div className="mt-4">
-                    <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="tool-filter">
-                      Tool allowlist
-                    </label>
-                    <input
-                      id="tool-filter"
-                      className="input mt-2"
-                      placeholder="Filter tools..."
-                      value={toolFilter}
-                      onChange={(e) => setToolFilter(e.target.value)}
-                    />
-
-                    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
-                      <div className="max-h-[62vh] overflow-auto p-2">
-                        {filteredToolNames.length === 0 ? (
-                          <div className="px-2 py-3 text-sm text-muted">No matching tools.</div>
-                        ) : (
-                          <ul className="space-y-1">
-                            {filteredToolNames.map((toolName) => {
-                              const checked = toolAllowlist.includes(toolName);
-                              const toolIdPart = sanitizeIdPart(toolName);
-                              const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
-                              const inputId = `tool-${userIdPart}-${toolIdPart}`;
-
-                              return (
-                                <li key={toolName}>
-                                  <label
-                                    className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
-                                    htmlFor={inputId}
-                                  >
-                                    <input
-                                      id={inputId}
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => toggleTool(toolName)}
-                                    />
-                                    <span className="text-sm text-text">{toolName}</span>
-                                  </label>
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="mt-4 border-t border-border pt-4">
-                      <button
-                        type="button"
-                        disabled={!selectedUser || saving}
-                        className="button button-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
-                        onClick={() => void saveTools()}
-                      >
-                        {saving ? "Saving..." : "Save"}
-                      </button>
-                    </div>
+                  <div className="mt-4 border-t border-border pt-4">
+                    <button
+                      type="button"
+                      disabled={!selectedUser || saving}
+                      className="button button-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => void saveTools()}
+                    >
+                      {saving ? "Saving..." : "Save"}
+                    </button>
                   </div>
                 </div>
               </div>
