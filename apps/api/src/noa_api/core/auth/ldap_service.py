@@ -4,7 +4,11 @@ import asyncio
 import contextlib
 from dataclasses import dataclass
 
-from noa_api.core.auth.errors import AuthConfigurationError, AuthError, AuthInvalidCredentialsError
+from noa_api.core.auth.errors import (
+    AuthConfigurationError,
+    AuthError,
+    AuthInvalidCredentialsError,
+)
 from noa_api.core.config import Settings
 
 try:
@@ -28,6 +32,16 @@ class LDAPService:
     async def authenticate(self, email: str, password: str) -> LdapUser:
         if not password:
             raise AuthInvalidCredentialsError("Invalid credentials")
+
+        if self._settings.auth_dev_bypass_ldap:
+            base_dn = self._settings.ldap_base_dn.strip()
+            dn = (
+                f"CN={email},OU=DevBypass,{base_dn}"
+                if base_dn
+                else f"CN={email},OU=DevBypass"
+            )
+            return LdapUser(email=email, dn=dn, display_name=email)
+
         return await asyncio.to_thread(self._authenticate_sync, email, password)
 
     def _authenticate_sync(self, email: str, password: str) -> LdapUser:
@@ -50,7 +64,12 @@ class LDAPService:
 
             escaped_email = ldap.filter.escape_filter_chars(email)
             search_filter = f"(&(objectClass=user){self._settings.ldap_user_filter.format(email=escaped_email)})"
-            results = conn.search_s(self._settings.ldap_base_dn, ldap.SCOPE_SUBTREE, search_filter, ["displayName"])
+            results = conn.search_s(
+                self._settings.ldap_base_dn,
+                ldap.SCOPE_SUBTREE,
+                search_filter,
+                ["displayName"],
+            )
             if not results:
                 raise AuthInvalidCredentialsError("Invalid credentials")
 
@@ -61,7 +80,9 @@ class LDAPService:
             user_conn = ldap.initialize(self._settings.ldap_server_uri)
             user_conn.set_option(ldap.OPT_PROTOCOL_VERSION, 3)
             user_conn.set_option(ldap.OPT_REFERRALS, 0)
-            user_conn.set_option(ldap.OPT_NETWORK_TIMEOUT, self._settings.ldap_timeout_seconds)
+            user_conn.set_option(
+                ldap.OPT_NETWORK_TIMEOUT, self._settings.ldap_timeout_seconds
+            )
             user_conn.simple_bind_s(user_dn, password)
 
             return LdapUser(
