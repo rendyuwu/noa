@@ -57,6 +57,9 @@ export function UsersAdminPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [statusSaving, setStatusSaving] = useState(false);
+  const [statusError, setStatusError] = useState<string | null>(null);
+
   const loadData = useCallback(async () => {
     const seq = ++loadSeqRef.current;
     setLoading(true);
@@ -109,6 +112,8 @@ export function UsersAdminPage() {
     setToolAllowlist([]);
     setSaveError(null);
     setSaving(false);
+    setStatusError(null);
+    setStatusSaving(false);
   };
 
   const openPanelForUser = (user: AdminUser, opener: HTMLElement | null) => {
@@ -118,6 +123,8 @@ export function UsersAdminPage() {
     setToolAllowlist(coerceStringArray(user.tools));
     setSaveError(null);
     setSaving(false);
+    setStatusError(null);
+    setStatusSaving(false);
   };
 
   const toggleTool = (toolName: string) => {
@@ -131,6 +138,7 @@ export function UsersAdminPage() {
     if (!selectedUser) return;
     setSaving(true);
     setSaveError(null);
+    setStatusError(null);
 
     try {
       const response = await fetchWithAuth(`/admin/users/${selectedUser.id}/tools`, {
@@ -154,6 +162,39 @@ export function UsersAdminPage() {
       setSaveError(toErrorMessage(error, "Unable to save tool allowlist"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const toggleUserStatus = async () => {
+    if (!selectedUser) return;
+    const userId = selectedUser.id;
+    const nextIsActive = selectedUser.is_active === false;
+
+    setStatusSaving(true);
+    setStatusError(null);
+    setSaveError(null);
+
+    try {
+      const response = await fetchWithAuth(`/admin/users/${userId}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ is_active: nextIsActive }),
+      });
+
+      await jsonOrThrow(response);
+
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (u.id !== userId) return u;
+          return { ...u, is_active: nextIsActive };
+        })
+      );
+    } catch (error) {
+      setStatusError(toErrorMessage(error, "Unable to update user status"));
+    } finally {
+      setStatusSaving(false);
     }
   };
 
@@ -195,6 +236,7 @@ export function UsersAdminPage() {
             <thead className="bg-surface-2 text-muted">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Roles</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Tools</th>
               </tr>
@@ -202,18 +244,19 @@ export function UsersAdminPage() {
             <tbody className="divide-y divide-border">
               {users.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-muted" colSpan={3}>
+                  <td className="px-4 py-4 text-sm text-muted" colSpan={4}>
                     {loading
                       ? "Loading users..."
                       : loadError
-                        ? "Unable to load users."
-                        : "No users found."}
+                         ? "Unable to load users."
+                         : "No users found."}
                   </td>
                 </tr>
               ) : (
                 users.map((user) => {
                   const roles = coerceStringArray(user.roles);
                   const tools = coerceStringArray(user.tools);
+                  const isActive = user.is_active !== false;
 
                   return (
                     <tr
@@ -236,6 +279,7 @@ export function UsersAdminPage() {
                           <div className="mt-0.5 text-xs text-muted">{user.display_name}</div>
                         ) : null}
                       </td>
+                      <td className="px-4 py-3 text-muted">{isActive ? "Active" : "Inactive"}</td>
                       <td className="px-4 py-3 text-muted">{roles.length ? roles.join(", ") : "-"}</td>
                       <td className="px-4 py-3 text-muted">{tools.length}</td>
                     </tr>
@@ -288,71 +332,96 @@ export function UsersAdminPage() {
               </div>
 
               <div className="flex-1 overflow-hidden p-4 font-ui">
-                {saveError ? (
+                {statusError || saveError ? (
                   <p
                     role="alert"
                     aria-live="assertive"
                     className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
                   >
-                    {saveError}
+                    {statusError ?? saveError}
                   </p>
                 ) : null}
 
-                <div className={saveError ? "mt-4" : ""}>
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="tool-filter">
-                    Tool allowlist
-                  </label>
-                  <input
-                    id="tool-filter"
-                    className="input mt-2"
-                    placeholder="Filter tools..."
-                    value={toolFilter}
-                    onChange={(e) => setToolFilter(e.target.value)}
-                  />
-
-                  <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
-                    <div className="max-h-[62vh] overflow-auto p-2">
-                      {filteredToolNames.length === 0 ? (
-                        <div className="px-2 py-3 text-sm text-muted">No matching tools.</div>
-                      ) : (
-                        <ul className="space-y-1">
-                          {filteredToolNames.map((toolName) => {
-                            const checked = toolAllowlist.includes(toolName);
-                            const toolIdPart = sanitizeIdPart(toolName);
-                            const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
-                            const inputId = `tool-${userIdPart}-${toolIdPart}`;
-
-                            return (
-                              <li key={toolName}>
-                                <label
-                                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
-                                  htmlFor={inputId}
-                                >
-                                  <input
-                                    id={inputId}
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => toggleTool(toolName)}
-                                  />
-                                  <span className="text-sm text-text">{toolName}</span>
-                                </label>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
+                <div className={statusError || saveError ? "mt-4" : ""}>
+                  <div className="rounded-xl border border-border bg-surface px-3 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-muted">Status</div>
+                        <div className="mt-1 text-sm text-text">
+                          {selectedUser?.is_active === false ? "Inactive" : "Active"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={!selectedUser || statusSaving}
+                        className={[
+                          "button shrink-0",
+                          selectedUser?.is_active === false ? "button-primary" : "button-danger",
+                          "disabled:cursor-not-allowed disabled:opacity-60",
+                        ].join(" ")}
+                        onClick={() => void toggleUserStatus()}
+                      >
+                        {selectedUser?.is_active === false ? "Enable" : "Disable"}
+                      </button>
                     </div>
                   </div>
 
-                  <div className="mt-4 border-t border-border pt-4">
-                    <button
-                      type="button"
-                      disabled={!selectedUser || saving}
-                      className="button button-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
-                      onClick={() => void saveTools()}
-                    >
-                      {saving ? "Saving..." : "Save"}
-                    </button>
+                  <div className="mt-4">
+                    <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="tool-filter">
+                      Tool allowlist
+                    </label>
+                    <input
+                      id="tool-filter"
+                      className="input mt-2"
+                      placeholder="Filter tools..."
+                      value={toolFilter}
+                      onChange={(e) => setToolFilter(e.target.value)}
+                    />
+
+                    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
+                      <div className="max-h-[62vh] overflow-auto p-2">
+                        {filteredToolNames.length === 0 ? (
+                          <div className="px-2 py-3 text-sm text-muted">No matching tools.</div>
+                        ) : (
+                          <ul className="space-y-1">
+                            {filteredToolNames.map((toolName) => {
+                              const checked = toolAllowlist.includes(toolName);
+                              const toolIdPart = sanitizeIdPart(toolName);
+                              const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
+                              const inputId = `tool-${userIdPart}-${toolIdPart}`;
+
+                              return (
+                                <li key={toolName}>
+                                  <label
+                                    className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
+                                    htmlFor={inputId}
+                                  >
+                                    <input
+                                      id={inputId}
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={() => toggleTool(toolName)}
+                                    />
+                                    <span className="text-sm text-text">{toolName}</span>
+                                  </label>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="mt-4 border-t border-border pt-4">
+                      <button
+                        type="button"
+                        disabled={!selectedUser || saving}
+                        className="button button-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
+                        onClick={() => void saveTools()}
+                      >
+                        {saving ? "Saving..." : "Save"}
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
