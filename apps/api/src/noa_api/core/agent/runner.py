@@ -274,51 +274,119 @@ class AgentRunner:
             tool for tool in get_tool_registry() if tool.name in available_tool_names
         ]
         llm_tools = [_to_openai_tool_schema(tool) for tool in allowed_tools]
-        if on_text_delta is None:
-            llm_response = await self._llm_client.run_turn(
-                messages=thread_messages,
-                tools=llm_tools,
-            )
-        else:
-            llm_response = await self._llm_client.run_turn(
-                messages=thread_messages,
-                tools=llm_tools,
-                on_text_delta=on_text_delta,
-            )
+        max_rounds = 4
+        max_tool_calls = 8
 
+        working_messages = list(thread_messages)
         output_messages: list[AgentMessage] = []
-        text = llm_response.text.strip()
-        text_deltas = _split_text_deltas(text)
-        if text:
-            output_messages.append(
-                AgentMessage(
-                    role="assistant",
-                    parts=[{"type": "text", "text": text}],
-                )
-            )
+        text_deltas: list[str] = []
+        rounds = 0
+        tool_calls_processed = 0
+        hit_safety_limit = False
 
-        for tool_call in llm_response.tool_calls:
-            tool = get_tool_definition(tool_call.name)
-            if tool is None or tool.name not in available_tool_names:
+        while rounds < max_rounds and tool_calls_processed < max_tool_calls:
+            rounds += 1
+            if on_text_delta is None:
+                llm_response = await self._llm_client.run_turn(
+                    messages=working_messages,
+                    tools=llm_tools,
+                )
+            else:
+                llm_response = await self._llm_client.run_turn(
+                    messages=working_messages,
+                    tools=llm_tools,
+                    on_text_delta=on_text_delta,
+                )
+
+            text = llm_response.text.strip()
+            if text:
+                assistant_text_part: dict[str, object] = {
+                    "type": "text",
+                    "text": text,
+                }
+                assistant_parts: list[dict[str, object]] = [assistant_text_part]
                 output_messages.append(
                     AgentMessage(
                         role="assistant",
-                        parts=[
-                            {
-                                "type": "text",
-                                "text": f"Tool '{tool_call.name}' is not available for this user.",
-                            }
-                        ],
+                        parts=assistant_parts,
                     )
                 )
-                continue
+                working_messages.append(
+                    {
+                        "role": "assistant",
+                        "parts": assistant_parts,
+                    }
+                )
+                text_deltas.extend(_split_text_deltas(text))
 
-            output_messages.extend(
-                await self._process_tool_call(
+            if not llm_response.tool_calls:
+                return AgentRunnerResult(
+                    messages=output_messages, text_deltas=text_deltas
+                )
+
+            for tool_call in llm_response.tool_calls:
+                if tool_calls_processed >= max_tool_calls:
+                    hit_safety_limit = True
+                    break
+
+                tool_calls_processed += 1
+                tool = get_tool_definition(tool_call.name)
+                if tool is None or tool.name not in available_tool_names:
+                    unavailable_part: dict[str, object] = {
+                        "type": "text",
+                        "text": f"Tool '{tool_call.name}' is not available for this user.",
+                    }
+                    unavailable_parts: list[dict[str, object]] = [unavailable_part]
+                    output_messages.append(
+                        AgentMessage(
+                            role="assistant",
+                            parts=unavailable_parts,
+                        )
+                    )
+                    working_messages.append(
+                        {
+                            "role": "assistant",
+                            "parts": unavailable_parts,
+                        }
+                    )
+                    continue
+
+                tool_messages = await self._process_tool_call(
                     tool=tool,
                     args=tool_call.arguments,
                     thread_id=thread_id,
                     requested_by_user_id=requested_by_user_id,
+                )
+                output_messages.extend(tool_messages)
+                for message in tool_messages:
+                    working_messages.append(
+                        {
+                            "role": message.role,
+                            "parts": message.parts,
+                        }
+                    )
+
+                if tool.risk == ToolRisk.CHANGE:
+                    return AgentRunnerResult(
+                        messages=output_messages, text_deltas=text_deltas
+                    )
+
+        if not hit_safety_limit and (
+            rounds >= max_rounds or tool_calls_processed >= max_tool_calls
+        ):
+            hit_safety_limit = True
+
+        if hit_safety_limit:
+            safety_parts: list[dict[str, object]] = [
+                {
+                    "type": "text",
+                    "text": "Tool loop exceeded safety limits.",
+                }
+            ]
+            output_messages.append(
+                AgentMessage(
+                    role="assistant",
+                    parts=safety_parts,
                 )
             )
 

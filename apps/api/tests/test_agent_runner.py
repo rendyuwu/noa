@@ -127,13 +127,29 @@ class _InMemoryActionToolRunRepository:
 
 async def test_agent_runner_executes_read_tools_and_appends_result_messages() -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="I'll check the server time.",
+                    tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
+                )
+            return LLMTurnResponse(text="The current time is available.", tool_calls=[])
+
     runner = AgentRunner(
-        llm_client=_FakeLLMClient(
-            response=LLMTurnResponse(
-                text="I'll check the server time.",
-                tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
-            )
-        ),
+        llm_client=_TwoTurnLLM(),
         action_tool_run_service=ActionToolRunService(repository=repo),
     )
 
@@ -146,11 +162,15 @@ async def test_agent_runner_executes_read_tools_and_appends_result_messages() ->
         requested_by_user_id=uuid4(),
     )
 
-    assert len(result.messages) == 3
+    assert len(result.messages) == 4
     assert result.messages[0].role == "assistant"
     assert result.messages[0].parts[0]["type"] == "text"
     assert result.messages[1].parts[0]["type"] == "tool-call"
     assert result.messages[2].parts[0]["type"] == "tool-result"
+    final_part = result.messages[3].parts[0]
+    assert isinstance(final_part, dict)
+    assert final_part.get("type") == "text"
+    assert final_part.get("text") == "The current time is available."
 
     assert len(repo.tool_runs) == 1
     run = next(iter(repo.tool_runs.values()))
