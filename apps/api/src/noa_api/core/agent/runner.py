@@ -63,6 +63,54 @@ class RuleBasedLLMClient:
         on_text_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMTurnResponse:
         _ = tools
+
+        async def _emit_text_turn(text: str) -> LLMTurnResponse:
+            turn = LLMTurnResponse(text=text, tool_calls=[])
+            if on_text_delta is not None and turn.text:
+                for chunk in _split_text_deltas(turn.text):
+                    await on_text_delta(chunk)
+                    await asyncio.sleep(0)
+            return turn
+
+        tool_result_templates: dict[str, tuple[str, str]] = {
+            "get_current_date": ("date", "Today's date is {value}."),
+            "get_current_time": ("time", "The current time is {value}."),
+        }
+
+        last_user_index = -1
+        for index, message in enumerate(messages):
+            if message.get("role") == "user":
+                last_user_index = index
+
+        latest_relevant_tool_result: dict[str, object] | None = None
+        for message in reversed(messages[last_user_index + 1 :]):
+            if message.get("role") != "tool":
+                continue
+            parts = message.get("parts")
+            if not isinstance(parts, list):
+                continue
+            for part in parts:
+                if not isinstance(part, dict) or part.get("type") != "tool-result":
+                    continue
+                tool_name = part.get("toolName")
+                if not isinstance(tool_name, str):
+                    continue
+                if tool_name in tool_result_templates:
+                    latest_relevant_tool_result = part
+                    break
+            if latest_relevant_tool_result is not None:
+                break
+
+        if latest_relevant_tool_result is not None:
+            if latest_relevant_tool_result.get("isError") is not True:
+                tool_name = latest_relevant_tool_result.get("toolName")
+                result = latest_relevant_tool_result.get("result")
+                if isinstance(tool_name, str) and isinstance(result, dict):
+                    value_key, template = tool_result_templates[tool_name]
+                    raw_value = result.get(value_key)
+                    if isinstance(raw_value, str) and raw_value:
+                        return await _emit_text_turn(template.format(value=raw_value))
+
         last_user_text = ""
         for message in reversed(messages):
             if message.get("role") != "user":
