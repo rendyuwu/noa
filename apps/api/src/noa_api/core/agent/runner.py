@@ -76,6 +76,7 @@ class RuleBasedLLMClient:
             "get_current_date": ("date", "Today's date is {value}."),
             "get_current_time": ("time", "The current time is {value}."),
         }
+        relevant_tool_results = set(tool_result_templates) | {"set_demo_flag"}
 
         last_user_index = -1
         for index, message in enumerate(messages):
@@ -95,7 +96,7 @@ class RuleBasedLLMClient:
                 tool_name = part.get("toolName")
                 if not isinstance(tool_name, str):
                     continue
-                if tool_name in tool_result_templates:
+                if tool_name in relevant_tool_results:
                     latest_relevant_tool_result = part
                     break
             if latest_relevant_tool_result is not None:
@@ -106,6 +107,12 @@ class RuleBasedLLMClient:
                 tool_name = latest_relevant_tool_result.get("toolName")
                 result = latest_relevant_tool_result.get("result")
                 if isinstance(tool_name, str) and isinstance(result, dict):
+                    if tool_name == "set_demo_flag":
+                        if result.get("ok") is True:
+                            return await _emit_text_turn("The demo flag was updated.")
+                        return await _emit_text_turn(
+                            "I could not confirm the demo flag update."
+                        )
                     value_key, template = tool_result_templates[tool_name]
                     raw_value = result.get(value_key)
                     if isinstance(raw_value, str) and raw_value:

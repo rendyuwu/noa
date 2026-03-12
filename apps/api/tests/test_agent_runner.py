@@ -474,3 +474,49 @@ async def test_rule_based_llm_prioritizes_latest_user_turn_over_old_tool_result(
         == "I can help with date/time checks and demo flag requests in this MVP."
     )
     assert turn.tool_calls == []
+
+
+async def test_rule_based_llm_handles_set_demo_flag_tool_result_without_reasking() -> (
+    None
+):
+    client = RuleBasedLLMClient()
+
+    turn = await client.run_turn(
+        messages=[
+            {
+                "role": "user",
+                "parts": [{"type": "text", "text": "Set demo flag feature_x = true"}],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "set_demo_flag",
+                        "toolCallId": "tc-change-1",
+                        "args": {"key": "feature_x", "value": True},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "set_demo_flag",
+                        "toolCallId": "tc-change-1",
+                        "result": {
+                            "ok": True,
+                            "flag": {"key": "feature_x", "value": True},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        tools=[],
+        on_text_delta=None,
+    )
+
+    assert turn.text == "The demo flag was updated."
+    assert turn.tool_calls == []
