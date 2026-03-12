@@ -21,6 +21,10 @@ type ToolResultData = {
   artifact: unknown;
 };
 
+const isEmptyAssistantMessage = (message: ThreadMessage): boolean => {
+  return message.role === "assistant" && Array.isArray(message.content) && message.content.length === 0;
+};
+
 const partsToContent = (
   parts: Array<Record<string, unknown>>,
   messageId: string,
@@ -61,6 +65,23 @@ const partsToContent = (
         args,
         argsText,
         ...(toolResultData ?? {}),
+      });
+      continue;
+    }
+
+    if (type === "tool-result") {
+      const toolName = coerceString(part.toolName) ?? "unknown";
+      const toolCallId = coerceString(part.toolCallId);
+      const isError = typeof part.isError === "boolean" ? part.isError : undefined;
+      content.push({
+        type: "tool-call",
+        toolName,
+        ...(toolCallId ? { toolCallId } : {}),
+        args: {},
+        argsText: "{}",
+        result: part.result,
+        ...(isError !== undefined ? { isError } : {}),
+        ...(part.artifact !== undefined ? { artifact: part.artifact } : {}),
       });
       continue;
     }
@@ -112,7 +133,25 @@ export function convertAssistantState(
   connectionMetadata: { pendingCommands: Array<any>; isSending: boolean },
 ) {
   const transportIsRunning = Boolean(state.isRunning) || connectionMetadata.isSending;
+  const mergeableToolCallIds = new Set<string>();
   const toolResultsByCallId = new Map<string, ToolResultData>();
+
+  for (const message of state.messages ?? []) {
+    if (message.role === "tool") {
+      continue;
+    }
+
+    for (const part of message.parts ?? []) {
+      if (coerceString(part.type) !== "tool-call") {
+        continue;
+      }
+
+      const toolCallId = coerceString(part.toolCallId);
+      if (toolCallId) {
+        mergeableToolCallIds.add(toolCallId);
+      }
+    }
+  }
 
   for (const message of state.messages ?? []) {
     if (message.role !== "tool") {
@@ -126,6 +165,9 @@ export function convertAssistantState(
 
       const toolCallId = coerceString(part.toolCallId);
       if (!toolCallId) {
+        continue;
+      }
+      if (!mergeableToolCallIds.has(toolCallId)) {
         continue;
       }
 
@@ -156,9 +198,23 @@ export function convertAssistantState(
         return true;
       }
 
-      return !(message.parts ?? []).some((part) => coerceString(part.type) === "tool-result");
+      const parts = message.parts ?? [];
+      const hasToolResult = parts.some((part) => coerceString(part.type) === "tool-result");
+      if (!hasToolResult) {
+        return true;
+      }
+
+      return !parts.every((part) => {
+        if (coerceString(part.type) !== "tool-result") {
+          return false;
+        }
+
+        const toolCallId = coerceString(part.toolCallId);
+        return Boolean(toolCallId && mergeableToolCallIds.has(toolCallId));
+      });
     })
-    .map((message, index) => toThreadMessage(message, `persisted-${index}`, toolResultsByCallId));
+    .map((message, index) => toThreadMessage(message, `persisted-${index}`, toolResultsByCallId))
+    .filter((message) => !isEmptyAssistantMessage(message));
 
   if (transportIsRunning) {
     for (let index = persistedMessages.length - 1; index >= 0; index -= 1) {
@@ -173,7 +229,9 @@ export function convertAssistantState(
   }
 
   return {
-    messages: [...persistedMessages, ...optimisticMessages],
+    messages: [...persistedMessages, ...optimisticMessages].filter(
+      (message) => !isEmptyAssistantMessage(message),
+    ),
     isRunning: transportIsRunning,
   };
 }

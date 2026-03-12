@@ -134,7 +134,36 @@ describe("convertAssistantState", () => {
       { pendingCommands: [], isSending: false },
     );
 
-    const content = (converted.messages[0] as any).content;
-    expect(content.some((p: any) => p.type === "tool-call")).toBe(false);
+    expect(converted.messages).toEqual([]);
+  });
+
+  it("keeps unmergeable tool-result messages when toolCallId is missing", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "tool",
+            parts: [
+              {
+                type: "tool-result",
+                toolName: "get_current_time",
+                result: { time: "10:00" },
+                isError: false,
+              },
+            ],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    expect(converted.messages).toHaveLength(1);
+    const toolPart = (converted.messages[0] as any).content.find((p: any) => p.type === "tool-call");
+    expect(toolPart).toBeDefined();
+    expect(toolPart?.result).toEqual({ time: "10:00" });
+    expect(toolPart?.args).toEqual({});
+    expect(toolPart?.argsText).toBe("{}");
   });
 });
