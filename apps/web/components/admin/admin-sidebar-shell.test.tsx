@@ -52,7 +52,7 @@ describe("AdminSidebarShell", () => {
   beforeEach(() => {
     mocks.push.mockReset();
     vi.stubGlobal("matchMedia", (query: string) => ({
-      matches: true,
+      matches: /\(min-width:\s*768px\)/.test(query),
       media: query,
       onchange: null,
       addEventListener: () => {},
@@ -68,25 +68,29 @@ describe("AdminSidebarShell", () => {
   });
 
   it("starts desktop collapsed and shows an open-sidebar button", () => {
-    render(
+    const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
 
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
     expect(screen.queryByTestId("sidebar-thread-list")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Open sidebar" })).toBeInTheDocument();
   });
 
   it("expands desktop sidebar when Open sidebar clicked", () => {
-    render(
+    const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
 
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+
     fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
 
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
     expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
   });
 
@@ -98,8 +102,12 @@ describe("AdminSidebarShell", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
+
+    expect(mocks.push).not.toHaveBeenCalled();
+
     fireEvent.click(screen.getByRole("button", { name: "Select thread" }));
 
+    expect(mocks.push).toHaveBeenCalledTimes(1);
     expect(mocks.push).toHaveBeenCalledWith("/assistant");
   });
 });
