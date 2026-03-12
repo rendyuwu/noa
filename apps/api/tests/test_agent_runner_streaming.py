@@ -123,3 +123,95 @@ async def test_openai_compatible_llm_client_streams_when_callback_present() -> N
     assert result.text == "Hello world"
     assert fake.chat.completions.calls
     assert fake.chat.completions.calls[0].get("stream") is True
+
+
+async def test_openai_client_includes_tool_calls_and_tool_results_in_messages() -> None:
+    captured: dict[str, object] = {}
+
+    class _FakeCompletions:
+        async def create(self, **kwargs: object):
+            captured.update(kwargs)
+
+            class _Msg:
+                content = "ok"
+                tool_calls: list[object] = []
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _FakeChat:
+        def __init__(self) -> None:
+            self.completions = _FakeCompletions()
+
+    class _FakeOpenAI:
+        def __init__(self) -> None:
+            self.chat = _FakeChat()
+
+    client = OpenAICompatibleLLMClient(
+        model="gpt-4o-mini",
+        api_key="test",
+        base_url=None,
+        system_prompt="",
+    )
+    client._client = _FakeOpenAI()  # type: ignore[attr-defined]
+
+    _ = await client.run_turn(
+        messages=[
+            {
+                "role": "user",
+                "parts": [{"type": "text", "text": "hi"}],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "get_current_date",
+                        "toolCallId": "tc-1",
+                        "args": {},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "get_current_date",
+                        "toolCallId": "tc-1",
+                        "result": {"date": "2026-03-12"},
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        tools=[
+            {
+                "type": "function",
+                "function": {
+                    "name": "get_current_date",
+                    "description": "",
+                    "parameters": {"type": "object"},
+                },
+            }
+        ],
+        on_text_delta=None,
+    )
+
+    msgs = captured.get("messages")
+    assert isinstance(msgs, list)
+    assert any(
+        isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")
+        for m in msgs
+    )
+    assert any(
+        isinstance(m, dict)
+        and m.get("role") == "tool"
+        and m.get("tool_call_id") == "tc-1"
+        for m in msgs
+    )

@@ -178,28 +178,10 @@ class OpenAICompatibleLLMClient:
         tools: list[dict[str, object]],
         on_text_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> LLMTurnResponse:
-        llm_messages: list[dict[str, str]] = []
-        if self._system_prompt.strip():
-            llm_messages.append({"role": "system", "content": self._system_prompt})
-
-        for message in messages:
-            role = message.get("role")
-            if not isinstance(role, str):
-                continue
-            if role not in {"system", "user", "assistant", "tool"}:
-                role = "user"
-
-            parts = message.get("parts")
-            text_parts: list[str] = []
-            if isinstance(parts, list):
-                for part in parts:
-                    if isinstance(part, dict) and part.get("type") == "text":
-                        text = part.get("text")
-                        if isinstance(text, str) and text.strip():
-                            text_parts.append(text)
-            if not text_parts:
-                continue
-            llm_messages.append({"role": role, "content": "\n".join(text_parts)})
+        llm_messages = _to_openai_chat_messages(
+            messages=messages,
+            system_prompt=self._system_prompt,
+        )
 
         if on_text_delta is None:
             request_kwargs: dict[str, Any] = {
@@ -567,6 +549,94 @@ def create_default_llm_client() -> LLMClientProtocol:
             system_prompt=settings.llm_system_prompt,
         )
     return RuleBasedLLMClient()
+
+
+def _to_openai_chat_messages(
+    *, messages: list[dict[str, object]], system_prompt: str
+) -> list[dict[str, Any]]:
+    llm_messages: list[dict[str, Any]] = []
+    if system_prompt.strip():
+        llm_messages.append({"role": "system", "content": system_prompt})
+
+    for message in messages:
+        role = message.get("role")
+        if not isinstance(role, str):
+            continue
+        if role not in {"system", "user", "assistant", "tool"}:
+            role = "user"
+
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+
+        text_parts: list[str] = []
+        tool_calls_out: list[dict[str, Any]] = []
+        tool_results_out: list[dict[str, Any]] = []
+
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            part_type = part.get("type")
+            if part_type == "text":
+                text = part.get("text")
+                if isinstance(text, str) and text.strip():
+                    text_parts.append(text)
+                continue
+
+            if part_type == "tool-call":
+                tool_name = part.get("toolName")
+                if not isinstance(tool_name, str) or not tool_name:
+                    continue
+                tool_call_id = part.get("toolCallId")
+                if not isinstance(tool_call_id, str) or not tool_call_id:
+                    continue
+                args = part.get("args")
+                args_obj = args if isinstance(args, dict) else {}
+                tool_calls_out.append(
+                    {
+                        "id": tool_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": tool_name,
+                            "arguments": json.dumps(args_obj),
+                        },
+                    }
+                )
+                continue
+
+            if part_type == "tool-result":
+                tool_call_id = part.get("toolCallId")
+                if not isinstance(tool_call_id, str) or not tool_call_id:
+                    continue
+                result = part.get("result")
+                rendered_result = (
+                    result if isinstance(result, dict) else {"value": result}
+                )
+                tool_results_out.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": json.dumps(rendered_result),
+                    }
+                )
+
+        if role == "tool":
+            llm_messages.extend(tool_results_out)
+            continue
+
+        content_text = "\n".join(text_parts)
+        if not content_text and not tool_calls_out:
+            continue
+
+        message_payload: dict[str, Any] = {
+            "role": role,
+            "content": content_text,
+        }
+        if tool_calls_out:
+            message_payload["tool_calls"] = tool_calls_out
+        llm_messages.append(message_payload)
+
+    return llm_messages
 
 
 def _safe_json_object(raw: str | None) -> dict[str, object]:
