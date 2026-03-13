@@ -256,8 +256,13 @@ class AssistantService:
                 detail="Tool call is not awaiting result",
             )
 
-        _ = await self._action_tool_run_service.complete_tool_run(
+        completed = await self._action_tool_run_service.complete_tool_run(
             tool_run_id=tool_run_id, result=result
+        )
+        persisted_result = (
+            completed.result
+            if completed is not None and isinstance(completed.result, dict)
+            else result
         )
         await self._repository.create_message(
             thread_id=thread_id,
@@ -267,7 +272,7 @@ class AssistantService:
                     "type": "tool-result",
                     "toolName": tool_run.tool_name,
                     "toolCallId": tool_call_id,
-                    "result": result,
+                    "result": persisted_result,
                     "isError": False,
                 }
             ],
@@ -404,8 +409,13 @@ class AssistantService:
 
         try:
             result = await self._execute_tool(tool=tool, args=approved.args)
-            _ = await self._action_tool_run_service.complete_tool_run(
+            completed = await self._action_tool_run_service.complete_tool_run(
                 tool_run_id=started.id, result=result
+            )
+            persisted_result = (
+                completed.result
+                if completed is not None and isinstance(completed.result, dict)
+                else result
             )
             await self._repository.create_message(
                 thread_id=thread_id,
@@ -415,7 +425,7 @@ class AssistantService:
                         "type": "tool-result",
                         "toolName": approved.tool_name,
                         "toolCallId": tool_call_id,
-                        "result": result,
+                        "result": persisted_result,
                         "isError": False,
                     }
                 ],

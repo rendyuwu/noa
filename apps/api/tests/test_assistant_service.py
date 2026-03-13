@@ -9,8 +9,13 @@ import pytest
 from fastapi import HTTPException
 
 from noa_api.api.routes.assistant import AssistantService
+from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
-from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
+from noa_api.storage.postgres.lifecycle import (
+    ActionRequestStatus,
+    ToolRisk,
+    ToolRunStatus,
+)
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 
@@ -72,9 +77,13 @@ class _FakeAssistantRepository:
         _ = thread_id
         return []
 
-    async def create_message(self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]):
+    async def create_message(
+        self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]
+    ):
         self.messages.append({"thread_id": thread_id, "role": role, "parts": parts})
-        return SimpleNamespace(id=uuid4(), thread_id=thread_id, role=role, content=parts)
+        return SimpleNamespace(
+            id=uuid4(), thread_id=thread_id, role=role, content=parts
+        )
 
     async def create_audit_log(
         self,
@@ -99,7 +108,9 @@ class _InMemoryActionToolRunRepository:
     action_requests: dict[UUID, ActionRequest]
     tool_runs: dict[UUID, ToolRun]
 
-    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None:
+    async def get_action_request(
+        self, *, action_request_id: UUID
+    ) -> ActionRequest | None:
         return self.action_requests.get(action_request_id)
 
     async def create_action_request(
@@ -189,7 +200,9 @@ class _InMemoryActionToolRunRepository:
         return existing
 
 
-async def test_assistant_service_approve_executes_pending_change_and_writes_audit() -> None:
+async def test_assistant_service_approve_executes_pending_change_and_writes_audit() -> (
+    None
+):
     owner_id = uuid4()
     thread_id = uuid4()
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
@@ -399,7 +412,70 @@ async def test_assistant_service_run_agent_turn_emits_action_requested_audit() -
         available_tool_names={"set_demo_flag"},
     )
 
-    assert any(event["event_type"] == "action_requested" for event in assistant_repo.audits)
+    assert any(
+        event["event_type"] == "action_requested" for event in assistant_repo.audits
+    )
+
+
+async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools(
+    monkeypatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="json_unsafe_change",
+        args={},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+
+    async def change_tool(*, session, **kwargs):
+        _ = session, kwargs
+        return {"when": datetime(2026, 3, 13, 12, 0, 0, tzinfo=UTC)}
+
+    tool = ToolDefinition(
+        name="json_unsafe_change",
+        description="Returns non-JSON-native values.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        execute=change_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    await service.approve_action(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        action_request_id=str(request.id),
+        is_user_active=True,
+        authorize_tool_access=lambda _tool: _allow(),
+    )
+
+    tool_message = assistant_repo.messages[-1]
+    assert tool_message["role"] == "tool"
+    part = tool_message["parts"][0]
+    assert part["type"] == "tool-result"
+    assert part["result"]["when"] == "2026-03-13T12:00:00+00:00"
 
 
 async def _allow() -> bool:
