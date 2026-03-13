@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -185,6 +185,31 @@ async def test_auth_service_bootstrap_admin_auto_active_and_issues_jwt() -> None
     assert "admin" in result.roles
     assert repo.users["admin@example.com"].is_active is True
     assert repo.users["admin@example.com"].last_login_at is not None
+
+
+async def test_auth_service_updates_last_login_at_for_existing_active_user() -> None:
+    repo = _InMemoryAuthRepository()
+    existing_user = await repo.create_user(
+        email="active.user@example.com",
+        ldap_dn="CN=active.user@example.com",
+        display_name="Existing User",
+        is_active=True,
+    )
+    existing_user.last_login_at = datetime(2024, 1, 1, tzinfo=UTC)
+
+    service = AuthService(
+        auth_repository=repo,
+        ldap_service=cast(Any, _FakeLDAPService()),
+        jwt_service=cast(Any, _FakeJWTService()),
+        bootstrap_admin_emails={"admin@example.com"},
+    )
+
+    await service.authenticate(email="active.user@example.com", password="secret")
+
+    updated_user = repo.users["active.user@example.com"]
+    assert updated_user.last_login_at is not None
+    assert updated_user.last_login_at > datetime(2024, 1, 1, tzinfo=UTC)
+    assert updated_user.last_login_at.tzinfo is not None
 
 
 async def test_login_route_maps_auth_errors_and_success() -> None:
