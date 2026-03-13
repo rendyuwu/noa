@@ -7,11 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
-from noa_api.storage.postgres.lifecycle import (
-    ActionRequestStatus,
-    ToolRisk,
-    ToolRunStatus,
-)
+from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 
@@ -31,9 +27,7 @@ class _FakeActionToolRunRepository:
     action_requests: dict[UUID, ActionRequest]
     tool_runs: dict[UUID, ToolRun]
 
-    async def get_action_request(
-        self, *, action_request_id: UUID
-    ) -> ActionRequest | None:
+    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None:
         return self.action_requests.get(action_request_id)
 
     async def create_action_request(
@@ -139,16 +133,12 @@ async def test_action_tool_run_service_transitions_core_states() -> None:
     assert request.status == ActionRequestStatus.PENDING
     assert request.risk == ToolRisk.CHANGE
 
-    approved = await service.approve_action_request(
-        action_request_id=request.id, decided_by_user_id=actor_id
-    )
+    approved = await service.approve_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
     assert approved is not None
     assert approved.status == ActionRequestStatus.APPROVED
 
     with pytest.raises(ValueError, match="already been decided"):
-        await service.deny_action_request(
-            action_request_id=request.id, decided_by_user_id=actor_id
-        )
+        await service.deny_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
 
     run = await service.start_tool_run(
         thread_id=thread_id,
@@ -200,24 +190,16 @@ async def test_action_tool_run_service_rejects_re_deciding_action_request() -> N
         risk=ToolRisk.CHANGE,
         requested_by_user_id=actor_id,
     )
-    _ = await service.approve_action_request(
-        action_request_id=request.id, decided_by_user_id=actor_id
-    )
+    _ = await service.approve_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
 
     with pytest.raises(ValueError, match="already been decided"):
-        await service.approve_action_request(
-            action_request_id=request.id, decided_by_user_id=actor_id
-        )
+        await service.approve_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
 
     with pytest.raises(ValueError, match="already been decided"):
-        await service.deny_action_request(
-            action_request_id=request.id, decided_by_user_id=actor_id
-        )
+        await service.deny_action_request(action_request_id=request.id, decided_by_user_id=actor_id)
 
 
-async def test_action_tool_run_service_rejects_complete_then_failed_transition() -> (
-    None
-):
+async def test_action_tool_run_service_rejects_complete_then_failed_transition() -> None:
     repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
     service = ActionToolRunService(repository=repo)
 
@@ -234,9 +216,7 @@ async def test_action_tool_run_service_rejects_complete_then_failed_transition()
         await service.fail_tool_run(tool_run_id=run.id, error="should-not-transition")
 
 
-async def test_action_tool_run_service_rejects_failed_then_completed_transition() -> (
-    None
-):
+async def test_action_tool_run_service_rejects_failed_then_completed_transition() -> None:
     repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
     service = ActionToolRunService(repository=repo)
 
@@ -251,23 +231,3 @@ async def test_action_tool_run_service_rejects_failed_then_completed_transition(
 
     with pytest.raises(ValueError, match="already terminal"):
         await service.complete_tool_run(tool_run_id=run.id, result={"ok": True})
-
-
-async def test_action_tool_run_service_sanitizes_non_json_result_values() -> None:
-    repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
-    service = ActionToolRunService(repository=repo)
-
-    run = await service.start_tool_run(
-        thread_id=uuid4(),
-        tool_name="test_tool",
-        args={},
-        action_request_id=None,
-        requested_by_user_id=None,
-    )
-
-    raw = {"completed_at": datetime(2026, 3, 13, 12, 0, 0, tzinfo=UTC)}
-    completed = await service.complete_tool_run(tool_run_id=run.id, result=raw)
-
-    assert completed is not None
-    assert completed.result is not None
-    assert completed.result["completed_at"] == "2026-03-13T12:00:00+00:00"

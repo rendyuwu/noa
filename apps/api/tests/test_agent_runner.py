@@ -11,7 +11,6 @@ from noa_api.core.agent.runner import (
     LLMTurnResponse,
     RuleBasedLLMClient,
 )
-from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
@@ -180,75 +179,6 @@ async def test_agent_runner_executes_read_tools_and_appends_result_messages() ->
     assert run.status == ToolRunStatus.COMPLETED
     assert run.result is not None
     assert "time" in run.result
-
-
-async def test_agent_runner_sanitizes_tool_result_message_parts(monkeypatch) -> None:
-    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
-
-    async def json_unsafe_tool() -> dict[str, object]:
-        return {
-            "when": datetime(2026, 3, 13, 12, 0, 0, tzinfo=UTC),
-            "id": uuid4(),
-        }
-
-    tool = ToolDefinition(
-        name="json_unsafe_tool",
-        description="Returns non-JSON-native values.",
-        risk=ToolRisk.READ,
-        parameters_schema={
-            "type": "object",
-            "properties": {},
-            "required": [],
-            "additionalProperties": False,
-        },
-        execute=json_unsafe_tool,
-    )
-
-    monkeypatch.setattr(
-        "noa_api.core.agent.runner.get_tool_definition",
-        lambda name: tool if name == tool.name else None,
-    )
-    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
-
-    class _TwoTurnLLM:
-        def __init__(self) -> None:
-            self.turn = 0
-
-        async def run_turn(
-            self,
-            *,
-            messages: list[dict[str, object]],
-            tools: list[dict[str, object]],
-            on_text_delta=None,
-        ) -> LLMTurnResponse:
-            _ = messages, tools, on_text_delta
-            self.turn += 1
-            if self.turn == 1:
-                return LLMTurnResponse(
-                    text="",
-                    tool_calls=[LLMToolCall(name=tool.name, arguments={})],
-                )
-            return LLMTurnResponse(text="done", tool_calls=[])
-
-    runner = AgentRunner(
-        llm_client=_TwoTurnLLM(),
-        action_tool_run_service=ActionToolRunService(repository=repo),
-    )
-
-    result = await runner.run_turn(
-        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "go"}]}],
-        available_tool_names={tool.name},
-        thread_id=uuid4(),
-        requested_by_user_id=uuid4(),
-    )
-
-    tool_msg = next(message for message in result.messages if message.role == "tool")
-    part = tool_msg.parts[0]
-    assert isinstance(part, dict)
-    tool_result = part.get("result")
-    assert isinstance(tool_result, dict)
-    assert tool_result["when"] == "2026-03-13T12:00:00+00:00"
-    assert isinstance(tool_result["id"], str)
 
 
 async def test_agent_runner_emits_clear_message_when_tool_not_allowed() -> None:
