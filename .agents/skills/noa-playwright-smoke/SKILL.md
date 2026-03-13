@@ -27,7 +27,7 @@ The main agent must:
 1. Inspect the requested change, touched files, and any user notes.
 2. Build the Change Checklist itself. Commit ranges are optional context only; they help explain what changed, but they do not replace checklist authoring.
 3. Dispatch a fresh subagent with the checklist, local context, and the contract in this file.
-4. Read the subagent report, share the local evidence URL `http://127.0.0.1:9999/index.html`, and summarize PASS or FAIL.
+4. Read the subagent report, share the local evidence URL `http://127.0.0.1:9999/index.html` exactly, and summarize PASS or FAIL.
 5. Clean up any smoke processes after the subagent finishes, including API, web, and gallery server processes started for the run.
 
 Do not delegate planning to the subagent. The subagent executes the checklist; the main agent decides what to verify.
@@ -42,7 +42,7 @@ The subagent must:
 4. Start the API and web servers.
 5. Run the Change Checklist in Playwright.
 6. Capture step logs, screenshots, logs, and video evidence.
-7. Generate HTML evidence with `.agents/skills/noa-playwright-smoke/scripts/build_gallery.py` and serve it on `0.0.0.0:9999`.
+7. Generate HTML evidence with `.agents/skills/noa-playwright-smoke/scripts/build_gallery.py` and serve it on `0.0.0.0:9999` with a simple static file server.
 8. Return a concise PASS or FAIL report plus the user-facing URL `http://127.0.0.1:9999/index.html`.
 9. Avoid any code edits, rebases, commits, or cleanup-only refactors.
 
@@ -128,7 +128,7 @@ Required execution contract:
 - Run the smoke checklist through Playwright.
 - Capture a step log (`steps.md` or `steps.txt`), screenshots, browser console errors, network requests, server logs, and video.
 - Generate HTML evidence with `.agents/skills/noa-playwright-smoke/scripts/build_gallery.py`.
-- Serve the artifacts directory on `0.0.0.0:9999` and include the user-facing URL `http://127.0.0.1:9999/index.html` in the report.
+- Serve the artifacts directory on `0.0.0.0:9999` (for example `python3 -m http.server 9999 --bind 0.0.0.0`) and include the user-facing URL `http://127.0.0.1:9999/index.html` in the report.
 - Record the PID and command details for every long-lived process you start so the main agent can clean them up.
 - Report PASS/FAIL per checklist item with evidence filenames.
 - Do not perform cleanup; the main agent owns cleanup after you return.
