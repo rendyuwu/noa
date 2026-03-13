@@ -8,12 +8,26 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
+from noa_api.core.json_safety import json_safe
+from noa_api.storage.postgres.lifecycle import (
+    ActionRequestStatus,
+    ToolRisk,
+    ToolRunStatus,
+)
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 
+def _safe_dict(value: object) -> dict[str, object]:
+    safe = json_safe(value)
+    if isinstance(safe, dict):
+        return safe
+    return {"value": safe}
+
+
 class ActionToolRunRepositoryProtocol(Protocol):
-    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None: ...
+    async def get_action_request(
+        self, *, action_request_id: UUID
+    ) -> ActionRequest | None: ...
 
     async def create_action_request(
         self,
@@ -59,8 +73,12 @@ class SQLActionToolRunRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None:
-        result = await self._session.execute(select(ActionRequest).where(ActionRequest.id == action_request_id))
+    async def get_action_request(
+        self, *, action_request_id: UUID
+    ) -> ActionRequest | None:
+        result = await self._session.execute(
+            select(ActionRequest).where(ActionRequest.id == action_request_id)
+        )
         return result.scalar_one_or_none()
 
     async def create_action_request(
@@ -91,7 +109,9 @@ class SQLActionToolRunRepository:
         decided_by_user_id: UUID,
         status: ActionRequestStatus,
     ) -> ActionRequest | None:
-        action_request = await self.get_action_request(action_request_id=action_request_id)
+        action_request = await self.get_action_request(
+            action_request_id=action_request_id
+        )
         if action_request is None:
             return None
         if action_request.status != ActionRequestStatus.PENDING:
@@ -125,7 +145,9 @@ class SQLActionToolRunRepository:
         return tool_run
 
     async def get_tool_run(self, *, tool_run_id: UUID) -> ToolRun | None:
-        result = await self._session.execute(select(ToolRun).where(ToolRun.id == tool_run_id))
+        result = await self._session.execute(
+            select(ToolRun).where(ToolRun.id == tool_run_id)
+        )
         return result.scalar_one_or_none()
 
     async def finish_tool_run(
@@ -166,16 +188,24 @@ class ActionToolRunService:
         return await self._repository.create_action_request(
             thread_id=thread_id,
             tool_name=tool_name,
-            args=dict(args),
+            args=_safe_dict(args),
             risk=risk,
             requested_by_user_id=requested_by_user_id,
         )
 
-    async def get_action_request(self, *, action_request_id: UUID) -> ActionRequest | None:
-        return await self._repository.get_action_request(action_request_id=action_request_id)
+    async def get_action_request(
+        self, *, action_request_id: UUID
+    ) -> ActionRequest | None:
+        return await self._repository.get_action_request(
+            action_request_id=action_request_id
+        )
 
-    async def approve_action_request(self, *, action_request_id: UUID, decided_by_user_id: UUID) -> ActionRequest | None:
-        action_request = await self._repository.get_action_request(action_request_id=action_request_id)
+    async def approve_action_request(
+        self, *, action_request_id: UUID, decided_by_user_id: UUID
+    ) -> ActionRequest | None:
+        action_request = await self._repository.get_action_request(
+            action_request_id=action_request_id
+        )
         if action_request is None:
             return None
         if action_request.status != ActionRequestStatus.PENDING:
@@ -186,8 +216,12 @@ class ActionToolRunService:
             status=ActionRequestStatus.APPROVED,
         )
 
-    async def deny_action_request(self, *, action_request_id: UUID, decided_by_user_id: UUID) -> ActionRequest | None:
-        action_request = await self._repository.get_action_request(action_request_id=action_request_id)
+    async def deny_action_request(
+        self, *, action_request_id: UUID, decided_by_user_id: UUID
+    ) -> ActionRequest | None:
+        action_request = await self._repository.get_action_request(
+            action_request_id=action_request_id
+        )
         if action_request is None:
             return None
         if action_request.status != ActionRequestStatus.PENDING:
@@ -210,7 +244,7 @@ class ActionToolRunService:
         return await self._repository.start_tool_run(
             thread_id=thread_id,
             tool_name=tool_name,
-            args=dict(args),
+            args=_safe_dict(args),
             action_request_id=action_request_id,
             requested_by_user_id=requested_by_user_id,
         )
@@ -218,7 +252,9 @@ class ActionToolRunService:
     async def get_tool_run(self, *, tool_run_id: UUID) -> ToolRun | None:
         return await self._repository.get_tool_run(tool_run_id=tool_run_id)
 
-    async def complete_tool_run(self, *, tool_run_id: UUID, result: Mapping[str, object]) -> ToolRun | None:
+    async def complete_tool_run(
+        self, *, tool_run_id: UUID, result: Mapping[str, object]
+    ) -> ToolRun | None:
         tool_run = await self._repository.get_tool_run(tool_run_id=tool_run_id)
         if tool_run is None:
             return None
@@ -227,7 +263,7 @@ class ActionToolRunService:
         return await self._repository.finish_tool_run(
             tool_run_id=tool_run_id,
             status=ToolRunStatus.COMPLETED,
-            result=dict(result),
+            result=_safe_dict(result),
             error=None,
         )
 

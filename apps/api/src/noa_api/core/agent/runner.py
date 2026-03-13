@@ -11,6 +11,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.config import settings
+from noa_api.core.json_safety import json_safe
 from noa_api.core.tools.registry import (
     ToolDefinition,
     get_tool_definition,
@@ -517,8 +518,12 @@ class AgentRunner:
 
         try:
             result = await self._execute_tool(tool=tool, args=args)
+            safe_result = json_safe(result)
+            result_payload = (
+                safe_result if isinstance(safe_result, dict) else {"value": safe_result}
+            )
             _ = await self._action_tool_run_service.complete_tool_run(
-                tool_run_id=started.id, result=result
+                tool_run_id=started.id, result=result_payload
             )
             result_message = AgentMessage(
                 role="tool",
@@ -527,7 +532,7 @@ class AgentRunner:
                         "type": "tool-result",
                         "toolName": tool.name,
                         "toolCallId": tool_call_id,
-                        "result": result,
+                        "result": result_payload,
                         "isError": False,
                     }
                 ],
