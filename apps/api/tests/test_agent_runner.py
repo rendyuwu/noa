@@ -218,10 +218,16 @@ async def test_agent_runner_emits_clear_message_when_tool_not_allowed() -> None:
         requested_by_user_id=uuid4(),
     )
 
+    expected_denied_message = (
+        "You don't have permission to use tool 'get_current_time'. "
+        "Please ask SimondayCE Team to enable tool access for your account."
+    )
     texts = [
         m.parts[0].get("text") for m in result.messages if isinstance(m.parts[0], dict)
     ]
-    assert any("SimondayCE Team" in (t or "") for t in texts)
+    assert expected_denied_message in texts
+    assert len(repo.tool_runs) == 0
+    assert len(repo.action_requests) == 0
 
 
 async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
