@@ -3,89 +3,177 @@ name: noa-playwright-smoke
 description: Use when implementing or changing NOA (apps/web or apps/api), before claiming a change is done/fixed, or when asked to quickly verify behavior end-to-end in a real browser.
 ---
 
-# NOA Playwright Smoke (Dispatcher)
+# NOA Playwright Smoke
 
-This skill is intentionally dispatcher-only.
+Loading this skill is sufficient. `SKILL.md` is the only live instruction source for this workflow. Do not depend on any secondary instruction file.
 
-Goal: keep the main agent's context focused on implementation. A fresh subagent does the Playwright run, captures screenshots, LOOKS at them, and returns a concise report.
+Goal: keep the implementation agent focused on code while a fresh verification subagent prepares the local smoke environment, executes the browser smoke flow, captures evidence, and reports PASS or FAIL. The main agent owns the smoke checklist, evidence handoff, and cleanup.
 
-## Required Input: Change Checklist
+## When To Use This Skill
 
-If the user prompt does not include a checklist, ask for it (ask exactly one question) using this template:
+Use this skill when:
 
-```text
+- implementing or changing NOA in `apps/web` or `apps/api`
+- fixing a bug that should be checked end-to-end in a real browser
+- asked to quickly verify live NOA behavior with Playwright
+- about to claim a NOA change is done or fixed
+
+## Operating Modes
+
+### Main Agent Mode
+
+The main agent must:
+
+1. Inspect the requested change, touched files, and any user notes.
+2. Build the Change Checklist itself. Commit ranges are optional context only; they help explain what changed, but they do not replace checklist authoring.
+3. Dispatch a fresh subagent with the checklist, local context, and the contract in this file.
+4. Read the subagent report, share the local evidence URL `http://127.0.0.1:9999/index.html`, and summarize PASS or FAIL.
+5. Clean up any smoke processes after the subagent finishes, including API, web, and gallery server processes started for the run.
+
+Do not delegate planning to the subagent. The subagent executes the checklist; the main agent decides what to verify.
+
+### Subagent Mode
+
+The subagent must:
+
+1. Prepare the local environment without editing code.
+2. Reuse Postgres if it is already running; otherwise start the local dev Postgres needed for NOA.
+3. Materialize env files only from tracked templates on `master`/the checked-out repository state (`apps/api/.env.example`, `apps/web/.env.example`) and never invent ad hoc env files.
+4. Start the API and web servers.
+5. Run the Change Checklist in Playwright.
+6. Capture step logs, screenshots, logs, and video evidence.
+7. Generate HTML evidence with `.agents/skills/noa-playwright-smoke/scripts/build_gallery.py` and serve it on `0.0.0.0:9999`.
+8. Return a concise PASS or FAIL report plus the user-facing URL `http://127.0.0.1:9999/index.html`.
+9. Avoid any code edits, rebases, commits, or cleanup-only refactors.
+
+The subagent reports what it started so the main agent can clean it up.
+
+## Required Change Checklist Format
+
+Every smoke run needs a checklist. If the user does not provide one, the main agent derives it from the implementation and sends it to the subagent.
+
+Each checklist item must include:
+
+- `id`
+- `title`
+- `why`
+- `steps`
+- `expected`
+- `must_not_happen`
+
+Use this structure:
+
+```md
 Change Checklist:
-1) Area:
-   User goal:
-   Steps to reach it (in the UI):
-   Expected result (what should be visible / text / layout):
-   Must-not-happen (regressions to watch for):
-   Checkpoints to screenshot (names):
+- id: login
+  title: User can sign in and reach the assistant
+  why: Confirms the smoke account can enter the product before feature checks begin
+  steps:
+    - Open `/login`
+    - Sign in with the local smoke account
+    - Wait for the assistant view to load
+  expected:
+    - Login form renders
+    - Authentication succeeds
+    - The assistant thread viewport is visible after login
+  must_not_happen:
+    - Auth errors
+    - Blank screen
+    - Redirect loop
 ```
 
-Notes:
+Checklist items should be concrete and visual. `expected` should name visible UI states, labels, layouts, or success conditions. `must_not_happen` should call out regressions to watch for.
 
-- "Expected result" must be concrete and visual (labels, buttons, layout, empty states, error states).
-- "Checkpoints to screenshot" must include at least one checkpoint per checklist item.
+## Local Smoke Auth Contract
 
-## Secrets Rule (REQUIRED)
+Use the backend development LDAP bypass for local smoke authentication. Do not add a separate token-helper fallback.
 
-- Never paste credential values in chat/tool calls/subagent prompts.
-- Credentials MUST come from env vars `NOA_TEST_USER` and `NOA_TEST_PASSWORD` inside the runner.
+Required local contract:
 
-## Dispatcher Rule (REQUIRED)
+- `apps/api/.env` comes from `apps/api/.env.example` if missing
+- `AUTH_DEV_BYPASS_LDAP=true`
+- the dedicated smoke email is included in `AUTH_BOOTSTRAP_ADMIN_EMAILS`
+- the smoke user signs in through the normal `/login` UI against the local API
 
-Do NOT run Playwright in this agent.
+This flow proves the development bypass path works as intended for smoke verification while still exercising the real login screen and session behavior.
 
-Instead, spawn a fresh subagent and hand it ONLY:
+## Secrets And Artifact Rules
 
-- the Change Checklist
-- any additional context needed to navigate (e.g. "new page is under Settings -> Billing")
-- constraints (no secrets, capture many screenshots, generate index.html, cleanup)
-
-The subagent must follow the runner instructions in:
-
-`.agents/skills/noa-playwright-smoke/runner.md`
+- Never paste credential values into chat, tool calls, or subagent prompts.
+- Do not screenshot a filled login form.
+- Keep artifacts local.
+- Do not commit artifacts, env files, or captured tokens.
 
 ## Subagent Prompt Template
 
-Use this as the subagent task prompt (adapt as needed):
+Use this template when dispatching the verification subagent:
 
 ```text
-You are a verification subagent.
+You are a NOA Playwright smoke verification subagent. Follow `.agents/skills/noa-playwright-smoke/SKILL.md` in subagent mode only.
 
-Task:
-- Read and follow `.agents/skills/noa-playwright-smoke/runner.md`.
-- Use the Change Checklist below to design step-by-step Playwright actions.
-- Capture checkpoint screenshots for every checklist item.
-- Generate a screenshot gallery at `$ARTIFACTS/index.html`.
-- Capture a screen recording under `$ARTIFACTS/video/` (REQUIRED; do not record the login form). If video capture is not possible, mark the run FAIL and explain why.
-- LOOK at the screenshots and decide PASS/FAIL per checklist item.
-- Return a concise report to the main agent (no big logs; only file paths + key errors).
+Do not edit code, create commits, or change the checklist.
 
-Constraints:
-- Credentials come ONLY from env vars NOA_TEST_USER/NOA_TEST_PASSWORD; do not print or paste them.
-- Do not screenshot a filled login form.
-- Always cleanup background servers even on failure.
-
-Change Checklist:
+Required context:
+- Repo root: <repo-root>
+- Change Checklist:
 <paste checklist here>
+- Optional implementation context:
+<paths, routes, or commit range notes if helpful>
+
+Required execution contract:
+- Reuse Postgres if it is already running; otherwise start the local dev Postgres needed by NOA.
+- Materialize env files only from tracked env templates if they are missing.
+- Configure local smoke auth with `AUTH_DEV_BYPASS_LDAP=true` and ensure the smoke email is included in `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
+- Start the API and web servers.
+- Run the smoke checklist through Playwright.
+- Capture a step log (`steps.md` or `steps.txt`), screenshots, browser console errors, network requests, server logs, and video.
+- Generate HTML evidence with `.agents/skills/noa-playwright-smoke/scripts/build_gallery.py`.
+- Serve the artifacts directory on `0.0.0.0:9999` and include the user-facing URL `http://127.0.0.1:9999/index.html` in the report.
+- Record the PID and command details for every long-lived process you start so the main agent can clean them up.
+- Report PASS/FAIL per checklist item with evidence filenames.
+- Do not perform cleanup; the main agent owns cleanup after you return.
+
+Return only:
+- PASS or FAIL
+- Baseline smoke results (`/health`, `/login`, login success)
+- Checklist results with evidence references
+- `ARTIFACTS=...`
+- `http://127.0.0.1:9999/index.html`
+- Started process details that must be cleaned up
+- First actionable fix if FAIL
 ```
 
-## What The Subagent Must Return
+## Expected Subagent Evidence Bundle
 
-- PASS or FAIL
-- Baseline smoke: API health, /login loads, login succeeds
-- Change Checklist results: PASS/FAIL per item with screenshot filenames as evidence
-- Artifacts path (`ARTIFACTS=...`) and the gallery file (`$ARTIFACTS/index.html`)
-- Video path (`$ARTIFACTS/video/`). If missing, the run is FAIL.
-- First actionable fix if FAIL
-- Cleanup complete
+The subagent should leave an artifacts directory containing at least:
+
+- `steps.md` or `steps.txt`
+- `shots/`
+- `video/`
+- `console-errors.txt`
+- `network-requests.txt`
+- `api.log`
+- `web.log`
+- `index.html`
+
+If useful, the subagent may also include `report.md` or other small summary files. The gallery should expose the full smoke bundle, not only screenshots.
+
+## Main Agent Cleanup Contract
+
+After the subagent returns, the main agent must stop anything the run started, including:
+
+- API server
+- web dev server
+- evidence gallery server bound to `0.0.0.0:9999`
+- any extra smoke-only helper process started for the run
+
+Do not tell the user a run is complete until cleanup has either succeeded or been explicitly reported as incomplete.
 
 ## Iterate
 
-If any checklist item FAILs:
+If any checklist item fails:
 
-1) Main agent fixes implementation
-2) Dispatch a fresh subagent again with the same checklist
-3) Repeat until PASS
+1. Fix the implementation in the main agent.
+2. Rebuild the checklist if the behavior changed.
+3. Dispatch a fresh subagent with the updated checklist.
+4. Repeat until the smoke run passes or a blocker is identified.
