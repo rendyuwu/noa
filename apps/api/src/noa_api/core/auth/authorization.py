@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -16,7 +17,13 @@ from noa_api.core.auth.errors import AuthInvalidCredentialsError
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.tools.catalog import get_tool_catalog
 from noa_api.storage.postgres.client import create_engine, create_session_factory
-from noa_api.storage.postgres.models import AuditLog, Role, RoleToolPermission, User, UserRole
+from noa_api.storage.postgres.models import (
+    AuditLog,
+    Role,
+    RoleToolPermission,
+    User,
+    UserRole,
+)
 
 _engine = create_engine()
 _session_factory = create_session_factory(_engine)
@@ -25,7 +32,9 @@ _bearer_scheme = HTTPBearer(auto_error=False)
 
 class UnknownToolError(Exception):
     def __init__(self, unknown_tools: list[str]) -> None:
-        self.unknown_tools = sorted({name.strip() for name in unknown_tools if name.strip()})
+        self.unknown_tools = sorted(
+            {name.strip() for name in unknown_tools if name.strip()}
+        )
         super().__init__(f"Unknown tools: {', '.join(self.unknown_tools)}")
 
 
@@ -45,6 +54,8 @@ class AuthorizationUser:
     is_active: bool
     roles: list[str]
     tools: list[str]
+    created_at: datetime | None = None
+    last_login_at: datetime | None = None
 
 
 class AuthorizationRepositoryProtocol(Protocol):
@@ -54,7 +65,9 @@ class AuthorizationRepositoryProtocol(Protocol):
 
     async def get_user_by_id(self, user_id: UUID) -> User | None: ...
 
-    async def update_user_active(self, user_id: UUID, *, is_active: bool) -> User | None: ...
+    async def update_user_active(
+        self, user_id: UUID, *, is_active: bool
+    ) -> User | None: ...
 
     async def count_active_admin_users(self) -> int: ...
 
@@ -64,7 +77,9 @@ class AuthorizationRepositoryProtocol(Protocol):
 
     async def assign_role(self, user_id: UUID, role_name: str) -> None: ...
 
-    async def replace_role_tool_permissions(self, role_name: str, tool_names: list[str]) -> None: ...
+    async def replace_role_tool_permissions(
+        self, role_name: str, tool_names: list[str]
+    ) -> None: ...
 
     async def get_user_allowlist_tools(self, user_id: UUID) -> list[str]: ...
 
@@ -100,7 +115,9 @@ class SQLAuthorizationRepository:
         result = await self._session.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()
 
-    async def update_user_active(self, user_id: UUID, *, is_active: bool) -> User | None:
+    async def update_user_active(
+        self, user_id: UUID, *, is_active: bool
+    ) -> User | None:
         user = await self.get_user_by_id(user_id)
         if user is None:
             return None
@@ -119,7 +136,9 @@ class SQLAuthorizationRepository:
 
     async def get_role_names(self, user_id: UUID) -> list[str]:
         result = await self._session.execute(
-            select(Role.name).join(UserRole, UserRole.role_id == Role.id).where(UserRole.user_id == user_id)
+            select(Role.name)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id)
         )
         return sorted({str(name) for name in result.scalars().all()})
 
@@ -133,25 +152,35 @@ class SQLAuthorizationRepository:
         return role.name
 
     async def assign_role(self, user_id: UUID, role_name: str) -> None:
-        role_result = await self._session.execute(select(Role).where(Role.name == role_name))
+        role_result = await self._session.execute(
+            select(Role).where(Role.name == role_name)
+        )
         role = role_result.scalar_one_or_none()
         if role is None:
             return
 
         existing = await self._session.execute(
-            select(UserRole).where(UserRole.user_id == user_id, UserRole.role_id == role.id)
+            select(UserRole).where(
+                UserRole.user_id == user_id, UserRole.role_id == role.id
+            )
         )
         if existing.scalar_one_or_none() is None:
             self._session.add(UserRole(user_id=user_id, role_id=role.id))
             await self._session.flush()
 
-    async def replace_role_tool_permissions(self, role_name: str, tool_names: list[str]) -> None:
-        role_result = await self._session.execute(select(Role).where(Role.name == role_name))
+    async def replace_role_tool_permissions(
+        self, role_name: str, tool_names: list[str]
+    ) -> None:
+        role_result = await self._session.execute(
+            select(Role).where(Role.name == role_name)
+        )
         role = role_result.scalar_one_or_none()
         if role is None:
             return
 
-        await self._session.execute(delete(RoleToolPermission).where(RoleToolPermission.role_id == role.id))
+        await self._session.execute(
+            delete(RoleToolPermission).where(RoleToolPermission.role_id == role.id)
+        )
         for tool_name in sorted({name.strip() for name in tool_names if name.strip()}):
             self._session.add(RoleToolPermission(role_id=role.id, tool_name=tool_name))
         await self._session.flush()
@@ -189,7 +218,9 @@ class AuthorizationService:
         self._repository = repository
         self._known_tools = set(get_tool_catalog())
 
-    async def authorize_tool_access(self, user: AuthorizationUser, tool_name: str) -> bool:
+    async def authorize_tool_access(
+        self, user: AuthorizationUser, tool_name: str
+    ) -> bool:
         if not user.is_active:
             return False
         if "admin" in user.roles:
@@ -211,6 +242,8 @@ class AuthorizationService:
                     is_active=user.is_active,
                     roles=roles,
                     tools=tools,
+                    created_at=user.created_at,
+                    last_login_at=user.last_login_at,
                 )
             )
         return result
@@ -231,7 +264,9 @@ class AuthorizationService:
         is_admin_user = "admin" in roles
         if user.is_active and not is_active and is_admin_user:
             if actor_user_id is not None and actor_user_id == user_id:
-                raise SelfDeactivateAdminError("Admins cannot disable their own account")
+                raise SelfDeactivateAdminError(
+                    "Admins cannot disable their own account"
+                )
             if await self._repository.count_active_admin_users() <= 1:
                 raise LastActiveAdminError("Cannot disable the last active admin")
 
@@ -253,6 +288,8 @@ class AuthorizationService:
             is_active=user.is_active,
             roles=roles,
             tools=tools,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
         )
 
     async def list_tools(self) -> list[str]:
@@ -294,6 +331,8 @@ class AuthorizationService:
             is_active=user.is_active,
             roles=roles,
             tools=tools,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
         )
 
 
@@ -315,21 +354,29 @@ async def get_current_auth_user(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthorizationUser:
     if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token"
+        )
 
     try:
         payload = jwt_service.decode_token(credentials.credentials)
     except AuthInvalidCredentialsError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
 
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        )
 
     try:
         user = await auth_service.get_user_by_email(email=subject)
     except AuthInvalidCredentialsError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token") from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        ) from exc
 
     return AuthorizationUser(
         user_id=user.user_id,

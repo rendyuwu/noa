@@ -1,3 +1,4 @@
+from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -21,6 +22,8 @@ class AdminUserResponse(BaseModel):
     email: str
     display_name: str | None
     is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None
     roles: list[str]
     tools: list[str]
 
@@ -51,14 +54,20 @@ def _to_user_response(user: AuthorizationUser) -> AdminUserResponse:
         email=user.email,
         display_name=user.display_name,
         is_active=user.is_active,
+        created_at=user.created_at,
+        last_login_at=user.last_login_at,
         roles=user.roles,
         tools=user.tools,
     )
 
 
-async def _require_admin(current_user: AuthorizationUser = Depends(get_current_auth_user)) -> AuthorizationUser:
+async def _require_admin(
+    current_user: AuthorizationUser = Depends(get_current_auth_user),
+) -> AuthorizationUser:
     if not current_user.is_active or "admin" not in current_user.roles:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        )
     return current_user
 
 
@@ -86,9 +95,13 @@ async def update_user_active(
             actor_user_id=admin_user.user_id,
         )
     except (LastActiveAdminError, SelfDeactivateAdminError) as exc:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     return UpdateUserResponse(user=_to_user_response(user))
 
 
@@ -109,9 +122,15 @@ async def set_user_tools(
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> UpdateUserResponse:
     try:
-        user = await authorization_service.set_user_tools(id, payload.tools, actor_email=admin_user.email)
+        user = await authorization_service.set_user_tools(
+            id, payload.tools, actor_email=admin_user.email
+        )
     except UnknownToolError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
     if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
     return UpdateUserResponse(user=_to_user_response(user))

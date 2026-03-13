@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -22,6 +23,8 @@ class _RepoUser:
     email: str
     display_name: str | None
     is_active: bool
+    created_at: datetime
+    last_login_at: datetime | None
 
 
 class _InMemoryAuthorizationRepository:
@@ -44,7 +47,9 @@ class _InMemoryAuthorizationRepository:
     async def get_user_by_id(self, user_id: UUID) -> _RepoUser | None:
         return self.users.get(user_id)
 
-    async def update_user_active(self, user_id: UUID, *, is_active: bool) -> _RepoUser | None:
+    async def update_user_active(
+        self, user_id: UUID, *, is_active: bool
+    ) -> _RepoUser | None:
         user = self.users.get(user_id)
         if user is None:
             return None
@@ -70,7 +75,9 @@ class _InMemoryAuthorizationRepository:
     async def assign_role(self, user_id: UUID, role_name: str) -> None:
         self.user_roles.setdefault(user_id, set()).add(role_name)
 
-    async def replace_role_tool_permissions(self, role_name: str, tool_names: list[str]) -> None:
+    async def replace_role_tool_permissions(
+        self, role_name: str, tool_names: list[str]
+    ) -> None:
         self.role_tools[role_name] = set(tool_names)
 
     async def get_user_allowlist_tools(self, user_id: UUID) -> list[str]:
@@ -104,6 +111,7 @@ class _InMemoryAuthorizationRepository:
 class _FakeAuthorizationService:
     def __init__(self) -> None:
         self.target_user_id = uuid4()
+        created_at = datetime.now(UTC)
         self.users = [
             AuthorizationUser(
                 user_id=self.target_user_id,
@@ -112,6 +120,8 @@ class _FakeAuthorizationService:
                 is_active=True,
                 roles=["member"],
                 tools=["get_current_time"],
+                created_at=created_at,
+                last_login_at=None,
             )
         ]
         self.all_tools = ["get_current_time", "get_current_date", "set_demo_flag"]
@@ -211,26 +221,72 @@ async def test_authorization_service_lists_canonical_tools() -> None:
     repo.role_tools["member"] = {"db-only"}
     service = AuthorizationService(repository=repo)
 
-    assert await service.list_tools() == ["get_current_time", "get_current_date", "set_demo_flag"]
+    assert await service.list_tools() == [
+        "get_current_time",
+        "get_current_date",
+        "set_demo_flag",
+    ]
+
+
+async def test_authorization_service_list_users_includes_created_and_last_login() -> (
+    None
+):
+    repo = _InMemoryAuthorizationRepository()
+    user_id = uuid4()
+    now = datetime.now(UTC)
+    repo.users[user_id] = _RepoUser(
+        id=user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        created_at=now,
+        last_login_at=None,
+    )
+    repo.user_roles[user_id] = {"member"}
+    service = AuthorizationService(repository=repo)
+
+    users = await service.list_users()
+    assert users[0].created_at == now
+    assert users[0].last_login_at is None
 
 
 async def test_authorization_service_rejects_unknown_tool_updates() -> None:
     repo = _InMemoryAuthorizationRepository()
     user_id = uuid4()
-    repo.users[user_id] = _RepoUser(id=user_id, email="member@example.com", display_name="Member", is_active=True)
+    repo.users[user_id] = _RepoUser(
+        id=user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
     service = AuthorizationService(repository=repo)
 
     try:
-        await service.set_user_tools(user_id, ["get_current_time", "unknown-tool"], actor_email="admin@example.com")
+        await service.set_user_tools(
+            user_id,
+            ["get_current_time", "unknown-tool"],
+            actor_email="admin@example.com",
+        )
         assert False, "Expected UnknownToolError"
     except UnknownToolError as exc:
         assert exc.unknown_tools == ["unknown-tool"]
 
 
-async def test_authorization_service_permission_updates_take_effect_immediately() -> None:
+async def test_authorization_service_permission_updates_take_effect_immediately() -> (
+    None
+):
     repo = _InMemoryAuthorizationRepository()
     user_id = uuid4()
-    repo.users[user_id] = _RepoUser(id=user_id, email="member@example.com", display_name="Member", is_active=True)
+    repo.users[user_id] = _RepoUser(
+        id=user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
     service = AuthorizationService(repository=repo)
     user = AuthorizationUser(
         user_id=user_id,
@@ -243,7 +299,9 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
 
     assert await service.authorize_tool_access(user, "get_current_time") is False
 
-    updated = await service.set_user_tools(user_id, ["get_current_time"], actor_email="admin@example.com")
+    updated = await service.set_user_tools(
+        user_id, ["get_current_time"], actor_email="admin@example.com"
+    )
     assert updated is not None
 
     updated_user = AuthorizationUser(
@@ -260,11 +318,22 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
 async def test_authorization_service_writes_audit_events_for_admin_changes() -> None:
     repo = _InMemoryAuthorizationRepository()
     user_id = uuid4()
-    repo.users[user_id] = _RepoUser(id=user_id, email="member@example.com", display_name="Member", is_active=True)
+    repo.users[user_id] = _RepoUser(
+        id=user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
     service = AuthorizationService(repository=repo)
 
-    await service.set_user_active(user_id, is_active=False, actor_email="admin@example.com")
-    await service.set_user_tools(user_id, ["get_current_time"], actor_email="admin@example.com")
+    await service.set_user_active(
+        user_id, is_active=False, actor_email="admin@example.com"
+    )
+    await service.set_user_tools(
+        user_id, ["get_current_time"], actor_email="admin@example.com"
+    )
 
     assert [event["event_type"] for event in repo.audit_events] == [
         "admin_user_status_updated",
@@ -275,12 +344,21 @@ async def test_authorization_service_writes_audit_events_for_admin_changes() -> 
 async def test_authorization_service_blocks_disabling_last_active_admin() -> None:
     repo = _InMemoryAuthorizationRepository()
     admin_id = uuid4()
-    repo.users[admin_id] = _RepoUser(id=admin_id, email="admin@example.com", display_name="Admin", is_active=True)
+    repo.users[admin_id] = _RepoUser(
+        id=admin_id,
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
     repo.user_roles[admin_id] = {"admin"}
     service = AuthorizationService(repository=repo)
 
     try:
-        await service.set_user_active(admin_id, is_active=False, actor_email="owner@example.com")
+        await service.set_user_active(
+            admin_id, is_active=False, actor_email="owner@example.com"
+        )
         assert False, "Expected LastActiveAdminError"
     except LastActiveAdminError:
         pass
@@ -290,12 +368,21 @@ async def test_authorization_service_blocks_admin_self_deactivation() -> None:
     repo = _InMemoryAuthorizationRepository()
     admin_id = uuid4()
     other_admin_id = uuid4()
-    repo.users[admin_id] = _RepoUser(id=admin_id, email="admin@example.com", display_name="Admin", is_active=True)
+    repo.users[admin_id] = _RepoUser(
+        id=admin_id,
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
     repo.users[other_admin_id] = _RepoUser(
         id=other_admin_id,
         email="backup-admin@example.com",
         display_name="Backup Admin",
         is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
     )
     repo.user_roles[admin_id] = {"admin"}
     repo.user_roles[other_admin_id] = {"admin"}
@@ -316,7 +403,9 @@ async def test_authorization_service_blocks_admin_self_deactivation() -> None:
 async def test_admin_routes_forbid_non_admin_users() -> None:
     app = FastAPI()
     app.include_router(admin_router)
-    app.dependency_overrides[get_authorization_service] = lambda: _FakeAuthorizationService()
+    app.dependency_overrides[get_authorization_service] = lambda: (
+        _FakeAuthorizationService()
+    )
     app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
         user_id=uuid4(),
         email="member@example.com",
@@ -366,7 +455,9 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
     assert users_response.json()["users"][0]["email"] == "member@example.com"
 
     assert tools_response.status_code == 200
-    assert tools_response.json() == {"tools": ["get_current_time", "get_current_date", "set_demo_flag"]}
+    assert tools_response.json() == {
+        "tools": ["get_current_time", "get_current_date", "set_demo_flag"]
+    }
 
     assert patch_response.status_code == 200
     assert patch_response.json()["user"]["is_active"] is False
@@ -408,7 +499,14 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
 
     repo = _InMemoryAuthorizationRepository()
     admin_id = uuid4()
-    repo.users[admin_id] = _RepoUser(id=admin_id, email="admin@example.com", display_name="Admin", is_active=True)
+    repo.users[admin_id] = _RepoUser(
+        id=admin_id,
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
     repo.user_roles[admin_id] = {"admin"}
     service = AuthorizationService(repository=repo)
 
@@ -424,7 +522,9 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.patch(f"/admin/users/{admin_id}", json={"is_active": False})
+        response = await client.patch(
+            f"/admin/users/{admin_id}", json={"is_active": False}
+        )
 
     assert response.status_code == 409
     assert response.json() == {"detail": "Cannot disable the last active admin"}
