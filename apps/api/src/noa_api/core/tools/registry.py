@@ -12,6 +12,11 @@ from noa_api.core.tools.whm.preflight_tools import (
     whm_preflight_account,
     whm_preflight_csf_entries,
 )
+from noa_api.core.tools.whm.account_change_tools import (
+    whm_change_contact_email,
+    whm_suspend_account,
+    whm_unsuspend_account,
+)
 from noa_api.core.tools.whm.read_tools import (
     whm_list_accounts,
     whm_list_servers,
@@ -189,6 +194,55 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "additionalProperties": False,
         },
         execute=whm_preflight_csf_entries,
+    ),
+    ToolDefinition(
+        name="whm_suspend_account",
+        description="Suspend a WHM account (idempotent, requires approval).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        execute=whm_suspend_account,
+    ),
+    ToolDefinition(
+        name="whm_unsuspend_account",
+        description="Unsuspend a WHM account (idempotent, requires approval).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        execute=whm_unsuspend_account,
+    ),
+    ToolDefinition(
+        name="whm_change_contact_email",
+        description="Change a WHM account contact email (idempotent, requires approval).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "new_email": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "new_email", "reason"],
+            "additionalProperties": False,
+        },
+        execute=whm_change_contact_email,
     ),
 )
 _MVP_TOOL_INDEX = {tool.name: tool for tool in _MVP_TOOLS}
