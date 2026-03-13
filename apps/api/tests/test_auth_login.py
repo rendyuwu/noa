@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -28,6 +29,7 @@ class _User:
     ldap_dn: str | None = None
     display_name: str | None = None
     is_active: bool = False
+    last_login_at: datetime | None = None
 
 
 class _InMemoryAuthRepository:
@@ -64,12 +66,16 @@ class _InMemoryAuthRepository:
         ldap_dn: str | None = None,
         display_name: str | None = None,
         is_active: bool | None = None,
+        last_login_at: datetime | None = None,
     ) -> _User:
         user.ldap_dn = ldap_dn if ldap_dn is not None else user.ldap_dn
         user.display_name = (
             display_name if display_name is not None else user.display_name
         )
         user.is_active = is_active if is_active is not None else user.is_active
+        user.last_login_at = (
+            last_login_at if last_login_at is not None else user.last_login_at
+        )
         return user
 
     async def ensure_role(self, name: str) -> str:
@@ -178,6 +184,7 @@ async def test_auth_service_bootstrap_admin_auto_active_and_issues_jwt() -> None
     assert result.is_active is True
     assert "admin" in result.roles
     assert repo.users["admin@example.com"].is_active is True
+    assert repo.users["admin@example.com"].last_login_at is not None
 
 
 async def test_login_route_maps_auth_errors_and_success() -> None:

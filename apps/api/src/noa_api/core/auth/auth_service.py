@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.core.auth.errors import AuthInvalidCredentialsError, AuthPendingApprovalError
+from noa_api.core.auth.errors import (
+    AuthInvalidCredentialsError,
+    AuthPendingApprovalError,
+)
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.auth.ldap_service import LDAPService
 from noa_api.storage.postgres.models import Role, User, UserRole
@@ -59,6 +63,7 @@ class AuthRepositoryProtocol(Protocol):
         ldap_dn: str | None = None,
         display_name: str | None = None,
         is_active: bool | None = None,
+        last_login_at: datetime | None = None,
     ) -> AuthUserRecord: ...
 
     async def ensure_role(self, name: str) -> str: ...
@@ -76,8 +81,17 @@ class SQLAuthRepository:
         result = await self._session.execute(select(User).where(User.email == email))
         return result.scalar_one_or_none()
 
-    async def create_user(self, *, email: str, ldap_dn: str | None, display_name: str | None, is_active: bool) -> User:
-        user = User(email=email, ldap_dn=ldap_dn, display_name=display_name, is_active=is_active)
+    async def create_user(
+        self,
+        *,
+        email: str,
+        ldap_dn: str | None,
+        display_name: str | None,
+        is_active: bool,
+    ) -> User:
+        user = User(
+            email=email, ldap_dn=ldap_dn, display_name=display_name, is_active=is_active
+        )
         self._session.add(user)
         await self._session.flush()
         return user
@@ -89,6 +103,7 @@ class SQLAuthRepository:
         ldap_dn: str | None = None,
         display_name: str | None = None,
         is_active: bool | None = None,
+        last_login_at: datetime | None = None,
     ) -> User:
         if ldap_dn is not None:
             user.ldap_dn = ldap_dn
@@ -96,6 +111,8 @@ class SQLAuthRepository:
             user.display_name = display_name
         if is_active is not None:
             user.is_active = is_active
+        if last_login_at is not None:
+            user.last_login_at = last_login_at
         await self._session.flush()
         return user
 
@@ -109,13 +126,17 @@ class SQLAuthRepository:
         return role.name
 
     async def assign_role(self, user_id: UUID, role_name: str) -> None:
-        role_result = await self._session.execute(select(Role).where(Role.name == role_name))
+        role_result = await self._session.execute(
+            select(Role).where(Role.name == role_name)
+        )
         role = role_result.scalar_one_or_none()
         if role is None:
             return
 
         existing = await self._session.execute(
-            select(UserRole).where(UserRole.user_id == user_id, UserRole.role_id == role.id)
+            select(UserRole).where(
+                UserRole.user_id == user_id, UserRole.role_id == role.id
+            )
         )
         if existing.scalar_one_or_none() is None:
             self._session.add(UserRole(user_id=user_id, role_id=role.id))
@@ -123,7 +144,9 @@ class SQLAuthRepository:
 
     async def get_role_names(self, user_id: UUID) -> list[str]:
         result = await self._session.execute(
-            select(Role.name).join(UserRole, UserRole.role_id == Role.id).where(UserRole.user_id == user_id)
+            select(Role.name)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(UserRole.user_id == user_id)
         )
         return sorted({str(name) for name in result.scalars().all()})
 
@@ -140,7 +163,9 @@ class AuthService:
         self._auth_repository = auth_repository
         self._ldap_service = ldap_service
         self._jwt_service = jwt_service
-        self._bootstrap_admin_emails = {email.lower() for email in bootstrap_admin_emails}
+        self._bootstrap_admin_emails = {
+            email.lower() for email in bootstrap_admin_emails
+        }
 
     async def authenticate(self, *, email: str, password: str) -> AuthResult:
         normalized_email = email.strip().lower()
@@ -174,8 +199,15 @@ class AuthService:
         if not user.is_active:
             raise AuthPendingApprovalError("User pending approval")
 
+        user = await self._auth_repository.update_user(
+            user,
+            last_login_at=datetime.now(UTC),
+        )
+
         role_names = await self._auth_repository.get_role_names(user.id)
-        access_token, expires_in = self._jwt_service.create_access_token(user.email, user.id)
+        access_token, expires_in = self._jwt_service.create_access_token(
+            user.email, user.id
+        )
         return AuthResult(
             access_token=access_token,
             expires_in=expires_in,
