@@ -50,9 +50,18 @@ def main() -> int:
     def maybe_link(path: Path, label: str) -> str:
         if not path.exists():
             return ""
-        return f'<a href="{rel(path)}">{html.escape(label)}</a>'
+        return (
+            '<li><a href="'
+            + rel(path)
+            + '"><code>'
+            + html.escape(label)
+            + "</code></a></li>"
+        )
 
     links = [
+        maybe_link(artifacts_dir / "steps.md", "steps.md"),
+        maybe_link(artifacts_dir / "steps.txt", "steps.txt"),
+        maybe_link(artifacts_dir / "report.md", "report.md"),
         maybe_link(artifacts_dir / "console-errors.txt", "console-errors.txt"),
         maybe_link(artifacts_dir / "network-requests.txt", "network-requests.txt"),
         maybe_link(artifacts_dir / "api.log", "api.log"),
@@ -78,10 +87,23 @@ def main() -> int:
             )
         )
 
-    title = "NOA Smoke Screenshots"
+    title = "NOA Smoke Evidence"
     subtitle = html.escape(str(artifacts_dir))
-    nav = "" if not links else " | ".join(links)
     count = f"{len(images)} screenshot(s)"
+
+    evidence_html = ""
+    if links:
+        evidence_html = "\n".join(
+            [
+                '<section class="evidence">',
+                "  <h2>Evidence bundle</h2>",
+                '  <p class="meta">Step logs, reports, console output, network traces, and server logs.</p>',
+                '  <ul class="evidence__list">',
+                *[f"    {link}" for link in links],
+                "  </ul>",
+                "</section>",
+            ]
+        )
 
     videos_html = ""
     if videos:
@@ -126,27 +148,29 @@ header.page {
 }
 h1 { margin: 0 0 6px; font-size: 18px; letter-spacing: 0.2px; }
 .meta { margin: 0; opacity: 0.85; font-size: 12px; }
-.nav { margin-top: 8px; font-size: 12px; opacity: 0.9; }
  main { padding: 16px 16px 28px; }
+ .evidence,
  .videos {
    margin-bottom: 16px;
    padding: 14px;
    border: 1px solid rgba(255, 255, 255, 0.10);
    border-radius: 10px;
    background: rgba(255, 255, 255, 0.04);
- }
+  }
+ .evidence h2,
  .videos h2 { margin: 0 0 8px; font-size: 14px; letter-spacing: 0.2px; }
- .video__player {
-   width: 100%;
-   max-height: 420px;
-   background: rgba(0, 0, 0, 0.25);
-   border-radius: 8px;
- }
- .videos__list {
-   margin: 10px 0 0;
-   padding-left: 18px;
-   font-size: 12px;
- }
+  .video__player {
+    width: 100%;
+    max-height: 420px;
+    background: rgba(0, 0, 0, 0.25);
+    border-radius: 8px;
+  }
+ .evidence__list,
+  .videos__list {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    font-size: 12px;
+  }
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
@@ -196,9 +220,9 @@ h1 { margin: 0 0 6px; font-size: 18px; letter-spacing: 0.2px; }
             '  <header class="page">',
             f"    <h1>{html.escape(title)}</h1>",
             f'    <p class="meta"><code>{subtitle}</code> &middot; {html.escape(count)}</p>',
-            f'    <div class="nav">{nav}</div>',
             "  </header>",
             "  <main>",
+            evidence_html,
             videos_html,
             '    <section class="grid">',
             "      "
