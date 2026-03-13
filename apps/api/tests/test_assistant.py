@@ -717,7 +717,7 @@ async def test_assistant_route_runs_agent_with_rbac_filtered_tools() -> None:
 
     assert response.status_code == 200
     assert "I'll check that for you." in response.text
-    assert service.seen_available_tools == {"get_current_time"}
+    assert service.seen_available_tools == {"get_current_time", "update_workflow_todo"}
 
 
 async def test_assistant_route_keeps_user_message_in_streaming_state() -> None:

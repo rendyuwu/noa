@@ -237,6 +237,7 @@ async def test_authorization_service_lists_canonical_tools() -> None:
         "get_current_time",
         "get_current_date",
         "set_demo_flag",
+        "update_workflow_todo",
     ]
 
 
