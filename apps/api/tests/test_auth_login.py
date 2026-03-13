@@ -187,6 +187,33 @@ async def test_auth_service_bootstrap_admin_auto_active_and_issues_jwt() -> None
     assert repo.users["admin@example.com"].last_login_at is not None
 
 
+async def test_auth_service_smoke_bootstrap_user_uses_dev_ldap_bypass() -> None:
+    repo = _InMemoryAuthRepository()
+    cfg = _settings(
+        environment="development",
+        ldap_server_uri="ldap://127.0.0.1:1",
+        ldap_timeout_seconds=1,
+        auth_dev_bypass_ldap=True,
+    )
+    service = AuthService(
+        auth_repository=repo,
+        ldap_service=LDAPService(cfg),
+        jwt_service=cast(Any, _FakeJWTService()),
+        bootstrap_admin_emails={"smoke@example.com"},
+    )
+
+    result = await service.authenticate(email="smoke@example.com", password="secret")
+
+    assert result.access_token.startswith("token:smoke@example.com:")
+    assert result.email == "smoke@example.com"
+    assert result.is_active is True
+    assert result.roles == ["admin"]
+    assert repo.users["smoke@example.com"].is_active is True
+    assert repo.users["smoke@example.com"].ldap_dn is not None
+    assert "smoke@example.com" in repo.users["smoke@example.com"].ldap_dn
+    assert repo.users["smoke@example.com"].last_login_at is not None
+
+
 async def test_auth_service_updates_last_login_at_for_existing_active_user() -> None:
     repo = _InMemoryAuthRepository()
     existing_user = await repo.create_user(
