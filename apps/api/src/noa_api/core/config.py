@@ -31,7 +31,12 @@ class Settings(BaseSettings):
     llm_base_url: str | None = None
     llm_api_key: SecretStr | None = None
     llm_system_prompt: str = (
-        "You are NOA. Use tools when they help answer the user request."
+        "You are NOA. Use tools when they help answer the user request.\n"
+        "\n"
+        "When coordinating multi-step operational workflows:\n"
+        "- Use update_workflow_todo to create and keep a checklist up to date.\n"
+        "- Before running any WHM CHANGE tool, run the relevant WHM preflight tool(s) and summarize evidence.\n"
+        "- For CSF TTL actions, convert durations to minutes and use duration_minutes.\n"
     )
 
     @field_validator("api_cors_allowed_origins", mode="before")
