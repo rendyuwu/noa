@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Protocol
 from urllib.parse import urlparse
@@ -13,9 +14,9 @@ class WHMServerLike(Protocol):
 
 
 class WHMServerRefRepositoryProtocol(Protocol):
-    async def list_servers(self) -> list[WHMServerLike]: ...
+    async def list_servers(self) -> Sequence[WHMServerLike]: ...
 
-    async def get_by_id(self, server_id: UUID): ...
+    async def get_by_id(self, server_id: UUID) -> WHMServerLike | None: ...
 
 
 @dataclass(frozen=True)
@@ -53,7 +54,7 @@ async def resolve_whm_server_ref(
         server_id = None
 
     if server_id is not None:
-        server = await repo.get_by_id(server_id)
+        server = await repo.get_by_id(server_id=server_id)
         if server is None:
             return WHMServerRefResolution(
                 ok=False,
@@ -72,7 +73,7 @@ async def resolve_whm_server_ref(
             choices=[],
         )
 
-    servers = await repo.list_servers()
+    servers = list(await repo.list_servers())
 
     name_matches = [s for s in servers if s.name.lower() == ref.lower()]
     if name_matches:
