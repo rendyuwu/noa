@@ -29,6 +29,10 @@ vi.mock("@/components/claude/request-approval-tool-ui", () => ({
   RequestApprovalToolUI: () => <div data-testid="request-approval-tool-ui" />,
 }));
 
+vi.mock("@/components/claude/workflow-todo-tool-ui", () => ({
+  WorkflowTodoToolUI: () => <div data-testid="workflow-todo-tool-ui" />,
+}));
+
 vi.mock("@/components/lib/auth-store", () => ({
   useRequireAuth: () => true,
 }));

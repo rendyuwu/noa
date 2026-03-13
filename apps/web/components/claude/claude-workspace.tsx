@@ -7,6 +7,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { ClaudeThread } from "@/components/claude/claude-thread";
 import { ClaudeThreadList } from "@/components/claude/claude-thread-list";
 import { RequestApprovalToolUI } from "@/components/claude/request-approval-tool-ui";
+import { WorkflowTodoToolUI } from "@/components/claude/workflow-todo-tool-ui";
 
 export function ClaudeWorkspace() {
   const [open, setOpen] = useState(false);
@@ -42,6 +43,7 @@ export function ClaudeWorkspace() {
     <Dialog.Root open={open} onOpenChange={setOpen}>
       <section className="relative h-dvh w-full overflow-hidden bg-bg">
         <RequestApprovalToolUI />
+        <WorkflowTodoToolUI />
 
         <div
           className={[
