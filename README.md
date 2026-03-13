@@ -68,6 +68,13 @@ Open: http://localhost:3000
 
 ## Manual Smoke Test
 
+Env handling for smoke tests is strict:
+- Reuse `apps/api/.env` from the `master` worktree so smoke tests hit the real configured LLM and do not fall back to mock/rule-based behavior.
+- If a subagent/worktree needs an env file, copy `apps/api/.env` from the `master` worktree without reading, printing, or summarizing secret values.
+- After copying, only these keys may be edited for local smoke tests: `API_CORS_ALLOWED_ORIGINS`, `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
+- Do not inspect, print, summarize, or modify any other secret values.
+- Real `.env` files remain uncommitted.
+
 1) Login via LDAP at `/login` using a user in `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
 2) In `/assistant`, create a thread and ask: `what time is it` (READ tool).
 3) Ask: `set demo flag foo=bar` (CHANGE tool) and approve/deny the action card.
