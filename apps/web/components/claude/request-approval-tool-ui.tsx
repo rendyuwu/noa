@@ -2,7 +2,7 @@
 
 import { makeAssistantToolUI, useAssistantTransportSendCommand } from "@assistant-ui/react";
 import { CheckIcon, Cross2Icon } from "@radix-ui/react-icons";
-import { useEffect, useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 function coerceString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -126,10 +126,10 @@ export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
     rawStatus === "incomplete" ||
     rawStatus === "requires-action";
   const statusType =
-    hasKnownStatus
-      ? rawStatus
-      : isError
-        ? "incomplete"
+    isError === true
+      ? "incomplete"
+      : hasKnownStatus
+        ? rawStatus
         : result !== undefined
           ? "complete"
           : "running";
@@ -144,54 +144,19 @@ export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
           ? `Waiting for approval before continuing ${copy.label.toLowerCase()}`
           : copy.doing;
 
-  const isSuccessfulComplete = statusType === "complete" && !isError;
-  const [isMounted, setIsMounted] = useState(true);
-  const [isExiting, setIsExiting] = useState(false);
-
-  useEffect(() => {
-    if (!isSuccessfulComplete) {
-      setIsMounted(true);
-      setIsExiting(false);
-      return;
-    }
-
-    setIsMounted(true);
-    setIsExiting(false);
-
-    const exitTimer = window.setTimeout(() => {
-      setIsExiting(true);
-    }, 1000);
-
-    const unmountTimer = window.setTimeout(() => {
-      setIsMounted(false);
-    }, 1200);
-
-    return () => {
-      window.clearTimeout(exitTimer);
-      window.clearTimeout(unmountTimer);
-    };
-  }, [isSuccessfulComplete]);
-
-  if (isSuccessfulComplete && !isMounted) {
+  if (statusType !== "incomplete") {
     return null;
   }
 
   return (
-    <div
-      className={[
-        "overflow-hidden transition-all duration-200 ease-out",
-        isSuccessfulComplete && isExiting ? "opacity-0 max-h-0" : "opacity-100 max-h-20",
-      ].join(" ")}
-    >
-      <div className="flex items-center justify-between gap-2 rounded-md bg-surface/40 px-2 py-1.5 text-xs">
-        <div className="min-w-0 truncate text-muted">
-          <span className="font-medium text-text">{copy.label}</span>
-          <span className="mx-1.5 text-muted">-</span>
-          <span>{activityText}</span>
-        </div>
-        <div className={["shrink-0 rounded px-1.5 py-0.5 text-[10px]", badge.className].join(" ")}>
-          {badge.label}
-        </div>
+    <div className="flex items-center justify-between gap-2 rounded-md bg-surface/40 px-2 py-1.5 text-xs">
+      <div className="min-w-0 truncate text-muted">
+        <span className="font-medium text-text">{copy.label}</span>
+        <span className="mx-1.5 text-muted">-</span>
+        <span>{activityText}</span>
+      </div>
+      <div className={["shrink-0 rounded px-1.5 py-0.5 text-[10px]", badge.className].join(" ")}>
+        {badge.label}
       </div>
     </div>
   );
