@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import type { FC, ReactNode } from "react";
 
 import {
@@ -9,9 +10,11 @@ import {
 } from "@assistant-ui/react";
 import {
   ArchiveIcon,
+  ChevronDownIcon,
   ColumnsIcon,
   CodeIcon,
-  LayersIcon,
+  DesktopIcon,
+  GearIcon,
   MagnifyingGlassIcon,
   PersonIcon,
   PlusIcon,
@@ -94,6 +97,7 @@ export function ClaudeThreadList({
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
   const secondary = user?.email?.trim() || user?.roles?.join(", ") || "Signed in";
   const isAdmin = user?.roles?.includes("admin") ?? false;
+  const [backendOpen, setBackendOpen] = useState(false);
 
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col bg-bg">
@@ -136,7 +140,44 @@ export function ClaudeThreadList({
             {isAdmin ? (
               <NavLinkItem icon={<PersonIcon width={16} height={16} />} label="Users" href="/admin/users" />
             ) : null}
-            <DisabledNavItem icon={<LayersIcon width={16} height={16} />} label="Projects" />
+            {isAdmin ? (
+              <div>
+                <button
+                  type="button"
+                  onClick={() => setBackendOpen((prev) => !prev)}
+                  aria-expanded={backendOpen}
+                  aria-controls="backend-nav"
+                  className="flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-ui text-sm text-muted transition-colors hover:bg-surface-2/60 hover:text-text active:scale-[0.99]"
+                >
+                  <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">
+                    <GearIcon width={16} height={16} />
+                  </span>
+                  <span className="flex-1 text-left">Backend</span>
+                  <span
+                    aria-hidden="true"
+                    className={
+                      [
+                        "flex h-4 w-4 items-center justify-center text-muted transition-transform",
+                        backendOpen ? "rotate-180" : "rotate-0",
+                      ].join(" ")
+                    }
+                  >
+                    <ChevronDownIcon width={16} height={16} />
+                  </span>
+                </button>
+                {backendOpen ? (
+                  <div id="backend-nav" className="mt-1 pl-4">
+                    <NavLinkItem
+                      icon={<DesktopIcon width={16} height={16} />}
+                      label="WHM Servers"
+                      href="/admin/whm/servers"
+                    />
+                  </div>
+                ) : (
+                  <div id="backend-nav" className="hidden" />
+                )}
+              </div>
+            ) : null}
             <DisabledNavItem icon={<ArchiveIcon width={16} height={16} />} label="Artifacts" />
             <DisabledNavItem icon={<CodeIcon width={16} height={16} />} label="Code" />
           </div>

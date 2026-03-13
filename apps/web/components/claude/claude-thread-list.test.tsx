@@ -82,11 +82,31 @@ describe("ClaudeThreadList", () => {
 
     expect(navSection.queryByRole("button", { name: "Customize" })).not.toBeInTheDocument();
 
-    for (const label of ["Search", "Projects", "Artifacts", "Code"]) {
+    expect(navSection.queryByRole("button", { name: "Projects" })).not.toBeInTheDocument();
+
+    for (const label of ["Search", "Artifacts", "Code"]) {
       const button = navSection.getByRole("button", { name: label });
       expect(button).toHaveAttribute("aria-disabled", "true");
       expect(button).not.toBeDisabled();
     }
+  });
+
+  it("renders a Backend nav group with a WHM Servers link for admin users", () => {
+    render(<ClaudeThreadList />);
+
+    const newChatButton = screen.getByRole("button", { name: "New chat" });
+    expect(newChatButton.parentElement).not.toBeNull();
+    const navSection = within(newChatButton.parentElement as HTMLElement);
+
+    const backendToggle = navSection.getByRole("button", { name: "Backend" });
+    expect(backendToggle).toBeInTheDocument();
+
+    expect(navSection.queryByRole("link", { name: "WHM Servers" })).not.toBeInTheDocument();
+    fireEvent.click(backendToggle);
+    expect(navSection.getByRole("link", { name: "WHM Servers" })).toHaveAttribute(
+      "href",
+      "/admin/whm/servers",
+    );
   });
 
   it("renders a Users nav link under the new chat section for admin users", () => {
@@ -139,6 +159,15 @@ describe("ClaudeThreadList", () => {
     render(<ClaudeThreadList />);
 
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+  });
+
+  it("hides the Backend nav group for non-admin users", () => {
+    mocks.user.roles = ["member"];
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.queryByRole("button", { name: "Backend" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "WHM Servers" })).not.toBeInTheDocument();
   });
 
   it("hides the Users nav link when roles are empty or missing", () => {
