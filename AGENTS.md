@@ -87,12 +87,6 @@ Notes:
 - API list/set env vars are JSON arrays; examples:
   - `AUTH_BOOTSTRAP_ADMIN_EMAILS=["admin@example.com"]`
   - `API_CORS_ALLOWED_ORIGINS=["http://localhost:3000"]`
-- Smoke-test env reuse (strict):
-  - For manual smoke tests in subagents/worktrees, reuse `apps/api/.env` from the `master` worktree so tests use the real configured LLM and do not fall back to mock/rule-based behavior.
-  - If another worktree needs an env file, copy `apps/api/.env` from the `master` worktree without reading, printing, or summarizing secret values.
-  - After copying, only these keys may be edited for local smoke tests: `API_CORS_ALLOWED_ORIGINS`, `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
-  - Do not inspect or modify any other secret values.
-  - Real `.env` files remain uncommitted.
 - Browser code should never call FastAPI directly; use same-origin `/api/...`.
   - `apps/web/app/api/[...path]/route.ts` proxies to `NOA_API_URL` server-side.
 
