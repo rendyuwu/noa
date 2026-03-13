@@ -7,7 +7,7 @@ import {
 } from "@/components/claude/request-approval-tool-ui";
 
 describe("ClaudeToolFallback", () => {
-  it("hides successful tools after completion", () => {
+  it("shows successful tools immediately after completion", () => {
     render(
       <ClaudeToolFallback
         toolName="get_current_time"
@@ -19,7 +19,8 @@ describe("ClaudeToolFallback", () => {
       />,
     );
 
-    expect(screen.queryByText(/current time/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Current time$/i)).toBeVisible();
+    expect(screen.getByText("complete")).toBeInTheDocument();
   });
 
   it("lingers for 1s then fades out before unmounting", () => {
@@ -41,10 +42,11 @@ describe("ClaudeToolFallback", () => {
       act(() => {
         vi.advanceTimersByTime(1000);
       });
-      expect(screen.getByText(/^Current time$/i)).toBeVisible();
+      const row = screen.getByText(/^Current time$/i).closest("div.overflow-hidden");
+      expect(row).toHaveClass("opacity-0", "max-h-0");
 
       act(() => {
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(200);
       });
       expect(screen.queryByText(/^Current time$/i)).not.toBeInTheDocument();
     } finally {
@@ -96,7 +98,9 @@ describe("ClaudeToolFallback", () => {
     expect(screen.getByText(/could not complete current time/i)).toBeVisible();
   });
 
-  it("does not render a wrapper when only hidden success children exist", () => {
+  it("unmounts wrapper after successful tool fadeout", () => {
+    vi.useFakeTimers();
+
     const { container } = render(
       <ClaudeToolGroup>
         <ClaudeToolFallback
@@ -109,6 +113,13 @@ describe("ClaudeToolFallback", () => {
       </ClaudeToolGroup>,
     );
 
+    expect(screen.getByText(/^Current time$/i)).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1200);
+    });
+
     expect(container.firstChild).toBeNull();
+    vi.useRealTimers();
   });
 });
