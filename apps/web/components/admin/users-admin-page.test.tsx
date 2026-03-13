@@ -35,6 +35,8 @@ describe("UsersAdminPage", () => {
           id: "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb",
           email: "casey@example.com",
           display_name: "Casey Rivers",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: "2026-02-03T04:05:06.000Z",
           is_active: true,
           roles: ["member"],
           tools: ["get_current_time", "get_current_date"],
@@ -94,6 +96,88 @@ describe("UsersAdminPage", () => {
     expect(await within(table).findByText("casey@example.com")).toBeInTheDocument();
   });
 
+  it("renders Created and Last login columns with pending and disabled status labels", async () => {
+    const usersPayload = {
+      users: [
+        {
+          id: "5abf1606-aad2-4935-8b9c-fe017a8b704e",
+          email: "pending@example.com",
+          display_name: "Pending User",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: null,
+          is_active: false,
+          roles: ["member"],
+          tools: [],
+        },
+        {
+          id: "577f5df4-ab12-42e7-b4ca-e4c7c15ca6c1",
+          email: "disabled@example.com",
+          display_name: "Disabled User",
+          created_at: "2026-01-03T03:04:05.000Z",
+          last_login_at: "2026-01-10T09:08:07.000Z",
+          is_active: false,
+          roles: ["member"],
+          tools: [],
+        },
+      ],
+    };
+
+    const toolsPayload = {
+      tools: ["get_current_time"],
+    };
+
+    const usersResponse = new Response(JSON.stringify(usersPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string) => {
+      if (path === "/admin/users") {
+        return usersResponse;
+      }
+      if (path === "/admin/tools") {
+        return toolsResponse;
+      }
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === usersResponse) {
+        return usersPayload;
+      }
+      if (response === toolsResponse) {
+        return toolsPayload;
+      }
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<UsersAdminPage />);
+
+    const table = screen.getByRole("table");
+
+    await waitFor(() => {
+      const calledPaths = mocks.fetchWithAuth.mock.calls.map((call) => call[0]);
+      expect(calledPaths).toEqual(expect.arrayContaining(["/admin/users", "/admin/tools"]));
+    });
+
+    expect(within(table).getByRole("columnheader", { name: "Created" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Last login" })).toBeInTheDocument();
+
+    expect(await within(table).findByText("pending@example.com")).toBeInTheDocument();
+    expect(within(table).getByText("Pending approval")).toBeInTheDocument();
+    expect(within(table).getByText("disabled@example.com")).toBeInTheDocument();
+    expect(within(table).getByText("Disabled")).toBeInTheDocument();
+  });
+
   it("PATCHes /admin/users/:id to disable an active user from the drawer", async () => {
     const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
     const usersPayload = {
@@ -102,6 +186,8 @@ describe("UsersAdminPage", () => {
           id: userId,
           email: "casey@example.com",
           display_name: "Casey Rivers",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: "2026-02-03T04:05:06.000Z",
           is_active: true,
           roles: ["member"],
           tools: ["get_current_time"],
@@ -194,6 +280,8 @@ describe("UsersAdminPage", () => {
           id: userId,
           email: "casey@example.com",
           display_name: "Casey Rivers",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: "2026-02-03T04:05:06.000Z",
           is_active: true,
           roles: ["admin"],
           tools: ["get_current_time"],
@@ -278,6 +366,8 @@ describe("UsersAdminPage", () => {
           id: userAId,
           email: "casey@example.com",
           display_name: "Casey Rivers",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: "2026-02-03T04:05:06.000Z",
           is_active: true,
           roles: ["admin"],
           tools: ["get_current_time"],
@@ -286,6 +376,8 @@ describe("UsersAdminPage", () => {
           id: userBId,
           email: "riley@example.com",
           display_name: "Riley Smith",
+          created_at: "2026-01-10T07:08:09.000Z",
+          last_login_at: "2026-02-11T10:11:12.000Z",
           is_active: true,
           roles: ["admin"],
           tools: ["get_current_time"],

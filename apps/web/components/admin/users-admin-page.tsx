@@ -11,6 +11,8 @@ type AdminUser = {
   id: string;
   email: string;
   display_name?: string | null;
+  created_at?: string;
+  last_login_at?: string | null;
   is_active?: boolean;
   roles?: string[];
   tools?: string[];
@@ -35,6 +37,13 @@ function toErrorMessage(error: unknown, fallback: string): string {
 
 function sanitizeIdPart(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, "-");
+}
+
+function formatTimestamp(value: unknown): string {
+  if (typeof value !== "string" || !value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
 }
 
 export function UsersAdminPage() {
@@ -265,6 +274,8 @@ export function UsersAdminPage() {
             <thead className="bg-surface-2 text-muted">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Email</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Last login</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Roles</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Tools</th>
@@ -273,19 +284,27 @@ export function UsersAdminPage() {
             <tbody className="divide-y divide-border">
               {users.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-muted" colSpan={4}>
+                  <td className="px-4 py-4 text-sm text-muted" colSpan={6}>
                     {loading
                       ? "Loading users..."
                       : loadError
-                         ? "Unable to load users."
-                         : "No users found."}
+                          ? "Unable to load users."
+                          : "No users found."}
                   </td>
                 </tr>
               ) : (
                 users.map((user) => {
                   const roles = coerceStringArray(user.roles);
                   const tools = coerceStringArray(user.tools);
+                  const createdLabel = formatTimestamp(user.created_at);
+                  const lastLoginLabel = user.last_login_at ? formatTimestamp(user.last_login_at) : "Never";
                   const isActive = user.is_active !== false;
+                  const hasLoggedIn = Boolean(user.last_login_at);
+                  const statusLabel = isActive
+                    ? "Active"
+                    : hasLoggedIn
+                      ? "Disabled"
+                      : "Pending approval";
 
                   return (
                     <tr
@@ -308,7 +327,9 @@ export function UsersAdminPage() {
                           <div className="mt-0.5 text-xs text-muted">{user.display_name}</div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-muted">{isActive ? "Active" : "Inactive"}</td>
+                      <td className="px-4 py-3 text-muted">{createdLabel}</td>
+                      <td className="px-4 py-3 text-muted">{lastLoginLabel}</td>
+                      <td className="px-4 py-3 text-muted">{statusLabel}</td>
                       <td className="px-4 py-3 text-muted">{roles.length ? roles.join(", ") : "-"}</td>
                       <td className="px-4 py-3 text-muted">{tools.length}</td>
                     </tr>
