@@ -3,7 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from noa_api.core.tools.demo_tools import get_current_date, get_current_time, set_demo_flag
+from noa_api.core.tools.demo_tools import (
+    get_current_date,
+    get_current_time,
+    set_demo_flag,
+)
+from noa_api.core.tools.workflow_todo import update_workflow_todo
 from noa_api.storage.postgres.lifecycle import ToolRisk
 
 ToolExecutor = Callable[..., Awaitable[dict[str, Any]]]
@@ -24,14 +29,24 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         name="get_current_time",
         description="Get the server current time.",
         risk=ToolRisk.READ,
-        parameters_schema={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
         execute=get_current_time,
     ),
     ToolDefinition(
         name="get_current_date",
         description="Get the server current date.",
         risk=ToolRisk.READ,
-        parameters_schema={"type": "object", "properties": {}, "required": [], "additionalProperties": False},
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
         execute=get_current_date,
     ),
     ToolDefinition(
@@ -45,6 +60,43 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "additionalProperties": False,
         },
         execute=set_demo_flag,
+    ),
+    ToolDefinition(
+        name="update_workflow_todo",
+        description="Update the workflow TODO checklist shown in chat.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "todos": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {"type": "string"},
+                            "status": {
+                                "type": "string",
+                                "enum": [
+                                    "pending",
+                                    "in_progress",
+                                    "completed",
+                                    "cancelled",
+                                ],
+                            },
+                            "priority": {
+                                "type": "string",
+                                "enum": ["high", "medium", "low"],
+                            },
+                        },
+                        "required": ["content", "status", "priority"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["todos"],
+            "additionalProperties": False,
+        },
+        execute=update_workflow_todo,
     ),
 )
 _MVP_TOOL_INDEX = {tool.name: tool for tool in _MVP_TOOLS}

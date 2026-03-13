@@ -724,6 +724,9 @@ async def assistant_transport(
                 ):
                     allowed_tools.add(tool_name)
 
+            # Workflow TODO cards are always available for active users.
+            allowed_tools.add("update_workflow_todo")
+
             base_messages_obj = canonical_state.get("messages")
             base_messages: list[object] = (
                 list(base_messages_obj) if isinstance(base_messages_obj, list) else []
