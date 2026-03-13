@@ -247,6 +247,10 @@ async def test_authorization_service_lists_canonical_tools() -> None:
         "whm_suspend_account",
         "whm_unsuspend_account",
         "whm_change_contact_email",
+        "whm_csf_unblock",
+        "whm_csf_allowlist_remove",
+        "whm_csf_allowlist_add_ttl",
+        "whm_csf_denylist_add_ttl",
     ]
 
 

@@ -17,6 +17,12 @@ from noa_api.core.tools.whm.account_change_tools import (
     whm_suspend_account,
     whm_unsuspend_account,
 )
+from noa_api.core.tools.whm.csf_change_tools import (
+    whm_csf_allowlist_add_ttl,
+    whm_csf_allowlist_remove,
+    whm_csf_denylist_add_ttl,
+    whm_csf_unblock,
+)
 from noa_api.core.tools.whm.read_tools import (
     whm_list_accounts,
     whm_list_servers,
@@ -243,6 +249,96 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "additionalProperties": False,
         },
         execute=whm_change_contact_email,
+    ),
+    ToolDefinition(
+        name="whm_csf_unblock",
+        description="Unblock IPs in CSF if currently blocked (requires approval).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "targets": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                },
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "targets", "reason"],
+            "additionalProperties": False,
+        },
+        execute=whm_csf_unblock,
+    ),
+    ToolDefinition(
+        name="whm_csf_allowlist_remove",
+        description="Remove IPs from CSF allowlist if present (requires approval).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "targets": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                },
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "targets", "reason"],
+            "additionalProperties": False,
+        },
+        execute=whm_csf_allowlist_remove,
+    ),
+    ToolDefinition(
+        name="whm_csf_allowlist_add_ttl",
+        description="Temporarily allowlist IPs in CSF for a duration (requires approval).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "targets": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                },
+                "duration_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 525600,
+                },
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "targets", "duration_minutes", "reason"],
+            "additionalProperties": False,
+        },
+        execute=whm_csf_allowlist_add_ttl,
+    ),
+    ToolDefinition(
+        name="whm_csf_denylist_add_ttl",
+        description="Temporarily denylist IPs in CSF for a duration (requires approval).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "targets": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                },
+                "duration_minutes": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 525600,
+                },
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "targets", "duration_minutes", "reason"],
+            "additionalProperties": False,
+        },
+        execute=whm_csf_denylist_add_ttl,
     ),
 )
 _MVP_TOOL_INDEX = {tool.name: tool for tool in _MVP_TOOLS}
