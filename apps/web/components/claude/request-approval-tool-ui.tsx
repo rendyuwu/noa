@@ -89,7 +89,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   },
   complete: {
     label: "complete",
-    className: "bg-emerald-50 text-emerald-800",
+    className: "bg-surface-2/60 text-muted",
   },
   incomplete: {
     label: "incomplete",
@@ -97,7 +97,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   },
   "requires-action": {
     label: "requires-action",
-    className: "bg-amber-50 text-amber-800",
+    className: "bg-accent/15 text-accent",
   },
 };
 
