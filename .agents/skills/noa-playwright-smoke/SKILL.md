@@ -26,7 +26,7 @@ The main agent must:
 
 1. Inspect the requested change, touched files, and any user notes.
 2. Build the Change Checklist itself. Commit ranges are optional context only; they help explain what changed, but they do not replace checklist authoring.
-3. Dispatch a fresh subagent with the checklist, local context, and the contract in this file.
+3. Dispatch a fresh subagent with the checklist, local context, and the contract in this file. Always include the absolute path to the local `master` checkout in that handoff. If the current checkout is already `master`, pass that checkout path explicitly as the `master` checkout path.
 4. Read the subagent report, share the local evidence URL `http://127.0.0.1:9999/index.html` exactly, and summarize PASS or FAIL.
 5. Tell the user the local HTML evidence will remain available for review and wait for explicit confirmation that they are done reviewing it.
 6. Clean up any smoke processes only after that user confirmation, including API, web, and gallery server processes started for the run.
@@ -43,7 +43,7 @@ The subagent must:
 
 1. Prepare the local environment without editing code.
 2. Reuse Postgres if it is already running; otherwise start the local dev Postgres needed for NOA.
-3. Materialize env files only from tracked templates on `master`/the checked-out repository state (`apps/api/.env.example`, `apps/web/.env.example`) and never invent ad hoc env files.
+3. Materialize env files from the local `master` checkout when available. The only local env files the subagent may reuse are `apps/api/.env`, `apps/web/.env`, and `apps/web/.env.local`. If the smoke run is happening in the `master` checkout, reuse those existing local env files there directly. If the smoke run is happening in a worktree, copy only those files from the explicit local `master` checkout path provided by the main agent into the worktree. Only fall back to tracked templates when the needed local `master` env file does not exist: materialize `apps/api/.env` from `apps/api/.env.example` and materialize the web env for the smoke run as `apps/web/.env.local` from `apps/web/.env.example`. Never invent ad hoc env files.
 4. Start the API and web servers.
 5. Run the Change Checklist in Playwright.
 6. Capture step logs, screenshots, logs, and video evidence.
@@ -95,9 +95,11 @@ Use the backend development LDAP bypass for local smoke authentication. Do not a
 
 Required local contract:
 
-- `apps/api/.env` comes from `apps/api/.env.example` if missing
+- `apps/api/.env` uses the local `master` checkout copy when available; otherwise it comes from `apps/api/.env.example`
+- if the smoke run happens in a worktree, the subagent may copy `apps/api/.env` from the local `master` checkout into the worktree before starting services
 - `AUTH_DEV_BYPASS_LDAP=true`
-- the dedicated smoke email is included in `AUTH_BOOTSTRAP_ADMIN_EMAILS`
+- the subagent may update `API_CORS_ALLOWED_ORIGINS` in `apps/api/.env` for the local smoke run
+- the dedicated smoke email is included in `AUTH_BOOTSTRAP_ADMIN_EMAILS`, and the subagent may add it to `apps/api/.env` for the local smoke run
 - the smoke user signs in through the normal `/login` UI against the local API
 
 This flow proves the development bypass path works as intended for smoke verification while still exercising the real login screen and session behavior.
@@ -105,8 +107,10 @@ This flow proves the development bypass path works as intended for smoke verific
 ## Secrets And Artifact Rules
 
 - Never paste credential values into chat, tool calls, or subagent prompts.
+- Never print env contents or secret-bearing command lines into logs, reports, or chat.
 - Do not screenshot a filled login form.
 - Keep artifacts local.
+- Keep copied env files and smoke-only env edits local.
 - Do not commit artifacts, env files, or captured tokens.
 
 ## Subagent Prompt Template
@@ -120,6 +124,7 @@ Do not edit code, create commits, or change the checklist.
 
 Required context:
 - Repo root: <repo-root>
+- Master checkout path for env reuse: <absolute-path-to-local-master-checkout>
 - Change Checklist:
 <paste checklist here>
 - Optional implementation context:
@@ -127,15 +132,17 @@ Required context:
 
 Required execution contract:
 - Reuse Postgres if it is already running; otherwise start the local dev Postgres needed by NOA.
-- Materialize env files only from tracked env templates if they are missing.
-- Configure local smoke auth with `AUTH_DEV_BYPASS_LDAP=true` and ensure the smoke email is included in `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
+- Reuse only `apps/api/.env`, `apps/web/.env`, and `apps/web/.env.local` from the local `master` checkout when they exist. If the smoke run is already in the `master` checkout, use them there directly. If the smoke run is in a worktree, copy only those files from the explicit `master` checkout path provided by the main agent into the worktree. Only fall back to tracked templates if the needed local `master` env file is unavailable: materialize `apps/api/.env` from `apps/api/.env.example` and materialize the web env for the smoke run as `apps/web/.env.local` from `apps/web/.env.example`.
+- Configure local smoke auth with `AUTH_DEV_BYPASS_LDAP=true`, update `API_CORS_ALLOWED_ORIGINS` if needed for the local web origin, and ensure the smoke email is included in `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
 - Start the API and web servers.
 - Run the smoke checklist through Playwright.
 - Capture a step log (`steps.md` or `steps.txt`), screenshots, browser console errors, network requests, server logs, and video.
 - Generate HTML evidence with `.agents/skills/noa-playwright-smoke/scripts/build_gallery.py`.
 - Serve the artifacts directory on `0.0.0.0:9999` (for example `python3 -m http.server 9999 --bind 0.0.0.0`) and include the user-facing URL `http://127.0.0.1:9999/index.html` in the report.
-- Record the PID and command details for every long-lived process you start so the main agent can clean them up.
+- Record the PID and sanitized command details for every long-lived process you start so the main agent can clean them up. Redact any secret-bearing arguments.
 - Report PASS/FAIL per checklist item with evidence filenames.
+- Do not print env contents or secret-bearing command lines into logs, reports, or chat.
+- Do not commit copied env files, smoke-only env edits, or any other local secret material.
 - Do not perform cleanup; the main agent owns cleanup after you return.
 
 Return only:
