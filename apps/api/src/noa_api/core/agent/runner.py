@@ -307,10 +307,12 @@ class AgentRunner:
         requested_by_user_id: UUID,
         on_text_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> AgentRunnerResult:
-        allowed_tools = [
-            tool for tool in get_tool_registry() if tool.name in available_tool_names
-        ]
-        llm_tools = [_to_openai_tool_schema(tool) for tool in allowed_tools]
+        # Expose the full tool catalog to the LLM so it can propose tool calls
+        # even when the current user is not allowlisted for them.
+        #
+        # Execution is still gated by `available_tool_names` below; denied calls
+        # emit an explicit user-facing message.
+        llm_tools = [_to_openai_tool_schema(tool) for tool in get_tool_registry()]
         max_rounds = 4
         max_tool_calls = 8
 
@@ -361,6 +363,8 @@ class AgentRunner:
                     messages=output_messages, text_deltas=text_deltas
                 )
 
+            saw_denied_tool_call = False
+            saw_allowed_tool_call = False
             for tool_call in llm_response.tool_calls:
                 if tool_calls_processed >= max_tool_calls:
                     hit_safety_limit = True
@@ -369,6 +373,7 @@ class AgentRunner:
                 tool_calls_processed += 1
                 tool = get_tool_definition(tool_call.name)
                 if tool is None or tool.name not in available_tool_names:
+                    saw_denied_tool_call = True
                     unavailable_part: dict[str, object] = {
                         "type": "text",
                         "text": (
@@ -391,6 +396,7 @@ class AgentRunner:
                     )
                     continue
 
+                saw_allowed_tool_call = True
                 tool_messages = await self._process_tool_call(
                     tool=tool,
                     args=tool_call.arguments,
@@ -410,6 +416,17 @@ class AgentRunner:
                     return AgentRunnerResult(
                         messages=output_messages, text_deltas=text_deltas
                     )
+
+            # If the LLM proposed only tools the user cannot access, stop the turn
+            # after emitting explicit permission guidance instead of looping again.
+            if (
+                saw_denied_tool_call
+                and not saw_allowed_tool_call
+                and not hit_safety_limit
+            ):
+                return AgentRunnerResult(
+                    messages=output_messages, text_deltas=text_deltas
+                )
 
         if not hit_safety_limit and (
             rounds >= max_rounds or tool_calls_processed >= max_tool_calls

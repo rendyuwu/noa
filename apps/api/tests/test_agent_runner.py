@@ -195,17 +195,50 @@ async def test_agent_runner_emits_clear_message_when_tool_not_allowed() -> None:
             tools: list[dict[str, object]],
             on_text_delta=None,
         ) -> LLMTurnResponse:
-            _ = messages, tools, on_text_delta
+            _ = messages, on_text_delta
             self.turn += 1
             if self.turn == 1:
+                has_time_tool = False
+                for tool in tools:
+                    if not isinstance(tool, dict):
+                        continue
+                    if tool.get("type") != "function":
+                        continue
+                    fn = tool.get("function")
+                    if not isinstance(fn, dict):
+                        continue
+                    if fn.get("name") == "get_current_time":
+                        has_time_tool = True
+                        break
+
+                # Mimic OpenAI tool calling behavior: if the tool is not present
+                # in the provided tool catalog, the model cannot call it.
+                if not has_time_tool:
+                    return LLMTurnResponse(
+                        text=(
+                            "I'm not able to access a real-time clock, so I can't give you the exact current time. "
+                            "If you need the precise time, you can check a clock on your device or use an online time service."
+                        ),
+                        tool_calls=[],
+                    )
                 return LLMTurnResponse(
                     text="I'll check the server time.",
                     tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
                 )
-            return LLMTurnResponse(text="", tool_calls=[])
+            # If the runner loops and calls the LLM again after a denied tool call,
+            # mimic a typical model behavior: fall back to a non-tool answer.
+            return LLMTurnResponse(
+                text=(
+                    "I'm not able to retrieve the current time directly at the moment. "
+                    "If you need the exact time, you can check a clock on your device."
+                ),
+                tool_calls=[],
+            )
+
+    llm = _TwoTurnLLM()
 
     runner = AgentRunner(
-        llm_client=_TwoTurnLLM(),
+        llm_client=llm,
         action_tool_run_service=ActionToolRunService(repository=repo),
     )
 
@@ -226,6 +259,7 @@ async def test_agent_runner_emits_clear_message_when_tool_not_allowed() -> None:
         m.parts[0].get("text") for m in result.messages if isinstance(m.parts[0], dict)
     ]
     assert expected_denied_message in texts
+    assert llm.turn == 1
     assert len(repo.tool_runs) == 0
     assert len(repo.action_requests) == 0
 
