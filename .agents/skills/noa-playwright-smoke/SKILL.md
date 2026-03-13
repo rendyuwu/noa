@@ -7,7 +7,7 @@ description: Use when implementing or changing NOA (apps/web or apps/api), befor
 
 Loading this skill is sufficient. `SKILL.md` is the only live instruction source for this workflow. Do not depend on any secondary instruction file.
 
-Goal: keep the implementation agent focused on code while a fresh verification subagent prepares the local smoke environment, executes the browser smoke flow, captures evidence, and reports PASS or FAIL. The main agent owns the smoke checklist, evidence handoff, and cleanup.
+Goal: keep the implementation agent focused on code while a fresh verification subagent prepares the local smoke environment, executes the browser smoke flow, captures evidence, and reports PASS or FAIL. The main agent owns the smoke checklist, evidence handoff, the user confirmation gate, and cleanup.
 
 ## When To Use This Skill
 
@@ -28,9 +28,14 @@ The main agent must:
 2. Build the Change Checklist itself. Commit ranges are optional context only; they help explain what changed, but they do not replace checklist authoring.
 3. Dispatch a fresh subagent with the checklist, local context, and the contract in this file.
 4. Read the subagent report, share the local evidence URL `http://127.0.0.1:9999/index.html` exactly, and summarize PASS or FAIL.
-5. Clean up any smoke processes after the subagent finishes, including API, web, and gallery server processes started for the run.
+5. Tell the user the local HTML evidence will remain available for review and wait for explicit confirmation that they are done reviewing it.
+6. Clean up any smoke processes only after that user confirmation, including API, web, and gallery server processes started for the run.
 
 Do not delegate planning to the subagent. The subagent executes the checklist; the main agent decides what to verify.
+
+Recommended handoff message:
+
+`Smoke finished. Review the local HTML report at http://127.0.0.1:9999/index.html and tell me when you are done. I will wait for your confirmation before cleanup.`
 
 ### Subagent Mode
 
@@ -160,12 +165,14 @@ If useful, the subagent may also include `report.md` or other small summary file
 
 ## Main Agent Cleanup Contract
 
-After the subagent returns, the main agent must stop anything the run started, including:
+After the subagent returns and the user confirms they are done reviewing the evidence, the main agent must stop anything the run started, including:
 
 - API server
 - web dev server
 - evidence gallery server bound to `0.0.0.0:9999`
 - any extra smoke-only helper process started for the run
+
+Do not stop smoke processes before the user confirms they are done reviewing the evidence URL.
 
 Do not tell the user a run is complete until cleanup has either succeeded or been explicitly reported as incomplete.
 
