@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import * as Dialog from "@radix-ui/react-dialog";
@@ -13,15 +13,20 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(false);
+  const desktopSidebarDismissedRef = useRef(false);
 
   const openSidebar = useCallback(() => {
+    desktopSidebarDismissedRef.current = false;
     setDesktopSidebarOpen(true);
     if (window.matchMedia("(min-width: 768px)").matches) return;
     setOpen(true);
   }, []);
 
   const closeSidebar = useCallback(() => setOpen(false), []);
-  const closeDesktopSidebar = useCallback(() => setDesktopSidebarOpen(false), []);
+  const closeDesktopSidebar = useCallback(() => {
+    desktopSidebarDismissedRef.current = true;
+    setDesktopSidebarOpen(false);
+  }, []);
 
   const selectThread = useCallback(() => {
     setOpen(false);
@@ -32,13 +37,14 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
     const mediaQuery = window.matchMedia("(min-width: 768px)");
 
     const closeOnDesktop = (event: MediaQueryList | MediaQueryListEvent) => {
-      if (event.matches) setOpen(false);
+      if (!event.matches) return;
+
+      setOpen(false);
+      if (desktopSidebarDismissedRef.current) return;
+      setDesktopSidebarOpen(true);
     };
 
     closeOnDesktop(mediaQuery);
-    if (mediaQuery.matches) {
-      setDesktopSidebarOpen(true);
-    }
 
     if (mediaQuery.addEventListener) {
       mediaQuery.addEventListener("change", closeOnDesktop);

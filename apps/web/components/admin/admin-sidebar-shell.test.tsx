@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -150,6 +150,24 @@ describe("AdminSidebarShell", () => {
     expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
   });
 
+  it("keeps desktop sidebar collapsed after explicit close across viewport changes", () => {
+    const { container } = render(
+      <AdminSidebarShell>
+        <div>Admin content</div>
+      </AdminSidebarShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+
+    mediaController.setDesktopMatch(false);
+    act(() => {
+      mediaController.setDesktopMatch(true);
+    });
+
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+  });
+
   it("routes to /assistant when a sidebar thread action is selected", () => {
     render(
       <AdminSidebarShell>
@@ -204,5 +222,24 @@ describe("AdminSidebarShell", () => {
 
     fireEvent.click(openButton);
     expect(screen.getByTestId("dialog-content")).toBeInTheDocument();
+  });
+
+  it("opens the desktop sidebar when transitioning from mobile to desktop", () => {
+    mediaController.setDesktopMatch(false);
+
+    const { container } = render(
+      <AdminSidebarShell>
+        <div>Admin content</div>
+      </AdminSidebarShell>,
+    );
+
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+
+    act(() => {
+      mediaController.setDesktopMatch(true);
+    });
+
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+    expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
   });
 });
