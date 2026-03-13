@@ -1,5 +1,5 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   ClaudeToolFallback,
@@ -20,6 +20,36 @@ describe("ClaudeToolFallback", () => {
     );
 
     expect(screen.queryByText(/current time/i)).not.toBeInTheDocument();
+  });
+
+  it("lingers for 1s then fades out before unmounting", () => {
+    vi.useFakeTimers();
+
+    try {
+      render(
+        <ClaudeToolFallback
+          toolName="get_current_time"
+          toolCallId="tool-call-fadeout"
+          status={{ type: "complete" }}
+          result={{ time: "10:00" }}
+          isError={false}
+        />,
+      );
+
+      expect(screen.getByText(/^Current time$/i)).toBeVisible();
+
+      act(() => {
+        vi.advanceTimersByTime(1000);
+      });
+      expect(screen.getByText(/^Current time$/i)).toBeVisible();
+
+      act(() => {
+        vi.advanceTimersByTime(250);
+      });
+      expect(screen.queryByText(/^Current time$/i)).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("shows one-line running activity when status is missing", () => {
