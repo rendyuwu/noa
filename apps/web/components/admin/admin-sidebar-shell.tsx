@@ -36,6 +36,9 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
     };
 
     closeOnDesktop(mediaQuery);
+    if (mediaQuery.matches) {
+      setDesktopSidebarOpen(true);
+    }
 
     if (mediaQuery.addEventListener) {
       mediaQuery.addEventListener("change", closeOnDesktop);

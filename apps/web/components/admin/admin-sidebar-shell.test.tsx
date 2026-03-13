@@ -124,31 +124,30 @@ describe("AdminSidebarShell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("starts desktop collapsed and shows an open-sidebar button", () => {
+  it("starts desktop expanded and shows the thread list", () => {
     const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
-
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
-    expect(screen.queryByTestId("sidebar-thread-list")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Open sidebar" })).toBeInTheDocument();
-  });
-
-  it("expands desktop sidebar when Open sidebar clicked", () => {
-    const { container } = render(
-      <AdminSidebarShell>
-        <div>Admin content</div>
-      </AdminSidebarShell>,
-    );
-
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
-
-    fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
 
     expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
     expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
+  });
+
+  it("collapses desktop sidebar when Close sidebar clicked", () => {
+    const { container } = render(
+      <AdminSidebarShell>
+        <div>Admin content</div>
+      </AdminSidebarShell>,
+    );
+
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+    expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
+
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
   });
 
   it("routes to /assistant when a sidebar thread action is selected", () => {
