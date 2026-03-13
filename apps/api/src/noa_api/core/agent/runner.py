@@ -371,7 +371,10 @@ class AgentRunner:
                 if tool is None or tool.name not in available_tool_names:
                     unavailable_part: dict[str, object] = {
                         "type": "text",
-                        "text": f"Tool '{tool_call.name}' is not available for this user.",
+                        "text": (
+                            f"You don't have permission to use tool '{tool_call.name}'. "
+                            "Please ask SimondayCE Team to enable tool access for your account."
+                        ),
                     }
                     unavailable_parts: list[dict[str, object]] = [unavailable_part]
                     output_messages.append(

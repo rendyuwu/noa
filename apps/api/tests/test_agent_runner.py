@@ -181,6 +181,49 @@ async def test_agent_runner_executes_read_tools_and_appends_result_messages() ->
     assert "time" in run.result
 
 
+async def test_agent_runner_emits_clear_message_when_tool_not_allowed() -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="I'll check the server time.",
+                    tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
+                )
+            return LLMTurnResponse(text="", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "What time is it?"}]}
+        ],
+        available_tool_names=set(),
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    texts = [
+        m.parts[0].get("text") for m in result.messages if isinstance(m.parts[0], dict)
+    ]
+    assert any("SimondayCE Team" in (t or "") for t in texts)
+
+
 async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
