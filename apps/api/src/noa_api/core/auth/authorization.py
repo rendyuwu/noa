@@ -223,8 +223,6 @@ class AuthorizationService:
     ) -> bool:
         if not user.is_active:
             return False
-        if "admin" in user.roles:
-            return True
         role_tools = await self._repository.get_role_tool_names(user.roles)
         return tool_name in role_tools
 

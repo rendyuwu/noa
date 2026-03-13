@@ -165,21 +165,33 @@ class _FakeAuthorizationService:
         return self.users[0]
 
 
-async def test_authorization_service_admin_bypasses_tool_checks() -> None:
+async def test_authorization_service_admin_requires_explicit_tool_permissions() -> None:
     repo = _InMemoryAuthorizationRepository()
     service = AuthorizationService(repository=repo)
-    allowed = await service.authorize_tool_access(
-        AuthorizationUser(
-            user_id=uuid4(),
-            email="admin@example.com",
-            display_name="Admin",
-            is_active=True,
-            roles=["admin"],
-            tools=[],
-        ),
-        "anything",
+    user = AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
     )
-    assert allowed is True
+    assert await service.authorize_tool_access(user, "get_current_time") is False
+
+
+async def test_authorization_service_admin_allows_when_role_grants_tool() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    repo.role_tools["admin"] = {"get_current_time"}
+    service = AuthorizationService(repository=repo)
+    user = AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+    assert await service.authorize_tool_access(user, "get_current_time") is True
 
 
 async def test_authorization_service_disabled_user_has_zero_permissions() -> None:
