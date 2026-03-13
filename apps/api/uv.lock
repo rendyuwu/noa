@@ -485,6 +485,7 @@ dependencies = [
     { name = "assistant-stream" },
     { name = "asyncpg" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "openai" },
     { name = "orjson" },
     { name = "pydantic" },
@@ -498,7 +499,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "ruff" },
@@ -510,6 +510,7 @@ requires-dist = [
     { name = "assistant-stream", specifier = ">=0.0.31" },
     { name = "asyncpg", specifier = ">=0.29.0" },
     { name = "fastapi", specifier = ">=0.115.0" },
+    { name = "httpx", specifier = ">=0.27.0" },
     { name = "openai", specifier = ">=1.61.0" },
     { name = "orjson", specifier = ">=3.10.0" },
     { name = "pydantic", specifier = ">=2.9.0" },
@@ -523,7 +524,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx", specifier = ">=0.27.0" },
     { name = "pytest", specifier = ">=8.0.0" },
     { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "ruff", specifier = ">=0.6.0" },
