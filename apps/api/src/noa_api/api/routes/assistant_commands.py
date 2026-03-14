@@ -4,7 +4,7 @@ from typing import Annotated, Any, Literal, Protocol
 from uuid import UUID
 
 from fastapi import status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from noa_api.api.error_codes import (
     INVALID_ADD_MESSAGE_ROLE,
@@ -30,24 +30,45 @@ class AddMessageCommand(BaseModel):
 
 class ApproveActionCommand(BaseModel):
     type: Literal["approve-action"]
-    action_request_id: str | None = Field(default=None, alias="actionRequestId")
+    action_request_id: str | None = Field(alias="actionRequestId")
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_missing_action_request_id(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "actionRequestId" not in value:
+            return {**value, "actionRequestId": None}
+        return value
 
 
 class DenyActionCommand(BaseModel):
     type: Literal["deny-action"]
-    action_request_id: str | None = Field(default=None, alias="actionRequestId")
+    action_request_id: str | None = Field(alias="actionRequestId")
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_missing_action_request_id(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "actionRequestId" not in value:
+            return {**value, "actionRequestId": None}
+        return value
 
 
 class AddToolResultCommand(BaseModel):
     type: Literal["add-tool-result"]
-    tool_call_id: str = Field(alias="toolCallId")
+    tool_call_id: str | None = Field(alias="toolCallId")
     result: dict[str, Any]
 
     model_config = {"populate_by_name": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_missing_tool_call_id(cls, value: Any) -> Any:
+        if isinstance(value, dict) and "toolCallId" not in value:
+            return {**value, "toolCallId": None}
+        return value
 
 
 AssistantCommand = Annotated[
@@ -102,7 +123,7 @@ class AssistantServiceProtocol(Protocol):
         owner_user_id: Any,
         owner_user_email: str | None,
         thread_id: Any,
-        tool_call_id: str,
+        tool_call_id: str | None,
         result: dict[str, object],
     ) -> None: ...
 

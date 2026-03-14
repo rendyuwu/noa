@@ -31,6 +31,11 @@ from noa_api.api.routes.assistant_commands import (
     should_run_agent,
     validate_commands,
 )
+from noa_api.api.routes.assistant_errors import (
+    assistant_http_error,
+    parse_action_request_id,
+    parse_tool_call_id,
+)
 from noa_api.api.routes.assistant_repository import SQLAssistantRepository
 from noa_api.api.routes.assistant_streaming import (
     _stream_assistant_text,
@@ -71,29 +76,6 @@ router = APIRouter(tags=["assistant"])
 logger = logging.getLogger(__name__)
 
 __all__ = ["_stream_assistant_text", "get_assistant_service", "router"]
-
-
-def _http_error(
-    *,
-    status_code: int,
-    detail: str,
-    error_code: str | None = None,
-) -> HTTPException:
-    headers = {"x-error-code": error_code} if error_code is not None else None
-    return HTTPException(status_code=status_code, detail=detail, headers=headers)
-
-
-def _parse_uuid(raw: str | None, *, label: str) -> UUID:
-    if raw is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Missing {label}"
-        )
-    try:
-        return UUID(raw)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid {label}"
-        ) from exc
 
 
 def _assistant_command_types(payload: AssistantRequest) -> list[str]:
@@ -142,7 +124,7 @@ class AssistantService:
             owner_user_id=owner_user_id, thread_id=thread_id
         )
         if thread is None:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Thread not found",
                 error_code=THREAD_NOT_FOUND,
@@ -180,15 +162,15 @@ class AssistantService:
         owner_user_id: UUID,
         owner_user_email: str | None,
         thread_id: UUID,
-        tool_call_id: str,
+        tool_call_id: str | None,
         result: dict[str, Any],
     ) -> None:
-        tool_run_id = _parse_uuid(tool_call_id, label="toolCallId")
+        tool_run_id = parse_tool_call_id(tool_call_id)
         tool_run = await self._action_tool_run_service.get_tool_run(
             tool_run_id=tool_run_id
         )
         if tool_run is None:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Unknown tool call id",
                 error_code=UNKNOWN_TOOL_CALL_ID,
@@ -197,13 +179,13 @@ class AssistantService:
             tool_run.thread_id != thread_id
             or tool_run.requested_by_user_id != owner_user_id
         ):
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Tool call not found",
                 error_code=TOOL_CALL_NOT_FOUND,
             )
         if tool_run.status != ToolRunStatus.STARTED:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Tool call is not awaiting result",
                 error_code=TOOL_CALL_NOT_AWAITING_RESULT,
@@ -217,28 +199,43 @@ class AssistantService:
             if completed is not None and isinstance(completed.result, dict)
             else result
         )
-        await self._repository.create_message(
-            thread_id=thread_id,
-            role="tool",
-            parts=[
-                build_tool_result_part(
-                    tool_name=tool_run.tool_name,
-                    tool_call_id=tool_call_id,
-                    result=persisted_result,
-                    is_error=False,
-                )
-            ],
-        )
-        await self._repository.create_audit_log(
-            event_type="tool_completed",
-            actor_email=owner_user_email,
+        with log_context(
+            thread_id=str(thread_id),
             tool_name=tool_run.tool_name,
-            metadata={
-                "thread_id": str(thread_id),
-                "tool_run_id": str(tool_run.id),
-                "source": "add-tool-result",
-            },
-        )
+            tool_run_id=str(tool_run.id),
+            user_id=str(owner_user_id),
+        ):
+            await self._repository.create_message(
+                thread_id=thread_id,
+                role="tool",
+                parts=[
+                    build_tool_result_part(
+                        tool_name=tool_run.tool_name,
+                        tool_call_id=str(tool_call_id),
+                        result=persisted_result,
+                        is_error=False,
+                    )
+                ],
+            )
+            await self._repository.create_audit_log(
+                event_type="tool_completed",
+                actor_email=owner_user_email,
+                tool_name=tool_run.tool_name,
+                metadata={
+                    "thread_id": str(thread_id),
+                    "tool_run_id": str(tool_run.id),
+                    "source": "add-tool-result",
+                },
+            )
+            logger.info(
+                "assistant_tool_result_recorded",
+                extra={
+                    "thread_id": str(thread_id),
+                    "tool_name": tool_run.tool_name,
+                    "tool_run_id": str(tool_run.id),
+                    "user_id": str(owner_user_id),
+                },
+            )
 
     async def approve_action(
         self,
@@ -251,18 +248,18 @@ class AssistantService:
         authorize_tool_access: Callable[[str], Awaitable[bool]],
     ) -> None:
         if not is_user_active:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="User pending approval",
                 error_code=USER_PENDING_APPROVAL,
             )
 
-        parsed_id = _parse_uuid(action_request_id, label="actionRequestId")
+        parsed_id = parse_action_request_id(action_request_id)
         request = await self._action_tool_run_service.get_action_request(
             action_request_id=parsed_id
         )
         if request is None:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Action request not found",
                 error_code=ACTION_REQUEST_NOT_FOUND,
@@ -271,25 +268,25 @@ class AssistantService:
             request.thread_id != thread_id
             or request.requested_by_user_id != owner_user_id
         ):
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Action request not found",
                 error_code=ACTION_REQUEST_NOT_FOUND,
             )
         if request.status != ActionRequestStatus.PENDING:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Action request already decided",
                 error_code=ACTION_REQUEST_ALREADY_DECIDED,
             )
         if request.risk != ToolRisk.CHANGE:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Only CHANGE actions require approval",
                 error_code=CHANGE_APPROVAL_REQUIRED,
             )
         if not await authorize_tool_access(request.tool_name):
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Tool access denied",
                 error_code=TOOL_ACCESS_DENIED,
@@ -301,13 +298,13 @@ class AssistantService:
                 decided_by_user_id=owner_user_id,
             )
         except ValueError as exc:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Action request already decided",
                 error_code=ACTION_REQUEST_ALREADY_DECIDED,
             ) from exc
         if approved is None:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Action request not found",
                 error_code=ACTION_REQUEST_NOT_FOUND,
@@ -331,122 +328,15 @@ class AssistantService:
             requested_by_user_id=owner_user_id,
         )
         tool_call_id = str(started.id)
-        await self._repository.create_audit_log(
-            event_type="tool_started",
-            actor_email=owner_user_email,
+        with log_context(
+            action_request_id=str(approved.id),
+            thread_id=str(thread_id),
             tool_name=approved.tool_name,
-            metadata={
-                "thread_id": str(thread_id),
-                "tool_run_id": str(started.id),
-                "action_request_id": str(approved.id),
-            },
-        )
-        await self._repository.create_message(
-            thread_id=thread_id,
-            role="assistant",
-            parts=[
-                {
-                    "type": "tool-call",
-                    "toolName": approved.tool_name,
-                    "toolCallId": tool_call_id,
-                    "args": approved.args,
-                }
-            ],
-        )
-
-        tool = get_tool_definition(approved.tool_name)
-        if tool is None:
-            error = "Requested tool is unavailable"
-            _ = await self._action_tool_run_service.fail_tool_run(
-                tool_run_id=started.id,
-                error=error,
-            )
-            await self._repository.create_message(
-                thread_id=thread_id,
-                role="tool",
-                parts=[
-                    build_tool_result_part(
-                        tool_name=approved.tool_name,
-                        tool_call_id=tool_call_id,
-                        result=cast(dict[str, object], {"error": error}),
-                        is_error=True,
-                    )
-                ],
-            )
+            tool_run_id=str(started.id),
+            user_id=str(owner_user_id),
+        ):
             await self._repository.create_audit_log(
-                event_type="tool_failed",
-                actor_email=owner_user_email,
-                tool_name=approved.tool_name,
-                metadata={
-                    "thread_id": str(thread_id),
-                    "tool_run_id": str(started.id),
-                    "action_request_id": str(approved.id),
-                    "error": error,
-                },
-            )
-            return
-        if tool.risk != ToolRisk.CHANGE:
-            error = "Approved tool risk mismatch"
-            _ = await self._action_tool_run_service.fail_tool_run(
-                tool_run_id=started.id,
-                error=error,
-            )
-            await self._repository.create_message(
-                thread_id=thread_id,
-                role="tool",
-                parts=[
-                    build_tool_result_part(
-                        tool_name=approved.tool_name,
-                        tool_call_id=tool_call_id,
-                        result=cast(
-                            dict[str, object],
-                            {
-                                "error": error,
-                                "expectedRisk": ToolRisk.CHANGE.value,
-                                "actualRisk": tool.risk.value,
-                            },
-                        ),
-                        is_error=True,
-                    )
-                ],
-            )
-            await self._repository.create_audit_log(
-                event_type="tool_failed",
-                actor_email=owner_user_email,
-                tool_name=approved.tool_name,
-                metadata={
-                    "thread_id": str(thread_id),
-                    "tool_run_id": str(started.id),
-                    "action_request_id": str(approved.id),
-                    "error": error,
-                },
-            )
-            return
-
-        try:
-            result = await self._execute_tool(tool=tool, args=approved.args)
-            completed = await self._action_tool_run_service.complete_tool_run(
-                tool_run_id=started.id, result=result
-            )
-            persisted_result = (
-                completed.result
-                if completed is not None and isinstance(completed.result, dict)
-                else result
-            )
-            await self._repository.create_message(
-                thread_id=thread_id,
-                role="tool",
-                parts=[
-                    build_tool_result_part(
-                        tool_name=approved.tool_name,
-                        tool_call_id=tool_call_id,
-                        result=persisted_result,
-                        is_error=False,
-                    )
-                ],
-            )
-            await self._repository.create_audit_log(
-                event_type="tool_completed",
+                event_type="tool_started",
                 actor_email=owner_user_email,
                 tool_name=approved.tool_name,
                 metadata={
@@ -455,50 +345,174 @@ class AssistantService:
                     "action_request_id": str(approved.id),
                 },
             )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            sanitized_error = sanitize_tool_error(exc)
-            logger.exception(
-                "assistant_approved_tool_execution_failed",
+            await self._repository.create_message(
+                thread_id=thread_id,
+                role="assistant",
+                parts=[
+                    {
+                        "type": "tool-call",
+                        "toolName": approved.tool_name,
+                        "toolCallId": tool_call_id,
+                        "args": approved.args,
+                    }
+                ],
+            )
+            logger.info(
+                "assistant_action_approved",
                 extra={
                     "action_request_id": str(approved.id),
-                    "error_code": sanitized_error.error_code,
                     "thread_id": str(thread_id),
                     "tool_name": approved.tool_name,
                     "tool_run_id": str(started.id),
                     "user_id": str(owner_user_id),
                 },
             )
-            _ = await self._action_tool_run_service.fail_tool_run(
-                tool_run_id=started.id,
-                error=sanitized_error.error_code,
-            )
-            await self._repository.create_message(
-                thread_id=thread_id,
-                role="tool",
-                parts=[
-                    build_tool_result_part(
-                        tool_name=approved.tool_name,
-                        tool_call_id=tool_call_id,
-                        result=cast(dict[str, object], sanitized_error.as_result()),
-                        is_error=True,
-                    )
-                ],
-            )
-            await self._repository.create_audit_log(
-                event_type="tool_failed",
-                actor_email=owner_user_email,
-                tool_name=approved.tool_name,
-                metadata={
-                    "thread_id": str(thread_id),
-                    "tool_run_id": str(started.id),
-                    "action_request_id": str(approved.id),
-                    "error": sanitized_error.error,
-                    "error_code": sanitized_error.error_code,
-                },
-            )
-            return
+
+            tool = get_tool_definition(approved.tool_name)
+            if tool is None:
+                error = "Requested tool is unavailable"
+                _ = await self._action_tool_run_service.fail_tool_run(
+                    tool_run_id=started.id,
+                    error=error,
+                )
+                await self._repository.create_message(
+                    thread_id=thread_id,
+                    role="tool",
+                    parts=[
+                        build_tool_result_part(
+                            tool_name=approved.tool_name,
+                            tool_call_id=tool_call_id,
+                            result=cast(dict[str, object], {"error": error}),
+                            is_error=True,
+                        )
+                    ],
+                )
+                await self._repository.create_audit_log(
+                    event_type="tool_failed",
+                    actor_email=owner_user_email,
+                    tool_name=approved.tool_name,
+                    metadata={
+                        "thread_id": str(thread_id),
+                        "tool_run_id": str(started.id),
+                        "action_request_id": str(approved.id),
+                        "error": error,
+                    },
+                )
+                return
+            if tool.risk != ToolRisk.CHANGE:
+                error = "Approved tool risk mismatch"
+                _ = await self._action_tool_run_service.fail_tool_run(
+                    tool_run_id=started.id,
+                    error=error,
+                )
+                await self._repository.create_message(
+                    thread_id=thread_id,
+                    role="tool",
+                    parts=[
+                        build_tool_result_part(
+                            tool_name=approved.tool_name,
+                            tool_call_id=tool_call_id,
+                            result=cast(
+                                dict[str, object],
+                                {
+                                    "error": error,
+                                    "expectedRisk": ToolRisk.CHANGE.value,
+                                    "actualRisk": tool.risk.value,
+                                },
+                            ),
+                            is_error=True,
+                        )
+                    ],
+                )
+                await self._repository.create_audit_log(
+                    event_type="tool_failed",
+                    actor_email=owner_user_email,
+                    tool_name=approved.tool_name,
+                    metadata={
+                        "thread_id": str(thread_id),
+                        "tool_run_id": str(started.id),
+                        "action_request_id": str(approved.id),
+                        "error": error,
+                    },
+                )
+                return
+
+            try:
+                result = await self._execute_tool(tool=tool, args=approved.args)
+                completed = await self._action_tool_run_service.complete_tool_run(
+                    tool_run_id=started.id, result=result
+                )
+                persisted_result = (
+                    completed.result
+                    if completed is not None and isinstance(completed.result, dict)
+                    else result
+                )
+                await self._repository.create_message(
+                    thread_id=thread_id,
+                    role="tool",
+                    parts=[
+                        build_tool_result_part(
+                            tool_name=approved.tool_name,
+                            tool_call_id=tool_call_id,
+                            result=persisted_result,
+                            is_error=False,
+                        )
+                    ],
+                )
+                await self._repository.create_audit_log(
+                    event_type="tool_completed",
+                    actor_email=owner_user_email,
+                    tool_name=approved.tool_name,
+                    metadata={
+                        "thread_id": str(thread_id),
+                        "tool_run_id": str(started.id),
+                        "action_request_id": str(approved.id),
+                    },
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                sanitized_error = sanitize_tool_error(exc)
+                logger.exception(
+                    "assistant_approved_tool_execution_failed",
+                    extra={
+                        "action_request_id": str(approved.id),
+                        "error_code": sanitized_error.error_code,
+                        "thread_id": str(thread_id),
+                        "tool_name": approved.tool_name,
+                        "tool_run_id": str(started.id),
+                        "user_id": str(owner_user_id),
+                    },
+                )
+                _ = await self._action_tool_run_service.fail_tool_run(
+                    tool_run_id=started.id,
+                    error=sanitized_error.error_code,
+                )
+                await self._repository.create_message(
+                    thread_id=thread_id,
+                    role="tool",
+                    parts=[
+                        build_tool_result_part(
+                            tool_name=approved.tool_name,
+                            tool_call_id=tool_call_id,
+                            result=cast(dict[str, object], sanitized_error.as_result()),
+                            is_error=True,
+                        )
+                    ],
+                )
+                await self._repository.create_audit_log(
+                    event_type="tool_failed",
+                    actor_email=owner_user_email,
+                    tool_name=approved.tool_name,
+                    metadata={
+                        "thread_id": str(thread_id),
+                        "tool_run_id": str(started.id),
+                        "action_request_id": str(approved.id),
+                        "error": sanitized_error.error,
+                        "error_code": sanitized_error.error_code,
+                    },
+                )
+                return
 
     async def deny_action(
         self,
@@ -508,12 +522,12 @@ class AssistantService:
         thread_id: UUID,
         action_request_id: str | None,
     ) -> None:
-        parsed_id = _parse_uuid(action_request_id, label="actionRequestId")
+        parsed_id = parse_action_request_id(action_request_id)
         request = await self._action_tool_run_service.get_action_request(
             action_request_id=parsed_id
         )
         if request is None:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Action request not found",
                 error_code=ACTION_REQUEST_NOT_FOUND,
@@ -522,13 +536,13 @@ class AssistantService:
             request.thread_id != thread_id
             or request.requested_by_user_id != owner_user_id
         ):
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Action request not found",
                 error_code=ACTION_REQUEST_NOT_FOUND,
             )
         if request.status != ActionRequestStatus.PENDING:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Action request already decided",
                 error_code=ACTION_REQUEST_ALREADY_DECIDED,
@@ -540,34 +554,52 @@ class AssistantService:
                 decided_by_user_id=owner_user_id,
             )
         except ValueError as exc:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Action request already decided",
                 error_code=ACTION_REQUEST_ALREADY_DECIDED,
             ) from exc
         if denied is None:
-            raise _http_error(
+            raise assistant_http_error(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Action request not found",
                 error_code=ACTION_REQUEST_NOT_FOUND,
             )
 
-        await self._repository.create_message(
-            thread_id=thread_id,
-            role="assistant",
-            parts=[
-                {
-                    "type": "text",
-                    "text": f"Denied action request for tool '{denied.tool_name}'.",
-                }
-            ],
-        )
-        await self._repository.create_audit_log(
-            event_type="action_denied",
-            actor_email=owner_user_email,
+        with log_context(
+            action_request_id=str(denied.id),
+            thread_id=str(thread_id),
             tool_name=denied.tool_name,
-            metadata={"thread_id": str(thread_id), "action_request_id": str(denied.id)},
-        )
+            user_id=str(owner_user_id),
+        ):
+            await self._repository.create_message(
+                thread_id=thread_id,
+                role="assistant",
+                parts=[
+                    {
+                        "type": "text",
+                        "text": f"Denied action request for tool '{denied.tool_name}'.",
+                    }
+                ],
+            )
+            await self._repository.create_audit_log(
+                event_type="action_denied",
+                actor_email=owner_user_email,
+                tool_name=denied.tool_name,
+                metadata={
+                    "thread_id": str(thread_id),
+                    "action_request_id": str(denied.id),
+                },
+            )
+            logger.info(
+                "assistant_action_denied",
+                extra={
+                    "action_request_id": str(denied.id),
+                    "thread_id": str(thread_id),
+                    "tool_name": denied.tool_name,
+                    "user_id": str(owner_user_id),
+                },
+            )
 
     async def run_agent_turn(
         self,
@@ -660,7 +692,7 @@ async def _require_active_user(
             "assistant_access_denied_inactive_user",
             extra={"user_id": str(current_user.user_id)},
         )
-        raise _http_error(
+        raise assistant_http_error(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User pending approval",
             error_code=USER_PENDING_APPROVAL,

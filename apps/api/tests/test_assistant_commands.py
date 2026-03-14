@@ -176,6 +176,16 @@ def test_validate_commands_rejects_non_user_add_message_role() -> None:
     assert exc_info.value.error_code == "invalid_add_message_role"
 
 
+def test_assistant_command_schemas_keep_required_ids() -> None:
+    add_tool_result_schema = AddToolResultCommand.model_json_schema(by_alias=True)
+    approve_action_schema = ApproveActionCommand.model_json_schema(by_alias=True)
+    deny_action_schema = DenyActionCommand.model_json_schema(by_alias=True)
+
+    assert "toolCallId" in add_tool_result_schema["required"]
+    assert "actionRequestId" in approve_action_schema["required"]
+    assert "actionRequestId" in deny_action_schema["required"]
+
+
 async def test_apply_commands_dispatches_supported_commands() -> None:
     owner_user_id = uuid4()
     thread_id = uuid4()

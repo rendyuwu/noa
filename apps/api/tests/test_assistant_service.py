@@ -217,9 +217,17 @@ class _InMemoryActionToolRunRepository:
         return existing
 
 
-async def test_assistant_service_approve_executes_pending_change_and_writes_audit() -> (
-    None
-):
+def _error_code(exc: HTTPException) -> str | None:
+    error_code = getattr(exc, "error_code", None)
+    if isinstance(error_code, str):
+        return error_code
+    headers = exc.headers or {}
+    return headers.get("x-error-code") or headers.get("X-Error-Code")
+
+
+async def test_assistant_service_approve_executes_pending_change_and_writes_audit(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     owner_id = uuid4()
     thread_id = uuid4()
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
@@ -239,14 +247,15 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
         session=_FakeSession(),
     )
 
-    await service.approve_action(
-        owner_user_id=owner_id,
-        owner_user_email="owner@example.com",
-        thread_id=thread_id,
-        action_request_id=str(request.id),
-        is_user_active=True,
-        authorize_tool_access=lambda _tool: _allow(),
-    )
+    with caplog.at_level("INFO"):
+        await service.approve_action(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            action_request_id=str(request.id),
+            is_user_active=True,
+            authorize_tool_access=lambda _tool: _allow(),
+        )
 
     assert request.status == ActionRequestStatus.APPROVED
     run = next(iter(repo.tool_runs.values()))
@@ -257,6 +266,16 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
         "tool_started",
         "tool_completed",
     ]
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_action_approved"
+    )
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "user_id") == str(owner_id)
+    assert getattr(record, "tool_name") == "set_demo_flag"
+    assert getattr(record, "action_request_id") == str(request.id)
+    assert getattr(record, "tool_run_id") == str(run.id)
 
 
 async def test_assistant_service_approve_change_tool_failure_is_persisted_and_does_not_raise(
@@ -509,6 +528,89 @@ async def test_assistant_service_deny_marks_denied_with_audit_and_message() -> N
     assert assistant_repo.audits[-1]["event_type"] == "action_denied"
 
 
+async def test_assistant_service_add_tool_result_logs_success_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name="get_current_time",
+        args={},
+        action_request_id=None,
+        requested_by_user_id=owner_id,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    with caplog.at_level("INFO"):
+        await service.add_tool_result(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            tool_call_id=str(started.id),
+            result={"ok": True},
+        )
+
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_tool_result_recorded"
+    )
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "user_id") == str(owner_id)
+    assert getattr(record, "tool_name") == "get_current_time"
+    assert getattr(record, "tool_run_id") == str(started.id)
+
+
+async def test_assistant_service_deny_logs_success_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="set_demo_flag",
+        args={"key": "feature_x", "value": True},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    with caplog.at_level("INFO"):
+        await service.deny_action(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            action_request_id=str(request.id),
+        )
+
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_action_denied"
+    )
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "user_id") == str(owner_id)
+    assert getattr(record, "tool_name") == "set_demo_flag"
+    assert getattr(record, "action_request_id") == str(request.id)
+
+
 async def test_assistant_service_rejects_approval_replay() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
@@ -625,6 +727,126 @@ async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() 
 
     assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
     assert assistant_repo.messages[-1]["role"] == "tool"
+
+
+@pytest.mark.parametrize(
+    ("tool_call_id", "detail", "error_code"),
+    [
+        (None, "Missing toolCallId", "missing_tool_call_id"),
+        ("not-a-uuid", "Invalid toolCallId", "invalid_tool_call_id"),
+    ],
+)
+async def test_assistant_service_add_tool_result_rejects_missing_or_invalid_tool_call_id(
+    tool_call_id: str | None,
+    detail: str,
+    error_code: str,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        session=_FakeSession(),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.add_tool_result(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            tool_call_id=tool_call_id,
+            result={"ok": True},
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == detail
+    assert _error_code(exc_info.value) == error_code
+
+
+@pytest.mark.parametrize(
+    ("action_request_id", "detail", "error_code"),
+    [
+        (None, "Missing actionRequestId", "missing_action_request_id"),
+        ("not-a-uuid", "Invalid actionRequestId", "invalid_action_request_id"),
+    ],
+)
+async def test_assistant_service_approve_action_rejects_missing_or_invalid_action_request_id(
+    action_request_id: str | None,
+    detail: str,
+    error_code: str,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        session=_FakeSession(),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.approve_action(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            action_request_id=action_request_id,
+            is_user_active=True,
+            authorize_tool_access=lambda _tool: _allow(),
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == detail
+    assert _error_code(exc_info.value) == error_code
+
+
+@pytest.mark.parametrize(
+    ("action_request_id", "detail", "error_code"),
+    [
+        (None, "Missing actionRequestId", "missing_action_request_id"),
+        ("not-a-uuid", "Invalid actionRequestId", "invalid_action_request_id"),
+    ],
+)
+async def test_assistant_service_deny_action_rejects_missing_or_invalid_action_request_id(
+    action_request_id: str | None,
+    detail: str,
+    error_code: str,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        session=_FakeSession(),
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.deny_action(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            action_request_id=action_request_id,
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == detail
+    assert _error_code(exc_info.value) == error_code
 
 
 async def test_assistant_service_run_agent_turn_emits_action_requested_audit() -> None:

@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, cast
 from uuid import UUID, uuid4
 
@@ -14,14 +15,19 @@ from httpx import ASGITransport, AsyncClient
 pytest.importorskip("assistant_stream")
 
 from noa_api.api.error_handling import install_error_handling
+from noa_api.api.routes.assistant import (
+    AssistantService,
+    _stream_assistant_text,
+    get_assistant_service,
+)
 from noa_api.core.agent.runner import AgentMessage, AgentRunnerResult
-from noa_api.api.routes.assistant import _stream_assistant_text, get_assistant_service
 from noa_api.api.routes.assistant import router as assistant_router
 from noa_api.core.auth.authorization import (
     AuthorizationUser,
     get_authorization_service,
     get_current_auth_user,
 )
+from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 
 
 def _iter_assistant_transport_events(payload: str) -> list[dict[str, object]]:
@@ -242,6 +248,78 @@ class _FakeAuthorizationService:
     ) -> bool:
         _ = user
         return tool_name in self.allowed_tools
+
+
+@dataclass
+class _RouteRunner:
+    async def run_turn(self, **kwargs):
+        raise AssertionError(f"runner should not be called: {kwargs}")
+
+
+@dataclass
+class _RouteAssistantRepository:
+    owner_user_id: UUID
+    thread_id: UUID
+
+    async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID):
+        if owner_user_id != self.owner_user_id or thread_id != self.thread_id:
+            return None
+        return SimpleNamespace(id=thread_id, owner_user_id=owner_user_id)
+
+    async def list_messages(self, *, thread_id: UUID):
+        _ = thread_id
+        return []
+
+    async def create_message(self, **kwargs):
+        raise AssertionError(f"create_message should not be called: {kwargs}")
+
+    async def create_audit_log(self, **kwargs) -> None:
+        raise AssertionError(f"create_audit_log should not be called: {kwargs}")
+
+
+@dataclass
+class _RouteActionToolRunRepository:
+    async def get_action_request(self, **kwargs):
+        _ = kwargs
+        return None
+
+    async def create_action_request(self, **kwargs):
+        raise AssertionError(f"create_action_request should not be called: {kwargs}")
+
+    async def decide_action_request(self, **kwargs):
+        raise AssertionError(f"decide_action_request should not be called: {kwargs}")
+
+    async def start_tool_run(self, **kwargs):
+        raise AssertionError(f"start_tool_run should not be called: {kwargs}")
+
+    async def get_tool_run(self, **kwargs):
+        _ = kwargs
+        return None
+
+    async def finish_tool_run(self, **kwargs):
+        raise AssertionError(f"finish_tool_run should not be called: {kwargs}")
+
+
+def _build_real_service_app(*, owner_id: UUID, thread_id: UUID) -> FastAPI:
+    service = AssistantService(
+        _RouteAssistantRepository(owner_user_id=owner_id, thread_id=thread_id),
+        _RouteRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_RouteActionToolRunRepository()
+        ),
+        session=cast(Any, None),
+    )
+    return _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
 
 
 def _build_app(
@@ -690,6 +768,92 @@ async def test_assistant_route_returns_http_error_for_pre_agent_command_failure(
     assert getattr(record, "error_code") == "unknown_tool_call_id"
     assert getattr(record, "thread_id") == str(thread_id)
     assert getattr(record, "user_id") == str(owner_id)
+
+
+@pytest.mark.parametrize(
+    ("command", "detail", "error_code", "request_id"),
+    [
+        (
+            {
+                "type": "add-tool-result",
+                "result": {"ok": True},
+            },
+            "Missing toolCallId",
+            "missing_tool_call_id",
+            "assistant-missing-tool-call-id",
+        ),
+        (
+            {
+                "type": "add-tool-result",
+                "toolCallId": "not-a-uuid",
+                "result": {"ok": True},
+            },
+            "Invalid toolCallId",
+            "invalid_tool_call_id",
+            "assistant-invalid-tool-call-id",
+        ),
+        (
+            {"type": "approve-action"},
+            "Missing actionRequestId",
+            "missing_action_request_id",
+            "assistant-missing-approve-action-request-id",
+        ),
+        (
+            {
+                "type": "approve-action",
+                "actionRequestId": "not-a-uuid",
+            },
+            "Invalid actionRequestId",
+            "invalid_action_request_id",
+            "assistant-invalid-approve-action-request-id",
+        ),
+        (
+            {"type": "deny-action"},
+            "Missing actionRequestId",
+            "missing_action_request_id",
+            "assistant-missing-deny-action-request-id",
+        ),
+        (
+            {
+                "type": "deny-action",
+                "actionRequestId": "not-a-uuid",
+            },
+            "Invalid actionRequestId",
+            "invalid_action_request_id",
+            "assistant-invalid-deny-action-request-id",
+        ),
+    ],
+)
+async def test_assistant_route_returns_coded_errors_for_missing_or_invalid_ids(
+    command: dict[str, object],
+    detail: str,
+    error_code: str,
+    request_id: str,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    app = _build_real_service_app(owner_id=owner_id, thread_id=thread_id)
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [command],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/assistant",
+            json=payload,
+            headers={"x-request-id": request_id},
+        )
+
+    assert response.status_code == 400
+    body = response.json()
+    assert body["detail"] == detail
+    assert body["error_code"] == error_code
+    assert body["request_id"] == request_id
+    assert response.headers["x-request-id"] == request_id
 
 
 async def test_assistant_route_runs_agent_after_add_tool_result_command() -> None:
