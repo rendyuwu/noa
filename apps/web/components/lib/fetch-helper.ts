@@ -2,6 +2,18 @@
 
 import { getAuthToken, clearAuth } from "@/components/lib/auth-store";
 
+type ErrorPayload = {
+  detail?: unknown;
+  error_code?: unknown;
+  request_id?: unknown;
+  errorCode?: unknown;
+  requestId?: unknown;
+};
+
+const asString = (value: unknown): string | undefined => {
+  return typeof value === "string" && value.length > 0 ? value : undefined;
+};
+
 export const getApiUrl = (): string => {
   // Always use same-origin API routes from the browser.
   return "/api";
@@ -9,10 +21,21 @@ export const getApiUrl = (): string => {
 
 export class ApiError extends Error {
   status: number;
+  detail: string;
+  errorCode?: string;
+  requestId?: string;
 
-  constructor(status: number, message: string) {
-    super(message);
+  constructor(
+    status: number,
+    detail: string,
+    options: { errorCode?: string; requestId?: string } = {},
+  ) {
+    super(detail);
+    this.name = "ApiError";
     this.status = status;
+    this.detail = detail;
+    this.errorCode = options.errorCode;
+    this.requestId = options.requestId;
   }
 }
 
@@ -50,9 +73,19 @@ export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promi
 };
 
 export const jsonOrThrow = async <T>(response: Response): Promise<T> => {
-  const payload = await response.json().catch(() => ({}));
+  const payload = (await response.json().catch(() => ({}))) as ErrorPayload;
   if (!response.ok) {
-    throw new ApiError(response.status, payload?.detail ?? `Request failed (${response.status})`);
+    const detail = asString(payload?.detail) ?? `Request failed (${response.status})`;
+    const errorCode = asString(payload?.error_code) ?? asString(payload?.errorCode);
+    const requestId =
+      asString(payload?.request_id) ??
+      asString(payload?.requestId) ??
+      asString(response.headers.get("x-request-id"));
+
+    throw new ApiError(response.status, detail, {
+      errorCode,
+      requestId,
+    });
   }
   return payload as T;
 };
