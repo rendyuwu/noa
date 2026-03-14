@@ -1,10 +1,12 @@
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.admin import router as admin_router
 from noa_api.core.auth.authorization import (
     AuthorizationService,
@@ -165,9 +167,22 @@ class _FakeAuthorizationService:
         return self.users[0]
 
 
+def _create_admin_app() -> FastAPI:
+    app = FastAPI()
+    install_error_handling(app)
+    app.include_router(admin_router)
+    return app
+
+
+def _build_authorization_service(
+    repo: _InMemoryAuthorizationRepository,
+) -> AuthorizationService:
+    return AuthorizationService(repository=cast(Any, repo))
+
+
 async def test_authorization_service_admin_requires_explicit_tool_permissions() -> None:
     repo = _InMemoryAuthorizationRepository()
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
     user = AuthorizationUser(
         user_id=uuid4(),
         email="admin@example.com",
@@ -182,7 +197,7 @@ async def test_authorization_service_admin_requires_explicit_tool_permissions() 
 async def test_authorization_service_admin_allows_when_role_grants_tool() -> None:
     repo = _InMemoryAuthorizationRepository()
     repo.role_tools["admin"] = {"get_current_time"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
     user = AuthorizationUser(
         user_id=uuid4(),
         email="admin@example.com",
@@ -197,7 +212,7 @@ async def test_authorization_service_admin_allows_when_role_grants_tool() -> Non
 async def test_authorization_service_disabled_user_has_zero_permissions() -> None:
     repo = _InMemoryAuthorizationRepository()
     repo.role_tools["member"] = {"get_current_time"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
     allowed = await service.authorize_tool_access(
         AuthorizationUser(
             user_id=uuid4(),
@@ -215,7 +230,7 @@ async def test_authorization_service_disabled_user_has_zero_permissions() -> Non
 async def test_authorization_service_non_admin_depends_on_tool_permissions() -> None:
     repo = _InMemoryAuthorizationRepository()
     repo.role_tools["member"] = {"get_current_time"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
     user = AuthorizationUser(
         user_id=uuid4(),
         email="member@example.com",
@@ -231,7 +246,7 @@ async def test_authorization_service_non_admin_depends_on_tool_permissions() -> 
 async def test_authorization_service_lists_canonical_tools() -> None:
     repo = _InMemoryAuthorizationRepository()
     repo.role_tools["member"] = {"db-only"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
 
     assert await service.list_tools() == [
         "get_current_time",
@@ -269,7 +284,7 @@ async def test_authorization_service_list_users_includes_created_and_last_login(
         last_login_at=None,
     )
     repo.user_roles[user_id] = {"member"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
 
     users = await service.list_users()
     assert users[0].created_at == now
@@ -287,7 +302,7 @@ async def test_authorization_service_rejects_unknown_tool_updates() -> None:
         created_at=datetime.now(UTC),
         last_login_at=None,
     )
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
 
     try:
         await service.set_user_tools(
@@ -313,7 +328,7 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
         created_at=datetime.now(UTC),
         last_login_at=None,
     )
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
     user = AuthorizationUser(
         user_id=user_id,
         email="member@example.com",
@@ -352,7 +367,7 @@ async def test_authorization_service_writes_audit_events_for_admin_changes() -> 
         created_at=datetime.now(UTC),
         last_login_at=None,
     )
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
 
     await service.set_user_active(
         user_id, is_active=False, actor_email="admin@example.com"
@@ -379,7 +394,7 @@ async def test_authorization_service_blocks_disabling_last_active_admin() -> Non
         last_login_at=None,
     )
     repo.user_roles[admin_id] = {"admin"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
 
     try:
         await service.set_user_active(
@@ -412,7 +427,7 @@ async def test_authorization_service_blocks_admin_self_deactivation() -> None:
     )
     repo.user_roles[admin_id] = {"admin"}
     repo.user_roles[other_admin_id] = {"admin"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
 
     try:
         await service.set_user_active(
@@ -427,8 +442,7 @@ async def test_authorization_service_blocks_admin_self_deactivation() -> None:
 
 
 async def test_admin_routes_forbid_non_admin_users() -> None:
-    app = FastAPI()
-    app.include_router(admin_router)
+    app = _create_admin_app()
     app.dependency_overrides[get_authorization_service] = lambda: (
         _FakeAuthorizationService()
     )
@@ -451,8 +465,7 @@ async def test_admin_routes_forbid_non_admin_users() -> None:
 
 
 async def test_admin_routes_allow_admin_management_operations() -> None:
-    app = FastAPI()
-    app.include_router(admin_router)
+    app = _create_admin_app()
     service = _FakeAuthorizationService()
     app.dependency_overrides[get_authorization_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
@@ -495,8 +508,7 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
 
 
 async def test_admin_route_rejects_unknown_tools_with_400() -> None:
-    app = FastAPI()
-    app.include_router(admin_router)
+    app = _create_admin_app()
     service = _FakeAuthorizationService()
     app.dependency_overrides[get_authorization_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
@@ -513,15 +525,48 @@ async def test_admin_route_rejects_unknown_tools_with_400() -> None:
         response = await client.put(
             f"/admin/users/{service.target_user_id}/tools",
             json={"tools": ["get_current_time", "unknown-tool"]},
+            headers={"x-request-id": "admin-unknown-tools"},
         )
 
     assert response.status_code == 400
-    assert response.json() == {"detail": "Unknown tools: unknown-tool"}
+    body = response.json()
+    assert body["detail"] == "Unknown tools: unknown-tool"
+    assert body["error_code"] == "unknown_tools"
+    assert body["request_id"] == "admin-unknown-tools"
+    assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_admin_route_returns_error_code_for_missing_user_404() -> None:
+    app = _create_admin_app()
+    service = _FakeAuthorizationService()
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch(
+            f"/admin/users/{uuid4()}",
+            json={"is_active": False},
+            headers={"x-request-id": "admin-user-missing"},
+        )
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["detail"] == "User not found"
+    assert body["error_code"] == "admin_user_not_found"
+    assert body["request_id"] == "admin-user-missing"
+    assert response.headers["x-request-id"] == body["request_id"]
 
 
 async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None:
-    app = FastAPI()
-    app.include_router(admin_router)
+    app = _create_admin_app()
 
     repo = _InMemoryAuthorizationRepository()
     admin_id = uuid4()
@@ -534,7 +579,7 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
         last_login_at=None,
     )
     repo.user_roles[admin_id] = {"admin"}
-    service = AuthorizationService(repository=repo)
+    service = _build_authorization_service(repo)
 
     app.dependency_overrides[get_authorization_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
@@ -549,8 +594,14 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.patch(
-            f"/admin/users/{admin_id}", json={"is_active": False}
+            f"/admin/users/{admin_id}",
+            json={"is_active": False},
+            headers={"x-request-id": "admin-last-active"},
         )
 
     assert response.status_code == 409
-    assert response.json() == {"detail": "Cannot disable the last active admin"}
+    body = response.json()
+    assert body["detail"] == "Cannot disable the last active admin"
+    assert body["error_code"] == "last_active_admin"
+    assert body["request_id"] == "admin-last-active"
+    assert response.headers["x-request-id"] == body["request_id"]

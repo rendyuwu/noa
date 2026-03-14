@@ -464,7 +464,15 @@ async def test_assistant_service_approve_change_tool_logs_original_exception(
         "error": "Tool execution failed",
         "error_code": "tool_execution_failed",
     }
-    assert "Approved tool execution failed" in caplog.text
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_approved_tool_execution_failed"
+    )
+    assert getattr(record, "error_code") == "tool_execution_failed"
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "tool_name") == "failing_change_logged"
+    assert getattr(record, "user_id") == str(owner_id)
     assert "boom" in caplog.text
 
 

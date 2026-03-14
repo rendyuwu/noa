@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass, field
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from httpx import ASGITransport, AsyncClient
 
 pytest.importorskip("assistant_stream")
 
+from noa_api.api.error_handling import install_error_handling
 from noa_api.core.agent.runner import AgentMessage, AgentRunnerResult
 from noa_api.api.routes.assistant import _stream_assistant_text, get_assistant_service
 from noa_api.api.routes.assistant import router as assistant_router
@@ -49,10 +52,11 @@ def _apply_assistant_stream_patches(
         for key in path[:-1]:
             key_str = str(key)
             if isinstance(current, list):
+                current_list = cast(list[object], current)
                 idx = int(key_str)
-                while idx >= len(current):
-                    current.append({})
-                current = current[idx]
+                while idx >= len(current_list):
+                    current_list.append({})
+                current = current_list[idx]
                 continue
 
             assert isinstance(current, dict)
@@ -246,6 +250,7 @@ def _build_app(
     authorization_service: _FakeAuthorizationService | None = None,
 ) -> FastAPI:
     app = FastAPI()
+    install_error_handling(app)
     app.include_router(assistant_router)
     app.dependency_overrides[get_assistant_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: current_user
@@ -544,10 +549,18 @@ async def test_assistant_route_rejects_edit_style_add_message() -> None:
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/assistant", json=payload)
+        response = await client.post(
+            "/assistant",
+            json=payload,
+            headers={"x-request-id": "assistant-edit-message"},
+        )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Editing existing messages is not supported yet"
+    body = response.json()
+    assert body["detail"] == "Editing existing messages is not supported yet"
+    assert body["error_code"] == "message_edit_not_supported"
+    assert body["request_id"] == "assistant-edit-message"
+    assert response.headers["x-request-id"] == body["request_id"]
 
 
 async def test_assistant_route_accepts_add_tool_result_command() -> None:
@@ -609,6 +622,74 @@ async def test_assistant_route_accepts_add_tool_result_command() -> None:
             state.update(event_state)
 
     assert _state_contains_text(state, "From DB")
+
+
+async def test_assistant_route_returns_http_error_for_pre_agent_command_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+
+    async def _boom_add_tool_result(*_, **__) -> None:
+        raise HTTPException(
+            status_code=400,
+            detail="Unknown tool call id",
+            headers={"x-error-code": "unknown_tool_call_id"},
+        )
+
+    monkeypatch.setattr(service, "add_tool_result", _boom_add_tool_result)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-tool-result",
+                "toolCallId": "tool-call-1",
+                "result": {"ok": True},
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    caplog.set_level(logging.INFO, logger="noa_api.api.routes.assistant")
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/assistant",
+            json=payload,
+            headers={"x-request-id": "assistant-pre-agent-http-error"},
+        )
+
+    assert response.status_code == 400
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert body["detail"] == "Unknown tool call id"
+    assert body["error_code"] == "unknown_tool_call_id"
+    assert body["request_id"] == "assistant-pre-agent-http-error"
+    assert response.headers["x-request-id"] == body["request_id"]
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_run_failed_pre_agent"
+    )
+    assert getattr(record, "status_code") == 400
+    assert getattr(record, "error_code") == "unknown_tool_call_id"
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "user_id") == str(owner_id)
 
 
 async def test_assistant_route_runs_agent_after_add_tool_result_command() -> None:
@@ -964,7 +1045,9 @@ async def test_assistant_route_streams_assistant_text_incrementally() -> None:
     assert len(set(observed)) >= 3
 
 
-async def test_assistant_route_rejects_non_user_add_message_role() -> None:
+async def test_assistant_route_rejects_non_user_add_message_role(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
     owner_id = uuid4()
     thread_id = uuid4()
     service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
@@ -994,12 +1077,31 @@ async def test_assistant_route_rejects_non_user_add_message_role() -> None:
         "threadId": str(thread_id),
     }
 
-    transport = ASGITransport(app=app)
+    caplog.set_level(logging.INFO, logger="noa_api.api.routes.assistant")
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/assistant", json=payload)
+        response = await client.post(
+            "/assistant",
+            json=payload,
+            headers={"x-request-id": "assistant-invalid-role"},
+        )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "Only user add-message commands are allowed"
+    body = response.json()
+    assert body["detail"] == "Only user add-message commands are allowed"
+    assert body["error_code"] == "invalid_add_message_role"
+    assert body["request_id"] == "assistant-invalid-role"
+    assert response.headers["x-request-id"] == body["request_id"]
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_run_failed_pre_agent"
+    )
+    assert getattr(record, "status_code") == 400
+    assert getattr(record, "error_code") == "invalid_add_message_role"
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "user_id") == str(owner_id)
 
 
 async def test_streaming_loop_stops_on_cancellation(
@@ -1019,7 +1121,7 @@ async def test_streaming_loop_stops_on_cancellation(
     monkeypatch.setattr(asyncio, "sleep", _cancelled_sleep)
 
     with pytest.raises(asyncio.CancelledError):
-        await _stream_assistant_text(_Controller(), ["a", "b"])
+        await _stream_assistant_text(cast(Any, _Controller()), ["a", "b"])
 
 
 async def test_streaming_loop_respects_controller_is_cancelled_flag() -> None:
@@ -1033,4 +1135,4 @@ async def test_streaming_loop_respects_controller_is_cancelled_flag() -> None:
     import asyncio
 
     with pytest.raises(asyncio.CancelledError):
-        await _stream_assistant_text(_Controller(), ["a", "b"])
+        await _stream_assistant_text(cast(Any, _Controller()), ["a", "b"])

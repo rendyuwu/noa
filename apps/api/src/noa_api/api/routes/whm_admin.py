@@ -2,20 +2,33 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from datetime import datetime
+import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
+from noa_api.api.error_codes import (
+    ADMIN_ACCESS_REQUIRED,
+    WHM_SERVER_NAME_EXISTS,
+    WHM_SERVER_NOT_FOUND,
+)
+from noa_api.api.error_handling import ApiHTTPException
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
+from noa_api.core.logging_context import log_context
 from noa_api.storage.postgres.client import get_session_factory
-from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
+from noa_api.storage.postgres.whm_servers import (
+    SQLWHMServerRepository,
+    WHMServerRepositoryProtocol,
+)
 
 router = APIRouter(prefix="/admin/whm/servers", tags=["admin"])
+
+logger = logging.getLogger(__name__)
 
 
 class WHMServerResponse(BaseModel):
@@ -85,6 +98,18 @@ class ValidateWHMServerResponse(BaseModel):
     message: str
 
 
+class WHMServerServiceError(Exception):
+    pass
+
+
+class WHMServerNameExistsError(WHMServerServiceError):
+    pass
+
+
+class WHMServerNotFoundError(WHMServerServiceError):
+    pass
+
+
 def _to_server_response(server: Any) -> WHMServerResponse:
     safe = server.to_safe_dict()
     return WHMServerResponse.model_validate(safe)
@@ -94,14 +119,24 @@ async def _require_admin(
     current_user: AuthorizationUser = Depends(get_current_auth_user),
 ) -> AuthorizationUser:
     if not current_user.is_active or "admin" not in current_user.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        logger.info(
+            "whm_admin_access_denied",
+            extra={
+                "is_active": current_user.is_active,
+                "roles": current_user.roles,
+                "user_id": str(current_user.user_id),
+            },
+        )
+        raise ApiHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+            error_code=ADMIN_ACCESS_REQUIRED,
         )
     return current_user
 
 
 class WHMServerService:
-    def __init__(self, repository: SQLWHMServerRepository) -> None:
+    def __init__(self, repository: WHMServerRepositoryProtocol) -> None:
         self._repository = repository
 
     async def list_servers(self):
@@ -128,10 +163,7 @@ class WHMServerService:
                 verify_ssl=verify_ssl,
             )
         except IntegrityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="WHM server name already exists",
-            ) from exc
+            raise WHMServerNameExistsError from exc
 
     async def update_server(
         self,
@@ -153,10 +185,7 @@ class WHMServerService:
                 verify_ssl=verify_ssl,
             )
         except IntegrityError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="WHM server name already exists",
-            ) from exc
+            raise WHMServerNameExistsError from exc
 
     async def delete_server(self, *, server_id: UUID) -> bool:
         return await self._repository.delete(server_id=server_id)
@@ -164,9 +193,7 @@ class WHMServerService:
     async def validate_server(self, *, server_id: UUID) -> ValidateWHMServerResponse:
         server = await self.get_server(server_id=server_id)
         if server is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND, detail="WHM server not found"
-            )
+            raise WHMServerNotFoundError
 
         # Local import keeps this module usable in tests without the integration present yet.
         from noa_api.integrations.whm.client import WHMClient
@@ -213,13 +240,22 @@ async def create_whm_server(
     _: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> CreateWHMServerResponse | Response:
-    server = await whm_server_service.create_server(
-        name=payload.name,
-        base_url=payload.base_url,
-        api_username=payload.api_username,
-        api_token=payload.api_token,
-        verify_ssl=payload.verify_ssl,
-    )
+    with log_context(server_name=payload.name):
+        try:
+            server = await whm_server_service.create_server(
+                name=payload.name,
+                base_url=payload.base_url,
+                api_username=payload.api_username,
+                api_token=payload.api_token,
+                verify_ssl=payload.verify_ssl,
+            )
+        except WHMServerNameExistsError as exc:
+            logger.info("whm_server_name_conflict")
+            raise ApiHTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="WHM server name already exists",
+                error_code=WHM_SERVER_NAME_EXISTS,
+            ) from exc
     response = CreateWHMServerResponse(server=_to_server_response(server))
     return JSONResponse(
         content=jsonable_encoder(response.model_dump()),
@@ -234,18 +270,30 @@ async def update_whm_server(
     _: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> UpdateWHMServerResponse:
-    server = await whm_server_service.update_server(
-        server_id=server_id,
-        name=payload.name,
-        base_url=payload.base_url,
-        api_username=payload.api_username,
-        api_token=payload.api_token,
-        verify_ssl=payload.verify_ssl,
-    )
-    if server is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="WHM server not found"
-        )
+    with log_context(server_id=str(server_id), server_name=payload.name):
+        try:
+            server = await whm_server_service.update_server(
+                server_id=server_id,
+                name=payload.name,
+                base_url=payload.base_url,
+                api_username=payload.api_username,
+                api_token=payload.api_token,
+                verify_ssl=payload.verify_ssl,
+            )
+        except WHMServerNameExistsError as exc:
+            logger.info("whm_server_name_conflict")
+            raise ApiHTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="WHM server name already exists",
+                error_code=WHM_SERVER_NAME_EXISTS,
+            ) from exc
+        if server is None:
+            logger.info("whm_server_not_found")
+            raise ApiHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="WHM server not found",
+                error_code=WHM_SERVER_NOT_FOUND,
+            )
     return UpdateWHMServerResponse(server=_to_server_response(server))
 
 
@@ -255,11 +303,15 @@ async def delete_whm_server(
     _: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> DeleteWHMServerResponse:
-    deleted = await whm_server_service.delete_server(server_id=server_id)
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="WHM server not found"
-        )
+    with log_context(server_id=str(server_id)):
+        deleted = await whm_server_service.delete_server(server_id=server_id)
+        if not deleted:
+            logger.info("whm_server_not_found")
+            raise ApiHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="WHM server not found",
+                error_code=WHM_SERVER_NOT_FOUND,
+            )
     return DeleteWHMServerResponse(ok=True)
 
 
@@ -269,4 +321,13 @@ async def validate_whm_server(
     _: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> ValidateWHMServerResponse:
-    return await whm_server_service.validate_server(server_id=server_id)
+    with log_context(server_id=str(server_id)):
+        try:
+            return await whm_server_service.validate_server(server_id=server_id)
+        except WHMServerNotFoundError as exc:
+            logger.info("whm_server_not_found")
+            raise ApiHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="WHM server not found",
+                error_code=WHM_SERVER_NOT_FOUND,
+            ) from exc

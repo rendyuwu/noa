@@ -18,7 +18,8 @@ High-level assessment:
 Implementation status update (same branch, after foundation work):
 - Core foundation work from this audit has been partially implemented in `feat/error-handling-logging-foundation`.
 - Request-scoped IDs, centralized API error shaping, shared DB engine/session accessors, tool-failure sanitization, frontend shared error mapping, and a top-level web error boundary are now in place.
-- The remaining notable gap is broader observability and deeper assistant transport decomposition; the assistant route is improved but still too large.
+- The backend-only follow-up branch `feat/backend-error-code-assistant-logging` has now implemented the next planned pass: wider route-level `error_code` coverage, additional assistant transport extraction, and richer structured logging context for the touched backend flows.
+- The remaining notable gap is broader repo-wide observability and deeper assistant transport decomposition; the assistant route is materially smaller and safer, but still too large.
 - A backend-only follow-up design and implementation plan for the next phase now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md` and `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`.
 
 ---
@@ -89,10 +90,13 @@ What changed on this branch
 - Added request-context-aware logging setup in `apps/api/src/noa_api/core/logging.py`.
 - Preserved safe embedding behavior by avoiding destructive root logger resets.
 - Added internal exception logging in tool failure paths.
+- Added `apps/api/src/noa_api/core/logging_context.py` for scoped structured context binding.
+- Updated logging setup so existing root handlers are upgraded to the structlog formatter instead of silently bypassing structured output.
+- Added structured event-style logs with bound request/entity fields in `apps/api/src/noa_api/api/error_handling.py`, `apps/api/src/noa_api/api/routes/assistant.py`, `apps/api/src/noa_api/api/routes/admin.py`, `apps/api/src/noa_api/api/routes/threads.py`, and `apps/api/src/noa_api/api/routes/whm_admin.py`.
 
 What remains
 - Logging is still not consistently structured/bound across the whole API surface.
-- Key contextual fields such as `user_id`, `thread_id`, `tool_name`, and `tool_run_id` are not yet systematically bound everywhere.
+- Key contextual fields such as `user_id`, `thread_id`, `tool_name`, and `tool_run_id` are now present in the touched backend flows, but not yet systematically bound everywhere else in the API.
 
 ### W2: Missing request-scoped context (no request_id / correlation)
 Status
@@ -124,9 +128,11 @@ What changed on this branch
 - Added `ApiHTTPException` support for stable `error_code` values while preserving `detail`.
 - Converted auth routes to return stable auth-specific `error_code` values.
 - Updated the frontend error parser to consume `error_code` and `request_id`.
+- Expanded stable `error_code` coverage in `apps/api/src/noa_api/api/routes/threads.py`, `apps/api/src/noa_api/api/routes/admin.py`, `apps/api/src/noa_api/api/routes/whm_admin.py`, and key assistant transport/service paths.
+- Added `apps/api/src/noa_api/api/error_codes.py` as a shared backend error-code catalog for the currently covered route set.
 
 What remains
-- Stable `error_code` coverage is still selective; most non-auth routes still rely on `detail` only.
+- Stable `error_code` coverage is broader, but still selective; some routes and helper-level validation errors still rely on `detail` only.
 - Validation and generic route exceptions are shaped consistently now, but they are not yet normalized into a larger app-wide error-code catalog.
 
 ### W4: Assistant transport route is large and multi-responsibility
@@ -147,10 +153,14 @@ What changed on this branch
 - Extracted `SQLAssistantRepository` into `apps/api/src/noa_api/api/routes/assistant_repository.py`.
 - Extracted shared tool-result payload shaping into `apps/api/src/noa_api/api/routes/assistant_tool_execution.py`.
 - Added better failure sanitization and internal logging in assistant tool execution paths.
+- Extracted command validation/application into `apps/api/src/noa_api/api/routes/assistant_commands.py`.
+- Extracted streaming placeholder/fallback/flush helpers into `apps/api/src/noa_api/api/routes/assistant_streaming.py`.
+- Moved pre-agent validation/loading/command application before SSE startup so structured HTTP errors survive and pre-stream failures roll back safely.
+- Added focused assistant helper tests around the new seams.
 
 What remains
-- `apps/api/src/noa_api/api/routes/assistant.py` is still large and multi-responsibility.
-- Validation/orchestration/streaming concerns are still colocated and should be split further in follow-up work.
+- `apps/api/src/noa_api/api/routes/assistant.py` is smaller but still large and multi-responsibility.
+- Orchestration, service-layer HTTP mapping, and some logging concerns are still colocated and should be split further in follow-up work.
 
 ### W5: Multiple SQLAlchemy engines/pools instantiated across modules
 Status
@@ -222,7 +232,7 @@ What changed on this branch
 
 ### W8: Limited operational telemetry (web + api)
 Status
-- Not yet
+- Partial
 
 What
 - Backend lacks request logging and structured context.
@@ -233,20 +243,22 @@ Why it matters
 
 What changed on this branch
 - Improved local diagnostic quality through request IDs, centralized error envelopes, and internal exception logging.
+- Added structured request completion and assistant/backend route event logging suitable for a log aggregator.
+- Added request/entity context binding for the touched backend flows without adding a vendor dependency yet.
 
 What remains
 - No dedicated frontend error reporting tool is installed.
 - No backend tracing/metrics stack is present.
-- Request logging is better, but still not a full production telemetry solution.
+- Backend request/event logging is stronger, but still not a full production telemetry solution.
 
 ---
 
 ## Recommendations (Prioritized)
 
 Updated status after this branch:
-- Completed on this branch: request context middleware, centralized error shaping foundation, shared DB engine/session lifecycle, tool failure sanitization, frontend shared error mapping, app-level error boundary, and initial assistant extraction.
-- Planning completed on this branch: a backend-only follow-up design and implementation plan for wider `error_code` adoption, further assistant decomposition, richer structured logging context, and an audit-report refresh.
-- Still recommended next: execute that backend plan, then revisit backend telemetry after the assistant split and log fields stabilize.
+- Completed on the foundation branch: request context middleware, centralized error shaping foundation, shared DB engine/session lifecycle, tool failure sanitization, frontend shared error mapping, app-level error boundary, and initial assistant extraction.
+- Completed on `feat/backend-error-code-assistant-logging`: wider backend `error_code` adoption for threads/admin/WHM/assistant flows, assistant command/streaming extraction, request/entity structured logging context for the touched backend flows, logging-handler compatibility with preconfigured root handlers, and this report refresh.
+- Still recommended next: close the remaining selective `error_code` gaps, continue shrinking assistant transport responsibilities, and revisit backend telemetry after the new logging/event field set stabilizes.
 
 ### P0 (highest impact)
 - Establish a consistent logging strategy and make it real:
@@ -293,17 +305,38 @@ Done on `feat/error-handling-logging-foundation`
   - `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`
   - `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`
 
+Done on `feat/backend-error-code-assistant-logging`
+- Stable backend `error_code` coverage expanded for threads, admin, WHM admin, and key assistant transport/service errors
+- Shared backend error-code catalog added in `apps/api/src/noa_api/api/error_codes.py`
+- Assistant helper extraction added in `apps/api/src/noa_api/api/routes/assistant_commands.py` and `apps/api/src/noa_api/api/routes/assistant_streaming.py`
+- Assistant pre-agent failures now return structured HTTP errors before SSE starts, while agent-phase failures still degrade gracefully in-stream
+- Structured logging context helpers added in `apps/api/src/noa_api/core/logging_context.py`
+- Request completion, unhandled exception, assistant, admin, threads, and WHM admin logs now emit structured event-style fields in the touched flows
+- Logging setup now upgrades pre-existing root handlers so structured output still works under Uvicorn-style startup
+- Focused regression coverage added for logging context, request logging setup, assistant helper seams, and widened route error-code contracts
+
 Not yet done on this branch
-- Broader route-by-route `error_code` adoption beyond auth and tool execution flows
-- Full assistant transport decomposition into smaller orchestration/streaming modules
-- Rich, consistent structured logging context binding across assistant and related backend route flows
+- Broader route-by-route `error_code` adoption beyond the newly covered threads/admin/WHM/assistant flows
+- Full assistant transport decomposition into smaller orchestration/service modules
+- Rich, consistent structured logging context binding across the rest of the backend surface
 - Backend telemetry vendor adoption (`OpenTelemetry`, etc.) remains deferred
 
 Recommended next
-1. Execute `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, starting with route-level `error_code` tests and migrations in `threads.py`, `admin.py`, `whm_admin.py`, and assistant validation branches.
-2. Continue splitting `apps/api/src/noa_api/api/routes/assistant.py` into command and streaming helpers while preserving current SSE behavior with targeted characterization tests.
-3. Add structured logging context binding for `user_id`, `thread_id`, `tool_name`, `tool_run_id`, and `action_request_id` in assistant and related backend route flows.
-4. Revisit backend telemetry only after the assistant refactor lands and the desired structured log fields have stabilized.
+1. Finish the remaining assistant error-contract cleanup, especially malformed or missing ID paths (`toolCallId`, `actionRequestId`) and any other remaining detail-only helper responses.
+2. Continue splitting `apps/api/src/noa_api/api/routes/assistant.py` into smaller orchestration/service layers so route code stops owning service-level HTTP mapping.
+3. Extend `log_context(...)` adoption beyond the touched backend flows so more successful paths bind `user_id`, `thread_id`, `tool_name`, and related identifiers consistently.
+4. Revisit backend telemetry only after the new structured log/event fields stabilize and you know which data should feed traces/metrics.
+
+Execution handoff prepared
+- Worktree: `.worktrees/backend-error-code-assistant-logging`
+- Branch: `feat/backend-error-code-assistant-logging`
+- Primary plan: `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`
+- Verification completed in this worktree:
+  - `uv run pytest -q tests/test_request_context.py tests/test_logging_context.py tests/test_assistant.py tests/test_assistant_service.py tests/test_assistant_commands.py tests/test_assistant_streaming.py tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py` -> `74 passed`
+  - `uv run ruff check src/noa_api/core/logging.py src/noa_api/core/logging_context.py src/noa_api/api/error_handling.py src/noa_api/api/routes/assistant.py src/noa_api/api/routes/admin.py src/noa_api/api/routes/threads.py src/noa_api/api/routes/whm_admin.py tests/test_request_context.py tests/test_logging_context.py tests/test_assistant.py tests/test_assistant_service.py` -> `All checks passed!`
+- Full backend test suite also passed: `uv run pytest -q` -> `156 passed`
+- Full backend lint still has one unrelated pre-existing issue outside this change set: `uv run ruff check src tests` reports `F401` in `apps/api/src/noa_api/api/routes/auth.py:1`
+- Next session can continue from this branch as-is; before committing or opening a PR, decide whether to fix the unrelated `auth.py` lint warning here or leave it explicitly out of scope.
 
 ---
 

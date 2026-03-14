@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator
 from datetime import datetime
-from typing import Literal
+import logging
+from typing import Literal, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -13,11 +14,16 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
+from noa_api.api.error_codes import THREAD_NOT_FOUND, USER_PENDING_APPROVAL
+from noa_api.api.error_handling import ApiHTTPException
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
+from noa_api.core.logging_context import log_context
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.models import Message, Thread
 
 router = APIRouter(tags=["threads"])
+
+logger = logging.getLogger(__name__)
 
 
 class ThreadResponse(BaseModel):
@@ -318,6 +324,16 @@ def _to_thread_response(thread: Thread) -> ThreadResponse:
     )
 
 
+def _raise_thread_not_found(*, owner_user_id: UUID, thread_id: UUID) -> NoReturn:
+    with log_context(thread_id=str(thread_id), user_id=str(owner_user_id)):
+        logger.info("thread_not_found")
+    raise ApiHTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Thread not found",
+        error_code=THREAD_NOT_FOUND,
+    )
+
+
 async def get_thread_service() -> AsyncGenerator[ThreadService, None]:
     async with get_session_factory()() as session:
         service = ThreadService(SQLThreadRepository(session))
@@ -333,8 +349,12 @@ async def _require_active_user(
     current_user: AuthorizationUser = Depends(get_current_auth_user),
 ) -> AuthorizationUser:
     if not current_user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="User pending approval"
+        with log_context(user_id=str(current_user.user_id)):
+            logger.info("threads_access_denied_inactive_user")
+        raise ApiHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User pending approval",
+            error_code=USER_PENDING_APPROVAL,
         )
     return current_user
 
@@ -380,9 +400,7 @@ async def get_thread(
         owner_user_id=current_user.user_id, thread_id=id
     )
     if thread is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
+        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
     return _to_thread_response(thread)
 
 
@@ -397,9 +415,7 @@ async def patch_thread(
         owner_user_id=current_user.user_id, thread_id=id, title=payload.title
     )
     if thread is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
+        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
     return _to_thread_response(thread)
 
 
@@ -413,9 +429,7 @@ async def archive_thread(
         owner_user_id=current_user.user_id, thread_id=id, is_archived=True
     )
     if thread is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
+        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
     return _to_thread_response(thread)
 
 
@@ -429,9 +443,7 @@ async def unarchive_thread(
         owner_user_id=current_user.user_id, thread_id=id, is_archived=False
     )
     if thread is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
+        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
     return _to_thread_response(thread)
 
 
@@ -445,9 +457,7 @@ async def delete_thread(
         owner_user_id=current_user.user_id, thread_id=id
     )
     if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
+        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -462,9 +472,7 @@ async def generate_thread_title(
         owner_user_id=current_user.user_id, thread_id=id
     )
     if stored is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
+        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
     if stored.title is not None:
         return GenerateTitleResponse(title=stored.title)
 
@@ -508,7 +516,5 @@ async def generate_thread_title(
         owner_user_id=current_user.user_id, thread_id=id
     )
     if refreshed is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Thread not found"
-        )
+        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
     return GenerateTitleResponse(title=refreshed.title or title)

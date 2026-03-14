@@ -4,13 +4,16 @@ import logging
 from typing import Any
 
 import structlog
+from structlog.contextvars import merge_contextvars
 
 from noa_api.core.request_context import get_request_id
 
 
 def configure_logging() -> None:
     shared_processors = [
+        merge_contextvars,
         _add_request_context,
+        structlog.stdlib.ExtraAdder(),
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
@@ -30,6 +33,10 @@ def configure_logging() -> None:
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
         root_logger.setLevel(logging.INFO)
+    else:
+        for handler in root_logger.handlers:
+            if not isinstance(handler.formatter, structlog.stdlib.ProcessorFormatter):
+                handler.setFormatter(formatter)
 
     structlog.configure(
         processors=[

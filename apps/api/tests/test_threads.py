@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.threads import get_thread_service, router as threads_router
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
 
@@ -120,9 +121,15 @@ class _FakeThreadService:
         return True
 
 
-async def test_threads_routes_enforce_owner_scoping() -> None:
+def _create_threads_app() -> FastAPI:
     app = FastAPI()
+    install_error_handling(app)
     app.include_router(threads_router)
+    return app
+
+
+async def test_threads_routes_enforce_owner_scoping() -> None:
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -148,7 +155,10 @@ async def test_threads_routes_enforce_owner_scoping() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         list_response = await client.get("/threads")
-        get_other_response = await client.get(f"/threads/{other_thread.id}")
+        get_other_response = await client.get(
+            f"/threads/{other_thread.id}",
+            headers={"x-request-id": "threads-missing-thread"},
+        )
         patch_other_response = await client.patch(
             f"/threads/{other_thread.id}", json={"title": "Nope"}
         )
@@ -162,14 +172,18 @@ async def test_threads_routes_enforce_owner_scoping() -> None:
     assert [item["id"] for item in threads] == [str(owner_thread.id)]
 
     assert get_other_response.status_code == 404
+    get_other_body = get_other_response.json()
+    assert get_other_body["detail"] == "Thread not found"
+    assert get_other_body["error_code"] == "thread_not_found"
+    assert get_other_body["request_id"] == "threads-missing-thread"
+    assert get_other_response.headers["x-request-id"] == get_other_body["request_id"]
     assert patch_other_response.status_code == 404
     assert archive_other_response.status_code == 404
     assert delete_other_response.status_code == 404
 
 
 async def test_threads_routes_archive_unarchive_and_delete() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -214,8 +228,7 @@ async def test_threads_routes_archive_unarchive_and_delete() -> None:
 
 
 async def test_threads_routes_deny_inactive_user() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     app.dependency_overrides[get_thread_service] = lambda: service
@@ -230,16 +243,22 @@ async def test_threads_routes_deny_inactive_user() -> None:
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        list_response = await client.get("/threads")
+        list_response = await client.get(
+            "/threads", headers={"x-request-id": "threads-pending-approval"}
+        )
         create_response = await client.post("/threads", json={"title": "Blocked"})
 
     assert list_response.status_code == 403
+    list_body = list_response.json()
+    assert list_body["detail"] == "User pending approval"
+    assert list_body["error_code"] == "user_pending_approval"
+    assert list_body["request_id"] == "threads-pending-approval"
+    assert list_response.headers["x-request-id"] == list_body["request_id"]
     assert create_response.status_code == 403
 
 
 async def test_threads_routes_initialize_is_idempotent_per_user_local_id() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -279,8 +298,7 @@ async def test_threads_routes_initialize_is_idempotent_per_user_local_id() -> No
 
 
 async def test_threads_routes_reject_oversized_title() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -302,8 +320,7 @@ async def test_threads_routes_reject_oversized_title() -> None:
 
 
 async def test_threads_title_endpoint_generates_title_for_owner_thread() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -345,8 +362,7 @@ async def test_threads_title_endpoint_generates_title_for_owner_thread() -> None
 async def test_threads_title_endpoint_persists_generated_title_for_later_list_fetch() -> (
     None
 ):
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -382,8 +398,7 @@ async def test_threads_title_endpoint_persists_generated_title_for_later_list_fe
 
 
 async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -428,8 +443,7 @@ async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch() -
 async def test_threads_title_endpoint_returns_stored_title_when_set_during_generation() -> (
     None
 ):
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     class _RaceyThreadService(_FakeThreadService):
         def __init__(self) -> None:
@@ -505,8 +519,7 @@ async def test_threads_title_endpoint_returns_stored_title_when_set_during_gener
 
 
 async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -535,8 +548,7 @@ async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
 
 
 async def test_threads_title_endpoint_supports_parts_message_shape() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()
@@ -576,8 +588,7 @@ async def test_threads_title_endpoint_supports_parts_message_shape() -> None:
 
 
 async def test_threads_title_endpoint_supports_string_content_shape() -> None:
-    app = FastAPI()
-    app.include_router(threads_router)
+    app = _create_threads_app()
 
     service = _FakeThreadService()
     owner_id = uuid4()

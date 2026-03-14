@@ -1,9 +1,18 @@
+import logging
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
 
+from noa_api.api.error_codes import (
+    ADMIN_ACCESS_REQUIRED,
+    ADMIN_USER_NOT_FOUND,
+    LAST_ACTIVE_ADMIN,
+    SELF_DEACTIVATE_ADMIN,
+    UNKNOWN_TOOLS,
+)
+from noa_api.api.error_handling import ApiHTTPException
 from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
@@ -13,8 +22,11 @@ from noa_api.core.auth.authorization import (
     get_authorization_service,
     get_current_auth_user,
 )
+from noa_api.core.logging_context import log_context
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+logger = logging.getLogger(__name__)
 
 
 class AdminUserResponse(BaseModel):
@@ -65,8 +77,18 @@ async def _require_admin(
     current_user: AuthorizationUser = Depends(get_current_auth_user),
 ) -> AuthorizationUser:
     if not current_user.is_active or "admin" not in current_user.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required"
+        logger.info(
+            "admin_access_denied",
+            extra={
+                "is_active": current_user.is_active,
+                "roles": current_user.roles,
+                "user_id": str(current_user.user_id),
+            },
+        )
+        raise ApiHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required",
+            error_code=ADMIN_ACCESS_REQUIRED,
         )
     return current_user
 
@@ -87,21 +109,35 @@ async def update_user_active(
     admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> UpdateUserResponse:
-    try:
-        user = await authorization_service.set_user_active(
-            id,
-            is_active=payload.is_active,
-            actor_email=admin_user.email,
-            actor_user_id=admin_user.user_id,
-        )
-    except (LastActiveAdminError, SelfDeactivateAdminError) as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
-        ) from exc
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+    with log_context(target_user_id=str(id), user_id=str(admin_user.user_id)):
+        try:
+            user = await authorization_service.set_user_active(
+                id,
+                is_active=payload.is_active,
+                actor_email=admin_user.email,
+                actor_user_id=admin_user.user_id,
+            )
+        except LastActiveAdminError as exc:
+            logger.info("admin_last_active_admin_conflict")
+            raise ApiHTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+                error_code=LAST_ACTIVE_ADMIN,
+            ) from exc
+        except SelfDeactivateAdminError as exc:
+            logger.info("admin_self_deactivate_conflict")
+            raise ApiHTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+                error_code=SELF_DEACTIVATE_ADMIN,
+            ) from exc
+        if user is None:
+            logger.info("admin_user_not_found")
+            raise ApiHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+                error_code=ADMIN_USER_NOT_FOUND,
+            )
     return UpdateUserResponse(user=_to_user_response(user))
 
 
@@ -121,16 +157,26 @@ async def set_user_tools(
     admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> UpdateUserResponse:
-    try:
-        user = await authorization_service.set_user_tools(
-            id, payload.tools, actor_email=admin_user.email
-        )
-    except UnknownToolError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
-        )
+    with log_context(target_user_id=str(id), user_id=str(admin_user.user_id)):
+        try:
+            user = await authorization_service.set_user_tools(
+                id, payload.tools, actor_email=admin_user.email
+            )
+        except UnknownToolError as exc:
+            logger.info(
+                "admin_unknown_tools",
+                extra={"requested_tools": payload.tools},
+            )
+            raise ApiHTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(exc),
+                error_code=UNKNOWN_TOOLS,
+            ) from exc
+        if user is None:
+            logger.info("admin_user_not_found")
+            raise ApiHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+                error_code=ADMIN_USER_NOT_FOUND,
+            )
     return UpdateUserResponse(user=_to_user_response(user))

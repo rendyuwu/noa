@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from time import perf_counter
 from typing import Any, Mapping
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from noa_api.core.request_context import (
     reset_request_id,
     set_request_id,
 )
+from noa_api.core.logging_context import log_context
 
 REQUEST_ID_HEADER = "X-Request-Id"
 
@@ -45,17 +47,38 @@ class RequestContextMiddleware:
             return
 
         request_id = _resolve_request_id(Headers(scope=scope).get("x-request-id"))
+        request_method = scope.get("method")
+        request_path = scope.get("path")
         scope.setdefault("state", {})["request_id"] = request_id
         token = set_request_id(request_id)
+        started_at = perf_counter()
+        response_status_code = 500
 
         async def send_with_request_id(message: Message) -> None:
+            nonlocal response_status_code
             if message["type"] == "http.response.start":
+                response_status_code = int(message["status"])
                 headers = MutableHeaders(scope=message)
                 headers[REQUEST_ID_HEADER] = request_id
             await send(message)
 
         try:
-            await self.app(scope, receive, send_with_request_id)
+            with log_context(
+                request_id=request_id,
+                request_method=request_method,
+                request_path=request_path,
+            ):
+                try:
+                    await self.app(scope, receive, send_with_request_id)
+                finally:
+                    duration_ms = int((perf_counter() - started_at) * 1000)
+                    logger.info(
+                        "api_request_completed",
+                        extra={
+                            "duration_ms": duration_ms,
+                            "status_code": response_status_code,
+                        },
+                    )
         finally:
             reset_request_id(token)
 
@@ -97,7 +120,15 @@ async def request_validation_exception_handler(
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    logger.exception("Unhandled exception", exc_info=exc)
+    logger.exception(
+        "api_unhandled_exception",
+        exc_info=exc,
+        extra={
+            "error_type": type(exc).__name__,
+            "request_method": request.method,
+            "request_path": request.url.path,
+        },
+    )
     return _json_error_response(
         status_code=500,
         detail="Internal server error",

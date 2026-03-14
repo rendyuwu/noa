@@ -7,7 +7,10 @@ from uuid import UUID, uuid4
 
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+import pytest
+from sqlalchemy.exc import IntegrityError
 
+from noa_api.api.error_handling import ApiHTTPException, install_error_handling
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
 
 
@@ -47,6 +50,17 @@ class _WHMServerServiceProtocol(Protocol):
         verify_ssl: bool,
     ) -> _WHMServer: ...
 
+    async def update_server(
+        self,
+        *,
+        server_id: UUID,
+        name: str | None = None,
+        base_url: str | None = None,
+        api_username: str | None = None,
+        api_token: str | None = None,
+        verify_ssl: bool | None = None,
+    ) -> _WHMServer | None: ...
+
 
 class _FakeWHMServerService:
     def __init__(self) -> None:
@@ -78,16 +92,149 @@ class _FakeWHMServerService:
         self._servers[server.id] = server
         return server
 
+    async def update_server(
+        self,
+        *,
+        server_id: UUID,
+        name: str | None = None,
+        base_url: str | None = None,
+        api_username: str | None = None,
+        api_token: str | None = None,
+        verify_ssl: bool | None = None,
+    ) -> _WHMServer | None:
+        _ = api_token
+        server = self._servers.get(server_id)
+        if server is None:
+            return None
+        if name is not None:
+            server.name = name
+        if base_url is not None:
+            server.base_url = base_url
+        if api_username is not None:
+            server.api_username = api_username
+        if verify_ssl is not None:
+            server.verify_ssl = verify_ssl
+        server.updated_at = datetime.now(UTC)
+        return server
 
-async def test_whm_admin_routes_never_return_api_token() -> None:
+
+class _IntegrityErrorWHMServerRepository:
+    async def list_servers(self) -> list[_WHMServer]:
+        return []
+
+    async def get_by_id(self, *, server_id: UUID) -> _WHMServer | None:
+        _ = server_id
+        return None
+
+    async def create(
+        self,
+        *,
+        name: str,
+        base_url: str,
+        api_username: str,
+        api_token: str,
+        verify_ssl: bool,
+    ) -> _WHMServer:
+        _ = (name, base_url, api_username, api_token, verify_ssl)
+        raise IntegrityError("insert into whm_servers", {}, Exception("duplicate key"))
+
+    async def update(
+        self,
+        *,
+        server_id: UUID,
+        name: str | None = None,
+        base_url: str | None = None,
+        api_username: str | None = None,
+        api_token: str | None = None,
+        verify_ssl: bool | None = None,
+    ) -> _WHMServer | None:
+        _ = (server_id, name, base_url, api_username, api_token, verify_ssl)
+        raise AssertionError("update should not be called")
+
+    async def delete(self, *, server_id: UUID) -> bool:
+        _ = server_id
+        raise AssertionError("delete should not be called")
+
+
+class _MissingWHMServerRepository:
+    async def list_servers(self) -> list[_WHMServer]:
+        return []
+
+    async def get_by_id(self, *, server_id: UUID) -> _WHMServer | None:
+        _ = server_id
+        return None
+
+    async def create(
+        self,
+        *,
+        name: str,
+        base_url: str,
+        api_username: str,
+        api_token: str,
+        verify_ssl: bool,
+    ) -> _WHMServer:
+        _ = (name, base_url, api_username, api_token, verify_ssl)
+        raise AssertionError("create should not be called")
+
+    async def update(
+        self,
+        *,
+        server_id: UUID,
+        name: str | None = None,
+        base_url: str | None = None,
+        api_username: str | None = None,
+        api_token: str | None = None,
+        verify_ssl: bool | None = None,
+    ) -> _WHMServer | None:
+        _ = (server_id, name, base_url, api_username, api_token, verify_ssl)
+        raise AssertionError("update should not be called")
+
+    async def delete(self, *, server_id: UUID) -> bool:
+        _ = server_id
+        raise AssertionError("delete should not be called")
+
+
+class _ConflictCreateWHMServerService:
+    def __init__(self, error: Exception) -> None:
+        self._error = error
+
+    async def list_servers(self) -> list[_WHMServer]:
+        return []
+
+    async def create_server(
+        self,
+        *,
+        name: str,
+        base_url: str,
+        api_username: str,
+        api_token: str,
+        verify_ssl: bool,
+    ) -> _WHMServer:
+        _ = (name, base_url, api_username, api_token, verify_ssl)
+        raise self._error
+
+    async def update_server(
+        self,
+        *,
+        server_id: UUID,
+        name: str | None = None,
+        base_url: str | None = None,
+        api_username: str | None = None,
+        api_token: str | None = None,
+        verify_ssl: bool | None = None,
+    ) -> _WHMServer | None:
+        _ = (server_id, name, base_url, api_username, api_token, verify_ssl)
+        raise AssertionError("update should not be called")
+
+
+def _create_whm_admin_app(service: _WHMServerServiceProtocol) -> FastAPI:
     from noa_api.api.routes.whm_admin import (
         get_whm_server_service,
         router as whm_admin_router,
     )
 
-    service = _FakeWHMServerService()
-
     app = FastAPI()
+    install_error_handling(app)
     app.include_router(whm_admin_router)
     app.dependency_overrides[get_whm_server_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
@@ -98,6 +245,12 @@ async def test_whm_admin_routes_never_return_api_token() -> None:
         roles=["admin"],
         tools=[],
     )
+    return app
+
+
+async def test_whm_admin_routes_never_return_api_token() -> None:
+    service = _FakeWHMServerService()
+    app = _create_whm_admin_app(service)
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -123,3 +276,85 @@ async def test_whm_admin_routes_never_return_api_token() -> None:
     assert "SECRET" not in list_response.text
     assert list_payload["servers"][0]["name"] == "web1"
     assert "api_token" not in list_payload["servers"][0]
+
+
+async def test_whm_admin_route_returns_error_contract_for_missing_server() -> None:
+    service = _FakeWHMServerService()
+    app = _create_whm_admin_app(service)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch(
+            f"/admin/whm/servers/{uuid4()}",
+            json={"name": "renamed"},
+            headers={"x-request-id": "whm-server-missing"},
+        )
+
+    assert response.status_code == 404
+    body = response.json()
+    assert body["detail"] == "WHM server not found"
+    assert body["error_code"] == "whm_server_not_found"
+    assert body["request_id"] == "whm-server-missing"
+    assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_whm_server_service_raises_typed_conflict_error_for_duplicate_name() -> (
+    None
+):
+    from noa_api.api.routes.whm_admin import WHMServerService
+
+    service = WHMServerService(_IntegrityErrorWHMServerRepository())
+
+    with pytest.raises(Exception) as exc_info:
+        await service.create_server(
+            name="web1",
+            base_url="https://whm.example.com:2087",
+            api_username="root",
+            api_token="SECRET",
+            verify_ssl=True,
+        )
+
+    assert type(exc_info.value).__name__ == "WHMServerNameExistsError"
+    assert not isinstance(exc_info.value, ApiHTTPException)
+
+
+async def test_whm_server_service_raises_typed_not_found_error_for_missing_validate_target() -> (
+    None
+):
+    from noa_api.api.routes.whm_admin import WHMServerService
+
+    service = WHMServerService(_MissingWHMServerRepository())
+
+    with pytest.raises(Exception) as exc_info:
+        await service.validate_server(server_id=uuid4())
+
+    assert type(exc_info.value).__name__ == "WHMServerNotFoundError"
+    assert not isinstance(exc_info.value, ApiHTTPException)
+
+
+async def test_whm_admin_route_maps_service_conflict_error_to_http_contract() -> None:
+    from noa_api.api.routes import whm_admin
+
+    service = _ConflictCreateWHMServerService(whm_admin.WHMServerNameExistsError())
+    app = _create_whm_admin_app(service)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/admin/whm/servers",
+            json={
+                "name": "web1",
+                "base_url": "https://whm.example.com:2087",
+                "api_username": "root",
+                "api_token": "SECRET",
+                "verify_ssl": True,
+            },
+            headers={"x-request-id": "whm-server-conflict"},
+        )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["detail"] == "WHM server name already exists"
+    assert body["error_code"] == "whm_server_name_exists"
+    assert body["request_id"] == "whm-server-conflict"
+    assert response.headers["x-request-id"] == body["request_id"]
