@@ -252,6 +252,11 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
             "/auth/login", json={"email": "user@example.com", "password": "bad"}
         )
     assert invalid_response.status_code == 401
+    invalid_body = invalid_response.json()
+    assert invalid_body["detail"] == "Invalid credentials"
+    assert invalid_body["error_code"] == "invalid_credentials"
+    assert isinstance(invalid_body["request_id"], str)
+    assert invalid_response.headers["x-request-id"] == invalid_body["request_id"]
 
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="pending"
@@ -262,6 +267,28 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
             "/auth/login", json={"email": "user@example.com", "password": "ok"}
         )
     assert pending_response.status_code == 403
+    pending_body = pending_response.json()
+    assert pending_body["detail"] == "User pending approval"
+    assert pending_body["error_code"] == "user_pending_approval"
+    assert isinstance(pending_body["request_id"], str)
+    assert pending_response.headers["x-request-id"] == pending_body["request_id"]
+
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="auth_error"
+    )
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        unavailable_response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+    assert unavailable_response.status_code == 503
+    unavailable_body = unavailable_response.json()
+    assert unavailable_body["detail"] == "Authentication service unavailable"
+    assert unavailable_body["error_code"] == "authentication_service_unavailable"
+    assert isinstance(unavailable_body["request_id"], str)
+    assert (
+        unavailable_response.headers["x-request-id"] == unavailable_body["request_id"]
+    )
 
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="ok"
@@ -292,7 +319,11 @@ async def test_login_route_maps_auth_service_failure_to_503() -> None:
         )
 
     assert response.status_code == 503
-    assert response.json() == {"detail": "Authentication service unavailable"}
+    body = response.json()
+    assert body["detail"] == "Authentication service unavailable"
+    assert body["error_code"] == "authentication_service_unavailable"
+    assert isinstance(body["request_id"], str)
+    assert response.headers["x-request-id"] == body["request_id"]
 
 
 async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
@@ -330,6 +361,11 @@ async def test_me_route_rejects_invalid_token() -> None:
         )
 
     assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Invalid token"
+    assert body["error_code"] == "invalid_token"
+    assert isinstance(body["request_id"], str)
+    assert response.headers["x-request-id"] == body["request_id"]
 
 
 async def test_me_route_rejects_inactive_user() -> None:
