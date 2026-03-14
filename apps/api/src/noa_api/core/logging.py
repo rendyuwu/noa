@@ -24,9 +24,15 @@ def configure_logging() -> None:
             structlog.processors.JSONRenderer(),
         ],
     )
-    handler = logging.StreamHandler()
-    handler.setFormatter(formatter)
-    logging.basicConfig(level=logging.INFO, handlers=[handler], force=True)
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        for handler in root_logger.handlers:
+            handler.setFormatter(formatter)
+    else:
+        handler = logging.StreamHandler()
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+        root_logger.setLevel(logging.INFO)
 
     structlog.configure(
         processors=[

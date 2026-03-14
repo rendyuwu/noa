@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 from fastapi import Response
 from httpx import ASGITransport, AsyncClient
 
@@ -48,3 +50,28 @@ async def test_uncaught_exception_returns_safe_500_envelope_with_request_id() ->
         "error_code": "internal_server_error",
         "request_id": request_id,
     }
+
+
+def test_create_app_preserves_existing_root_logging_configuration() -> None:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_formatters = {
+        id(handler): handler.formatter for handler in original_handlers
+    }
+    sentinel = logging.StreamHandler()
+    sentinel.setLevel(logging.ERROR)
+    root_logger.handlers = [sentinel]
+    root_logger.setLevel(logging.WARNING)
+
+    try:
+        create_app()
+        create_app()
+
+        assert root_logger.handlers == [sentinel]
+        assert root_logger.level == logging.WARNING
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+        for handler in original_handlers:
+            handler.setFormatter(original_formatters[id(handler)])
