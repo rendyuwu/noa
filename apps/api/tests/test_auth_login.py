@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.core.auth.auth_service import AuthResult, AuthService, AuthUser
 from noa_api.core.auth.errors import (
@@ -151,6 +152,13 @@ class _FakeRouteAuthService:
         )
 
 
+def _create_auth_app() -> FastAPI:
+    app = FastAPI()
+    install_error_handling(app)
+    app.include_router(auth_router)
+    return app
+
+
 async def test_auth_service_auto_provisions_pending_user() -> None:
     repo = _InMemoryAuthRepository()
     service = AuthService(
@@ -240,8 +248,7 @@ async def test_auth_service_updates_last_login_at_for_existing_active_user() -> 
 
 
 async def test_login_route_maps_auth_errors_and_success() -> None:
-    app = FastAPI()
-    app.include_router(auth_router)
+    app = _create_auth_app()
 
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="invalid"
@@ -306,8 +313,7 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
 
 
 async def test_login_route_maps_auth_service_failure_to_503() -> None:
-    app = FastAPI()
-    app.include_router(auth_router)
+    app = _create_auth_app()
 
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="auth_error"
@@ -327,8 +333,7 @@ async def test_login_route_maps_auth_service_failure_to_503() -> None:
 
 
 async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
-    app = FastAPI()
-    app.include_router(auth_router)
+    app = _create_auth_app()
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="ok"
     )
@@ -347,8 +352,7 @@ async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
 
 
 async def test_me_route_rejects_invalid_token() -> None:
-    app = FastAPI()
-    app.include_router(auth_router)
+    app = _create_auth_app()
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="ok"
     )
@@ -369,8 +373,7 @@ async def test_me_route_rejects_invalid_token() -> None:
 
 
 async def test_me_route_rejects_inactive_user() -> None:
-    app = FastAPI()
-    app.include_router(auth_router)
+    app = _create_auth_app()
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="ok"
     )
@@ -383,6 +386,10 @@ async def test_me_route_rejects_inactive_user() -> None:
         )
 
     assert response.status_code == 403
+    body = response.json()
+    assert body["detail"] == "User pending approval"
+    assert isinstance(body["request_id"], str)
+    assert response.headers["x-request-id"] == body["request_id"]
 
 
 def test_settings_requires_jwt_secret_in_non_dev_environment() -> None:
