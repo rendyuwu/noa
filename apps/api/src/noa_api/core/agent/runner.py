@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import re
 from dataclasses import dataclass
 from inspect import signature
@@ -20,6 +21,9 @@ from noa_api.core.tools.registry import (
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -541,6 +545,14 @@ class AgentRunner:
             return [call_message, result_message]
         except Exception as exc:
             sanitized_error = sanitize_tool_error(exc)
+            logger.exception(
+                "Agent tool execution failed (tool_name=%s thread_id=%s tool_run_id=%s requested_by_user_id=%s error_code=%s)",
+                tool.name,
+                thread_id,
+                started.id,
+                requested_by_user_id,
+                sanitized_error.error_code,
+            )
             _ = await self._action_tool_run_service.fail_tool_run(
                 tool_run_id=started.id,
                 error=sanitized_error.error_code,

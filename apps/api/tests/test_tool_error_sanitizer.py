@@ -174,3 +174,23 @@ async def test_tool_failure_contract_redacts_raw_exceptions(
         "error": expected_message,
         "error_code": expected_code,
     }
+
+
+async def test_tool_failure_contract_logs_original_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level("ERROR"):
+        run, part = await _run_failed_tool_call(
+            monkeypatch=monkeypatch,
+            tool_name="failing_tool_logged",
+            exc_factory=lambda: RuntimeError("token=secret"),
+        )
+
+    assert run.error == "tool_execution_failed"
+    assert part["result"] == {
+        "error": "Tool execution failed",
+        "error_code": "tool_execution_failed",
+    }
+    assert "tool execution failed" in caplog.text
+    assert "token=secret" in caplog.text

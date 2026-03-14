@@ -387,6 +387,71 @@ async def test_assistant_service_approve_change_tool_timeout_is_sanitized(
     }
 
 
+async def test_assistant_service_approve_change_tool_logs_original_exception(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="failing_change_logged",
+        args={},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+
+    async def failing_change(*, session, **kwargs):
+        _ = session, kwargs
+        raise RuntimeError("boom")
+
+    tool = ToolDefinition(
+        name="failing_change_logged",
+        description="Always fails.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        execute=failing_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    with caplog.at_level("ERROR"):
+        await service.approve_action(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            action_request_id=str(request.id),
+            is_user_active=True,
+            authorize_tool_access=lambda _tool: _allow(),
+        )
+
+    run = next(iter(repo.tool_runs.values()))
+    assert run.error == "tool_execution_failed"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Tool execution failed",
+        "error_code": "tool_execution_failed",
+    }
+    assert "Approved tool execution failed" in caplog.text
+    assert "boom" in caplog.text
+
+
 async def test_assistant_service_deny_marks_denied_with_audit_and_message() -> None:
     owner_id = uuid4()
     thread_id = uuid4()

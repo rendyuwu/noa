@@ -496,6 +496,15 @@ class AssistantService:
             raise
         except Exception as exc:
             sanitized_error = sanitize_tool_error(exc)
+            logger.exception(
+                "Approved tool execution failed (tool_name=%s thread_id=%s action_request_id=%s tool_run_id=%s owner_user_id=%s error_code=%s)",
+                approved.tool_name,
+                thread_id,
+                approved.id,
+                started.id,
+                owner_user_id,
+                sanitized_error.error_code,
+            )
             _ = await self._action_tool_run_service.fail_tool_run(
                 tool_run_id=started.id,
                 error=sanitized_error.error_code,
