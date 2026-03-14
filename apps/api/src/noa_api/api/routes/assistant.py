@@ -26,6 +26,7 @@ from noa_api.core.auth.authorization import (
     get_authorization_service,
     get_current_auth_user,
 )
+from noa_api.core.tool_error_sanitizer import sanitize_tool_error
 from noa_api.core.tools.registry import get_tool_definition, get_tool_registry
 from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
@@ -494,8 +495,10 @@ class AssistantService:
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            sanitized_error = sanitize_tool_error(exc)
             _ = await self._action_tool_run_service.fail_tool_run(
-                tool_run_id=started.id, error=str(exc)
+                tool_run_id=started.id,
+                error=sanitized_error.error_code,
             )
             await self._repository.create_message(
                 thread_id=thread_id,
@@ -505,7 +508,7 @@ class AssistantService:
                         "type": "tool-result",
                         "toolName": approved.tool_name,
                         "toolCallId": tool_call_id,
-                        "result": {"error": str(exc)},
+                        "result": sanitized_error.as_result(),
                         "isError": True,
                     }
                 ],
@@ -518,7 +521,8 @@ class AssistantService:
                     "thread_id": str(thread_id),
                     "tool_run_id": str(started.id),
                     "action_request_id": str(approved.id),
-                    "error": str(exc),
+                    "error": sanitized_error.error,
+                    "error_code": sanitized_error.error_code,
                 },
             )
             return

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.config import settings
 from noa_api.core.json_safety import json_safe
+from noa_api.core.tool_error_sanitizer import sanitize_tool_error
 from noa_api.core.tools.registry import (
     ToolDefinition,
     get_tool_definition,
@@ -539,8 +540,10 @@ class AgentRunner:
             )
             return [call_message, result_message]
         except Exception as exc:
+            sanitized_error = sanitize_tool_error(exc)
             _ = await self._action_tool_run_service.fail_tool_run(
-                tool_run_id=started.id, error=str(exc)
+                tool_run_id=started.id,
+                error=sanitized_error.error_code,
             )
             error_message = AgentMessage(
                 role="tool",
@@ -549,7 +552,7 @@ class AgentRunner:
                         "type": "tool-result",
                         "toolName": tool.name,
                         "toolCallId": tool_call_id,
-                        "result": {"error": str(exc)},
+                        "result": sanitized_error.as_result(),
                         "isError": True,
                     }
                 ],
