@@ -15,6 +15,11 @@ High-level assessment:
 - Logging/observability: present but minimal; currently insufficient for reliable production diagnosis.
 - Maintainability: moderate; biggest risk is a large multi-responsibility assistant transport route and inconsistent logging patterns.
 
+Implementation status update (same branch, after foundation work):
+- Core foundation work from this audit has been partially implemented in `feat/error-handling-logging-foundation`.
+- Request-scoped IDs, centralized API error shaping, shared DB engine/session accessors, tool-failure sanitization, frontend shared error mapping, and a top-level web error boundary are now in place.
+- The remaining notable gap is broader observability and deeper assistant transport decomposition; the assistant route is improved but still too large.
+
 ---
 
 ## What Exists Today
@@ -60,7 +65,15 @@ Frontend
 
 ## Weak Spots (Plan Inputs)
 
+Status legend:
+- Done: implemented on the current branch
+- Partial: improved, but follow-up work still remains
+- Not yet: identified by the audit, but not implemented in this branch
+
 ### W1: Structlog configured but not operationally used
+Status
+- Partial
+
 What
 - `structlog` is configured, but the codebase predominantly uses stdlib `logging.getLogger()` and does not bind structured context.
 
@@ -71,14 +84,33 @@ Primary locations
 - Logging config: `apps/api/src/noa_api/core/logging.py`
 - Stdlib logger usage: `apps/api/src/noa_api/api/routes/assistant.py`
 
+What changed on this branch
+- Added request-context-aware logging setup in `apps/api/src/noa_api/core/logging.py`.
+- Preserved safe embedding behavior by avoiding destructive root logger resets.
+- Added internal exception logging in tool failure paths.
+
+What remains
+- Logging is still not consistently structured/bound across the whole API surface.
+- Key contextual fields such as `user_id`, `thread_id`, `tool_name`, and `tool_run_id` are not yet systematically bound everywhere.
+
 ### W2: Missing request-scoped context (no request_id / correlation)
+Status
+- Done
+
 What
 - No request ID is generated/propagated, and logs are not automatically enriched with request metadata.
 
 Why it matters
 - Hard to trace a single user action across proxy -> API -> DB -> tool run, especially in async/streaming flows.
 
+What changed on this branch
+- Added request ID middleware and contextvar helpers in `apps/api/src/noa_api/api/error_handling.py` and `apps/api/src/noa_api/core/request_context.py`.
+- Responses now include `X-Request-Id`, and error responses also include `request_id` in the JSON body.
+
 ### W3: No centralized API error response standardization
+Status
+- Partial
+
 What
 - Errors rely on FastAPI defaults plus per-route `HTTPException(detail=...)` strings.
 - Frontend logic sometimes depends on specific `detail` strings (e.g. pending approval).
@@ -86,7 +118,20 @@ What
 Why it matters
 - String-based branching is brittle as the product grows. Adding a stable `error_code` (while keeping `detail`) improves long-term maintainability and i18n readiness.
 
+What changed on this branch
+- Added centralized JSON error shaping in `apps/api/src/noa_api/api/error_handling.py`.
+- Added `ApiHTTPException` support for stable `error_code` values while preserving `detail`.
+- Converted auth routes to return stable auth-specific `error_code` values.
+- Updated the frontend error parser to consume `error_code` and `request_id`.
+
+What remains
+- Stable `error_code` coverage is still selective; most non-auth routes still rely on `detail` only.
+- Validation and generic route exceptions are shaped consistently now, but they are not yet normalized into a larger app-wide error-code catalog.
+
 ### W4: Assistant transport route is large and multi-responsibility
+Status
+- Partial
+
 What
 - The assistant transport module mixes HTTP validation, persistence, orchestration, streaming state management, tool execution, and logging.
 
@@ -97,7 +142,19 @@ Why it matters
 Primary location
 - `apps/api/src/noa_api/api/routes/assistant.py`
 
+What changed on this branch
+- Extracted `SQLAssistantRepository` into `apps/api/src/noa_api/api/routes/assistant_repository.py`.
+- Extracted shared tool-result payload shaping into `apps/api/src/noa_api/api/routes/assistant_tool_execution.py`.
+- Added better failure sanitization and internal logging in assistant tool execution paths.
+
+What remains
+- `apps/api/src/noa_api/api/routes/assistant.py` is still large and multi-responsibility.
+- Validation/orchestration/streaming concerns are still colocated and should be split further in follow-up work.
+
 ### W5: Multiple SQLAlchemy engines/pools instantiated across modules
+Status
+- Done
+
 What
 - Several modules create their own engine + session factory at import time.
 
@@ -112,7 +169,14 @@ Examples
 - `apps/api/src/noa_api/core/auth/deps.py`
 - `apps/api/src/noa_api/core/auth/authorization.py`
 
+What changed on this branch
+- Added cached `get_engine()` and `get_session_factory()` accessors in `apps/api/src/noa_api/storage/postgres/client.py`.
+- Updated the listed modules to use the shared session factory instead of building their own module-local engine/session pairs.
+
 ### W6: Tool failures persist raw error strings (potential information leakage)
+Status
+- Done
+
 What
 - Tool execution failures store `str(exc)` as the error, and that value is persisted and also surfaced in tool-result payloads in some paths.
 
@@ -125,7 +189,16 @@ Primary locations
 - Tool execution: `apps/api/src/noa_api/core/agent/runner.py`
 - Approval/execution path: `apps/api/src/noa_api/api/routes/assistant.py`
 
+What changed on this branch
+- Added a shared sanitizer in `apps/api/src/noa_api/core/tool_error_sanitizer.py`.
+- `AgentRunner` and assistant approval execution now persist stable sanitized codes instead of raw exception strings.
+- Tool-result payloads now expose safe `error` + `error_code` values.
+- Raw exception detail remains available in internal logs via `logger.exception(...)` without being persisted or surfaced to users.
+
 ### W7: Frontend lacks error boundaries and duplicates error-string handling
+Status
+- Done
+
 What
 - No `app/**/error.tsx` route error boundaries were found.
 - Several components define their own `toErrorMessage()` helpers.
@@ -140,7 +213,16 @@ Primary locations
 - Login: `apps/web/app/login/page.tsx`
 - Runtime/hydration: `apps/web/components/lib/runtime-provider.tsx`
 
+What changed on this branch
+- Added `apps/web/app/error.tsx`.
+- Expanded `ApiError` and `jsonOrThrow()` in `apps/web/components/lib/fetch-helper.ts`.
+- Added shared `toUserMessage()` in `apps/web/components/lib/error-message.ts`.
+- Moved login and admin flows to the shared parsing/messaging path.
+
 ### W8: Limited operational telemetry (web + api)
+Status
+- Not yet
+
 What
 - Backend lacks request logging and structured context.
 - Frontend lacks an error reporting tool.
@@ -148,9 +230,21 @@ What
 Why it matters
 - In production, issues will be discovered via user reports, and reproductions can be difficult without telemetry.
 
+What changed on this branch
+- Improved local diagnostic quality through request IDs, centralized error envelopes, and internal exception logging.
+
+What remains
+- No dedicated frontend error reporting tool is installed.
+- No backend tracing/metrics stack is present.
+- Request logging is better, but still not a full production telemetry solution.
+
 ---
 
 ## Recommendations (Prioritized)
+
+Updated status after this branch:
+- Completed on this branch: request context middleware, centralized error shaping foundation, shared DB engine/session lifecycle, tool failure sanitization, frontend shared error mapping, app-level error boundary, and initial assistant extraction.
+- Still recommended next: broader structured context adoption, a larger assistant transport decomposition, wider `error_code` adoption outside auth/tool flows, and production telemetry.
 
 ### P0 (highest impact)
 - Establish a consistent logging strategy and make it real:
@@ -179,6 +273,32 @@ Why it matters
   - Backend tracing/metrics (OpenTelemetry) if you expect multi-service workflows.
 - Add targeted tests around failure modes:
   - Assistant transport failures (pre-agent and agent phases), tool failures, DB conflicts/idempotency.
+
+---
+
+## Branch Status Summary
+
+Done on `feat/error-handling-logging-foundation`
+- Backend request IDs and centralized error envelopes
+- Stable auth `error_code` support
+- Shared Postgres engine/session factory accessors
+- Tool failure sanitization with preserved internal logging
+- Shared frontend API error parsing and user-message mapping
+- Login/admin integration with shared frontend error helpers
+- Top-level web error boundary
+- Initial assistant route extraction (`assistant_repository.py`, `assistant_tool_execution.py`)
+
+Not yet done on this branch
+- Broader route-by-route `error_code` adoption beyond auth and tool execution flows
+- Full assistant transport decomposition into smaller orchestration/streaming modules
+- Rich, consistent structured logging context binding across all backend modules
+- Frontend or backend production telemetry tooling (`Sentry`, `OpenTelemetry`, etc.)
+
+Recommended next
+1. Expand stable `error_code` coverage to more API routes where the frontend currently relies on prose or may need to soon.
+2. Continue splitting `apps/api/src/noa_api/api/routes/assistant.py` by orchestration concern, especially streaming/state handling.
+3. Add structured logging context binding for `user_id`, `thread_id`, `tool_name`, and `tool_run_id` in more backend flows.
+4. Decide whether to add production telemetry now (`Sentry` / `OpenTelemetry`) or defer until after the assistant transport refactor stabilizes.
 
 ---
 
