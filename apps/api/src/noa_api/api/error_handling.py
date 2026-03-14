@@ -22,6 +22,19 @@ REQUEST_ID_HEADER = "X-Request-Id"
 logger = logging.getLogger(__name__)
 
 
+class ApiHTTPException(StarletteHTTPException):
+    def __init__(
+        self,
+        *,
+        status_code: int,
+        detail: Any,
+        error_code: str | None = None,
+        headers: Mapping[str, str] | None = None,
+    ) -> None:
+        super().__init__(status_code=status_code, detail=detail, headers=headers)
+        self.error_code = error_code
+
+
 class RequestContextMiddleware:
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -61,6 +74,8 @@ async def http_exception_handler(
 ) -> JSONResponse:
     detail, error_code = _unpack_error_detail(exc.detail)
     if error_code is None:
+        error_code = getattr(exc, "error_code", None)
+    if error_code is None:
         error_code = _extract_header_error_code(exc.headers)
     return _json_error_response(
         status_code=exc.status_code,
@@ -97,7 +112,7 @@ def _json_error_response(
     detail: Any,
     request: Request,
     error_code: str | None = None,
-    headers: dict[str, str] | None = None,
+    headers: Mapping[str, str] | None = None,
 ) -> JSONResponse:
     request_id = _get_or_create_request_id(request)
     content: dict[str, Any] = {
