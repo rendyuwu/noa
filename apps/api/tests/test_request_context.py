@@ -61,6 +61,8 @@ def test_create_app_preserves_existing_root_logging_configuration() -> None:
     }
     sentinel = logging.StreamHandler()
     sentinel.setLevel(logging.ERROR)
+    sentinel_formatter = logging.Formatter("sentinel %(message)s")
+    sentinel.setFormatter(sentinel_formatter)
     root_logger.handlers = [sentinel]
     root_logger.setLevel(logging.WARNING)
 
@@ -70,6 +72,7 @@ def test_create_app_preserves_existing_root_logging_configuration() -> None:
 
         assert root_logger.handlers == [sentinel]
         assert root_logger.level == logging.WARNING
+        assert sentinel.formatter is sentinel_formatter
     finally:
         root_logger.handlers = original_handlers
         root_logger.setLevel(original_level)

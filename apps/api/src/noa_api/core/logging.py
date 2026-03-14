@@ -25,10 +25,7 @@ def configure_logging() -> None:
         ],
     )
     root_logger = logging.getLogger()
-    if root_logger.handlers:
-        for handler in root_logger.handlers:
-            handler.setFormatter(formatter)
-    else:
+    if not root_logger.handlers:
         handler = logging.StreamHandler()
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
