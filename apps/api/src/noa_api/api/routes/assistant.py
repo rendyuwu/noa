@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from datetime import UTC, datetime
 from inspect import signature
 from typing import Annotated, Any, Awaitable, Callable, Literal, cast
 from uuid import UUID, uuid4
@@ -12,9 +11,10 @@ from assistant_stream import RunController, create_run
 from assistant_stream.serialization import AssistantTransportResponse
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from noa_api.api.routes.assistant_repository import SQLAssistantRepository
+from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.agent.runner import (
     AgentRunner,
     AgentRunnerResult,
@@ -38,7 +38,6 @@ from noa_api.storage.postgres.lifecycle import (
     ToolRisk,
     ToolRunStatus,
 )
-from noa_api.storage.postgres.models import AuditLog, Message, Thread
 
 router = APIRouter(tags=["assistant"])
 
@@ -121,60 +120,6 @@ class AssistantThreadStateResponse(BaseModel):
     is_running: bool = Field(alias="isRunning")
 
     model_config = {"populate_by_name": True}
-
-
-class SQLAssistantRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    async def get_thread(
-        self, *, owner_user_id: UUID, thread_id: UUID
-    ) -> Thread | None:
-        result = await self._session.execute(
-            select(Thread).where(
-                Thread.id == thread_id, Thread.owner_user_id == owner_user_id
-            )
-        )
-        return result.scalar_one_or_none()
-
-    async def list_messages(self, *, thread_id: UUID) -> list[Message]:
-        result = await self._session.execute(
-            select(Message)
-            .where(Message.thread_id == thread_id)
-            .order_by(Message.created_at.asc(), Message.id.asc())
-        )
-        return list(result.scalars().all())
-
-    async def create_message(
-        self, *, thread_id: UUID, role: str, parts: list[dict[str, Any]]
-    ) -> Message:
-        message = Message(
-            thread_id=thread_id,
-            role=role,
-            content=parts,
-            created_at=datetime.now(UTC),
-        )
-        self._session.add(message)
-        await self._session.flush()
-        return message
-
-    async def create_audit_log(
-        self,
-        *,
-        event_type: str,
-        actor_email: str | None,
-        tool_name: str | None,
-        metadata: dict[str, object],
-    ) -> None:
-        self._session.add(
-            AuditLog(
-                event_type=event_type,
-                user_email=actor_email,
-                tool_name=tool_name,
-                meta_data=metadata,
-            )
-        )
-        await self._session.flush()
 
 
 class AssistantService:
@@ -270,13 +215,12 @@ class AssistantService:
             thread_id=thread_id,
             role="tool",
             parts=[
-                {
-                    "type": "tool-result",
-                    "toolName": tool_run.tool_name,
-                    "toolCallId": tool_call_id,
-                    "result": persisted_result,
-                    "isError": False,
-                }
+                build_tool_result_part(
+                    tool_name=tool_run.tool_name,
+                    tool_call_id=tool_call_id,
+                    result=persisted_result,
+                    is_error=False,
+                )
             ],
         )
         await self._repository.create_audit_log(
@@ -402,13 +346,12 @@ class AssistantService:
                 thread_id=thread_id,
                 role="tool",
                 parts=[
-                    {
-                        "type": "tool-result",
-                        "toolName": approved.tool_name,
-                        "toolCallId": tool_call_id,
-                        "result": {"error": error},
-                        "isError": True,
-                    }
+                    build_tool_result_part(
+                        tool_name=approved.tool_name,
+                        tool_call_id=tool_call_id,
+                        result={"error": error},
+                        is_error=True,
+                    )
                 ],
             )
             await self._repository.create_audit_log(
@@ -433,17 +376,16 @@ class AssistantService:
                 thread_id=thread_id,
                 role="tool",
                 parts=[
-                    {
-                        "type": "tool-result",
-                        "toolName": approved.tool_name,
-                        "toolCallId": tool_call_id,
-                        "result": {
+                    build_tool_result_part(
+                        tool_name=approved.tool_name,
+                        tool_call_id=tool_call_id,
+                        result={
                             "error": error,
                             "expectedRisk": ToolRisk.CHANGE.value,
                             "actualRisk": tool.risk.value,
                         },
-                        "isError": True,
-                    }
+                        is_error=True,
+                    )
                 ],
             )
             await self._repository.create_audit_log(
@@ -473,13 +415,12 @@ class AssistantService:
                 thread_id=thread_id,
                 role="tool",
                 parts=[
-                    {
-                        "type": "tool-result",
-                        "toolName": approved.tool_name,
-                        "toolCallId": tool_call_id,
-                        "result": persisted_result,
-                        "isError": False,
-                    }
+                    build_tool_result_part(
+                        tool_name=approved.tool_name,
+                        tool_call_id=tool_call_id,
+                        result=persisted_result,
+                        is_error=False,
+                    )
                 ],
             )
             await self._repository.create_audit_log(
@@ -513,13 +454,12 @@ class AssistantService:
                 thread_id=thread_id,
                 role="tool",
                 parts=[
-                    {
-                        "type": "tool-result",
-                        "toolName": approved.tool_name,
-                        "toolCallId": tool_call_id,
-                        "result": sanitized_error.as_result(),
-                        "isError": True,
-                    }
+                    build_tool_result_part(
+                        tool_name=approved.tool_name,
+                        tool_call_id=tool_call_id,
+                        result=sanitized_error.as_result(),
+                        is_error=True,
+                    )
                 ],
             )
             await self._repository.create_audit_log(

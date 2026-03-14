@@ -10,6 +10,7 @@ import pytest
 from fastapi import HTTPException
 
 from noa_api.api.routes.assistant import AssistantService
+from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
@@ -18,6 +19,21 @@ from noa_api.storage.postgres.lifecycle import (
     ToolRunStatus,
 )
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
+
+
+def test_build_tool_result_part_shapes_payload() -> None:
+    assert build_tool_result_part(
+        tool_name="set_demo_flag",
+        tool_call_id="tool-call-1",
+        result={"ok": True},
+        is_error=False,
+    ) == {
+        "type": "tool-result",
+        "toolName": "set_demo_flag",
+        "toolCallId": "tool-call-1",
+        "result": {"ok": True},
+        "isError": False,
+    }
 
 
 @dataclass
