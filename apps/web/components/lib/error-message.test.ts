@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import { ApiError } from "./fetch-helper";
+
 const loadToUserMessage = async () => {
   const modulePath = "./error-message";
   const module = await import(/* @vite-ignore */ modulePath);
@@ -22,5 +24,11 @@ describe("toUserMessage", () => {
     const toUserMessage = await loadToUserMessage();
 
     expect(toUserMessage(new TypeError("Failed to fetch"))).toBe("Unable to reach API");
+  });
+
+  it("uses a safe fallback when ApiError detail is not meaningful", async () => {
+    const toUserMessage = await loadToUserMessage();
+
+    expect(toUserMessage(new ApiError(500, ""))).toBe("Unable to reach API");
   });
 });

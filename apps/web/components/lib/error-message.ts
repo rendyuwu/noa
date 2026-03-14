@@ -19,7 +19,7 @@ export const toUserMessage = (error: unknown): string => {
       return PENDING_APPROVAL_MESSAGE;
     }
 
-    return error.detail || `Request failed (${error.status})`;
+    return error.detail || SAFE_FALLBACK_MESSAGE;
   }
 
   if (isErrorLike(error)) {
