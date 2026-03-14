@@ -372,6 +372,25 @@ async def test_me_route_rejects_invalid_token() -> None:
     assert response.headers["x-request-id"] == body["request_id"]
 
 
+async def test_me_route_rejects_missing_bearer_token() -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/auth/me")
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Missing bearer token"
+    assert body["error_code"] == "missing_bearer_token"
+    assert isinstance(body["request_id"], str)
+    assert response.headers["x-request-id"] == body["request_id"]
+
+
 async def test_me_route_rejects_inactive_user() -> None:
     app = _create_auth_app()
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(

@@ -103,8 +103,10 @@ async def me(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> MeResponse:
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token"
+        raise ApiHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token",
+            error_code="missing_bearer_token",
         )
 
     try:
