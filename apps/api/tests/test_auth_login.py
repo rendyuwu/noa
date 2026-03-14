@@ -388,6 +388,7 @@ async def test_me_route_rejects_inactive_user() -> None:
     assert response.status_code == 403
     body = response.json()
     assert body["detail"] == "User pending approval"
+    assert body["error_code"] == "user_pending_approval"
     assert isinstance(body["request_id"], str)
     assert response.headers["x-request-id"] == body["request_id"]
 
