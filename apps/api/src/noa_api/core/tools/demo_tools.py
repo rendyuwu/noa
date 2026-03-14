@@ -16,7 +16,9 @@ async def get_current_date() -> dict[str, str]:
     return {"date": datetime.now().date().isoformat()}
 
 
-async def set_demo_flag(*, session: AsyncSession, key: str, value: Any) -> dict[str, Any]:
+async def set_demo_flag(
+    *, session: AsyncSession, key: str, value: Any
+) -> dict[str, Any]:
     marker_payload = {"key": key, "value": value}
     session.add(
         AuditLog(

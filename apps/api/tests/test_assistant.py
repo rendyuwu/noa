@@ -348,6 +348,91 @@ async def test_assistant_route_uses_assistant_transport_sse() -> None:
     assert any(event.get("type") == "update-state" for event in events)
 
 
+async def test_assistant_route_does_not_break_stream_when_agent_turn_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+
+    async def _boom_run_agent_turn(*_, **__) -> AgentRunnerResult:
+        raise RuntimeError("agent boom")
+
+    monkeypatch.setattr(service, "run_agent_turn", _boom_run_agent_turn)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Trigger agent"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.text.rstrip().endswith("data: [DONE]")
+
+    def _state_contains_text_substring(
+        state: dict[str, object], substring: str
+    ) -> bool:
+        messages = state.get("messages")
+        if not isinstance(messages, list):
+            return False
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            parts = message.get("parts")
+            if not isinstance(parts, list):
+                continue
+            for part in parts:
+                if not isinstance(part, dict):
+                    continue
+                if part.get("type") != "text":
+                    continue
+                text = part.get("text")
+                if isinstance(text, str) and substring in text:
+                    return True
+        return False
+
+    state: dict[str, object] = {}
+    for event in _iter_assistant_transport_events(response.text):
+        if event.get("type") != "update-state":
+            continue
+
+        operations = event.get("operations") or event.get("patches")
+        if isinstance(operations, list):
+            _apply_assistant_stream_patches(state, operations)
+            continue
+
+        event_state = event.get("state")
+        if isinstance(event_state, dict):
+            state.clear()
+            state.update(event_state)
+
+    assert _state_contains_text_substring(state, "Assistant run failed")
+
+
 async def test_assistant_route_streams_canonical_state_and_applies_commands() -> None:
     owner_id = uuid4()
     thread_id = uuid4()

@@ -6,7 +6,11 @@ from typing import cast
 
 from noa_api.core.tools import catalog
 from noa_api.core.tools.catalog import get_tool_catalog
-from noa_api.core.tools.demo_tools import get_current_date, get_current_time, set_demo_flag
+from noa_api.core.tools.demo_tools import (
+    get_current_date,
+    get_current_time,
+    set_demo_flag,
+)
 from noa_api.core.tools.registry import get_tool_definition, get_tool_registry
 from noa_api.storage.postgres.models import AuditLog
 

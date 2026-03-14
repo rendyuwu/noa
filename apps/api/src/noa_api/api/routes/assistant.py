@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 from inspect import signature
 from typing import Annotated, Any, Awaitable, Callable, Literal, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from assistant_stream import RunController, create_run
 from assistant_stream.serialization import AssistantTransportResponse
@@ -41,6 +42,8 @@ from noa_api.storage.postgres.models import AuditLog, Message, Thread
 router = APIRouter(tags=["assistant"])
 _engine = create_engine()
 _session_factory = create_session_factory(_engine)
+
+logger = logging.getLogger(__name__)
 
 
 def _parse_uuid(raw: str | None, *, label: str) -> UUID:
@@ -391,21 +394,71 @@ class AssistantService:
 
         tool = get_tool_definition(approved.tool_name)
         if tool is None:
+            error = "Requested tool is unavailable"
             _ = await self._action_tool_run_service.fail_tool_run(
-                tool_run_id=started.id, error="Unknown tool"
+                tool_run_id=started.id,
+                error=error,
             )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Requested tool is unavailable",
+            await self._repository.create_message(
+                thread_id=thread_id,
+                role="tool",
+                parts=[
+                    {
+                        "type": "tool-result",
+                        "toolName": approved.tool_name,
+                        "toolCallId": tool_call_id,
+                        "result": {"error": error},
+                        "isError": True,
+                    }
+                ],
             )
+            await self._repository.create_audit_log(
+                event_type="tool_failed",
+                actor_email=owner_user_email,
+                tool_name=approved.tool_name,
+                metadata={
+                    "thread_id": str(thread_id),
+                    "tool_run_id": str(started.id),
+                    "action_request_id": str(approved.id),
+                    "error": error,
+                },
+            )
+            return
         if tool.risk != ToolRisk.CHANGE:
+            error = "Approved tool risk mismatch"
             _ = await self._action_tool_run_service.fail_tool_run(
-                tool_run_id=started.id, error="Tool risk mismatch"
+                tool_run_id=started.id,
+                error=error,
             )
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Approved tool risk mismatch",
+            await self._repository.create_message(
+                thread_id=thread_id,
+                role="tool",
+                parts=[
+                    {
+                        "type": "tool-result",
+                        "toolName": approved.tool_name,
+                        "toolCallId": tool_call_id,
+                        "result": {
+                            "error": error,
+                            "expectedRisk": ToolRisk.CHANGE.value,
+                            "actualRisk": tool.risk.value,
+                        },
+                        "isError": True,
+                    }
+                ],
             )
+            await self._repository.create_audit_log(
+                event_type="tool_failed",
+                actor_email=owner_user_email,
+                tool_name=approved.tool_name,
+                metadata={
+                    "thread_id": str(thread_id),
+                    "tool_run_id": str(started.id),
+                    "action_request_id": str(approved.id),
+                    "error": error,
+                },
+            )
+            return
 
         try:
             result = await self._execute_tool(tool=tool, args=approved.args)
@@ -440,6 +493,8 @@ class AssistantService:
                     "action_request_id": str(approved.id),
                 },
             )
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             _ = await self._action_tool_run_service.fail_tool_run(
                 tool_run_id=started.id, error=str(exc)
@@ -468,10 +523,7 @@ class AssistantService:
                     "error": str(exc),
                 },
             )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Approved action execution failed",
-            )
+            return
 
     async def deny_action(
         self,
@@ -665,59 +717,133 @@ async def assistant_transport(
             )
 
     async def run_callback(controller: RunController) -> None:
+        error_text = "Assistant run failed. Please try again."
+
+        def _make_error_message(*, text: str) -> dict[str, object]:
+            return {
+                "id": f"assistant-run-error-{uuid4()}",
+                "role": "assistant",
+                "parts": [{"type": "text", "text": text}],
+            }
+
+        def _remove_streaming_placeholder(messages: list[object]) -> list[object]:
+            return [
+                message
+                for message in messages
+                if not (
+                    isinstance(message, dict)
+                    and message.get("id") == "assistant-streaming"
+                )
+            ]
+
         if controller.state is None:
             controller.state = {}
 
-        # Ensure the thread exists and belongs to the current user before applying commands.
-        await assistant_service.load_state(
-            owner_user_id=current_user.user_id,
-            thread_id=payload.thread_id,
-        )
+        try:
+            # Ensure the thread exists and belongs to the current user before applying commands.
+            await assistant_service.load_state(
+                owner_user_id=current_user.user_id,
+                thread_id=payload.thread_id,
+            )
 
-        for command in payload.commands:
-            if isinstance(command, AddMessageCommand):
-                await assistant_service.add_message(
-                    owner_user_id=current_user.user_id,
-                    thread_id=payload.thread_id,
-                    role=command.message.role,
-                    parts=command.message.parts,
+            for command in payload.commands:
+                if isinstance(command, AddMessageCommand):
+                    await assistant_service.add_message(
+                        owner_user_id=current_user.user_id,
+                        thread_id=payload.thread_id,
+                        role=command.message.role,
+                        parts=command.message.parts,
+                    )
+                elif isinstance(command, ApproveActionCommand):
+                    await assistant_service.approve_action(
+                        owner_user_id=current_user.user_id,
+                        owner_user_email=current_user.email,
+                        thread_id=payload.thread_id,
+                        action_request_id=command.action_request_id,
+                        is_user_active=current_user.is_active,
+                        authorize_tool_access=lambda tool_name: (
+                            authorization_service.authorize_tool_access(
+                                current_user,
+                                tool_name,
+                            )
+                        ),
+                    )
+                elif isinstance(command, DenyActionCommand):
+                    await assistant_service.deny_action(
+                        owner_user_id=current_user.user_id,
+                        owner_user_email=current_user.email,
+                        thread_id=payload.thread_id,
+                        action_request_id=command.action_request_id,
+                    )
+                elif isinstance(command, AddToolResultCommand):
+                    await assistant_service.add_tool_result(
+                        owner_user_id=current_user.user_id,
+                        owner_user_email=current_user.email,
+                        thread_id=payload.thread_id,
+                        tool_call_id=command.tool_call_id,
+                        result=command.result,
+                    )
+
+            canonical_state = await assistant_service.load_state(
+                owner_user_id=current_user.user_id,
+                thread_id=payload.thread_id,
+            )
+            controller.state["messages"] = canonical_state["messages"]
+            controller.state["isRunning"] = True
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if isinstance(exc, HTTPException):
+                logger.info(
+                    "Assistant run failed (pre-agent) (status_code=%s thread_id=%s user_id=%s)",
+                    exc.status_code,
+                    payload.thread_id,
+                    current_user.user_id,
                 )
-            elif isinstance(command, ApproveActionCommand):
-                await assistant_service.approve_action(
-                    owner_user_id=current_user.user_id,
-                    owner_user_email=current_user.email,
-                    thread_id=payload.thread_id,
-                    action_request_id=command.action_request_id,
-                    is_user_active=current_user.is_active,
-                    authorize_tool_access=lambda tool_name: (
-                        authorization_service.authorize_tool_access(
-                            current_user,
-                            tool_name,
-                        )
-                    ),
+            else:
+                logger.exception(
+                    "Assistant run failed (pre-agent) (thread_id=%s user_id=%s)",
+                    payload.thread_id,
+                    current_user.user_id,
                 )
-            elif isinstance(command, DenyActionCommand):
-                await assistant_service.deny_action(
+            controller.state["isRunning"] = False
+
+            safe_messages: list[object]
+            try:
+                safe_state = await assistant_service.load_state(
                     owner_user_id=current_user.user_id,
-                    owner_user_email=current_user.email,
                     thread_id=payload.thread_id,
-                    action_request_id=command.action_request_id,
                 )
-            elif isinstance(command, AddToolResultCommand):
-                await assistant_service.add_tool_result(
-                    owner_user_id=current_user.user_id,
-                    owner_user_email=current_user.email,
-                    thread_id=payload.thread_id,
-                    tool_call_id=command.tool_call_id,
-                    result=command.result,
+                safe_messages_obj = safe_state.get("messages")
+                safe_messages = (
+                    list(safe_messages_obj)
+                    if isinstance(safe_messages_obj, list)
+                    else []
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                existing_messages_obj = controller.state.get("messages")
+                safe_messages = (
+                    list(existing_messages_obj)
+                    if isinstance(existing_messages_obj, list)
+                    else []
                 )
 
-        canonical_state = await assistant_service.load_state(
-            owner_user_id=current_user.user_id,
-            thread_id=payload.thread_id,
-        )
-        controller.state["messages"] = canonical_state["messages"]
-        controller.state["isRunning"] = True
+            safe_messages = _remove_streaming_placeholder(safe_messages)
+            safe_messages.append(_make_error_message(text=error_text))
+            controller.state["messages"] = safe_messages
+
+            state_manager = getattr(controller, "_state_manager", None)
+            if state_manager is not None:
+                try:
+                    state_manager.flush()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
+            await asyncio.sleep(0)
+            return
 
         should_run_agent = any(
             (isinstance(command, AddMessageCommand) and command.message.role == "user")
@@ -726,78 +852,193 @@ async def assistant_transport(
             for command in payload.commands
         )
         if should_run_agent:
-            allowed_tools: set[str] = set()
-            for tool in get_tool_registry():
-                tool_name = tool.name
-                if await authorization_service.authorize_tool_access(
-                    current_user, tool_name
-                ):
-                    allowed_tools.add(tool_name)
+            try:
+                allowed_tools: set[str] = set()
+                for tool in get_tool_registry():
+                    tool_name = tool.name
+                    if await authorization_service.authorize_tool_access(
+                        current_user, tool_name
+                    ):
+                        allowed_tools.add(tool_name)
 
-            # Workflow TODO cards are always available for active users.
-            allowed_tools.add("update_workflow_todo")
+                # Workflow TODO cards are always available for active users.
+                allowed_tools.add("update_workflow_todo")
 
-            base_messages_obj = canonical_state.get("messages")
-            base_messages: list[object] = (
-                list(base_messages_obj) if isinstance(base_messages_obj, list) else []
-            )
+                base_messages_obj = canonical_state.get("messages")
+                base_messages: list[object] = (
+                    list(base_messages_obj)
+                    if isinstance(base_messages_obj, list)
+                    else []
+                )
 
-            def _make_streaming_message(text: str) -> dict[str, object]:
-                return {
-                    "id": "assistant-streaming",
-                    "role": "assistant",
-                    "parts": [{"type": "text", "text": text}],
-                }
+                def _make_streaming_message(text: str) -> dict[str, object]:
+                    return {
+                        "id": "assistant-streaming",
+                        "role": "assistant",
+                        "parts": [{"type": "text", "text": text}],
+                    }
 
-            # Emit a running assistant message immediately so the UI can show
-            # a first-token loading state before any text arrives.
-            controller.state["messages"] = [
-                *base_messages,
-                _make_streaming_message(""),
-            ]
-
-            # Flush pending state updates before the first delta.
-            state_manager = getattr(controller, "_state_manager", None)
-            if state_manager is not None:
-                state_manager.flush()
-            await asyncio.sleep(0)
-
-            streamed_text = ""
-
-            async def _on_text_delta(delta: str) -> None:
-                nonlocal streamed_text
-                if not delta:
-                    return
-                if _controller_is_cancelled(controller):
-                    raise asyncio.CancelledError
-                task = asyncio.current_task()
-                if task is not None and task.cancelled():
-                    raise asyncio.CancelledError
-
-                streamed_text += delta
+                # Emit a running assistant message immediately so the UI can show
+                # a first-token loading state before any text arrives.
                 controller.state["messages"] = [
                     *base_messages,
-                    _make_streaming_message(streamed_text),
+                    _make_streaming_message(""),
                 ]
+
+                # Flush pending state updates before the first delta.
                 state_manager = getattr(controller, "_state_manager", None)
                 if state_manager is not None:
                     state_manager.flush()
                 await asyncio.sleep(0)
 
-            _ = await assistant_service.run_agent_turn(
-                owner_user_id=current_user.user_id,
-                owner_user_email=current_user.email,
-                thread_id=payload.thread_id,
-                available_tool_names=allowed_tools,
-                on_text_delta=_on_text_delta,
-            )
+                streamed_text = ""
 
-        updated_state = await assistant_service.load_state(
-            owner_user_id=current_user.user_id,
-            thread_id=payload.thread_id,
-        )
-        controller.state["messages"] = updated_state["messages"]
-        controller.state["isRunning"] = False
+                async def _on_text_delta(delta: str) -> None:
+                    nonlocal streamed_text
+                    if not delta:
+                        return
+                    if _controller_is_cancelled(controller):
+                        raise asyncio.CancelledError
+                    task = asyncio.current_task()
+                    if task is not None and task.cancelling():
+                        raise asyncio.CancelledError
+
+                    streamed_text += delta
+                    controller.state["messages"] = [
+                        *base_messages,
+                        _make_streaming_message(streamed_text),
+                    ]
+                    state_manager = getattr(controller, "_state_manager", None)
+                    if state_manager is not None:
+                        state_manager.flush()
+                    await asyncio.sleep(0)
+
+                _ = await assistant_service.run_agent_turn(
+                    owner_user_id=current_user.user_id,
+                    owner_user_email=current_user.email,
+                    thread_id=payload.thread_id,
+                    available_tool_names=allowed_tools,
+                    on_text_delta=_on_text_delta,
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                if isinstance(exc, HTTPException):
+                    logger.info(
+                        "Assistant run failed (agent) (status_code=%s thread_id=%s user_id=%s)",
+                        exc.status_code,
+                        payload.thread_id,
+                        current_user.user_id,
+                    )
+                else:
+                    logger.exception(
+                        "Assistant run failed (thread_id=%s user_id=%s)",
+                        payload.thread_id,
+                        current_user.user_id,
+                    )
+
+                persisted_error_message = False
+                try:
+                    await assistant_service.add_message(
+                        owner_user_id=current_user.user_id,
+                        thread_id=payload.thread_id,
+                        role="assistant",
+                        parts=[{"type": "text", "text": error_text}],
+                    )
+                    persisted_error_message = True
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception(
+                        "Failed to persist assistant error message (thread_id=%s user_id=%s)",
+                        payload.thread_id,
+                        current_user.user_id,
+                    )
+
+                controller.state["isRunning"] = False
+                try:
+                    failed_state = await assistant_service.load_state(
+                        owner_user_id=current_user.user_id,
+                        thread_id=payload.thread_id,
+                    )
+                    controller.state["messages"] = failed_state["messages"]
+
+                    # If we couldn't persist the assistant error message, ensure the
+                    # client still sees an error by appending one locally.
+                    if not persisted_error_message:
+                        canonical_messages_obj = controller.state.get("messages")
+                        canonical_messages: list[object] = (
+                            list(canonical_messages_obj)
+                            if isinstance(canonical_messages_obj, list)
+                            else []
+                        )
+                        canonical_messages = _remove_streaming_placeholder(
+                            canonical_messages
+                        )
+                        canonical_messages.append(_make_error_message(text=error_text))
+                        controller.state["messages"] = canonical_messages
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    existing_messages_obj = controller.state.get("messages")
+                    existing_messages: list[object] = (
+                        list(existing_messages_obj)
+                        if isinstance(existing_messages_obj, list)
+                        else []
+                    )
+                    existing_messages = _remove_streaming_placeholder(existing_messages)
+                    existing_messages.append(_make_error_message(text=error_text))
+                    controller.state["messages"] = existing_messages
+
+                state_manager = getattr(controller, "_state_manager", None)
+                if state_manager is not None:
+                    try:
+                        state_manager.flush()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        pass
+                await asyncio.sleep(0)
+                return
+
+        try:
+            updated_state = await assistant_service.load_state(
+                owner_user_id=current_user.user_id,
+                thread_id=payload.thread_id,
+            )
+            controller.state["messages"] = updated_state["messages"]
+            controller.state["isRunning"] = False
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Avoid escaping exceptions at the end of the callback; keep the stream alive.
+            logger.exception(
+                "Assistant state refresh failed (thread_id=%s user_id=%s)",
+                payload.thread_id,
+                current_user.user_id,
+            )
+            controller.state["isRunning"] = False
+
+            existing_messages_obj = controller.state.get("messages")
+            existing_messages: list[object] = (
+                list(existing_messages_obj)
+                if isinstance(existing_messages_obj, list)
+                else []
+            )
+            existing_messages = _remove_streaming_placeholder(existing_messages)
+            existing_messages.append(_make_error_message(text=error_text))
+            controller.state["messages"] = existing_messages
+
+            state_manager = getattr(controller, "_state_manager", None)
+            if state_manager is not None:
+                try:
+                    state_manager.flush()
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    pass
+            await asyncio.sleep(0)
+            return
 
     stream = create_run(run_callback, state=payload.state)
     return AssistantTransportResponse(stream)
@@ -824,7 +1065,7 @@ async def _stream_assistant_text(
         if _controller_is_cancelled(controller):
             raise asyncio.CancelledError
         task = asyncio.current_task()
-        if task is not None and task.cancelled():
+        if task is not None and task.cancelling():
             raise asyncio.CancelledError
         cast_part = streaming_message["parts"][0]
         cast_part["text"] += chunk
@@ -840,6 +1081,8 @@ def _controller_is_cancelled(controller: RunController) -> bool:
     if callable(value):
         try:
             return bool(value())
+        except asyncio.CancelledError:
+            raise
         except Exception:
             return False
     return bool(value)

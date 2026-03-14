@@ -242,6 +242,79 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
     ]
 
 
+async def test_assistant_service_approve_change_tool_failure_is_persisted_and_does_not_raise(
+    monkeypatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="failing_change",
+        args={},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+
+    async def failing_change(*, session, **kwargs):
+        _ = session, kwargs
+        raise RuntimeError("boom")
+
+    tool = ToolDefinition(
+        name="failing_change",
+        description="Always fails.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        execute=failing_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    await service.approve_action(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        action_request_id=str(request.id),
+        is_user_active=True,
+        authorize_tool_access=lambda _tool: _allow(),
+    )
+
+    assert request.status == ActionRequestStatus.APPROVED
+    run = next(iter(repo.tool_runs.values()))
+    assert run.status == ToolRunStatus.FAILED
+    assert run.error is not None
+    assert "boom" in run.error
+
+    tool_message = assistant_repo.messages[-1]
+    assert tool_message["role"] == "tool"
+    part = tool_message["parts"][0]
+    assert part["type"] == "tool-result"
+    assert part["isError"] is True
+    assert "boom" in str(part["result"]["error"])
+
+    assert [event["event_type"] for event in assistant_repo.audits] == [
+        "action_approved",
+        "tool_started",
+        "tool_failed",
+    ]
+
+
 async def test_assistant_service_deny_marks_denied_with_audit_and_message() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
