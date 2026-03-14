@@ -19,6 +19,7 @@ Implementation status update (same branch, after foundation work):
 - Core foundation work from this audit has been partially implemented in `feat/error-handling-logging-foundation`.
 - Request-scoped IDs, centralized API error shaping, shared DB engine/session accessors, tool-failure sanitization, frontend shared error mapping, and a top-level web error boundary are now in place.
 - The remaining notable gap is broader observability and deeper assistant transport decomposition; the assistant route is improved but still too large.
+- A backend-only follow-up design and implementation plan for the next phase now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md` and `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`.
 
 ---
 
@@ -244,7 +245,8 @@ What remains
 
 Updated status after this branch:
 - Completed on this branch: request context middleware, centralized error shaping foundation, shared DB engine/session lifecycle, tool failure sanitization, frontend shared error mapping, app-level error boundary, and initial assistant extraction.
-- Still recommended next: broader structured context adoption, a larger assistant transport decomposition, wider `error_code` adoption outside auth/tool flows, and production telemetry.
+- Planning completed on this branch: a backend-only follow-up design and implementation plan for wider `error_code` adoption, further assistant decomposition, richer structured logging context, and an audit-report refresh.
+- Still recommended next: execute that backend plan, then revisit backend telemetry after the assistant split and log fields stabilize.
 
 ### P0 (highest impact)
 - Establish a consistent logging strategy and make it real:
@@ -287,18 +289,21 @@ Done on `feat/error-handling-logging-foundation`
 - Login/admin integration with shared frontend error helpers
 - Top-level web error boundary
 - Initial assistant route extraction (`assistant_repository.py`, `assistant_tool_execution.py`)
+- Backend-only follow-up planning docs for the next pass:
+  - `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`
+  - `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`
 
 Not yet done on this branch
 - Broader route-by-route `error_code` adoption beyond auth and tool execution flows
 - Full assistant transport decomposition into smaller orchestration/streaming modules
-- Rich, consistent structured logging context binding across all backend modules
-- Frontend or backend production telemetry tooling (`Sentry`, `OpenTelemetry`, etc.)
+- Rich, consistent structured logging context binding across assistant and related backend route flows
+- Backend telemetry vendor adoption (`OpenTelemetry`, etc.) remains deferred
 
 Recommended next
-1. Expand stable `error_code` coverage to more API routes where the frontend currently relies on prose or may need to soon.
-2. Continue splitting `apps/api/src/noa_api/api/routes/assistant.py` by orchestration concern, especially streaming/state handling.
-3. Add structured logging context binding for `user_id`, `thread_id`, `tool_name`, and `tool_run_id` in more backend flows.
-4. Decide whether to add production telemetry now (`Sentry` / `OpenTelemetry`) or defer until after the assistant transport refactor stabilizes.
+1. Execute `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, starting with route-level `error_code` tests and migrations in `threads.py`, `admin.py`, `whm_admin.py`, and assistant validation branches.
+2. Continue splitting `apps/api/src/noa_api/api/routes/assistant.py` into command and streaming helpers while preserving current SSE behavior with targeted characterization tests.
+3. Add structured logging context binding for `user_id`, `thread_id`, `tool_name`, `tool_run_id`, and `action_request_id` in assistant and related backend route flows.
+4. Revisit backend telemetry only after the assistant refactor lands and the desired structured log fields have stabilized.
 
 ---
 
