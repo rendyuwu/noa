@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from noa_api.api.error_handling import install_error_handling
 from noa_api.api.router import api_router
 from noa_api.core.config import Settings, settings
 from noa_api.core.logging import configure_logging
@@ -17,6 +18,7 @@ def create_app(app_settings: Settings = settings) -> FastAPI:
             allow_methods=["*"],
             allow_headers=["*"],
         )
+    install_error_handling(app)
     app.include_router(api_router)
     return app
 

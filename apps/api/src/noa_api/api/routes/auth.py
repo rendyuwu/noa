@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+from noa_api.api.error_handling import ApiHTTPException
 from noa_api.core.auth.auth_service import AuthResult, AuthService, AuthUser
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.errors import (
@@ -74,17 +75,22 @@ async def login(
             email=payload.email, password=payload.password
         )
     except AuthInvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        raise ApiHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            error_code="invalid_credentials",
         ) from exc
     except AuthPendingApprovalError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="User pending approval"
+        raise ApiHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User pending approval",
+            error_code="user_pending_approval",
         ) from exc
     except AuthError as exc:
-        raise HTTPException(
+        raise ApiHTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",
+            error_code="authentication_service_unavailable",
         ) from exc
 
     return _to_login_response(result)
@@ -97,33 +103,43 @@ async def me(
     auth_service: AuthService = Depends(get_auth_service),
 ) -> MeResponse:
     if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token"
+        raise ApiHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing bearer token",
+            error_code="missing_bearer_token",
         )
 
     try:
         payload = jwt_service.decode_token(credentials.credentials)
     except AuthInvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        raise ApiHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            error_code="invalid_token",
         ) from exc
 
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        raise ApiHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            error_code="invalid_token",
         )
 
     try:
         user = await auth_service.get_user_by_email(email=subject)
     except AuthInvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
+        raise ApiHTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            error_code="invalid_token",
         ) from exc
 
     if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="User pending approval"
+        raise ApiHTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User pending approval",
+            error_code="user_pending_approval",
         )
 
     return _to_me_response(user)

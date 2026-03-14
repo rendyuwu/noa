@@ -4,16 +4,14 @@ from noa_api.core.auth.auth_service import AuthService, SQLAuthRepository
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.auth.ldap_service import LDAPService
 from noa_api.core.config import settings
-from noa_api.storage.postgres.client import create_engine, create_session_factory
+from noa_api.storage.postgres.client import get_session_factory
 
-_engine = create_engine()
-_session_factory = create_session_factory(_engine)
 _ldap_service = LDAPService(settings)
 _jwt_service = JWTService(settings)
 
 
 async def get_auth_service() -> AsyncGenerator[AuthService, None]:
-    async with _session_factory() as session:
+    async with get_session_factory()() as session:
         repository = SQLAuthRepository(session)
         service = AuthService(
             auth_repository=repository,

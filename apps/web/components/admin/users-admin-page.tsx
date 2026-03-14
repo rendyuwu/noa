@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cross2Icon } from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
 
+import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
 type AdminUser = {
@@ -28,11 +29,6 @@ type AdminToolsResponse = {
 
 function coerceStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
-}
-
-function toErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
 }
 
 function sanitizeIdPart(value: string): string {
@@ -96,7 +92,7 @@ export function UsersAdminPage() {
       setAvailableTools(coerceStringArray(toolsPayload.tools));
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
-      setLoadError(toErrorMessage(error, "Unable to load users"));
+      setLoadError(toUserMessage(error, "Unable to load users"));
     } finally {
       if (seq !== loadSeqRef.current) return;
       setLoading(false);
@@ -189,7 +185,7 @@ export function UsersAdminPage() {
       }
     } catch (error) {
       if (panelStillMatches(seq, userId)) {
-        setSaveError(toErrorMessage(error, "Unable to save tool allowlist"));
+        setSaveError(toUserMessage(error, "Unable to save tool allowlist"));
       }
     } finally {
       if (panelStillMatches(seq, userId)) {
@@ -227,7 +223,7 @@ export function UsersAdminPage() {
       );
     } catch (error) {
       if (panelStillMatches(seq, userId)) {
-        setStatusError(toErrorMessage(error, "Unable to update user status"));
+        setStatusError(toUserMessage(error, "Unable to update user status"));
       }
     } finally {
       if (panelStillMatches(seq, userId)) {

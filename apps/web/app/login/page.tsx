@@ -3,8 +3,14 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { getApiUrl } from "@/components/lib/fetch-helper";
+import { toUserMessage } from "@/components/lib/error-message";
+import { getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { setAuthToken, setAuthUser } from "@/components/lib/auth-store";
+
+type LoginResponse = {
+  access_token: string;
+  user?: Parameters<typeof setAuthUser>[0];
+};
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,22 +35,13 @@ export default function LoginPage() {
         body: JSON.stringify({ email, password }),
       });
 
-      const payload = await response.json();
-      if (!response.ok) {
-        if (payload?.detail === "User pending approval") {
-          setError("Your account is pending approval. Ask an admin to enable it.");
-          return;
-        }
-
-        setError(payload?.detail ?? "Login failed");
-        return;
-      }
+      const payload = await jsonOrThrow<LoginResponse>(response);
 
       setAuthToken(payload.access_token);
       setAuthUser(payload.user ?? null);
       router.push("/assistant");
-    } catch {
-      setError("Unable to reach API");
+    } catch (error) {
+      setError(toUserMessage(error, "Login failed"));
     } finally {
       setSubmitting(false);
     }

@@ -16,7 +16,7 @@ from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.errors import AuthInvalidCredentialsError
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.tools.catalog import get_tool_catalog
-from noa_api.storage.postgres.client import create_engine, create_session_factory
+from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.models import (
     AuditLog,
     Role,
@@ -25,8 +25,6 @@ from noa_api.storage.postgres.models import (
     UserRole,
 )
 
-_engine = create_engine()
-_session_factory = create_session_factory(_engine)
 _bearer_scheme = HTTPBearer(auto_error=False)
 
 
@@ -335,7 +333,7 @@ class AuthorizationService:
 
 
 async def get_authorization_service() -> AsyncGenerator[AuthorizationService, None]:
-    async with _session_factory() as session:
+    async with get_session_factory()() as session:
         repository = SQLAuthorizationRepository(session)
         service = AuthorizationService(repository=repository)
         try:
