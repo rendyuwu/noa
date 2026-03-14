@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
+import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
 type WhmServer = {
@@ -30,11 +31,6 @@ type ValidateWhmServerResponse = {
   error_code?: string | null;
   message: string;
 };
-
-function toErrorMessage(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
-}
 
 function formatTimestamp(value: unknown): string {
   if (typeof value !== "string" || !value) return "-";
@@ -75,7 +71,7 @@ export function WhmServersAdminPage() {
       setServers(Array.isArray(payload.servers) ? payload.servers : []);
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
-      setLoadError(toErrorMessage(error, "Unable to load WHM servers"));
+      setLoadError(toUserMessage(error));
     } finally {
       if (seq !== loadSeqRef.current) return;
       setLoading(false);
@@ -132,7 +128,7 @@ export function WhmServersAdminPage() {
       setCreateOpen(false);
       resetCreateForm();
     } catch (error) {
-      setCreateError(toErrorMessage(error, "Unable to create WHM server"));
+      setCreateError(toUserMessage(error));
     } finally {
       setCreating(false);
       setApiToken("");
@@ -154,7 +150,7 @@ export function WhmServersAdminPage() {
         ...prev,
         [serverId]: {
           ok: false,
-          message: toErrorMessage(error, "Validation failed"),
+          message: toUserMessage(error),
         },
       }));
     } finally {
