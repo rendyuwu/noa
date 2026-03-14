@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+from functools import cache
+
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -14,3 +18,13 @@ def create_engine() -> AsyncEngine:
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     return async_sessionmaker(engine, expire_on_commit=False)
+
+
+@cache
+def get_engine() -> AsyncEngine:
+    return create_engine()
+
+
+@cache
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    return create_session_factory(get_engine())

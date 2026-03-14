@@ -12,12 +12,10 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.exc import IntegrityError
 
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
-from noa_api.storage.postgres.client import create_engine, create_session_factory
+from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 
 router = APIRouter(prefix="/admin/whm/servers", tags=["admin"])
-_engine = create_engine()
-_session_factory = create_session_factory(_engine)
 
 
 class WHMServerResponse(BaseModel):
@@ -190,7 +188,7 @@ class WHMServerService:
 
 
 async def get_whm_server_service() -> AsyncGenerator[WHMServerService, None]:
-    async with _session_factory() as session:
+    async with get_session_factory()() as session:
         service = WHMServerService(SQLWHMServerRepository(session))
         try:
             yield service

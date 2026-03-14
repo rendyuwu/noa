@@ -31,7 +31,7 @@ from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
 )
-from noa_api.storage.postgres.client import create_engine, create_session_factory
+from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
     ToolRisk,
@@ -40,8 +40,6 @@ from noa_api.storage.postgres.lifecycle import (
 from noa_api.storage.postgres.models import AuditLog, Message, Thread
 
 router = APIRouter(tags=["assistant"])
-_engine = create_engine()
-_session_factory = create_session_factory(_engine)
 
 logger = logging.getLogger(__name__)
 
@@ -646,7 +644,7 @@ class AssistantService:
 
 
 async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
-    async with _session_factory() as session:
+    async with get_session_factory()() as session:
         service = AssistantService(
             SQLAssistantRepository(session),
             AgentRunner(

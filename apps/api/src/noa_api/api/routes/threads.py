@@ -14,12 +14,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
 from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
-from noa_api.storage.postgres.client import create_engine, create_session_factory
+from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.models import Message, Thread
 
 router = APIRouter(tags=["threads"])
-_engine = create_engine()
-_session_factory = create_session_factory(_engine)
 
 
 class ThreadResponse(BaseModel):
@@ -321,7 +319,7 @@ def _to_thread_response(thread: Thread) -> ThreadResponse:
 
 
 async def get_thread_service() -> AsyncGenerator[ThreadService, None]:
-    async with _session_factory() as session:
+    async with get_session_factory()() as session:
         service = ThreadService(SQLThreadRepository(session))
         try:
             yield service
