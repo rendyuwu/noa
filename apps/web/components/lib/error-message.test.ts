@@ -31,4 +31,12 @@ describe("toUserMessage", () => {
 
     expect(toUserMessage(new ApiError(500, ""))).toBe("Unable to reach API");
   });
+
+  it("prefers an explicit fallback over a generic error message", async () => {
+    const toUserMessage = await loadToUserMessage();
+
+    expect(toUserMessage(new Error("Internal stack trace"), "Unable to load users")).toBe(
+      "Unable to load users",
+    );
+  });
 });

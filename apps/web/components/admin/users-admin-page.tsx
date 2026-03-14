@@ -92,7 +92,7 @@ export function UsersAdminPage() {
       setAvailableTools(coerceStringArray(toolsPayload.tools));
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
-      setLoadError(toUserMessage(error));
+      setLoadError(toUserMessage(error, "Unable to load users"));
     } finally {
       if (seq !== loadSeqRef.current) return;
       setLoading(false);
@@ -185,7 +185,7 @@ export function UsersAdminPage() {
       }
     } catch (error) {
       if (panelStillMatches(seq, userId)) {
-        setSaveError(toUserMessage(error));
+        setSaveError(toUserMessage(error, "Unable to save tool allowlist"));
       }
     } finally {
       if (panelStillMatches(seq, userId)) {
@@ -223,7 +223,7 @@ export function UsersAdminPage() {
       );
     } catch (error) {
       if (panelStillMatches(seq, userId)) {
-        setStatusError(toUserMessage(error));
+        setStatusError(toUserMessage(error, "Unable to update user status"));
       }
     } finally {
       if (panelStillMatches(seq, userId)) {

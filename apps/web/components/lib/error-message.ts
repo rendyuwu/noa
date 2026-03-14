@@ -13,13 +13,13 @@ const isErrorLike = (error: unknown): error is ErrorLike => {
   return typeof error === "object" && error !== null;
 };
 
-export const toUserMessage = (error: unknown): string => {
+export const toUserMessage = (error: unknown, fallback = SAFE_FALLBACK_MESSAGE): string => {
   if (error instanceof ApiError) {
     if (error.errorCode === "user_pending_approval") {
       return PENDING_APPROVAL_MESSAGE;
     }
 
-    return error.detail || SAFE_FALLBACK_MESSAGE;
+    return error.detail || fallback;
   }
 
   if (isErrorLike(error)) {
@@ -33,12 +33,12 @@ export const toUserMessage = (error: unknown): string => {
   }
 
   if (error instanceof TypeError) {
-    return SAFE_FALLBACK_MESSAGE;
+    return fallback;
   }
 
   if (error instanceof Error && error.message) {
-    return error.message;
+    return fallback;
   }
 
-  return SAFE_FALLBACK_MESSAGE;
+  return fallback;
 };

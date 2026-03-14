@@ -10,16 +10,19 @@ vi.mock("@/components/lib/fetch-helper", () => ({
   getApiUrl: () => "/api",
   ApiError: class ApiError extends Error {
     status: number;
+    detail: string;
 
     constructor(status: number, message: string) {
       super(message);
       this.status = status;
+      this.detail = message;
     }
   },
   fetchWithAuth: (...args: any[]) => mocks.fetchWithAuth(...args),
   jsonOrThrow: (...args: any[]) => mocks.jsonOrThrow(...args),
 }));
 
+import { ApiError } from "@/components/lib/fetch-helper";
 import { UsersAdminPage } from "./users-admin-page";
 
 describe("UsersAdminPage", () => {
@@ -176,6 +179,21 @@ describe("UsersAdminPage", () => {
     expect(within(table).getByText("Pending approval")).toBeInTheDocument();
     expect(within(table).getByText("disabled@example.com")).toBeInTheDocument();
     expect(within(table).getByText("Disabled")).toBeInTheDocument();
+  });
+
+  it("shows contextual fallback copy instead of raw load errors", async () => {
+    mocks.fetchWithAuth.mockImplementation(async (path: string) => {
+      if (path === "/admin/users" || path === "/admin/tools") {
+        throw new Error("database connection exploded");
+      }
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    render(<UsersAdminPage />);
+
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Unable to load users");
+    expect(alert).not.toHaveTextContent("database connection exploded");
   });
 
   it("PATCHes /admin/users/:id to disable an active user from the drawer", async () => {
@@ -335,7 +353,7 @@ describe("UsersAdminPage", () => {
         return toolsPayload;
       }
       if (response === patchResponse) {
-        throw new Error(conflictMessage);
+        throw new ApiError(409, conflictMessage);
       }
       throw new Error("Unexpected jsonOrThrow response");
     });
@@ -436,7 +454,7 @@ describe("UsersAdminPage", () => {
         return toolsPayload;
       }
       if (response === patchResponse) {
-        throw new Error(conflictMessage);
+        throw new ApiError(409, conflictMessage);
       }
       throw new Error("Unexpected jsonOrThrow response");
     });

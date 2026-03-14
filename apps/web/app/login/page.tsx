@@ -41,7 +41,7 @@ export default function LoginPage() {
       setAuthUser(payload.user ?? null);
       router.push("/assistant");
     } catch (error) {
-      setError(toUserMessage(error));
+      setError(toUserMessage(error, "Login failed"));
     } finally {
       setSubmitting(false);
     }

@@ -71,7 +71,7 @@ export function WhmServersAdminPage() {
       setServers(Array.isArray(payload.servers) ? payload.servers : []);
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
-      setLoadError(toUserMessage(error));
+      setLoadError(toUserMessage(error, "Unable to load WHM servers"));
     } finally {
       if (seq !== loadSeqRef.current) return;
       setLoading(false);
@@ -128,7 +128,7 @@ export function WhmServersAdminPage() {
       setCreateOpen(false);
       resetCreateForm();
     } catch (error) {
-      setCreateError(toUserMessage(error));
+      setCreateError(toUserMessage(error, "Unable to create WHM server"));
     } finally {
       setCreating(false);
       setApiToken("");
@@ -150,7 +150,7 @@ export function WhmServersAdminPage() {
         ...prev,
         [serverId]: {
           ok: false,
-          message: toUserMessage(error),
+          message: toUserMessage(error, "Validation failed"),
         },
       }));
     } finally {

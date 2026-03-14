@@ -69,4 +69,23 @@ describe("LoginPage", () => {
       "Approval request is still awaiting administrator review.",
     );
   });
+
+  it("shows contextual fallback copy for unexpected login errors", async () => {
+    mocks.fetch.mockRejectedValue(new Error("socket hang up"));
+
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "pending@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    const alert = await screen.findByRole("alert");
+
+    expect(alert).toHaveTextContent("Login failed");
+    expect(alert).not.toHaveTextContent("socket hang up");
+  });
 });
