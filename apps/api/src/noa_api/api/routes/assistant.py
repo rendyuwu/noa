@@ -9,7 +9,7 @@ from uuid import UUID
 
 from assistant_stream import RunController, create_run
 from assistant_stream.serialization import AssistantTransportResponse
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -27,24 +27,19 @@ from noa_api.api.error_codes import (
 )
 from noa_api.api.routes.assistant_commands import (
     AssistantRequest,
-    apply_commands,
     should_run_agent,
-    validate_commands,
 )
 from noa_api.api.routes.assistant_errors import (
     assistant_http_error,
     parse_action_request_id,
     parse_tool_call_id,
 )
-from noa_api.api.routes.assistant_repository import SQLAssistantRepository
-from noa_api.api.routes.assistant_streaming import (
-    _stream_assistant_text,
-    append_fallback_error_message,
-    coerce_messages,
-    controller_is_cancelled,
-    flush_controller_state,
-    make_streaming_placeholder,
+from noa_api.api.routes.assistant_operations import (
+    prepare_assistant_transport,
+    run_agent_phase,
 )
+from noa_api.api.routes.assistant_repository import SQLAssistantRepository
+from noa_api.api.routes.assistant_streaming import _stream_assistant_text
 from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.agent.runner import (
     AgentRunner,
@@ -59,7 +54,7 @@ from noa_api.core.auth.authorization import (
 )
 from noa_api.core.logging_context import log_context
 from noa_api.core.tool_error_sanitizer import sanitize_tool_error
-from noa_api.core.tools.registry import get_tool_definition, get_tool_registry
+from noa_api.core.tools.registry import get_tool_definition
 from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
@@ -76,10 +71,6 @@ router = APIRouter(tags=["assistant"])
 logger = logging.getLogger(__name__)
 
 __all__ = ["_stream_assistant_text", "get_assistant_service", "router"]
-
-
-def _assistant_command_types(payload: AssistantRequest) -> list[str]:
-    return [command.type for command in payload.commands]
 
 
 def _http_exception_error_code(exc: StarletteHTTPException) -> str | None:
@@ -723,38 +714,25 @@ async def assistant_transport(
     assistant_service: AssistantService = Depends(get_assistant_service),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> AssistantTransportResponse:
-    command_types = _assistant_command_types(payload)
+    command_types: list[str] = []
 
     with log_context(
-        assistant_command_types=command_types,
         thread_id=str(payload.thread_id),
         user_id=str(current_user.user_id),
     ):
         try:
-            validate_commands(payload.commands)
-
-            # Fail before starting SSE so route-level errors still propagate as structured
-            # HTTP responses and roll back any partial command mutations.
-            await assistant_service.load_state(
-                owner_user_id=current_user.user_id,
-                thread_id=payload.thread_id,
-            )
-
-            await apply_commands(
-                commands=payload.commands,
-                assistant_service=assistant_service,
-                current_user=current_user,
+            prepared = await prepare_assistant_transport(
                 payload=payload,
+                current_user=current_user,
+                assistant_service=assistant_service,
                 authorization_service=authorization_service,
             )
-
-            canonical_state = await assistant_service.load_state(
-                owner_user_id=current_user.user_id,
-                thread_id=payload.thread_id,
-            )
+            command_types = prepared.command_types
+            canonical_state = prepared.canonical_state
         except asyncio.CancelledError:
             raise
         except Exception as exc:
+            command_types = getattr(exc, "_assistant_command_types", [])
             if isinstance(exc, StarletteHTTPException):
                 logger.info(
                     "assistant_run_failed_pre_agent",
@@ -780,8 +758,6 @@ async def assistant_transport(
             raise
 
     async def run_callback(controller: RunController) -> None:
-        error_text = "Assistant run failed. Please try again."
-
         with log_context(
             assistant_command_types=command_types,
             thread_id=str(payload.thread_id),
@@ -794,148 +770,18 @@ async def assistant_transport(
             controller.state["isRunning"] = True
 
             if should_run_agent(payload.commands):
-                try:
-                    allowed_tools: set[str] = set()
-                    for tool in get_tool_registry():
-                        tool_name = tool.name
-                        if await authorization_service.authorize_tool_access(
-                            current_user, tool_name
-                        ):
-                            allowed_tools.add(tool_name)
-
-                    # Workflow TODO cards are always available for active users.
-                    allowed_tools.add("update_workflow_todo")
-
-                    base_messages = coerce_messages(canonical_state.get("messages"))
-
-                    # Emit a running assistant message immediately so the UI can show
-                    # a first-token loading state before any text arrives.
-                    controller.state["messages"] = [
-                        *base_messages,
-                        make_streaming_placeholder(""),
-                    ]
-
-                    # Flush pending state updates before the first delta.
-                    await flush_controller_state(controller)
-
-                    streamed_text = ""
-
-                    async def _on_text_delta(delta: str) -> None:
-                        nonlocal streamed_text
-                        if not delta:
-                            return
-                        if controller_is_cancelled(controller):
-                            raise asyncio.CancelledError
-                        task = asyncio.current_task()
-                        if task is not None and task.cancelling():
-                            raise asyncio.CancelledError
-
-                        streamed_text += delta
-                        controller.state["messages"] = [
-                            *base_messages,
-                            make_streaming_placeholder(streamed_text),
-                        ]
-                        await flush_controller_state(controller)
-
-                    _ = await assistant_service.run_agent_turn(
-                        owner_user_id=current_user.user_id,
-                        owner_user_email=current_user.email,
-                        thread_id=payload.thread_id,
-                        available_tool_names=allowed_tools,
-                        on_text_delta=_on_text_delta,
-                    )
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    if isinstance(exc, HTTPException):
-                        logger.info(
-                            "assistant_run_failed_agent",
-                            extra={
-                                "assistant_command_types": command_types,
-                                "detail": exc.detail,
-                                "error_code": _http_exception_error_code(exc),
-                                "status_code": exc.status_code,
-                                "thread_id": str(payload.thread_id),
-                                "user_id": str(current_user.user_id),
-                            },
-                        )
-                    else:
-                        logger.exception(
-                            "assistant_run_failed_agent",
-                            extra={
-                                "assistant_command_types": command_types,
-                                "error_type": type(exc).__name__,
-                                "thread_id": str(payload.thread_id),
-                                "user_id": str(current_user.user_id),
-                            },
-                        )
-
-                    persisted_error_message = False
-                    try:
-                        await assistant_service.add_message(
-                            owner_user_id=current_user.user_id,
-                            thread_id=payload.thread_id,
-                            role="assistant",
-                            parts=[{"type": "text", "text": error_text}],
-                        )
-                        persisted_error_message = True
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        logger.exception("assistant_error_message_persist_failed")
-
-                    controller.state["isRunning"] = False
-                    try:
-                        failed_state = await assistant_service.load_state(
-                            owner_user_id=current_user.user_id,
-                            thread_id=payload.thread_id,
-                        )
-                        controller.state["messages"] = coerce_messages(
-                            failed_state.get("messages")
-                        )
-
-                        # If we couldn't persist the assistant error message, ensure the
-                        # client still sees an error by appending one locally.
-                        if not persisted_error_message:
-                            controller.state["messages"] = (
-                                append_fallback_error_message(
-                                    coerce_messages(controller.state.get("messages")),
-                                    error_text,
-                                )
-                            )
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        controller.state["messages"] = append_fallback_error_message(
-                            coerce_messages(controller.state.get("messages")),
-                            error_text,
-                        )
-
-                    await flush_controller_state(controller)
-                    return
-
-            try:
-                updated_state = await assistant_service.load_state(
-                    owner_user_id=current_user.user_id,
-                    thread_id=payload.thread_id,
+                await run_agent_phase(
+                    controller=controller,
+                    payload=payload,
+                    current_user=current_user,
+                    assistant_service=assistant_service,
+                    authorization_service=authorization_service,
+                    canonical_state=canonical_state,
+                    command_types=command_types,
                 )
-                controller.state["messages"] = coerce_messages(
-                    updated_state.get("messages")
-                )
-                controller.state["isRunning"] = False
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                # Avoid escaping exceptions at the end of the callback; keep the stream alive.
-                logger.exception("assistant_state_refresh_failed")
-                controller.state["isRunning"] = False
-
-                controller.state["messages"] = append_fallback_error_message(
-                    coerce_messages(controller.state.get("messages")),
-                    error_text,
-                )
-                await flush_controller_state(controller)
                 return
+
+            controller.state["isRunning"] = False
 
     stream = create_run(run_callback, state=payload.state)
     return AssistantTransportResponse(stream)

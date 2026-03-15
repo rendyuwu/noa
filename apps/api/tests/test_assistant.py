@@ -398,6 +398,36 @@ async def test_thread_state_route_hydrates_persisted_state() -> None:
     assert data["isRunning"] is False
 
 
+async def test_assistant_route_returns_structured_http_error_when_thread_missing() -> (
+    None
+):
+    owner_id = uuid4()
+    app = _build_real_service_app(owner_id=owner_id, thread_id=uuid4())
+    missing_thread_id = uuid4()
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [],
+        "threadId": str(missing_thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/assistant",
+            json=payload,
+            headers={"x-request-id": "assistant-thread-not-found"},
+        )
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+    body = response.json()
+    assert body["detail"] == "Thread not found"
+    assert body["error_code"] == "thread_not_found"
+    assert body["request_id"] == "assistant-thread-not-found"
+    assert response.headers["x-request-id"] == body["request_id"]
+
+
 async def test_assistant_route_uses_assistant_transport_sse() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
@@ -431,7 +461,7 @@ async def test_assistant_route_uses_assistant_transport_sse() -> None:
     assert any(event.get("type") == "update-state" for event in events)
 
 
-async def test_assistant_route_does_not_break_stream_when_agent_turn_raises(
+async def test_assistant_route_streams_fallback_text_after_agent_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     owner_id = uuid4()
@@ -476,28 +506,6 @@ async def test_assistant_route_does_not_break_stream_when_agent_turn_raises(
     assert response.headers["content-type"].startswith("text/event-stream")
     assert response.text.rstrip().endswith("data: [DONE]")
 
-    def _state_contains_text_substring(
-        state: dict[str, object], substring: str
-    ) -> bool:
-        messages = state.get("messages")
-        if not isinstance(messages, list):
-            return False
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            parts = message.get("parts")
-            if not isinstance(parts, list):
-                continue
-            for part in parts:
-                if not isinstance(part, dict):
-                    continue
-                if part.get("type") != "text":
-                    continue
-                text = part.get("text")
-                if isinstance(text, str) and substring in text:
-                    return True
-        return False
-
     state: dict[str, object] = {}
     for event in _iter_assistant_transport_events(response.text):
         if event.get("type") != "update-state":
@@ -513,7 +521,7 @@ async def test_assistant_route_does_not_break_stream_when_agent_turn_raises(
             state.clear()
             state.update(event_state)
 
-    assert _state_contains_text_substring(state, "Assistant run failed")
+    assert _state_contains_text(state, "Assistant run failed. Please try again.")
 
 
 async def test_assistant_route_streams_canonical_state_and_applies_commands() -> None:
@@ -768,6 +776,64 @@ async def test_assistant_route_returns_http_error_for_pre_agent_command_failure(
     assert getattr(record, "error_code") == "unknown_tool_call_id"
     assert getattr(record, "thread_id") == str(thread_id)
     assert getattr(record, "user_id") == str(owner_id)
+
+
+async def test_assistant_route_uses_helper_command_types_for_pre_stream_logging(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+
+    async def _boom_prepare(*_, **__):
+        exc = HTTPException(status_code=400, detail="pre-stream failed")
+        setattr(exc, "_assistant_command_types", ["from-helper"])
+        raise exc
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant.prepare_assistant_transport",
+        _boom_prepare,
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Hello"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    caplog.set_level(logging.INFO, logger="noa_api.api.routes.assistant")
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 400
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_run_failed_pre_agent"
+    )
+    assert getattr(record, "assistant_command_types") == ["from-helper"]
 
 
 @pytest.mark.parametrize(
