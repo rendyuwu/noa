@@ -376,11 +376,11 @@ Updated status after the latest 2026-03-15 continuation passes:
 - Completed on `feat/assistant-service-extraction`: assistant action/tool-result extraction into `apps/api/src/noa_api/api/routes/assistant_action_operations.py` and `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py`, assistant-domain error translation tightening in `apps/api/src/noa_api/api/routes/assistant_errors.py`, thinner `AssistantService` delegation in `apps/api/src/noa_api/api/routes/assistant.py`, and a fresh handoff refresh anchored to the 2026-03-15 assistant service extraction design and implementation plan docs.
 - Completed on `feat/backend-auth-boundary-logging`: shared auth dependency extraction into `apps/api/src/noa_api/api/auth_dependencies.py`, protected-route auth `error_code` coverage, shared auth error-code catalog constants, structured auth boundary success/rejection logs including failed-login visibility, and refreshed verification plus handoff docs for this non-assistant continuation.
 - Completed in the latest continuation pass: shared request validation responses now emit `request_validation_error`, and structured success logging now covers the admin, threads, and WHM admin route flows.
-- Still recommended next: revisit backend telemetry after the new log/event field set stabilizes, and treat any future backend logging or `error_code` follow-up as deeper helper-level/shared-catalog work rather than more route-slice changes.
+- Still recommended next: the main remaining backend follow-up is to revisit backend telemetry after the new log/event field set stabilizes, while treating any later backend logging or `error_code` follow-up as deeper helper-level/shared-catalog work rather than more route-slice changes.
 
 Active next steps
-1. Revisit backend telemetry only after the current structured log/event field set stabilizes.
-2. If more backend logging work is needed later, target deeper helper/service seams instead of reopening this completed route slice.
+1. Main next step: revisit backend telemetry only after the current structured log/event field set stabilizes.
+2. If more backend logging work is needed later, treat it as a deeper helper/service follow-up instead of reopening this completed route slice.
 3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog expansion rather than more route-specific patching.
 
 Historical note
