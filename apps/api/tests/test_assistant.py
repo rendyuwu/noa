@@ -780,6 +780,7 @@ async def test_assistant_route_returns_http_error_for_pre_agent_command_failure(
 
 async def test_assistant_route_returns_http_error_for_pre_stream_domain_failure(
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     from noa_api.api.routes.assistant_errors import AssistantDomainError
 
@@ -821,6 +822,8 @@ async def test_assistant_route_returns_http_error_for_pre_stream_domain_failure(
         "threadId": str(thread_id),
     }
 
+    caplog.set_level(logging.INFO, logger="noa_api.api.routes.assistant")
+
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post(
@@ -834,6 +837,16 @@ async def test_assistant_route_returns_http_error_for_pre_stream_domain_failure(
     assert body["detail"] == "Action request already decided"
     assert body["error_code"] == "action_request_already_decided"
     assert response.headers["x-request-id"] == body["request_id"]
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_run_failed_pre_agent"
+    )
+    assert getattr(record, "status_code") == 409
+    assert getattr(record, "error_code") == "action_request_already_decided"
+    assert getattr(record, "request_id") == "assistant-action-request-already-decided"
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "user_id") == str(owner_id)
 
 
 async def test_assistant_route_uses_helper_command_types_for_pre_stream_logging(

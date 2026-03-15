@@ -266,7 +266,7 @@ async def test_record_tool_result_rejects_foreign_thread() -> None:
     )
     assistant_repo = _FakeAssistantRepository()
 
-    with pytest.raises(HTTPException, match="Tool call not found"):
+    with pytest.raises(HTTPException) as exc_info:
         await record_tool_result(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -277,6 +277,9 @@ async def test_record_tool_result_rejects_foreign_thread() -> None:
             action_tool_run_service=ActionToolRunService(repository=repo),
         )
 
+    assert exc_info.value.status_code == 404
+    assert exc_info.value.detail == "Tool call not found"
+    assert _error_code(exc_info.value) == "tool_call_not_found"
     assert repo.tool_runs[started.id].status == ToolRunStatus.STARTED
     assert assistant_repo.messages == []
     assert assistant_repo.audits == []
@@ -300,7 +303,7 @@ async def test_record_tool_result_rejects_stale_tool_run() -> None:
     started.status = ToolRunStatus.COMPLETED
     assistant_repo = _FakeAssistantRepository()
 
-    with pytest.raises(HTTPException, match="not awaiting result"):
+    with pytest.raises(HTTPException) as exc_info:
         await record_tool_result(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -311,6 +314,9 @@ async def test_record_tool_result_rejects_stale_tool_run() -> None:
             action_tool_run_service=ActionToolRunService(repository=repo),
         )
 
+    assert exc_info.value.status_code == 409
+    assert exc_info.value.detail == "Tool call is not awaiting result"
+    assert _error_code(exc_info.value) == "tool_call_not_awaiting_result"
     assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
     assert assistant_repo.messages == []
     assert assistant_repo.audits == []
