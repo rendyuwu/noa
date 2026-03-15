@@ -64,6 +64,11 @@ class ReportFailingTelemetryRecorder(RecordingTelemetryRecorder):
         raise RuntimeError("report boom")
 
 
+class ExportFailingSpan:
+    def add_event(self, name: str, attributes: dict[str, object] | None = None) -> None:
+        raise RuntimeError("otel export boom")
+
+
 def test_telemetry_settings_defaults() -> None:
     settings = _settings(environment="test")
 
@@ -160,6 +165,54 @@ def test_create_telemetry_recorder_returns_otel_recorder_when_enabled() -> None:
     )
 
     assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+
+
+def test_create_telemetry_recorder_falls_back_to_noop_when_enabled_without_endpoint(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="noa_api.core.telemetry_opentelemetry")
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(environment="test", telemetry_enabled=True)
+    )
+
+    assert isinstance(recorder, NoOpTelemetryRecorder)
+    warning_record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "telemetry_falling_back_to_noop"
+    )
+    assert getattr(warning_record, "reason") == "missing_otlp_endpoint"
+
+
+def test_create_telemetry_recorder_falls_back_to_noop_when_exporter_setup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    module = _telemetry_otel_module()
+    caplog.set_level(logging.WARNING, logger="noa_api.core.telemetry_opentelemetry")
+
+    def fail_exporter(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("span exporter boom")
+
+    monkeypatch.setattr(module, "OTLPSpanExporter", fail_exporter)
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+        )
+    )
+
+    assert isinstance(recorder, NoOpTelemetryRecorder)
+    warning_record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "telemetry_falling_back_to_noop"
+    )
+    assert getattr(warning_record, "reason") == "exporter_setup_failed"
+    assert "span exporter boom" in caplog.text
 
 
 def test_create_app_passes_settings_into_telemetry_factory(
@@ -396,3 +449,39 @@ async def test_unhandled_exception_tolerates_reporting_failure(
     assert getattr(failure_record, "telemetry_operation") == "report"
     assert getattr(failure_record, "telemetry_event") == "api_unhandled_exception"
     assert "report boom" in caplog.text
+
+
+async def test_request_still_succeeds_when_otel_export_raises(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    app = create_app()
+    module = _telemetry_otel_module()
+    recorder_class = getattr(module, "OpenTelemetryRecorder", None)
+
+    assert recorder_class is not None
+
+    monkeypatch.setattr(module, "_active_span", lambda: ExportFailingSpan())
+    app.state.telemetry = recorder_class(tracer=None, meter=None)
+
+    @app.get("/_tests/ok")
+    async def ok_route() -> dict[str, str]:
+        return {"status": "ok"}
+
+    caplog.set_level(logging.ERROR, logger="noa_api.api.error_handling")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/_tests/ok")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+    failure_record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "api_telemetry_failed"
+    )
+    assert getattr(failure_record, "telemetry_operation") == "trace"
+    assert getattr(failure_record, "telemetry_event") == "api_request_completed"
+    assert "otel export boom" in caplog.text
