@@ -22,8 +22,29 @@ Implementation status update (branch lineage):
 - The separate continuation branch `feat/assistant-route-decomposition-continuation` records the next backend-only assistant pass: assistant orchestration now has its own `assistant_operations.py` seam, helper-level tests cover the extracted flow directly, and `assistant.py` is closer to a transport coordinator than before.
 - The branch `feat/assistant-service-extraction` completed the next planned assistant slice: extracted assistant action/tool-result operation seams, a thinner assistant-domain HTTP translation boundary, and refreshed verification/handoff docs for that pass.
 - The current backend-only branch `feat/backend-auth-boundary-logging` completes the next deferred non-assistant slice: shared auth dependency extraction into the API layer, shared auth error-code catalog coverage across login and protected-route auth failures, structured auth boundary success/rejection logs, and refreshed verification/handoff docs for this pass.
-- The remaining notable gaps now center on broader repo-wide structured logging adoption outside the auth and previously refreshed backend flows, the remaining selective non-assistant `error_code` follow-up outside the currently covered route surface, and deferred telemetry reconsideration after the current log/event field set stabilizes.
-- Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-service-extraction-design.md`, `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md`, and `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md`.
+- The latest continuation pass after `feat/backend-auth-boundary-logging` completes the remaining route-slice follow-up from this audit: shared request validation responses now emit the stable `request_validation_error` code, and structured success logging now covers the admin, threads, and WHM admin route flows alongside the previously refreshed backend paths.
+- The remaining notable backend follow-up now centers on deferred telemetry reconsideration after the current log/event field set stabilizes plus any future deeper helper-level logging or shared error-code catalog work, not more work on this completed route slice.
+- Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-service-extraction-design.md`, `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md`, and `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md`.
+
+## 2026-03-15 Continuation Pass: Request Validation Error Code and Route Success Logging
+
+What was done in this continuation pass
+- Shared request validation responses now emit the stable `request_validation_error` code, so request-body, query, and path validation failures no longer depend on detail-only envelopes.
+- Structured success logging now covers the route flows completed in this continuation pass across `apps/api/src/noa_api/api/routes/admin.py`, `apps/api/src/noa_api/api/routes/threads.py`, and `apps/api/src/noa_api/api/routes/whm_admin.py`.
+- This audit report now records that the planned non-assistant route-slice follow-up from the earlier backend continuation passes is complete.
+
+What is not yet done
+- This route-slice follow-up is now complete; the remaining backend work from this audit is no longer wider route-level success logging or request-validation `error_code` wiring.
+- Deferred backend follow-up is now limited to telemetry reconsideration after the current structured log/event field set stabilizes, plus any future deeper helper-level logging or broader shared error-code catalog work if later needed.
+
+What should come next
+- Reconsider backend telemetry only after the current structured log/event field set has settled enough to decide what should feed traces, metrics, or external reporting.
+- Treat any later backend logging or `error_code` follow-up as a deeper helper-level/shared-catalog pass rather than reopening this now-completed route slice.
+- Use `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md` and `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md` as the handoff docs for this completed continuation pass and its deferred backend-only follow-up.
+- Fresh verification for this continuation pass in `apps/api`:
+  - `uv run pytest -q tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py tests/test_request_context.py` -> `43 passed`
+  - `uv run ruff check src tests` -> `All checks passed!`
+  - `uv run pytest -q` -> `199 passed`
 
 ## 2026-03-15 Continuation Pass: Auth Boundary Logging and Error Code Coverage
 
@@ -173,10 +194,11 @@ What changed across the implemented branches
 - Added structured event-style logs with bound request/entity fields in `apps/api/src/noa_api/api/error_handling.py`, `apps/api/src/noa_api/api/routes/assistant.py`, `apps/api/src/noa_api/api/routes/admin.py`, `apps/api/src/noa_api/api/routes/threads.py`, and `apps/api/src/noa_api/api/routes/whm_admin.py`.
 - Added successful assistant action/tool logs with stable bound fields for `action_request_id`, `tool_name`, `tool_run_id`, `thread_id`, and `user_id` in the newly touched assistant service paths.
 - Added structured auth boundary logs plus bound `user_id` / `user_email` context in `apps/api/src/noa_api/api/auth_dependencies.py` and `apps/api/src/noa_api/api/routes/auth.py` for login success/rejection, current-user resolution, `/auth/me`, and auth rejection paths.
+- Added structured success logs for the main admin, threads, and WHM admin route flows, completing the route-level success-logging slice called out by the earlier follow-up notes.
 
 What remains
-- Logging is still not consistently structured/bound across the whole API surface.
-- Key contextual fields such as `user_id`, `thread_id`, `tool_name`, and `tool_run_id` are now present in the touched backend flows, but not yet systematically bound everywhere else in the API.
+- The targeted route-level success-logging work from this audit is now complete for the refreshed backend slices.
+- Any additional backend logging follow-up is now a deeper helper/service-level concern plus deferred telemetry reconsideration, not more work on this route slice.
 
 ### W2: Missing request-scoped context (no request_id / correlation)
 Status
@@ -213,10 +235,11 @@ What changed across the implemented branches
 - Added stable assistant error codes for malformed and missing `toolCallId` / `actionRequestId` paths and preserved schema-level required fields for those commands.
 - Added an API-layer auth dependency seam in `apps/api/src/noa_api/api/auth_dependencies.py` so protected-route auth failures now also return stable auth `error_code` values instead of plain `detail`-only `HTTPException` responses.
 - Expanded the shared backend error-code catalog to cover auth login and protected-route bearer-token failures via shared constants.
+- Added the stable `request_validation_error` code for shared request validation responses so FastAPI validation failures now participate in the same shaped error contract.
 
 What remains
-- Stable `error_code` coverage is broader, but still selective; some routes and helper-level validation errors still rely on `detail` only.
-- Validation and generic route exceptions are shaped consistently now, but they are not yet normalized into a larger app-wide error-code catalog.
+- The route-level `error_code` work called out by this audit is now complete for the refreshed backend slices, including shared request validation responses.
+- Any future `error_code` follow-up is now helper-level normalization or broader shared catalog expansion beyond this completed route slice.
 
 ### W4: Assistant transport route is large and multi-responsibility
 Status
@@ -346,18 +369,19 @@ What remains
 
 ## Current Recommendations
 
-Updated status after the 2026-03-15 auth boundary logging and error-code pass:
+Updated status after the latest 2026-03-15 continuation passes:
 - Completed on the foundation branch: request context middleware, centralized error shaping foundation, shared DB engine/session lifecycle, tool failure sanitization, frontend shared error mapping, app-level error boundary, and initial assistant extraction.
 - Completed on `feat/backend-error-code-assistant-logging`: wider backend `error_code` adoption for threads/admin/WHM/assistant flows, assistant command/streaming extraction, assistant malformed/missing ID error-code coverage, request/entity structured logging context for the touched backend flows, logging-handler compatibility with preconfigured root handlers, and this report refresh.
 - Completed on `feat/assistant-route-decomposition-continuation`: assistant pre-stream preparation and in-stream agent coordination extraction into `apps/api/src/noa_api/api/routes/assistant_operations.py`, focused helper/route regression coverage for the new seam, and a separate continuation handoff pointing to the 2026-03-15 design and implementation docs.
 - Completed on `feat/assistant-service-extraction`: assistant action/tool-result extraction into `apps/api/src/noa_api/api/routes/assistant_action_operations.py` and `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py`, assistant-domain error translation tightening in `apps/api/src/noa_api/api/routes/assistant_errors.py`, thinner `AssistantService` delegation in `apps/api/src/noa_api/api/routes/assistant.py`, and a fresh handoff refresh anchored to the 2026-03-15 assistant service extraction design and implementation plan docs.
 - Completed on `feat/backend-auth-boundary-logging`: shared auth dependency extraction into `apps/api/src/noa_api/api/auth_dependencies.py`, protected-route auth `error_code` coverage, shared auth error-code catalog constants, structured auth boundary success/rejection logs including failed-login visibility, and refreshed verification plus handoff docs for this non-assistant continuation.
-- Still recommended next: continue broader structured logging adoption beyond the auth and previously refreshed route slices, close the remaining selective non-assistant `error_code` gaps, and revisit backend telemetry after the new log/event field set stabilizes.
+- Completed in the latest continuation pass: shared request validation responses now emit `request_validation_error`, and structured success logging now covers the admin, threads, and WHM admin route flows.
+- Still recommended next: revisit backend telemetry after the new log/event field set stabilizes, and treat any future backend logging or `error_code` follow-up as deeper helper-level/shared-catalog work rather than more route-slice changes.
 
 Active next steps
-1. Extend `log_context(...)` adoption across the rest of the backend surface.
-2. Close the remaining selective non-assistant `error_code` gaps across the rest of the backend surface beyond auth/admin/threads/WHM/assistant.
-3. Revisit telemetry only after the current structured log/event field set stabilizes.
+1. Revisit backend telemetry only after the current structured log/event field set stabilizes.
+2. If more backend logging work is needed later, target deeper helper/service seams instead of reopening this completed route slice.
+3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog expansion rather than more route-specific patching.
 
 Historical note
 - The original P0/P1/P2 recommendations from the 2026-03-14 audit drove the foundation branch and the first backend continuation branches. Items such as request IDs, centralized error envelopes, DB session consolidation, tool error sanitization, frontend error boundaries, and initial assistant helper extraction are no longer active recommendations for this worktree.
@@ -428,23 +452,23 @@ Done on `feat/backend-auth-boundary-logging`
   - `uv run pytest -q` -> `195 passed`
   - `uv run ruff check src tests` -> `All checks passed!`
 
-Not yet done after the 2026-03-15 auth boundary logging and error-code pass
-- Broader route-by-route `error_code` adoption beyond the now-covered auth/admin/threads/WHM/assistant flows
-- Rich, consistent structured logging context binding across the rest of the backend surface beyond the current auth and assistant-adjacent event coverage
+Not yet done after the latest 2026-03-15 continuation passes
 - Backend telemetry vendor adoption (`OpenTelemetry`, etc.) remains deferred
+- Any future backend logging follow-up is now deeper helper/service-level work beyond the completed route slice
+- Any future backend `error_code` follow-up is now shared/helper-level catalog work beyond the completed route slice
 
 Recommended next from this worktree
-1. Extend `log_context(...)` adoption beyond the touched backend flows so more successful non-auth paths bind stable identifiers consistently using the current auth and assistant event vocabulary.
-2. Close the remaining selective non-assistant `error_code` gaps across the rest of the backend surface beyond the now-covered auth/admin/threads/WHM/assistant route set.
-3. Revisit backend telemetry only after the new structured log/event fields stabilize and you know which data should feed traces/metrics.
+1. Revisit backend telemetry only after the new structured log/event fields stabilize and you know which data should feed traces/metrics.
+2. If more backend logging work is needed later, target deeper helper/service seams rather than reopening the completed route slice.
+3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog work rather than route-specific patching.
 
 Primary execution handoff for the current continuation pass
 - Worktree: `.worktrees/feat-backend-auth-boundary-logging`
 - Branch: `feat/backend-auth-boundary-logging`
 - Primary plans:
-  - `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md`
-  - `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md`
-- Resume point: this worktree completed the shared auth dependency extraction plus auth-boundary logging/error-code slice and refreshed the audit handoff; use the deferred follow-up list in these docs as the backend-only next-step reference.
+  - `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md`
+  - `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md`
+- Resume point: this worktree completed the non-assistant logging/error-code continuation pass recorded in this audit refresh; the remaining backend-only next-step reference is now telemetry reconsideration plus any future helper-level logging/shared-catalog work.
 
 Historical execution handoff: assistant service extraction
 - Worktree: `apps/api/.worktrees/feat-assistant-service-extraction`
