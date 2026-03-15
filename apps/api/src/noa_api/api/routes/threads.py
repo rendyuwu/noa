@@ -366,6 +366,8 @@ async def list_threads(
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadListResponse:
     threads = await thread_service.list_threads(owner_user_id=current_user.user_id)
+    with log_context(user_id=str(current_user.user_id)):
+        logger.info("threads_list_succeeded", extra={"thread_count": len(threads)})
     return ThreadListResponse(
         threads=[_to_thread_response(thread) for thread in threads]
     )
@@ -382,6 +384,11 @@ async def create_thread(
         title=None if payload is None else payload.title,
         external_id=None if payload is None else payload.local_id,
     )
+    with log_context(user_id=str(current_user.user_id), thread_id=str(thread.id)):
+        logger.info(
+            "thread_created" if created else "thread_reused",
+            extra={"external_id_present": thread.external_id is not None},
+        )
     response = _to_thread_response(thread)
     if created:
         return JSONResponse(
@@ -397,12 +404,14 @@ async def get_thread(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
-    thread = await thread_service.get_thread(
-        owner_user_id=current_user.user_id, thread_id=id
-    )
-    if thread is None:
-        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
-    return _to_thread_response(thread)
+    with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
+        thread = await thread_service.get_thread(
+            owner_user_id=current_user.user_id, thread_id=id
+        )
+        if thread is None:
+            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+        logger.info("thread_retrieved")
+        return _to_thread_response(thread)
 
 
 @router.patch("/threads/{id}", response_model=ThreadResponse)
@@ -412,12 +421,14 @@ async def patch_thread(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
-    thread = await thread_service.update_thread_title(
-        owner_user_id=current_user.user_id, thread_id=id, title=payload.title
-    )
-    if thread is None:
-        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
-    return _to_thread_response(thread)
+    with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
+        thread = await thread_service.update_thread_title(
+            owner_user_id=current_user.user_id, thread_id=id, title=payload.title
+        )
+        if thread is None:
+            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+        logger.info("thread_title_updated")
+        return _to_thread_response(thread)
 
 
 @router.post("/threads/{id}/archive", response_model=ThreadResponse)
@@ -426,12 +437,14 @@ async def archive_thread(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
-    thread = await thread_service.set_archived(
-        owner_user_id=current_user.user_id, thread_id=id, is_archived=True
-    )
-    if thread is None:
-        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
-    return _to_thread_response(thread)
+    with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
+        thread = await thread_service.set_archived(
+            owner_user_id=current_user.user_id, thread_id=id, is_archived=True
+        )
+        if thread is None:
+            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+        logger.info("thread_archived")
+        return _to_thread_response(thread)
 
 
 @router.post("/threads/{id}/unarchive", response_model=ThreadResponse)
@@ -440,12 +453,14 @@ async def unarchive_thread(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
-    thread = await thread_service.set_archived(
-        owner_user_id=current_user.user_id, thread_id=id, is_archived=False
-    )
-    if thread is None:
-        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
-    return _to_thread_response(thread)
+    with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
+        thread = await thread_service.set_archived(
+            owner_user_id=current_user.user_id, thread_id=id, is_archived=False
+        )
+        if thread is None:
+            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+        logger.info("thread_unarchived")
+        return _to_thread_response(thread)
 
 
 @router.delete("/threads/{id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -454,12 +469,14 @@ async def delete_thread(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> Response:
-    deleted = await thread_service.delete_thread(
-        owner_user_id=current_user.user_id, thread_id=id
-    )
-    if not deleted:
-        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
+        deleted = await thread_service.delete_thread(
+            owner_user_id=current_user.user_id, thread_id=id
+        )
+        if not deleted:
+            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+        logger.info("thread_deleted")
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/threads/{id}/title", response_model=GenerateTitleResponse)
@@ -469,53 +486,62 @@ async def generate_thread_title(
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> GenerateTitleResponse:
-    stored = await thread_service.get_thread(
-        owner_user_id=current_user.user_id, thread_id=id
-    )
-    if stored is None:
-        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
-    if stored.title is not None:
-        return GenerateTitleResponse(title=stored.title)
-
-    user_text_chunks: list[str] = []
-    fallback_text_chunks: list[str] = []
-    for message in payload.messages:
-        text_chunks = _message_text_chunks(message)
-        if not text_chunks:
-            continue
-        fallback_text_chunks.extend(text_chunks)
-        if message.get("role") == "user":
-            user_text_chunks.extend(text_chunks)
-
-    candidate = " ".join(user_text_chunks or fallback_text_chunks).strip()
-
-    if not candidate:
-        persisted_messages = await thread_service.list_thread_messages_for_title(
-            owner_user_id=current_user.user_id,
-            thread_id=id,
+    with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
+        stored = await thread_service.get_thread(
+            owner_user_id=current_user.user_id, thread_id=id
         )
-        for message in persisted_messages:
+        if stored is None:
+            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+        if stored.title is not None:
+            logger.info("thread_title_returned_existing")
+            return GenerateTitleResponse(title=stored.title)
+
+        user_text_chunks: list[str] = []
+        fallback_text_chunks: list[str] = []
+        for message in payload.messages:
             text_chunks = _message_text_chunks(message)
             if not text_chunks:
                 continue
             fallback_text_chunks.extend(text_chunks)
             if message.get("role") == "user":
                 user_text_chunks.extend(text_chunks)
+
+        generated_title_source = "request_messages"
         candidate = " ".join(user_text_chunks or fallback_text_chunks).strip()
 
-    title = (candidate[:80] if candidate else "New Thread").strip()
+        if not candidate:
+            persisted_messages = await thread_service.list_thread_messages_for_title(
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
+            for message in persisted_messages:
+                text_chunks = _message_text_chunks(message)
+                if not text_chunks:
+                    continue
+                fallback_text_chunks.extend(text_chunks)
+                if message.get("role") == "user":
+                    user_text_chunks.extend(text_chunks)
+            candidate = " ".join(user_text_chunks or fallback_text_chunks).strip()
+            generated_title_source = "persisted_messages"
 
-    did_set = await thread_service.set_thread_title_if_missing(
-        owner_user_id=current_user.user_id,
-        thread_id=id,
-        title=title,
-    )
-    if did_set:
-        return GenerateTitleResponse(title=title)
+        title = (candidate[:80] if candidate else "New Thread").strip()
 
-    refreshed = await thread_service.get_thread(
-        owner_user_id=current_user.user_id, thread_id=id
-    )
-    if refreshed is None:
-        _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
-    return GenerateTitleResponse(title=refreshed.title or title)
+        did_set = await thread_service.set_thread_title_if_missing(
+            owner_user_id=current_user.user_id,
+            thread_id=id,
+            title=title,
+        )
+        if did_set:
+            logger.info(
+                "thread_title_generated",
+                extra={"generated_title_source": generated_title_source},
+            )
+            return GenerateTitleResponse(title=title)
+
+        refreshed = await thread_service.get_thread(
+            owner_user_id=current_user.user_id, thread_id=id
+        )
+        if refreshed is None:
+            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+        logger.info("thread_title_returned_refreshed")
+        return GenerateTitleResponse(title=refreshed.title or title)

@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import io
+import json
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -11,6 +17,7 @@ from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.threads import get_thread_service, router as threads_router
 from noa_api.core.auth.authorization import AuthorizationUser
+from noa_api.core.logging import configure_logging
 
 
 @dataclass
@@ -127,6 +134,37 @@ def _create_threads_app() -> FastAPI:
     install_error_handling(app)
     app.include_router(threads_router)
     return app
+
+
+@contextmanager
+def _capture_structured_logs() -> Iterator[io.StringIO]:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_formatters = {
+        id(handler): handler.formatter for handler in original_handlers
+    }
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root_logger.handlers = [handler]
+    root_logger.setLevel(logging.INFO)
+
+    try:
+        configure_logging()
+        yield stream
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+        for existing_handler in original_handlers:
+            existing_handler.setFormatter(original_formatters[id(existing_handler)])
+
+
+def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
+    return [
+        cast(dict[str, Any], json.loads(line))
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
 
 
 async def test_threads_routes_enforce_owner_scoping() -> None:
@@ -298,6 +336,120 @@ async def test_threads_routes_initialize_is_idempotent_per_user_local_id() -> No
     assert threads[0]["externalId"] == "local-123"
 
 
+async def test_threads_routes_emit_structured_success_logs() -> None:
+    app = _create_threads_app()
+
+    service = _FakeThreadService()
+    owner_id = uuid4()
+    app.dependency_overrides[get_thread_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=owner_id,
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["member"],
+        tools=[],
+    )
+
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            list_response = await client.get("/threads")
+            create_response = await client.post(
+                "/threads", json={"localId": "local-123"}
+            )
+            reused_response = await client.post(
+                "/threads", json={"localId": "local-123"}
+            )
+
+            assert create_response.status_code == 201
+            thread_id = create_response.json()["id"]
+
+            get_response = await client.get(f"/threads/{thread_id}")
+            patch_response = await client.patch(
+                f"/threads/{thread_id}", json={"title": None}
+            )
+            archive_response = await client.post(f"/threads/{thread_id}/archive")
+            unarchive_response = await client.post(f"/threads/{thread_id}/unarchive")
+            title_response = await client.post(
+                f"/threads/{thread_id}/title",
+                json={
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": "Need a deployment rollback checklist",
+                        }
+                    ]
+                },
+            )
+            delete_response = await client.delete(f"/threads/{thread_id}")
+
+    assert list_response.status_code == 200
+    assert reused_response.status_code == 200
+    assert get_response.status_code == 200
+    assert patch_response.status_code == 200
+    assert archive_response.status_code == 200
+    assert unarchive_response.status_code == 200
+    assert title_response.status_code == 200
+    assert delete_response.status_code == 204
+
+    payloads = _load_log_payloads(stream)
+
+    threads_list_events = [
+        payload for payload in payloads if payload["event"] == "threads_list_succeeded"
+    ]
+    assert len(threads_list_events) == 1
+
+    created_events = [
+        payload for payload in payloads if payload["event"] == "thread_created"
+    ]
+    assert len(created_events) == 1
+    created_payload = created_events[0]
+    assert created_payload["external_id_present"] is True
+    assert isinstance(created_payload["thread_id"], str)
+
+    reused_events = [
+        payload for payload in payloads if payload["event"] == "thread_reused"
+    ]
+    assert len(reused_events) == 1
+    reused_payload = reused_events[0]
+    assert reused_payload["thread_id"] == created_payload["thread_id"]
+
+    retrieved_events = [
+        payload for payload in payloads if payload["event"] == "thread_retrieved"
+    ]
+    assert len(retrieved_events) == 1
+
+    updated_events = [
+        payload for payload in payloads if payload["event"] == "thread_title_updated"
+    ]
+    assert len(updated_events) == 1
+
+    archived_events = [
+        payload for payload in payloads if payload["event"] == "thread_archived"
+    ]
+    assert len(archived_events) == 1
+
+    unarchived_events = [
+        payload for payload in payloads if payload["event"] == "thread_unarchived"
+    ]
+    assert len(unarchived_events) == 1
+
+    title_generated_events = [
+        payload for payload in payloads if payload["event"] == "thread_title_generated"
+    ]
+    assert len(title_generated_events) == 1
+    title_generated_payload = title_generated_events[0]
+    assert title_generated_payload["generated_title_source"] == "request_messages"
+
+    deleted_events = [
+        payload for payload in payloads if payload["event"] == "thread_deleted"
+    ]
+    assert len(deleted_events) == 1
+    deleted_payload = deleted_events[0]
+    assert deleted_payload["request_path"] == f"/threads/{thread_id}"
+
+
 async def test_threads_routes_reject_oversized_title() -> None:
     app = _create_threads_app()
 
@@ -409,7 +561,9 @@ async def test_threads_title_endpoint_persists_generated_title_for_later_list_fe
     assert threads_by_id[str(thread.id)]["title"] == expected_title
 
 
-async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch() -> None:
+async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch_structured_logs() -> (
+    None
+):
     app = _create_threads_app()
 
     service = _FakeThreadService()
@@ -428,16 +582,17 @@ async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch() -
     renamed_title = "User renamed title"
     generated_title = "Need a deployment rollback checklist"
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        patch_response = await client.patch(
-            f"/threads/{thread.id}", json={"title": renamed_title}
-        )
-        title_response = await client.post(
-            f"/threads/{thread.id}/title",
-            json={"messages": [{"role": "user", "content": generated_title}]},
-        )
-        list_response = await client.get("/threads")
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            patch_response = await client.patch(
+                f"/threads/{thread.id}", json={"title": renamed_title}
+            )
+            title_response = await client.post(
+                f"/threads/{thread.id}/title",
+                json={"messages": [{"role": "user", "content": generated_title}]},
+            )
+            list_response = await client.get("/threads")
 
     assert patch_response.status_code == 200
     assert patch_response.json()["title"] == renamed_title
@@ -451,8 +606,22 @@ async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch() -
     assert str(thread.id) in threads_by_id
     assert threads_by_id[str(thread.id)]["title"] == renamed_title
 
+    payloads = _load_log_payloads(stream)
+    existing_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "thread_title_returned_existing"
+    ]
+    assert len(existing_events) == 1
+    assert existing_events[0]["thread_id"] == str(thread.id)
 
-async def test_threads_title_endpoint_returns_stored_title_when_set_during_generation() -> (
+    generated_events = [
+        payload for payload in payloads if payload["event"] == "thread_title_generated"
+    ]
+    assert generated_events == []
+
+
+async def test_threads_title_endpoint_returns_stored_title_when_set_during_generation_structured_logs() -> (
     None
 ):
     app = _create_threads_app()
@@ -512,13 +681,14 @@ async def test_threads_title_endpoint_returns_stored_title_when_set_during_gener
     generated_title = "Create an incident response runbook"
     service.rename_before_next_write(thread_id=thread.id, title=stored_title)
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        title_response = await client.post(
-            f"/threads/{thread.id}/title",
-            json={"messages": [{"role": "user", "content": generated_title}]},
-        )
-        list_response = await client.get("/threads")
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            title_response = await client.post(
+                f"/threads/{thread.id}/title",
+                json={"messages": [{"role": "user", "content": generated_title}]},
+            )
+            list_response = await client.get("/threads")
 
     assert title_response.status_code == 200
     assert title_response.json()["title"] == stored_title
@@ -528,6 +698,20 @@ async def test_threads_title_endpoint_returns_stored_title_when_set_during_gener
     threads_by_id = {item["id"]: item for item in threads}
     assert str(thread.id) in threads_by_id
     assert threads_by_id[str(thread.id)]["title"] == stored_title
+
+    payloads = _load_log_payloads(stream)
+    refreshed_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "thread_title_returned_refreshed"
+    ]
+    assert len(refreshed_events) == 1
+    assert refreshed_events[0]["thread_id"] == str(thread.id)
+
+    generated_events = [
+        payload for payload in payloads if payload["event"] == "thread_title_generated"
+    ]
+    assert generated_events == []
 
 
 async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
