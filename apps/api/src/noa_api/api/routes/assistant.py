@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncGenerator
-from inspect import signature
 from typing import Any, Awaitable, Callable, cast
 from uuid import UUID
 
@@ -15,11 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from noa_api.api.error_codes import (
-    ACTION_REQUEST_ALREADY_DECIDED,
-    ACTION_REQUEST_NOT_FOUND,
-    CHANGE_APPROVAL_REQUIRED,
     THREAD_NOT_FOUND,
-    TOOL_ACCESS_DENIED,
     USER_PENDING_APPROVAL,
 )
 from noa_api.api.routes.assistant_commands import (
@@ -27,11 +22,12 @@ from noa_api.api.routes.assistant_commands import (
     should_run_agent,
 )
 from noa_api.api.routes.assistant_action_operations import (
+    approve_action_request as approve_action_request_operation,
     deny_action_request as deny_action_request_operation,
+    execute_approved_tool_run,
 )
 from noa_api.api.routes.assistant_errors import (
     assistant_http_error,
-    parse_action_request_id,
 )
 from noa_api.api.routes.assistant_operations import (
     prepare_assistant_transport,
@@ -40,7 +36,6 @@ from noa_api.api.routes.assistant_operations import (
 from noa_api.api.routes.assistant_repository import SQLAssistantRepository
 from noa_api.api.routes.assistant_streaming import _stream_assistant_text
 from noa_api.api.routes.assistant_tool_result_operations import record_tool_result
-from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.agent.runner import (
     AgentRunner,
     AgentRunnerResult,
@@ -53,17 +48,11 @@ from noa_api.core.auth.authorization import (
     get_current_auth_user,
 )
 from noa_api.core.logging_context import log_context
-from noa_api.core.tool_error_sanitizer import sanitize_tool_error
-from noa_api.core.tools.registry import get_tool_definition
 from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
 )
 from noa_api.storage.postgres.client import get_session_factory
-from noa_api.storage.postgres.lifecycle import (
-    ActionRequestStatus,
-    ToolRisk,
-)
 
 router = APIRouter(tags=["assistant"])
 
@@ -175,272 +164,38 @@ class AssistantService:
         is_user_active: bool,
         authorize_tool_access: Callable[[str], Awaitable[bool]],
     ) -> None:
-        if not is_user_active:
-            raise assistant_http_error(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="User pending approval",
-                error_code=USER_PENDING_APPROVAL,
-            )
-
-        parsed_id = parse_action_request_id(action_request_id)
-        request = await self._action_tool_run_service.get_action_request(
-            action_request_id=parsed_id
-        )
-        if request is None:
-            raise assistant_http_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Action request not found",
-                error_code=ACTION_REQUEST_NOT_FOUND,
-            )
-        if (
-            request.thread_id != thread_id
-            or request.requested_by_user_id != owner_user_id
-        ):
-            raise assistant_http_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Action request not found",
-                error_code=ACTION_REQUEST_NOT_FOUND,
-            )
-        if request.status != ActionRequestStatus.PENDING:
-            raise assistant_http_error(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Action request already decided",
-                error_code=ACTION_REQUEST_ALREADY_DECIDED,
-            )
-        if request.risk != ToolRisk.CHANGE:
-            raise assistant_http_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Only CHANGE actions require approval",
-                error_code=CHANGE_APPROVAL_REQUIRED,
-            )
-        if not await authorize_tool_access(request.tool_name):
-            raise assistant_http_error(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Tool access denied",
-                error_code=TOOL_ACCESS_DENIED,
-            )
-
-        try:
-            approved = await self._action_tool_run_service.approve_action_request(
-                action_request_id=parsed_id,
-                decided_by_user_id=owner_user_id,
-            )
-        except ValueError as exc:
-            raise assistant_http_error(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Action request already decided",
-                error_code=ACTION_REQUEST_ALREADY_DECIDED,
-            ) from exc
-        if approved is None:
-            raise assistant_http_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Action request not found",
-                error_code=ACTION_REQUEST_NOT_FOUND,
-            )
-
-        await self._repository.create_audit_log(
-            event_type="action_approved",
-            actor_email=owner_user_email,
-            tool_name=approved.tool_name,
-            metadata={
-                "thread_id": str(thread_id),
-                "action_request_id": str(approved.id),
-            },
-        )
-
-        started = await self._action_tool_run_service.start_tool_run(
-            thread_id=thread_id,
-            tool_name=approved.tool_name,
-            args=approved.args,
-            action_request_id=approved.id,
-            requested_by_user_id=owner_user_id,
-        )
-        tool_call_id = str(started.id)
-        with log_context(
-            action_request_id=str(approved.id),
-            thread_id=str(thread_id),
-            tool_name=approved.tool_name,
-            tool_run_id=str(started.id),
-            user_id=str(owner_user_id),
-        ):
-            await self._repository.create_audit_log(
-                event_type="tool_started",
-                actor_email=owner_user_email,
-                tool_name=approved.tool_name,
-                metadata={
-                    "thread_id": str(thread_id),
-                    "tool_run_id": str(started.id),
-                    "action_request_id": str(approved.id),
-                },
-            )
-            await self._repository.create_message(
+        async def execute_tool(
+            *,
+            started_tool_run: Any,
+            approved_request: Any,
+            owner_user_id: UUID,
+            owner_user_email: str | None,
+            thread_id: UUID,
+            repository: Any,
+            action_tool_run_service: ActionToolRunService,
+        ) -> None:
+            await execute_approved_tool_run(
+                started_tool_run=started_tool_run,
+                approved_request=approved_request,
+                owner_user_id=owner_user_id,
+                owner_user_email=owner_user_email,
                 thread_id=thread_id,
-                role="assistant",
-                parts=[
-                    {
-                        "type": "tool-call",
-                        "toolName": approved.tool_name,
-                        "toolCallId": tool_call_id,
-                        "args": approved.args,
-                    }
-                ],
-            )
-            logger.info(
-                "assistant_action_approved",
-                extra={
-                    "action_request_id": str(approved.id),
-                    "thread_id": str(thread_id),
-                    "tool_name": approved.tool_name,
-                    "tool_run_id": str(started.id),
-                    "user_id": str(owner_user_id),
-                },
+                repository=repository,
+                action_tool_run_service=action_tool_run_service,
+                session=self._session,
             )
 
-            tool = get_tool_definition(approved.tool_name)
-            if tool is None:
-                error = "Requested tool is unavailable"
-                _ = await self._action_tool_run_service.fail_tool_run(
-                    tool_run_id=started.id,
-                    error=error,
-                )
-                await self._repository.create_message(
-                    thread_id=thread_id,
-                    role="tool",
-                    parts=[
-                        build_tool_result_part(
-                            tool_name=approved.tool_name,
-                            tool_call_id=tool_call_id,
-                            result=cast(dict[str, object], {"error": error}),
-                            is_error=True,
-                        )
-                    ],
-                )
-                await self._repository.create_audit_log(
-                    event_type="tool_failed",
-                    actor_email=owner_user_email,
-                    tool_name=approved.tool_name,
-                    metadata={
-                        "thread_id": str(thread_id),
-                        "tool_run_id": str(started.id),
-                        "action_request_id": str(approved.id),
-                        "error": error,
-                    },
-                )
-                return
-            if tool.risk != ToolRisk.CHANGE:
-                error = "Approved tool risk mismatch"
-                _ = await self._action_tool_run_service.fail_tool_run(
-                    tool_run_id=started.id,
-                    error=error,
-                )
-                await self._repository.create_message(
-                    thread_id=thread_id,
-                    role="tool",
-                    parts=[
-                        build_tool_result_part(
-                            tool_name=approved.tool_name,
-                            tool_call_id=tool_call_id,
-                            result=cast(
-                                dict[str, object],
-                                {
-                                    "error": error,
-                                    "expectedRisk": ToolRisk.CHANGE.value,
-                                    "actualRisk": tool.risk.value,
-                                },
-                            ),
-                            is_error=True,
-                        )
-                    ],
-                )
-                await self._repository.create_audit_log(
-                    event_type="tool_failed",
-                    actor_email=owner_user_email,
-                    tool_name=approved.tool_name,
-                    metadata={
-                        "thread_id": str(thread_id),
-                        "tool_run_id": str(started.id),
-                        "action_request_id": str(approved.id),
-                        "error": error,
-                    },
-                )
-                return
-
-            try:
-                result = await self._execute_tool(tool=tool, args=approved.args)
-                completed = await self._action_tool_run_service.complete_tool_run(
-                    tool_run_id=started.id, result=result
-                )
-                persisted_result = (
-                    completed.result
-                    if completed is not None and isinstance(completed.result, dict)
-                    else result
-                )
-                await self._repository.create_message(
-                    thread_id=thread_id,
-                    role="tool",
-                    parts=[
-                        build_tool_result_part(
-                            tool_name=approved.tool_name,
-                            tool_call_id=tool_call_id,
-                            result=persisted_result,
-                            is_error=False,
-                        )
-                    ],
-                )
-                await self._repository.create_audit_log(
-                    event_type="tool_completed",
-                    actor_email=owner_user_email,
-                    tool_name=approved.tool_name,
-                    metadata={
-                        "thread_id": str(thread_id),
-                        "tool_run_id": str(started.id),
-                        "action_request_id": str(approved.id),
-                    },
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                sanitized_error = sanitize_tool_error(exc)
-                logger.exception(
-                    "assistant_approved_tool_execution_failed",
-                    extra={
-                        "action_request_id": str(approved.id),
-                        "error_code": sanitized_error.error_code,
-                        "thread_id": str(thread_id),
-                        "tool_name": approved.tool_name,
-                        "tool_run_id": str(started.id),
-                        "user_id": str(owner_user_id),
-                    },
-                )
-                _ = await self._action_tool_run_service.fail_tool_run(
-                    tool_run_id=started.id,
-                    error=sanitized_error.error_code,
-                )
-                await self._repository.create_message(
-                    thread_id=thread_id,
-                    role="tool",
-                    parts=[
-                        build_tool_result_part(
-                            tool_name=approved.tool_name,
-                            tool_call_id=tool_call_id,
-                            result=cast(dict[str, object], sanitized_error.as_result()),
-                            is_error=True,
-                        )
-                    ],
-                )
-                await self._repository.create_audit_log(
-                    event_type="tool_failed",
-                    actor_email=owner_user_email,
-                    tool_name=approved.tool_name,
-                    metadata={
-                        "thread_id": str(thread_id),
-                        "tool_run_id": str(started.id),
-                        "action_request_id": str(approved.id),
-                        "error": sanitized_error.error,
-                        "error_code": sanitized_error.error_code,
-                    },
-                )
-                return
+        await approve_action_request_operation(
+            owner_user_id=owner_user_id,
+            owner_user_email=owner_user_email,
+            thread_id=thread_id,
+            action_request_id=action_request_id,
+            is_user_active=is_user_active,
+            authorize_tool_access=authorize_tool_access,
+            repository=self._repository,
+            action_tool_run_service=self._action_tool_run_service,
+            execute_tool=execute_tool,
+        )
 
     async def deny_action(
         self,
@@ -506,16 +261,6 @@ class AssistantService:
                     },
                 )
         return result
-
-    async def _execute_tool(
-        self, *, tool: Any, args: dict[str, object]
-    ) -> dict[str, object]:
-        if (
-            self._session is not None
-            and "session" in signature(tool.execute).parameters
-        ):
-            return await tool.execute(session=self._session, **args)
-        return await tool.execute(**args)
 
 
 async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:

@@ -374,6 +374,310 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
     assert operations.calls == [("execute", "set_demo_flag")]
 
 
+async def test_execute_approved_tool_run_fails_when_tool_definition_missing(
+    monkeypatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="missing_change",
+        args={},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+    assistant_repo = _FakeAssistantRepository()
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        lambda _name: None,
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
+    assert repo.tool_runs[started.id].error == "Requested tool is unavailable"
+    assert assistant_repo.messages[-1] == {
+        "thread_id": thread_id,
+        "role": "tool",
+        "parts": [
+            {
+                "type": "tool-result",
+                "toolName": "missing_change",
+                "toolCallId": str(started.id),
+                "result": {"error": "Requested tool is unavailable"},
+                "isError": True,
+            }
+        ],
+    }
+    assert assistant_repo.audits[-1] == {
+        "event_type": "tool_failed",
+        "actor_email": "owner@example.com",
+        "tool_name": "missing_change",
+        "metadata": {
+            "thread_id": str(thread_id),
+            "tool_run_id": str(started.id),
+            "action_request_id": str(request.id),
+            "error": "Requested tool is unavailable",
+        },
+    }
+
+
+async def test_execute_approved_tool_run_fails_on_risk_mismatch(monkeypatch) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="read_only_tool",
+        args={},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+    assistant_repo = _FakeAssistantRepository()
+    tool = ToolDefinition(
+        name="read_only_tool",
+        description="Actually read-only.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        execute=_allow,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
+    assert repo.tool_runs[started.id].error == "Approved tool risk mismatch"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Approved tool risk mismatch",
+        "expectedRisk": "CHANGE",
+        "actualRisk": "READ",
+    }
+    assert assistant_repo.audits[-1] == {
+        "event_type": "tool_failed",
+        "actor_email": "owner@example.com",
+        "tool_name": "read_only_tool",
+        "metadata": {
+            "thread_id": str(thread_id),
+            "tool_run_id": str(started.id),
+            "action_request_id": str(request.id),
+            "error": "Approved tool risk mismatch",
+        },
+    }
+
+
+async def test_execute_approved_tool_run_sanitizes_execution_errors(
+    monkeypatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="failing_change_direct",
+        args={},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def failing_change(*, session, **kwargs):
+        _ = session, kwargs
+        raise RuntimeError("boom")
+
+    tool = ToolDefinition(
+        name="failing_change_direct",
+        description="Always fails.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        execute=failing_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+
+    with caplog.at_level("ERROR"):
+        await execute_approved_tool_run(
+            started_tool_run=started,
+            approved_request=request,
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            repository=assistant_repo,
+            action_tool_run_service=ActionToolRunService(repository=repo),
+            session=_FakeSession(),
+        )
+
+    run = next(iter(repo.tool_runs.values()))
+    assert run.error == "tool_execution_failed"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Tool execution failed",
+        "error_code": "tool_execution_failed",
+    }
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_approved_tool_execution_failed"
+    )
+    assert getattr(record, "error_code") == "tool_execution_failed"
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "tool_name") == "failing_change_direct"
+    assert getattr(record, "user_id") == str(owner_id)
+    assert "boom" in caplog.text
+
+
+async def test_execute_approved_tool_run_completes_and_persists_result(
+    monkeypatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="successful_change",
+        args={},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def successful_change(*, session, **kwargs):
+        _ = session, kwargs
+        return {"when": datetime(2026, 3, 13, 12, 0, 0, tzinfo=UTC)}
+
+    tool = ToolDefinition(
+        name="successful_change",
+        description="Succeeds.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        execute=successful_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    run = next(iter(repo.tool_runs.values()))
+    assert run.status == ToolRunStatus.COMPLETED
+    assert assistant_repo.messages[-1]["role"] == "tool"
+    part = assistant_repo.messages[-1]["parts"][0]
+    assert part["type"] == "tool-result"
+    assert part["result"]["when"] == "2026-03-13T12:00:00+00:00"
+    assert assistant_repo.audits[-1] == {
+        "event_type": "tool_completed",
+        "actor_email": "owner@example.com",
+        "tool_name": "successful_change",
+        "metadata": {
+            "thread_id": str(thread_id),
+            "tool_run_id": str(started.id),
+            "action_request_id": str(request.id),
+        },
+    }
+
+
 async def test_deny_action_request_writes_message_and_audit_metadata() -> None:
     from noa_api.api.routes.assistant_action_operations import deny_action_request
 
@@ -505,7 +809,7 @@ async def test_assistant_service_approve_change_tool_failure_is_persisted_and_do
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant.get_tool_definition",
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -581,7 +885,7 @@ async def test_assistant_service_approve_change_tool_timeout_is_sanitized(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant.get_tool_definition",
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -650,7 +954,7 @@ async def test_assistant_service_approve_change_tool_logs_original_exception(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant.get_tool_definition",
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -1101,7 +1405,7 @@ async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant.get_tool_definition",
+        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
