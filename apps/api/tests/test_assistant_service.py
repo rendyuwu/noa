@@ -121,6 +121,29 @@ class _FakeAssistantRepository:
 
 
 @dataclass
+class _FakeApprovedToolExecutor:
+    calls: list[tuple[str, str]] = field(default_factory=list)
+
+    async def execute(
+        self,
+        *,
+        started_tool_run: ToolRun,
+        approved_request: ActionRequest,
+        owner_user_id: UUID,
+        owner_user_email: str | None,
+        thread_id: UUID,
+        repository: _FakeAssistantRepository,
+        action_tool_run_service: ActionToolRunService,
+    ) -> None:
+        assert started_tool_run.status == ToolRunStatus.STARTED
+        assert started_tool_run.thread_id == thread_id
+        assert started_tool_run.requested_by_user_id == owner_user_id
+        assert started_tool_run.action_request_id == approved_request.id
+        _ = owner_user_email, repository, action_tool_run_service
+        self.calls.append(("execute", approved_request.tool_name))
+
+
+@dataclass
 class _InMemoryActionToolRunRepository:
     action_requests: dict[UUID, ActionRequest]
     tool_runs: dict[UUID, ToolRun]
@@ -223,6 +246,138 @@ def _error_code(exc: HTTPException) -> str | None:
         return error_code
     headers = exc.headers or {}
     return headers.get("x-error-code") or headers.get("X-Error-Code")
+
+
+async def test_record_tool_result_rejects_foreign_thread() -> None:
+    from noa_api.api.routes.assistant_tool_result_operations import (
+        record_tool_result,
+    )
+
+    owner_id = uuid4()
+    foreign_thread_id = uuid4()
+    actual_thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    started = await repo.start_tool_run(
+        thread_id=actual_thread_id,
+        tool_name="get_current_time",
+        args={},
+        action_request_id=None,
+        requested_by_user_id=owner_id,
+    )
+    assistant_repo = _FakeAssistantRepository()
+
+    with pytest.raises(HTTPException, match="Tool call not found"):
+        await record_tool_result(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=foreign_thread_id,
+            tool_call_id=str(started.id),
+            result={"ok": True},
+            repository=assistant_repo,
+            action_tool_run_service=ActionToolRunService(repository=repo),
+        )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.STARTED
+    assert assistant_repo.messages == []
+    assert assistant_repo.audits == []
+
+
+async def test_approve_action_starts_tool_run_before_execution() -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        approve_action_request,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="set_demo_flag",
+        args={"key": "feature_x", "value": True},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    assistant_repo = _FakeAssistantRepository()
+    operations = _FakeApprovedToolExecutor()
+
+    await approve_action_request(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        action_request_id=str(request.id),
+        is_user_active=True,
+        authorize_tool_access=lambda _tool: _allow(),
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        execute_tool=operations.execute,
+    )
+
+    started = next(iter(repo.tool_runs.values()))
+    assert request.status == ActionRequestStatus.APPROVED
+    assert started.status == ToolRunStatus.STARTED
+    assert assistant_repo.messages[-1] == {
+        "thread_id": thread_id,
+        "role": "assistant",
+        "parts": [
+            {
+                "type": "tool-call",
+                "toolName": "set_demo_flag",
+                "toolCallId": str(started.id),
+                "args": {"key": "feature_x", "value": True},
+            }
+        ],
+    }
+    assert [event["event_type"] for event in assistant_repo.audits] == [
+        "action_approved",
+        "tool_started",
+    ]
+    assert operations.calls == [("execute", "set_demo_flag")]
+
+
+async def test_deny_action_request_writes_message_and_audit_metadata() -> None:
+    from noa_api.api.routes.assistant_action_operations import deny_action_request
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="set_demo_flag",
+        args={"key": "feature_x", "value": True},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    assistant_repo = _FakeAssistantRepository()
+
+    await deny_action_request(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        action_request_id=str(request.id),
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    assert request.status == ActionRequestStatus.DENIED
+    assert assistant_repo.messages[-1] == {
+        "thread_id": thread_id,
+        "role": "assistant",
+        "parts": [
+            {
+                "type": "text",
+                "text": "Denied action request for tool 'set_demo_flag'.",
+            }
+        ],
+    }
+    assert assistant_repo.audits[-1] == {
+        "event_type": "action_denied",
+        "actor_email": "owner@example.com",
+        "tool_name": "set_demo_flag",
+        "metadata": {
+            "thread_id": str(thread_id),
+            "action_request_id": str(request.id),
+        },
+    }
 
 
 async def test_assistant_service_approve_executes_pending_change_and_writes_audit(

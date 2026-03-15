@@ -778,6 +778,64 @@ async def test_assistant_route_returns_http_error_for_pre_agent_command_failure(
     assert getattr(record, "user_id") == str(owner_id)
 
 
+async def test_assistant_route_returns_http_error_for_pre_stream_domain_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from noa_api.api.routes.assistant_errors import AssistantDomainError
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+
+    async def _boom_prepare(*_, **__):
+        raise AssistantDomainError(
+            status_code=409,
+            detail="Action request already decided",
+            error_code="action_request_already_decided",
+        )
+
+    monkeypatch.setattr(
+        "noa_api.api.routes.assistant.prepare_assistant_transport",
+        _boom_prepare,
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "approve-action",
+                "actionRequestId": str(uuid4()),
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/assistant",
+            json=payload,
+            headers={"x-request-id": "assistant-action-request-already-decided"},
+        )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["detail"] == "Action request already decided"
+    assert body["error_code"] == "action_request_already_decided"
+    assert response.headers["x-request-id"] == body["request_id"]
+
+
 async def test_assistant_route_uses_helper_command_types_for_pre_stream_logging(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
