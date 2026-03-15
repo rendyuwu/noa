@@ -10,8 +10,9 @@ from httpx import ASGITransport, AsyncClient
 import pytest
 from sqlalchemy.exc import IntegrityError
 
+from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_handling import ApiHTTPException, install_error_handling
-from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
+from noa_api.core.auth.authorization import AuthorizationUser
 
 
 @dataclass

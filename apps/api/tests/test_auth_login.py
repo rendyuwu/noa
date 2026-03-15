@@ -1,3 +1,8 @@
+import io
+import json
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -6,6 +11,15 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+import noa_api.api.auth_dependencies as auth_dependencies
+import noa_api.api.routes.auth as auth_routes
+from noa_api.api.error_codes import (
+    AUTHENTICATION_SERVICE_UNAVAILABLE,
+    INVALID_CREDENTIALS,
+    INVALID_TOKEN,
+    MISSING_BEARER_TOKEN,
+    USER_PENDING_APPROVAL,
+)
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.core.auth.auth_service import AuthResult, AuthService, AuthUser
@@ -17,6 +31,7 @@ from noa_api.core.auth.errors import (
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.ldap_service import LDAPService, LdapUser
 from noa_api.core.config import Settings
+from noa_api.core.logging import configure_logging
 
 
 def _settings(**kwargs: Any) -> Settings:
@@ -159,6 +174,37 @@ def _create_auth_app() -> FastAPI:
     return app
 
 
+@contextmanager
+def _capture_structured_logs() -> Iterator[io.StringIO]:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_formatters = {
+        id(handler): handler.formatter for handler in original_handlers
+    }
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root_logger.handlers = [handler]
+    root_logger.setLevel(logging.INFO)
+
+    try:
+        configure_logging()
+        yield stream
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+        for existing_handler in original_handlers:
+            existing_handler.setFormatter(original_formatters[id(existing_handler)])
+
+
+def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
+    return [
+        cast(dict[str, Any], json.loads(line))
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
+
+
 async def test_auth_service_auto_provisions_pending_user() -> None:
     repo = _InMemoryAuthRepository()
     service = AuthService(
@@ -261,7 +307,7 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     assert invalid_response.status_code == 401
     invalid_body = invalid_response.json()
     assert invalid_body["detail"] == "Invalid credentials"
-    assert invalid_body["error_code"] == "invalid_credentials"
+    assert invalid_body["error_code"] == INVALID_CREDENTIALS
     assert isinstance(invalid_body["request_id"], str)
     assert invalid_response.headers["x-request-id"] == invalid_body["request_id"]
 
@@ -276,7 +322,7 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     assert pending_response.status_code == 403
     pending_body = pending_response.json()
     assert pending_body["detail"] == "User pending approval"
-    assert pending_body["error_code"] == "user_pending_approval"
+    assert pending_body["error_code"] == USER_PENDING_APPROVAL
     assert isinstance(pending_body["request_id"], str)
     assert pending_response.headers["x-request-id"] == pending_body["request_id"]
 
@@ -291,7 +337,7 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     assert unavailable_response.status_code == 503
     unavailable_body = unavailable_response.json()
     assert unavailable_body["detail"] == "Authentication service unavailable"
-    assert unavailable_body["error_code"] == "authentication_service_unavailable"
+    assert unavailable_body["error_code"] == AUTHENTICATION_SERVICE_UNAVAILABLE
     assert isinstance(unavailable_body["request_id"], str)
     assert (
         unavailable_response.headers["x-request-id"] == unavailable_body["request_id"]
@@ -312,6 +358,227 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
     assert payload["user"]["email"] == "user@example.com"
 
 
+async def test_auth_routes_emit_structured_auth_boundary_logs() -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            login_response = await client.post(
+                "/auth/login", json={"email": "user@example.com", "password": "ok"}
+            )
+            me_response = await client.get(
+                "/auth/me", headers={"Authorization": "Bearer good-token"}
+            )
+            invalid_response = await client.get(
+                "/auth/me", headers={"Authorization": "Bearer bad-token"}
+            )
+
+    assert login_response.status_code == 200
+    assert me_response.status_code == 200
+    assert invalid_response.status_code == 401
+
+    payloads = _load_log_payloads(stream)
+    success_events = [
+        payload for payload in payloads if payload["event"] == "auth_login_succeeded"
+    ]
+    assert len(success_events) == 1
+    success_payload = success_events[0]
+    assert success_payload["user_email"] == "user@example.com"
+    assert isinstance(success_payload["user_id"], str)
+    assert success_payload["roles"] == ["admin"]
+    assert success_payload["is_active"] is True
+    assert success_payload["request_path"] == "/auth/login"
+    assert "password" not in success_payload
+    assert "access_token" not in success_payload
+
+    resolved_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "auth_current_user_resolved"
+    ]
+    assert len(resolved_events) == 1
+    resolved_payload = resolved_events[0]
+    assert resolved_payload["user_email"] == "user@example.com"
+    assert isinstance(resolved_payload["user_id"], str)
+    assert resolved_payload["roles"] == ["admin"]
+    assert resolved_payload["is_active"] is True
+    assert resolved_payload["request_path"] == "/auth/me"
+
+    me_success_events = [
+        payload for payload in payloads if payload["event"] == "auth_me_succeeded"
+    ]
+    assert len(me_success_events) == 1
+    me_success_payload = me_success_events[0]
+    assert me_success_payload["user_email"] == "user@example.com"
+    assert isinstance(me_success_payload["user_id"], str)
+    assert me_success_payload["roles"] == ["admin"]
+    assert me_success_payload["is_active"] is True
+    assert me_success_payload["request_path"] == "/auth/me"
+
+    rejection_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "auth_current_user_rejected"
+    ]
+    assert len(rejection_events) == 1
+    rejection_payload = rejection_events[0]
+    assert rejection_payload["status_code"] == 401
+    assert rejection_payload["error_code"] == INVALID_TOKEN
+    assert rejection_payload["failure_stage"] == "jwt_decode"
+    assert rejection_payload["request_path"] == "/auth/me"
+    assert "authorization" not in rejection_payload
+
+
+async def test_login_route_emits_structured_rejection_log() -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="invalid"
+    )
+
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/auth/login", json={"email": "user@example.com", "password": "bad"}
+            )
+
+    assert response.status_code == 401
+
+    payloads = _load_log_payloads(stream)
+    rejection_events = [
+        payload for payload in payloads if payload["event"] == "auth_login_rejected"
+    ]
+    assert len(rejection_events) == 1
+    rejection_payload = rejection_events[0]
+    assert rejection_payload["status_code"] == 401
+    assert rejection_payload["error_code"] == INVALID_CREDENTIALS
+    assert rejection_payload["failure_stage"] == "invalid_credentials"
+    assert rejection_payload["request_path"] == "/auth/login"
+    assert rejection_payload["user_email"] == "user@example.com"
+    assert "password" not in rejection_payload
+    assert "access_token" not in rejection_payload
+
+
+async def test_me_route_emits_auth_boundary_rejection_log_for_inactive_user() -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/auth/me", headers={"Authorization": "Bearer inactive-token"}
+            )
+
+    assert response.status_code == 403
+
+    payloads = _load_log_payloads(stream)
+    rejection_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "auth_current_user_rejected"
+    ]
+    assert len(rejection_events) == 1
+    rejection_payload = rejection_events[0]
+    assert rejection_payload["status_code"] == 403
+    assert rejection_payload["error_code"] == USER_PENDING_APPROVAL
+    assert rejection_payload["failure_stage"] == "inactive_user"
+    assert rejection_payload["request_path"] == "/auth/me"
+    assert rejection_payload["user_email"] == "inactive@example.com"
+    assert isinstance(rejection_payload["user_id"], str)
+
+    me_success_events = [
+        payload for payload in payloads if payload["event"] == "auth_me_succeeded"
+    ]
+    assert me_success_events == []
+
+
+async def test_login_route_uses_shared_invalid_credentials_error_code(
+    monkeypatch,
+) -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="invalid"
+    )
+    monkeypatch.setattr(
+        auth_routes,
+        "INVALID_CREDENTIALS",
+        "catalog_invalid_credentials",
+        raising=False,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "bad"}
+        )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Invalid credentials"
+    assert body["error_code"] == "catalog_invalid_credentials"
+
+
+async def test_login_route_uses_shared_user_pending_approval_error_code(
+    monkeypatch,
+) -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="pending"
+    )
+    monkeypatch.setattr(
+        auth_routes,
+        "USER_PENDING_APPROVAL",
+        "catalog_user_pending_approval",
+        raising=False,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["detail"] == "User pending approval"
+    assert body["error_code"] == "catalog_user_pending_approval"
+
+
+async def test_login_route_uses_shared_auth_service_unavailable_error_code(
+    monkeypatch,
+) -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="auth_error"
+    )
+    monkeypatch.setattr(
+        auth_routes,
+        "AUTHENTICATION_SERVICE_UNAVAILABLE",
+        "catalog_authentication_service_unavailable",
+        raising=False,
+    )
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+
+    assert response.status_code == 503
+    body = response.json()
+    assert body["detail"] == "Authentication service unavailable"
+    assert body["error_code"] == "catalog_authentication_service_unavailable"
+
+
 async def test_login_route_maps_auth_service_failure_to_503() -> None:
     app = _create_auth_app()
 
@@ -327,7 +594,7 @@ async def test_login_route_maps_auth_service_failure_to_503() -> None:
     assert response.status_code == 503
     body = response.json()
     assert body["detail"] == "Authentication service unavailable"
-    assert body["error_code"] == "authentication_service_unavailable"
+    assert body["error_code"] == AUTHENTICATION_SERVICE_UNAVAILABLE
     assert isinstance(body["request_id"], str)
     assert response.headers["x-request-id"] == body["request_id"]
 
@@ -367,9 +634,59 @@ async def test_me_route_rejects_invalid_token() -> None:
     assert response.status_code == 401
     body = response.json()
     assert body["detail"] == "Invalid token"
-    assert body["error_code"] == "invalid_token"
+    assert body["error_code"] == INVALID_TOKEN
     assert isinstance(body["request_id"], str)
     assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_me_route_uses_shared_invalid_token_error_code(monkeypatch) -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+    monkeypatch.setattr(
+        auth_dependencies,
+        "INVALID_TOKEN",
+        "catalog_invalid_token",
+        raising=False,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/auth/me", headers={"Authorization": "Bearer bad-token"}
+        )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Invalid token"
+    assert body["error_code"] == "catalog_invalid_token"
+
+
+async def test_me_route_uses_shared_missing_bearer_token_error_code(
+    monkeypatch,
+) -> None:
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+    monkeypatch.setattr(
+        auth_dependencies,
+        "MISSING_BEARER_TOKEN",
+        "catalog_missing_bearer_token",
+        raising=False,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/auth/me")
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Missing bearer token"
+    assert body["error_code"] == "catalog_missing_bearer_token"
 
 
 async def test_me_route_rejects_missing_bearer_token() -> None:
@@ -386,7 +703,7 @@ async def test_me_route_rejects_missing_bearer_token() -> None:
     assert response.status_code == 401
     body = response.json()
     assert body["detail"] == "Missing bearer token"
-    assert body["error_code"] == "missing_bearer_token"
+    assert body["error_code"] == MISSING_BEARER_TOKEN
     assert isinstance(body["request_id"], str)
     assert response.headers["x-request-id"] == body["request_id"]
 
@@ -407,7 +724,7 @@ async def test_me_route_rejects_inactive_user() -> None:
     assert response.status_code == 403
     body = response.json()
     assert body["detail"] == "User pending approval"
-    assert body["error_code"] == "user_pending_approval"
+    assert body["error_code"] == USER_PENDING_APPROVAL
     assert isinstance(body["request_id"], str)
     assert response.headers["x-request-id"] == body["request_id"]
 

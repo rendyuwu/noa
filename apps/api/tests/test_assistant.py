@@ -14,6 +14,7 @@ from httpx import ASGITransport, AsyncClient
 
 pytest.importorskip("assistant_stream")
 
+from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.assistant import (
     AssistantService,
@@ -25,7 +26,6 @@ from noa_api.api.routes.assistant import router as assistant_router
 from noa_api.core.auth.authorization import (
     AuthorizationUser,
     get_authorization_service,
-    get_current_auth_user,
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 
