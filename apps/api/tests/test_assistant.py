@@ -31,6 +31,7 @@ from noa_api.core.auth.authorization import (
     get_authorization_service,
 )
 from noa_api.core.logging import configure_logging
+from noa_api.core.telemetry import TelemetryEvent
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 
 
@@ -166,6 +167,22 @@ def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
         for line in stream.getvalue().splitlines()
         if line.strip()
     ]
+
+
+class RecordingTelemetryRecorder:
+    def __init__(self) -> None:
+        self.trace_events: list[TelemetryEvent] = []
+        self.metric_events: list[tuple[TelemetryEvent, int | float]] = []
+        self.report_events: list[tuple[TelemetryEvent, str | None]] = []
+
+    def trace(self, event: TelemetryEvent) -> None:
+        self.trace_events.append(event)
+
+    def metric(self, event: TelemetryEvent, *, value: int | float) -> None:
+        self.metric_events.append((event, value))
+
+    def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
+        self.report_events.append((event, detail))
 
 
 @dataclass
@@ -623,6 +640,104 @@ async def test_assistant_route_emits_structured_agent_failure_log_with_request_i
     assert log_payload["error_code"] == "action_request_already_decided"
 
 
+async def test_assistant_route_records_unexpected_agent_failure_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    recorder = RecordingTelemetryRecorder()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+
+    async def _boom_run_agent_turn(*_, **__) -> AgentRunnerResult:
+        raise RuntimeError("agent boom")
+
+    monkeypatch.setattr(service, "run_agent_turn", _boom_run_agent_turn)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+    app.state.telemetry = recorder
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Trigger agent"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assistant_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "assistant_run_failed_agent"
+    ]
+    assert assistant_trace_events == [
+        TelemetryEvent(
+            name="assistant_run_failed_agent",
+            attributes={
+                "assistant_command_types": "add-message",
+                "thread_id": str(thread_id),
+                "user_id": str(owner_id),
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
+    assistant_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "assistant.failures.total"
+    ]
+    assert assistant_metric_events == [
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "error_type": "RuntimeError",
+                },
+            ),
+            1,
+        )
+    ]
+    assistant_report_events = [
+        (event, detail)
+        for event, detail in recorder.report_events
+        if event.name == "assistant_run_failed_agent"
+    ]
+    assert assistant_report_events == [
+        (
+            TelemetryEvent(
+                name="assistant_run_failed_agent",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "thread_id": str(thread_id),
+                    "user_id": str(owner_id),
+                    "error_type": "RuntimeError",
+                },
+            ),
+            None,
+        )
+    ]
+
+
 async def test_assistant_route_streams_canonical_state_and_applies_commands() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
@@ -875,6 +990,191 @@ async def test_assistant_route_returns_http_error_for_pre_agent_command_failure(
     assert getattr(record, "error_code") == "unknown_tool_call_id"
     assert getattr(record, "thread_id") == str(thread_id)
     assert getattr(record, "user_id") == str(owner_id)
+
+
+async def test_assistant_route_records_pre_agent_http_failure_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    recorder = RecordingTelemetryRecorder()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+
+    async def _boom_add_tool_result(*_, **__) -> None:
+        raise HTTPException(
+            status_code=400,
+            detail="Unknown tool call id",
+            headers={"x-error-code": "unknown_tool_call_id"},
+        )
+
+    monkeypatch.setattr(service, "add_tool_result", _boom_add_tool_result)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+    app.state.telemetry = recorder
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-tool-result",
+                "toolCallId": "tool-call-1",
+                "result": {"ok": True},
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 400
+    assistant_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "assistant_run_failed_pre_agent"
+    ]
+    assert assistant_trace_events == [
+        TelemetryEvent(
+            name="assistant_run_failed_pre_agent",
+            attributes={
+                "assistant_command_types": "add-tool-result",
+                "thread_id": str(thread_id),
+                "user_id": str(owner_id),
+                "status_code": 400,
+                "error_code": "unknown_tool_call_id",
+            },
+        )
+    ]
+    assistant_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "assistant.failures.total"
+    ]
+    assert assistant_metric_events == [
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-tool-result",
+                    "status_code": 400,
+                    "error_code": "unknown_tool_call_id",
+                },
+            ),
+            1,
+        )
+    ]
+    assistant_report_events = [
+        (event, detail)
+        for event, detail in recorder.report_events
+        if event.name == "assistant_run_failed_pre_agent"
+    ]
+    assert assistant_report_events == []
+
+
+async def test_assistant_route_records_unexpected_pre_agent_failure_telemetry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    recorder = RecordingTelemetryRecorder()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+
+    async def _boom_add_tool_result(*_, **__) -> None:
+        raise RuntimeError("pre-agent boom")
+
+    monkeypatch.setattr(service, "add_tool_result", _boom_add_tool_result)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+    app.state.telemetry = recorder
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-tool-result",
+                "toolCallId": "tool-call-1",
+                "result": {"ok": True},
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 500
+    assistant_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "assistant_run_failed_pre_agent"
+    ]
+    assert assistant_trace_events == [
+        TelemetryEvent(
+            name="assistant_run_failed_pre_agent",
+            attributes={
+                "assistant_command_types": "add-tool-result",
+                "thread_id": str(thread_id),
+                "user_id": str(owner_id),
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
+    assistant_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "assistant.failures.total"
+    ]
+    assert assistant_metric_events == [
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-tool-result",
+                    "error_type": "RuntimeError",
+                },
+            ),
+            1,
+        )
+    ]
+    assistant_report_events = [
+        (event, detail)
+        for event, detail in recorder.report_events
+        if event.name == "assistant_run_failed_pre_agent"
+    ]
+    assert assistant_report_events == [
+        (
+            TelemetryEvent(
+                name="assistant_run_failed_pre_agent",
+                attributes={
+                    "assistant_command_types": "add-tool-result",
+                    "thread_id": str(thread_id),
+                    "user_id": str(owner_id),
+                    "error_type": "RuntimeError",
+                },
+            ),
+            None,
+        )
+    ]
 
 
 async def test_assistant_route_returns_http_error_for_pre_stream_domain_failure(

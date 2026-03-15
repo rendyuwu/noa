@@ -27,6 +27,23 @@ from noa_api.core.auth.authorization import (
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.errors import AuthInvalidCredentialsError
 from noa_api.core.logging import configure_logging
+from noa_api.core.telemetry import TelemetryEvent
+
+
+class RecordingTelemetryRecorder:
+    def __init__(self) -> None:
+        self.trace_events: list[TelemetryEvent] = []
+        self.metric_events: list[tuple[TelemetryEvent, int | float]] = []
+        self.report_events: list[tuple[TelemetryEvent, str | None]] = []
+
+    def trace(self, event: TelemetryEvent) -> None:
+        self.trace_events.append(event)
+
+    def metric(self, event: TelemetryEvent, *, value: int | float) -> None:
+        self.metric_events.append((event, value))
+
+    def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
+        self.report_events.append((event, detail))
 
 
 @contextmanager
@@ -611,8 +628,90 @@ async def test_admin_route_uses_admin_access_contract_for_inactive_user() -> Non
     assert response.headers["x-request-id"] == body["request_id"]
 
 
+async def test_admin_routes_record_current_user_telemetry_for_protected_requests() -> (
+    None
+):
+    app = _create_admin_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
+    app.dependency_overrides[get_authorization_service] = lambda: (
+        _FakeAuthorizationService()
+    )
+    app.dependency_overrides[get_auth_service] = lambda: (
+        _FakeProtectedRouteAuthService()
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        app.dependency_overrides[get_jwt_service] = lambda: (
+            _FakeProtectedRouteJWTService()
+        )
+        success_response = await client.get(
+            "/admin/users", headers={"Authorization": "Bearer good-token"}
+        )
+
+        app.dependency_overrides[get_jwt_service] = lambda: (
+            _FakeProtectedRouteJWTService(invalid=True)
+        )
+        invalid_response = await client.get(
+            "/admin/users", headers={"Authorization": "Bearer bad-token"}
+        )
+
+    assert success_response.status_code == 200
+    assert invalid_response.status_code == 401
+
+    resolved_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "auth_current_user_resolved"
+    ]
+    assert len(resolved_events) == 1
+    assert resolved_events[0].attributes["user_email"] == "admin@example.com"
+    assert isinstance(resolved_events[0].attributes["user_id"], str)
+
+    rejection_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "auth_current_user_rejected"
+    ]
+    assert rejection_events == [
+        TelemetryEvent(
+            name="auth_current_user_rejected",
+            attributes={
+                "status_code": 401,
+                "error_code": INVALID_TOKEN,
+                "failure_stage": "jwt_decode",
+            },
+        )
+    ]
+
+    auth_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "auth.outcomes.total"
+    ]
+    assert auth_metric_events == [
+        (
+            TelemetryEvent(
+                name="auth.outcomes.total",
+                attributes={
+                    "event_name": "auth_current_user_rejected",
+                    "status_code": 401,
+                    "error_code": INVALID_TOKEN,
+                    "failure_stage": "jwt_decode",
+                },
+            ),
+            1,
+        )
+    ]
+    assert recorder.report_events == []
+    assert all(event.name != "auth_me_succeeded" for event in recorder.trace_events)
+
+
 async def test_admin_routes_allow_admin_management_operations() -> None:
     app = _create_admin_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
     service = _FakeAuthorizationService()
     admin_user = AuthorizationUser(
         user_id=uuid4(),
@@ -707,6 +806,95 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
         == f"/admin/users/{service.target_user_id}/tools"
     )
 
+    route_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name != "api_request_completed"
+    ]
+    route_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "admin.outcomes.total"
+    ]
+
+    assert route_trace_events == [
+        TelemetryEvent(
+            name="admin_users_list_succeeded",
+            attributes={
+                "user_count": 1,
+                "user_email": admin_user.email,
+                "user_id": str(admin_user.user_id),
+            },
+        ),
+        TelemetryEvent(
+            name="admin_tools_list_succeeded",
+            attributes={
+                "tool_count": 3,
+                "user_email": admin_user.email,
+                "user_id": str(admin_user.user_id),
+            },
+        ),
+        TelemetryEvent(
+            name="admin_user_status_updated",
+            attributes={
+                "is_active": False,
+                "target_user_id": str(service.target_user_id),
+                "user_id": str(admin_user.user_id),
+            },
+        ),
+        TelemetryEvent(
+            name="admin_user_tools_updated",
+            attributes={
+                "assigned_tool_count": 2,
+                "target_user_id": str(service.target_user_id),
+                "user_id": str(admin_user.user_id),
+            },
+        ),
+    ]
+    assert route_metric_events == [
+        (
+            TelemetryEvent(
+                name="admin.outcomes.total",
+                attributes={
+                    "event_name": "admin_users_list_succeeded",
+                    "status_family": "2xx",
+                },
+            ),
+            1,
+        ),
+        (
+            TelemetryEvent(
+                name="admin.outcomes.total",
+                attributes={
+                    "event_name": "admin_tools_list_succeeded",
+                    "status_family": "2xx",
+                },
+            ),
+            1,
+        ),
+        (
+            TelemetryEvent(
+                name="admin.outcomes.total",
+                attributes={
+                    "event_name": "admin_user_status_updated",
+                    "status_family": "2xx",
+                },
+            ),
+            1,
+        ),
+        (
+            TelemetryEvent(
+                name="admin.outcomes.total",
+                attributes={
+                    "event_name": "admin_user_tools_updated",
+                    "status_family": "2xx",
+                },
+            ),
+            1,
+        ),
+    ]
+    assert recorder.report_events == []
+
 
 async def test_admin_route_rejects_unknown_tools_with_400() -> None:
     app = _create_admin_app()
@@ -768,6 +956,8 @@ async def test_admin_route_returns_error_code_for_missing_user_404() -> None:
 
 async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None:
     app = _create_admin_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
 
     repo = _InMemoryAuthorizationRepository()
     admin_id = uuid4()
@@ -781,9 +971,7 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
     )
     repo.user_roles[admin_id] = {"admin"}
     service = _build_authorization_service(repo)
-
-    app.dependency_overrides[get_authorization_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    admin_user = AuthorizationUser(
         user_id=uuid4(),
         email="owner@example.com",
         display_name="Owner",
@@ -791,6 +979,9 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
         roles=["admin"],
         tools=[],
     )
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: admin_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -806,3 +997,40 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
     assert body["error_code"] == "last_active_admin"
     assert body["request_id"] == "admin-last-active"
     assert response.headers["x-request-id"] == body["request_id"]
+
+    route_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name != "api_request_completed"
+    ]
+    route_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "admin.outcomes.total"
+    ]
+
+    assert route_trace_events == [
+        TelemetryEvent(
+            name="admin_last_active_admin_conflict",
+            attributes={
+                "error_code": "last_active_admin",
+                "status_code": 409,
+                "target_user_id": str(admin_id),
+                "user_id": str(admin_user.user_id),
+            },
+        )
+    ]
+    assert route_metric_events == [
+        (
+            TelemetryEvent(
+                name="admin.outcomes.total",
+                attributes={
+                    "error_code": "last_active_admin",
+                    "event_name": "admin_last_active_admin_conflict",
+                    "status_family": "4xx",
+                },
+            ),
+            1,
+        )
+    ]
+    assert recorder.report_events == []

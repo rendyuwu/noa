@@ -19,8 +19,10 @@ from noa_api.core.request_context import (
     reset_request_id,
     set_request_id,
 )
+from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
 
 REQUEST_ID_HEADER = "X-Request-Id"
+UNMATCHED_REQUEST_PATH = "unmatched"
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,39 @@ class RequestContextMiddleware:
                             "status_code": response_status_code,
                         },
                     )
+                    request_completed_event = TelemetryEvent(
+                        name="api_request_completed",
+                        attributes={
+                            "request_id": request_id,
+                            "request_method": request_method,
+                            "request_path": request_path,
+                            "status_code": response_status_code,
+                            "duration_ms": duration_ms,
+                        },
+                    )
+                    _safe_trace(scope["app"], request_completed_event)
+                    metric_request_path = _resolve_metric_request_path(scope)
+                    metric_attributes = {
+                        "request_method": request_method,
+                        "request_path": metric_request_path,
+                        "status_code": response_status_code,
+                    }
+                    _safe_metric(
+                        scope["app"],
+                        TelemetryEvent(
+                            name="api.requests.total",
+                            attributes=metric_attributes,
+                        ),
+                        value=1,
+                    )
+                    _safe_metric(
+                        scope["app"],
+                        TelemetryEvent(
+                            name="api.request.duration_ms",
+                            attributes=metric_attributes,
+                        ),
+                        value=duration_ms,
+                    )
         finally:
             reset_request_id(token)
 
@@ -130,6 +165,17 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
             "request_method": request.method,
             "request_path": request.url.path,
         },
+    )
+    _safe_report(
+        request.app,
+        TelemetryEvent(
+            name="api_unhandled_exception",
+            attributes={
+                "error_type": type(exc).__name__,
+                "request_method": request.method,
+                "request_path": request.url.path,
+            },
+        ),
     )
     return _json_error_response(
         status_code=500,
@@ -184,6 +230,53 @@ def _extract_header_error_code(headers: Mapping[str, str] | None) -> str | None:
     if headers is None:
         return None
     return headers.get("x-error-code") or headers.get("X-Error-Code")
+
+
+def _safe_trace(app: FastAPI, event: TelemetryEvent) -> None:
+    try:
+        get_telemetry_recorder(app).trace(event)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "trace",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _safe_metric(app: FastAPI, event: TelemetryEvent, *, value: int | float) -> None:
+    try:
+        get_telemetry_recorder(app).metric(event, value=value)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "metric",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _safe_report(app: FastAPI, event: TelemetryEvent) -> None:
+    try:
+        get_telemetry_recorder(app).report(event)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "report",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _resolve_metric_request_path(scope: Scope) -> str | None:
+    route = scope.get("route")
+    route_path = getattr(route, "path_format", None) or getattr(route, "name", None)
+    if isinstance(route_path, str) and route_path:
+        return route_path
+    return UNMATCHED_REQUEST_PATH
 
 
 def _unpack_error_detail(detail: Any) -> tuple[Any, str | None]:

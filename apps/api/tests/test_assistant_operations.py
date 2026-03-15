@@ -18,6 +18,7 @@ from noa_api.api.routes.assistant_commands import AssistantRequest
 from noa_api.api.routes.assistant_operations import prepare_assistant_transport
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging import configure_logging
+from noa_api.core.telemetry import TelemetryEvent
 
 
 def _active_user() -> AuthorizationUser:
@@ -82,6 +83,22 @@ def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
         for line in stream.getvalue().splitlines()
         if line.strip()
     ]
+
+
+class RecordingTelemetryRecorder:
+    def __init__(self) -> None:
+        self.trace_events: list[TelemetryEvent] = []
+        self.metric_events: list[tuple[TelemetryEvent, int | float]] = []
+        self.report_events: list[tuple[TelemetryEvent, str | None]] = []
+
+    def trace(self, event: TelemetryEvent) -> None:
+        self.trace_events.append(event)
+
+    def metric(self, event: TelemetryEvent, *, value: int | float) -> None:
+        self.metric_events.append((event, value))
+
+    def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
+        self.report_events.append((event, detail))
 
 
 @dataclass
@@ -430,6 +447,126 @@ async def test_run_agent_phase_emits_structured_http_agent_failure_log() -> None
     assert payload["detail"] == "Agent request already decided"
 
 
+async def test_run_agent_phase_records_http_agent_failure_trace_and_metric_only() -> (
+    None
+):
+    current_user = _active_user()
+    thread_id = uuid4()
+    exc = HTTPException(status_code=409, detail="Agent request already decided")
+    setattr(exc, "error_code", "action_request_already_decided")
+    service = _FakeAssistantServiceThatFailsAgentRun(
+        base_messages=[_message_with_text("Trigger agent")],
+        agent_failure=exc,
+    )
+    controller = _FakeController(state={"messages": [], "isRunning": True})
+    recorder = RecordingTelemetryRecorder()
+
+    await assistant_operations.run_agent_phase(
+        controller=controller,
+        payload=_payload_with_user_message(thread_id),
+        current_user=current_user,
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={
+            "messages": list(service.base_messages),
+            "isRunning": False,
+        },
+        command_types=["add-message"],
+        telemetry=recorder,
+    )
+
+    assert recorder.trace_events == [
+        TelemetryEvent(
+            name="assistant_run_failed_agent",
+            attributes={
+                "assistant_command_types": "add-message",
+                "thread_id": str(thread_id),
+                "user_id": str(current_user.user_id),
+                "status_code": 409,
+                "error_code": "action_request_already_decided",
+            },
+        )
+    ]
+    assert recorder.metric_events == [
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "status_code": 409,
+                    "error_code": "action_request_already_decided",
+                },
+            ),
+            1,
+        )
+    ]
+    assert recorder.report_events == []
+
+
+async def test_run_agent_phase_records_unexpected_agent_failure_reporting_candidate() -> (
+    None
+):
+    current_user = _active_user()
+    thread_id = uuid4()
+    service = _FakeAssistantServiceThatFailsAgentRun(
+        base_messages=[_message_with_text("Trigger agent")]
+    )
+    controller = _FakeController(state={"messages": [], "isRunning": True})
+    recorder = RecordingTelemetryRecorder()
+
+    await assistant_operations.run_agent_phase(
+        controller=controller,
+        payload=_payload_with_user_message(thread_id),
+        current_user=current_user,
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={
+            "messages": list(service.base_messages),
+            "isRunning": False,
+        },
+        command_types=["add-message"],
+        telemetry=recorder,
+    )
+
+    assert recorder.trace_events == [
+        TelemetryEvent(
+            name="assistant_run_failed_agent",
+            attributes={
+                "assistant_command_types": "add-message",
+                "thread_id": str(thread_id),
+                "user_id": str(current_user.user_id),
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
+    assert recorder.metric_events == [
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "error_type": "RuntimeError",
+                },
+            ),
+            1,
+        )
+    ]
+    assert recorder.report_events == [
+        (
+            TelemetryEvent(
+                name="assistant_run_failed_agent",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "thread_id": str(thread_id),
+                    "user_id": str(current_user.user_id),
+                    "error_type": "RuntimeError",
+                },
+            ),
+            None,
+        )
+    ]
+
+
 async def test_run_agent_phase_emits_structured_error_persist_failure_log() -> None:
     current_user = _active_user()
     thread_id = uuid4()
@@ -466,6 +603,96 @@ async def test_run_agent_phase_emits_structured_error_persist_failure_log() -> N
     assert payload["error_type"] == "RuntimeError"
 
 
+async def test_run_agent_phase_records_error_message_persist_failure_telemetry() -> (
+    None
+):
+    current_user = _active_user()
+    thread_id = uuid4()
+    service = _FakeAssistantServiceThatFailsAgentRun(
+        base_messages=[_message_with_text("Trigger agent")],
+        fail_error_persistence=True,
+    )
+    controller = _FakeController(state={"messages": [], "isRunning": True})
+    recorder = RecordingTelemetryRecorder()
+
+    await assistant_operations.run_agent_phase(
+        controller=controller,
+        payload=_payload_with_user_message(thread_id),
+        current_user=current_user,
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={
+            "messages": list(service.base_messages),
+            "isRunning": False,
+        },
+        command_types=["add-message"],
+        telemetry=recorder,
+    )
+
+    persist_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "assistant_error_message_persist_failed"
+    ]
+    assert persist_trace_events == [
+        TelemetryEvent(
+            name="assistant_error_message_persist_failed",
+            attributes={
+                "assistant_command_types": "add-message",
+                "thread_id": str(thread_id),
+                "user_id": str(current_user.user_id),
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
+    persist_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "assistant.failures.total"
+    ]
+    assert persist_metric_events == [
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "error_type": "RuntimeError",
+                },
+            ),
+            1,
+        ),
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "error_type": "RuntimeError",
+                },
+            ),
+            1,
+        ),
+    ]
+    persist_report_events = [
+        (event, detail)
+        for event, detail in recorder.report_events
+        if event.name == "assistant_error_message_persist_failed"
+    ]
+    assert persist_report_events == [
+        (
+            TelemetryEvent(
+                name="assistant_error_message_persist_failed",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "thread_id": str(thread_id),
+                    "user_id": str(current_user.user_id),
+                    "error_type": "RuntimeError",
+                },
+            ),
+            None,
+        )
+    ]
+
+
 async def test_run_agent_phase_emits_structured_state_refresh_failure_log() -> None:
     current_user = _active_user()
     thread_id = uuid4()
@@ -493,6 +720,76 @@ async def test_run_agent_phase_emits_structured_state_refresh_failure_log() -> N
     assert payload["thread_id"] == str(thread_id)
     assert payload["user_id"] == str(current_user.user_id)
     assert payload["error_type"] == "RuntimeError"
+
+
+async def test_run_agent_phase_records_state_refresh_failure_telemetry() -> None:
+    current_user = _active_user()
+    thread_id = uuid4()
+    recorder = RecordingTelemetryRecorder()
+
+    await assistant_operations.run_agent_phase(
+        controller=_FakeController(state={"messages": [], "isRunning": True}),
+        payload=_payload_with_user_message(thread_id),
+        current_user=current_user,
+        assistant_service=_FakeAssistantServiceThatFailsStateRefresh(),
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={"messages": [], "isRunning": False},
+        command_types=["add-message"],
+        telemetry=recorder,
+    )
+
+    refresh_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "assistant_state_refresh_failed"
+    ]
+    assert refresh_trace_events == [
+        TelemetryEvent(
+            name="assistant_state_refresh_failed",
+            attributes={
+                "assistant_command_types": "add-message",
+                "thread_id": str(thread_id),
+                "user_id": str(current_user.user_id),
+                "error_type": "RuntimeError",
+            },
+        )
+    ]
+    refresh_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "assistant.failures.total"
+    ]
+    assert refresh_metric_events == [
+        (
+            TelemetryEvent(
+                name="assistant.failures.total",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "error_type": "RuntimeError",
+                },
+            ),
+            1,
+        )
+    ]
+    refresh_report_events = [
+        (event, detail)
+        for event, detail in recorder.report_events
+        if event.name == "assistant_state_refresh_failed"
+    ]
+    assert refresh_report_events == [
+        (
+            TelemetryEvent(
+                name="assistant_state_refresh_failed",
+                attributes={
+                    "assistant_command_types": "add-message",
+                    "thread_id": str(thread_id),
+                    "user_id": str(current_user.user_id),
+                    "error_type": "RuntimeError",
+                },
+            ),
+            None,
+        )
+    ]
 
 
 async def test_run_agent_phase_appends_local_fallback_when_persistence_and_refresh_fail() -> (

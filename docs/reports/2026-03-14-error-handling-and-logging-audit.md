@@ -23,8 +23,34 @@ Implementation status update (branch lineage):
 - The branch `feat/assistant-service-extraction` completed the next planned assistant slice: extracted assistant action/tool-result operation seams, a thinner assistant-domain HTTP translation boundary, and refreshed verification/handoff docs for that pass.
 - The current backend-only branch `feat/backend-auth-boundary-logging` completes the next deferred non-assistant slice: shared auth dependency extraction into the API layer, shared auth error-code catalog coverage across login and protected-route auth failures, structured auth boundary success/rejection logs, and refreshed verification/handoff docs for this pass.
 - The latest continuation pass after `feat/backend-auth-boundary-logging` completes the remaining route-slice follow-up from this audit: shared request validation responses now emit the stable `request_validation_error` code, and structured success logging now covers the admin, threads, and WHM admin route flows alongside the previously refreshed backend paths.
-- The remaining notable backend follow-up now centers on the active telemetry revisit/design pass that maps the stabilized log/event field set to traces, metrics, and external reporting, plus any future deeper helper-level logging or shared error-code catalog work, not more work on this completed route slice.
+- The current telemetry implementation worktree `feat/backend-telemetry-mapping` completes the next backend-only pass: a vendor-neutral telemetry seam, bounded request/auth/assistant/admin/threads/WHM telemetry emissions, selective external-reporting candidates, and refreshed verification/handoff docs for this pass.
+- The remaining notable backend follow-up now centers on whether to wire the now-implemented telemetry seam to a concrete exporter/vendor plus any future deeper helper-level logging or shared error-code catalog work, not more work on this completed route slice.
 - Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-service-extraction-design.md`, `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md`, `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`, and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
+
+## 2026-03-15 Continuation Pass: Backend Telemetry Mapping Implementation
+
+What was done in this continuation pass
+- Added `apps/api/src/noa_api/core/telemetry.py` as a small vendor-neutral telemetry seam with immutable `TelemetryEvent` payloads, a default no-op recorder, and safe fallback access for apps that use `install_error_handling(...)` without going through `create_app(...)`.
+- Updated `apps/api/src/noa_api/main.py` plus `apps/api/src/noa_api/api/error_handling.py` so request lifecycle telemetry now emits bounded request metrics, request trace attributes, and best-effort unhandled-exception reporting without changing the existing HTTP envelopes or request logging behavior.
+- Added auth telemetry in `apps/api/src/noa_api/api/routes/auth.py` and `apps/api/src/noa_api/api/auth_dependencies.py` for login success/rejection, current-user resolution/rejection, `/auth/me`, bounded auth outcome metrics, and selective external reporting for authentication-service outages.
+- Added assistant failure telemetry in `apps/api/src/noa_api/api/routes/assistant_operations.py` plus the related route wiring and pre-agent failure coverage in `apps/api/src/noa_api/api/routes/assistant.py` so both pre-agent and agent/degraded assistant failure paths now emit trace events, bounded failure counters, and selective external reporting for unexpected/degraded failures.
+- Added admin, threads, and WHM management route telemetry in `apps/api/src/noa_api/api/routes/admin.py`, `apps/api/src/noa_api/api/routes/threads.py`, and `apps/api/src/noa_api/api/routes/whm_admin.py` with bounded route outcome counters and trace metadata that keeps entity identifiers out of metric labels.
+- Extended focused backend coverage in `apps/api/tests/test_telemetry.py`, `apps/api/tests/test_request_context.py`, `apps/api/tests/test_auth_login.py`, `apps/api/tests/test_rbac.py`, `apps/api/tests/test_threads.py`, `apps/api/tests/test_whm_admin_routes.py`, `apps/api/tests/test_assistant_operations.py`, and `apps/api/tests/test_assistant.py`.
+
+What is not yet done
+- No concrete backend exporter/vendor integration (`OpenTelemetry`, etc.) is wired behind `apps/api/src/noa_api/core/telemetry.py` yet; the seam is still no-op by default.
+- Sampling, dashboards, alerts, and final external-reporting platform decisions remain future operational follow-up.
+- No dedicated frontend error reporting tool is installed yet.
+
+What should come next
+- Decide whether the current backend telemetry seam should stay internal-only for now or be wired to a concrete exporter/vendor behind `apps/api/src/noa_api/core/telemetry.py` without changing the stabilized event vocabulary.
+- If later backend logging follow-up is still needed, treat it as deeper helper/service work rather than reopening the completed route-level telemetry slice.
+- If later backend `error_code` follow-up is still needed, treat it as shared/helper-level catalog work rather than route-specific patching.
+- Use `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`, `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`, and this audit refresh as the current handoff docs for the completed backend telemetry mapping pass.
+- Fresh verification for this continuation pass in `apps/api/.worktrees/feat-backend-telemetry-mapping/apps/api`:
+  - `uv run pytest -q tests/test_telemetry.py tests/test_request_context.py tests/test_auth_login.py tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py tests/test_assistant_operations.py tests/test_assistant.py` -> `125 passed`
+  - `uv run pytest -q` -> `227 passed`
+  - `uv run ruff check src tests` -> `All checks passed!`
 
 ## 2026-03-15 Continuation Pass: Backend Telemetry Mapping Design Kickoff
 
@@ -382,8 +408,8 @@ What changed across the implemented branches
 
 What remains
 - No dedicated frontend error reporting tool is installed.
-- No backend tracing/metrics stack is present yet; the active backend follow-up now has a dedicated mapping design and implementation-plan handoff in `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
-- Backend request/event logging is stronger, but still not a full production telemetry solution.
+- A vendor-neutral backend telemetry seam and bounded backend trace/metric/report mapping are now implemented, but no concrete backend exporter/tracing vendor is wired yet.
+- Backend request/event logging is stronger, but still not a full production telemetry solution until exporter/vendor decisions, dashboards, and alerts are addressed.
 
 ---
 
@@ -396,10 +422,11 @@ Updated status after the latest 2026-03-15 continuation passes:
 - Completed on `feat/assistant-service-extraction`: assistant action/tool-result extraction into `apps/api/src/noa_api/api/routes/assistant_action_operations.py` and `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py`, assistant-domain error translation tightening in `apps/api/src/noa_api/api/routes/assistant_errors.py`, thinner `AssistantService` delegation in `apps/api/src/noa_api/api/routes/assistant.py`, and a fresh handoff refresh anchored to the 2026-03-15 assistant service extraction design and implementation plan docs.
 - Completed on `feat/backend-auth-boundary-logging`: shared auth dependency extraction into `apps/api/src/noa_api/api/auth_dependencies.py`, protected-route auth `error_code` coverage, shared auth error-code catalog constants, structured auth boundary success/rejection logs including failed-login visibility, and refreshed verification plus handoff docs for this non-assistant continuation.
 - Completed in the latest continuation pass: shared request validation responses now emit `request_validation_error`, and structured success logging now covers the admin, threads, and WHM admin route flows.
-- Still recommended next: the main remaining backend follow-up is to continue the active telemetry mapping pass using the now-stable log/event field set, while treating any later backend logging or `error_code` follow-up as deeper helper-level/shared-catalog work rather than more route-slice changes.
+- Completed in the current telemetry implementation worktree `feat/backend-telemetry-mapping`: app-scoped backend telemetry seam, request/auth/assistant/admin/threads/WHM telemetry mapping, bounded metric labels, best-effort telemetry failure handling, and refreshed verification plus handoff docs for the implementation pass.
+- Still recommended next: the main remaining backend follow-up is now deciding whether to wire the implemented telemetry seam to a concrete exporter/vendor while treating any later backend logging or `error_code` follow-up as deeper helper-level/shared-catalog work rather than more route-slice changes.
 
 Active next steps
-1. Main next step: execute the active backend telemetry mapping follow-up using `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
+1. Main next step: decide whether to wire `apps/api/src/noa_api/core/telemetry.py` to a concrete backend exporter/vendor while preserving the now-stable event vocabulary documented in `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`.
 2. If more backend logging work is needed later, treat it as a deeper helper/service follow-up instead of reopening this completed route slice.
 3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog expansion rather than more route-specific patching.
 
@@ -472,28 +499,32 @@ Done on `feat/backend-auth-boundary-logging`
   - `uv run pytest -q` -> `195 passed`
   - `uv run ruff check src tests` -> `All checks passed!`
 
-Active on `master`
-- Backend telemetry revisit/design is now active via `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`
-- A resume-friendly execution handoff now exists in `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`
-- The audit now points to the telemetry mapping docs as the main remaining backend follow-up
+Done in `feat/backend-telemetry-mapping`
+- Added the vendor-neutral backend telemetry seam in `apps/api/src/noa_api/core/telemetry.py`
+- Added bounded request/auth/assistant/admin/threads/WHM telemetry emissions across the touched backend flows
+- Added selective external-reporting candidates for unhandled exceptions, auth service outages, and unexpected/degraded assistant failures
+- Recorded fresh verification for the telemetry implementation pass:
+  - `uv run pytest -q tests/test_telemetry.py tests/test_request_context.py tests/test_auth_login.py tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py tests/test_assistant_operations.py tests/test_assistant.py` -> `125 passed`
+  - `uv run pytest -q` -> `227 passed`
+  - `uv run ruff check src tests` -> `All checks passed!`
 
 Not yet done after the latest 2026-03-15 continuation passes
-- Backend telemetry implementation and vendor adoption (`OpenTelemetry`, etc.) remain not yet done, even though the telemetry mapping pass is now active
+- Backend telemetry exporter/vendor adoption (`OpenTelemetry`, etc.) remains not yet done even though the backend telemetry mapping pass is now implemented
 - Any future backend logging follow-up is now deeper helper/service-level work beyond the completed route slice
 - Any future backend `error_code` follow-up is now shared/helper-level catalog work beyond the completed route slice
 
 Recommended next from this worktree
-1. Continue the active backend telemetry mapping follow-up by executing `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
+1. Decide whether to wire the implemented backend telemetry seam in `apps/api/src/noa_api/core/telemetry.py` to a concrete exporter/vendor.
 2. If more backend logging work is needed later, target deeper helper/service seams rather than reopening the completed route slice.
 3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog work rather than route-specific patching.
 
-Primary execution handoff for the active telemetry follow-up
-- Worktree: `.`
-- Branch: `master`
+Primary execution handoff after the telemetry implementation pass
+- Worktree: `apps/api/.worktrees/feat-backend-telemetry-mapping`
+- Branch: `feat/backend-telemetry-mapping`
 - Primary plans:
   - `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`
   - `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`
-- Resume point: this worktree started the backend telemetry design pass and refreshed the audit handoff; the next step is to execute the telemetry implementation plan so the current request, auth, assistant, admin, threads, and WHM event vocabulary begins feeding traces, metrics, and any later external reporting without changing the stable log contract.
+- Resume point: this worktree completed the backend telemetry mapping implementation pass and refreshed the audit handoff; the next step is to decide whether to keep the seam no-op by default or wire a concrete exporter/vendor behind `apps/api/src/noa_api/core/telemetry.py` without changing the stabilized event vocabulary.
 
 Historical execution handoff: assistant service extraction
 - Worktree: `apps/api/.worktrees/feat-assistant-service-extraction`

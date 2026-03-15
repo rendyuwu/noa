@@ -32,6 +32,23 @@ from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.ldap_service import LDAPService, LdapUser
 from noa_api.core.config import Settings
 from noa_api.core.logging import configure_logging
+from noa_api.core.telemetry import TelemetryEvent
+
+
+class RecordingTelemetryRecorder:
+    def __init__(self) -> None:
+        self.trace_events: list[TelemetryEvent] = []
+        self.metric_events: list[tuple[TelemetryEvent, int | float]] = []
+        self.report_events: list[tuple[TelemetryEvent, str | None]] = []
+
+    def trace(self, event: TelemetryEvent) -> None:
+        self.trace_events.append(event)
+
+    def metric(self, event: TelemetryEvent, *, value: int | float) -> None:
+        self.metric_events.append((event, value))
+
+    def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
+        self.report_events.append((event, detail))
 
 
 def _settings(**kwargs: Any) -> Settings:
@@ -432,6 +449,206 @@ async def test_auth_routes_emit_structured_auth_boundary_logs() -> None:
     assert rejection_payload["failure_stage"] == "jwt_decode"
     assert rejection_payload["request_path"] == "/auth/me"
     assert "authorization" not in rejection_payload
+
+
+async def test_auth_routes_record_success_telemetry_with_bounded_metrics() -> None:
+    app = _create_auth_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        login_response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+        me_response = await client.get(
+            "/auth/me", headers={"Authorization": "Bearer good-token"}
+        )
+
+    assert login_response.status_code == 200
+    assert me_response.status_code == 200
+
+    login_success_events = [
+        event for event in recorder.trace_events if event.name == "auth_login_succeeded"
+    ]
+    assert len(login_success_events) == 1
+    assert login_success_events[0].attributes["user_email"] == "user@example.com"
+    assert isinstance(login_success_events[0].attributes["user_id"], str)
+
+    resolved_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "auth_current_user_resolved"
+    ]
+    assert len(resolved_events) == 1
+    assert resolved_events[0].attributes["user_email"] == "user@example.com"
+    assert isinstance(resolved_events[0].attributes["user_id"], str)
+
+    me_success_events = [
+        event for event in recorder.trace_events if event.name == "auth_me_succeeded"
+    ]
+    assert len(me_success_events) == 1
+    assert me_success_events[0].attributes["user_email"] == "user@example.com"
+    assert isinstance(me_success_events[0].attributes["user_id"], str)
+
+    auth_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "auth.outcomes.total"
+    ]
+    assert len(auth_metric_events) == 2
+    assert any(
+        event.attributes == {"event_name": "auth_login_succeeded"} and value == 1
+        for event, value in auth_metric_events
+    )
+    assert any(
+        event.attributes == {"event_name": "auth_me_succeeded"} and value == 1
+        for event, value in auth_metric_events
+    )
+    assert all(
+        "user_email" not in event.attributes and "user_id" not in event.attributes
+        for event, _ in auth_metric_events
+    )
+    assert recorder.report_events == []
+
+
+async def test_auth_routes_record_rejection_telemetry_and_report_auth_outages() -> None:
+    app = _create_auth_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+            mode="invalid"
+        )
+        invalid_login_response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "bad"}
+        )
+
+        app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+            mode="auth_error"
+        )
+        unavailable_login_response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+
+        app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+            mode="ok"
+        )
+        app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+        invalid_token_response = await client.get(
+            "/auth/me", headers={"Authorization": "Bearer bad-token"}
+        )
+
+    assert invalid_login_response.status_code == 401
+    assert unavailable_login_response.status_code == 503
+    assert invalid_token_response.status_code == 401
+
+    login_rejection_events = [
+        event for event in recorder.trace_events if event.name == "auth_login_rejected"
+    ]
+    assert len(login_rejection_events) == 2
+
+    invalid_login_event = next(
+        event
+        for event in login_rejection_events
+        if event.attributes["error_code"] == INVALID_CREDENTIALS
+    )
+    assert invalid_login_event.attributes == {
+        "status_code": 401,
+        "error_code": INVALID_CREDENTIALS,
+        "failure_stage": "invalid_credentials",
+        "user_email": "user@example.com",
+    }
+
+    unavailable_login_event = next(
+        event
+        for event in login_rejection_events
+        if event.attributes["error_code"] == AUTHENTICATION_SERVICE_UNAVAILABLE
+    )
+    assert unavailable_login_event.attributes == {
+        "status_code": 503,
+        "error_code": AUTHENTICATION_SERVICE_UNAVAILABLE,
+        "failure_stage": "auth_service",
+        "user_email": "user@example.com",
+    }
+
+    current_user_rejection_events = [
+        event
+        for event in recorder.trace_events
+        if event.name == "auth_current_user_rejected"
+    ]
+    assert len(current_user_rejection_events) == 1
+    assert current_user_rejection_events[0].attributes == {
+        "status_code": 401,
+        "error_code": INVALID_TOKEN,
+        "failure_stage": "jwt_decode",
+    }
+
+    auth_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "auth.outcomes.total"
+    ]
+    assert len(auth_metric_events) == 3
+    assert any(
+        event.attributes
+        == {
+            "event_name": "auth_login_rejected",
+            "status_code": 401,
+            "error_code": INVALID_CREDENTIALS,
+            "failure_stage": "invalid_credentials",
+        }
+        and value == 1
+        for event, value in auth_metric_events
+    )
+    assert any(
+        event.attributes
+        == {
+            "event_name": "auth_login_rejected",
+            "status_code": 503,
+            "error_code": AUTHENTICATION_SERVICE_UNAVAILABLE,
+            "failure_stage": "auth_service",
+        }
+        and value == 1
+        for event, value in auth_metric_events
+    )
+    assert any(
+        event.attributes
+        == {
+            "event_name": "auth_current_user_rejected",
+            "status_code": 401,
+            "error_code": INVALID_TOKEN,
+            "failure_stage": "jwt_decode",
+        }
+        and value == 1
+        for event, value in auth_metric_events
+    )
+    assert all(
+        "user_email" not in event.attributes and "user_id" not in event.attributes
+        for event, _ in auth_metric_events
+    )
+
+    report_events = [
+        event
+        for event, detail in recorder.report_events
+        if detail is None and event.name == "auth_login_rejected"
+    ]
+    assert report_events == [
+        TelemetryEvent(
+            name="auth_login_rejected",
+            attributes={
+                "status_code": 503,
+                "error_code": AUTHENTICATION_SERVICE_UNAVAILABLE,
+                "failure_stage": "auth_service",
+            },
+        )
+    ]
 
 
 async def test_login_route_emits_structured_rejection_log() -> None:

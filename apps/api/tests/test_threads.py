@@ -18,6 +18,7 @@ from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.threads import get_thread_service, router as threads_router
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging import configure_logging
+from noa_api.core.telemetry import TelemetryEvent
 
 
 @dataclass
@@ -127,6 +128,22 @@ class _FakeThreadService:
             self._thread_by_external_id.pop((owner_user_id, record.external_id), None)
         del self._threads[thread_id]
         return True
+
+
+class RecordingTelemetryRecorder:
+    def __init__(self) -> None:
+        self.trace_events: list[TelemetryEvent] = []
+        self.metric_events: list[tuple[TelemetryEvent, int | float]] = []
+        self.report_events: list[tuple[TelemetryEvent, str | None]] = []
+
+    def trace(self, event: TelemetryEvent) -> None:
+        self.trace_events.append(event)
+
+    def metric(self, event: TelemetryEvent, *, value: int | float) -> None:
+        self.metric_events.append((event, value))
+
+    def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
+        self.report_events.append((event, detail))
 
 
 def _create_threads_app() -> FastAPI:
@@ -448,6 +465,109 @@ async def test_threads_routes_emit_structured_success_logs() -> None:
     assert len(deleted_events) == 1
     deleted_payload = deleted_events[0]
     assert deleted_payload["request_path"] == f"/threads/{thread_id}"
+
+
+async def test_threads_routes_record_route_outcome_telemetry() -> None:
+    app = _create_threads_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
+
+    service = _FakeThreadService()
+    owner_id = uuid4()
+    app.dependency_overrides[get_thread_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=owner_id,
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["member"],
+        tools=[],
+    )
+
+    missing_thread_id = uuid4()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        list_response = await client.get("/threads")
+        create_response = await client.post("/threads", json={"localId": "local-123"})
+        missing_response = await client.get(f"/threads/{missing_thread_id}")
+
+    assert list_response.status_code == 200
+    assert create_response.status_code == 201
+    assert missing_response.status_code == 404
+
+    created_thread_id = create_response.json()["id"]
+    route_trace_events = [
+        event
+        for event in recorder.trace_events
+        if event.name != "api_request_completed"
+    ]
+    route_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "threads.outcomes.total"
+    ]
+
+    assert route_trace_events == [
+        TelemetryEvent(
+            name="threads_list_succeeded",
+            attributes={
+                "thread_count": 0,
+                "user_id": str(owner_id),
+            },
+        ),
+        TelemetryEvent(
+            name="thread_created",
+            attributes={
+                "external_id_present": True,
+                "thread_id": created_thread_id,
+                "user_id": str(owner_id),
+            },
+        ),
+        TelemetryEvent(
+            name="thread_not_found",
+            attributes={
+                "error_code": "thread_not_found",
+                "status_code": 404,
+                "thread_id": str(missing_thread_id),
+                "user_id": str(owner_id),
+            },
+        ),
+    ]
+    assert route_metric_events == [
+        (
+            TelemetryEvent(
+                name="threads.outcomes.total",
+                attributes={
+                    "event_name": "threads_list_succeeded",
+                    "status_family": "2xx",
+                },
+            ),
+            1,
+        ),
+        (
+            TelemetryEvent(
+                name="threads.outcomes.total",
+                attributes={
+                    "event_name": "thread_created",
+                    "status_family": "2xx",
+                },
+            ),
+            1,
+        ),
+        (
+            TelemetryEvent(
+                name="threads.outcomes.total",
+                attributes={
+                    "error_code": "thread_not_found",
+                    "event_name": "thread_not_found",
+                    "status_family": "4xx",
+                },
+            ),
+            1,
+        ),
+    ]
+    assert recorder.report_events == []
 
 
 async def test_threads_routes_reject_oversized_title() -> None:

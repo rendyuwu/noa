@@ -6,7 +6,7 @@ import logging
 from typing import Literal, NoReturn
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -19,12 +19,14 @@ from noa_api.api.error_codes import THREAD_NOT_FOUND, USER_PENDING_APPROVAL
 from noa_api.api.error_handling import ApiHTTPException
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
+from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.models import Message, Thread
 
 router = APIRouter(tags=["threads"])
 
 logger = logging.getLogger(__name__)
+THREADS_OUTCOMES_TOTAL = "threads.outcomes.total"
 
 
 class ThreadResponse(BaseModel):
@@ -325,9 +327,85 @@ def _to_thread_response(thread: Thread) -> ThreadResponse:
     )
 
 
-def _raise_thread_not_found(*, owner_user_id: UUID, thread_id: UUID) -> NoReturn:
+def _status_family(status_code: int) -> str:
+    return f"{status_code // 100}xx"
+
+
+def _safe_trace(request: Request, event: TelemetryEvent) -> None:
+    try:
+        get_telemetry_recorder(request.app).trace(event)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "trace",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _safe_metric(
+    request: Request, event: TelemetryEvent, *, value: int | float
+) -> None:
+    try:
+        get_telemetry_recorder(request.app).metric(event, value=value)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "metric",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _record_thread_outcome(
+    request: Request,
+    *,
+    event_name: str,
+    status_code: int,
+    trace_attributes: dict[str, str | int | bool],
+    error_code: str | None = None,
+) -> None:
+    event_attributes = dict(trace_attributes)
+    if error_code is not None:
+        event_attributes["error_code"] = error_code
+        event_attributes["status_code"] = status_code
+
+    _safe_trace(
+        request,
+        TelemetryEvent(name=event_name, attributes=event_attributes),
+    )
+
+    metric_attributes: dict[str, str] = {
+        "event_name": event_name,
+        "status_family": _status_family(status_code),
+    }
+    if error_code is not None:
+        metric_attributes["error_code"] = error_code
+
+    _safe_metric(
+        request,
+        TelemetryEvent(name=THREADS_OUTCOMES_TOTAL, attributes=metric_attributes),
+        value=1,
+    )
+
+
+def _raise_thread_not_found(
+    request: Request, *, owner_user_id: UUID, thread_id: UUID
+) -> NoReturn:
     with log_context(thread_id=str(thread_id), user_id=str(owner_user_id)):
         logger.info("thread_not_found")
+    _record_thread_outcome(
+        request,
+        event_name="thread_not_found",
+        status_code=status.HTTP_404_NOT_FOUND,
+        trace_attributes={
+            "thread_id": str(thread_id),
+            "user_id": str(owner_user_id),
+        },
+        error_code=THREAD_NOT_FOUND,
+    )
     raise ApiHTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
         detail="Thread not found",
@@ -347,11 +425,19 @@ async def get_thread_service() -> AsyncGenerator[ThreadService, None]:
 
 
 async def _require_active_user(
+    request: Request,
     current_user: AuthorizationUser = Depends(get_current_auth_user),
 ) -> AuthorizationUser:
     if not current_user.is_active:
         with log_context(user_id=str(current_user.user_id)):
             logger.info("threads_access_denied_inactive_user")
+        _record_thread_outcome(
+            request,
+            event_name="threads_access_denied_inactive_user",
+            status_code=status.HTTP_403_FORBIDDEN,
+            trace_attributes={"user_id": str(current_user.user_id)},
+            error_code=USER_PENDING_APPROVAL,
+        )
         raise ApiHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User pending approval",
@@ -362,12 +448,22 @@ async def _require_active_user(
 
 @router.get("/threads", response_model=ThreadListResponse)
 async def list_threads(
+    request: Request,
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadListResponse:
     threads = await thread_service.list_threads(owner_user_id=current_user.user_id)
     with log_context(user_id=str(current_user.user_id)):
         logger.info("threads_list_succeeded", extra={"thread_count": len(threads)})
+    _record_thread_outcome(
+        request,
+        event_name="threads_list_succeeded",
+        status_code=status.HTTP_200_OK,
+        trace_attributes={
+            "thread_count": len(threads),
+            "user_id": str(current_user.user_id),
+        },
+    )
     return ThreadListResponse(
         threads=[_to_thread_response(thread) for thread in threads]
     )
@@ -375,6 +471,7 @@ async def list_threads(
 
 @router.post("/threads", response_model=ThreadResponse)
 async def create_thread(
+    request: Request,
     payload: CreateThreadRequest | None = None,
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
@@ -389,6 +486,16 @@ async def create_thread(
             "thread_created" if created else "thread_reused",
             extra={"external_id_present": thread.external_id is not None},
         )
+    _record_thread_outcome(
+        request,
+        event_name="thread_created" if created else "thread_reused",
+        status_code=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        trace_attributes={
+            "external_id_present": thread.external_id is not None,
+            "thread_id": str(thread.id),
+            "user_id": str(current_user.user_id),
+        },
+    )
     response = _to_thread_response(thread)
     if created:
         return JSONResponse(
@@ -400,6 +507,7 @@ async def create_thread(
 
 @router.get("/threads/{id}", response_model=ThreadResponse)
 async def get_thread(
+    request: Request,
     id: UUID,
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
@@ -409,13 +517,27 @@ async def get_thread(
             owner_user_id=current_user.user_id, thread_id=id
         )
         if thread is None:
-            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+            _raise_thread_not_found(
+                request,
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
         logger.info("thread_retrieved")
+        _record_thread_outcome(
+            request,
+            event_name="thread_retrieved",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "thread_id": str(id),
+                "user_id": str(current_user.user_id),
+            },
+        )
         return _to_thread_response(thread)
 
 
 @router.patch("/threads/{id}", response_model=ThreadResponse)
 async def patch_thread(
+    request: Request,
     id: UUID,
     payload: UpdateThreadRequest,
     current_user: AuthorizationUser = Depends(_require_active_user),
@@ -426,13 +548,27 @@ async def patch_thread(
             owner_user_id=current_user.user_id, thread_id=id, title=payload.title
         )
         if thread is None:
-            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+            _raise_thread_not_found(
+                request,
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
         logger.info("thread_title_updated")
+        _record_thread_outcome(
+            request,
+            event_name="thread_title_updated",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "thread_id": str(id),
+                "user_id": str(current_user.user_id),
+            },
+        )
         return _to_thread_response(thread)
 
 
 @router.post("/threads/{id}/archive", response_model=ThreadResponse)
 async def archive_thread(
+    request: Request,
     id: UUID,
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
@@ -442,13 +578,27 @@ async def archive_thread(
             owner_user_id=current_user.user_id, thread_id=id, is_archived=True
         )
         if thread is None:
-            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+            _raise_thread_not_found(
+                request,
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
         logger.info("thread_archived")
+        _record_thread_outcome(
+            request,
+            event_name="thread_archived",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "thread_id": str(id),
+                "user_id": str(current_user.user_id),
+            },
+        )
         return _to_thread_response(thread)
 
 
 @router.post("/threads/{id}/unarchive", response_model=ThreadResponse)
 async def unarchive_thread(
+    request: Request,
     id: UUID,
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
@@ -458,13 +608,27 @@ async def unarchive_thread(
             owner_user_id=current_user.user_id, thread_id=id, is_archived=False
         )
         if thread is None:
-            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+            _raise_thread_not_found(
+                request,
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
         logger.info("thread_unarchived")
+        _record_thread_outcome(
+            request,
+            event_name="thread_unarchived",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "thread_id": str(id),
+                "user_id": str(current_user.user_id),
+            },
+        )
         return _to_thread_response(thread)
 
 
 @router.delete("/threads/{id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_thread(
+    request: Request,
     id: UUID,
     current_user: AuthorizationUser = Depends(_require_active_user),
     thread_service: ThreadService = Depends(get_thread_service),
@@ -474,13 +638,27 @@ async def delete_thread(
             owner_user_id=current_user.user_id, thread_id=id
         )
         if not deleted:
-            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+            _raise_thread_not_found(
+                request,
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
         logger.info("thread_deleted")
+        _record_thread_outcome(
+            request,
+            event_name="thread_deleted",
+            status_code=status.HTTP_204_NO_CONTENT,
+            trace_attributes={
+                "thread_id": str(id),
+                "user_id": str(current_user.user_id),
+            },
+        )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/threads/{id}/title", response_model=GenerateTitleResponse)
 async def generate_thread_title(
+    request: Request,
     id: UUID,
     payload: GenerateTitleRequest,
     current_user: AuthorizationUser = Depends(_require_active_user),
@@ -491,9 +669,22 @@ async def generate_thread_title(
             owner_user_id=current_user.user_id, thread_id=id
         )
         if stored is None:
-            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+            _raise_thread_not_found(
+                request,
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
         if stored.title is not None:
             logger.info("thread_title_returned_existing")
+            _record_thread_outcome(
+                request,
+                event_name="thread_title_returned_existing",
+                status_code=status.HTTP_200_OK,
+                trace_attributes={
+                    "thread_id": str(id),
+                    "user_id": str(current_user.user_id),
+                },
+            )
             return GenerateTitleResponse(title=stored.title)
 
         user_text_chunks: list[str] = []
@@ -536,12 +727,35 @@ async def generate_thread_title(
                 "thread_title_generated",
                 extra={"generated_title_source": generated_title_source},
             )
+            _record_thread_outcome(
+                request,
+                event_name="thread_title_generated",
+                status_code=status.HTTP_200_OK,
+                trace_attributes={
+                    "generated_title_source": generated_title_source,
+                    "thread_id": str(id),
+                    "user_id": str(current_user.user_id),
+                },
+            )
             return GenerateTitleResponse(title=title)
 
         refreshed = await thread_service.get_thread(
             owner_user_id=current_user.user_id, thread_id=id
         )
         if refreshed is None:
-            _raise_thread_not_found(owner_user_id=current_user.user_id, thread_id=id)
+            _raise_thread_not_found(
+                request,
+                owner_user_id=current_user.user_id,
+                thread_id=id,
+            )
         logger.info("thread_title_returned_refreshed")
+        _record_thread_outcome(
+            request,
+            event_name="thread_title_returned_refreshed",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "thread_id": str(id),
+                "user_id": str(current_user.user_id),
+            },
+        )
         return GenerateTitleResponse(title=refreshed.title or title)

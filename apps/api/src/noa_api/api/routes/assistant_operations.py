@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Protocol, cast
 
 from assistant_stream import RunController
-from fastapi import HTTPException
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from noa_api.api.routes.assistant_commands import (
@@ -24,10 +23,12 @@ from noa_api.api.routes.assistant_streaming import (
 )
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
+from noa_api.core.telemetry import TelemetryEvent, TelemetryRecorder
 from noa_api.core.tools.registry import get_tool_registry
 
 logger = logging.getLogger(__name__)
 
+ASSISTANT_FAILURES_TOTAL = "assistant.failures.total"
 SAFE_ASSISTANT_ERROR_TEXT = "Assistant run failed. Please try again."
 
 
@@ -80,6 +81,122 @@ def _http_exception_error_code(exc: StarletteHTTPException) -> str | None:
     return headers.get("x-error-code") or headers.get("X-Error-Code")
 
 
+def _assistant_command_types_attribute(command_types: list[str]) -> str:
+    unique_command_types = dict.fromkeys(command_types)
+    return ",".join(unique_command_types) or "none"
+
+
+def _assistant_failure_attributes(
+    *,
+    command_types: list[str],
+    thread_id: Any | None = None,
+    user_id: Any | None = None,
+    status_code: int | None = None,
+    error_code: str | None = None,
+    error_type: str | None = None,
+) -> dict[str, str | int]:
+    attributes: dict[str, str | int] = {
+        "assistant_command_types": _assistant_command_types_attribute(command_types)
+    }
+    if thread_id is not None:
+        attributes["thread_id"] = str(thread_id)
+    if user_id is not None:
+        attributes["user_id"] = str(user_id)
+    if status_code is not None:
+        attributes["status_code"] = status_code
+    if error_code is not None:
+        attributes["error_code"] = error_code
+    if error_type is not None:
+        attributes["error_type"] = error_type
+    return attributes
+
+
+def _safe_trace(telemetry: TelemetryRecorder | None, event: TelemetryEvent) -> None:
+    if telemetry is None:
+        return
+    try:
+        telemetry.trace(event)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "trace",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _safe_metric(
+    telemetry: TelemetryRecorder | None, event: TelemetryEvent, *, value: int | float
+) -> None:
+    if telemetry is None:
+        return
+    try:
+        telemetry.metric(event, value=value)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "metric",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _safe_report(telemetry: TelemetryRecorder | None, event: TelemetryEvent) -> None:
+    if telemetry is None:
+        return
+    try:
+        telemetry.report(event)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "report",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _record_assistant_failure_telemetry(
+    telemetry: TelemetryRecorder | None,
+    *,
+    event_name: str,
+    command_types: list[str],
+    thread_id: Any,
+    user_id: Any,
+    status_code: int | None = None,
+    error_code: str | None = None,
+    error_type: str | None = None,
+    report: bool = False,
+) -> None:
+    trace_event = TelemetryEvent(
+        name=event_name,
+        attributes=_assistant_failure_attributes(
+            command_types=command_types,
+            thread_id=thread_id,
+            user_id=user_id,
+            status_code=status_code,
+            error_code=error_code,
+            error_type=error_type,
+        ),
+    )
+    _safe_trace(telemetry, trace_event)
+    metric_attributes = _assistant_failure_attributes(
+        command_types=command_types,
+        status_code=status_code,
+        error_code=error_code,
+        error_type=error_type,
+    )
+    _safe_metric(
+        telemetry,
+        TelemetryEvent(name=ASSISTANT_FAILURES_TOTAL, attributes=metric_attributes),
+        value=1,
+    )
+    if report:
+        _safe_report(telemetry, trace_event)
+
+
 async def prepare_assistant_transport(
     *,
     payload: AssistantRequest,
@@ -130,6 +247,7 @@ async def run_agent_phase(
     authorization_service: AssistantAuthorizationServiceProtocol,
     canonical_state: dict[str, object],
     command_types: list[str],
+    telemetry: TelemetryRecorder | None = None,
 ) -> None:
     if controller.state is None:
         controller.state = {}
@@ -181,17 +299,28 @@ async def run_agent_phase(
     except asyncio.CancelledError:
         raise
     except Exception as exc:
-        if isinstance(exc, HTTPException):
+        if isinstance(exc, StarletteHTTPException):
+            http_exc = cast(StarletteHTTPException, exc)
+            error_code = _http_exception_error_code(http_exc)
             logger.info(
                 "assistant_run_failed_agent",
                 extra={
                     "assistant_command_types": command_types,
-                    "detail": exc.detail,
-                    "error_code": _http_exception_error_code(exc),
-                    "status_code": exc.status_code,
+                    "detail": http_exc.detail,
+                    "error_code": error_code,
+                    "status_code": http_exc.status_code,
                     "thread_id": str(payload.thread_id),
                     "user_id": str(current_user.user_id),
                 },
+            )
+            _record_assistant_failure_telemetry(
+                telemetry,
+                event_name="assistant_run_failed_agent",
+                command_types=command_types,
+                thread_id=payload.thread_id,
+                user_id=current_user.user_id,
+                status_code=http_exc.status_code,
+                error_code=error_code,
             )
         else:
             logger.exception(
@@ -202,6 +331,15 @@ async def run_agent_phase(
                     "thread_id": str(payload.thread_id),
                     "user_id": str(current_user.user_id),
                 },
+            )
+            _record_assistant_failure_telemetry(
+                telemetry,
+                event_name="assistant_run_failed_agent",
+                command_types=command_types,
+                thread_id=payload.thread_id,
+                user_id=current_user.user_id,
+                error_type=type(exc).__name__,
+                report=True,
             )
 
         persisted_error_message = False
@@ -224,6 +362,15 @@ async def run_agent_phase(
                     "thread_id": str(payload.thread_id),
                     "user_id": str(current_user.user_id),
                 },
+            )
+            _record_assistant_failure_telemetry(
+                telemetry,
+                event_name="assistant_error_message_persist_failed",
+                command_types=command_types,
+                thread_id=payload.thread_id,
+                user_id=current_user.user_id,
+                error_type=type(exc).__name__,
+                report=True,
             )
 
         controller.state["isRunning"] = False
@@ -268,6 +415,15 @@ async def run_agent_phase(
                 "thread_id": str(payload.thread_id),
                 "user_id": str(current_user.user_id),
             },
+        )
+        _record_assistant_failure_telemetry(
+            telemetry,
+            event_name="assistant_state_refresh_failed",
+            command_types=command_types,
+            thread_id=payload.thread_id,
+            user_id=current_user.user_id,
+            error_type=type(exc).__name__,
+            report=True,
         )
         controller.state["isRunning"] = False
         controller.state["messages"] = append_fallback_error_message(

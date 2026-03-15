@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel
 
 from noa_api.api.auth_dependencies import get_current_auth_user
@@ -23,10 +23,12 @@ from noa_api.core.auth.authorization import (
     get_authorization_service,
 )
 from noa_api.core.logging_context import log_context
+from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 logger = logging.getLogger(__name__)
+ADMIN_OUTCOMES_TOTAL = "admin.outcomes.total"
 
 
 class AdminUserResponse(BaseModel):
@@ -73,7 +75,72 @@ def _to_user_response(user: AuthorizationUser) -> AdminUserResponse:
     )
 
 
+def _status_family(status_code: int) -> str:
+    return f"{status_code // 100}xx"
+
+
+def _safe_trace(request: Request, event: TelemetryEvent) -> None:
+    try:
+        get_telemetry_recorder(request.app).trace(event)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "trace",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _safe_metric(
+    request: Request, event: TelemetryEvent, *, value: int | float
+) -> None:
+    try:
+        get_telemetry_recorder(request.app).metric(event, value=value)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "metric",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+def _record_admin_outcome(
+    request: Request,
+    *,
+    event_name: str,
+    status_code: int,
+    trace_attributes: dict[str, str | int | bool],
+    error_code: str | None = None,
+) -> None:
+    event_attributes = dict(trace_attributes)
+    if error_code is not None:
+        event_attributes["error_code"] = error_code
+        event_attributes["status_code"] = status_code
+
+    _safe_trace(
+        request,
+        TelemetryEvent(name=event_name, attributes=event_attributes),
+    )
+
+    metric_attributes: dict[str, str] = {
+        "event_name": event_name,
+        "status_family": _status_family(status_code),
+    }
+    if error_code is not None:
+        metric_attributes["error_code"] = error_code
+
+    _safe_metric(
+        request,
+        TelemetryEvent(name=ADMIN_OUTCOMES_TOTAL, attributes=metric_attributes),
+        value=1,
+    )
+
+
 async def _require_admin(
+    request: Request,
     current_user: AuthorizationUser = Depends(get_current_auth_user),
 ) -> AuthorizationUser:
     if not current_user.is_active or "admin" not in current_user.roles:
@@ -85,6 +152,16 @@ async def _require_admin(
                 "user_id": str(current_user.user_id),
             },
         )
+        _record_admin_outcome(
+            request,
+            event_name="admin_access_denied",
+            status_code=status.HTTP_403_FORBIDDEN,
+            trace_attributes={
+                "is_active": current_user.is_active,
+                "user_id": str(current_user.user_id),
+            },
+            error_code=ADMIN_ACCESS_REQUIRED,
+        )
         raise ApiHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin access required",
@@ -95,17 +172,29 @@ async def _require_admin(
 
 @router.get("/users", response_model=AdminUsersResponse)
 async def list_users(
+    request: Request,
     admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> AdminUsersResponse:
     users = await authorization_service.list_users()
     with log_context(user_id=str(admin_user.user_id), user_email=admin_user.email):
         logger.info("admin_users_list_succeeded", extra={"user_count": len(users)})
+    _record_admin_outcome(
+        request,
+        event_name="admin_users_list_succeeded",
+        status_code=status.HTTP_200_OK,
+        trace_attributes={
+            "user_count": len(users),
+            "user_email": admin_user.email,
+            "user_id": str(admin_user.user_id),
+        },
+    )
     return AdminUsersResponse(users=[_to_user_response(user) for user in users])
 
 
 @router.patch("/users/{id}", response_model=UpdateUserResponse)
 async def update_user_active(
+    request: Request,
     id: UUID,
     payload: UpdateUserRequest,
     admin_user: AuthorizationUser = Depends(_require_admin),
@@ -121,6 +210,16 @@ async def update_user_active(
             )
         except LastActiveAdminError as exc:
             logger.info("admin_last_active_admin_conflict")
+            _record_admin_outcome(
+                request,
+                event_name="admin_last_active_admin_conflict",
+                status_code=status.HTTP_409_CONFLICT,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=LAST_ACTIVE_ADMIN,
+            )
             raise ApiHTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(exc),
@@ -128,6 +227,16 @@ async def update_user_active(
             ) from exc
         except SelfDeactivateAdminError as exc:
             logger.info("admin_self_deactivate_conflict")
+            _record_admin_outcome(
+                request,
+                event_name="admin_self_deactivate_conflict",
+                status_code=status.HTTP_409_CONFLICT,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=SELF_DEACTIVATE_ADMIN,
+            )
             raise ApiHTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(exc),
@@ -135,28 +244,60 @@ async def update_user_active(
             ) from exc
         if user is None:
             logger.info("admin_user_not_found")
+            _record_admin_outcome(
+                request,
+                event_name="admin_user_not_found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=ADMIN_USER_NOT_FOUND,
+            )
             raise ApiHTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found",
                 error_code=ADMIN_USER_NOT_FOUND,
             )
         logger.info("admin_user_status_updated", extra={"is_active": user.is_active})
+        _record_admin_outcome(
+            request,
+            event_name="admin_user_status_updated",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "is_active": user.is_active,
+                "target_user_id": str(id),
+                "user_id": str(admin_user.user_id),
+            },
+        )
     return UpdateUserResponse(user=_to_user_response(user))
 
 
 @router.get("/tools", response_model=AdminToolsResponse)
 async def list_tools(
+    request: Request,
     admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> AdminToolsResponse:
     tools = await authorization_service.list_tools()
     with log_context(user_id=str(admin_user.user_id), user_email=admin_user.email):
         logger.info("admin_tools_list_succeeded", extra={"tool_count": len(tools)})
+    _record_admin_outcome(
+        request,
+        event_name="admin_tools_list_succeeded",
+        status_code=status.HTTP_200_OK,
+        trace_attributes={
+            "tool_count": len(tools),
+            "user_email": admin_user.email,
+            "user_id": str(admin_user.user_id),
+        },
+    )
     return AdminToolsResponse(tools=tools)
 
 
 @router.put("/users/{id}/tools", response_model=UpdateUserResponse)
 async def set_user_tools(
+    request: Request,
     id: UUID,
     payload: SetUserToolsRequest,
     admin_user: AuthorizationUser = Depends(_require_admin),
@@ -172,6 +313,16 @@ async def set_user_tools(
                 "admin_unknown_tools",
                 extra={"requested_tools": payload.tools},
             )
+            _record_admin_outcome(
+                request,
+                event_name="admin_unknown_tools",
+                status_code=status.HTTP_400_BAD_REQUEST,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=UNKNOWN_TOOLS,
+            )
             raise ApiHTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=str(exc),
@@ -179,6 +330,16 @@ async def set_user_tools(
             ) from exc
         if user is None:
             logger.info("admin_user_not_found")
+            _record_admin_outcome(
+                request,
+                event_name="admin_user_not_found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=ADMIN_USER_NOT_FOUND,
+            )
             raise ApiHTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="User not found",
@@ -187,5 +348,15 @@ async def set_user_tools(
         logger.info(
             "admin_user_tools_updated",
             extra={"assigned_tool_count": len(user.tools)},
+        )
+        _record_admin_outcome(
+            request,
+            event_name="admin_user_tools_updated",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "assigned_tool_count": len(user.tools),
+                "target_user_id": str(id),
+                "user_id": str(admin_user.user_id),
+            },
         )
     return UpdateUserResponse(user=_to_user_response(user))

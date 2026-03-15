@@ -20,6 +20,7 @@ from noa_api.api.error_handling import ApiHTTPException, install_error_handling
 from noa_api.api.routes.whm_admin import ValidateWHMServerResponse
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging import configure_logging
+from noa_api.core.telemetry import TelemetryEvent
 
 
 @dataclass
@@ -141,6 +142,36 @@ class _FakeWHMServerService:
 
             raise WHMServerNotFoundError
         return ValidateWHMServerResponse(ok=True, message=f"validated {server.name}")
+
+
+class _ValidationErrorWHMServerService(_FakeWHMServerService):
+    async def validate_server(self, *, server_id: UUID) -> ValidateWHMServerResponse:
+        server = self._servers.get(server_id)
+        if server is None:
+            from noa_api.api.routes.whm_admin import WHMServerNotFoundError
+
+            raise WHMServerNotFoundError
+        return ValidateWHMServerResponse(
+            ok=False,
+            error_code="upstream-temporary-failure-77",
+            message=f"validation failed for {server.name}",
+        )
+
+
+class RecordingTelemetryRecorder:
+    def __init__(self) -> None:
+        self.trace_events: list[TelemetryEvent] = []
+        self.metric_events: list[tuple[TelemetryEvent, int | float]] = []
+        self.report_events: list[tuple[TelemetryEvent, str | None]] = []
+
+    def trace(self, event: TelemetryEvent) -> None:
+        self.trace_events.append(event)
+
+    def metric(self, event: TelemetryEvent, *, value: int | float) -> None:
+        self.metric_events.append((event, value))
+
+    def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
+        self.report_events.append((event, detail))
 
 
 @contextmanager
@@ -429,6 +460,162 @@ async def test_whm_admin_routes_emit_structured_success_logs() -> None:
     ]
     assert len(deleted_events) == 1
     assert isinstance(deleted_events[0]["server_id"], str)
+
+
+async def test_whm_admin_routes_record_route_outcome_telemetry() -> None:
+    service = _FakeWHMServerService()
+    app = _create_whm_admin_app(service)
+    recorder = RecordingTelemetryRecorder()
+    admin_user = AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+    app.state.telemetry = recorder
+    app.dependency_overrides[get_current_auth_user] = lambda: admin_user
+
+    missing_server_id = uuid4()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create_response = await client.post(
+            "/admin/whm/servers",
+            json={
+                "name": "web1",
+                "base_url": "https://whm.example.com:2087",
+                "api_username": "root",
+                "api_token": "SECRET",
+                "verify_ssl": True,
+            },
+        )
+        missing_response = await client.delete(
+            f"/admin/whm/servers/{missing_server_id}"
+        )
+
+    assert create_response.status_code == 201
+    assert missing_response.status_code == 404
+
+    created_trace = next(
+        event for event in recorder.trace_events if event.name == "whm_server_created"
+    )
+    assert created_trace == TelemetryEvent(
+        name="whm_server_created",
+        attributes={
+            "server_name": "web1",
+            "user_id": str(admin_user.user_id),
+        },
+    )
+
+    route_metric_events = [
+        (event, value)
+        for event, value in recorder.metric_events
+        if event.name == "whm.outcomes.total"
+    ]
+
+    not_found_trace = next(
+        event for event in recorder.trace_events if event.name == "whm_server_not_found"
+    )
+    assert not_found_trace == TelemetryEvent(
+        name="whm_server_not_found",
+        attributes={
+            "error_code": "whm_server_not_found",
+            "server_id": str(missing_server_id),
+            "status_code": 404,
+            "user_id": str(admin_user.user_id),
+        },
+    )
+
+    assert route_metric_events == [
+        (
+            TelemetryEvent(
+                name="whm.outcomes.total",
+                attributes={
+                    "event_name": "whm_server_created",
+                    "status_family": "2xx",
+                },
+            ),
+            1,
+        ),
+        (
+            TelemetryEvent(
+                name="whm.outcomes.total",
+                attributes={
+                    "error_code": "whm_server_not_found",
+                    "event_name": "whm_server_not_found",
+                    "status_family": "4xx",
+                },
+            ),
+            1,
+        ),
+    ]
+    assert recorder.report_events == []
+
+
+async def test_whm_validation_metric_labels_remain_bounded_on_upstream_failure() -> (
+    None
+):
+    service = _ValidationErrorWHMServerService()
+    app = _create_whm_admin_app(service)
+    recorder = RecordingTelemetryRecorder()
+    admin_user = AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+    app.state.telemetry = recorder
+    app.dependency_overrides[get_current_auth_user] = lambda: admin_user
+
+    server = await service.create_server(
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(f"/admin/whm/servers/{server.id}/validate")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "ok": False,
+        "error_code": "upstream-temporary-failure-77",
+        "message": "validation failed for web1",
+    }
+
+    validated_trace = next(
+        event for event in recorder.trace_events if event.name == "whm_server_validated"
+    )
+    assert validated_trace == TelemetryEvent(
+        name="whm_server_validated",
+        attributes={
+            "server_id": str(server.id),
+            "user_id": str(admin_user.user_id),
+            "validation_error_code": "upstream-temporary-failure-77",
+            "validation_ok": False,
+        },
+    )
+
+    validated_metric = next(
+        event
+        for event, _value in recorder.metric_events
+        if event.name == "whm.outcomes.total"
+    )
+    assert validated_metric == TelemetryEvent(
+        name="whm.outcomes.total",
+        attributes={
+            "event_name": "whm_server_validated",
+            "status_family": "2xx",
+            "validation_ok": False,
+        },
+    )
 
 
 async def test_whm_server_service_raises_typed_conflict_error_for_duplicate_name() -> (

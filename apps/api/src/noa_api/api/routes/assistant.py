@@ -8,7 +8,7 @@ from uuid import UUID
 
 from assistant_stream import RunController, create_run
 from assistant_stream.serialization import AssistantTransportResponse
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -33,6 +33,7 @@ from noa_api.api.routes.assistant_errors import (
     to_assistant_http_error,
 )
 from noa_api.api.routes.assistant_operations import (
+    _record_assistant_failure_telemetry,
     prepare_assistant_transport,
     run_agent_phase,
 )
@@ -51,6 +52,7 @@ from noa_api.core.auth.authorization import (
 )
 from noa_api.core.logging_context import log_context
 from noa_api.core.request_context import get_request_id
+from noa_api.core.telemetry import get_telemetry_recorder
 from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
@@ -324,12 +326,14 @@ async def get_thread_state(
 
 @router.post("/assistant")
 async def assistant_transport(
+    request: Request,
     payload: AssistantRequest,
     current_user: AuthorizationUser = Depends(_require_active_user),
     assistant_service: AssistantService = Depends(get_assistant_service),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> AssistantTransportResponse:
     command_types: list[str] = []
+    telemetry = get_telemetry_recorder(request.app)
 
     with log_context(
         thread_id=str(payload.thread_id),
@@ -361,17 +365,27 @@ async def assistant_transport(
             else:
                 http_exc = None
             if http_exc is not None:
+                error_code = _http_exception_error_code(http_exc)
                 logger.info(
                     "assistant_run_failed_pre_agent",
                     extra={
                         "assistant_command_types": command_types,
                         "detail": http_exc.detail,
-                        "error_code": _http_exception_error_code(http_exc),
+                        "error_code": error_code,
                         "request_id": get_request_id(),
                         "status_code": http_exc.status_code,
                         "thread_id": str(payload.thread_id),
                         "user_id": str(current_user.user_id),
                     },
+                )
+                _record_assistant_failure_telemetry(
+                    telemetry,
+                    event_name="assistant_run_failed_pre_agent",
+                    command_types=command_types,
+                    thread_id=payload.thread_id,
+                    user_id=current_user.user_id,
+                    status_code=http_exc.status_code,
+                    error_code=error_code,
                 )
             else:
                 logger.exception(
@@ -383,6 +397,15 @@ async def assistant_transport(
                         "thread_id": str(payload.thread_id),
                         "user_id": str(current_user.user_id),
                     },
+                )
+                _record_assistant_failure_telemetry(
+                    telemetry,
+                    event_name="assistant_run_failed_pre_agent",
+                    command_types=command_types,
+                    thread_id=payload.thread_id,
+                    user_id=current_user.user_id,
+                    error_type=type(exc).__name__,
+                    report=True,
                 )
             if translated_exc is not None:
                 raise translated_exc from exc
@@ -409,6 +432,7 @@ async def assistant_transport(
                     authorization_service=authorization_service,
                     canonical_state=canonical_state,
                     command_types=command_types,
+                    telemetry=telemetry,
                 )
                 return
 
