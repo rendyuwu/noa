@@ -107,16 +107,20 @@ class OpenTelemetryRecorder:
 
 
 def create_open_telemetry_recorder(app_settings: Settings) -> TelemetryRecorder:
+    resource = Resource.create({"service.name": app_settings.telemetry_service_name})
+    signals_enabled = _signals_enabled(app_settings)
+    if not signals_enabled:
+        return OpenTelemetryRecorder(tracer=None, meter=None)
+
     endpoint = _telemetry_endpoint(app_settings)
     if endpoint is None:
         return _warn_and_return_noop("missing_otlp_endpoint")
 
-    resource = Resource.create({"service.name": app_settings.telemetry_service_name})
-    try:
-        tracer_provider = _tracer_provider(app_settings, resource, endpoint)
-        meter_provider = _meter_provider(app_settings, resource, endpoint)
-    except Exception as exc:
-        return _warn_and_return_noop("exporter_setup_failed", exc)
+    tracer_provider = _tracer_provider(app_settings, resource, endpoint)
+    meter_provider = _meter_provider(app_settings, resource, endpoint)
+
+    if tracer_provider is None and meter_provider is None:
+        return NoOpTelemetryRecorder()
 
     tracer = (
         tracer_provider.get_tracer("noa_api.core.telemetry")
@@ -154,6 +158,12 @@ def _telemetry_endpoint(app_settings: Settings) -> str | None:
         return None
 
     return endpoint
+
+
+def _signals_enabled(app_settings: Settings) -> bool:
+    return (
+        app_settings.telemetry_traces_enabled or app_settings.telemetry_metrics_enabled
+    )
 
 
 def _event_attributes(
@@ -196,12 +206,17 @@ def _tracer_provider(
     if not app_settings.telemetry_traces_enabled:
         return None
 
-    exporter = OTLPSpanExporter(
-        endpoint=endpoint,
-        headers=app_settings.telemetry_otlp_headers,
-    )
-    tracer_provider = TracerProvider(resource=resource)
-    tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
+    try:
+        exporter = OTLPSpanExporter(
+            endpoint=endpoint,
+            headers=app_settings.telemetry_otlp_headers,
+        )
+        tracer_provider = TracerProvider(resource=resource)
+        tracer_provider.add_span_processor(BatchSpanProcessor(exporter))
+    except Exception as exc:
+        _warn_and_return_noop("trace_exporter_setup_failed", exc)
+        return None
+
     return tracer_provider
 
 
@@ -213,9 +228,17 @@ def _meter_provider(
     if not app_settings.telemetry_metrics_enabled:
         return None
 
-    exporter = OTLPMetricExporter(
-        endpoint=endpoint,
-        headers=app_settings.telemetry_otlp_headers,
-    )
-    metric_reader = PeriodicExportingMetricReader(exporter)
-    return MeterProvider(metric_readers=[metric_reader], resource=resource)
+    try:
+        exporter = OTLPMetricExporter(
+            endpoint=endpoint,
+            headers=app_settings.telemetry_otlp_headers,
+        )
+        metric_reader = PeriodicExportingMetricReader(exporter)
+        meter_provider = MeterProvider(
+            metric_readers=[metric_reader], resource=resource
+        )
+    except Exception as exc:
+        _warn_and_return_noop("metric_exporter_setup_failed", exc)
+        return None
+
+    return meter_provider

@@ -69,6 +69,16 @@ class ExportFailingSpan:
         raise RuntimeError("otel export boom")
 
 
+def _telemetry_fallback_warnings(
+    caplog: pytest.LogCaptureFixture,
+) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in caplog.records
+        if record.getMessage() == "telemetry_falling_back_to_noop"
+    ]
+
+
 def test_telemetry_settings_defaults() -> None:
     settings = _settings(environment="test")
 
@@ -185,7 +195,7 @@ def test_create_telemetry_recorder_falls_back_to_noop_when_enabled_without_endpo
     assert getattr(warning_record, "reason") == "missing_otlp_endpoint"
 
 
-def test_create_telemetry_recorder_falls_back_to_noop_when_exporter_setup_fails(
+def test_create_telemetry_recorder_keeps_metrics_when_trace_exporter_setup_fails(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -205,14 +215,60 @@ def test_create_telemetry_recorder_falls_back_to_noop_when_exporter_setup_fails(
         )
     )
 
-    assert isinstance(recorder, NoOpTelemetryRecorder)
-    warning_record = next(
-        record
-        for record in caplog.records
-        if record.getMessage() == "telemetry_falling_back_to_noop"
-    )
-    assert getattr(warning_record, "reason") == "exporter_setup_failed"
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+    assert getattr(recorder, "_tracer") is None
+    assert getattr(recorder, "_meter") is not None
+    warning_record = _telemetry_fallback_warnings(caplog)[0]
+    assert getattr(warning_record, "reason") == "trace_exporter_setup_failed"
     assert "span exporter boom" in caplog.text
+
+
+def test_create_telemetry_recorder_keeps_traces_when_metric_exporter_setup_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    module = _telemetry_otel_module()
+    caplog.set_level(logging.WARNING, logger="noa_api.core.telemetry_opentelemetry")
+
+    def fail_exporter(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("metric exporter boom")
+
+    monkeypatch.setattr(module, "OTLPMetricExporter", fail_exporter)
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+        )
+    )
+
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+    assert getattr(recorder, "_tracer") is not None
+    assert getattr(recorder, "_meter") is None
+    warning_record = _telemetry_fallback_warnings(caplog)[0]
+    assert getattr(warning_record, "reason") == "metric_exporter_setup_failed"
+    assert "metric exporter boom" in caplog.text
+
+
+def test_create_telemetry_recorder_skips_missing_endpoint_warning_when_both_signals_disabled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.WARNING, logger="noa_api.core.telemetry_opentelemetry")
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_traces_enabled=False,
+            telemetry_metrics_enabled=False,
+        )
+    )
+
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+    assert getattr(recorder, "_tracer") is None
+    assert getattr(recorder, "_meter") is None
+    assert _telemetry_fallback_warnings(caplog) == []
 
 
 def test_create_app_passes_settings_into_telemetry_factory(
