@@ -64,6 +64,37 @@ def test_telemetry_settings_parse_otlp_headers() -> None:
     }
 
 
+def test_telemetry_settings_parse_otlp_headers_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv(
+        "TELEMETRY_OTLP_HEADERS",
+        "authorization=Bearer token, x-tenant-id = tenant-123",
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.telemetry_otlp_headers == {
+        "authorization": "Bearer token",
+        "x-tenant-id": "tenant-123",
+    }
+
+
+def test_telemetry_settings_ignore_malformed_otlp_headers() -> None:
+    settings = _settings(
+        environment="test",
+        telemetry_otlp_headers=(
+            "authorization=Bearer token, malformed, =missing-name, x-tenant-id=tenant-123"
+        ),
+    )
+
+    assert settings.telemetry_otlp_headers == {
+        "authorization": "Bearer token",
+        "x-tenant-id": "tenant-123",
+    }
+
+
 def test_create_app_exposes_app_scoped_noop_telemetry_recorder() -> None:
     app = create_app()
     other_app = create_app()

@@ -1,7 +1,9 @@
+from typing import Annotated
+
 import secrets
 
 from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -14,7 +16,9 @@ class Settings(BaseSettings):
     telemetry_enabled: bool = False
     telemetry_service_name: str = "noa-api"
     telemetry_otlp_endpoint: str | None = None
-    telemetry_otlp_headers: dict[str, str] = Field(default_factory=dict)
+    telemetry_otlp_headers: Annotated[dict[str, str], NoDecode] = Field(
+        default_factory=dict
+    )
     telemetry_traces_enabled: bool = True
     telemetry_metrics_enabled: bool = True
     auth_jwt_secret: SecretStr | None = None
@@ -56,6 +60,8 @@ class Settings(BaseSettings):
             for item in value.split(","):
                 entry = item.strip()
                 if not entry:
+                    continue
+                if "=" not in entry:
                     continue
                 key, _, raw_value = entry.partition("=")
                 header_name = key.strip()
