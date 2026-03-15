@@ -1,3 +1,6 @@
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -10,8 +13,17 @@ from noa_api.core.telemetry import create_telemetry_recorder
 
 def create_app(app_settings: Settings = settings) -> FastAPI:
     configure_logging()
-    app = FastAPI(title="Project NOA API")
-    app.state.telemetry = create_telemetry_recorder(app_settings)
+    telemetry = create_telemetry_recorder(app_settings)
+
+    @asynccontextmanager
+    async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        try:
+            yield
+        finally:
+            telemetry.shutdown()
+
+    app = FastAPI(title="Project NOA API", lifespan=lifespan)
+    app.state.telemetry = telemetry
     if app_settings.api_cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,

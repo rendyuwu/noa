@@ -13,6 +13,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
 )
 from opentelemetry.trace import StatusCode
 from fastapi import FastAPI, Response
+from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 
 from noa_api.api.error_handling import install_error_handling
@@ -62,6 +63,15 @@ class RecordingTelemetryRecorder:
 class ReportFailingTelemetryRecorder(RecordingTelemetryRecorder):
     def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
         raise RuntimeError("report boom")
+
+
+class ShutdownRecordingTelemetryRecorder(RecordingTelemetryRecorder):
+    def __init__(self) -> None:
+        super().__init__()
+        self.shutdown_calls = 0
+
+    def shutdown(self) -> None:
+        self.shutdown_calls += 1
 
 
 class ExportFailingSpan:
@@ -370,6 +380,29 @@ def test_create_app_passes_settings_into_telemetry_factory(
     assert app.state.telemetry is fake_recorder
 
 
+def test_create_app_shuts_down_enabled_telemetry_on_app_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_settings = _settings(
+        environment="test",
+        telemetry_enabled=True,
+        telemetry_otlp_endpoint="http://collector:4318",
+    )
+    recorder = ShutdownRecordingTelemetryRecorder()
+
+    monkeypatch.setattr(
+        "noa_api.main.create_telemetry_recorder",
+        lambda settings: recorder,
+    )
+
+    app = create_app(app_settings)
+
+    with TestClient(app):
+        pass
+
+    assert recorder.shutdown_calls == 1
+
+
 def test_metric_labels_drop_high_cardinality_fields() -> None:
     module = _telemetry_otel_module()
     filter_metric_attributes = getattr(module, "_metric_attributes_for_event", None)
@@ -423,6 +456,8 @@ def test_telemetry_recorder_trace_adds_event_to_active_span() -> None:
     recorder = recorder_class(
         tracer=tracer,
         meter=MeterProvider().get_meter("tests.telemetry"),
+        tracer_provider=tracer_provider,
+        meter_provider=None,
     )
     event = TelemetryEvent(
         name="assistant.request.started",
@@ -454,6 +489,8 @@ def test_telemetry_recorder_report_marks_span_error() -> None:
     recorder = recorder_class(
         tracer=tracer,
         meter=MeterProvider().get_meter("tests.telemetry"),
+        tracer_provider=tracer_provider,
+        meter_provider=None,
     )
     event = TelemetryEvent(
         name="api_unhandled_exception",
@@ -591,7 +628,12 @@ async def test_request_still_succeeds_when_otel_export_raises(
     assert recorder_class is not None
 
     monkeypatch.setattr(module, "_active_span", lambda: ExportFailingSpan())
-    app.state.telemetry = recorder_class(tracer=None, meter=None)
+    app.state.telemetry = recorder_class(
+        tracer=None,
+        meter=None,
+        tracer_provider=None,
+        meter_provider=None,
+    )
 
     @app.get("/_tests/ok")
     async def ok_route() -> dict[str, str]:

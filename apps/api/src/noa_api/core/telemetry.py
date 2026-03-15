@@ -29,6 +29,8 @@ class TelemetryRecorder(Protocol):
 
     def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None: ...
 
+    def shutdown(self) -> None: ...
+
 
 class NoOpTelemetryRecorder:
     def trace(self, event: TelemetryEvent) -> None:
@@ -38,6 +40,9 @@ class NoOpTelemetryRecorder:
         return None
 
     def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
+        return None
+
+    def shutdown(self) -> None:
         return None
 
 

@@ -42,9 +42,18 @@ _METRIC_ATTRIBUTE_KEYS = {
 
 
 class OpenTelemetryRecorder:
-    def __init__(self, *, tracer: Tracer | None, meter: Meter | None) -> None:
+    def __init__(
+        self,
+        *,
+        tracer: Tracer | None,
+        meter: Meter | None,
+        tracer_provider: TracerProvider | None,
+        meter_provider: MeterProvider | None,
+    ) -> None:
         self._tracer = tracer
         self._meter = meter
+        self._tracer_provider = tracer_provider
+        self._meter_provider = meter_provider
         self._counters: dict[str, object] = {}
         self._histograms: dict[str, object] = {}
 
@@ -105,12 +114,21 @@ class OpenTelemetryRecorder:
             span.set_status(Status(StatusCode.ERROR, description=detail))
             span.add_event(event.name, attributes=attributes)
 
+    def shutdown(self) -> None:
+        _shutdown_provider("traces", self._tracer_provider)
+        _shutdown_provider("metrics", self._meter_provider)
+
 
 def create_open_telemetry_recorder(app_settings: Settings) -> TelemetryRecorder:
     resource = Resource.create({"service.name": app_settings.telemetry_service_name})
     signals_enabled = _signals_enabled(app_settings)
     if not signals_enabled:
-        return OpenTelemetryRecorder(tracer=None, meter=None)
+        return OpenTelemetryRecorder(
+            tracer=None,
+            meter=None,
+            tracer_provider=None,
+            meter_provider=None,
+        )
 
     endpoint = _telemetry_endpoint(app_settings)
     if endpoint is None:
@@ -133,7 +151,12 @@ def create_open_telemetry_recorder(app_settings: Settings) -> TelemetryRecorder:
         else None
     )
 
-    return OpenTelemetryRecorder(tracer=tracer, meter=meter)
+    return OpenTelemetryRecorder(
+        tracer=tracer,
+        meter=meter,
+        tracer_provider=tracer_provider,
+        meter_provider=meter_provider,
+    )
 
 
 def _warn_and_return_noop(
@@ -146,6 +169,24 @@ def _warn_and_return_noop(
         extra={"reason": reason},
     )
     return NoOpTelemetryRecorder()
+
+
+def _shutdown_provider(
+    signal: str,
+    provider: TracerProvider | MeterProvider | None,
+) -> None:
+    if provider is None:
+        return
+
+    try:
+        provider.force_flush()
+        provider.shutdown()
+    except Exception as exc:
+        logger.warning(
+            "telemetry_shutdown_failed",
+            exc_info=exc,
+            extra={"signal": signal},
+        )
 
 
 def _telemetry_endpoint(app_settings: Settings) -> str | None:
