@@ -14,6 +14,7 @@ from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.logging_context import log_context
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRunStatus
+from noa_api.storage.postgres.models import ToolRun
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +44,13 @@ async def record_tool_result(
     repository: AssistantMessageAuditRepositoryProtocol,
     action_tool_run_service: ActionToolRunService,
 ) -> None:
-    tool_run_id = parse_tool_call_id(tool_call_id)
-    tool_run = await action_tool_run_service.get_tool_run(tool_run_id=tool_run_id)
-    if tool_run is None:
-        raise unknown_tool_call_id_error()
-    if (
-        tool_run.thread_id != thread_id
-        or tool_run.requested_by_user_id != owner_user_id
-    ):
-        raise tool_call_not_found_error()
-    if tool_run.status != ToolRunStatus.STARTED:
-        raise tool_call_not_awaiting_result_error()
+    tool_run = await require_started_tool_run(
+        owner_user_id=owner_user_id,
+        thread_id=thread_id,
+        tool_call_id=tool_call_id,
+        action_tool_run_service=action_tool_run_service,
+    )
+    tool_run_id = tool_run.id
 
     completed = await action_tool_run_service.complete_tool_run(
         tool_run_id=tool_run_id, result=result
@@ -101,3 +98,24 @@ async def record_tool_result(
                 "user_id": str(owner_user_id),
             },
         )
+
+
+async def require_started_tool_run(
+    *,
+    owner_user_id: UUID,
+    thread_id: UUID,
+    tool_call_id: str | None,
+    action_tool_run_service: ActionToolRunService,
+) -> ToolRun:
+    tool_run_id = parse_tool_call_id(tool_call_id)
+    tool_run = await action_tool_run_service.get_tool_run(tool_run_id=tool_run_id)
+    if tool_run is None:
+        raise unknown_tool_call_id_error()
+    if (
+        tool_run.thread_id != thread_id
+        or tool_run.requested_by_user_id != owner_user_id
+    ):
+        raise tool_call_not_found_error()
+    if tool_run.status != ToolRunStatus.STARTED:
+        raise tool_call_not_awaiting_result_error()
+    return tool_run

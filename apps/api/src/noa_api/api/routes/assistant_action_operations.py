@@ -7,19 +7,15 @@ from inspect import signature
 from typing import Any, Protocol, cast
 from uuid import UUID
 
-from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.api.error_codes import (
-    CHANGE_APPROVAL_REQUIRED,
-    TOOL_ACCESS_DENIED,
-    USER_PENDING_APPROVAL,
-)
 from noa_api.api.routes.assistant_errors import (
-    assistant_http_error,
     action_request_already_decided_error,
     action_request_not_found_error,
+    change_approval_required_error,
     parse_action_request_id,
+    tool_access_denied_error,
+    user_pending_approval_error,
 )
 from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.api.routes.assistant_tool_result_operations import (
@@ -144,11 +140,7 @@ async def approve_action_request(
     execute_tool: ApprovedToolExecutor,
 ) -> None:
     if not is_user_active:
-        raise assistant_http_error(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User pending approval",
-            error_code=USER_PENDING_APPROVAL,
-        )
+        raise user_pending_approval_error()
 
     request = await require_pending_action_request(
         owner_user_id=owner_user_id,
@@ -157,17 +149,9 @@ async def approve_action_request(
         action_tool_run_service=action_tool_run_service,
     )
     if request.risk != ToolRisk.CHANGE:
-        raise assistant_http_error(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only CHANGE actions require approval",
-            error_code=CHANGE_APPROVAL_REQUIRED,
-        )
+        raise change_approval_required_error()
     if not await authorize_tool_access(request.tool_name):
-        raise assistant_http_error(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Tool access denied",
-            error_code=TOOL_ACCESS_DENIED,
-        )
+        raise tool_access_denied_error()
 
     try:
         approved = await action_tool_run_service.approve_action_request(

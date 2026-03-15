@@ -248,6 +248,19 @@ def _error_code(exc: HTTPException) -> str | None:
     return headers.get("x-error-code") or headers.get("X-Error-Code")
 
 
+def _assert_assistant_domain_error(
+    exc: Exception,
+    *,
+    status_code: int,
+    detail: str,
+    error_code: str,
+) -> None:
+    assert type(exc).__name__ == "AssistantDomainError"
+    assert getattr(exc, "status_code") == status_code
+    assert getattr(exc, "detail") == detail
+    assert getattr(exc, "error_code") == error_code
+
+
 async def test_record_tool_result_rejects_foreign_thread() -> None:
     from noa_api.api.routes.assistant_tool_result_operations import (
         record_tool_result,
@@ -266,7 +279,7 @@ async def test_record_tool_result_rejects_foreign_thread() -> None:
     )
     assistant_repo = _FakeAssistantRepository()
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(Exception) as exc_info:
         await record_tool_result(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -277,9 +290,12 @@ async def test_record_tool_result_rejects_foreign_thread() -> None:
             action_tool_run_service=ActionToolRunService(repository=repo),
         )
 
-    assert exc_info.value.status_code == 404
-    assert exc_info.value.detail == "Tool call not found"
-    assert _error_code(exc_info.value) == "tool_call_not_found"
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=404,
+        detail="Tool call not found",
+        error_code="tool_call_not_found",
+    )
     assert repo.tool_runs[started.id].status == ToolRunStatus.STARTED
     assert assistant_repo.messages == []
     assert assistant_repo.audits == []
@@ -303,7 +319,7 @@ async def test_record_tool_result_rejects_stale_tool_run() -> None:
     started.status = ToolRunStatus.COMPLETED
     assistant_repo = _FakeAssistantRepository()
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(Exception) as exc_info:
         await record_tool_result(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -314,9 +330,12 @@ async def test_record_tool_result_rejects_stale_tool_run() -> None:
             action_tool_run_service=ActionToolRunService(repository=repo),
         )
 
-    assert exc_info.value.status_code == 409
-    assert exc_info.value.detail == "Tool call is not awaiting result"
-    assert _error_code(exc_info.value) == "tool_call_not_awaiting_result"
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=409,
+        detail="Tool call is not awaiting result",
+        error_code="tool_call_not_awaiting_result",
+    )
     assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
     assert assistant_repo.messages == []
     assert assistant_repo.audits == []
@@ -1130,7 +1149,7 @@ async def test_assistant_service_rejects_approval_replay() -> None:
         session=_FakeSession(),
     )
 
-    with pytest.raises(HTTPException, match="already decided"):
+    with pytest.raises(Exception) as exc_info:
         await service.approve_action(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -1139,6 +1158,13 @@ async def test_assistant_service_rejects_approval_replay() -> None:
             is_user_active=True,
             authorize_tool_access=lambda _tool: _allow(),
         )
+
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=409,
+        detail="Action request already decided",
+        error_code="action_request_already_decided",
+    )
 
 
 async def test_assistant_service_rejects_deny_replay() -> None:
@@ -1161,13 +1187,20 @@ async def test_assistant_service_rejects_deny_replay() -> None:
         session=_FakeSession(),
     )
 
-    with pytest.raises(HTTPException, match="already decided"):
+    with pytest.raises(Exception) as exc_info:
         await service.deny_action(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
             thread_id=thread_id,
             action_request_id=str(request.id),
         )
+
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=409,
+        detail="Action request already decided",
+        error_code="action_request_already_decided",
+    )
 
 
 async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() -> None:
@@ -1198,7 +1231,7 @@ async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() 
         session=_FakeSession(),
     )
 
-    with pytest.raises(HTTPException, match="Unknown tool call id"):
+    with pytest.raises(Exception) as unknown_exc_info:
         await service.add_tool_result(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -1207,7 +1240,14 @@ async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() 
             result={"ok": True},
         )
 
-    with pytest.raises(HTTPException, match="not awaiting result"):
+    _assert_assistant_domain_error(
+        unknown_exc_info.value,
+        status_code=400,
+        detail="Unknown tool call id",
+        error_code="unknown_tool_call_id",
+    )
+
+    with pytest.raises(Exception) as stale_exc_info:
         await service.add_tool_result(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -1215,6 +1255,13 @@ async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() 
             tool_call_id=str(stale.id),
             result={"ok": True},
         )
+
+    _assert_assistant_domain_error(
+        stale_exc_info.value,
+        status_code=409,
+        detail="Tool call is not awaiting result",
+        error_code="tool_call_not_awaiting_result",
+    )
 
     await service.add_tool_result(
         owner_user_id=owner_id,
@@ -1254,7 +1301,7 @@ async def test_assistant_service_add_tool_result_rejects_missing_or_invalid_tool
         session=_FakeSession(),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(Exception) as exc_info:
         await service.add_tool_result(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -1263,9 +1310,12 @@ async def test_assistant_service_add_tool_result_rejects_missing_or_invalid_tool
             result={"ok": True},
         )
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == detail
-    assert _error_code(exc_info.value) == error_code
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=400,
+        detail=detail,
+        error_code=error_code,
+    )
 
 
 @pytest.mark.parametrize(
@@ -1294,7 +1344,7 @@ async def test_assistant_service_approve_action_rejects_missing_or_invalid_actio
         session=_FakeSession(),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(Exception) as exc_info:
         await service.approve_action(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -1304,9 +1354,12 @@ async def test_assistant_service_approve_action_rejects_missing_or_invalid_actio
             authorize_tool_access=lambda _tool: _allow(),
         )
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == detail
-    assert _error_code(exc_info.value) == error_code
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=400,
+        detail=detail,
+        error_code=error_code,
+    )
 
 
 @pytest.mark.parametrize(
@@ -1335,7 +1388,7 @@ async def test_assistant_service_deny_action_rejects_missing_or_invalid_action_r
         session=_FakeSession(),
     )
 
-    with pytest.raises(HTTPException) as exc_info:
+    with pytest.raises(Exception) as exc_info:
         await service.deny_action(
             owner_user_id=owner_id,
             owner_user_email="owner@example.com",
@@ -1343,9 +1396,12 @@ async def test_assistant_service_deny_action_rejects_missing_or_invalid_action_r
             action_request_id=action_request_id,
         )
 
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == detail
-    assert _error_code(exc_info.value) == error_code
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=400,
+        detail=detail,
+        error_code=error_code,
+    )
 
 
 async def test_assistant_service_run_agent_turn_emits_action_requested_audit() -> None:

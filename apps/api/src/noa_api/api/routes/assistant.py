@@ -27,7 +27,9 @@ from noa_api.api.routes.assistant_action_operations import (
     execute_approved_tool_run,
 )
 from noa_api.api.routes.assistant_errors import (
+    AssistantDomainError,
     assistant_http_error,
+    to_assistant_http_error,
 )
 from noa_api.api.routes.assistant_operations import (
     prepare_assistant_transport,
@@ -48,6 +50,7 @@ from noa_api.core.auth.authorization import (
     get_current_auth_user,
 )
 from noa_api.core.logging_context import log_context
+from noa_api.core.request_context import get_request_id
 from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
@@ -345,14 +348,27 @@ async def assistant_transport(
             raise
         except Exception as exc:
             command_types = getattr(exc, "_assistant_command_types", [])
-            if isinstance(exc, StarletteHTTPException):
+            translated_exc = (
+                to_assistant_http_error(exc)
+                if isinstance(exc, AssistantDomainError)
+                else None
+            )
+            http_exc: StarletteHTTPException | None
+            if translated_exc is not None:
+                http_exc = translated_exc
+            elif isinstance(exc, StarletteHTTPException):
+                http_exc = exc
+            else:
+                http_exc = None
+            if http_exc is not None:
                 logger.info(
                     "assistant_run_failed_pre_agent",
                     extra={
                         "assistant_command_types": command_types,
-                        "detail": exc.detail,
-                        "error_code": _http_exception_error_code(exc),
-                        "status_code": exc.status_code,
+                        "detail": http_exc.detail,
+                        "error_code": _http_exception_error_code(http_exc),
+                        "request_id": get_request_id(),
+                        "status_code": http_exc.status_code,
                         "thread_id": str(payload.thread_id),
                         "user_id": str(current_user.user_id),
                     },
@@ -363,10 +379,13 @@ async def assistant_transport(
                     extra={
                         "assistant_command_types": command_types,
                         "error_type": type(exc).__name__,
+                        "request_id": get_request_id(),
                         "thread_id": str(payload.thread_id),
                         "user_id": str(current_user.user_id),
                     },
                 )
+            if translated_exc is not None:
+                raise translated_exc from exc
             raise
 
     async def run_callback(controller: RunController) -> None:
