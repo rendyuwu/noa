@@ -162,16 +162,30 @@ def test_create_telemetry_recorder_returns_otel_recorder_when_enabled() -> None:
     assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
 
 
-def test_create_app_uses_configured_telemetry_recorder() -> None:
-    app = create_app(
-        _settings(
-            environment="test",
-            telemetry_enabled=True,
-            telemetry_otlp_endpoint="http://collector:4318",
-        )
+def test_create_app_passes_settings_into_telemetry_factory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app_settings = _settings(
+        environment="test",
+        telemetry_enabled=True,
+        telemetry_otlp_endpoint="http://collector:4318",
+    )
+    fake_recorder = object()
+    calls: list[Settings] = []
+
+    def fake_create_telemetry_recorder(settings: Settings) -> object:
+        calls.append(settings)
+        return fake_recorder
+
+    monkeypatch.setattr(
+        "noa_api.main.create_telemetry_recorder",
+        fake_create_telemetry_recorder,
     )
 
-    assert app.state.telemetry.__class__.__name__ == "OpenTelemetryRecorder"
+    app = create_app(app_settings)
+
+    assert calls == [app_settings]
+    assert app.state.telemetry is fake_recorder
 
 
 def test_metric_labels_drop_high_cardinality_fields() -> None:
