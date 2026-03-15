@@ -9,6 +9,9 @@ from noa_api.api.error_codes import (
     INVALID_TOOL_CALL_ID,
     MISSING_ACTION_REQUEST_ID,
     MISSING_TOOL_CALL_ID,
+    TOOL_CALL_NOT_AWAITING_RESULT,
+    TOOL_CALL_NOT_FOUND,
+    UNKNOWN_TOOL_CALL_ID,
 )
 
 
@@ -37,6 +40,30 @@ def parse_tool_call_id(raw: str | None) -> UUID:
             detail="Invalid toolCallId",
             error_code=INVALID_TOOL_CALL_ID,
         ) from exc
+
+
+def unknown_tool_call_id_error() -> HTTPException:
+    return assistant_http_error(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Unknown tool call id",
+        error_code=UNKNOWN_TOOL_CALL_ID,
+    )
+
+
+def tool_call_not_found_error() -> HTTPException:
+    return assistant_http_error(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Tool call not found",
+        error_code=TOOL_CALL_NOT_FOUND,
+    )
+
+
+def tool_call_not_awaiting_result_error() -> HTTPException:
+    return assistant_http_error(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Tool call is not awaiting result",
+        error_code=TOOL_CALL_NOT_AWAITING_RESULT,
+    )
 
 
 def parse_action_request_id(raw: str | None) -> UUID:

@@ -20,9 +20,6 @@ from noa_api.api.error_codes import (
     CHANGE_APPROVAL_REQUIRED,
     THREAD_NOT_FOUND,
     TOOL_ACCESS_DENIED,
-    TOOL_CALL_NOT_AWAITING_RESULT,
-    TOOL_CALL_NOT_FOUND,
-    UNKNOWN_TOOL_CALL_ID,
     USER_PENDING_APPROVAL,
 )
 from noa_api.api.routes.assistant_commands import (
@@ -32,7 +29,6 @@ from noa_api.api.routes.assistant_commands import (
 from noa_api.api.routes.assistant_errors import (
     assistant_http_error,
     parse_action_request_id,
-    parse_tool_call_id,
 )
 from noa_api.api.routes.assistant_operations import (
     prepare_assistant_transport,
@@ -40,6 +36,7 @@ from noa_api.api.routes.assistant_operations import (
 )
 from noa_api.api.routes.assistant_repository import SQLAssistantRepository
 from noa_api.api.routes.assistant_streaming import _stream_assistant_text
+from noa_api.api.routes.assistant_tool_result_operations import record_tool_result
 from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.agent.runner import (
     AgentRunner,
@@ -63,7 +60,6 @@ from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
     ToolRisk,
-    ToolRunStatus,
 )
 
 router = APIRouter(tags=["assistant"])
@@ -156,77 +152,15 @@ class AssistantService:
         tool_call_id: str | None,
         result: dict[str, Any],
     ) -> None:
-        tool_run_id = parse_tool_call_id(tool_call_id)
-        tool_run = await self._action_tool_run_service.get_tool_run(
-            tool_run_id=tool_run_id
+        await record_tool_result(
+            owner_user_id=owner_user_id,
+            owner_user_email=owner_user_email,
+            thread_id=thread_id,
+            tool_call_id=tool_call_id,
+            result=result,
+            repository=self._repository,
+            action_tool_run_service=self._action_tool_run_service,
         )
-        if tool_run is None:
-            raise assistant_http_error(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Unknown tool call id",
-                error_code=UNKNOWN_TOOL_CALL_ID,
-            )
-        if (
-            tool_run.thread_id != thread_id
-            or tool_run.requested_by_user_id != owner_user_id
-        ):
-            raise assistant_http_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Tool call not found",
-                error_code=TOOL_CALL_NOT_FOUND,
-            )
-        if tool_run.status != ToolRunStatus.STARTED:
-            raise assistant_http_error(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Tool call is not awaiting result",
-                error_code=TOOL_CALL_NOT_AWAITING_RESULT,
-            )
-
-        completed = await self._action_tool_run_service.complete_tool_run(
-            tool_run_id=tool_run_id, result=result
-        )
-        persisted_result = (
-            completed.result
-            if completed is not None and isinstance(completed.result, dict)
-            else result
-        )
-        with log_context(
-            thread_id=str(thread_id),
-            tool_name=tool_run.tool_name,
-            tool_run_id=str(tool_run.id),
-            user_id=str(owner_user_id),
-        ):
-            await self._repository.create_message(
-                thread_id=thread_id,
-                role="tool",
-                parts=[
-                    build_tool_result_part(
-                        tool_name=tool_run.tool_name,
-                        tool_call_id=str(tool_call_id),
-                        result=persisted_result,
-                        is_error=False,
-                    )
-                ],
-            )
-            await self._repository.create_audit_log(
-                event_type="tool_completed",
-                actor_email=owner_user_email,
-                tool_name=tool_run.tool_name,
-                metadata={
-                    "thread_id": str(thread_id),
-                    "tool_run_id": str(tool_run.id),
-                    "source": "add-tool-result",
-                },
-            )
-            logger.info(
-                "assistant_tool_result_recorded",
-                extra={
-                    "thread_id": str(thread_id),
-                    "tool_name": tool_run.tool_name,
-                    "tool_run_id": str(tool_run.id),
-                    "user_id": str(owner_user_id),
-                },
-            )
 
     async def approve_action(
         self,
