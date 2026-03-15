@@ -315,9 +315,20 @@ async def test_threads_routes_reject_oversized_title() -> None:
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.post("/threads", json={"title": "x" * 256})
+        response = await client.post(
+            "/threads",
+            headers={"x-request-id": "threads-oversized-title"},
+            json={"title": "x" * 256},
+        )
 
     assert response.status_code == 422
+    body = response.json()
+    assert body.get("error_code") == "request_validation_error"
+    assert body["request_id"] == "threads-oversized-title"
+    assert response.headers["x-request-id"] == body["request_id"]
+    assert isinstance(body["detail"], list)
+    assert body["detail"]
+    assert body["detail"][0]["loc"][-1] == "title"
 
 
 async def test_threads_title_endpoint_generates_title_for_owner_thread() -> None:

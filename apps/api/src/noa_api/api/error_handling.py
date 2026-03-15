@@ -12,12 +12,13 @@ from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from noa_api.api.error_codes import REQUEST_VALIDATION_ERROR
+from noa_api.core.logging_context import log_context
 from noa_api.core.request_context import (
     get_request_id,
     reset_request_id,
     set_request_id,
 )
-from noa_api.core.logging_context import log_context
 
 REQUEST_ID_HEADER = "X-Request-Id"
 
@@ -116,6 +117,7 @@ async def request_validation_exception_handler(
         status_code=422,
         detail=exc.errors(),
         request=request,
+        error_code=REQUEST_VALIDATION_ERROR,
     )
 
 
