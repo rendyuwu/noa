@@ -23,8 +23,28 @@ Implementation status update (branch lineage):
 - The branch `feat/assistant-service-extraction` completed the next planned assistant slice: extracted assistant action/tool-result operation seams, a thinner assistant-domain HTTP translation boundary, and refreshed verification/handoff docs for that pass.
 - The current backend-only branch `feat/backend-auth-boundary-logging` completes the next deferred non-assistant slice: shared auth dependency extraction into the API layer, shared auth error-code catalog coverage across login and protected-route auth failures, structured auth boundary success/rejection logs, and refreshed verification/handoff docs for this pass.
 - The latest continuation pass after `feat/backend-auth-boundary-logging` completes the remaining route-slice follow-up from this audit: shared request validation responses now emit the stable `request_validation_error` code, and structured success logging now covers the admin, threads, and WHM admin route flows alongside the previously refreshed backend paths.
-- The remaining notable backend follow-up now centers on deferred telemetry reconsideration after the current log/event field set stabilizes plus any future deeper helper-level logging or shared error-code catalog work, not more work on this completed route slice.
-- Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-service-extraction-design.md`, `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md`, and `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md`.
+- The remaining notable backend follow-up now centers on the active telemetry revisit/design pass that maps the stabilized log/event field set to traces, metrics, and external reporting, plus any future deeper helper-level logging or shared error-code catalog work, not more work on this completed route slice.
+- Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-service-extraction-design.md`, `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md`, `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`, and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
+
+## 2026-03-15 Continuation Pass: Backend Telemetry Mapping Design Kickoff
+
+What was done in this continuation pass
+- Added `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` to map the now-stable backend event and field set to trace, metric, and external-reporting candidates without choosing a vendor yet.
+- Added `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` so the next step is easy to track and can move directly into backend instrumentation work without rediscovering the event inventory.
+- Grouped the current backend telemetry surface into request lifecycle, auth, assistant orchestration, and admin/management domains anchored to the existing structured log vocabulary.
+- This audit report now records that backend telemetry revisit is active rather than merely deferred.
+
+What is not yet done
+- No backend telemetry SDK, exporter, or vendor integration has been added yet.
+- No backend runtime instrumentation has been implemented yet; this pass is design and handoff only.
+- Sampling, dashboards, alerts, and final external-reporting platform choices remain future decisions.
+
+What should come next
+- Execute `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` to add a small vendor-neutral telemetry seam and map the current request, auth, assistant, admin, threads, and WHM flows without changing the stable log vocabulary.
+- Keep structured logs as the source of truth for event names and fields, and avoid high-cardinality metric labels for entity identifiers.
+- Use `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` as the current handoff docs for this active backend telemetry follow-up.
+- Verification for this continuation pass:
+  - Docs-only pass; no backend test or lint commands were run.
 
 ## 2026-03-15 Continuation Pass: Request Validation Error Code and Route Success Logging
 
@@ -35,10 +55,10 @@ What was done in this continuation pass
 
 What is not yet done
 - This route-slice follow-up is now complete; the remaining backend work from this audit is no longer wider route-level success logging or request-validation `error_code` wiring.
-- Deferred backend follow-up is now limited to telemetry reconsideration after the current structured log/event field set stabilizes, plus any future deeper helper-level logging or broader shared error-code catalog work if later needed.
+- Deferred backend follow-up is now limited to executing the active telemetry mapping follow-up plus any future deeper helper-level logging or broader shared error-code catalog work if later needed.
 
 What should come next
-- Reconsider backend telemetry only after the current structured log/event field set has settled enough to decide what should feed traces, metrics, or external reporting.
+- Continue the active backend telemetry follow-up by using the current stabilized log/event field set to drive traces, metrics, and any later external reporting.
 - Treat any later backend logging or `error_code` follow-up as a deeper helper-level/shared-catalog pass rather than reopening this now-completed route slice.
 - Use `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md` and `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md` as the handoff docs for this completed continuation pass and its deferred backend-only follow-up.
 - Fresh verification for this continuation pass in `apps/api`:
@@ -59,7 +79,7 @@ What was done in this continuation pass
 What is not yet done
 - Broader backend structured logging adoption is still follow-up work outside the auth boundary and the previously refreshed assistant/admin/threads/WHM slices.
 - Stable `error_code` coverage is stronger across auth plus the already-covered route surfaces, but selective gaps still remain in untouched routes and generic/helper-level validation paths.
-- Telemetry reconsideration remains deferred until the current structured log/event field set stabilizes.
+- Telemetry mapping design is now active, but instrumentation and vendor/export decisions remain deferred.
 
 What should come next
 - Continue the backend-only follow-up by extending `log_context(...)` adoption across more non-auth success paths using the now-stabilized auth event vocabulary.
@@ -82,7 +102,7 @@ What was done in this continuation pass
 What is not yet done
 - Broader backend structured logging adoption is still follow-up work outside the assistant-specific seams touched in this pass.
 - Stable `error_code` coverage is still selective outside the assistant and previously refreshed backend routes.
-- Telemetry reconsideration remains deferred until the current structured log/event field set stabilizes.
+- Telemetry mapping design is now active, but instrumentation and vendor/export decisions remain deferred.
 
 What should come next
 - Continue the backend-only follow-up by extending `log_context(...)` adoption across more non-assistant success paths.
@@ -198,7 +218,7 @@ What changed across the implemented branches
 
 What remains
 - The targeted route-level success-logging work from this audit is now complete for the refreshed backend slices.
-- Any additional backend logging follow-up is now a deeper helper/service-level concern plus deferred telemetry reconsideration, not more work on this route slice.
+- Any additional backend logging follow-up is now a deeper helper/service-level concern plus the active telemetry mapping follow-up, not more work on this route slice.
 
 ### W2: Missing request-scoped context (no request_id / correlation)
 Status
@@ -274,7 +294,7 @@ What changed across the implemented branches
 What remains
 - `apps/api/src/noa_api/api/routes/assistant.py` is materially smaller than the original audit target, but broader backend logging adoption still remains outside the assistant slice.
 - Stable `error_code` coverage is still selective outside the assistant and previously touched backend routes.
-- Backend telemetry/vendor follow-up is still deferred.
+- Backend telemetry implementation and vendor/export follow-up is still not implemented, but the mapping design pass is now active.
 
 ### W5: Multiple SQLAlchemy engines/pools instantiated across modules
 Status
@@ -362,7 +382,7 @@ What changed across the implemented branches
 
 What remains
 - No dedicated frontend error reporting tool is installed.
-- No backend tracing/metrics stack is present.
+- No backend tracing/metrics stack is present yet; the active backend follow-up now has a dedicated mapping design and implementation-plan handoff in `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
 - Backend request/event logging is stronger, but still not a full production telemetry solution.
 
 ---
@@ -376,10 +396,10 @@ Updated status after the latest 2026-03-15 continuation passes:
 - Completed on `feat/assistant-service-extraction`: assistant action/tool-result extraction into `apps/api/src/noa_api/api/routes/assistant_action_operations.py` and `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py`, assistant-domain error translation tightening in `apps/api/src/noa_api/api/routes/assistant_errors.py`, thinner `AssistantService` delegation in `apps/api/src/noa_api/api/routes/assistant.py`, and a fresh handoff refresh anchored to the 2026-03-15 assistant service extraction design and implementation plan docs.
 - Completed on `feat/backend-auth-boundary-logging`: shared auth dependency extraction into `apps/api/src/noa_api/api/auth_dependencies.py`, protected-route auth `error_code` coverage, shared auth error-code catalog constants, structured auth boundary success/rejection logs including failed-login visibility, and refreshed verification plus handoff docs for this non-assistant continuation.
 - Completed in the latest continuation pass: shared request validation responses now emit `request_validation_error`, and structured success logging now covers the admin, threads, and WHM admin route flows.
-- Still recommended next: the main remaining backend follow-up is to revisit backend telemetry after the new log/event field set stabilizes, while treating any later backend logging or `error_code` follow-up as deeper helper-level/shared-catalog work rather than more route-slice changes.
+- Still recommended next: the main remaining backend follow-up is to continue the active telemetry mapping pass using the now-stable log/event field set, while treating any later backend logging or `error_code` follow-up as deeper helper-level/shared-catalog work rather than more route-slice changes.
 
 Active next steps
-1. Main next step: revisit backend telemetry only after the current structured log/event field set stabilizes.
+1. Main next step: execute the active backend telemetry mapping follow-up using `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
 2. If more backend logging work is needed later, treat it as a deeper helper/service follow-up instead of reopening this completed route slice.
 3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog expansion rather than more route-specific patching.
 
@@ -452,23 +472,28 @@ Done on `feat/backend-auth-boundary-logging`
   - `uv run pytest -q` -> `195 passed`
   - `uv run ruff check src tests` -> `All checks passed!`
 
+Active on `master`
+- Backend telemetry revisit/design is now active via `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`
+- A resume-friendly execution handoff now exists in `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`
+- The audit now points to the telemetry mapping docs as the main remaining backend follow-up
+
 Not yet done after the latest 2026-03-15 continuation passes
-- Backend telemetry vendor adoption (`OpenTelemetry`, etc.) remains deferred
+- Backend telemetry implementation and vendor adoption (`OpenTelemetry`, etc.) remain not yet done, even though the telemetry mapping pass is now active
 - Any future backend logging follow-up is now deeper helper/service-level work beyond the completed route slice
 - Any future backend `error_code` follow-up is now shared/helper-level catalog work beyond the completed route slice
 
 Recommended next from this worktree
-1. Revisit backend telemetry only after the new structured log/event fields stabilize and you know which data should feed traces/metrics.
+1. Continue the active backend telemetry mapping follow-up by executing `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`.
 2. If more backend logging work is needed later, target deeper helper/service seams rather than reopening the completed route slice.
 3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog work rather than route-specific patching.
 
-Primary execution handoff for the current continuation pass
-- Worktree: `.worktrees/feat-backend-auth-boundary-logging`
-- Branch: `feat/backend-auth-boundary-logging`
+Primary execution handoff for the active telemetry follow-up
+- Worktree: `.`
+- Branch: `master`
 - Primary plans:
-  - `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md`
-  - `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md`
-- Resume point: this worktree completed the non-assistant logging/error-code continuation pass recorded in this audit refresh; the remaining backend-only next-step reference is now telemetry reconsideration plus any future helper-level logging/shared-catalog work.
+  - `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`
+  - `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`
+- Resume point: this worktree started the backend telemetry design pass and refreshed the audit handoff; the next step is to execute the telemetry implementation plan so the current request, auth, assistant, admin, threads, and WHM event vocabulary begins feeding traces, metrics, and any later external reporting without changing the stable log contract.
 
 Historical execution handoff: assistant service extraction
 - Worktree: `apps/api/.worktrees/feat-assistant-service-extraction`
