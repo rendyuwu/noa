@@ -24,7 +24,7 @@ Implementation status update (branch lineage):
 - The current backend-only branch `feat/backend-auth-boundary-logging` completes the next deferred non-assistant slice: shared auth dependency extraction into the API layer, shared auth error-code catalog coverage across login and protected-route auth failures, structured auth boundary success/rejection logs, and refreshed verification/handoff docs for this pass.
 - The latest continuation pass after `feat/backend-auth-boundary-logging` completes the remaining route-slice follow-up from this audit: shared request validation responses now emit the stable `request_validation_error` code, and structured success logging now covers the admin, threads, and WHM admin route flows alongside the previously refreshed backend paths.
 - The earlier telemetry implementation worktree `feat/backend-telemetry-mapping` completed the vendor-neutral telemetry seam, bounded request/auth/assistant/admin/threads/WHM telemetry emissions, selective external-reporting candidates, and refreshed verification/handoff docs for that route-level pass.
-- The current backend telemetry exporter worktree `feat/backend-telemetry-exporter` now wires that seam to an OpenTelemetry-backed exporter path with explicit settings, safe no-op fallback, bounded metric attribute filtering, and refreshed verification/handoff docs for this pass.
+- The current backend telemetry exporter worktree `feat/backend-telemetry-exporter` now wires that seam to an OpenTelemetry-backed exporter path with explicit settings, safe no-op fallback, bounded metric attribute filtering, app-shutdown cleanup, and refreshed verification/handoff docs for this pass.
 - The remaining notable follow-up after exporter wiring is now operational and adjacent rather than another route-level backend telemetry pass: dashboards, alerts, sampling/front-end reporting decisions, plus any later deeper helper/service logging cleanup or shared/helper-level error-code catalog work if needed.
 - Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-service-extraction-design.md`, `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md`, `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md`, `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md`, `docs/plans/2026-03-15-backend-telemetry-mapping-design.md`, `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md`, `docs/plans/2026-03-15-backend-telemetry-exporter-design.md`, and `docs/plans/2026-03-15-backend-telemetry-exporter-implementation-plan.md`.
 
@@ -34,7 +34,7 @@ What was done in this continuation pass
 - Added backend telemetry exporter settings in `apps/api/src/noa_api/core/config.py`, including safe OTLP header normalization and no-op-safe defaults.
 - Added `apps/api/src/noa_api/core/telemetry_opentelemetry.py` and updated `apps/api/src/noa_api/core/telemetry.py` so the existing telemetry seam now returns an OpenTelemetry-backed recorder when enabled/configured, derives the correct OTLP HTTP signal paths from the configured collector base URL, and otherwise falls back safely to the existing no-op recorder.
 - Updated `apps/api/src/noa_api/main.py` so app startup installs the configured recorder without changing route call sites, HTTP contracts, or the stabilized telemetry event vocabulary.
-- Preserved bounded metric attribute filtering plus best-effort exporter setup/runtime behavior so telemetry failures do not break request handling.
+- Preserved bounded metric attribute filtering plus best-effort exporter setup/runtime behavior so telemetry failures do not break request handling, and added app-shutdown cleanup so enabled telemetry flushes and shuts down with the FastAPI app lifecycle.
 - Extended backend telemetry coverage in `apps/api/tests/test_telemetry.py` and re-ran the focused backend regression suite for request context, auth, RBAC, threads, WHM admin, assistant operations, and assistant transport.
 
 What is not yet done
@@ -47,8 +47,8 @@ What should come next
 - If later backend `error_code` follow-up is still needed, treat it as shared/helper-level catalog expansion rather than route-specific patching.
 - Use `docs/plans/2026-03-15-backend-telemetry-exporter-design.md`, `docs/plans/2026-03-15-backend-telemetry-exporter-implementation-plan.md`, and this audit refresh as the handoff docs for the completed exporter pass.
 - Fresh verification for this continuation pass in `.worktrees/feat-backend-telemetry-exporter/apps/api`:
-  - `uv run pytest -q tests/test_telemetry.py tests/test_request_context.py tests/test_auth_login.py tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py tests/test_assistant_operations.py tests/test_assistant.py` -> `144 passed`
-  - `uv run pytest -q` -> `246 passed`
+  - `uv run pytest -q tests/test_telemetry.py tests/test_request_context.py tests/test_auth_login.py tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py tests/test_assistant_operations.py tests/test_assistant.py` -> `145 passed`
+  - `uv run pytest -q` -> `247 passed`
   - `uv run ruff check src tests` -> `All checks passed!`
 
 ## 2026-03-15 Continuation Pass: Backend Telemetry Mapping Implementation
@@ -448,7 +448,7 @@ Updated status after the latest 2026-03-15 continuation passes:
 - Completed on `feat/backend-auth-boundary-logging`: shared auth dependency extraction into `apps/api/src/noa_api/api/auth_dependencies.py`, protected-route auth `error_code` coverage, shared auth error-code catalog constants, structured auth boundary success/rejection logs including failed-login visibility, and refreshed verification plus handoff docs for this non-assistant continuation.
 - Completed in the latest continuation pass: shared request validation responses now emit `request_validation_error`, and structured success logging now covers the admin, threads, and WHM admin route flows.
 - Completed in `feat/backend-telemetry-mapping`: app-scoped backend telemetry seam, request/auth/assistant/admin/threads/WHM telemetry mapping, bounded metric labels, best-effort telemetry failure handling, and refreshed verification plus handoff docs for the implementation pass.
-- Completed in the current telemetry exporter worktree `feat/backend-telemetry-exporter`: OpenTelemetry-backed exporter wiring behind the existing telemetry seam, explicit exporter settings, signal-correct OTLP HTTP endpoint derivation, safe setup fallback, bounded metric attribute filtering, and refreshed verification plus handoff docs for the exporter pass.
+- Completed in the current telemetry exporter worktree `feat/backend-telemetry-exporter`: OpenTelemetry-backed exporter wiring behind the existing telemetry seam, explicit exporter settings, signal-correct OTLP HTTP endpoint derivation, safe setup fallback, bounded metric attribute filtering, app-shutdown cleanup, and refreshed verification plus handoff docs for the exporter pass.
 - Still recommended next: leave the completed backend telemetry route/exporter slice alone and move the remaining observability follow-up to dashboards, alerts, frontend reporting, and only later helper/service logging cleanup or shared/helper-level `error_code` expansion if needed.
 
 Active next steps
@@ -541,8 +541,8 @@ Done on `feat/backend-telemetry-exporter`
 - Preserved stable event names, bounded metric attributes, and best-effort telemetry failure handling behind the existing seam
 - Extended telemetry-focused coverage in `apps/api/tests/test_telemetry.py`
 - Recorded fresh verification for the telemetry exporter pass:
-  - `uv run pytest -q tests/test_telemetry.py tests/test_request_context.py tests/test_auth_login.py tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py tests/test_assistant_operations.py tests/test_assistant.py` -> `144 passed`
-  - `uv run pytest -q` -> `246 passed`
+  - `uv run pytest -q tests/test_telemetry.py tests/test_request_context.py tests/test_auth_login.py tests/test_rbac.py tests/test_threads.py tests/test_whm_admin_routes.py tests/test_assistant_operations.py tests/test_assistant.py` -> `145 passed`
+  - `uv run pytest -q` -> `247 passed`
   - `uv run ruff check src tests` -> `All checks passed!`
 
 Not yet done after the latest 2026-03-15 continuation passes
