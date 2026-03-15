@@ -26,6 +26,9 @@ from noa_api.api.routes.assistant_commands import (
     AssistantRequest,
     should_run_agent,
 )
+from noa_api.api.routes.assistant_action_operations import (
+    deny_action_request as deny_action_request_operation,
+)
 from noa_api.api.routes.assistant_errors import (
     assistant_http_error,
     parse_action_request_id,
@@ -447,84 +450,14 @@ class AssistantService:
         thread_id: UUID,
         action_request_id: str | None,
     ) -> None:
-        parsed_id = parse_action_request_id(action_request_id)
-        request = await self._action_tool_run_service.get_action_request(
-            action_request_id=parsed_id
+        await deny_action_request_operation(
+            owner_user_id=owner_user_id,
+            owner_user_email=owner_user_email,
+            thread_id=thread_id,
+            action_request_id=action_request_id,
+            repository=self._repository,
+            action_tool_run_service=self._action_tool_run_service,
         )
-        if request is None:
-            raise assistant_http_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Action request not found",
-                error_code=ACTION_REQUEST_NOT_FOUND,
-            )
-        if (
-            request.thread_id != thread_id
-            or request.requested_by_user_id != owner_user_id
-        ):
-            raise assistant_http_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Action request not found",
-                error_code=ACTION_REQUEST_NOT_FOUND,
-            )
-        if request.status != ActionRequestStatus.PENDING:
-            raise assistant_http_error(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Action request already decided",
-                error_code=ACTION_REQUEST_ALREADY_DECIDED,
-            )
-
-        try:
-            denied = await self._action_tool_run_service.deny_action_request(
-                action_request_id=parsed_id,
-                decided_by_user_id=owner_user_id,
-            )
-        except ValueError as exc:
-            raise assistant_http_error(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Action request already decided",
-                error_code=ACTION_REQUEST_ALREADY_DECIDED,
-            ) from exc
-        if denied is None:
-            raise assistant_http_error(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Action request not found",
-                error_code=ACTION_REQUEST_NOT_FOUND,
-            )
-
-        with log_context(
-            action_request_id=str(denied.id),
-            thread_id=str(thread_id),
-            tool_name=denied.tool_name,
-            user_id=str(owner_user_id),
-        ):
-            await self._repository.create_message(
-                thread_id=thread_id,
-                role="assistant",
-                parts=[
-                    {
-                        "type": "text",
-                        "text": f"Denied action request for tool '{denied.tool_name}'.",
-                    }
-                ],
-            )
-            await self._repository.create_audit_log(
-                event_type="action_denied",
-                actor_email=owner_user_email,
-                tool_name=denied.tool_name,
-                metadata={
-                    "thread_id": str(thread_id),
-                    "action_request_id": str(denied.id),
-                },
-            )
-            logger.info(
-                "assistant_action_denied",
-                extra={
-                    "action_request_id": str(denied.id),
-                    "thread_id": str(thread_id),
-                    "tool_name": denied.tool_name,
-                    "user_id": str(owner_user_id),
-                },
-            )
 
     async def run_agent_turn(
         self,

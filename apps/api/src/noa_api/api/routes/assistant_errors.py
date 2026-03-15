@@ -5,6 +5,8 @@ from uuid import UUID
 from fastapi import HTTPException, status
 
 from noa_api.api.error_codes import (
+    ACTION_REQUEST_ALREADY_DECIDED,
+    ACTION_REQUEST_NOT_FOUND,
     INVALID_ACTION_REQUEST_ID,
     INVALID_TOOL_CALL_ID,
     MISSING_ACTION_REQUEST_ID,
@@ -81,3 +83,19 @@ def parse_action_request_id(raw: str | None) -> UUID:
             detail="Invalid actionRequestId",
             error_code=INVALID_ACTION_REQUEST_ID,
         ) from exc
+
+
+def action_request_not_found_error() -> HTTPException:
+    return assistant_http_error(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Action request not found",
+        error_code=ACTION_REQUEST_NOT_FOUND,
+    )
+
+
+def action_request_already_decided_error() -> HTTPException:
+    return assistant_http_error(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Action request already decided",
+        error_code=ACTION_REQUEST_ALREADY_DECIDED,
+    )
