@@ -228,20 +228,22 @@ async def get_whm_server_service() -> AsyncGenerator[WHMServerService, None]:
 
 @router.get("", response_model=WHMServerListResponse)
 async def list_whm_servers(
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> WHMServerListResponse:
     servers = await whm_server_service.list_servers()
+    with log_context(user_id=str(admin_user.user_id)):
+        logger.info("whm_servers_list_succeeded", extra={"server_count": len(servers)})
     return WHMServerListResponse(servers=[_to_server_response(s) for s in servers])
 
 
 @router.post("", response_model=CreateWHMServerResponse)
 async def create_whm_server(
     payload: CreateWHMServerRequest,
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> CreateWHMServerResponse | Response:
-    with log_context(server_name=payload.name):
+    with log_context(server_name=payload.name, user_id=str(admin_user.user_id)):
         try:
             server = await whm_server_service.create_server(
                 name=payload.name,
@@ -257,6 +259,7 @@ async def create_whm_server(
                 detail="WHM server name already exists",
                 error_code=WHM_SERVER_NAME_EXISTS,
             ) from exc
+        logger.info("whm_server_created")
     response = CreateWHMServerResponse(server=_to_server_response(server))
     return JSONResponse(
         content=jsonable_encoder(response.model_dump()),
@@ -268,10 +271,14 @@ async def create_whm_server(
 async def update_whm_server(
     server_id: UUID,
     payload: UpdateWHMServerRequest,
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> UpdateWHMServerResponse:
-    with log_context(server_id=str(server_id), server_name=payload.name):
+    with log_context(
+        server_id=str(server_id),
+        server_name=payload.name,
+        user_id=str(admin_user.user_id),
+    ):
         try:
             server = await whm_server_service.update_server(
                 server_id=server_id,
@@ -295,16 +302,17 @@ async def update_whm_server(
                 detail="WHM server not found",
                 error_code=WHM_SERVER_NOT_FOUND,
             )
+        logger.info("whm_server_updated")
     return UpdateWHMServerResponse(server=_to_server_response(server))
 
 
 @router.delete("/{server_id}", response_model=DeleteWHMServerResponse)
 async def delete_whm_server(
     server_id: UUID,
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> DeleteWHMServerResponse:
-    with log_context(server_id=str(server_id)):
+    with log_context(server_id=str(server_id), user_id=str(admin_user.user_id)):
         deleted = await whm_server_service.delete_server(server_id=server_id)
         if not deleted:
             logger.info("whm_server_not_found")
@@ -313,18 +321,19 @@ async def delete_whm_server(
                 detail="WHM server not found",
                 error_code=WHM_SERVER_NOT_FOUND,
             )
+        logger.info("whm_server_deleted")
     return DeleteWHMServerResponse(ok=True)
 
 
 @router.post("/{server_id}/validate", response_model=ValidateWHMServerResponse)
 async def validate_whm_server(
     server_id: UUID,
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     whm_server_service: WHMServerService = Depends(get_whm_server_service),
 ) -> ValidateWHMServerResponse:
-    with log_context(server_id=str(server_id)):
+    with log_context(server_id=str(server_id), user_id=str(admin_user.user_id)):
         try:
-            return await whm_server_service.validate_server(server_id=server_id)
+            result = await whm_server_service.validate_server(server_id=server_id)
         except WHMServerNotFoundError as exc:
             logger.info("whm_server_not_found")
             raise ApiHTTPException(
@@ -332,3 +341,11 @@ async def validate_whm_server(
                 detail="WHM server not found",
                 error_code=WHM_SERVER_NOT_FOUND,
             ) from exc
+        logger.info(
+            "whm_server_validated",
+            extra={
+                "validation_ok": result.ok,
+                "validation_error_code": result.error_code,
+            },
+        )
+        return result

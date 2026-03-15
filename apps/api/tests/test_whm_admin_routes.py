@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import io
+import json
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Protocol
+from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -12,7 +17,9 @@ from sqlalchemy.exc import IntegrityError
 
 from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_handling import ApiHTTPException, install_error_handling
+from noa_api.api.routes.whm_admin import ValidateWHMServerResponse
 from noa_api.core.auth.authorization import AuthorizationUser
+from noa_api.core.logging import configure_logging
 
 
 @dataclass
@@ -61,6 +68,12 @@ class _WHMServerServiceProtocol(Protocol):
         api_token: str | None = None,
         verify_ssl: bool | None = None,
     ) -> _WHMServer | None: ...
+
+    async def delete_server(self, *, server_id: UUID) -> bool: ...
+
+    async def validate_server(
+        self, *, server_id: UUID
+    ) -> ValidateWHMServerResponse: ...
 
 
 class _FakeWHMServerService:
@@ -117,6 +130,48 @@ class _FakeWHMServerService:
             server.verify_ssl = verify_ssl
         server.updated_at = datetime.now(UTC)
         return server
+
+    async def delete_server(self, *, server_id: UUID) -> bool:
+        return self._servers.pop(server_id, None) is not None
+
+    async def validate_server(self, *, server_id: UUID) -> ValidateWHMServerResponse:
+        server = self._servers.get(server_id)
+        if server is None:
+            from noa_api.api.routes.whm_admin import WHMServerNotFoundError
+
+            raise WHMServerNotFoundError
+        return ValidateWHMServerResponse(ok=True, message=f"validated {server.name}")
+
+
+@contextmanager
+def _capture_structured_logs() -> Iterator[io.StringIO]:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_formatters = {
+        id(handler): handler.formatter for handler in original_handlers
+    }
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root_logger.handlers = [handler]
+    root_logger.setLevel(logging.INFO)
+
+    try:
+        configure_logging()
+        yield stream
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+        for existing_handler in original_handlers:
+            existing_handler.setFormatter(original_formatters[id(existing_handler)])
+
+
+def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
+    return [
+        cast(dict[str, Any], json.loads(line))
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
 
 
 class _IntegrityErrorWHMServerRepository:
@@ -227,6 +282,14 @@ class _ConflictCreateWHMServerService:
         _ = (server_id, name, base_url, api_username, api_token, verify_ssl)
         raise AssertionError("update should not be called")
 
+    async def delete_server(self, *, server_id: UUID) -> bool:
+        _ = server_id
+        raise AssertionError("delete should not be called")
+
+    async def validate_server(self, *, server_id: UUID) -> ValidateWHMServerResponse:
+        _ = server_id
+        raise AssertionError("validate should not be called")
+
 
 def _create_whm_admin_app(service: _WHMServerServiceProtocol) -> FastAPI:
     from noa_api.api.routes.whm_admin import (
@@ -297,6 +360,75 @@ async def test_whm_admin_route_returns_error_contract_for_missing_server() -> No
     assert body["error_code"] == "whm_server_not_found"
     assert body["request_id"] == "whm-server-missing"
     assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_whm_admin_routes_emit_structured_success_logs() -> None:
+    service = _FakeWHMServerService()
+    app = _create_whm_admin_app(service)
+
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            create_response = await client.post(
+                "/admin/whm/servers",
+                json={
+                    "name": "web1",
+                    "base_url": "https://whm.example.com:2087",
+                    "api_username": "root",
+                    "api_token": "SECRET",
+                    "verify_ssl": True,
+                },
+            )
+            assert create_response.status_code == 201
+            server_id = create_response.json()["server"]["id"]
+
+            list_response = await client.get("/admin/whm/servers")
+            patch_response = await client.patch(
+                f"/admin/whm/servers/{server_id}",
+                json={"name": "web1-renamed"},
+            )
+            validate_response = await client.post(
+                f"/admin/whm/servers/{server_id}/validate"
+            )
+            delete_response = await client.delete(f"/admin/whm/servers/{server_id}")
+
+    assert list_response.status_code == 200
+    assert patch_response.status_code == 200
+    assert validate_response.status_code == 200
+    assert delete_response.status_code == 200
+
+    payloads = _load_log_payloads(stream)
+
+    created_events = [
+        payload for payload in payloads if payload["event"] == "whm_server_created"
+    ]
+    assert len(created_events) == 1
+    assert created_events[0]["server_name"] == "web1"
+
+    list_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "whm_servers_list_succeeded"
+    ]
+    assert len(list_events) == 1
+    assert list_events[0]["server_count"] == 1
+
+    updated_events = [
+        payload for payload in payloads if payload["event"] == "whm_server_updated"
+    ]
+    assert len(updated_events) == 1
+
+    validated_events = [
+        payload for payload in payloads if payload["event"] == "whm_server_validated"
+    ]
+    assert len(validated_events) == 1
+    assert validated_events[0]["validation_ok"] is True
+
+    deleted_events = [
+        payload for payload in payloads if payload["event"] == "whm_server_deleted"
+    ]
+    assert len(deleted_events) == 1
+    assert isinstance(deleted_events[0]["server_id"], str)
 
 
 async def test_whm_server_service_raises_typed_conflict_error_for_duplicate_name() -> (
