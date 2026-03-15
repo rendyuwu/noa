@@ -11,7 +11,7 @@ from noa_api.core.telemetry import create_telemetry_recorder
 def create_app(app_settings: Settings = settings) -> FastAPI:
     configure_logging()
     app = FastAPI(title="Project NOA API")
-    app.state.telemetry = create_telemetry_recorder()
+    app.state.telemetry = create_telemetry_recorder(app_settings)
     if app_settings.api_cors_allowed_origins:
         app.add_middleware(
             CORSMiddleware,

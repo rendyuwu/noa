@@ -162,6 +162,18 @@ def test_create_telemetry_recorder_returns_otel_recorder_when_enabled() -> None:
     assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
 
 
+def test_create_app_uses_configured_telemetry_recorder() -> None:
+    app = create_app(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+        )
+    )
+
+    assert app.state.telemetry.__class__.__name__ == "OpenTelemetryRecorder"
+
+
 def test_metric_labels_drop_high_cardinality_fields() -> None:
     module = _telemetry_otel_module()
     filter_metric_attributes = getattr(module, "_metric_attributes_for_event", None)
@@ -178,6 +190,28 @@ def test_metric_labels_drop_high_cardinality_fields() -> None:
     )
 
     assert filter_metric_attributes(event) == {"error_code": "assistant_failed"}
+
+
+def test_bounded_metric_labels_survive_filtering() -> None:
+    module = _telemetry_otel_module()
+    filter_metric_attributes = getattr(module, "_metric_attributes_for_event", None)
+
+    assert callable(filter_metric_attributes)
+
+    event = TelemetryEvent(
+        name="assistant_failures_total",
+        attributes={
+            "assistant_command_types": "message,tool",
+            "validation_ok": True,
+            "thread_id": "thread-123",
+            "user_id": "user-456",
+        },
+    )
+
+    assert filter_metric_attributes(event) == {
+        "assistant_command_types": "message,tool",
+        "validation_ok": True,
+    }
 
 
 def test_telemetry_recorder_trace_adds_event_to_active_span() -> None:

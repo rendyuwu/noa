@@ -17,6 +17,7 @@ from noa_api.core.config import Settings
 from noa_api.core.telemetry import TelemetryAttributeValue, TelemetryEvent
 
 _METRIC_ATTRIBUTE_KEYS = {
+    "assistant_command_types",
     "command_type",
     "command_types",
     "error_code",
@@ -28,6 +29,7 @@ _METRIC_ATTRIBUTE_KEYS = {
     "route",
     "status_code",
     "status_family",
+    "validation_ok",
 }
 
 
