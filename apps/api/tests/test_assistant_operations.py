@@ -1,16 +1,23 @@
 from __future__ import annotations
 
+import io
+import json
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import Any, cast
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import HTTPException
 from structlog.contextvars import get_contextvars
 
 from noa_api.api.routes import assistant_operations
 from noa_api.api.routes.assistant_commands import AssistantRequest
 from noa_api.api.routes.assistant_operations import prepare_assistant_transport
 from noa_api.core.auth.authorization import AuthorizationUser
+from noa_api.core.logging import configure_logging
 
 
 def _active_user() -> AuthorizationUser:
@@ -44,6 +51,37 @@ def _payload_with_add_message(thread_id: UUID | None = None) -> AssistantRequest
 
 def _payload_with_user_message(thread_id: UUID | None = None) -> AssistantRequest:
     return _payload_with_add_message(thread_id)
+
+
+@contextmanager
+def _capture_structured_logs() -> Iterator[io.StringIO]:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_formatters = {
+        id(handler): handler.formatter for handler in original_handlers
+    }
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root_logger.handlers = [handler]
+    root_logger.setLevel(logging.INFO)
+
+    try:
+        configure_logging()
+        yield stream
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+        for existing_handler in original_handlers:
+            existing_handler.setFormatter(original_formatters[id(existing_handler)])
+
+
+def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
+    return [
+        cast(dict[str, Any], json.loads(line))
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
 
 
 @dataclass
@@ -131,6 +169,7 @@ class _FakeAssistantServiceThatFailsAgentRun:
     load_state_calls: int = 0
     fail_error_persistence: bool = False
     fail_state_refresh: bool = False
+    agent_failure: Exception | None = None
 
     async def run_agent_turn(
         self,
@@ -143,6 +182,8 @@ class _FakeAssistantServiceThatFailsAgentRun:
     ) -> None:
         _ = owner_user_id, owner_user_email, thread_id, on_text_delta
         self.seen_available_tools = set(available_tool_names)
+        if self.agent_failure is not None:
+            raise self.agent_failure
         raise RuntimeError("agent boom")
 
     async def add_message(
@@ -174,6 +215,37 @@ class _FakeAssistantServiceThatFailsAgentRun:
             "messages": [*self.base_messages, *self.added_messages],
             "isRunning": False,
         }
+
+
+@dataclass
+class _FakeAssistantServiceThatFailsStateRefresh:
+    async def run_agent_turn(
+        self,
+        *,
+        owner_user_id: UUID,
+        owner_user_email: str | None,
+        thread_id: UUID,
+        available_tool_names: set[str],
+        on_text_delta: Any = None,
+    ) -> None:
+        _ = owner_user_id, owner_user_email, thread_id, available_tool_names
+        _ = on_text_delta
+
+    async def add_message(
+        self,
+        *,
+        owner_user_id: UUID,
+        thread_id: UUID,
+        role: str,
+        parts: list[dict[str, object]],
+    ) -> None:
+        _ = owner_user_id, thread_id, role, parts
+
+    async def load_state(
+        self, *, owner_user_id: UUID, thread_id: UUID
+    ) -> dict[str, object]:
+        _ = owner_user_id, thread_id
+        raise RuntimeError("refresh failed")
 
 
 async def test_prepare_assistant_transport_validates_commands_before_mutation(
@@ -281,6 +353,146 @@ async def test_run_agent_phase_persists_safe_error_message_on_failure() -> None:
     assert controller.state is not None
     assert controller.state["isRunning"] is False
     assert _state_contains_text(controller.state, error_text)
+
+
+async def test_run_agent_phase_emits_structured_agent_failure_log() -> None:
+    current_user = _active_user()
+    thread_id = uuid4()
+    service = _FakeAssistantServiceThatFailsAgentRun(
+        base_messages=[_message_with_text("Trigger agent")]
+    )
+    controller = _FakeController(state={"messages": [], "isRunning": True})
+
+    with _capture_structured_logs() as stream:
+        await assistant_operations.run_agent_phase(
+            controller=controller,
+            payload=_payload_with_user_message(thread_id),
+            current_user=current_user,
+            assistant_service=service,
+            authorization_service=_FakeAuthorizationService(),
+            canonical_state={
+                "messages": list(service.base_messages),
+                "isRunning": False,
+            },
+            command_types=["add-message"],
+        )
+
+    payloads = [
+        payload
+        for payload in _load_log_payloads(stream)
+        if payload["event"] == "assistant_run_failed_agent"
+    ]
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["assistant_command_types"] == ["add-message"]
+    assert payload["thread_id"] == str(thread_id)
+    assert payload["user_id"] == str(current_user.user_id)
+    assert payload["error_type"] == "RuntimeError"
+
+
+async def test_run_agent_phase_emits_structured_http_agent_failure_log() -> None:
+    current_user = _active_user()
+    thread_id = uuid4()
+    exc = HTTPException(status_code=409, detail="Agent request already decided")
+    setattr(exc, "error_code", "action_request_already_decided")
+    service = _FakeAssistantServiceThatFailsAgentRun(
+        base_messages=[_message_with_text("Trigger agent")],
+        agent_failure=exc,
+    )
+    controller = _FakeController(state={"messages": [], "isRunning": True})
+
+    with _capture_structured_logs() as stream:
+        await assistant_operations.run_agent_phase(
+            controller=controller,
+            payload=_payload_with_user_message(thread_id),
+            current_user=current_user,
+            assistant_service=service,
+            authorization_service=_FakeAuthorizationService(),
+            canonical_state={
+                "messages": list(service.base_messages),
+                "isRunning": False,
+            },
+            command_types=["add-message"],
+        )
+
+    payloads = [
+        payload
+        for payload in _load_log_payloads(stream)
+        if payload["event"] == "assistant_run_failed_agent"
+    ]
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["assistant_command_types"] == ["add-message"]
+    assert payload["thread_id"] == str(thread_id)
+    assert payload["user_id"] == str(current_user.user_id)
+    assert payload["status_code"] == 409
+    assert payload["error_code"] == "action_request_already_decided"
+    assert payload["detail"] == "Agent request already decided"
+
+
+async def test_run_agent_phase_emits_structured_error_persist_failure_log() -> None:
+    current_user = _active_user()
+    thread_id = uuid4()
+    service = _FakeAssistantServiceThatFailsAgentRun(
+        base_messages=[_message_with_text("Trigger agent")],
+        fail_error_persistence=True,
+    )
+    controller = _FakeController(state={"messages": [], "isRunning": True})
+
+    with _capture_structured_logs() as stream:
+        await assistant_operations.run_agent_phase(
+            controller=controller,
+            payload=_payload_with_user_message(thread_id),
+            current_user=current_user,
+            assistant_service=service,
+            authorization_service=_FakeAuthorizationService(),
+            canonical_state={
+                "messages": list(service.base_messages),
+                "isRunning": False,
+            },
+            command_types=["add-message"],
+        )
+
+    payloads = [
+        payload
+        for payload in _load_log_payloads(stream)
+        if payload["event"] == "assistant_error_message_persist_failed"
+    ]
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["assistant_command_types"] == ["add-message"]
+    assert payload["thread_id"] == str(thread_id)
+    assert payload["user_id"] == str(current_user.user_id)
+    assert payload["error_type"] == "RuntimeError"
+
+
+async def test_run_agent_phase_emits_structured_state_refresh_failure_log() -> None:
+    current_user = _active_user()
+    thread_id = uuid4()
+    controller = _FakeController(state={"messages": [], "isRunning": True})
+
+    with _capture_structured_logs() as stream:
+        await assistant_operations.run_agent_phase(
+            controller=controller,
+            payload=_payload_with_user_message(thread_id),
+            current_user=current_user,
+            assistant_service=_FakeAssistantServiceThatFailsStateRefresh(),
+            authorization_service=_FakeAuthorizationService(),
+            canonical_state={"messages": [], "isRunning": False},
+            command_types=["add-message"],
+        )
+
+    payloads = [
+        payload
+        for payload in _load_log_payloads(stream)
+        if payload["event"] == "assistant_state_refresh_failed"
+    ]
+    assert len(payloads) == 1
+    payload = payloads[0]
+    assert payload["assistant_command_types"] == ["add-message"]
+    assert payload["thread_id"] == str(thread_id)
+    assert payload["user_id"] == str(current_user.user_id)
+    assert payload["error_type"] == "RuntimeError"
 
 
 async def test_run_agent_phase_appends_local_fallback_when_persistence_and_refresh_fail() -> (

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any, cast
@@ -27,6 +30,7 @@ from noa_api.core.auth.authorization import (
     AuthorizationUser,
     get_authorization_service,
 )
+from noa_api.core.logging import configure_logging
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 
 
@@ -131,6 +135,37 @@ def _state_contains_text(state: dict[str, object], text: str) -> bool:
             if part.get("text") == text:
                 return True
     return False
+
+
+@contextmanager
+def _capture_structured_logs() -> Iterator[io.StringIO]:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_formatters = {
+        id(handler): handler.formatter for handler in original_handlers
+    }
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root_logger.handlers = [handler]
+    root_logger.setLevel(logging.INFO)
+
+    try:
+        configure_logging()
+        yield stream
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+        for existing_handler in original_handlers:
+            existing_handler.setFormatter(original_formatters[id(existing_handler)])
+
+
+def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
+    return [
+        cast(dict[str, Any], json.loads(line))
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
 
 
 @dataclass
@@ -522,6 +557,70 @@ async def test_assistant_route_streams_fallback_text_after_agent_failure(
             state.update(event_state)
 
     assert _state_contains_text(state, "Assistant run failed. Please try again.")
+
+
+async def test_assistant_route_emits_structured_agent_failure_log_with_request_id(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    exc = HTTPException(status_code=409, detail="Action request already decided")
+    setattr(exc, "error_code", "action_request_already_decided")
+
+    async def _boom_run_agent_turn(*_, **__) -> AgentRunnerResult:
+        raise exc
+
+    monkeypatch.setattr(service, "run_agent_turn", _boom_run_agent_turn)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Trigger agent"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app, raise_app_exceptions=False)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/assistant",
+                json=payload,
+                headers={"x-request-id": "assistant-agent-http-failure"},
+            )
+
+    assert response.status_code == 200
+    payloads = [
+        payload
+        for payload in _load_log_payloads(stream)
+        if payload["event"] == "assistant_run_failed_agent"
+    ]
+    assert len(payloads) == 1
+    log_payload = payloads[0]
+    assert log_payload["request_id"] == "assistant-agent-http-failure"
+    assert log_payload["assistant_command_types"] == ["add-message"]
+    assert log_payload["thread_id"] == str(thread_id)
+    assert log_payload["user_id"] == str(owner_id)
+    assert log_payload["status_code"] == 409
+    assert log_payload["error_code"] == "action_request_already_decided"
 
 
 async def test_assistant_route_streams_canonical_state_and_applies_commands() -> None:

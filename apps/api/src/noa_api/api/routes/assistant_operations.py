@@ -215,8 +215,16 @@ async def run_agent_phase(
             persisted_error_message = True
         except asyncio.CancelledError:
             raise
-        except Exception:
-            logger.exception("assistant_error_message_persist_failed")
+        except Exception as exc:
+            logger.exception(
+                "assistant_error_message_persist_failed",
+                extra={
+                    "assistant_command_types": command_types,
+                    "error_type": type(exc).__name__,
+                    "thread_id": str(payload.thread_id),
+                    "user_id": str(current_user.user_id),
+                },
+            )
 
         controller.state["isRunning"] = False
         try:
@@ -251,8 +259,16 @@ async def run_agent_phase(
         controller.state["isRunning"] = False
     except asyncio.CancelledError:
         raise
-    except Exception:
-        logger.exception("assistant_state_refresh_failed")
+    except Exception as exc:
+        logger.exception(
+            "assistant_state_refresh_failed",
+            extra={
+                "assistant_command_types": command_types,
+                "error_type": type(exc).__name__,
+                "thread_id": str(payload.thread_id),
+                "user_id": str(current_user.user_id),
+            },
+        )
         controller.state["isRunning"] = False
         controller.state["messages"] = append_fallback_error_message(
             coerce_messages(controller.state.get("messages")),
