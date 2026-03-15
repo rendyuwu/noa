@@ -6,15 +6,9 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.core.auth.auth_service import AuthService
-from noa_api.core.auth.deps import get_auth_service, get_jwt_service
-from noa_api.core.auth.errors import AuthInvalidCredentialsError
-from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.tools.catalog import get_tool_catalog
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.models import (
@@ -24,8 +18,6 @@ from noa_api.storage.postgres.models import (
     User,
     UserRole,
 )
-
-_bearer_scheme = HTTPBearer(auto_error=False)
 
 
 class UnknownToolError(Exception):
@@ -342,43 +334,3 @@ async def get_authorization_service() -> AsyncGenerator[AuthorizationService, No
         except Exception:
             await session.rollback()
             raise
-
-
-async def get_current_auth_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-    jwt_service: JWTService = Depends(get_jwt_service),
-    auth_service: AuthService = Depends(get_auth_service),
-) -> AuthorizationUser:
-    if credentials is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token"
-        )
-
-    try:
-        payload = jwt_service.decode_token(credentials.credentials)
-    except AuthInvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        ) from exc
-
-    subject = payload.get("sub")
-    if not isinstance(subject, str) or not subject:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        )
-
-    try:
-        user = await auth_service.get_user_by_email(email=subject)
-    except AuthInvalidCredentialsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token"
-        ) from exc
-
-    return AuthorizationUser(
-        user_id=user.user_id,
-        email=user.email,
-        display_name=user.display_name,
-        is_active=user.is_active,
-        roles=user.roles,
-        tools=[],
-    )

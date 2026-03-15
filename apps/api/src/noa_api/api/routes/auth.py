@@ -1,19 +1,27 @@
+import logging
+
 from fastapi import APIRouter, Depends, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 
+from noa_api.api.auth_dependencies import get_active_current_auth_user
+from noa_api.api.error_codes import (
+    AUTHENTICATION_SERVICE_UNAVAILABLE,
+    INVALID_CREDENTIALS,
+    USER_PENDING_APPROVAL,
+)
 from noa_api.api.error_handling import ApiHTTPException
-from noa_api.core.auth.auth_service import AuthResult, AuthService, AuthUser
-from noa_api.core.auth.deps import get_auth_service, get_jwt_service
+from noa_api.core.auth.auth_service import AuthResult, AuthService
+from noa_api.core.auth.authorization import AuthorizationUser
+from noa_api.core.auth.deps import get_auth_service
 from noa_api.core.auth.errors import (
     AuthError,
     AuthInvalidCredentialsError,
     AuthPendingApprovalError,
 )
-from noa_api.core.auth.jwt_service import JWTService
+from noa_api.core.logging_context import log_context
 
 router = APIRouter(prefix="/auth", tags=["auth"])
-_bearer_scheme = HTTPBearer(auto_error=False)
+logger = logging.getLogger(__name__)
 
 
 class LoginRequest(BaseModel):
@@ -54,7 +62,7 @@ def _to_login_response(result: AuthResult) -> LoginResponse:
     )
 
 
-def _to_me_response(user: AuthUser) -> MeResponse:
+def _to_me_response(user: AuthorizationUser) -> MeResponse:
     return MeResponse(
         user=LoginUserResponse(
             id=str(user.user_id),
@@ -66,6 +74,20 @@ def _to_me_response(user: AuthUser) -> MeResponse:
     )
 
 
+def _log_login_rejected(
+    *, user_email: str, status_code: int, error_code: str, failure_stage: str
+) -> None:
+    with log_context(user_email=user_email):
+        logger.info(
+            "auth_login_rejected",
+            extra={
+                "status_code": status_code,
+                "error_code": error_code,
+                "failure_stage": failure_stage,
+            },
+        )
+
+
 @router.post("/login", response_model=LoginResponse)
 async def login(
     payload: LoginRequest, auth_service: AuthService = Depends(get_auth_service)
@@ -75,71 +97,65 @@ async def login(
             email=payload.email, password=payload.password
         )
     except AuthInvalidCredentialsError as exc:
+        _log_login_rejected(
+            user_email=payload.email,
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            error_code=INVALID_CREDENTIALS,
+            failure_stage="invalid_credentials",
+        )
         raise ApiHTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid credentials",
-            error_code="invalid_credentials",
+            error_code=INVALID_CREDENTIALS,
         ) from exc
     except AuthPendingApprovalError as exc:
+        _log_login_rejected(
+            user_email=payload.email,
+            status_code=status.HTTP_403_FORBIDDEN,
+            error_code=USER_PENDING_APPROVAL,
+            failure_stage="pending_approval",
+        )
         raise ApiHTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User pending approval",
-            error_code="user_pending_approval",
+            error_code=USER_PENDING_APPROVAL,
         ) from exc
     except AuthError as exc:
+        _log_login_rejected(
+            user_email=payload.email,
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            error_code=AUTHENTICATION_SERVICE_UNAVAILABLE,
+            failure_stage="auth_service",
+        )
         raise ApiHTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authentication service unavailable",
-            error_code="authentication_service_unavailable",
+            error_code=AUTHENTICATION_SERVICE_UNAVAILABLE,
         ) from exc
+
+    with log_context(user_id=str(result.user_id), user_email=result.email):
+        logger.info(
+            "auth_login_succeeded",
+            extra={
+                "is_active": result.is_active,
+                "roles": result.roles,
+            },
+        )
 
     return _to_login_response(result)
 
 
 @router.get("/me", response_model=MeResponse)
 async def me(
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
-    jwt_service: JWTService = Depends(get_jwt_service),
-    auth_service: AuthService = Depends(get_auth_service),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
 ) -> MeResponse:
-    if credentials is None:
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing bearer token",
-            error_code="missing_bearer_token",
+    with log_context(user_id=str(current_user.user_id), user_email=current_user.email):
+        logger.info(
+            "auth_me_succeeded",
+            extra={
+                "is_active": current_user.is_active,
+                "roles": current_user.roles,
+            },
         )
 
-    try:
-        payload = jwt_service.decode_token(credentials.credentials)
-    except AuthInvalidCredentialsError as exc:
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            error_code="invalid_token",
-        ) from exc
-
-    subject = payload.get("sub")
-    if not isinstance(subject, str) or not subject:
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            error_code="invalid_token",
-        )
-
-    try:
-        user = await auth_service.get_user_by_email(email=subject)
-    except AuthInvalidCredentialsError as exc:
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-            error_code="invalid_token",
-        ) from exc
-
-    if not user.is_active:
-        raise ApiHTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User pending approval",
-            error_code="user_pending_approval",
-        )
-
-    return _to_me_response(user)
+    return _to_me_response(current_user)

@@ -14,9 +14,10 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import IntegrityError
 
+from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_codes import THREAD_NOT_FOUND, USER_PENDING_APPROVAL
 from noa_api.api.error_handling import ApiHTTPException
-from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
+from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.models import Message, Thread

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_codes import (
     THREAD_NOT_FOUND,
     USER_PENDING_APPROVAL,
@@ -47,7 +48,6 @@ from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
     get_authorization_service,
-    get_current_auth_user,
 )
 from noa_api.core.logging_context import log_context
 from noa_api.core.request_context import get_request_id

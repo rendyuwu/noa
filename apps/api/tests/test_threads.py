@@ -7,9 +7,10 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.threads import get_thread_service, router as threads_router
-from noa_api.core.auth.authorization import AuthorizationUser, get_current_auth_user
+from noa_api.core.auth.authorization import AuthorizationUser
 
 
 @dataclass

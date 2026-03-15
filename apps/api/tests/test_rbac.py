@@ -6,8 +6,11 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
+from noa_api.api.auth_dependencies import get_current_auth_user
+from noa_api.api.error_codes import INVALID_TOKEN, MISSING_BEARER_TOKEN
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.admin import router as admin_router
+from noa_api.core.auth.auth_service import AuthUser
 from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
@@ -15,8 +18,9 @@ from noa_api.core.auth.authorization import (
     SelfDeactivateAdminError,
     UnknownToolError,
     get_authorization_service,
-    get_current_auth_user,
 )
+from noa_api.core.auth.deps import get_auth_service, get_jwt_service
+from noa_api.core.auth.errors import AuthInvalidCredentialsError
 
 
 @dataclass
@@ -165,6 +169,30 @@ class _FakeAuthorizationService:
             return None
         self.users[0].tools = sorted(set(tool_names))
         return self.users[0]
+
+
+class _FakeProtectedRouteJWTService:
+    def __init__(self, *, invalid: bool = False) -> None:
+        self.invalid = invalid
+
+    def decode_token(self, token: str) -> dict[str, str]:
+        if self.invalid:
+            raise AuthInvalidCredentialsError("Invalid token")
+        return {"sub": "admin@example.com"}
+
+
+class _FakeProtectedRouteAuthService:
+    def __init__(self, *, is_active: bool = True) -> None:
+        self.is_active = is_active
+
+    async def get_user_by_email(self, *, email: str) -> AuthUser:
+        return AuthUser(
+            user_id=uuid4(),
+            email=email,
+            display_name="Admin User",
+            is_active=self.is_active,
+            roles=["admin"],
+        )
 
 
 def _create_admin_app() -> FastAPI:
@@ -462,6 +490,88 @@ async def test_admin_routes_forbid_non_admin_users() -> None:
 
     assert users_response.status_code == 403
     assert tools_response.status_code == 403
+
+
+async def test_admin_route_requires_bearer_token_with_stable_error_code() -> None:
+    app = _create_admin_app()
+    app.dependency_overrides[get_authorization_service] = lambda: (
+        _FakeAuthorizationService()
+    )
+    app.dependency_overrides[get_auth_service] = lambda: (
+        _FakeProtectedRouteAuthService()
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeProtectedRouteJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/admin/users", headers={"x-request-id": "admin-missing-bearer"}
+        )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Missing bearer token"
+    assert body["error_code"] == MISSING_BEARER_TOKEN
+    assert body["request_id"] == "admin-missing-bearer"
+    assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_admin_route_rejects_invalid_bearer_token_with_error_code() -> None:
+    app = _create_admin_app()
+    app.dependency_overrides[get_authorization_service] = lambda: (
+        _FakeAuthorizationService()
+    )
+    app.dependency_overrides[get_auth_service] = lambda: (
+        _FakeProtectedRouteAuthService()
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeProtectedRouteJWTService(
+        invalid=True
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/admin/users",
+            headers={
+                "Authorization": "Bearer bad-token",
+                "x-request-id": "admin-invalid-token",
+            },
+        )
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Invalid token"
+    assert body["error_code"] == INVALID_TOKEN
+    assert body["request_id"] == "admin-invalid-token"
+    assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_admin_route_uses_admin_access_contract_for_inactive_user() -> None:
+    app = _create_admin_app()
+    app.dependency_overrides[get_authorization_service] = lambda: (
+        _FakeAuthorizationService()
+    )
+    app.dependency_overrides[get_auth_service] = lambda: _FakeProtectedRouteAuthService(
+        is_active=False
+    )
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeProtectedRouteJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/admin/users",
+            headers={
+                "Authorization": "Bearer good-token",
+                "x-request-id": "admin-inactive-user",
+            },
+        )
+
+    assert response.status_code == 403
+    body = response.json()
+    assert body["detail"] == "Admin access required"
+    assert body["error_code"] == "admin_access_required"
+    assert body["request_id"] == "admin-inactive-user"
+    assert response.headers["x-request-id"] == body["request_id"]
 
 
 async def test_admin_routes_allow_admin_management_operations() -> None:

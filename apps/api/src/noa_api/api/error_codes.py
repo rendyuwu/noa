@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+INVALID_CREDENTIALS = "invalid_credentials"
+AUTHENTICATION_SERVICE_UNAVAILABLE = "authentication_service_unavailable"
+MISSING_BEARER_TOKEN = "missing_bearer_token"
+INVALID_TOKEN = "invalid_token"
 USER_PENDING_APPROVAL = "user_pending_approval"
 ADMIN_ACCESS_REQUIRED = "admin_access_required"
 ADMIN_USER_NOT_FOUND = "admin_user_not_found"
