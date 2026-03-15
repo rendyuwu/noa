@@ -1,3 +1,8 @@
+import io
+import json
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, cast
@@ -21,6 +26,38 @@ from noa_api.core.auth.authorization import (
 )
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.errors import AuthInvalidCredentialsError
+from noa_api.core.logging import configure_logging
+
+
+@contextmanager
+def _capture_structured_logs() -> Iterator[io.StringIO]:
+    root_logger = logging.getLogger()
+    original_handlers = list(root_logger.handlers)
+    original_level = root_logger.level
+    original_formatters = {
+        id(handler): handler.formatter for handler in original_handlers
+    }
+    stream = io.StringIO()
+    handler = logging.StreamHandler(stream)
+    root_logger.handlers = [handler]
+    root_logger.setLevel(logging.INFO)
+
+    try:
+        configure_logging()
+        yield stream
+    finally:
+        root_logger.handlers = original_handlers
+        root_logger.setLevel(original_level)
+        for existing_handler in original_handlers:
+            existing_handler.setFormatter(original_formatters[id(existing_handler)])
+
+
+def _load_log_payloads(stream: io.StringIO) -> list[dict[str, Any]]:
+    return [
+        cast(dict[str, Any], json.loads(line))
+        for line in stream.getvalue().splitlines()
+        if line.strip()
+    ]
 
 
 @dataclass
@@ -577,8 +614,7 @@ async def test_admin_route_uses_admin_access_contract_for_inactive_user() -> Non
 async def test_admin_routes_allow_admin_management_operations() -> None:
     app = _create_admin_app()
     service = _FakeAuthorizationService()
-    app.dependency_overrides[get_authorization_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    admin_user = AuthorizationUser(
         user_id=uuid4(),
         email="admin@example.com",
         display_name="Admin",
@@ -586,19 +622,22 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
         roles=["admin"],
         tools=[],
     )
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: admin_user
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        users_response = await client.get("/admin/users")
-        tools_response = await client.get("/admin/tools")
-        patch_response = await client.patch(
-            f"/admin/users/{service.target_user_id}",
-            json={"is_active": False},
-        )
-        put_response = await client.put(
-            f"/admin/users/{service.target_user_id}/tools",
-            json={"tools": ["set_demo_flag", "get_current_date"]},
-        )
+    with _capture_structured_logs() as stream:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            users_response = await client.get("/admin/users")
+            tools_response = await client.get("/admin/tools")
+            patch_response = await client.patch(
+                f"/admin/users/{service.target_user_id}",
+                json={"is_active": False},
+            )
+            put_response = await client.put(
+                f"/admin/users/{service.target_user_id}/tools",
+                json={"tools": ["set_demo_flag", "get_current_date"]},
+            )
 
     assert users_response.status_code == 200
     assert users_response.json()["users"][0]["email"] == "member@example.com"
@@ -615,6 +654,58 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
     assert put_response.status_code == 200
     assert put_response.json()["user"]["tools"] == ["get_current_date", "set_demo_flag"]
     assert service.last_set_tools == ["set_demo_flag", "get_current_date"]
+
+    payloads = _load_log_payloads(stream)
+
+    user_list_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "admin_users_list_succeeded"
+    ]
+    assert len(user_list_events) == 1
+    assert user_list_events[0]["user_count"] == 1
+    assert user_list_events[0]["user_id"] == str(admin_user.user_id)
+    assert user_list_events[0]["user_email"] == admin_user.email
+
+    tools_list_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "admin_tools_list_succeeded"
+    ]
+    assert len(tools_list_events) == 1
+    assert tools_list_events[0]["tool_count"] == 3
+    assert tools_list_events[0]["user_id"] == str(admin_user.user_id)
+    assert tools_list_events[0]["user_email"] == admin_user.email
+
+    status_update_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "admin_user_status_updated"
+    ]
+    assert len(status_update_events) == 1
+    assert status_update_events[0]["is_active"] is False
+    assert status_update_events[0]["user_id"] == str(admin_user.user_id)
+    assert status_update_events[0]["target_user_id"] == str(service.target_user_id)
+
+    active_update_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "admin_user_active_updated"
+    ]
+    assert active_update_events == []
+
+    tool_update_events = [
+        payload
+        for payload in payloads
+        if payload["event"] == "admin_user_tools_updated"
+    ]
+    assert len(tool_update_events) == 1
+    assert tool_update_events[0]["assigned_tool_count"] == 2
+    assert tool_update_events[0]["user_id"] == str(admin_user.user_id)
+    assert (
+        tool_update_events[0]["request_path"]
+        == f"/admin/users/{service.target_user_id}/tools"
+    )
 
 
 async def test_admin_route_rejects_unknown_tools_with_400() -> None:

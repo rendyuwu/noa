@@ -95,10 +95,12 @@ async def _require_admin(
 
 @router.get("/users", response_model=AdminUsersResponse)
 async def list_users(
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> AdminUsersResponse:
     users = await authorization_service.list_users()
+    with log_context(user_id=str(admin_user.user_id), user_email=admin_user.email):
+        logger.info("admin_users_list_succeeded", extra={"user_count": len(users)})
     return AdminUsersResponse(users=[_to_user_response(user) for user in users])
 
 
@@ -138,15 +140,18 @@ async def update_user_active(
                 detail="User not found",
                 error_code=ADMIN_USER_NOT_FOUND,
             )
+        logger.info("admin_user_status_updated", extra={"is_active": user.is_active})
     return UpdateUserResponse(user=_to_user_response(user))
 
 
 @router.get("/tools", response_model=AdminToolsResponse)
 async def list_tools(
-    _: AuthorizationUser = Depends(_require_admin),
+    admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> AdminToolsResponse:
     tools = await authorization_service.list_tools()
+    with log_context(user_id=str(admin_user.user_id), user_email=admin_user.email):
+        logger.info("admin_tools_list_succeeded", extra={"tool_count": len(tools)})
     return AdminToolsResponse(tools=tools)
 
 
@@ -179,4 +184,8 @@ async def set_user_tools(
                 detail="User not found",
                 error_code=ADMIN_USER_NOT_FOUND,
             )
+        logger.info(
+            "admin_user_tools_updated",
+            extra={"assigned_tool_count": len(user.tools)},
+        )
     return UpdateUserResponse(user=_to_user_response(user))

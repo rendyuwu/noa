@@ -113,7 +113,7 @@ Suggested assertions:
 assert {payload["event"] for payload in payloads} >= {
     "admin_users_list_succeeded",
     "admin_tools_list_succeeded",
-    "admin_user_active_updated",
+    "admin_user_status_updated",
     "admin_user_tools_updated",
 }
 ```
@@ -144,7 +144,7 @@ Recommended shapes:
 ```python
 logger.info("admin_users_list_succeeded", extra={"user_count": len(users)})
 logger.info("admin_tools_list_succeeded", extra={"tool_count": len(tools)})
-logger.info("admin_user_active_updated", extra={"is_active": user.is_active})
+logger.info("admin_user_status_updated", extra={"is_active": user.is_active})
 logger.info(
     "admin_user_tools_updated",
     extra={"assigned_tool_count": len(user.tools)},
