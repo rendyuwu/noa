@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+import importlib
+import inspect
 import logging
 
 import pytest
+from opentelemetry.sdk.metrics import MeterProvider
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+    InMemorySpanExporter,
+)
+from opentelemetry.trace import StatusCode
 from fastapi import FastAPI, Response
 from httpx import ASGITransport, AsyncClient
 
@@ -12,12 +21,26 @@ from noa_api.main import create_app
 from noa_api.core.telemetry import (
     NoOpTelemetryRecorder,
     TelemetryEvent,
+    create_telemetry_recorder,
     get_telemetry_recorder,
 )
 
 
 def _settings(**kwargs: object) -> Settings:
     return Settings(**kwargs, _env_file=None)  # type: ignore[call-arg]
+
+
+def _telemetry_otel_module():
+    try:
+        return importlib.import_module("noa_api.core.telemetry_opentelemetry")
+    except ModuleNotFoundError:
+        pytest.fail("telemetry_opentelemetry module missing")
+
+
+def _create_telemetry_recorder_for_test(settings: Settings):
+    if inspect.signature(create_telemetry_recorder).parameters:
+        return create_telemetry_recorder(settings)
+    return create_telemetry_recorder()
 
 
 class RecordingTelemetryRecorder:
@@ -115,6 +138,112 @@ def test_create_app_exposes_app_scoped_noop_telemetry_recorder() -> None:
     assert recorder.trace(event) is None
     assert recorder.metric(event, value=1) is None
     assert recorder.report(event, detail="healthy") is None
+
+
+def test_create_telemetry_recorder_accepts_settings() -> None:
+    assert "app_settings" in inspect.signature(create_telemetry_recorder).parameters
+
+
+def test_create_telemetry_recorder_returns_noop_when_disabled() -> None:
+    recorder = _create_telemetry_recorder_for_test(_settings(environment="test"))
+
+    assert isinstance(recorder, NoOpTelemetryRecorder)
+
+
+def test_create_telemetry_recorder_returns_otel_recorder_when_enabled() -> None:
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+        )
+    )
+
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+
+
+def test_metric_labels_drop_high_cardinality_fields() -> None:
+    module = _telemetry_otel_module()
+    filter_metric_attributes = getattr(module, "_metric_attributes_for_event", None)
+
+    assert callable(filter_metric_attributes)
+
+    event = TelemetryEvent(
+        name="assistant_failures_total",
+        attributes={
+            "error_code": "assistant_failed",
+            "thread_id": "thread-123",
+            "user_id": "user-456",
+        },
+    )
+
+    assert filter_metric_attributes(event) == {"error_code": "assistant_failed"}
+
+
+def test_telemetry_recorder_trace_adds_event_to_active_span() -> None:
+    module = _telemetry_otel_module()
+    recorder_class = getattr(module, "OpenTelemetryRecorder", None)
+
+    assert recorder_class is not None
+
+    span_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = tracer_provider.get_tracer("tests.telemetry")
+    recorder = recorder_class(
+        tracer=tracer,
+        meter=MeterProvider().get_meter("tests.telemetry"),
+    )
+    event = TelemetryEvent(
+        name="assistant.request.started",
+        attributes={"request_id": "req-123", "route": "/health"},
+    )
+
+    with tracer.start_as_current_span("request"):
+        recorder.trace(event)
+
+    finished_span = span_exporter.get_finished_spans()[0]
+
+    assert finished_span.events[0].name == "assistant.request.started"
+    assert finished_span.events[0].attributes == {
+        "request_id": "req-123",
+        "route": "/health",
+    }
+
+
+def test_telemetry_recorder_report_marks_span_error() -> None:
+    module = _telemetry_otel_module()
+    recorder_class = getattr(module, "OpenTelemetryRecorder", None)
+
+    assert recorder_class is not None
+
+    span_exporter = InMemorySpanExporter()
+    tracer_provider = TracerProvider()
+    tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+    tracer = tracer_provider.get_tracer("tests.telemetry")
+    recorder = recorder_class(
+        tracer=tracer,
+        meter=MeterProvider().get_meter("tests.telemetry"),
+    )
+    event = TelemetryEvent(
+        name="api_unhandled_exception",
+        attributes={"error_type": "RuntimeError", "request_method": "GET"},
+    )
+
+    with tracer.start_as_current_span("request"):
+        recorder.report(event, detail="boom")
+
+    finished_span = span_exporter.get_finished_spans()[0]
+    report_event = finished_span.events[0]
+
+    assert finished_span.status.status_code is StatusCode.ERROR
+    assert report_event.name == "api_unhandled_exception"
+    assert report_event.attributes == {
+        "error_type": "RuntimeError",
+        "request_method": "GET",
+        "detail": "boom",
+        "telemetry.kind": "report",
+    }
 
 
 def test_telemetry_event_attributes_are_immutable_after_creation() -> None:

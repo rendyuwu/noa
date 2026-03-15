@@ -1,8 +1,10 @@
 from __future__ import annotations
 
-from types import MappingProxyType
 from dataclasses import dataclass, field
+from types import MappingProxyType
 from typing import Mapping, Protocol
+
+from noa_api.core.config import Settings, settings
 
 TelemetryAttributeValue = str | int | float | bool | None
 
@@ -50,8 +52,13 @@ class HasTelemetryRecorder(Protocol):
     state: TelemetryState
 
 
-def create_telemetry_recorder() -> TelemetryRecorder:
-    return NoOpTelemetryRecorder()
+def create_telemetry_recorder(app_settings: Settings = settings) -> TelemetryRecorder:
+    if not app_settings.telemetry_enabled:
+        return NoOpTelemetryRecorder()
+
+    from noa_api.core.telemetry_opentelemetry import create_open_telemetry_recorder
+
+    return create_open_telemetry_recorder(app_settings)
 
 
 def get_telemetry_recorder(app: HasTelemetryRecorder) -> TelemetryRecorder:
