@@ -20,10 +20,36 @@ Implementation status update (branch lineage):
 - Request-scoped IDs, centralized API error shaping, shared DB engine/session accessors, tool-failure sanitization, frontend shared error mapping, and a top-level web error boundary are now in place.
 - The backend-only follow-up branch `feat/backend-error-code-assistant-logging` has now implemented the next planned pass plus a continuation cleanup: wider route-level `error_code` coverage, additional assistant transport extraction, stable assistant ID error contracts for malformed/missing `toolCallId` and `actionRequestId`, and richer structured logging context for the touched backend flows.
 - The separate continuation branch `feat/assistant-route-decomposition-continuation` records the next backend-only assistant pass: assistant orchestration now has its own `assistant_operations.py` seam, helper-level tests cover the extracted flow directly, and `assistant.py` is closer to a transport coordinator than before.
-- The remaining notable gap is now the rest of `apps/api/src/noa_api/api/routes/assistant.py`, especially the large `AssistantService` methods and route-local assistant-domain error shaping, plus broader repo-wide structured logging adoption.
-- Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, and `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`.
+- The current backend-only branch `feat/assistant-service-extraction` completes the next planned assistant slice: extracted assistant action/tool-result operation seams, a thinner assistant-domain HTTP translation boundary, and refreshed verification/handoff docs for this pass.
+- The remaining notable gaps now center on broader repo-wide structured logging adoption, the remaining selective non-assistant `error_code` follow-up, and deferred telemetry reconsideration after the current log/event field set stabilizes.
+- Backend-only follow-up docs now live in `docs/plans/2026-03-14-backend-error-code-assistant-logging-design.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-implementation-plan.md`, `docs/plans/2026-03-14-backend-error-code-assistant-logging-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`, `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`, `docs/plans/2026-03-15-assistant-service-extraction-design.md`, and `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`.
 
-## 2026-03-15 Continuation Pass: Assistant Route Decomposition
+## 2026-03-15 Continuation Pass: Assistant Service Extraction
+
+What was done in this continuation pass
+- Added `apps/api/src/noa_api/api/routes/assistant_action_operations.py` for pending action validation, denial handling, approval orchestration, and approved-tool execution.
+- Added `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py` so tool-call ID parsing, tool-run validation, result persistence, audit writes, and success logging now live outside `apps/api/src/noa_api/api/routes/assistant.py`.
+- Extended `apps/api/src/noa_api/api/routes/assistant_errors.py` with `AssistantDomainError` plus assistant-focused translation helpers so the extracted assistant flows no longer assemble route-shaped `HTTPException` branches inline.
+- Rewired `apps/api/src/noa_api/api/routes/assistant.py` so `AssistantService.add_tool_result(...)`, `approve_action(...)`, and `deny_action(...)` are thin delegation wrappers around the extracted helpers while the route keeps the top-level HTTP and streaming exception boundary.
+- Added and tightened focused assistant coverage in `apps/api/tests/test_assistant_service.py`, `apps/api/tests/test_assistant.py`, and the related assistant slice.
+
+What is not yet done
+- Broader backend structured logging adoption is still follow-up work outside the assistant-specific seams touched in this pass.
+- Stable `error_code` coverage is still selective outside the assistant and previously refreshed backend routes.
+- Telemetry reconsideration remains deferred until the current structured log/event field set stabilizes.
+
+What should come next
+- Continue the backend-only follow-up by extending `log_context(...)` adoption across more non-assistant success paths.
+- Close the remaining selective non-assistant `error_code` gaps without mixing in a larger application-layer redesign.
+- Use `docs/plans/2026-03-15-assistant-service-extraction-design.md` and `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md` as the current handoff docs for this completed slice and its deferred backend follow-up list.
+- Fresh verification for this continuation pass in `apps/api/.worktrees/feat-assistant-service-extraction`:
+  - `uv run pytest -q tests/test_assistant_operations.py tests/test_assistant.py tests/test_assistant_service.py tests/test_assistant_commands.py tests/test_assistant_streaming.py` -> `64 passed`
+  - `uv run pytest -q` -> `186 passed`
+  - `uv run ruff check src tests` -> `All checks passed!`
+
+---
+
+## Historical 2026-03-15 Continuation Pass: Assistant Route Decomposition
 
 What was done in this continuation pass
 - Added `apps/api/src/noa_api/api/routes/assistant_operations.py` as a dedicated assistant-orchestration seam for this pass.
@@ -189,11 +215,15 @@ What changed across the implemented branches
 - Added `apps/api/src/noa_api/api/routes/assistant_operations.py` for the 2026-03-15 continuation pass so pre-stream preparation and in-stream agent coordination are no longer inlined in the route callback.
 - Slimmed the route callback so it now mostly seeds controller state, decides whether the agent phase should run, and delegates orchestration to helper-level seams.
 - Added focused assistant helper tests around the new seams.
+- Added `apps/api/src/noa_api/api/routes/assistant_action_operations.py` for assistant action validation, approval/denial orchestration, and approved-tool execution.
+- Added `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py` for tool-result validation, completion, audit logging, and success-path message persistence.
+- Centralized assistant-domain failure construction in `apps/api/src/noa_api/api/routes/assistant_errors.py` so extracted assistant flows raise `AssistantDomainError` values that are translated back to the stable HTTP contract at one thin boundary.
+- Reduced `AssistantService` in `apps/api/src/noa_api/api/routes/assistant.py` to thin delegation wrappers for action approval, action denial, and tool-result recording.
 
 What remains
-- `apps/api/src/noa_api/api/routes/assistant.py` is smaller but still large and multi-responsibility.
-- The remaining large `AssistantService` methods still mix assistant-domain behavior, persistence, audit logging, and route-facing error shaping in the same module.
-- Some logging concerns and service-layer HTTP mapping are still colocated and should be split further in the next backend-only pass.
+- `apps/api/src/noa_api/api/routes/assistant.py` is materially smaller than the original audit target, but broader backend logging adoption still remains outside the assistant slice.
+- Stable `error_code` coverage is still selective outside the assistant and previously touched backend routes.
+- Backend telemetry/vendor follow-up is still deferred.
 
 ### W5: Multiple SQLAlchemy engines/pools instantiated across modules
 Status
@@ -288,17 +318,17 @@ What remains
 
 ## Current Recommendations
 
-Updated status after the 2026-03-15 continuation pass:
+Updated status after the 2026-03-15 assistant service extraction pass:
 - Completed on the foundation branch: request context middleware, centralized error shaping foundation, shared DB engine/session lifecycle, tool failure sanitization, frontend shared error mapping, app-level error boundary, and initial assistant extraction.
 - Completed on `feat/backend-error-code-assistant-logging`: wider backend `error_code` adoption for threads/admin/WHM/assistant flows, assistant command/streaming extraction, assistant malformed/missing ID error-code coverage, request/entity structured logging context for the touched backend flows, logging-handler compatibility with preconfigured root handlers, and this report refresh.
 - Completed on `feat/assistant-route-decomposition-continuation`: assistant pre-stream preparation and in-stream agent coordination extraction into `apps/api/src/noa_api/api/routes/assistant_operations.py`, focused helper/route regression coverage for the new seam, and a separate continuation handoff pointing to the 2026-03-15 design and implementation docs.
-- Still recommended next: extract the remaining `AssistantService` flows and assistant-domain error shaping out of `apps/api/src/noa_api/api/routes/assistant.py`, then continue broader structured logging adoption, close the remaining selective non-assistant `error_code` gaps, and revisit backend telemetry after the new log/event field set stabilizes.
+- Completed on `feat/assistant-service-extraction`: assistant action/tool-result extraction into `apps/api/src/noa_api/api/routes/assistant_action_operations.py` and `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py`, assistant-domain error translation tightening in `apps/api/src/noa_api/api/routes/assistant_errors.py`, thinner `AssistantService` delegation in `apps/api/src/noa_api/api/routes/assistant.py`, and a fresh handoff refresh anchored to the 2026-03-15 assistant service extraction design and implementation plan docs.
+- Still recommended next: continue broader structured logging adoption, close the remaining selective non-assistant `error_code` gaps, and revisit backend telemetry after the new log/event field set stabilizes.
 
 Active next steps
-1. Continue the backend-only assistant decomposition by extracting the remaining `AssistantService` approval, tool-result, and tool-execution flows from `apps/api/src/noa_api/api/routes/assistant.py`.
-2. Tighten the assistant route-facing translation boundary so assistant-domain failure shaping is less coupled to `apps/api/src/noa_api/api/routes/assistant.py`.
-3. Extend `log_context(...)` adoption and close the remaining selective non-assistant `error_code` gaps across the rest of the backend surface.
-4. Revisit telemetry only after the current structured log/event field set stabilizes.
+1. Extend `log_context(...)` adoption across the rest of the backend surface.
+2. Close the remaining selective non-assistant `error_code` gaps across the rest of the backend surface.
+3. Revisit telemetry only after the current structured log/event field set stabilizes.
 
 Historical note
 - The original P0/P1/P2 recommendations from the 2026-03-14 audit drove the foundation branch and the first backend continuation branches. Items such as request IDs, centralized error envelopes, DB session consolidation, tool error sanitization, frontend error boundaries, and initial assistant helper extraction are no longer active recommendations for this worktree.
@@ -345,25 +375,42 @@ Done on `feat/assistant-route-decomposition-continuation`
   - `uv run pytest -q` -> `177 passed`
   - `uv run ruff check src tests` -> `All checks passed!`
 
-Not yet done after the 2026-03-15 continuation pass
+Done on `feat/assistant-service-extraction`
+- Assistant action validation, denial, approval, and approved-tool execution extraction added in `apps/api/src/noa_api/api/routes/assistant_action_operations.py`
+- Tool-result validation, completion, audit logging, and success-path persistence extraction added in `apps/api/src/noa_api/api/routes/assistant_tool_result_operations.py`
+- Assistant-domain failure construction and translation tightened in `apps/api/src/noa_api/api/routes/assistant_errors.py`
+- `AssistantService` now delegates add-tool-result, approve-action, and deny-action flows through the extracted helpers in `apps/api/src/noa_api/api/routes/assistant.py`
+- Focused helper and route regression coverage extended for the extracted assistant seam
+- Fresh backend verification recorded for this pass:
+  - `uv run pytest -q tests/test_assistant_operations.py tests/test_assistant.py tests/test_assistant_service.py tests/test_assistant_commands.py tests/test_assistant_streaming.py` -> `64 passed`
+  - `uv run pytest -q` -> `186 passed`
+  - `uv run ruff check src tests` -> `All checks passed!`
+
+Not yet done after the 2026-03-15 assistant service extraction pass
 - Broader route-by-route `error_code` adoption beyond the newly covered threads/admin/WHM/assistant flows
-- The remaining `AssistantService` action approval, tool-result, and tool execution flows still live in `apps/api/src/noa_api/api/routes/assistant.py`
 - Rich, consistent structured logging context binding across the rest of the backend surface
 - Backend telemetry vendor adoption (`OpenTelemetry`, etc.) remains deferred
 
 Recommended next from this worktree
-1. Extract the remaining `AssistantService` approval, tool-result, and tool-execution flows out of `apps/api/src/noa_api/api/routes/assistant.py`, and keep tightening the route-facing translation boundary around assistant-domain failures.
-2. Extend `log_context(...)` adoption beyond the touched backend flows so more successful paths bind `user_id`, `thread_id`, `tool_name`, `tool_run_id`, and related identifiers consistently.
-3. Close the remaining selective non-assistant `error_code` gaps across the rest of the backend surface.
-4. Revisit backend telemetry only after the new structured log/event fields stabilize and you know which data should feed traces/metrics.
+1. Extend `log_context(...)` adoption beyond the touched backend flows so more successful paths bind `user_id`, `thread_id`, `tool_name`, `tool_run_id`, and related identifiers consistently.
+2. Close the remaining selective non-assistant `error_code` gaps across the rest of the backend surface.
+3. Revisit backend telemetry only after the new structured log/event fields stabilize and you know which data should feed traces/metrics.
 
 Primary execution handoff for the current continuation pass
+- Worktree: `apps/api/.worktrees/feat-assistant-service-extraction`
+- Branch: `feat/assistant-service-extraction`
+- Primary plans:
+  - `docs/plans/2026-03-15-assistant-service-extraction-design.md`
+  - `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md`
+- Resume point: this worktree completed the assistant action/tool-result extraction slice and refreshed the audit handoff; use the deferred follow-up list in these docs as the backend-only next-step reference.
+
+Historical execution handoff: assistant route decomposition continuation
 - Worktree: `.worktrees/feat-assistant-route-decomposition-continuation`
 - Branch: `feat/assistant-route-decomposition-continuation`
 - Primary plans:
   - `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md`
   - `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md`
-- Resume point: continue from the remaining `AssistantService` extraction work described above; this pass completed the `assistant_operations.py` seam and left the route transport boundary intact.
+- Resume point: this pass completed the `assistant_operations.py` seam and left the remaining `AssistantService` extraction work for the now-completed `feat/assistant-service-extraction` continuation.
 
 Historical execution handoff: prior backend continuation branch
 - Worktree: `.worktrees/backend-error-code-assistant-logging`
