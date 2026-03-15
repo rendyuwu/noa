@@ -282,6 +282,40 @@ async def test_record_tool_result_rejects_foreign_thread() -> None:
     assert assistant_repo.audits == []
 
 
+async def test_record_tool_result_rejects_stale_tool_run() -> None:
+    from noa_api.api.routes.assistant_tool_result_operations import (
+        record_tool_result,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name="get_current_time",
+        args={},
+        action_request_id=None,
+        requested_by_user_id=owner_id,
+    )
+    started.status = ToolRunStatus.COMPLETED
+    assistant_repo = _FakeAssistantRepository()
+
+    with pytest.raises(HTTPException, match="not awaiting result"):
+        await record_tool_result(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            tool_call_id=str(started.id),
+            result={"ok": True},
+            repository=assistant_repo,
+            action_tool_run_service=ActionToolRunService(repository=repo),
+        )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
+    assert assistant_repo.messages == []
+    assert assistant_repo.audits == []
+
+
 async def test_approve_action_starts_tool_run_before_execution() -> None:
     from noa_api.api.routes.assistant_action_operations import (
         approve_action_request,
