@@ -2,9 +2,15 @@
 
 Date: 2026-03-15
 
+## Status Update
+
+- Implemented on `feat/backend-telemetry-exporter`.
+- This document is now the design record for the completed backend telemetry exporter slice.
+- Use the refreshed audit for the next-step handoff: dashboards, alerts, and frontend error reporting remain undone, and any later backend-only code follow-up should stay in helper/service logging cleanup or shared/helper-level `error_code` expansion rather than reopening the completed route/exporter slice.
+
 ## Context
 
-The backend telemetry mapping pass is complete and the audit now treats the route-level telemetry slice as done. The remaining backend observability decision is narrower: whether to wire `apps/api/src/noa_api/core/telemetry.py` to a concrete exporter or vendor while keeping the event vocabulary stable.
+The backend telemetry mapping pass is complete and the audit now treats the route-level telemetry slice as done. This design captured the next backend observability decision for the now-completed exporter pass: wiring `apps/api/src/noa_api/core/telemetry.py` to a concrete exporter or vendor while keeping the event vocabulary stable.
 
 The current seam is intentionally small. `apps/api/src/noa_api/core/telemetry.py` defines immutable `TelemetryEvent` payloads, a `TelemetryRecorder` protocol, a default no-op implementation, and an app-scoped accessor used by request handling, auth, assistant, admin, threads, and WHM routes.
 
