@@ -177,6 +177,79 @@ def test_create_telemetry_recorder_returns_otel_recorder_when_enabled() -> None:
     assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
 
 
+def test_create_telemetry_recorder_appends_trace_signal_path_to_otlp_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _telemetry_otel_module()
+    endpoints: list[str] = []
+
+    class FakeTracerProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.processors: list[object] = []
+
+        def add_span_processor(self, processor: object) -> None:
+            self.processors.append(processor)
+
+        def get_tracer(self, name: str) -> object:
+            return object()
+
+    def fake_exporter(*args: object, **kwargs: object) -> object:
+        endpoints.append(str(kwargs["endpoint"]))
+        return object()
+
+    monkeypatch.setattr(module, "OTLPSpanExporter", fake_exporter)
+    monkeypatch.setattr(module, "BatchSpanProcessor", lambda exporter: object())
+    monkeypatch.setattr(module, "TracerProvider", FakeTracerProvider)
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+            telemetry_metrics_enabled=False,
+        )
+    )
+
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+    assert endpoints == ["http://collector:4318/v1/traces"]
+
+
+def test_create_telemetry_recorder_appends_metric_signal_path_to_otlp_base_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    module = _telemetry_otel_module()
+    endpoints: list[str] = []
+
+    class FakeMeterProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+        def get_meter(self, name: str) -> object:
+            return object()
+
+    def fake_exporter(*args: object, **kwargs: object) -> object:
+        endpoints.append(str(kwargs["endpoint"]))
+        return object()
+
+    monkeypatch.setattr(module, "OTLPMetricExporter", fake_exporter)
+    monkeypatch.setattr(
+        module, "PeriodicExportingMetricReader", lambda exporter: object()
+    )
+    monkeypatch.setattr(module, "MeterProvider", FakeMeterProvider)
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+            telemetry_traces_enabled=False,
+        )
+    )
+
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+    assert endpoints == ["http://collector:4318/v1/metrics"]
+
+
 def test_create_telemetry_recorder_falls_back_to_noop_when_enabled_without_endpoint(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

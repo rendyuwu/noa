@@ -160,6 +160,10 @@ def _telemetry_endpoint(app_settings: Settings) -> str | None:
     return endpoint
 
 
+def _signal_endpoint(base_endpoint: str, signal_path: str) -> str:
+    return f"{base_endpoint.rstrip('/')}/v1/{signal_path}"
+
+
 def _signals_enabled(app_settings: Settings) -> bool:
     return (
         app_settings.telemetry_traces_enabled or app_settings.telemetry_metrics_enabled
@@ -208,7 +212,7 @@ def _tracer_provider(
 
     try:
         exporter = OTLPSpanExporter(
-            endpoint=endpoint,
+            endpoint=_signal_endpoint(endpoint, "traces"),
             headers=app_settings.telemetry_otlp_headers,
         )
         tracer_provider = TracerProvider(resource=resource)
@@ -230,7 +234,7 @@ def _meter_provider(
 
     try:
         exporter = OTLPMetricExporter(
-            endpoint=endpoint,
+            endpoint=_signal_endpoint(endpoint, "metrics"),
             headers=app_settings.telemetry_otlp_headers,
         )
         metric_reader = PeriodicExportingMetricReader(exporter)
