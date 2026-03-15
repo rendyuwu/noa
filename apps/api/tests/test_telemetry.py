@@ -7,12 +7,17 @@ from fastapi import FastAPI, Response
 from httpx import ASGITransport, AsyncClient
 
 from noa_api.api.error_handling import install_error_handling
+from noa_api.core.config import Settings
 from noa_api.main import create_app
 from noa_api.core.telemetry import (
     NoOpTelemetryRecorder,
     TelemetryEvent,
     get_telemetry_recorder,
 )
+
+
+def _settings(**kwargs: object) -> Settings:
+    return Settings(**kwargs, _env_file=None)  # type: ignore[call-arg]
 
 
 class RecordingTelemetryRecorder:
@@ -34,6 +39,29 @@ class RecordingTelemetryRecorder:
 class ReportFailingTelemetryRecorder(RecordingTelemetryRecorder):
     def report(self, event: TelemetryEvent, *, detail: str | None = None) -> None:
         raise RuntimeError("report boom")
+
+
+def test_telemetry_settings_defaults() -> None:
+    settings = _settings(environment="test")
+
+    assert settings.telemetry_enabled is False
+    assert settings.telemetry_service_name == "noa-api"
+    assert settings.telemetry_otlp_endpoint is None
+    assert settings.telemetry_otlp_headers == {}
+    assert settings.telemetry_traces_enabled is True
+    assert settings.telemetry_metrics_enabled is True
+
+
+def test_telemetry_settings_parse_otlp_headers() -> None:
+    settings = _settings(
+        environment="test",
+        telemetry_otlp_headers="authorization=Bearer token, x-tenant-id = tenant-123",
+    )
+
+    assert settings.telemetry_otlp_headers == {
+        "authorization": "Bearer token",
+        "x-tenant-id": "tenant-123",
+    }
 
 
 def test_create_app_exposes_app_scoped_noop_telemetry_recorder() -> None:

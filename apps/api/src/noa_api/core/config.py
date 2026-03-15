@@ -11,6 +11,12 @@ class Settings(BaseSettings):
     postgres_url: PostgresDsn = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/noa"
     )
+    telemetry_enabled: bool = False
+    telemetry_service_name: str = "noa-api"
+    telemetry_otlp_endpoint: str | None = None
+    telemetry_otlp_headers: dict[str, str] = Field(default_factory=dict)
+    telemetry_traces_enabled: bool = True
+    telemetry_metrics_enabled: bool = True
     auth_jwt_secret: SecretStr | None = None
     auth_jwt_algorithm: str = "HS256"
     auth_jwt_access_token_ttl_seconds: int = 3600
@@ -39,6 +45,25 @@ class Settings(BaseSettings):
         "- For WHM CHANGE tools: after preflight and collecting required args, call the CHANGE tool and use the approval card (request_approval); do not ask the user to confirm in chat.\n"
         "- For CSF TTL actions, convert durations to minutes and use duration_minutes.\n"
     )
+
+    @field_validator("telemetry_otlp_headers", mode="before")
+    @classmethod
+    def _normalize_telemetry_otlp_headers(cls, value: object) -> object:
+        if value is None:
+            return {}
+        if isinstance(value, str):
+            headers: dict[str, str] = {}
+            for item in value.split(","):
+                entry = item.strip()
+                if not entry:
+                    continue
+                key, _, raw_value = entry.partition("=")
+                header_name = key.strip()
+                if not header_name:
+                    continue
+                headers[header_name] = raw_value.strip()
+            return headers
+        return value
 
     @field_validator("api_cors_allowed_origins", mode="before")
     @classmethod
