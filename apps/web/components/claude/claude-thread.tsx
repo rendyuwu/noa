@@ -4,7 +4,6 @@ import type { FC, ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
 
 import {
-  ActionBarPrimitive,
   AssistantIf,
   ComposerPrimitive,
   MessagePrimitive,
@@ -15,9 +14,7 @@ import {
 import {
   ArrowUpIcon,
   ChevronDownIcon,
-  ClipboardIcon,
   HamburgerMenuIcon,
-  HandIcon,
   MixerHorizontalIcon,
   PlusIcon,
   ReloadIcon,
@@ -29,6 +26,10 @@ import {
   getClaudeTimeGreeting,
 } from "@/components/claude/claude-greeting";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/claude/request-approval-tool-ui";
+import {
+  extractLatestWorkflowTodos,
+  WorkflowTodoCard,
+} from "@/components/claude/workflow-todo-tool-ui";
 import { getAuthUser } from "@/components/lib/auth-store";
 import { useThreadHydration } from "@/components/lib/thread-hydration";
 
@@ -209,6 +210,9 @@ export const ClaudeThread: FC<{
 }> = ({ onOpenSidebar, showOpenSidebarButtonOnDesktop }) => {
   const { isHydrating } = useThreadHydration();
   const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
+  const workflowTodos = useAssistantState(({ thread }: any) =>
+    extractLatestWorkflowTodos(thread?.messages),
+  );
   const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
 
   const sidebarButtonClassName = [
@@ -248,21 +252,29 @@ export const ClaudeThread: FC<{
       </ThreadPrimitive.Viewport>
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
-        <ComposerPrimitive.Root className="mx-auto flex w-full max-w-3xl flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
-          <div className="m-3.5 flex flex-col gap-3.5">
-            <div className="relative">
-              <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
-                <ComposerPrimitive.Input
-                  placeholder="How can I help you today?"
-                  aria-label="Message input"
-                  className="block min-h-6 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
-                />
-              </div>
+        <div className="mx-auto w-full max-w-3xl">
+          {workflowTodos.length ? (
+            <div className="mb-3" data-testid="workflow-todo-dock">
+              <WorkflowTodoCard todos={workflowTodos} />
             </div>
+          ) : null}
 
-            <ComposerControlsRow />
-          </div>
-        </ComposerPrimitive.Root>
+          <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
+            <div className="m-3.5 flex flex-col gap-3.5">
+              <div className="relative">
+                <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
+                  <ComposerPrimitive.Input
+                    placeholder="How can I help you today?"
+                    aria-label="Message input"
+                    className="block min-h-6 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
+                  />
+                </div>
+              </div>
+
+              <ComposerControlsRow />
+            </div>
+          </ComposerPrimitive.Root>
+        </div>
       </AssistantIf>
     </ThreadPrimitive.Root>
   );
@@ -337,48 +349,6 @@ const ChatMessage: FC = () => {
                 />
               </div>
             </div>
-          </div>
-
-          <div className="pointer-events-none absolute inset-x-0 bottom-0">
-            <ActionBarPrimitive.Root
-              hideWhenRunning
-              autohide="not-last"
-              className="pointer-events-auto flex w-full translate-y-4 flex-col items-end px-2 pt-2 opacity-0 transition group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
-            >
-              <div className="flex items-center text-muted">
-                <ActionBarPrimitive.Copy
-                  aria-label="Copy message"
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95"
-                >
-                  <ClipboardIcon width={20} height={20} />
-                </ActionBarPrimitive.Copy>
-
-                <DisabledIconButton
-                  label="Thumbs up"
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95 disabled:pointer-events-none disabled:opacity-60"
-                >
-                  <HandIcon width={18} height={18} />
-                </DisabledIconButton>
-                <DisabledIconButton
-                  label="Thumbs down"
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95 disabled:pointer-events-none disabled:opacity-60"
-                >
-                  <HandIcon width={18} height={18} className="rotate-180" />
-                </DisabledIconButton>
-                <DisabledIconButton
-                  label="Reload"
-                  className="flex h-8 w-8 items-center justify-center rounded-md transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-transparent active:scale-95 disabled:pointer-events-none disabled:opacity-60"
-                >
-                  <ReloadIcon width={20} height={20} />
-                </DisabledIconButton>
-              </div>
-
-              <AssistantIf condition={(s) => s.message.isLast}>
-                <p className="mt-2 w-full text-right text-muted text-[0.65rem] leading-[0.85rem] opacity-90 sm:text-[0.75rem]">
-                  Claude can make mistakes. Please double-check responses.
-                </p>
-              </AssistantIf>
-            </ActionBarPrimitive.Root>
           </div>
         </div>
       </AssistantIf>

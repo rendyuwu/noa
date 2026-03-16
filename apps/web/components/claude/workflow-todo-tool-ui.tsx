@@ -56,10 +56,31 @@ function isTodoItem(value: unknown): value is WorkflowTodoItem {
   );
 }
 
-function coerceTodos(value: unknown): WorkflowTodoItem[] | undefined {
+export function coerceTodos(value: unknown): WorkflowTodoItem[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const todos = value.filter(isTodoItem);
   return todos.length ? todos : [];
+}
+
+export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[] {
+  if (!Array.isArray(messages)) return [];
+
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = messages[messageIndex] as Record<string, unknown> | undefined;
+    const content = Array.isArray(message?.content) ? message.content : [];
+    for (let contentIndex = content.length - 1; contentIndex >= 0; contentIndex -= 1) {
+      const part = content[contentIndex] as Record<string, unknown> | undefined;
+      if (part?.type !== "tool-call" || part.toolName !== "update_workflow_todo") continue;
+      const argsTodos = coerceTodos(part.args && typeof part.args === "object" ? (part.args as Record<string, unknown>).todos : undefined);
+      const resultTodos =
+        part.result && typeof part.result === "object"
+          ? coerceTodos((part.result as Record<string, unknown>).todos)
+          : undefined;
+      return argsTodos ?? resultTodos ?? [];
+    }
+  }
+
+  return [];
 }
 
 export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {

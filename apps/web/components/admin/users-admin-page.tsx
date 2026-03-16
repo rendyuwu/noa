@@ -70,6 +70,8 @@ export function UsersAdminPage() {
 
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [deleteSaving, setDeleteSaving] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     const seq = ++loadSeqRef.current;
@@ -127,6 +129,8 @@ export function UsersAdminPage() {
     setSaving(false);
     setStatusError(null);
     setStatusSaving(false);
+    setDeleteError(null);
+    setDeleteSaving(false);
   };
 
   const openPanelForUser = (user: AdminUser, opener: HTMLElement | null) => {
@@ -140,6 +144,8 @@ export function UsersAdminPage() {
     setSaving(false);
     setStatusError(null);
     setStatusSaving(false);
+    setDeleteError(null);
+    setDeleteSaving(false);
   };
 
   const toggleTool = (toolName: string) => {
@@ -232,6 +238,37 @@ export function UsersAdminPage() {
     }
   };
 
+  const deleteUser = async () => {
+    if (!selectedUser) return;
+
+    const seq = panelSeqRef.current;
+    const userId = selectedUser.id;
+
+    setDeleteSaving(true);
+    setDeleteError(null);
+
+    try {
+      const response = await fetchWithAuth(`/admin/users/${userId}`, {
+        method: "DELETE",
+      });
+
+      await jsonOrThrow(response);
+
+      setUsers((prev) => prev.filter((user) => user.id !== userId));
+      if (panelStillMatches(seq, userId)) {
+        closePanel();
+      }
+    } catch (error) {
+      if (panelStillMatches(seq, userId)) {
+        setDeleteError(toUserMessage(error, "Unable to delete user"));
+      }
+    } finally {
+      if (panelStillMatches(seq, userId)) {
+        setDeleteSaving(false);
+      }
+    }
+  };
+
   return (
     <Dialog.Root
       open={selectedUserId !== null}
@@ -275,12 +312,13 @@ export function UsersAdminPage() {
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Status</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Roles</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Tools</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {users.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-4 text-sm text-muted" colSpan={6}>
+                  <td className="px-4 py-4 text-sm text-muted" colSpan={7}>
                     {loading
                       ? "Loading users..."
                       : loadError
@@ -328,6 +366,7 @@ export function UsersAdminPage() {
                       <td className="px-4 py-3 text-muted">{statusLabel}</td>
                       <td className="px-4 py-3 text-muted">{roles.length ? roles.join(", ") : "-"}</td>
                       <td className="px-4 py-3 text-muted">{tools.length}</td>
+                      <td className="px-4 py-3 text-muted">Manage</td>
                     </tr>
                   );
                 })
@@ -411,6 +450,16 @@ export function UsersAdminPage() {
                   </p>
                 ) : null}
 
+                {deleteError ? (
+                  <p
+                    role="alert"
+                    aria-live="assertive"
+                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                  >
+                    {deleteError}
+                  </p>
+                ) : null}
+
                 <div className="mt-4">
                   {saveError ? (
                     <p
@@ -475,6 +524,23 @@ export function UsersAdminPage() {
                       onClick={() => void saveTools()}
                     >
                       {saving ? "Saving..." : "Save"}
+                    </button>
+                  </div>
+
+                  <div className="mt-6 rounded-xl border border-red-200 bg-red-50/70 px-3 py-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-red-800">
+                      Danger zone
+                    </div>
+                    <p className="mt-1 text-sm text-red-800">
+                      Delete this user account and remove its access from NOA.
+                    </p>
+                    <button
+                      type="button"
+                      disabled={!selectedUser || deleteSaving}
+                      className="button button-danger mt-3 w-full disabled:cursor-not-allowed disabled:opacity-60"
+                      onClick={() => void deleteUser()}
+                    >
+                      {deleteSaving ? "Deleting..." : "Delete user"}
                     </button>
                   </div>
                 </div>

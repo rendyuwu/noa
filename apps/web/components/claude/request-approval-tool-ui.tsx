@@ -8,10 +8,47 @@ function coerceString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+function coerceRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+type DetailItem = {
+  label: string;
+  value: string;
+};
+
+function coerceDetailItems(value: unknown): DetailItem[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    const item = coerceRecord(entry);
+    const label = coerceString(item?.label);
+    const rawValue = item?.value;
+    if (!label) return [];
+    if (typeof rawValue === "string") return [{ label, value: rawValue }];
+    if (typeof rawValue === "number" || typeof rawValue === "boolean") {
+      return [{ label, value: String(rawValue) }];
+    }
+    return [];
+  });
+}
+
+function prettifyToolName(value: string): string {
+  return value
+    .split("_")
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
 function Actions({ args }: { args: Record<string, unknown> }) {
   const sendCommand = useAssistantTransportSendCommand();
   const actionRequestId = coerceString(args.actionRequestId) ?? "";
   const toolName = coerceString(args.toolName) ?? "unknown";
+  const activity = coerceString(args.activity) ?? `Run ${prettifyToolName(toolName).toLowerCase()}`;
+  const beforeState = coerceDetailItems(args.beforeState);
+  const argumentSummary = coerceDetailItems(args.argumentSummary);
 
   if (!actionRequestId) {
     return (
@@ -34,7 +71,39 @@ function Actions({ args }: { args: Record<string, unknown> }) {
         </div>
       </div>
       <div className="px-4 py-3">
-        <div className="flex flex-wrap gap-2">
+        <div className="rounded-lg border border-border bg-bg/40 px-3 py-2.5 text-sm text-text">
+          {activity}
+        </div>
+
+        {beforeState.length ? (
+          <div className="mt-3 rounded-lg border border-border bg-bg/40 px-3 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Before state</div>
+            <dl className="mt-2 space-y-1.5 text-sm">
+              {beforeState.map((item) => (
+                <div key={`${item.label}-${item.value}`} className="grid grid-cols-[9rem_minmax(0,1fr)] gap-3">
+                  <dt className="text-muted">{item.label}</dt>
+                  <dd className="min-w-0 break-words text-text">{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+
+        {argumentSummary.length ? (
+          <div className="mt-3 rounded-lg border border-border bg-bg/40 px-3 py-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Requested change</div>
+            <dl className="mt-2 space-y-1.5 text-sm">
+              {argumentSummary.map((item) => (
+                <div key={`${item.label}-${item.value}`} className="grid grid-cols-[9rem_minmax(0,1fr)] gap-3">
+                  <dt className="text-muted">{item.label}</dt>
+                  <dd className="min-w-0 break-words text-text">{item.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
+
+        <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => sendCommand({ type: "approve-action", actionRequestId })}
@@ -102,11 +171,7 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 };
 
 function humanizeToolName(toolName: string): string {
-  return toolName
-    .split("_")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+  return prettifyToolName(toolName);
 }
 
 export function ClaudeToolFallback({ toolName, status, result, isError }: any) {

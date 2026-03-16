@@ -498,4 +498,93 @@ describe("UsersAdminPage", () => {
 
     expect(within(screen.getByRole("dialog")).queryByText(conflictMessage)).not.toBeInTheDocument();
   });
+
+  it("DELETEs /admin/users/:id from the drawer danger zone", async () => {
+    const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
+    const usersPayload = {
+      users: [
+        {
+          id: userId,
+          email: "casey@example.com",
+          display_name: "Casey Rivers",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: "2026-02-03T04:05:06.000Z",
+          is_active: true,
+          roles: ["member"],
+          tools: ["get_current_time"],
+        },
+      ],
+    };
+
+    const toolsPayload = {
+      tools: ["get_current_time"],
+    };
+
+    const usersResponse = new Response(JSON.stringify(usersPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    const deleteResponse = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/admin/users") {
+        return usersResponse;
+      }
+      if (path === "/admin/tools") {
+        return toolsResponse;
+      }
+      if (path === `/admin/users/${userId}` && init?.method === "DELETE") {
+        return deleteResponse;
+      }
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === usersResponse) {
+        return usersPayload;
+      }
+      if (response === toolsResponse) {
+        return toolsPayload;
+      }
+      if (response === deleteResponse) {
+        return { ok: true };
+      }
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<UsersAdminPage />);
+
+    const table = screen.getByRole("table");
+    const emailCell = await within(table).findByText("casey@example.com");
+    const row = emailCell.closest("tr");
+    if (!row) throw new Error("Unable to locate user row");
+    fireEvent.click(row);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Delete user" }));
+
+    await waitFor(() => {
+      expect(mocks.fetchWithAuth).toHaveBeenCalledWith(`/admin/users/${userId}`, {
+        method: "DELETE",
+      });
+    });
+
+    await waitFor(() => {
+      expect(within(table).queryByText("casey@example.com")).not.toBeInTheDocument();
+    });
+  });
 });

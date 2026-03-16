@@ -10,6 +10,7 @@ from noa_api.api.error_codes import (
     ADMIN_ACCESS_REQUIRED,
     ADMIN_USER_NOT_FOUND,
     LAST_ACTIVE_ADMIN,
+    SELF_DELETE_ADMIN,
     SELF_DEACTIVATE_ADMIN,
     UNKNOWN_TOOLS,
 )
@@ -18,6 +19,7 @@ from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
     LastActiveAdminError,
+    SelfDeleteAdminError,
     SelfDeactivateAdminError,
     UnknownToolError,
     get_authorization_service,
@@ -52,6 +54,10 @@ class UpdateUserRequest(BaseModel):
 
 class UpdateUserResponse(BaseModel):
     user: AdminUserResponse
+
+
+class DeleteUserResponse(BaseModel):
+    ok: bool
 
 
 class AdminToolsResponse(BaseModel):
@@ -271,6 +277,86 @@ async def update_user_active(
             },
         )
     return UpdateUserResponse(user=_to_user_response(user))
+
+
+@router.delete("/users/{id}", response_model=DeleteUserResponse)
+async def delete_user(
+    request: Request,
+    id: UUID,
+    admin_user: AuthorizationUser = Depends(_require_admin),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> DeleteUserResponse:
+    with log_context(target_user_id=str(id), user_id=str(admin_user.user_id)):
+        try:
+            deleted_user = await authorization_service.delete_user(
+                id,
+                actor_email=admin_user.email,
+                actor_user_id=admin_user.user_id,
+            )
+        except LastActiveAdminError as exc:
+            logger.info("admin_last_active_admin_conflict")
+            _record_admin_outcome(
+                request,
+                event_name="admin_last_active_admin_conflict",
+                status_code=status.HTTP_409_CONFLICT,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=LAST_ACTIVE_ADMIN,
+            )
+            raise ApiHTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+                error_code=LAST_ACTIVE_ADMIN,
+            ) from exc
+        except SelfDeleteAdminError as exc:
+            logger.info("admin_self_delete_conflict")
+            _record_admin_outcome(
+                request,
+                event_name="admin_self_delete_conflict",
+                status_code=status.HTTP_409_CONFLICT,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=SELF_DELETE_ADMIN,
+            )
+            raise ApiHTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+                error_code=SELF_DELETE_ADMIN,
+            ) from exc
+        if deleted_user is None:
+            logger.info("admin_user_not_found")
+            _record_admin_outcome(
+                request,
+                event_name="admin_user_not_found",
+                status_code=status.HTTP_404_NOT_FOUND,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=ADMIN_USER_NOT_FOUND,
+            )
+            raise ApiHTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found",
+                error_code=ADMIN_USER_NOT_FOUND,
+            )
+        logger.info(
+            "admin_user_deleted", extra={"deleted_user_email": deleted_user.email}
+        )
+        _record_admin_outcome(
+            request,
+            event_name="admin_user_deleted",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "target_user_id": str(id),
+                "user_id": str(admin_user.user_id),
+            },
+        )
+    return DeleteUserResponse(ok=True)
 
 
 @router.get("/tools", response_model=AdminToolsResponse)

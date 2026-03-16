@@ -36,6 +36,10 @@ class SelfDeactivateAdminError(Exception):
     pass
 
 
+class SelfDeleteAdminError(Exception):
+    pass
+
+
 @dataclass
 class AuthorizationUser:
     user_id: UUID
@@ -60,6 +64,8 @@ class AuthorizationRepositoryProtocol(Protocol):
     ) -> User | None: ...
 
     async def count_active_admin_users(self) -> int: ...
+
+    async def delete_user(self, user_id: UUID) -> User | None: ...
 
     async def get_role_names(self, user_id: UUID) -> list[str]: ...
 
@@ -123,6 +129,33 @@ class SQLAuthorizationRepository:
             .where(User.is_active.is_(True), Role.name == "admin")
         )
         return int(result.scalar_one() or 0)
+
+    async def delete_user(self, user_id: UUID) -> User | None:
+        user = await self.get_user_by_id(user_id)
+        if user is None:
+            return None
+
+        allowlist_role_name = f"user:{user_id}"
+        role_result = await self._session.execute(
+            select(Role).where(Role.name == allowlist_role_name)
+        )
+        allowlist_role = role_result.scalar_one_or_none()
+        if allowlist_role is not None:
+            await self._session.execute(
+                delete(RoleToolPermission).where(
+                    RoleToolPermission.role_id == allowlist_role.id
+                )
+            )
+            await self._session.execute(
+                delete(UserRole).where(UserRole.role_id == allowlist_role.id)
+            )
+            await self._session.execute(
+                delete(Role).where(Role.id == allowlist_role.id)
+            )
+
+        await self._session.delete(user)
+        await self._session.flush()
+        return user
 
     async def get_role_names(self, user_id: UUID) -> list[str]:
         result = await self._session.execute(
@@ -282,6 +315,47 @@ class AuthorizationService:
 
     async def list_tools(self) -> list[str]:
         return list(get_tool_catalog())
+
+    async def delete_user(
+        self,
+        user_id: UUID,
+        *,
+        actor_email: str | None = None,
+        actor_user_id: UUID | None = None,
+    ) -> AuthorizationUser | None:
+        user = await self._repository.get_user_by_id(user_id)
+        if user is None:
+            return None
+
+        roles = await self._repository.get_role_names(user.id)
+        tools = await self._repository.get_user_allowlist_tools(user.id)
+        is_admin_user = "admin" in roles
+        if actor_user_id is not None and actor_user_id == user_id:
+            raise SelfDeleteAdminError("Admins cannot delete their own account")
+        if user.is_active and is_admin_user:
+            if await self._repository.count_active_admin_users() <= 1:
+                raise LastActiveAdminError("Cannot delete the last active admin")
+
+        deleted_user = await self._repository.delete_user(user_id)
+        if deleted_user is None:
+            return None
+
+        await self._repository.create_audit_log(
+            event_type="admin_user_deleted",
+            actor_email=actor_email,
+            tool_name=None,
+            metadata={"target_user_id": str(user.id), "email": user.email},
+        )
+        return AuthorizationUser(
+            user_id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            is_active=user.is_active,
+            roles=roles,
+            tools=tools,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+        )
 
     async def set_user_tools(
         self,

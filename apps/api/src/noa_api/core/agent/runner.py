@@ -406,6 +406,7 @@ class AgentRunner:
                 tool_messages = await self._process_tool_call(
                     tool=tool,
                     args=tool_call.arguments,
+                    working_messages=working_messages,
                     thread_id=thread_id,
                     requested_by_user_id=requested_by_user_id,
                 )
@@ -460,6 +461,7 @@ class AgentRunner:
         *,
         tool: ToolDefinition,
         args: dict[str, object],
+        working_messages: list[dict[str, object]],
         thread_id: UUID,
         requested_by_user_id: UUID,
     ) -> list[AgentMessage]:
@@ -495,6 +497,11 @@ class AgentRunner:
                                 "toolName": tool.name,
                                 "risk": tool.risk.value,
                                 "arguments": args,
+                                **_build_approval_context(
+                                    tool_name=tool.name,
+                                    args=args,
+                                    working_messages=working_messages,
+                                ),
                             },
                         }
                     ],
@@ -696,6 +703,163 @@ def _safe_json_object(raw: str | None) -> dict[str, object]:
     if isinstance(parsed, dict):
         return parsed
     return {}
+
+
+def _humanize_tool_name(tool_name: str) -> str:
+    return (
+        " ".join(part.capitalize() for part in tool_name.split("_") if part.strip())
+        or "Tool"
+    )
+
+
+def _coerce_part_record(value: object) -> dict[str, object] | None:
+    return value if isinstance(value, dict) else None
+
+
+def _collect_recent_preflight_results(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    results: list[dict[str, object]] = []
+    for message in reversed(working_messages):
+        if message.get("role") == "user":
+            break
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for raw_part in reversed(parts):
+            part = _coerce_part_record(raw_part)
+            if part is None or part.get("type") != "tool-result":
+                continue
+            tool_name = part.get("toolName")
+            result = part.get("result")
+            if (
+                not isinstance(tool_name, str)
+                or not tool_name.startswith("whm_preflight_")
+                or not isinstance(result, dict)
+                or part.get("isError") is True
+            ):
+                continue
+            results.append({"toolName": tool_name, "result": json_safe(result)})
+    results.reverse()
+    return results
+
+
+def _format_argument_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "yes" if value else "no"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, str):
+        return value
+    if value is None:
+        return "none"
+    if isinstance(value, list):
+        return ", ".join(_format_argument_value(item) for item in value[:5])
+    return json.dumps(json_safe(value))
+
+
+def _summarize_arguments(args: dict[str, object]) -> list[dict[str, str]]:
+    hidden_keys = {"api_token", "password", "secret", "token"}
+    items: list[dict[str, str]] = []
+    for key, value in args.items():
+        if key in hidden_keys:
+            continue
+        items.append(
+            {
+                "label": key.replace("_", " ").capitalize(),
+                "value": _format_argument_value(value),
+            }
+        )
+    return items
+
+
+def _describe_activity(tool_name: str, args: dict[str, object]) -> str:
+    if tool_name == "whm_unsuspend_account":
+        return f"Unsuspend account '{args.get('username', 'unknown')}'"
+    if tool_name == "whm_suspend_account":
+        return f"Suspend account '{args.get('username', 'unknown')}'"
+    if tool_name == "whm_change_contact_email":
+        return (
+            f"Change contact email for '{args.get('username', 'unknown')}' "
+            f"to '{args.get('email', 'unknown')}'"
+        )
+    if tool_name == "whm_csf_unblock":
+        return f"Remove CSF block for '{args.get('target', 'unknown')}'"
+    if tool_name == "whm_csf_allowlist_add_ttl":
+        return f"Add '{args.get('target', 'unknown')}' to the CSF allowlist"
+    if tool_name == "whm_csf_allowlist_remove":
+        return f"Remove '{args.get('target', 'unknown')}' from the CSF allowlist"
+    if tool_name == "whm_csf_denylist_add_ttl":
+        return f"Add '{args.get('target', 'unknown')}' to the CSF denylist"
+    return _humanize_tool_name(tool_name)
+
+
+def _extract_before_state(
+    preflight_results: list[dict[str, object]],
+) -> list[dict[str, str]]:
+    before_state: list[dict[str, str]] = []
+    for item in preflight_results:
+        tool_name = item.get("toolName")
+        result = item.get("result")
+        if not isinstance(tool_name, str) or not isinstance(result, dict):
+            continue
+        if tool_name == "whm_preflight_account":
+            account = result.get("account")
+            if isinstance(account, dict):
+                for key, label in (
+                    ("user", "Username"),
+                    ("domain", "Domain"),
+                    ("contactemail", "Contact email"),
+                    ("suspended", "Suspended"),
+                    ("suspendreason", "Suspend reason"),
+                    ("plan", "Plan"),
+                ):
+                    value = account.get(key)
+                    if value in (None, ""):
+                        continue
+                    before_state.append(
+                        {"label": label, "value": _format_argument_value(value)}
+                    )
+        if tool_name == "whm_preflight_csf_entries":
+            verdict = result.get("verdict")
+            target = result.get("target")
+            if target not in (None, ""):
+                before_state.append(
+                    {"label": "Target", "value": _format_argument_value(target)}
+                )
+            if verdict not in (None, ""):
+                before_state.append(
+                    {
+                        "label": "Current CSF state",
+                        "value": _format_argument_value(verdict),
+                    }
+                )
+            matches = result.get("matches")
+            if isinstance(matches, list) and matches:
+                before_state.append(
+                    {
+                        "label": "Matched entries",
+                        "value": "; ".join(
+                            _format_argument_value(match) for match in matches[:3]
+                        ),
+                    }
+                )
+    return before_state
+
+
+def _build_approval_context(
+    *,
+    tool_name: str,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+) -> dict[str, object]:
+    preflight_results = _collect_recent_preflight_results(working_messages)
+    return {
+        "activity": _describe_activity(tool_name, args),
+        "argumentSummary": _summarize_arguments(args),
+        "beforeState": _extract_before_state(preflight_results),
+        "preflightResults": preflight_results,
+    }
 
 
 def _to_openai_tool_schema(tool: ToolDefinition) -> dict[str, object]:

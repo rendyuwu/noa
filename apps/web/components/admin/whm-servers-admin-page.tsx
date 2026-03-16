@@ -56,6 +56,8 @@ export function WhmServersAdminPage() {
 
   const [validateBusyId, setValidateBusyId] = useState<string | null>(null);
   const [validateResultById, setValidateResultById] = useState<Record<string, ValidateWhmServerResponse>>({});
+  const [deleteBusyId, setDeleteBusyId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const loadSeqRef = useRef(0);
 
@@ -158,6 +160,29 @@ export function WhmServersAdminPage() {
     }
   };
 
+  const deleteServer = async (serverId: string) => {
+    if (!serverId) return;
+    setDeleteBusyId(serverId);
+    setActionError(null);
+
+    try {
+      const response = await fetchWithAuth(`/admin/whm/servers/${serverId}`, {
+        method: "DELETE",
+      });
+      await jsonOrThrow(response);
+      setServers((prev) => prev.filter((server) => server.id !== serverId));
+      setValidateResultById((prev) => {
+        const next = { ...prev };
+        delete next[serverId];
+        return next;
+      });
+    } catch (error) {
+      setActionError(toUserMessage(error, "Unable to delete WHM server"));
+    } finally {
+      setDeleteBusyId((prev) => (prev === serverId ? null : prev));
+    }
+  };
+
   const labelClass = "block text-sm font-medium text-text";
   const inputClass =
     "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70";
@@ -205,6 +230,16 @@ export function WhmServersAdminPage() {
           </div>
         ) : null}
 
+        {actionError ? (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+          >
+            {actionError}
+          </div>
+        ) : null}
+
         <div className="panel mt-6 overflow-hidden">
           <table className="w-full font-ui text-sm">
             <thead className="bg-surface-2 text-muted">
@@ -228,6 +263,7 @@ export function WhmServersAdminPage() {
                 sortedServers.map((server) => {
                   const validateResult = validateResultById[server.id];
                   const busy = validateBusyId === server.id;
+                  const deleting = deleteBusyId === server.id;
                   const badge =
                     validateResult === undefined
                       ? null
@@ -247,10 +283,19 @@ export function WhmServersAdminPage() {
                           <button
                             type="button"
                             className="button"
-                            disabled={busy}
+                            disabled={busy || deleting}
                             onClick={() => void validateServer(server.id)}
                           >
                             {busy ? "Validating..." : "Validate"}
+                          </button>
+
+                          <button
+                            type="button"
+                            className="button button-danger"
+                            disabled={deleting || busy}
+                            onClick={() => void deleteServer(server.id)}
+                          >
+                            {deleting ? "Deleting..." : "Delete"}
                           </button>
 
                           {badge ? (

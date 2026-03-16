@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 let mockThreadIsEmpty = true;
 let mockThreadListItemStatus: "archived" | "regular" | "new" | "deleted" = "new";
 let mockIsHydrating = false;
+let mockThreadMessages: any[] = [];
 let mockAssistantMessage: any = {
   role: "assistant",
   isLast: true,
@@ -27,6 +28,16 @@ vi.mock("@/components/claude/request-approval-tool-ui", () => ({
   ClaudeToolGroup: () => null,
 }));
 
+vi.mock("@/components/claude/workflow-todo-tool-ui", () => ({
+  WorkflowTodoCard: ({ todos }: { todos: Array<{ content: string }> }) => (
+    <div data-testid="workflow-card">{todos.map((todo) => todo.content).join(", ")}</div>
+  ),
+  extractLatestWorkflowTodos: (messages: any[]) => {
+    const last = messages[messages.length - 1];
+    return last?.metadata?.todos ?? [];
+  },
+}));
+
 vi.mock("@/components/lib/thread-hydration", () => ({
   useThreadHydration: () => ({ isHydrating: mockIsHydrating }),
 }));
@@ -42,14 +53,6 @@ vi.mock("@assistant-ui/react", async () => {
   );
 
   return {
-    ActionBarPrimitive: {
-      Root: passthrough,
-      Copy: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => (
-        <button type="button" {...props}>
-          {children}
-        </button>
-      ),
-    },
     AssistantIf: ({
       children,
       condition,
@@ -106,6 +109,10 @@ vi.mock("@assistant-ui/react", async () => {
     useAssistantState: (selector: any) =>
       selector({
         message: mockAssistantMessage,
+        thread: {
+          isEmpty: mockThreadIsEmpty,
+          messages: mockThreadMessages,
+        },
         threadListItem: {
           status: mockThreadListItemStatus,
         },
@@ -120,6 +127,7 @@ describe("ClaudeThread", () => {
     mockThreadIsEmpty = true;
     mockThreadListItemStatus = "new";
     mockIsHydrating = false;
+    mockThreadMessages = [];
     mockAssistantMessage = {
       role: "assistant",
       isLast: true,
@@ -220,5 +228,31 @@ describe("ClaudeThread", () => {
 
     expect(screen.getByLabelText("Loading conversation")).toBeInTheDocument();
     expect(screen.queryByText(/Morning, Casey/)).not.toBeInTheDocument();
+  });
+
+  it("pins the latest workflow todo card above the composer", () => {
+    mockThreadIsEmpty = false;
+    mockThreadMessages = [
+      {
+        metadata: {
+          todos: [{ content: "Delete user", status: "in_progress", priority: "high" }],
+        },
+      },
+    ];
+
+    render(<ClaudeThread />);
+
+    expect(screen.getByTestId("workflow-todo-dock")).toBeInTheDocument();
+    expect(screen.getByTestId("workflow-card")).toHaveTextContent("Delete user");
+  });
+
+  it("does not render the assistant disclaimer footer", () => {
+    mockThreadIsEmpty = false;
+
+    render(<ClaudeThread />);
+
+    expect(
+      screen.queryByText("Claude can make mistakes. Please double-check responses."),
+    ).not.toBeInTheDocument();
   });
 });

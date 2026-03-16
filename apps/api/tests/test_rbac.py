@@ -20,6 +20,7 @@ from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
     LastActiveAdminError,
+    SelfDeleteAdminError,
     SelfDeactivateAdminError,
     UnknownToolError,
     get_authorization_service,
@@ -125,6 +126,9 @@ class _InMemoryAuthorizationRepository:
                 total += 1
         return total
 
+    async def delete_user(self, user_id: UUID) -> _RepoUser | None:
+        return self.users.pop(user_id, None)
+
     async def get_role_names(self, user_id: UUID) -> list[str]:
         return sorted(self.user_roles.get(user_id, set()))
 
@@ -187,6 +191,7 @@ class _FakeAuthorizationService:
         self.all_tools = ["get_current_time", "get_current_date", "set_demo_flag"]
         self.last_set_tools: list[str] | None = None
         self.last_is_active: bool | None = None
+        self.deleted_user_id: UUID | None = None
 
     async def list_users(self) -> list[AuthorizationUser]:
         return self.users
@@ -207,6 +212,20 @@ class _FakeAuthorizationService:
 
     async def list_tools(self) -> list[str]:
         return self.all_tools
+
+    async def delete_user(
+        self,
+        user_id: UUID,
+        *,
+        actor_email: str | None = None,
+        actor_user_id: UUID | None = None,
+    ) -> AuthorizationUser | None:
+        _ = actor_email
+        _ = actor_user_id
+        self.deleted_user_id = user_id
+        if user_id != self.target_user_id:
+            return None
+        return self.users.pop(0)
 
     async def set_user_tools(
         self,
@@ -894,6 +913,81 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
         ),
     ]
     assert recorder.report_events == []
+
+
+async def test_admin_route_deletes_user() -> None:
+    app = _create_admin_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
+    service = _FakeAuthorizationService()
+    admin_user = AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: admin_user
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(f"/admin/users/{service.target_user_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert service.deleted_user_id == service.target_user_id
+
+    route_trace = next(
+        event for event in recorder.trace_events if event.name == "admin_user_deleted"
+    )
+    assert route_trace == TelemetryEvent(
+        name="admin_user_deleted",
+        attributes={
+            "target_user_id": str(service.target_user_id),
+            "user_id": str(admin_user.user_id),
+        },
+    )
+
+
+async def test_admin_route_blocks_self_delete_with_409() -> None:
+    app = _create_admin_app()
+
+    class _SelfDeleteService(_FakeAuthorizationService):
+        async def delete_user(
+            self,
+            user_id: UUID,
+            *,
+            actor_email: str | None = None,
+            actor_user_id: UUID | None = None,
+        ) -> AuthorizationUser | None:
+            raise SelfDeleteAdminError("Admins cannot delete their own account")
+
+    service = _SelfDeleteService()
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=service.target_user_id,
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/admin/users/{service.target_user_id}",
+            headers={"x-request-id": "admin-self-delete"},
+        )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["detail"] == "Admins cannot delete their own account"
+    assert body["error_code"] == "self_delete_admin"
+    assert body["request_id"] == "admin-self-delete"
+    assert response.headers["x-request-id"] == body["request_id"]
 
 
 async def test_admin_route_rejects_unknown_tools_with_400() -> None:
