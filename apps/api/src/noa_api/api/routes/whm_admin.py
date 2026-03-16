@@ -277,7 +277,7 @@ class WHMServerService:
             raise WHMServerNotFoundError
 
         # Local import keeps this module usable in tests without the integration present yet.
-        from noa_api.integrations.whm.client import WHMClient
+        from noa_api.whm.integrations.client import WHMClient
 
         client = WHMClient(
             base_url=server.base_url,

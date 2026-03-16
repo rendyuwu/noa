@@ -8,22 +8,22 @@ from noa_api.core.tools.demo_tools import (
     get_current_time,
     set_demo_flag,
 )
-from noa_api.core.tools.whm.preflight_tools import (
+from noa_api.whm.tools.preflight_tools import (
     whm_preflight_account,
     whm_preflight_csf_entries,
 )
-from noa_api.core.tools.whm.account_change_tools import (
+from noa_api.whm.tools.account_change_tools import (
     whm_change_contact_email,
     whm_suspend_account,
     whm_unsuspend_account,
 )
-from noa_api.core.tools.whm.csf_change_tools import (
+from noa_api.whm.tools.csf_change_tools import (
     whm_csf_allowlist_add_ttl,
     whm_csf_allowlist_remove,
     whm_csf_denylist_add_ttl,
     whm_csf_unblock,
 )
-from noa_api.core.tools.whm.read_tools import (
+from noa_api.whm.tools.read_tools import (
     whm_list_accounts,
     whm_list_servers,
     whm_search_accounts,

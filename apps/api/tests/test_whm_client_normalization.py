@@ -4,7 +4,7 @@ import httpx
 
 
 async def test_whm_client_maps_401_to_auth_failed() -> None:
-    from noa_api.integrations.whm.client import WHMClient
+    from noa_api.whm.integrations.client import WHMClient
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code=401, text="unauthorized", request=request)
@@ -22,7 +22,7 @@ async def test_whm_client_maps_401_to_auth_failed() -> None:
 
 
 async def test_whm_client_maps_timeout_to_timeout() -> None:
-    from noa_api.integrations.whm.client import WHMClient
+    from noa_api.whm.integrations.client import WHMClient
 
     def handler(request: httpx.Request) -> httpx.Response:
         raise httpx.ReadTimeout("timeout", request=request)
@@ -41,7 +41,7 @@ async def test_whm_client_maps_timeout_to_timeout() -> None:
 
 
 async def test_whm_client_maps_non_json_to_invalid_response() -> None:
-    from noa_api.integrations.whm.client import WHMClient
+    from noa_api.whm.integrations.client import WHMClient
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(status_code=200, text="not json", request=request)
@@ -59,7 +59,7 @@ async def test_whm_client_maps_non_json_to_invalid_response() -> None:
 
 
 async def test_whm_client_maps_metadata_result_zero_to_whm_api_error() -> None:
-    from noa_api.integrations.whm.client import WHMClient
+    from noa_api.whm.integrations.client import WHMClient
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

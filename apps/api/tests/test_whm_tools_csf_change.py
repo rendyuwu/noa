@@ -59,7 +59,7 @@ def _grep_html(*, target: str, blocked: bool, allowlisted: bool) -> str:
 
 @pytest.mark.asyncio
 async def test_whm_csf_unblock_changes_when_blocked(monkeypatch) -> None:
-    from noa_api.core.tools.whm import csf_change_tools
+    from noa_api.whm.tools import csf_change_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -119,7 +119,7 @@ async def test_whm_csf_unblock_changes_when_blocked(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_whm_csf_unblock_is_noop_when_not_blocked(monkeypatch) -> None:
-    from noa_api.core.tools.whm import csf_change_tools
+    from noa_api.whm.tools import csf_change_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -178,7 +178,7 @@ async def test_whm_csf_unblock_is_noop_when_not_blocked(monkeypatch) -> None:
 async def test_whm_csf_allowlist_add_ttl_rejects_cidr_and_ipv6_and_converts_minutes(
     monkeypatch,
 ) -> None:
-    from noa_api.core.tools.whm import csf_change_tools
+    from noa_api.whm.tools import csf_change_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -248,7 +248,7 @@ async def test_whm_csf_allowlist_add_ttl_rejects_cidr_and_ipv6_and_converts_minu
 async def test_whm_csf_allowlist_remove_is_noop_when_not_allowlisted(
     monkeypatch,
 ) -> None:
-    from noa_api.core.tools.whm import csf_change_tools
+    from noa_api.whm.tools import csf_change_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -305,7 +305,7 @@ async def test_whm_csf_allowlist_remove_is_noop_when_not_allowlisted(
 
 @pytest.mark.asyncio
 async def test_whm_csf_denylist_add_ttl_converts_minutes(monkeypatch) -> None:
-    from noa_api.core.tools.whm import csf_change_tools
+    from noa_api.whm.tools import csf_change_tools
 
     now = datetime.now(UTC)
     server = _Server(

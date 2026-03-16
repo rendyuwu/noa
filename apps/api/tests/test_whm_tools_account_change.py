@@ -49,7 +49,7 @@ class _AccountState:
 
 @pytest.mark.asyncio
 async def test_whm_suspend_account_is_noop_when_already_suspended(monkeypatch) -> None:
-    from noa_api.core.tools.whm import account_change_tools
+    from noa_api.whm.tools import account_change_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -110,7 +110,7 @@ async def test_whm_suspend_account_is_noop_when_already_suspended(monkeypatch) -
 
 @pytest.mark.asyncio
 async def test_whm_unsuspend_account_is_noop_when_not_suspended(monkeypatch) -> None:
-    from noa_api.core.tools.whm import account_change_tools
+    from noa_api.whm.tools import account_change_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -171,7 +171,7 @@ async def test_whm_unsuspend_account_is_noop_when_not_suspended(monkeypatch) -> 
 async def test_whm_change_contact_email_is_noop_when_already_matches(
     monkeypatch,
 ) -> None:
-    from noa_api.core.tools.whm import account_change_tools
+    from noa_api.whm.tools import account_change_tools
 
     now = datetime.now(UTC)
     server = _Server(

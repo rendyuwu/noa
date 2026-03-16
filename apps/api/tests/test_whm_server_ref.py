@@ -42,7 +42,7 @@ class _RepoKwOnly:
 
 @pytest.mark.asyncio
 async def test_resolve_by_uuid() -> None:
-    from noa_api.core.whm.server_ref import resolve_whm_server_ref
+    from noa_api.whm.server_ref import resolve_whm_server_ref
 
     target = _Server(id=uuid4(), name="web1", base_url="https://whm.example.com:2087")
     repo = _Repo([target])
@@ -53,7 +53,7 @@ async def test_resolve_by_uuid() -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_by_uuid_supports_keyword_only_repo_methods() -> None:
-    from noa_api.core.whm.server_ref import resolve_whm_server_ref
+    from noa_api.whm.server_ref import resolve_whm_server_ref
 
     target = _Server(id=uuid4(), name="web1", base_url="https://whm.example.com:2087")
     repo = _RepoKwOnly(target)
@@ -64,7 +64,7 @@ async def test_resolve_by_uuid_supports_keyword_only_repo_methods() -> None:
 
 @pytest.mark.asyncio
 async def test_resolve_ambiguous_by_name_returns_choices() -> None:
-    from noa_api.core.whm.server_ref import resolve_whm_server_ref
+    from noa_api.whm.server_ref import resolve_whm_server_ref
 
     a = _Server(id=uuid4(), name="web1", base_url="https://a.example.com:2087")
     b = _Server(id=uuid4(), name="web1", base_url="https://b.example.com:2087")

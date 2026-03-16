@@ -51,7 +51,7 @@ class _Session:
 
 @pytest.mark.asyncio
 async def test_whm_list_servers_excludes_api_token(monkeypatch) -> None:
-    from noa_api.core.tools.whm import read_tools
+    from noa_api.whm.tools import read_tools
 
     now = datetime.now(UTC)
     servers = [
@@ -81,7 +81,7 @@ async def test_whm_list_servers_excludes_api_token(monkeypatch) -> None:
 async def test_whm_list_accounts_ambiguous_server_ref_returns_choices(
     monkeypatch,
 ) -> None:
-    from noa_api.core.tools.whm import read_tools
+    from noa_api.whm.tools import read_tools
 
     now = datetime.now(UTC)
     a = _Server(
@@ -116,7 +116,7 @@ async def test_whm_list_accounts_ambiguous_server_ref_returns_choices(
 
 @pytest.mark.asyncio
 async def test_whm_validate_server_propagates_client_errors(monkeypatch) -> None:
-    from noa_api.core.tools.whm import read_tools
+    from noa_api.whm.tools import read_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -153,7 +153,7 @@ async def test_whm_validate_server_propagates_client_errors(monkeypatch) -> None
 
 @pytest.mark.asyncio
 async def test_whm_search_accounts_filters_results(monkeypatch) -> None:
-    from noa_api.core.tools.whm import read_tools
+    from noa_api.whm.tools import read_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -198,7 +198,7 @@ async def test_whm_search_accounts_filters_results(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
-    from noa_api.core.tools.whm import preflight_tools
+    from noa_api.whm.tools import preflight_tools
 
     now = datetime.now(UTC)
     server = _Server(
@@ -240,7 +240,7 @@ async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_whm_preflight_account_finds_account(monkeypatch) -> None:
-    from noa_api.core.tools.whm import preflight_tools
+    from noa_api.whm.tools import preflight_tools
 
     now = datetime.now(UTC)
     server = _Server(

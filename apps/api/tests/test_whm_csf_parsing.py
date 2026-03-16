@@ -2,7 +2,7 @@ from __future__ import annotations
 
 
 def test_parse_csf_target_ip() -> None:
-    from noa_api.integrations.whm.csf import parse_csf_target
+    from noa_api.whm.integrations.csf import parse_csf_target
 
     target = parse_csf_target("1.2.3.4")
     assert target.kind == "ip"
@@ -10,7 +10,7 @@ def test_parse_csf_target_ip() -> None:
 
 
 def test_parse_csf_target_cidr() -> None:
-    from noa_api.integrations.whm.csf import parse_csf_target
+    from noa_api.whm.integrations.csf import parse_csf_target
 
     target = parse_csf_target("1.2.3.0/24")
     assert target.kind == "cidr"
@@ -18,7 +18,7 @@ def test_parse_csf_target_cidr() -> None:
 
 
 def test_parse_csf_grep_html_returns_verdict_and_bounded_matches() -> None:
-    from noa_api.integrations.whm.csf import parse_csf_grep_html
+    from noa_api.whm.integrations.csf import parse_csf_grep_html
 
     lines = [
         "Found 1.2.3.4 in /etc/csf/csf.deny",
