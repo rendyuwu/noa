@@ -421,7 +421,7 @@ async def test_execute_approved_tool_run_fails_when_tool_definition_missing(
     assistant_repo = _FakeAssistantRepository()
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda _name: None,
     )
 
@@ -502,7 +502,7 @@ async def test_execute_approved_tool_run_fails_on_risk_mismatch(monkeypatch) -> 
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -582,7 +582,7 @@ async def test_execute_approved_tool_run_sanitizes_execution_errors(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -662,7 +662,7 @@ async def test_execute_approved_tool_run_completes_and_persists_result(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -828,7 +828,7 @@ async def test_assistant_service_approve_change_tool_failure_is_persisted_and_do
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -904,7 +904,7 @@ async def test_assistant_service_approve_change_tool_timeout_is_sanitized(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -973,7 +973,7 @@ async def test_assistant_service_approve_change_tool_logs_original_exception(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -1461,7 +1461,7 @@ async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools
     )
 
     monkeypatch.setattr(
-        "noa_api.api.routes.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 

@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import * as Dialog from "@radix-ui/react-dialog";
 import { HamburgerMenuIcon } from "@radix-ui/react-icons";
 
-import { ClaudeThreadList } from "@/components/claude/claude-thread-list";
+import { ClaudeThreadList } from "@/components/assistant/claude-thread-list";
 
 export function AdminSidebarShell({ children }: { children: ReactNode }) {
   const router = useRouter();

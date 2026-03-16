@@ -18,28 +18,28 @@ from noa_api.api.error_codes import (
     THREAD_NOT_FOUND,
     USER_PENDING_APPROVAL,
 )
-from noa_api.api.routes.assistant_commands import (
+from noa_api.api.assistant.assistant_commands import (
     AssistantRequest,
     should_run_agent,
 )
-from noa_api.api.routes.assistant_action_operations import (
+from noa_api.api.assistant.assistant_action_operations import (
     approve_action_request as approve_action_request_operation,
     deny_action_request as deny_action_request_operation,
     execute_approved_tool_run,
 )
-from noa_api.api.routes.assistant_errors import (
+from noa_api.api.assistant.assistant_errors import (
     AssistantDomainError,
     assistant_http_error,
     to_assistant_http_error,
 )
-from noa_api.api.routes.assistant_operations import (
+from noa_api.api.assistant.assistant_operations import (
     _record_assistant_failure_telemetry,
     prepare_assistant_transport,
     run_agent_phase,
 )
-from noa_api.api.routes.assistant_repository import SQLAssistantRepository
-from noa_api.api.routes.assistant_streaming import _stream_assistant_text
-from noa_api.api.routes.assistant_tool_result_operations import record_tool_result
+from noa_api.api.assistant.assistant_repository import SQLAssistantRepository
+from noa_api.api.assistant.assistant_streaming import _stream_assistant_text
+from noa_api.api.assistant.assistant_tool_result_operations import record_tool_result
 from noa_api.core.agent.runner import (
     AgentRunner,
     AgentRunnerResult,

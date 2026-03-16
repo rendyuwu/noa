@@ -23,12 +23,12 @@ vi.mock("@/components/lib/auth-store", () => ({
   })),
 }));
 
-vi.mock("@/components/claude/request-approval-tool-ui", () => ({
+vi.mock("@/components/assistant/request-approval-tool-ui", () => ({
   ClaudeToolFallback: () => null,
   ClaudeToolGroup: () => null,
 }));
 
-vi.mock("@/components/claude/workflow-todo-tool-ui", () => ({
+vi.mock("@/components/assistant/workflow-todo-tool-ui", () => ({
   WorkflowTodoCard: ({ todos }: { todos: Array<{ content: string }> }) => (
     <div data-testid="workflow-card">{todos.map((todo) => todo.content).join(", ")}</div>
   ),
@@ -53,6 +53,7 @@ vi.mock("@assistant-ui/react", async () => {
   );
 
   return {
+    makeAssistantToolUI: ({ render }: { render: (props: any) => ReactNode }) => render,
     AssistantIf: ({
       children,
       condition,

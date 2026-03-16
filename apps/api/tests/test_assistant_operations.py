@@ -13,9 +13,9 @@ import pytest
 from fastapi import HTTPException
 from structlog.contextvars import get_contextvars
 
-from noa_api.api.routes import assistant_operations
-from noa_api.api.routes.assistant_commands import AssistantRequest
-from noa_api.api.routes.assistant_operations import prepare_assistant_transport
+from noa_api.api.assistant import assistant_operations
+from noa_api.api.assistant.assistant_commands import AssistantRequest
+from noa_api.api.assistant.assistant_operations import prepare_assistant_transport
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging import configure_logging
 from noa_api.core.telemetry import TelemetryEvent

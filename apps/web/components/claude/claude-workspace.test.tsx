@@ -17,23 +17,24 @@ vi.mock("@radix-ui/react-dialog", async () => {
   };
 });
 
-vi.mock("@/components/claude/claude-thread", () => ({
+vi.mock("@/components/assistant/claude-thread", () => ({
   ClaudeThread: () => <div data-testid="claude-thread" />,
 }));
 
-vi.mock("@/components/claude/claude-thread-list", () => ({
+vi.mock("@/components/assistant/claude-thread-list", () => ({
   ClaudeThreadList: () => <div data-testid="claude-thread-list" />,
 }));
 
-vi.mock("@/components/claude/request-approval-tool-ui", () => ({
+vi.mock("@/components/assistant/request-approval-tool-ui", () => ({
   RequestApprovalToolUI: () => <div data-testid="request-approval-tool-ui" />,
 }));
 
-vi.mock("@/components/claude/workflow-todo-tool-ui", () => ({
+vi.mock("@/components/assistant/workflow-todo-tool-ui", () => ({
   WorkflowTodoToolUI: () => <div data-testid="workflow-todo-tool-ui" />,
 }));
 
 vi.mock("@/components/lib/auth-store", () => ({
+  getAuthUser: () => null,
   useRequireAuth: () => true,
 }));
 
@@ -45,7 +46,7 @@ vi.mock("@/components/lib/runtime-provider", async () => {
 });
 
 import AssistantPage from "@/app/(app)/assistant/page";
-import { ClaudeWorkspace } from "./claude-workspace";
+import { ClaudeWorkspace } from "@/components/assistant/claude-workspace";
 
 describe("/assistant full-bleed shell", () => {
   beforeEach(() => {
