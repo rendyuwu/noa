@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
-import { ErrorReportingProvider } from "@/components/lib/error-reporting-provider";
+import { ErrorReportingProvider } from "@/components/lib/observability/error-reporting-provider";
 
 export const metadata: Metadata = {
   title: "NOA Web",

@@ -2,7 +2,7 @@
 
 import { getAuthToken, clearAuth } from "@/components/lib/auth-store";
 
-import { reportClientError } from "./error-reporting";
+import { reportClientError } from "@/components/lib/observability/error-reporting";
 
 type ErrorPayload = {
   detail?: unknown;

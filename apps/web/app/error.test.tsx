@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const reportClientError = vi.fn();
 
-vi.mock("@/components/lib/error-reporting", () => ({
+vi.mock("@/components/lib/observability/error-reporting", () => ({
   reportClientError: (...args: unknown[]) => reportClientError(...args),
 }));
 

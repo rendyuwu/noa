@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 
-import { reportClientError } from "@/components/lib/error-reporting";
+import { reportClientError } from "@/components/lib/observability/error-reporting";
 
 type GlobalErrorProps = {
   error: Error & { digest?: string };

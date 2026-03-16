@@ -11,9 +11,9 @@ vi.mock("@sentry/nextjs", () => ({
 const loadErrorReporting = async () => {
   vi.resetModules();
   const modulePath = "./error-reporting";
-  const fetchHelperPath = "./fetch-helper";
+  const fetchHelperPath = "@/components/lib/fetch-helper";
   const [{ ApiError }, errorReporting] = await Promise.all([
-    import(/* @vite-ignore */ fetchHelperPath),
+    import(fetchHelperPath),
     import(/* @vite-ignore */ modulePath),
   ]);
 
@@ -32,135 +32,27 @@ describe("error reporting", () => {
   });
 
   const handledApiErrorCases = [
-    {
-      label: "invalid credentials",
-      status: 401,
-      detail: "Invalid credentials",
-      errorCode: "invalid_credentials",
-      requestId: "req-401-invalid-credentials",
-    },
-    {
-      label: "missing bearer token",
-      status: 401,
-      detail: "Missing bearer token",
-      errorCode: "missing_bearer_token",
-      requestId: "req-401-missing-bearer",
-    },
-    {
-      label: "invalid token",
-      status: 401,
-      detail: "Invalid token",
-      errorCode: "invalid_token",
-      requestId: "req-401-invalid-token",
-    },
-    {
-      label: "approval gating",
-      status: 403,
-      detail: "Pending",
-      errorCode: "user_pending_approval",
-      requestId: "req-403-pending",
-    },
-    {
-      label: "request validation",
-      status: 422,
-      detail: "Validation failed",
-      errorCode: "request_validation_error",
-      requestId: "req-422",
-    },
-    {
-      label: "access denied",
-      status: 403,
-      detail: "Admin access required",
-      errorCode: "admin_access_required",
-      requestId: "req-403-admin",
-    },
-    {
-      label: "tool access denied",
-      status: 403,
-      detail: "Tool access denied",
-      errorCode: "tool_access_denied",
-      requestId: "req-403-tool-access",
-    },
-    {
-      label: "not found",
-      status: 404,
-      detail: "Admin user not found",
-      errorCode: "admin_user_not_found",
-      requestId: "req-404-admin-user",
-    },
-    {
-      label: "thread not found",
-      status: 404,
-      detail: "Thread not found",
-      errorCode: "thread_not_found",
-      requestId: "req-404",
-    },
-    {
-      label: "server not found",
-      status: 404,
-      detail: "Server not found",
-      errorCode: "whm_server_not_found",
-      requestId: "req-404-server",
-    },
-    {
-      label: "tool call not found",
-      status: 404,
-      detail: "Tool call not found",
-      errorCode: "tool_call_not_found",
-      requestId: "req-404-tool-call",
-    },
-    {
-      label: "action request not found",
-      status: 404,
-      detail: "Action request not found",
-      errorCode: "action_request_not_found",
-      requestId: "req-404-action-request",
-    },
-    {
-      label: "last active admin conflict",
-      status: 409,
-      detail: "Cannot disable the last active admin",
-      errorCode: "last_active_admin",
-      requestId: "req-409",
-    },
-    {
-      label: "self deactivate conflict",
-      status: 409,
-      detail: "Cannot deactivate your own account",
-      errorCode: "self_deactivate_admin",
-      requestId: "req-409-self-deactivate",
-    },
-    {
-      label: "server name conflict",
-      status: 409,
-      detail: "Server name already exists",
-      errorCode: "whm_server_name_exists",
-      requestId: "req-409-server-name",
-    },
-    {
-      label: "action request already decided",
-      status: 409,
-      detail: "Action request already decided",
-      errorCode: "action_request_already_decided",
-      requestId: "req-409-action-request",
-    },
+    { label: "invalid credentials", status: 401, detail: "Invalid credentials", errorCode: "invalid_credentials", requestId: "req-401-invalid-credentials" },
+    { label: "missing bearer token", status: 401, detail: "Missing bearer token", errorCode: "missing_bearer_token", requestId: "req-401-missing-bearer" },
+    { label: "invalid token", status: 401, detail: "Invalid token", errorCode: "invalid_token", requestId: "req-401-invalid-token" },
+    { label: "approval gating", status: 403, detail: "Pending", errorCode: "user_pending_approval", requestId: "req-403-pending" },
+    { label: "request validation", status: 422, detail: "Validation failed", errorCode: "request_validation_error", requestId: "req-422" },
+    { label: "access denied", status: 403, detail: "Admin access required", errorCode: "admin_access_required", requestId: "req-403-admin" },
+    { label: "tool access denied", status: 403, detail: "Tool access denied", errorCode: "tool_access_denied", requestId: "req-403-tool-access" },
+    { label: "not found", status: 404, detail: "Admin user not found", errorCode: "admin_user_not_found", requestId: "req-404-admin-user" },
+    { label: "thread not found", status: 404, detail: "Thread not found", errorCode: "thread_not_found", requestId: "req-404" },
+    { label: "server not found", status: 404, detail: "Server not found", errorCode: "whm_server_not_found", requestId: "req-404-server" },
+    { label: "tool call not found", status: 404, detail: "Tool call not found", errorCode: "tool_call_not_found", requestId: "req-404-tool-call" },
+    { label: "action request not found", status: 404, detail: "Action request not found", errorCode: "action_request_not_found", requestId: "req-404-action-request" },
+    { label: "last active admin conflict", status: 409, detail: "Cannot disable the last active admin", errorCode: "last_active_admin", requestId: "req-409" },
+    { label: "self deactivate conflict", status: 409, detail: "Cannot deactivate your own account", errorCode: "self_deactivate_admin", requestId: "req-409-self-deactivate" },
+    { label: "server name conflict", status: 409, detail: "Server name already exists", errorCode: "whm_server_name_exists", requestId: "req-409-server-name" },
+    { label: "action request already decided", status: 409, detail: "Action request already decided", errorCode: "action_request_already_decided", requestId: "req-409-action-request" },
   ] as const;
 
   const unexpectedHandledStatusCases = [
-    {
-      label: "401 with unknown code",
-      status: 401,
-      detail: "Session revoked unexpectedly",
-      errorCode: "session_revoked",
-      requestId: "req-401-unexpected",
-    },
-    {
-      label: "422 with unknown code",
-      status: 422,
-      detail: "Unexpected validation envelope",
-      errorCode: "schema_mismatch",
-      requestId: "req-422-unexpected",
-    },
+    { label: "401 with unknown code", status: 401, detail: "Session revoked unexpectedly", errorCode: "session_revoked", requestId: "req-401-unexpected" },
+    { label: "422 with unknown code", status: 422, detail: "Unexpected validation envelope", errorCode: "schema_mismatch", requestId: "req-422-unexpected" },
   ] as const;
 
   it("is a no-op when disabled", async () => {
@@ -191,21 +83,13 @@ describe("error reporting", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it.each(handledApiErrorCases)("ignores handled ApiError cases for $label", async ({
-    status,
-    detail,
-    errorCode,
-    requestId,
-  }) => {
+  it.each(handledApiErrorCases)("ignores handled ApiError cases for $label", async ({ status, detail, errorCode, requestId }) => {
     vi.stubEnv("NEXT_PUBLIC_ERROR_REPORTING_ENABLED", "true");
     vi.stubEnv("NEXT_PUBLIC_ERROR_REPORTING_DSN", "https://examplePublicKey@o0.ingest.sentry.io/0");
 
     const { ApiError, reportClientError, shouldReportClientError } = await loadErrorReporting();
 
-    const error = new ApiError(status, detail, {
-      errorCode,
-      requestId,
-    });
+    const error = new ApiError(status, detail, { errorCode, requestId });
 
     expect(shouldReportClientError(error)).toBe(false);
 
@@ -215,34 +99,23 @@ describe("error reporting", () => {
     expect(captureException).not.toHaveBeenCalled();
   });
 
-  it.each(unexpectedHandledStatusCases)(
-    "still reports unexpected ApiError cases for $label",
-    async ({ status, detail, errorCode, requestId }) => {
-      vi.stubEnv("NEXT_PUBLIC_ERROR_REPORTING_ENABLED", "true");
-      vi.stubEnv("NEXT_PUBLIC_ERROR_REPORTING_DSN", "https://examplePublicKey@o0.ingest.sentry.io/0");
+  it.each(unexpectedHandledStatusCases)("still reports unexpected ApiError cases for $label", async ({ status, detail, errorCode, requestId }) => {
+    vi.stubEnv("NEXT_PUBLIC_ERROR_REPORTING_ENABLED", "true");
+    vi.stubEnv("NEXT_PUBLIC_ERROR_REPORTING_DSN", "https://examplePublicKey@o0.ingest.sentry.io/0");
 
-      const { ApiError, reportClientError, shouldReportClientError } = await loadErrorReporting();
+    const { ApiError, reportClientError, shouldReportClientError } = await loadErrorReporting();
 
-      const error = new ApiError(status, detail, {
-        errorCode,
-        requestId,
-      });
+    const error = new ApiError(status, detail, { errorCode, requestId });
 
-      expect(shouldReportClientError(error)).toBe(true);
+    expect(shouldReportClientError(error)).toBe(true);
 
-      reportClientError(error);
+    reportClientError(error);
 
-      expect(init).toHaveBeenCalledTimes(1);
-      expect(captureException).toHaveBeenCalledWith(error, {
-        extra: {
-          errorCode,
-          pathname: "/",
-          requestId,
-          status,
-        },
-      });
-    },
-  );
+    expect(init).toHaveBeenCalledTimes(1);
+    expect(captureException).toHaveBeenCalledWith(error, {
+      extra: { errorCode, pathname: "/", requestId, status },
+    });
+  });
 
   it("still reports unexpected ApiError client failures outside the handled subset", async () => {
     vi.stubEnv("NEXT_PUBLIC_ERROR_REPORTING_ENABLED", "true");

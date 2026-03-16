@@ -9,7 +9,7 @@ vi.mock("@/components/lib/auth-store", () => ({
   getAuthToken: () => getAuthToken(),
 }));
 
-vi.mock("./error-reporting", () => ({
+vi.mock("@/components/lib/observability/error-reporting", () => ({
   reportClientError: (...args: unknown[]) => reportClientError(...args),
 }));
 
