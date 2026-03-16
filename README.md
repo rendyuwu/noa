@@ -8,6 +8,7 @@ The model interprets and proposes actions; the platform enforces permissions, ap
 Docs:
 - `ARCHITECTURE.md`
 - `docs/STATUS.md`
+- `docs/observability/README.md`
 - `docs/plans/2026-03-09-project-noa-mvp-design.md`
 - `docs/reports/2026-03-09-task-11-verification.md`
 

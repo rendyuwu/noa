@@ -459,6 +459,7 @@ Active next steps
 
 Historical note
 - The original P0/P1/P2 recommendations from the 2026-03-14 audit drove the foundation branch and the first backend continuation branches. Items such as request IDs, centralized error envelopes, DB session consolidation, tool error sanitization, frontend error boundaries, and initial assistant helper extraction are no longer active recommendations for this worktree.
+- The observability implementation-plan docs under `docs/plans/` are retained as branch history and execution handoff material; the current observability status and next-step guidance now live under `docs/observability/`.
 
 ---
 
@@ -571,10 +572,14 @@ Recommended next from this worktree
 Primary execution handoff after the observability/frontend reporting pass
 - Worktree: `.worktrees/feat-observability-dashboards-alerts-frontend-reporting`
 - Branch: `feat/observability-dashboards-alerts-frontend-reporting`
-- Primary plans:
+- Current status docs:
+  - `docs/observability/README.md`
+  - `docs/observability/backend-observability-baseline.md`
+  - `docs/observability/frontend-error-reporting.md`
+- Historical implementation plans:
   - `docs/plans/2026-03-16-observability-dashboards-alerts-frontend-reporting-design.md`
   - `docs/plans/2026-03-16-observability-dashboards-alerts-frontend-reporting-implementation-plan.md`
-- Resume point: the repo implementation step for dashboards/alerts/frontend reporting is now complete; any next step is operational rollout work plus only later helper/service logging cleanup or shared/helper-level `error_code` expansion if needed.
+- Resume point: the repo implementation step for dashboards/alerts/frontend reporting is now complete; use `docs/observability/README.md` as the current entry point, and treat any next step as operational rollout work plus only later helper/service logging cleanup or shared/helper-level `error_code` expansion if needed.
 
 Historical execution handoff: assistant service extraction
 - Worktree: `apps/api/.worktrees/feat-assistant-service-extraction`
