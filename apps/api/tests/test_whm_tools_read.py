@@ -252,6 +252,7 @@ async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
     )
 
     assert result["ok"] is True
+    assert result["server_id"] == str(server.id)
     assert result["verdict"] == "blocked"
     assert len(result["matches"]) <= 20
 
@@ -338,6 +339,7 @@ async def test_whm_preflight_account_finds_account(monkeypatch) -> None:
     )
 
     assert result["ok"] is True
+    assert result["server_id"] == str(server.id)
     assert result["account"]["user"] == "alice"
 
 

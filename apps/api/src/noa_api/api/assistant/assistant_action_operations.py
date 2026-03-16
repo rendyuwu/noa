@@ -22,7 +22,10 @@ from noa_api.api.assistant.assistant_tool_result_operations import (
     AssistantMessageAuditRepositoryProtocol,
 )
 from noa_api.core.logging_context import log_context
-from noa_api.core.agent.runner import _require_matching_preflight
+from noa_api.core.agent.runner import (
+    _require_matching_preflight,
+    _resolve_requested_server_id,
+)
 from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_error
 from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import get_tool_definition
@@ -294,6 +297,7 @@ async def execute_approved_tool_run(
         args=approved_request.args,
         thread_id=thread_id,
         repository=repository,
+        session=session,
     )
     if preflight_error is not None:
         await _persist_failed_tool_run(
@@ -391,8 +395,10 @@ async def _validate_approved_tool_preflight(
     args: dict[str, object],
     thread_id: UUID,
     repository: AssistantMessageAuditRepositoryProtocol,
+    session: AsyncSession | None,
 ) -> SanitizedToolError | None:
     messages = await repository.list_messages(thread_id=thread_id)
+    requested_server_id = await _resolve_requested_server_id(args=args, session=session)
     working_messages: list[dict[str, object]] = []
     for message in messages:
         role = getattr(message, "role", None)
@@ -404,6 +410,7 @@ async def _validate_approved_tool_preflight(
         tool_name=tool_name,
         args=args,
         working_messages=working_messages,
+        requested_server_id=requested_server_id,
     )
 
 

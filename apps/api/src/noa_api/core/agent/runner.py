@@ -23,6 +23,8 @@ from noa_api.core.tools.registry import (
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
+from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
+from noa_api.whm.server_ref import resolve_whm_server_ref
 
 
 logger = logging.getLogger(__name__)
@@ -475,7 +477,7 @@ class AgentRunner:
         requested_by_user_id: UUID,
     ) -> ProcessedToolCall:
         if tool.risk == ToolRisk.CHANGE:
-            validation_error = self._validate_tool_call(
+            validation_error = await self._validate_tool_call(
                 tool=tool,
                 args=args,
                 working_messages=working_messages,
@@ -607,7 +609,7 @@ class AgentRunner:
             )
             return ProcessedToolCall(messages=[call_message, error_message])
 
-    def _validate_tool_call(
+    async def _validate_tool_call(
         self,
         *,
         tool: ToolDefinition,
@@ -619,10 +621,15 @@ class AgentRunner:
         except Exception as exc:
             return sanitize_tool_error(exc)
         if tool.risk == ToolRisk.CHANGE:
+            requested_server_id = await _resolve_requested_server_id(
+                args=args,
+                session=self._session,
+            )
             preflight_error = _require_matching_preflight(
                 tool_name=tool.name,
                 args=args,
                 working_messages=working_messages,
+                requested_server_id=requested_server_id,
             )
             if preflight_error is not None:
                 return preflight_error
@@ -849,13 +856,18 @@ def _require_matching_preflight(
     tool_name: str,
     args: dict[str, object],
     working_messages: list[dict[str, object]],
+    requested_server_id: str | None = None,
 ) -> SanitizedToolError | None:
     if tool_name in {
         "whm_suspend_account",
         "whm_unsuspend_account",
         "whm_change_contact_email",
     }:
-        return _require_account_preflight(args=args, working_messages=working_messages)
+        return _require_account_preflight(
+            args=args,
+            working_messages=working_messages,
+            requested_server_id=requested_server_id,
+        )
 
     if tool_name in {
         "whm_csf_unblock",
@@ -863,13 +875,20 @@ def _require_matching_preflight(
         "whm_csf_allowlist_add_ttl",
         "whm_csf_denylist_add_ttl",
     }:
-        return _require_csf_preflight(args=args, working_messages=working_messages)
+        return _require_csf_preflight(
+            args=args,
+            working_messages=working_messages,
+            requested_server_id=requested_server_id,
+        )
 
     return None
 
 
 def _require_account_preflight(
-    *, args: dict[str, object], working_messages: list[dict[str, object]]
+    *,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    requested_server_id: str | None,
 ) -> SanitizedToolError | None:
     requested_server_ref = _normalized_text(args.get("server_ref"))
     requested_username = _normalized_text(args.get("username"))
@@ -897,13 +916,17 @@ def _require_account_preflight(
         result = item.get("result")
         if not isinstance(item_args, dict) or not isinstance(result, dict):
             continue
+        if not _server_identity_matches(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
+            continue
         account = result.get("account")
         if not isinstance(account, dict):
             continue
-        if (
-            _normalized_text(item_args.get("server_ref")) == requested_server_ref
-            and _normalized_text(account.get("user")) == requested_username
-        ):
+        if _normalized_text(account.get("user")) == requested_username:
             return None
 
     return SanitizedToolError(
@@ -916,7 +939,10 @@ def _require_account_preflight(
 
 
 def _require_csf_preflight(
-    *, args: dict[str, object], working_messages: list[dict[str, object]]
+    *,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    requested_server_id: str | None,
 ) -> SanitizedToolError | None:
     requested_server_ref = _normalized_text(args.get("server_ref"))
     requested_targets = _normalized_string_list(args.get("targets"))
@@ -945,7 +971,12 @@ def _require_csf_preflight(
         result = item.get("result")
         if not isinstance(item_args, dict) or not isinstance(result, dict):
             continue
-        if _normalized_text(item_args.get("server_ref")) != requested_server_ref:
+        if not _server_identity_matches(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
             continue
         target = _normalized_text(result.get("target"))
         if target is not None:
@@ -983,6 +1014,35 @@ def _normalized_string_list(value: object) -> list[str]:
         if text is not None:
             normalized.append(text)
     return normalized
+
+
+async def _resolve_requested_server_id(
+    *, args: dict[str, object], session: AsyncSession | None
+) -> str | None:
+    requested_server_ref = _normalized_text(args.get("server_ref"))
+    if requested_server_ref is None or session is None:
+        return None
+    if not hasattr(session, "execute"):
+        return None
+
+    repo = SQLWHMServerRepository(session)
+    resolution = await resolve_whm_server_ref(requested_server_ref, repo=repo)
+    if not resolution.ok or resolution.server_id is None:
+        return None
+    return str(resolution.server_id)
+
+
+def _server_identity_matches(
+    *,
+    item_args: dict[str, object],
+    result: dict[str, object],
+    requested_server_ref: str,
+    requested_server_id: str | None,
+) -> bool:
+    result_server_id = _normalized_text(result.get("server_id"))
+    if requested_server_id is not None and result_server_id is not None:
+        return result_server_id == requested_server_id
+    return _normalized_text(item_args.get("server_ref")) == requested_server_ref
 
 
 def _format_argument_value(value: object) -> str:

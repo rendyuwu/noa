@@ -55,7 +55,11 @@ async def whm_preflight_account(
             continue
         user_value = account.get("user")
         if isinstance(user_value, str) and user_value == normalized_username:
-            return {"ok": True, "account": account}
+            return {
+                "ok": True,
+                "server_id": str(resolution.server_id),
+                "account": account,
+            }
 
     return {
         "ok": False,
@@ -116,6 +120,7 @@ async def whm_preflight_csf_entries(
     parsed = parse_csf_grep_html(html_value, target=normalized_target)
     return {
         "ok": True,
+        "server_id": str(resolution.server_id),
         "target": normalized_target,
         "verdict": parsed.verdict,
         "matches": parsed.matches,

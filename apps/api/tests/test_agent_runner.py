@@ -22,6 +22,10 @@ from noa_api.storage.postgres.lifecycle import (
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 
+async def _async_return(value):
+    return value
+
+
 @dataclass
 class _FakeLLMClient:
     response: LLMTurnResponse
@@ -1533,6 +1537,222 @@ async def test_agent_runner_allows_change_proposal_when_matching_preflight_exist
     approval_part = result.messages[-1].parts[0]
     assert isinstance(approval_part, dict)
     assert approval_part["toolName"] == "request_approval"
+
+
+async def test_agent_runner_allows_change_proposal_when_server_id_matches(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change(
+        *, server_ref: str, username: str, reason: str
+    ) -> dict[str, object]:
+        raise AssertionError(
+            f"unexpected execution for {server_ref} {username} {reason}"
+        )
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Requires matching account preflight.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **kwargs: _async_return("server-1"),
+    )
+
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="I can suspend that account after approval.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "requested by customer",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=None,
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "whm.example.com", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice"},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    approval_part = result.messages[-1].parts[0]
+    assert isinstance(approval_part, dict)
+    assert approval_part["toolName"] == "request_approval"
+
+
+async def test_agent_runner_rejects_change_proposal_when_server_id_differs(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change(
+        *, server_ref: str, username: str, reason: str
+    ) -> dict[str, object]:
+        raise AssertionError(
+            f"unexpected execution for {server_ref} {username} {reason}"
+        )
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Requires matching account preflight.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **kwargs: _async_return("server-1"),
+    )
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self, *, messages, tools, on_text_delta=None
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web1",
+                                "username": "alice",
+                                "reason": "requested by customer",
+                            },
+                        )
+                    ],
+                )
+            return LLMTurnResponse(text="Wrong server identity.", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=None,
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-2",
+                            "account": {"user": "alice"},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert repo.action_requests == {}
+    tool_message = next(
+        message for message in result.messages if message.role == "tool"
+    )
+    part = tool_message.parts[0]
+    assert isinstance(part, dict)
+    assert part["result"]["error_code"] == "preflight_mismatch"
 
 
 async def test_build_approval_context_uses_correct_change_arguments_in_activity() -> (
