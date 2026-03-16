@@ -66,7 +66,7 @@ What is not yet done
 - Sampling, dashboards, alerts, and final external-reporting platform decisions remain future operational follow-up.
 - No dedicated frontend error reporting tool is installed yet.
 
-What should come next
+What came next from that point
 - Decide whether the current backend telemetry seam should stay internal-only for now or be wired to a concrete exporter/vendor behind `apps/api/src/noa_api/core/telemetry.py` without changing the stabilized event vocabulary.
 - If later backend logging follow-up is still needed, treat it as deeper helper/service work rather than reopening the completed route-level telemetry slice.
 - If later backend `error_code` follow-up is still needed, treat it as shared/helper-level catalog work rather than route-specific patching.
@@ -80,7 +80,7 @@ What should come next
 
 What was done in this continuation pass
 - Added `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` to map the now-stable backend event and field set to trace, metric, and external-reporting candidates without choosing a vendor yet.
-- Added `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` so the next step is easy to track and can move directly into backend instrumentation work without rediscovering the event inventory.
+- Added `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` so the then-current next step was easy to track and could move directly into backend instrumentation work without rediscovering the event inventory.
 - Grouped the current backend telemetry surface into request lifecycle, auth, assistant orchestration, and admin/management domains anchored to the existing structured log vocabulary.
 - This audit report now records that backend telemetry revisit is active rather than merely deferred.
 
@@ -89,8 +89,8 @@ What is not yet done
 - No backend runtime instrumentation has been implemented yet; this pass is design and handoff only.
 - Sampling, dashboards, alerts, and final external-reporting platform choices remain future decisions.
 
-What should come next
-- Execute `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` to add a small vendor-neutral telemetry seam and map the current request, auth, assistant, admin, threads, and WHM flows without changing the stable log vocabulary.
+What came next from that point
+- At that point, the next step was to execute `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` to add a small vendor-neutral telemetry seam and map the current request, auth, assistant, admin, threads, and WHM flows without changing the stable log vocabulary.
 - Keep structured logs as the source of truth for event names and fields, and avoid high-cardinality metric labels for entity identifiers.
 - Use `docs/plans/2026-03-15-backend-telemetry-mapping-design.md` and `docs/plans/2026-03-15-backend-telemetry-mapping-implementation-plan.md` as the current handoff docs for this active backend telemetry follow-up.
 - Verification for this continuation pass:
@@ -107,8 +107,8 @@ What is not yet done
 - This route-slice follow-up is now complete; the remaining backend work from this audit is no longer wider route-level success logging or request-validation `error_code` wiring.
 - Deferred backend follow-up is now limited to executing the active telemetry mapping follow-up plus any future deeper helper-level logging or broader shared error-code catalog work if later needed.
 
-What should come next
-- Continue the active backend telemetry follow-up by using the current stabilized log/event field set to drive traces, metrics, and any later external reporting.
+What came next from that point
+- At that point, the next step was to continue the active backend telemetry follow-up by using the current stabilized log/event field set to drive traces, metrics, and any later external reporting.
 - Treat any later backend logging or `error_code` follow-up as a deeper helper-level/shared-catalog pass rather than reopening this now-completed route slice.
 - Use `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-design.md` and `docs/plans/2026-03-15-backend-non-assistant-logging-error-codes-implementation-plan.md` as the handoff docs for this completed continuation pass and its deferred backend-only follow-up.
 - Fresh verification for this continuation pass in `apps/api`:
@@ -131,8 +131,8 @@ What is not yet done
 - Stable `error_code` coverage is stronger across auth plus the already-covered route surfaces, but selective gaps still remain in untouched routes and generic/helper-level validation paths.
 - Telemetry mapping design is now active, but instrumentation and vendor/export decisions remain deferred.
 
-What should come next
-- Continue the backend-only follow-up by extending `log_context(...)` adoption across more non-auth success paths using the now-stabilized auth event vocabulary.
+What came next from that point
+- At that point, the next step was to continue the backend-only follow-up by extending `log_context(...)` adoption across more non-auth success paths using the now-stabilized auth event vocabulary.
 - Close the remaining selective non-assistant `error_code` gaps outside the currently covered auth/admin/threads/WHM/assistant route surface without mixing in a larger redesign.
 - Use `docs/plans/2026-03-15-backend-auth-boundary-logging-design.md` and `docs/plans/2026-03-15-backend-auth-boundary-logging-implementation-plan.md` as the current handoff docs for this completed slice and its deferred backend follow-up list.
 - Fresh verification for this continuation pass in `.worktrees/feat-backend-auth-boundary-logging/apps/api`:
@@ -154,8 +154,8 @@ What is not yet done
 - Stable `error_code` coverage is still selective outside the assistant and previously refreshed backend routes.
 - Telemetry mapping design is now active, but instrumentation and vendor/export decisions remain deferred.
 
-What should come next
-- Continue the backend-only follow-up by extending `log_context(...)` adoption across more non-assistant success paths.
+What came next from that point
+- At that point, the next step was to continue the backend-only follow-up by extending `log_context(...)` adoption across more non-assistant success paths.
 - Close the remaining selective non-assistant `error_code` gaps without mixing in a larger application-layer redesign.
 - Use `docs/plans/2026-03-15-assistant-service-extraction-design.md` and `docs/plans/2026-03-15-assistant-service-extraction-implementation-plan.md` as the current handoff docs for this completed slice and its deferred backend follow-up list.
 - Fresh verification for this continuation pass in `apps/api/.worktrees/feat-assistant-service-extraction`:
@@ -179,8 +179,8 @@ What is not yet done
 - Assistant-domain failure shaping is still partly coupled to `assistant.py` instead of living behind smaller helper/service seams throughout the remaining assistant flow.
 - Broader backend structured logging adoption and wider non-assistant `error_code` normalization remain follow-up work outside this continuation slice.
 
-What should come next
-- Continue the backend-only decomposition by extracting the remaining `AssistantService` approval, tool-result, and tool-execution flows out of `apps/api/src/noa_api/api/routes/assistant.py` and tightening the route-facing translation boundary around them.
+What came next from that point
+- At that point, the next step was to continue the backend-only decomposition by extracting the remaining `AssistantService` approval, tool-result, and tool-execution flows out of `apps/api/src/noa_api/api/routes/assistant.py` and tightening the route-facing translation boundary around them.
 - Use `docs/plans/2026-03-15-assistant-route-decomposition-continuation-design.md` and `docs/plans/2026-03-15-assistant-route-decomposition-continuation-implementation-plan.md` as the resume point for the next session.
 - Fresh verification for this continuation pass in `.worktrees/feat-assistant-route-decomposition-continuation/apps/api`:
   - `uv run pytest -q tests/test_assistant_operations.py tests/test_assistant.py tests/test_assistant_service.py tests/test_assistant_commands.py tests/test_assistant_streaming.py` -> `55 passed`
