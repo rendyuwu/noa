@@ -7,14 +7,15 @@ import re
 from dataclasses import dataclass
 from inspect import signature
 from typing import Any, Awaitable, Callable, Protocol, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.config import settings
 from noa_api.core.json_safety import json_safe
 from noa_api.core.prompts.loader import load_system_prompt
-from noa_api.core.tool_error_sanitizer import sanitize_tool_error
+from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_error
+from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import (
     ToolDefinition,
     get_tool_definition,
@@ -59,6 +60,12 @@ class AgentMessage:
 class AgentRunnerResult:
     messages: list[AgentMessage]
     text_deltas: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessedToolCall:
+    messages: list[AgentMessage]
+    should_stop: bool = False
 
 
 class RuleBasedLLMClient:
@@ -404,13 +411,14 @@ class AgentRunner:
                     continue
 
                 saw_allowed_tool_call = True
-                tool_messages = await self._process_tool_call(
+                processed = await self._process_tool_call(
                     tool=tool,
                     args=tool_call.arguments,
                     working_messages=working_messages,
                     thread_id=thread_id,
                     requested_by_user_id=requested_by_user_id,
                 )
+                tool_messages = processed.messages
                 output_messages.extend(tool_messages)
                 for message in tool_messages:
                     working_messages.append(
@@ -420,7 +428,7 @@ class AgentRunner:
                         }
                     )
 
-                if tool.risk == ToolRisk.CHANGE:
+                if processed.should_stop:
                     return AgentRunnerResult(
                         messages=output_messages, text_deltas=text_deltas
                     )
@@ -465,8 +473,20 @@ class AgentRunner:
         working_messages: list[dict[str, object]],
         thread_id: UUID,
         requested_by_user_id: UUID,
-    ) -> list[AgentMessage]:
+    ) -> ProcessedToolCall:
         if tool.risk == ToolRisk.CHANGE:
+            validation_error = self._validate_tool_call(tool=tool, args=args)
+            if validation_error is not None:
+                tool_call_id = f"invalid-{uuid4()}"
+                return ProcessedToolCall(
+                    messages=_tool_error_messages(
+                        tool=tool,
+                        args=args,
+                        tool_call_id=tool_call_id,
+                        error=validation_error,
+                    )
+                )
+
             action_request = await self._action_tool_run_service.create_action_request(
                 thread_id=thread_id,
                 tool_name=tool.name,
@@ -474,40 +494,43 @@ class AgentRunner:
                 risk=tool.risk,
                 requested_by_user_id=requested_by_user_id,
             )
-            return [
-                AgentMessage(
-                    role="assistant",
-                    parts=[
-                        {
-                            "type": "tool-call",
-                            "toolName": tool.name,
-                            "toolCallId": f"proposal-{action_request.id}",
-                            "args": args,
-                        }
-                    ],
-                ),
-                AgentMessage(
-                    role="assistant",
-                    parts=[
-                        {
-                            "type": "tool-call",
-                            "toolName": "request_approval",
-                            "toolCallId": f"request-approval-{action_request.id}",
-                            "args": {
-                                "actionRequestId": str(action_request.id),
+            return ProcessedToolCall(
+                messages=[
+                    AgentMessage(
+                        role="assistant",
+                        parts=[
+                            {
+                                "type": "tool-call",
                                 "toolName": tool.name,
-                                "risk": tool.risk.value,
-                                "arguments": args,
-                                **_build_approval_context(
-                                    tool_name=tool.name,
-                                    args=args,
-                                    working_messages=working_messages,
-                                ),
-                            },
-                        }
-                    ],
-                ),
-            ]
+                                "toolCallId": f"proposal-{action_request.id}",
+                                "args": args,
+                            }
+                        ],
+                    ),
+                    AgentMessage(
+                        role="assistant",
+                        parts=[
+                            {
+                                "type": "tool-call",
+                                "toolName": "request_approval",
+                                "toolCallId": f"request-approval-{action_request.id}",
+                                "args": {
+                                    "actionRequestId": str(action_request.id),
+                                    "toolName": tool.name,
+                                    "risk": tool.risk.value,
+                                    "arguments": args,
+                                    **_build_approval_context(
+                                        tool_name=tool.name,
+                                        args=args,
+                                        working_messages=working_messages,
+                                    ),
+                                },
+                            }
+                        ],
+                    ),
+                ],
+                should_stop=True,
+            )
 
         started = await self._action_tool_run_service.start_tool_run(
             thread_id=thread_id,
@@ -530,6 +553,7 @@ class AgentRunner:
         )
 
         try:
+            validate_tool_arguments(tool=tool, args=args)
             result = await self._execute_tool(tool=tool, args=args)
             safe_result = json_safe(result)
             result_payload = (
@@ -550,7 +574,7 @@ class AgentRunner:
                     }
                 ],
             )
-            return [call_message, result_message]
+            return ProcessedToolCall(messages=[call_message, result_message])
         except Exception as exc:
             sanitized_error = sanitize_tool_error(exc)
             logger.exception(
@@ -577,7 +601,16 @@ class AgentRunner:
                     }
                 ],
             )
-            return [call_message, error_message]
+            return ProcessedToolCall(messages=[call_message, error_message])
+
+    def _validate_tool_call(
+        self, *, tool: ToolDefinition, args: dict[str, object]
+    ) -> SanitizedToolError | None:
+        try:
+            validate_tool_arguments(tool=tool, args=args)
+        except Exception as exc:
+            return sanitize_tool_error(exc)
+        return None
 
     async def _execute_tool(
         self, *, tool: ToolDefinition, args: dict[str, object]
@@ -889,6 +922,40 @@ def _tool_risk_note(tool: ToolDefinition) -> str:
     if tool.risk == ToolRisk.CHANGE:
         return "Risk: CHANGE. Requires persisted approval before execution"
     return "Risk: READ. Evidence-gathering only; it does not change system state"
+
+
+def _tool_error_messages(
+    *,
+    tool: ToolDefinition,
+    args: dict[str, object],
+    tool_call_id: str,
+    error: SanitizedToolError,
+) -> list[AgentMessage]:
+    return [
+        AgentMessage(
+            role="assistant",
+            parts=[
+                {
+                    "type": "tool-call",
+                    "toolName": tool.name,
+                    "toolCallId": tool_call_id,
+                    "args": args,
+                }
+            ],
+        ),
+        AgentMessage(
+            role="tool",
+            parts=[
+                {
+                    "type": "tool-result",
+                    "toolName": tool.name,
+                    "toolCallId": tool_call_id,
+                    "result": error.as_result(),
+                    "isError": True,
+                }
+            ],
+        ),
+    ]
 
 
 def _split_text_deltas(text: str, *, chunk_size: int = 24) -> list[str]:

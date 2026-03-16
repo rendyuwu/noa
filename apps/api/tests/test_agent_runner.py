@@ -531,6 +531,161 @@ async def test_agent_runner_creates_action_request_for_change_tools_without_exec
     assert approval_args.get("actionRequestId") == str(request.id)
 
 
+async def test_agent_runner_fails_read_tool_run_when_args_do_not_match_schema(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_tool(*, name: str) -> dict[str, object]:
+        raise AssertionError(f"unexpected execution for {name}")
+
+    tool = ToolDefinition(
+        name="guarded_read",
+        description="Requires a name argument.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "minLength": 1},
+            },
+            "required": ["name"],
+            "additionalProperties": False,
+        },
+        execute=guarded_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[LLMToolCall(name=tool.name, arguments={})],
+                )
+            return LLMTurnResponse(text="Need a name.", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "go"}]}],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    run = next(iter(repo.tool_runs.values()))
+    assert run.status == ToolRunStatus.FAILED
+    assert run.error == "invalid_tool_arguments"
+
+    tool_message = next(
+        message for message in result.messages if message.role == "tool"
+    )
+    part = tool_message.parts[0]
+    assert isinstance(part, dict)
+    assert part["isError"] is True
+    assert part["result"] == {
+        "error": "Tool arguments are invalid",
+        "error_code": "invalid_tool_arguments",
+        "details": ["Missing required field 'name'"],
+    }
+
+
+async def test_agent_runner_rejects_change_tool_when_args_do_not_match_schema(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change(*, reason: str) -> dict[str, object]:
+        raise AssertionError(f"unexpected execution for {reason}")
+
+    tool = ToolDefinition(
+        name="guarded_change",
+        description="Requires a reason argument.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[LLMToolCall(name=tool.name, arguments={})],
+                )
+            return LLMTurnResponse(text="A reason is required.", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "go"}]}],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert repo.action_requests == {}
+    assert repo.tool_runs == {}
+
+    tool_message = next(
+        message for message in result.messages if message.role == "tool"
+    )
+    part = tool_message.parts[0]
+    assert isinstance(part, dict)
+    assert part["isError"] is True
+    assert part["result"] == {
+        "error": "Tool arguments are invalid",
+        "error_code": "invalid_tool_arguments",
+        "details": ["Missing required field 'reason'"],
+    }
+
+
 async def test_build_approval_context_uses_correct_change_arguments_in_activity() -> (
     None
 ):

@@ -23,6 +23,7 @@ from noa_api.api.assistant.assistant_tool_result_operations import (
 )
 from noa_api.core.logging_context import log_context
 from noa_api.core.tool_error_sanitizer import sanitize_tool_error
+from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import get_tool_definition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
@@ -288,6 +289,7 @@ async def execute_approved_tool_run(
         return
 
     try:
+        validate_tool_arguments(tool=tool, args=approved_request.args)
         result = await _execute_tool(
             tool=tool, args=approved_request.args, session=session
         )
