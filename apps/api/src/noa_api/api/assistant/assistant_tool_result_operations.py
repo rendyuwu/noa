@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Any, Protocol
 from uuid import UUID
 
@@ -22,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 class AssistantMessageAuditRepositoryProtocol(Protocol):
-    async def list_messages(self, *, thread_id: UUID) -> list[object]: ...
+    async def list_messages(self, *, thread_id: UUID) -> Sequence[object]: ...
 
     async def create_message(
         self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]

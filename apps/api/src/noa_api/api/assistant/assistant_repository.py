@@ -6,7 +6,8 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.storage.postgres.models import AuditLog, Message, Thread
+from noa_api.storage.postgres.lifecycle import ActionRequestStatus
+from noa_api.storage.postgres.models import ActionRequest, AuditLog, Message, Thread
 
 
 class SQLAssistantRepository:
@@ -28,6 +29,19 @@ class SQLAssistantRepository:
             select(Message)
             .where(Message.thread_id == thread_id)
             .order_by(Message.created_at.asc(), Message.id.asc())
+        )
+        return list(result.scalars().all())
+
+    async def get_pending_action_requests(
+        self, *, thread_id: UUID
+    ) -> list[ActionRequest]:
+        result = await self._session.execute(
+            select(ActionRequest)
+            .where(
+                ActionRequest.thread_id == thread_id,
+                ActionRequest.status == ActionRequestStatus.PENDING,
+            )
+            .order_by(ActionRequest.created_at.asc(), ActionRequest.id.asc())
         )
         return list(result.scalars().all())
 

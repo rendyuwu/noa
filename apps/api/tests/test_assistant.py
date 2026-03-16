@@ -190,6 +190,8 @@ class _FakeAssistantService:
     owner_user_id: UUID
     thread_id: UUID
     messages: list[dict[str, object]] = field(default_factory=list)
+    workflow: list[dict[str, object]] = field(default_factory=list)
+    pending_approvals: list[dict[str, object]] = field(default_factory=list)
     runner_messages: list[AgentMessage] = field(default_factory=list)
     runner_text_deltas: list[str] = field(default_factory=list)
     seen_available_tools: set[str] = field(default_factory=set)
@@ -204,6 +206,8 @@ class _FakeAssistantService:
         assert thread_id == self.thread_id
         return {
             "messages": list(self.messages),
+            "workflow": list(self.workflow),
+            "pendingApprovals": list(self.pending_approvals),
             "isRunning": False,
         }
 
@@ -322,6 +326,10 @@ class _RouteAssistantRepository:
         _ = thread_id
         return []
 
+    async def get_pending_action_requests(self, *, thread_id: UUID):
+        _ = thread_id
+        return []
+
     async def create_message(self, **kwargs):
         raise AssertionError(f"create_message should not be called: {kwargs}")
 
@@ -375,7 +383,7 @@ def _build_real_service_app(*, owner_id: UUID, thread_id: UUID) -> FastAPI:
 
 
 def _build_app(
-    service: _FakeAssistantService,
+    service: Any,
     current_user: AuthorizationUser,
     authorization_service: _FakeAuthorizationService | None = None,
 ) -> FastAPI:
@@ -448,6 +456,126 @@ async def test_thread_state_route_hydrates_persisted_state() -> None:
     data = response.json()
     assert _state_contains_text(data, expected_text)
     assert data["isRunning"] is False
+
+
+async def test_thread_state_route_includes_workflow_and_pending_approvals() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        workflow=[
+            {"content": "Preflight", "status": "completed", "priority": "high"},
+            {
+                "content": "Request approval",
+                "status": "in_progress",
+                "priority": "high",
+            },
+        ],
+        pending_approvals=[
+            {
+                "actionRequestId": str(uuid4()),
+                "toolName": "set_demo_flag",
+                "risk": "CHANGE",
+                "arguments": {"key": "feature_x", "value": True},
+                "status": "PENDING",
+            }
+        ],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(f"/assistant/threads/{thread_id}/state")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["workflow"] == service.workflow
+    assert data["pendingApprovals"] == service.pending_approvals
+
+
+async def test_assistant_route_streams_canonical_workflow_and_pending_approvals() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        messages=[
+            {
+                "id": str(uuid4()),
+                "role": "assistant",
+                "parts": [{"type": "text", "text": "From DB"}],
+            }
+        ],
+        workflow=[
+            {"content": "Preflight", "status": "completed", "priority": "high"},
+            {
+                "content": "Request approval",
+                "status": "in_progress",
+                "priority": "high",
+            },
+        ],
+        pending_approvals=[
+            {
+                "actionRequestId": str(uuid4()),
+                "toolName": "set_demo_flag",
+                "risk": "CHANGE",
+                "arguments": {"key": "feature_x", "value": True},
+                "status": "PENDING",
+            }
+        ],
+    )
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+
+    state: dict[str, object] = {}
+    for event in _iter_assistant_transport_events(response.text):
+        if event.get("type") != "update-state":
+            continue
+        operations = event.get("operations") or event.get("patches")
+        if isinstance(operations, list):
+            _apply_assistant_stream_patches(state, operations)
+            continue
+        event_state = event.get("state")
+        if isinstance(event_state, dict):
+            state.clear()
+            state.update(event_state)
+
+    assert state.get("workflow") == service.workflow
+    assert state.get("pendingApprovals") == service.pending_approvals
 
 
 async def test_assistant_route_returns_structured_http_error_when_thread_missing() -> (

@@ -34,6 +34,7 @@ from noa_api.api.assistant.assistant_errors import (
 )
 from noa_api.api.assistant.assistant_operations import (
     _record_assistant_failure_telemetry,
+    _apply_canonical_state,
     prepare_assistant_transport,
     run_agent_phase,
 )
@@ -57,7 +58,12 @@ from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
 )
+from noa_api.storage.postgres.models import ActionRequest
 from noa_api.storage.postgres.client import get_session_factory
+from noa_api.storage.postgres.workflow_todos import (
+    SQLWorkflowTodoRepository,
+    WorkflowTodoService,
+)
 
 router = APIRouter(tags=["assistant"])
 
@@ -80,25 +86,58 @@ class AssistantThreadStateMessage(BaseModel):
     parts: list[dict[str, Any]]
 
 
+class AssistantWorkflowTodo(BaseModel):
+    content: str
+    status: str
+    priority: str
+
+
+class AssistantPendingApproval(BaseModel):
+    action_request_id: str = Field(alias="actionRequestId")
+    tool_name: str = Field(alias="toolName")
+    risk: str
+    arguments: dict[str, Any]
+    status: str
+
+    model_config = {"populate_by_name": True}
+
+
 class AssistantThreadStateResponse(BaseModel):
     messages: list[AssistantThreadStateMessage]
+    workflow: list[AssistantWorkflowTodo] = Field(default_factory=list)
+    pending_approvals: list[AssistantPendingApproval] = Field(
+        default_factory=list,
+        alias="pendingApprovals",
+    )
     is_running: bool = Field(alias="isRunning")
 
     model_config = {"populate_by_name": True}
 
 
+def _serialize_pending_approval(request: ActionRequest) -> dict[str, object]:
+    return {
+        "actionRequestId": str(request.id),
+        "toolName": request.tool_name,
+        "risk": request.risk.value,
+        "arguments": request.args,
+        "status": request.status.value,
+    }
+
+
 class AssistantService:
     def __init__(
         self,
-        repository: SQLAssistantRepository,
-        runner: AgentRunner,
+        repository: Any,
+        runner: Any,
         *,
         action_tool_run_service: ActionToolRunService,
+        workflow_todo_service: WorkflowTodoService | None = None,
         session: AsyncSession,
     ) -> None:
         self._repository = repository
         self._runner = runner
         self._action_tool_run_service = action_tool_run_service
+        self._workflow_todo_service = workflow_todo_service
         self._session = session
 
     async def load_state(
@@ -115,6 +154,14 @@ class AssistantService:
             )
 
         messages = await self._repository.list_messages(thread_id=thread_id)
+        workflow = (
+            await self._workflow_todo_service.list_workflow(thread_id=thread_id)
+            if self._workflow_todo_service is not None
+            else []
+        )
+        pending_action_requests = await self._repository.get_pending_action_requests(
+            thread_id=thread_id
+        )
         return {
             "messages": [
                 {
@@ -123,6 +170,11 @@ class AssistantService:
                     "parts": message.content,
                 }
                 for message in messages
+            ],
+            "workflow": workflow,
+            "pendingApprovals": [
+                _serialize_pending_approval(request)
+                for request in pending_action_requests
             ],
             "isRunning": False,
         }
@@ -270,17 +322,19 @@ class AssistantService:
 
 async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
     async with get_session_factory()() as session:
+        action_tool_run_service = ActionToolRunService(
+            repository=SQLActionToolRunRepository(session)
+        )
         service = AssistantService(
             SQLAssistantRepository(session),
             AgentRunner(
                 llm_client=create_default_llm_client(),
-                action_tool_run_service=ActionToolRunService(
-                    repository=SQLActionToolRunRepository(session)
-                ),
+                action_tool_run_service=action_tool_run_service,
                 session=session,
             ),
-            action_tool_run_service=ActionToolRunService(
-                repository=SQLActionToolRunRepository(session)
+            action_tool_run_service=action_tool_run_service,
+            workflow_todo_service=WorkflowTodoService(
+                repository=SQLWorkflowTodoRepository(session)
             ),
             session=session,
         )
@@ -430,8 +484,7 @@ async def assistant_transport(
             if controller.state is None:
                 controller.state = {}
 
-            controller.state["messages"] = canonical_state["messages"]
-            controller.state["isRunning"] = True
+            _apply_canonical_state(controller.state, canonical_state, is_running=True)
 
             if should_run_agent(payload.commands):
                 await run_agent_phase(
@@ -446,7 +499,7 @@ async def assistant_transport(
                 )
                 return
 
-            controller.state["isRunning"] = False
+            _apply_canonical_state(controller.state, canonical_state, is_running=False)
 
     stream = create_run(run_callback, state=payload.state)
     return AssistantTransportResponse(stream)

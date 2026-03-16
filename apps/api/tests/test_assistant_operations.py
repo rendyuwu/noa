@@ -265,6 +265,40 @@ class _FakeAssistantServiceThatFailsStateRefresh:
         raise RuntimeError("refresh failed")
 
 
+@dataclass
+class _FakeAssistantServiceThatSucceedsAgentRun:
+    refreshed_state: dict[str, object]
+    seen_available_tools: set[str] = field(default_factory=set)
+
+    async def run_agent_turn(
+        self,
+        *,
+        owner_user_id: UUID,
+        owner_user_email: str | None,
+        thread_id: UUID,
+        available_tool_names: set[str],
+        on_text_delta: Any = None,
+    ) -> None:
+        _ = owner_user_id, owner_user_email, thread_id, on_text_delta
+        self.seen_available_tools = set(available_tool_names)
+
+    async def add_message(
+        self,
+        *,
+        owner_user_id: UUID,
+        thread_id: UUID,
+        role: str,
+        parts: list[dict[str, object]],
+    ) -> None:
+        _ = owner_user_id, thread_id, role, parts
+
+    async def load_state(
+        self, *, owner_user_id: UUID, thread_id: UUID
+    ) -> dict[str, object]:
+        _ = owner_user_id, thread_id
+        return self.refreshed_state
+
+
 async def test_prepare_assistant_transport_validates_commands_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -370,6 +404,49 @@ async def test_run_agent_phase_persists_safe_error_message_on_failure() -> None:
     assert controller.state is not None
     assert controller.state["isRunning"] is False
     assert _state_contains_text(controller.state, error_text)
+
+
+async def test_run_agent_phase_refreshes_workflow_and_pending_approvals() -> None:
+    refreshed_state = {
+        "messages": [_message_with_text("Agent reply", role="assistant")],
+        "workflow": [
+            {"content": "Preflight", "status": "completed", "priority": "high"},
+            {
+                "content": "Request approval",
+                "status": "in_progress",
+                "priority": "high",
+            },
+        ],
+        "pendingApprovals": [
+            {
+                "actionRequestId": str(uuid4()),
+                "toolName": "set_demo_flag",
+                "risk": "CHANGE",
+                "arguments": {"key": "feature_x", "value": True},
+                "status": "PENDING",
+            }
+        ],
+        "isRunning": False,
+    }
+    controller = _FakeController(state={})
+    service = _FakeAssistantServiceThatSucceedsAgentRun(refreshed_state=refreshed_state)
+
+    await assistant_operations.run_agent_phase(
+        controller=controller,
+        payload=_payload_with_user_message(),
+        current_user=_active_user(),
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={
+            "messages": [],
+            "workflow": [],
+            "pendingApprovals": [],
+            "isRunning": False,
+        },
+        command_types=["add-message"],
+    )
+
+    assert controller.state == refreshed_state
 
 
 async def test_run_agent_phase_emits_structured_agent_failure_log() -> None:

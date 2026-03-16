@@ -95,6 +95,10 @@ class _FakeAssistantRepository:
         _ = thread_id
         return self.listed_messages
 
+    async def get_pending_action_requests(self, *, thread_id: UUID):
+        _ = thread_id
+        return []
+
     async def create_message(
         self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]
     ):
@@ -119,6 +123,15 @@ class _FakeAssistantRepository:
                 "metadata": metadata,
             }
         )
+
+
+@dataclass
+class _FakeWorkflowTodoService:
+    todos: list[dict[str, str]] = field(default_factory=list)
+
+    async def list_workflow(self, *, thread_id: UUID):
+        _ = thread_id
+        return list(self.todos)
 
 
 @dataclass
@@ -304,6 +317,88 @@ async def test_record_tool_result_rejects_foreign_thread() -> None:
     assert repo.tool_runs[started.id].status == ToolRunStatus.STARTED
     assert assistant_repo.messages == []
     assert assistant_repo.audits == []
+
+
+async def test_assistant_service_load_state_includes_workflow_and_pending_approvals() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    pending_request_id = uuid4()
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                id=uuid4(),
+                role="assistant",
+                content=[{"type": "text", "text": "From DB"}],
+            )
+        ]
+    )
+
+    async def _get_pending_action_requests(*, thread_id: UUID):
+        _ = thread_id
+        return [
+            ActionRequest(
+                id=pending_request_id,
+                thread_id=thread_id,
+                tool_name="set_demo_flag",
+                args={"key": "feature_x", "value": True},
+                risk=ToolRisk.CHANGE,
+                status=ActionRequestStatus.PENDING,
+                requested_by_user_id=owner_id,
+                decided_by_user_id=None,
+                decided_at=None,
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            )
+        ]
+
+    assistant_repo.get_pending_action_requests = _get_pending_action_requests  # type: ignore[attr-defined]
+
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        workflow_todo_service=_FakeWorkflowTodoService(
+            todos=[
+                {
+                    "content": "Preflight",
+                    "status": "completed",
+                    "priority": "high",
+                },
+                {
+                    "content": "Request approval",
+                    "status": "in_progress",
+                    "priority": "high",
+                },
+            ]
+        ),
+        session=_FakeSession(),
+    )
+
+    state = await service.load_state(owner_user_id=owner_id, thread_id=thread_id)
+
+    assert state["workflow"] == [
+        {"content": "Preflight", "status": "completed", "priority": "high"},
+        {
+            "content": "Request approval",
+            "status": "in_progress",
+            "priority": "high",
+        },
+    ]
+    assert state["pendingApprovals"] == [
+        {
+            "actionRequestId": str(pending_request_id),
+            "toolName": "set_demo_flag",
+            "risk": "CHANGE",
+            "arguments": {"key": "feature_x", "value": True},
+            "status": "PENDING",
+        }
+    ]
 
 
 async def test_record_tool_result_rejects_stale_tool_run() -> None:

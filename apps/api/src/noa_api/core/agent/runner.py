@@ -560,7 +560,12 @@ class AgentRunner:
 
         try:
             validate_tool_arguments(tool=tool, args=args)
-            result = await self._execute_tool(tool=tool, args=args)
+            result = await self._execute_tool(
+                tool=tool,
+                args=args,
+                thread_id=thread_id,
+                requested_by_user_id=requested_by_user_id,
+            )
             safe_result = json_safe(result)
             result_payload = (
                 safe_result if isinstance(safe_result, dict) else {"value": safe_result}
@@ -636,13 +641,24 @@ class AgentRunner:
         return None
 
     async def _execute_tool(
-        self, *, tool: ToolDefinition, args: dict[str, object]
+        self,
+        *,
+        tool: ToolDefinition,
+        args: dict[str, object],
+        thread_id: UUID,
+        requested_by_user_id: UUID,
     ) -> dict[str, object]:
-        if (
-            self._session is not None
-            and "session" in signature(tool.execute).parameters
-        ):
-            return await tool.execute(session=self._session, **args)
+        execute_parameters = signature(tool.execute).parameters
+        execute_kwargs: dict[str, object] = dict(args)
+        if self._session is not None and "session" in execute_parameters:
+            execute_kwargs["session"] = self._session
+        if "thread_id" in execute_parameters:
+            execute_kwargs["thread_id"] = thread_id
+        if "requested_by_user_id" in execute_parameters:
+            execute_kwargs["requested_by_user_id"] = requested_by_user_id
+
+        if execute_kwargs is not args:
+            return await tool.execute(**execute_kwargs)
         return await tool.execute(**args)
 
 
