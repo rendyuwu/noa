@@ -12,8 +12,26 @@ from noa_api.storage.postgres.workflow_todos import (
 )
 
 
-_VALID_TODO_STATUSES = {"pending", "in_progress", "completed", "cancelled"}
+_VALID_TODO_STATUSES = {
+    "pending",
+    "in_progress",
+    "waiting_on_user",
+    "waiting_on_approval",
+    "completed",
+    "cancelled",
+}
 _VALID_TODO_PRIORITIES = {"high", "medium", "low"}
+
+_VALID_TODO_STATUS_LIST = ", ".join(
+    [
+        "pending",
+        "in_progress",
+        "waiting_on_user",
+        "waiting_on_approval",
+        "completed",
+        "cancelled",
+    ]
+)
 
 
 async def _validate_workflow_todos(*, todos: list[dict[str, Any]]) -> dict[str, Any]:
@@ -35,7 +53,7 @@ async def _validate_workflow_todos(*, todos: list[dict[str, Any]]) -> dict[str, 
                 "error_code": "invalid_todo_status",
                 "message": (
                     f"Todo item {index} has invalid status '{status}'. "
-                    "Use pending, in_progress, completed, or cancelled"
+                    f"Use {_VALID_TODO_STATUS_LIST}"
                 ),
             }
         if status == "in_progress":

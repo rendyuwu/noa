@@ -1,7 +1,19 @@
 import type { ThreadMessage } from "@assistant-ui/react";
 
+import type { WorkflowTodoItem } from "@/components/assistant/workflow-todo-tool-ui";
+
+type AssistantPendingApproval = {
+  actionRequestId: string;
+  toolName: string;
+  risk: string;
+  arguments: Record<string, unknown>;
+  status: string;
+};
+
 export type AssistantState = {
   messages: Array<{ id?: string; role: string; parts: Array<Record<string, unknown>> }>;
+  workflow?: WorkflowTodoItem[];
+  pendingApprovals?: AssistantPendingApproval[];
   isRunning: boolean;
 };
 
@@ -23,6 +35,37 @@ type ToolResultData = {
 
 const isEmptyAssistantMessage = (message: ThreadMessage): boolean => {
   return message.role === "assistant" && Array.isArray(message.content) && message.content.length === 0;
+};
+
+const attachCanonicalMetadata = (
+  messages: ThreadMessage[],
+  state: Pick<AssistantState, "workflow" | "pendingApprovals">,
+) => {
+  if (!messages.length) {
+    return messages;
+  }
+
+  const lastMessage = messages[messages.length - 1] as ThreadMessage & {
+    metadata?: Record<string, unknown>;
+  };
+
+  const lastMetadata = coerceRecord(lastMessage.metadata) ?? {};
+  const custom = coerceRecord(lastMetadata.custom) ?? {};
+
+  const nextMessages = [...messages];
+  nextMessages[messages.length - 1] = {
+    ...lastMessage,
+    metadata: {
+      ...lastMetadata,
+      custom: {
+        ...custom,
+        workflow: Array.isArray(state.workflow) ? state.workflow : [],
+        pendingApprovals: Array.isArray(state.pendingApprovals) ? state.pendingApprovals : [],
+      },
+    },
+  } as ThreadMessage;
+
+  return nextMessages;
 };
 
 const partsToContent = (
@@ -229,8 +272,9 @@ export function convertAssistantState(
   }
 
   return {
-    messages: [...persistedMessages, ...optimisticMessages].filter(
-      (message) => !isEmptyAssistantMessage(message),
+    messages: attachCanonicalMetadata(
+      [...persistedMessages, ...optimisticMessages].filter((message) => !isEmptyAssistantMessage(message)),
+      state,
     ),
     isRunning: transportIsRunning,
   };

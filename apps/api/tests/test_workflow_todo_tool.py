@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from typing import cast
 from uuid import uuid4
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 async def test_update_workflow_todo_echoes_list() -> None:
@@ -15,6 +17,27 @@ async def test_update_workflow_todo_echoes_list() -> None:
     result = await update_workflow_todo(todos=todos)
     assert result["ok"] is True
     assert result["todos"] == todos
+
+
+async def test_update_workflow_todo_accepts_blocked_statuses() -> None:
+    from noa_api.core.tools.workflow_todo import update_workflow_todo
+
+    todos = [
+        {
+            "content": "Ask user to confirm target",
+            "status": "waiting_on_user",
+            "priority": "high",
+        },
+        {
+            "content": "Request approval",
+            "status": "waiting_on_approval",
+            "priority": "high",
+        },
+    ]
+
+    result = await update_workflow_todo(todos=todos)
+
+    assert result == {"ok": True, "todos": todos}
 
 
 async def test_update_workflow_todo_rejects_multiple_in_progress_items() -> None:
@@ -49,6 +72,8 @@ async def test_update_workflow_todo_rejects_invalid_status() -> None:
 
     assert result["ok"] is False
     assert result["error_code"] == "invalid_todo_status"
+    assert "waiting_on_user" in result["message"]
+    assert "waiting_on_approval" in result["message"]
 
 
 async def test_update_workflow_todo_persists_workflow_when_thread_context_present(
@@ -79,7 +104,7 @@ async def test_update_workflow_todo_persists_workflow_when_thread_context_presen
 
     result = await update_workflow_todo(
         todos=todos,
-        session=object(),
+        session=cast(AsyncSession, object()),
         thread_id=thread_id,
     )
 

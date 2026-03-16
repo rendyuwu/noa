@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Literal, Protocol, TypedDict
+from typing import Literal, Protocol, TypedDict, cast
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -9,7 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.storage.postgres.models import WorkflowTodo
 
-WorkflowTodoStatus = Literal["pending", "in_progress", "completed", "cancelled"]
+WorkflowTodoStatus = Literal[
+    "pending",
+    "in_progress",
+    "waiting_on_user",
+    "waiting_on_approval",
+    "completed",
+    "cancelled",
+]
 WorkflowTodoPriority = Literal["high", "medium", "low"]
 
 
@@ -71,26 +78,35 @@ class WorkflowTodoService:
     async def replace_workflow(
         self, *, thread_id: UUID, todos: Sequence[WorkflowTodoItem]
     ) -> list[WorkflowTodoItem]:
-        normalized: list[WorkflowTodoItem] = [
-            {
-                "content": todo["content"],
-                "status": todo["status"],
-                "priority": todo["priority"],
-            }
-            for todo in todos
-        ]
+        normalized: list[WorkflowTodoItem] = []
+        for todo in todos:
+            normalized.append(
+                cast(
+                    WorkflowTodoItem,
+                    {
+                        "content": todo["content"],
+                        "status": cast(WorkflowTodoStatus, todo["status"]),
+                        "priority": cast(WorkflowTodoPriority, todo["priority"]),
+                    },
+                )
+            )
         await self._repository.replace_workflow(thread_id=thread_id, todos=normalized)
         return normalized
 
     async def list_workflow(self, *, thread_id: UUID) -> list[WorkflowTodoItem]:
-        return [
-            {
-                "content": todo.content,
-                "status": todo.status,
-                "priority": todo.priority,
-            }
-            for todo in await self._repository.list_workflow(thread_id=thread_id)
-        ]
+        workflow: list[WorkflowTodoItem] = []
+        for todo in await self._repository.list_workflow(thread_id=thread_id):
+            workflow.append(
+                cast(
+                    WorkflowTodoItem,
+                    {
+                        "content": todo.content,
+                        "status": cast(WorkflowTodoStatus, todo.status),
+                        "priority": cast(WorkflowTodoPriority, todo.priority),
+                    },
+                )
+            )
+        return workflow
 
     async def clear_workflow(self, *, thread_id: UUID) -> None:
         await self._repository.clear_workflow(thread_id=thread_id)

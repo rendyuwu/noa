@@ -27,9 +27,10 @@ import {
 } from "@/components/assistant/claude-greeting";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/assistant/request-approval-tool-ui";
 import {
+  extractLatestCanonicalWorkflowTodos,
   extractLatestWorkflowTodos,
-  WorkflowTodoCard,
 } from "@/components/assistant/workflow-todo-tool-ui";
+import { WorkflowDock } from "@/components/assistant/workflow-dock";
 import { getAuthUser } from "@/components/lib/auth-store";
 import { useThreadHydration } from "@/components/lib/thread-hydration";
 
@@ -211,9 +212,20 @@ export const ClaudeThread: FC<{
   const { isHydrating } = useThreadHydration();
   const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
   const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
-  const workflowTodos = useMemo(
-    () => extractLatestWorkflowTodos(threadMessages),
+  const threadIsRunning = useAssistantState(({ thread }: any) =>
+    Array.isArray(thread?.messages)
+      ? thread.messages.some(
+          (message: any) => message?.role === "assistant" && message?.status?.type === "running",
+        )
+      : false,
+  );
+  const canonicalWorkflowTodos = useMemo(
+    () => extractLatestCanonicalWorkflowTodos(threadMessages),
     [threadMessages],
+  );
+  const workflowTodos = useMemo(
+    () => canonicalWorkflowTodos ?? extractLatestWorkflowTodos(threadMessages),
+    [canonicalWorkflowTodos, threadMessages],
   );
   const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
 
@@ -255,11 +267,7 @@ export const ClaudeThread: FC<{
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
         <div className="mx-auto w-full max-w-3xl">
-          {workflowTodos.length ? (
-            <div className="mb-3" data-testid="workflow-todo-dock">
-              <WorkflowTodoCard todos={workflowTodos} />
-            </div>
-          ) : null}
+          <WorkflowDock todos={workflowTodos} isRunning={threadIsRunning} />
 
           <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
             <div className="m-3.5 flex flex-col gap-3.5">

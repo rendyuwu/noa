@@ -112,6 +112,55 @@ describe("convertAssistantState", () => {
     expect(toolPart?.isError).toBe(false);
   });
 
+  it("attaches canonical workflow metadata to the latest message", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        workflow: [
+          {
+            content: "Request approval",
+            status: "waiting_on_approval",
+            priority: "high",
+          },
+        ],
+        pendingApprovals: [
+          {
+            actionRequestId: "approval-1",
+            toolName: "set_demo_flag",
+            risk: "CHANGE",
+            arguments: { key: "feature_x", value: true },
+            status: "PENDING",
+          },
+        ],
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Working on it" }],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    expect((converted.messages[0] as any)?.metadata?.custom?.workflow).toEqual([
+      {
+        content: "Request approval",
+        status: "waiting_on_approval",
+        priority: "high",
+      },
+    ]);
+    expect((converted.messages[0] as any)?.metadata?.custom?.pendingApprovals).toEqual([
+      {
+        actionRequestId: "approval-1",
+        toolName: "set_demo_flag",
+        risk: "CHANGE",
+        arguments: { key: "feature_x", value: true },
+        status: "PENDING",
+      },
+    ]);
+  });
+
   it("drops proposal tool calls", () => {
     const converted = convertAssistantState(
       {
