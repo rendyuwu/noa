@@ -102,6 +102,14 @@ def _validate_array(schema: dict[str, Any], *, value: object, path: str) -> list
                 _validate_schema(item_schema, value=item, path=f"{path}[{index}]")
             )
 
+    if schema.get("uniqueItems") is True:
+        duplicates = _duplicate_values(value)
+        if duplicates:
+            rendered = ", ".join(f"'{item}'" for item in duplicates[:3])
+            problems.append(
+                f"{_format_path(path)} must not contain duplicate values: {rendered}"
+            )
+
     return problems
 
 
@@ -110,11 +118,15 @@ def _validate_string(schema: dict[str, Any], *, value: object, path: str) -> lis
         return [f"{_format_path(path)} must be a string"]
 
     problems: list[str] = []
+    normalized = value.strip()
     min_length = schema.get("minLength")
-    if isinstance(min_length, int) and len(value) < min_length:
-        problems.append(
-            f"{_format_path(path)} must be at least {min_length} character(s) long"
-        )
+    if isinstance(min_length, int) and len(normalized) < min_length:
+        if min_length == 1:
+            problems.append(f"{_format_path(path)} must not be blank")
+        else:
+            problems.append(
+                f"{_format_path(path)} must be at least {min_length} character(s) long"
+            )
 
     enum_values = schema.get("enum")
     if isinstance(enum_values, list) and value not in enum_values:
@@ -122,7 +134,7 @@ def _validate_string(schema: dict[str, Any], *, value: object, path: str) -> lis
             f"{_format_path(path)} must be one of {', '.join(map(str, enum_values))}"
         )
 
-    if schema.get("format") == "email" and not _EMAIL_RE.match(value):
+    if schema.get("format") == "email" and not _EMAIL_RE.match(normalized):
         problems.append(f"{_format_path(path)} must be a valid email address")
 
     return problems
@@ -157,3 +169,25 @@ def _path_suffix(path: str, key: str) -> str:
     if formatted == "arguments":
         return key
     return f"{formatted}.{key}"
+
+
+def _duplicate_values(values: list[object]) -> list[str]:
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for value in values:
+        normalized = _normalize_unique_value(value)
+        if normalized is None:
+            continue
+        if normalized in seen and normalized not in duplicates:
+            duplicates.append(normalized)
+            continue
+        seen.add(normalized)
+    return duplicates
+
+
+def _normalize_unique_value(value: object) -> str | None:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, (int, float)):
+        return str(value)
+    return None

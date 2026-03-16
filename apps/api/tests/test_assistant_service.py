@@ -1016,6 +1016,71 @@ async def test_assistant_service_approve_change_tool_invalid_args_is_persisted(
     ]
 
 
+async def test_assistant_service_approve_change_tool_blank_string_args_are_rejected(
+    monkeypatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="invalid_blank_change_args",
+        args={"reason": "   "},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+
+    async def guarded_change(*, session, reason: str, **kwargs):
+        _ = session, reason, kwargs
+        raise AssertionError("tool should not execute when args are blank")
+
+    tool = ToolDefinition(
+        name="invalid_blank_change_args",
+        description="Requires a non-blank reason argument.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    await service.approve_action(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        action_request_id=str(request.id),
+        is_user_active=True,
+        authorize_tool_access=lambda _tool: _allow(),
+    )
+
+    run = next(iter(repo.tool_runs.values()))
+    assert run.status == ToolRunStatus.FAILED
+    assert run.error == "invalid_tool_arguments"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Tool arguments are invalid",
+        "error_code": "invalid_tool_arguments",
+        "details": ["reason must not be blank"],
+    }
+
+
 async def test_assistant_service_approve_change_tool_logs_original_exception(
     monkeypatch,
     caplog: pytest.LogCaptureFixture,

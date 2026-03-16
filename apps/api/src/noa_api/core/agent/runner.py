@@ -475,7 +475,11 @@ class AgentRunner:
         requested_by_user_id: UUID,
     ) -> ProcessedToolCall:
         if tool.risk == ToolRisk.CHANGE:
-            validation_error = self._validate_tool_call(tool=tool, args=args)
+            validation_error = self._validate_tool_call(
+                tool=tool,
+                args=args,
+                working_messages=working_messages,
+            )
             if validation_error is not None:
                 tool_call_id = f"invalid-{uuid4()}"
                 return ProcessedToolCall(
@@ -604,12 +608,24 @@ class AgentRunner:
             return ProcessedToolCall(messages=[call_message, error_message])
 
     def _validate_tool_call(
-        self, *, tool: ToolDefinition, args: dict[str, object]
+        self,
+        *,
+        tool: ToolDefinition,
+        args: dict[str, object],
+        working_messages: list[dict[str, object]],
     ) -> SanitizedToolError | None:
         try:
             validate_tool_arguments(tool=tool, args=args)
         except Exception as exc:
             return sanitize_tool_error(exc)
+        if tool.risk == ToolRisk.CHANGE:
+            preflight_error = _require_matching_preflight(
+                tool_name=tool.name,
+                args=args,
+                working_messages=working_messages,
+            )
+            if preflight_error is not None:
+                return preflight_error
         return None
 
     async def _execute_tool(
@@ -751,32 +767,217 @@ def _coerce_part_record(value: object) -> dict[str, object] | None:
     return value if isinstance(value, dict) else None
 
 
-def _collect_recent_preflight_results(
+def _messages_since_last_user(
     working_messages: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    results: list[dict[str, object]] = []
-    for message in reversed(working_messages):
+    last_user_index = -1
+    for index, message in enumerate(working_messages):
         if message.get("role") == "user":
-            break
+            last_user_index = index
+    return working_messages[last_user_index + 1 :]
+
+
+def _collect_recent_preflight_evidence(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    tool_calls_by_id: dict[str, dict[str, object]] = {}
+    evidence: list[dict[str, object]] = []
+
+    for message in _messages_since_last_user(working_messages):
         parts = message.get("parts")
         if not isinstance(parts, list):
             continue
-        for raw_part in reversed(parts):
+        for raw_part in parts:
             part = _coerce_part_record(raw_part)
-            if part is None or part.get("type") != "tool-result":
+            if part is None:
                 continue
+
+            part_type = part.get("type")
             tool_name = part.get("toolName")
-            result = part.get("result")
-            if (
-                not isinstance(tool_name, str)
-                or not tool_name.startswith("whm_preflight_")
-                or not isinstance(result, dict)
-                or part.get("isError") is True
+            if not isinstance(tool_name, str) or not tool_name.startswith(
+                "whm_preflight_"
             ):
                 continue
-            results.append({"toolName": tool_name, "result": json_safe(result)})
-    results.reverse()
-    return results
+
+            tool_call_id = part.get("toolCallId")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                continue
+
+            if part_type == "tool-call":
+                args = part.get("args")
+                args_obj = args if isinstance(args, dict) else {}
+                tool_calls_by_id[tool_call_id] = {
+                    "toolName": tool_name,
+                    "args": json_safe(args_obj),
+                }
+                continue
+
+            if part_type != "tool-result" or part.get("isError") is True:
+                continue
+
+            result = part.get("result")
+            if not isinstance(result, dict):
+                continue
+
+            call = tool_calls_by_id.get(tool_call_id, {})
+            entry: dict[str, object] = {
+                "toolName": tool_name,
+                "result": json_safe(result),
+            }
+            call_args = call.get("args")
+            if isinstance(call_args, dict):
+                entry["args"] = call_args
+            evidence.append(entry)
+
+    return evidence
+
+
+def _collect_recent_preflight_results(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "toolName": item["toolName"],
+            "result": item["result"],
+        }
+        for item in _collect_recent_preflight_evidence(working_messages)
+    ]
+
+
+def _require_matching_preflight(
+    *,
+    tool_name: str,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+) -> SanitizedToolError | None:
+    if tool_name in {
+        "whm_suspend_account",
+        "whm_unsuspend_account",
+        "whm_change_contact_email",
+    }:
+        return _require_account_preflight(args=args, working_messages=working_messages)
+
+    if tool_name in {
+        "whm_csf_unblock",
+        "whm_csf_allowlist_remove",
+        "whm_csf_allowlist_add_ttl",
+        "whm_csf_denylist_add_ttl",
+    }:
+        return _require_csf_preflight(args=args, working_messages=working_messages)
+
+    return None
+
+
+def _require_account_preflight(
+    *, args: dict[str, object], working_messages: list[dict[str, object]]
+) -> SanitizedToolError | None:
+    requested_server_ref = _normalized_text(args.get("server_ref"))
+    requested_username = _normalized_text(args.get("username"))
+    if requested_server_ref is None or requested_username is None:
+        return None
+
+    evidence = [
+        item
+        for item in _collect_recent_preflight_evidence(working_messages)
+        if item.get("toolName") == "whm_preflight_account"
+        and isinstance(item.get("result"), dict)
+        and cast(dict[str, object], item["result"]).get("ok") is True
+    ]
+    if not evidence:
+        return SanitizedToolError(
+            error="Required WHM preflight evidence is missing",
+            error_code="preflight_required",
+            details=(
+                "Run whm_preflight_account with the same server_ref and username before requesting this change.",
+            ),
+        )
+
+    for item in evidence:
+        item_args = item.get("args")
+        if not isinstance(item_args, dict):
+            continue
+        if (
+            _normalized_text(item_args.get("server_ref")) == requested_server_ref
+            and _normalized_text(item_args.get("username")) == requested_username
+        ):
+            return None
+
+    return SanitizedToolError(
+        error="Required WHM preflight evidence does not match this change request",
+        error_code="preflight_mismatch",
+        details=(
+            f"No successful whm_preflight_account was found for server_ref '{requested_server_ref}' and username '{requested_username}' in the current turn.",
+        ),
+    )
+
+
+def _require_csf_preflight(
+    *, args: dict[str, object], working_messages: list[dict[str, object]]
+) -> SanitizedToolError | None:
+    requested_server_ref = _normalized_text(args.get("server_ref"))
+    requested_targets = _normalized_string_list(args.get("targets"))
+    if requested_server_ref is None or not requested_targets:
+        return None
+
+    evidence = [
+        item
+        for item in _collect_recent_preflight_evidence(working_messages)
+        if item.get("toolName") == "whm_preflight_csf_entries"
+        and isinstance(item.get("result"), dict)
+        and cast(dict[str, object], item["result"]).get("ok") is True
+    ]
+    if not evidence:
+        return SanitizedToolError(
+            error="Required WHM preflight evidence is missing",
+            error_code="preflight_required",
+            details=(
+                "Run whm_preflight_csf_entries for each target with the same server_ref before requesting this change.",
+            ),
+        )
+
+    matched_targets: set[str] = set()
+    for item in evidence:
+        item_args = item.get("args")
+        if not isinstance(item_args, dict):
+            continue
+        if _normalized_text(item_args.get("server_ref")) != requested_server_ref:
+            continue
+        target = _normalized_text(item_args.get("target"))
+        if target is not None:
+            matched_targets.add(target)
+
+    missing_targets = [
+        target for target in requested_targets if target not in matched_targets
+    ]
+    if not missing_targets:
+        return None
+
+    return SanitizedToolError(
+        error="Required WHM preflight evidence does not match this change request",
+        error_code="preflight_mismatch",
+        details=(
+            "Missing successful whm_preflight_csf_entries results for target(s): "
+            + ", ".join(f"'{target}'" for target in missing_targets),
+        ),
+    )
+
+
+def _normalized_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalized_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        text = _normalized_text(item)
+        if text is not None:
+            normalized.append(text)
+    return normalized
 
 
 def _format_argument_value(value: object) -> str:

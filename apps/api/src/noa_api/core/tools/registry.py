@@ -99,14 +99,18 @@ def _string_array_param(
     *,
     item_description: str | None = None,
     min_items: int = 1,
+    unique_items: bool = False,
 ) -> dict[str, Any]:
     items = _string_param(item_description or "Non-empty string value")
-    return {
+    schema = {
         "type": "array",
         "description": description,
         "items": items,
         "minItems": min_items,
     }
+    if unique_items:
+        schema["uniqueItems"] = True
+    return schema
 
 
 _SERVER_REF_PARAM = _string_param(
@@ -128,6 +132,7 @@ _CSF_TARGET_PARAM = _string_param(
 _CSF_TARGETS_PARAM = _string_array_param(
     "One or more exact CSF targets to change. Preserve the user-provided values and include one result entry per target.",
     item_description="Exact IP, CIDR, or hostname target",
+    unique_items=True,
 )
 
 _TODO_ITEM_SCHEMA = {
@@ -423,6 +428,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "targets": _string_array_param(
                     "One or more IPv4 addresses to allowlist temporarily. This TTL tool does not accept CIDRs, hostnames, or IPv6 targets.",
                     item_description="Exact IPv4 address target",
+                    unique_items=True,
                 ),
                 "duration_minutes": _integer_param(
                     "Duration already converted to minutes before calling the tool.",
@@ -449,6 +455,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "targets": _string_array_param(
                     "One or more IPv4 addresses to deny temporarily. This TTL tool does not accept CIDRs, hostnames, or IPv6 targets.",
                     item_description="Exact IPv4 address target",
+                    unique_items=True,
                 ),
                 "duration_minutes": _integer_param(
                     "Duration already converted to minutes before calling the tool.",
