@@ -8,6 +8,7 @@ from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
 from noa_api.whm.integrations.csf import parse_csf_grep_html, parse_csf_target
 from noa_api.whm.server_ref import resolve_whm_server_ref
+from noa_api.whm.tools.result_shapes import normalize_whm_account_summary
 
 
 def _resolution_error(result: Any) -> dict[str, object]:
@@ -25,7 +26,7 @@ async def whm_preflight_account(
     server_ref: str,
     username: str,
 ) -> dict[str, object]:
-    repo = SQLWHMServerRepository(session)
+    repo: Any = SQLWHMServerRepository(session)
     resolution = await resolve_whm_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)
@@ -55,10 +56,13 @@ async def whm_preflight_account(
             continue
         user_value = account.get("user")
         if isinstance(user_value, str) and user_value == normalized_username:
+            normalized_account = normalize_whm_account_summary(account)
+            if normalized_account is None:
+                break
             return {
                 "ok": True,
                 "server_id": str(resolution.server_id),
-                "account": account,
+                "account": normalized_account,
             }
 
     return {
@@ -74,7 +78,7 @@ async def whm_preflight_csf_entries(
     server_ref: str,
     target: str,
 ) -> dict[str, object]:
-    repo = SQLWHMServerRepository(session)
+    repo: Any = SQLWHMServerRepository(session)
     resolution = await resolve_whm_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)

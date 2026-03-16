@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
 from noa_api.whm.server_ref import resolve_whm_server_ref
+from noa_api.whm.tools.result_shapes import normalize_whm_account_summary
 
 
 def _resolution_error(result: Any) -> dict[str, object]:
@@ -30,7 +31,7 @@ async def whm_list_servers(*, session: AsyncSession) -> dict[str, object]:
 async def whm_validate_server(
     *, session: AsyncSession, server_ref: str
 ) -> dict[str, object]:
-    repo = SQLWHMServerRepository(session)
+    repo: Any = SQLWHMServerRepository(session)
     resolution = await resolve_whm_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)
@@ -57,7 +58,7 @@ async def whm_validate_server(
 async def whm_list_accounts(
     *, session: AsyncSession, server_ref: str
 ) -> dict[str, object]:
-    repo = SQLWHMServerRepository(session)
+    repo: Any = SQLWHMServerRepository(session)
     resolution = await resolve_whm_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)
@@ -80,7 +81,7 @@ async def whm_list_accounts(
     accounts = result.get("accounts")
     return {
         "ok": True,
-        "accounts": list(accounts) if isinstance(accounts, list) else [],
+        "accounts": _normalize_account_list(accounts),
     }
 
 
@@ -130,3 +131,15 @@ async def whm_search_accounts(
             break
 
     return {"ok": True, "accounts": matches, "query": query}
+
+
+def _normalize_account_list(accounts: object) -> list[dict[str, object]]:
+    if not isinstance(accounts, list):
+        return []
+
+    normalized_accounts: list[dict[str, object]] = []
+    for account in accounts:
+        normalized = normalize_whm_account_summary(account)
+        if normalized is not None:
+            normalized_accounts.append(normalized)
+    return normalized_accounts

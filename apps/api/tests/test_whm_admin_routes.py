@@ -623,7 +623,7 @@ async def test_whm_server_service_raises_typed_conflict_error_for_duplicate_name
 ):
     from noa_api.api.routes.whm_admin import WHMServerService
 
-    service = WHMServerService(_IntegrityErrorWHMServerRepository())
+    service = WHMServerService(cast(Any, _IntegrityErrorWHMServerRepository()))
 
     with pytest.raises(Exception) as exc_info:
         await service.create_server(
@@ -643,7 +643,7 @@ async def test_whm_server_service_raises_typed_not_found_error_for_missing_valid
 ):
     from noa_api.api.routes.whm_admin import WHMServerService
 
-    service = WHMServerService(_MissingWHMServerRepository())
+    service = WHMServerService(cast(Any, _MissingWHMServerRepository()))
 
     with pytest.raises(Exception) as exc_info:
         await service.validate_server(server_id=uuid4())
@@ -678,3 +678,82 @@ async def test_whm_admin_route_maps_service_conflict_error_to_http_contract() ->
     assert body["error_code"] == "whm_server_name_exists"
     assert body["request_id"] == "whm-server-conflict"
     assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_whm_admin_create_rejects_invalid_base_url() -> None:
+    service = _FakeWHMServerService()
+    app = _create_whm_admin_app(service)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/admin/whm/servers",
+            json={
+                "name": "web1",
+                "base_url": "http://whm.example.com:2087/path",
+                "api_username": "root",
+                "api_token": "SECRET",
+                "verify_ssl": True,
+            },
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["detail"][0]["loc"] == ["body", "base_url"]
+    assert (
+        body["detail"][0]["msg"]
+        == "Value error, String should be a valid HTTPS WHM base URL"
+    )
+    assert service._servers == {}
+
+
+async def test_whm_admin_create_normalizes_validated_fields() -> None:
+    service = _FakeWHMServerService()
+    app = _create_whm_admin_app(service)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/admin/whm/servers",
+            json={
+                "name": " web-1 ",
+                "base_url": " https://WHM.Example.com:2087/ ",
+                "api_username": " root ",
+                "api_token": " SECRET ",
+                "verify_ssl": True,
+            },
+        )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["server"]["name"] == "web-1"
+    assert body["server"]["base_url"] == "https://whm.example.com:2087"
+    assert body["server"]["api_username"] == "root"
+
+
+async def test_whm_admin_update_rejects_invalid_api_username() -> None:
+    service = _FakeWHMServerService()
+    server = await service.create_server(
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+    )
+    app = _create_whm_admin_app(service)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch(
+            f"/admin/whm/servers/{server.id}",
+            json={"api_username": "bad user"},
+        )
+
+    assert response.status_code == 422
+    body = response.json()
+    assert body["detail"][0]["loc"] == ["body", "api_username"]
+    assert (
+        body["detail"][0]["msg"]
+        == "Value error, String should be a valid WHM API username"
+    )
+    assert service._servers[server.id].api_username == "root"

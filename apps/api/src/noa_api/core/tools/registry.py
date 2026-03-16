@@ -128,7 +128,7 @@ def _result_object_schema(
     *,
     properties: dict[str, Any],
     required: list[str],
-    additional_properties: bool = True,
+    additional_properties: bool = False,
 ) -> ToolResultSchema:
     schema: ToolResultSchema = {
         "type": "object",
@@ -226,7 +226,59 @@ _RESULT_ERROR_SCHEMA = _result_object_schema(
     required=["ok", "error_code", "message"],
 )
 
+_WHM_SERVER_CHOICE_SCHEMA = _result_object_schema(
+    properties={
+        "id": _result_string_schema(),
+        "name": _result_string_schema(),
+        "base_url": _result_string_schema(),
+    },
+    required=["id", "name", "base_url"],
+)
+
+_WHM_RESULT_ERROR_SCHEMA = _result_object_schema(
+    properties={
+        "ok": _result_boolean_schema(value=False),
+        "error_code": _result_string_schema(),
+        "message": _result_string_schema(),
+        "choices": _result_array_schema(items=_WHM_SERVER_CHOICE_SCHEMA),
+    },
+    required=["ok", "error_code", "message"],
+)
+
 _RESULT_SUCCESS_OK_SCHEMA = {"ok": _result_boolean_schema(value=True)}
+
+_SERVER_SAFE_RESULT_SCHEMA = _result_object_schema(
+    properties={
+        "id": _result_string_schema(),
+        "name": _result_string_schema(),
+        "base_url": _result_string_schema(),
+        "api_username": _result_string_schema(),
+        "verify_ssl": _result_boolean_schema(),
+        "created_at": _result_string_schema(),
+        "updated_at": _result_string_schema(),
+    },
+    required=[
+        "id",
+        "name",
+        "base_url",
+        "api_username",
+        "verify_ssl",
+        "created_at",
+        "updated_at",
+    ],
+    additional_properties=False,
+)
+
+_ACCOUNT_RESULT_SCHEMA = _result_object_schema(
+    properties={
+        "user": _result_string_schema(),
+        "domain": _result_string_schema(),
+        "email": _result_string_schema(),
+        "contactemail": _result_string_schema(),
+        "suspended": _result_boolean_schema(),
+    },
+    required=["user"],
+)
 
 _WORKFLOW_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
@@ -251,34 +303,34 @@ _SERVERS_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
             **_RESULT_SUCCESS_OK_SCHEMA,
-            "servers": _result_array_schema(items={"type": "object"}),
+            "servers": _result_array_schema(items=_SERVER_SAFE_RESULT_SCHEMA),
         },
         required=["ok", "servers"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 _ACCOUNTS_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
             **_RESULT_SUCCESS_OK_SCHEMA,
-            "accounts": _result_array_schema(items={"type": "object"}),
+            "accounts": _result_array_schema(items=_ACCOUNT_RESULT_SCHEMA),
         },
         required=["ok", "accounts"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 _SEARCH_ACCOUNTS_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
             **_RESULT_SUCCESS_OK_SCHEMA,
-            "accounts": _result_array_schema(items={"type": "object"}),
+            "accounts": _result_array_schema(items=_ACCOUNT_RESULT_SCHEMA),
             "query": _result_string_schema(),
         },
         required=["ok", "accounts", "query"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 _VALIDATE_SERVER_RESULT_SCHEMA = _result_any_of(
@@ -289,31 +341,33 @@ _VALIDATE_SERVER_RESULT_SCHEMA = _result_any_of(
         },
         required=["ok", "message"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 _PREFLIGHT_ACCOUNT_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
             **_RESULT_SUCCESS_OK_SCHEMA,
-            "account": {"type": "object"},
+            "server_id": _result_string_schema(),
+            "account": _ACCOUNT_RESULT_SCHEMA,
         },
-        required=["ok", "account"],
+        required=["ok", "server_id", "account"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 _PREFLIGHT_CSF_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
             **_RESULT_SUCCESS_OK_SCHEMA,
+            "server_id": _result_string_schema(),
             "target": _result_string_schema(),
             "verdict": _result_string_schema(),
             "matches": _result_array_schema(items=_result_string_schema()),
         },
-        required=["ok", "target", "verdict", "matches"],
+        required=["ok", "server_id", "target", "verdict", "matches"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 _ACCOUNT_CHANGE_RESULT_SCHEMA = _result_any_of(
@@ -325,7 +379,7 @@ _ACCOUNT_CHANGE_RESULT_SCHEMA = _result_any_of(
         },
         required=["ok", "status", "message"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 _CSF_RESULT_ITEM_SCHEMA = _result_any_of(
@@ -354,12 +408,12 @@ _CSF_RESULT_ITEM_SCHEMA = _result_any_of(
 _CSF_BATCH_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
-            "ok": _result_boolean_schema(),
+            "ok": _result_boolean_schema(value=True),
             "results": _result_array_schema(items=_CSF_RESULT_ITEM_SCHEMA),
         },
         required=["ok", "results"],
     ),
-    _RESULT_ERROR_SCHEMA,
+    _WHM_RESULT_ERROR_SCHEMA,
 )
 
 
