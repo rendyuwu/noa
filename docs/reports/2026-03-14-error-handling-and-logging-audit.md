@@ -449,11 +449,12 @@ Updated status after the latest 2026-03-15 continuation passes:
 - Completed in the latest continuation pass: shared request validation responses now emit `request_validation_error`, and structured success logging now covers the admin, threads, and WHM admin route flows.
 - Completed in `feat/backend-telemetry-mapping`: app-scoped backend telemetry seam, request/auth/assistant/admin/threads/WHM telemetry mapping, bounded metric labels, best-effort telemetry failure handling, and refreshed verification plus handoff docs for the implementation pass.
 - Completed in the current telemetry exporter worktree `feat/backend-telemetry-exporter`: OpenTelemetry-backed exporter wiring behind the existing telemetry seam, explicit exporter settings, signal-correct OTLP HTTP endpoint derivation, safe setup fallback, bounded metric attribute filtering, app-shutdown cleanup, and refreshed verification plus handoff docs for the exporter pass.
-- Still recommended next: leave the completed backend telemetry route/exporter slice alone and move the remaining observability follow-up to dashboards, alerts, frontend reporting, and only later helper/service logging cleanup or shared/helper-level `error_code` expansion if needed.
+- Completed in `feat/observability-dashboards-alerts-frontend-reporting`: repo-owned observability baseline docs in `docs/observability/`, disabled-by-default frontend reporting config in `apps/web`, a best-effort browser reporting adapter/provider path, route-level crash reporting, selective API/network failure reporting, and focused web verification plus smoke coverage for the no-regression rollout path.
+- Recommended next: treat the backend telemetry route/exporter slice and this initial observability/frontend reporting slice as complete in repo; any remaining next step is operational rollout work such as realizing dashboards/alerts in the chosen platform and enabling frontend reporting in non-production first.
 
 Active next steps
-1. Main next step: keep `apps/api/src/noa_api/core/telemetry.py` as-is for this completed slice and move the remaining observability work to dashboards, alerts, and frontend error reporting.
-2. If more backend logging work is needed later, treat it as a deeper helper/service follow-up instead of reopening this completed route/exporter slice.
+1. Main next step: operationalize the documented observability baseline outside the app code by realizing dashboards/alerts in the chosen platform and enabling frontend reporting in non-production first.
+2. If more backend logging work is needed later, treat it as a deeper helper/service follow-up instead of reopening the completed route/exporter or frontend reporting slices.
 3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog expansion rather than more route-specific patching.
 
 Historical note
@@ -545,23 +546,35 @@ Done on `feat/backend-telemetry-exporter`
   - `uv run pytest -q` -> `247 passed`
   - `uv run ruff check src tests` -> `All checks passed!`
 
-Not yet done after the latest 2026-03-15 continuation passes
-- Dashboards, alerts, sampling/operational follow-up, and frontend error reporting still remain after the backend telemetry exporter pass
-- Any future backend logging follow-up is now deeper helper/service-level work beyond the completed route/exporter slice
-- Any future backend `error_code` follow-up is now shared/helper-level catalog work beyond the completed route/exporter slice
+Done on `feat/observability-dashboards-alerts-frontend-reporting`
+- Added repo-owned observability baseline docs in `docs/observability/backend-observability-baseline.md` and `docs/observability/frontend-error-reporting.md`
+- Added disabled-by-default frontend reporting config in `apps/web/.env.example`
+- Added the frontend reporting adapter and focused coverage in `apps/web/components/lib/error-reporting.ts` and `apps/web/components/lib/error-reporting.test.ts`
+- Added a global browser reporting provider in `apps/web/components/lib/error-reporting-provider.tsx` with focused listener/noise-filter coverage
+- Mounted the provider from `apps/web/app/layout.tsx` and added route-level crash reporting in `apps/web/app/error.tsx`
+- Added selective backend-correlated API and rejected-fetch reporting in `apps/web/components/lib/fetch-helper.ts`
+- Recorded fresh web verification for this pass:
+  - `npm run test` -> `117 passed`
+  - `npm run build` -> `success`
+  - Smoke verification: `/login`, `/assistant`, `/admin/users`, and `/admin/whm/servers` passed in the local browser smoke run
+
+Not yet done after the latest observability continuation passes
+- Operational rollout still remains outside the repo: realize dashboards/alerts in the chosen platform, tune sampling/alert thresholds, and enable frontend reporting in non-production before any production rollout
+- Any future backend logging follow-up is now deeper helper/service-level work beyond the completed route/exporter and frontend reporting slices
+- Any future backend `error_code` follow-up is now shared/helper-level catalog work beyond the completed route/exporter and frontend reporting slices
 
 Recommended next from this worktree
-1. Leave the completed backend telemetry route/exporter slice as-is and move the remaining observability work to dashboards, alerts, and frontend error reporting.
-2. If more backend logging work is needed later, target deeper helper/service seams rather than reopening the completed route/exporter slice.
+1. Treat the repo implementation step as complete and move next to operational rollout: realize dashboards/alerts in the chosen platform and enable frontend reporting in non-production first.
+2. If more backend logging work is needed later, target deeper helper/service seams rather than reopening the completed route/exporter or frontend reporting slices.
 3. If more backend `error_code` work is needed later, treat it as shared/helper-level catalog work rather than route-specific patching.
 
-Primary execution handoff after the telemetry exporter pass
-- Worktree: `.worktrees/feat-backend-telemetry-exporter`
-- Branch: `feat/backend-telemetry-exporter`
+Primary execution handoff after the observability/frontend reporting pass
+- Worktree: `.worktrees/feat-observability-dashboards-alerts-frontend-reporting`
+- Branch: `feat/observability-dashboards-alerts-frontend-reporting`
 - Primary plans:
-  - `docs/plans/2026-03-15-backend-telemetry-exporter-design.md`
-  - `docs/plans/2026-03-15-backend-telemetry-exporter-implementation-plan.md`
-- Resume point: this worktree completed backend telemetry exporter wiring and refreshed the audit handoff; the next step is dashboards, alerts, and frontend error reporting, while any later backend code follow-up should stay in helper/service logging cleanup or shared/helper-level `error_code` expansion rather than reopening the route telemetry slice.
+  - `docs/plans/2026-03-16-observability-dashboards-alerts-frontend-reporting-design.md`
+  - `docs/plans/2026-03-16-observability-dashboards-alerts-frontend-reporting-implementation-plan.md`
+- Resume point: the repo implementation step for dashboards/alerts/frontend reporting is now complete; any next step is operational rollout work plus only later helper/service logging cleanup or shared/helper-level `error_code` expansion if needed.
 
 Historical execution handoff: assistant service extraction
 - Worktree: `apps/api/.worktrees/feat-assistant-service-extraction`

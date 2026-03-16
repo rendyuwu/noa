@@ -2,6 +2,8 @@
 
 import { getAuthToken, clearAuth } from "@/components/lib/auth-store";
 
+import { reportClientError } from "./error-reporting";
+
 type ErrorPayload = {
   detail?: unknown;
   error_code?: unknown;
@@ -12,6 +14,10 @@ type ErrorPayload = {
 
 const asString = (value: unknown): string | undefined => {
   return typeof value === "string" && value.length > 0 ? value : undefined;
+};
+
+const shouldReportApiFailure = (status: number): boolean => {
+  return status === 0 || status >= 500;
 };
 
 export const getApiUrl = (): string => {
@@ -60,10 +66,19 @@ export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promi
       ? normalizedPath
       : `${getApiUrl()}${normalizedPath}`;
 
-  const response = await fetch(url, {
-    ...init,
-    headers,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      ...init,
+      headers,
+    });
+  } catch (error) {
+    try {
+      reportClientError(error);
+    } catch {}
+    throw error;
+  }
 
   if (response.status === 401) {
     clearAuth();
@@ -82,10 +97,20 @@ export const jsonOrThrow = async <T>(response: Response): Promise<T> => {
       asString(payload?.requestId) ??
       asString(response.headers.get("x-request-id"));
 
-    throw new ApiError(response.status, detail, {
+    const error = new ApiError(response.status, detail, {
       errorCode,
       requestId,
     });
+
+    if (shouldReportApiFailure(response.status)) {
+      reportClientError(error, {
+        errorCode,
+        requestId,
+        status: response.status,
+      });
+    }
+
+    throw error;
   }
   return payload as T;
 };

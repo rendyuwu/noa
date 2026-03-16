@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 
+import { reportClientError } from "@/components/lib/error-reporting";
+
 type GlobalErrorProps = {
   error: Error & { digest?: string };
   reset: () => void;
@@ -10,6 +12,10 @@ type GlobalErrorProps = {
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
     console.error(error);
+    reportClientError(error, {
+      source: "app.error-boundary",
+      digest: error.digest,
+    });
   }, [error]);
 
   return (
