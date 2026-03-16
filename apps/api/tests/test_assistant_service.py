@@ -84,6 +84,7 @@ class _FakeSession:
 
 @dataclass
 class _FakeAssistantRepository:
+    listed_messages: list[object] = field(default_factory=list)
     messages: list[dict[str, object]] = field(default_factory=list)
     audits: list[dict[str, object]] = field(default_factory=list)
 
@@ -92,7 +93,7 @@ class _FakeAssistantRepository:
 
     async def list_messages(self, *, thread_id: UUID):
         _ = thread_id
-        return []
+        return self.listed_messages
 
     async def create_message(
         self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]
@@ -710,6 +711,432 @@ async def test_execute_approved_tool_run_completes_and_persists_result(
             "tool_run_id": str(started.id),
             "action_request_id": str(request.id),
         },
+    }
+
+
+async def test_execute_approved_tool_run_revalidates_required_preflight_before_execution(
+    monkeypatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_suspend_account",
+        args={"server_ref": "web1", "username": "alice"},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def should_not_run(*, session, **kwargs):
+        _ = session, kwargs
+        raise AssertionError("tool should not execute without matching preflight")
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Suspends an account.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "username": {"type": "string"},
+            },
+            "required": ["server_ref", "username"],
+            "additionalProperties": False,
+        },
+        execute=should_not_run,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
+    assert repo.tool_runs[started.id].error == "preflight_required"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Required WHM preflight evidence is missing",
+        "error_code": "preflight_required",
+        "details": [
+            "Run whm_preflight_account with the same server_ref and username before requesting this change."
+        ],
+    }
+    assert assistant_repo.audits[-1] == {
+        "event_type": "tool_failed",
+        "actor_email": "owner@example.com",
+        "tool_name": "whm_suspend_account",
+        "metadata": {
+            "thread_id": str(thread_id),
+            "tool_run_id": str(started.id),
+            "action_request_id": str(request.id),
+            "error": "Required WHM preflight evidence is missing",
+            "error_code": "preflight_required",
+        },
+    }
+
+
+async def test_execute_approved_tool_run_allows_execution_with_matching_preflight(
+    monkeypatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_suspend_account",
+        args={"server_ref": "web1", "username": "alice"},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def successful_change(*, session, **kwargs):
+        _ = session, kwargs
+        return {"ok": True}
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Suspends an account.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "username": {"type": "string"},
+            },
+            "required": ["server_ref", "username"],
+            "additionalProperties": False,
+        },
+        result_schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        },
+        execute=successful_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[{"type": "text", "text": "Suspend alice on web1."}],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {"ok": True, "account": {"user": "alice"}},
+                        "isError": False,
+                    }
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {"ok": True}
+
+
+async def test_execute_approved_tool_run_rejects_mismatched_account_preflight_result(
+    monkeypatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_suspend_account",
+        args={"server_ref": "web1", "username": "alice"},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def should_not_run(*, session, **kwargs):
+        _ = session, kwargs
+        raise AssertionError("tool should not execute with mismatched preflight result")
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Suspends an account.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "username": {"type": "string"},
+            },
+            "required": ["server_ref", "username"],
+            "additionalProperties": False,
+        },
+        execute=should_not_run,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[{"type": "text", "text": "Suspend alice on web1."}],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {"ok": True, "account": {"user": "bob"}},
+                        "isError": False,
+                    }
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
+    assert repo.tool_runs[started.id].error == "preflight_mismatch"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Required WHM preflight evidence does not match this change request",
+        "error_code": "preflight_mismatch",
+        "details": [
+            "No successful whm_preflight_account was found for server_ref 'web1' and username 'alice' in the current turn."
+        ],
+    }
+
+
+async def test_execute_approved_tool_run_rejects_mismatched_csf_preflight_result(
+    monkeypatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_csf_unblock",
+        args={"server_ref": "web1", "targets": ["1.2.3.4"]},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def should_not_run(*, session, **kwargs):
+        _ = session, kwargs
+        raise AssertionError("tool should not execute with mismatched preflight result")
+
+    tool = ToolDefinition(
+        name="whm_csf_unblock",
+        description="Unblocks CSF targets.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "targets": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "minItems": 1,
+                },
+            },
+            "required": ["server_ref", "targets"],
+            "additionalProperties": False,
+        },
+        execute=should_not_run,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[{"type": "text", "text": "Unblock 1.2.3.4 on web1."}],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "target": "1.2.3.4"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "target": "9.9.9.9",
+                            "verdict": "blocked",
+                            "matches": ["/etc/csf/csf.deny"],
+                        },
+                        "isError": False,
+                    }
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
+    assert repo.tool_runs[started.id].error == "preflight_mismatch"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Required WHM preflight evidence does not match this change request",
+        "error_code": "preflight_mismatch",
+        "details": [
+            "Missing successful whm_preflight_csf_entries results for target(s): '1.2.3.4'"
+        ],
     }
 
 

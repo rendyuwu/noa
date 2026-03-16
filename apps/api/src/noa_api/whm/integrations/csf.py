@@ -57,13 +57,23 @@ def parse_csf_target(raw: str) -> CSFTarget:
         except ValueError:
             pass
 
-    if re.search(r"[a-zA-Z]", value):
+    if _is_valid_hostname(value):
         return CSFTarget(raw=value, kind="hostname", hostname=value)
 
     return CSFTarget(raw=value, kind="unknown")
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_HOSTNAME_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
+
+
+def _is_valid_hostname(value: str) -> bool:
+    if len(value) > 253 or "." not in value or value.endswith("."):
+        return False
+    labels = value.split(".")
+    if not any(any(char.isalpha() for char in label) for label in labels):
+        return False
+    return all(_HOSTNAME_LABEL_RE.fullmatch(label) for label in labels)
 
 
 def _html_to_text_lines(html_value: str) -> list[str]:

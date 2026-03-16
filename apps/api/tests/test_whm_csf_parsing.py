@@ -17,6 +17,21 @@ def test_parse_csf_target_cidr() -> None:
     assert target.cidr == "1.2.3.0/24"
 
 
+def test_parse_csf_target_hostname() -> None:
+    from noa_api.whm.integrations.csf import parse_csf_target
+
+    target = parse_csf_target("app-01.example.com")
+    assert target.kind == "hostname"
+    assert target.hostname == "app-01.example.com"
+
+
+def test_parse_csf_target_rejects_invalid_hostname() -> None:
+    from noa_api.whm.integrations.csf import parse_csf_target
+
+    target = parse_csf_target("bad_target")
+    assert target.kind == "unknown"
+
+
 def test_parse_csf_grep_html_returns_verdict_and_bounded_matches() -> None:
     from noa_api.whm.integrations.csf import parse_csf_grep_html
 

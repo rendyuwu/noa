@@ -8,6 +8,8 @@ if TYPE_CHECKING:
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_SERVER_REF_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+_WHM_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
 
 class ToolArgumentValidationError(Exception):
@@ -136,6 +138,24 @@ def _validate_string(schema: dict[str, Any], *, value: object, path: str) -> lis
 
     if schema.get("format") == "email" and not _EMAIL_RE.match(normalized):
         problems.append(f"{_format_path(path)} must be a valid email address")
+
+    pattern = schema.get("pattern")
+    if isinstance(pattern, str) and not re.fullmatch(pattern, normalized):
+        problems.append(f"{_format_path(path)} must match pattern {pattern!r}")
+
+    format_name = schema.get("format")
+    if format_name == "server-ref" and not _SERVER_REF_RE.match(normalized):
+        problems.append(f"{_format_path(path)} must be a valid WHM server reference")
+    if format_name == "whm-username" and not _WHM_USERNAME_RE.match(normalized):
+        problems.append(f"{_format_path(path)} must be a valid WHM username")
+    if format_name in {"csf-target", "ipv4"}:
+        from noa_api.whm.integrations.csf import parse_csf_target
+
+        parsed = parse_csf_target(normalized)
+        if format_name == "csf-target" and parsed.kind == "unknown":
+            problems.append(f"{_format_path(path)} must be a valid CSF target")
+        if format_name == "ipv4" and parsed.kind != "ip":
+            problems.append(f"{_format_path(path)} must be a valid IPv4 address")
 
     return problems
 

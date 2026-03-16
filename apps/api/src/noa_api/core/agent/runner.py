@@ -894,11 +894,15 @@ def _require_account_preflight(
 
     for item in evidence:
         item_args = item.get("args")
-        if not isinstance(item_args, dict):
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
+            continue
+        account = result.get("account")
+        if not isinstance(account, dict):
             continue
         if (
             _normalized_text(item_args.get("server_ref")) == requested_server_ref
-            and _normalized_text(item_args.get("username")) == requested_username
+            and _normalized_text(account.get("user")) == requested_username
         ):
             return None
 
@@ -938,11 +942,12 @@ def _require_csf_preflight(
     matched_targets: set[str] = set()
     for item in evidence:
         item_args = item.get("args")
-        if not isinstance(item_args, dict):
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
             continue
         if _normalized_text(item_args.get("server_ref")) != requested_server_ref:
             continue
-        target = _normalized_text(item_args.get("target"))
+        target = _normalized_text(result.get("target"))
         if target is not None:
             matched_targets.add(target)
 

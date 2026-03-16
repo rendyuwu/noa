@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 
 
 class AssistantMessageAuditRepositoryProtocol(Protocol):
+    async def list_messages(self, *, thread_id: UUID) -> list[object]: ...
+
     async def create_message(
         self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]
     ) -> object: ...

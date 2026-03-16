@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
-from noa_api.whm.integrations.csf import parse_csf_grep_html
+from noa_api.whm.integrations.csf import parse_csf_grep_html, parse_csf_target
 from noa_api.whm.server_ref import resolve_whm_server_ref
 
 
@@ -83,6 +83,12 @@ async def whm_preflight_csf_entries(
             "ok": False,
             "error_code": "target_required",
             "message": "Target is required",
+        }
+    if parse_csf_target(normalized_target).kind == "unknown":
+        return {
+            "ok": False,
+            "error_code": "invalid_target",
+            "message": "Target must be a valid IP, CIDR, or hostname",
         }
 
     client = WHMClient(

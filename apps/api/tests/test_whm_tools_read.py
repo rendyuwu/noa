@@ -257,6 +257,43 @@ async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_whm_preflight_csf_entries_rejects_invalid_target(monkeypatch) -> None:
+    from noa_api.whm.tools import preflight_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    class _Client:
+        def __init__(self, **kwargs) -> None:
+            raise AssertionError("client should not be created for invalid targets")
+
+    monkeypatch.setattr(preflight_tools, "WHMClient", _Client)
+
+    result = await preflight_tools.whm_preflight_csf_entries(
+        session=_Session(),
+        server_ref="web1",
+        target="bad_target",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_target",
+        "message": "Target must be a valid IP, CIDR, or hostname",
+    }
+
+
+@pytest.mark.asyncio
 async def test_whm_preflight_account_finds_account(monkeypatch) -> None:
     from noa_api.whm.tools import preflight_tools
 

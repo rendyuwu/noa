@@ -1075,6 +1075,122 @@ async def test_agent_runner_rejects_account_change_when_preflight_targets_other_
     }
 
 
+async def test_agent_runner_rejects_account_change_when_preflight_result_user_differs(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change(
+        *, server_ref: str, username: str, reason: str
+    ) -> dict[str, object]:
+        raise AssertionError(
+            f"unexpected execution for {server_ref} {username} {reason}"
+        )
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Requires matching account preflight.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web1",
+                                "username": "alice",
+                                "reason": "requested by customer",
+                            },
+                        )
+                    ],
+                )
+            return LLMTurnResponse(text="Wrong preflight result.", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {"ok": True, "account": {"user": "bob"}},
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert repo.action_requests == {}
+    tool_message = next(
+        message for message in result.messages if message.role == "tool"
+    )
+    part = tool_message.parts[0]
+    assert isinstance(part, dict)
+    assert part["result"] == {
+        "error": "Required WHM preflight evidence does not match this change request",
+        "error_code": "preflight_mismatch",
+        "details": [
+            "No successful whm_preflight_account was found for server_ref 'web1' and username 'alice' in the current turn."
+        ],
+    }
+
+
 async def test_agent_runner_rejects_csf_change_when_preflight_is_missing_for_some_targets(
     monkeypatch,
 ) -> None:
@@ -1196,6 +1312,131 @@ async def test_agent_runner_rejects_csf_change_when_preflight_is_missing_for_som
         "error_code": "preflight_mismatch",
         "details": [
             "Missing successful whm_preflight_csf_entries results for target(s): '5.6.7.8'"
+        ],
+    }
+
+
+async def test_agent_runner_rejects_csf_change_when_preflight_result_target_differs(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change(
+        *, server_ref: str, targets: list[str], reason: str
+    ) -> dict[str, object]:
+        raise AssertionError(
+            f"unexpected execution for {server_ref} {targets} {reason}"
+        )
+
+    tool = ToolDefinition(
+        name="whm_csf_unblock",
+        description="Requires target-by-target preflight.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "targets": {
+                    "type": "array",
+                    "items": {"type": "string", "minLength": 1},
+                    "minItems": 1,
+                },
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "targets", "reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web1",
+                                "targets": ["1.2.3.4"],
+                                "reason": "customer unblock",
+                            },
+                        )
+                    ],
+                )
+            return LLMTurnResponse(text="Wrong preflight result.", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Unblock 1.2.3.4"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-csf-1",
+                        "args": {"server_ref": "web1", "target": "1.2.3.4"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-csf-1",
+                        "result": {
+                            "ok": True,
+                            "target": "9.9.9.9",
+                            "verdict": "blocked",
+                            "matches": ["/etc/csf/csf.deny"],
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert repo.action_requests == {}
+    tool_message = next(
+        message for message in result.messages if message.role == "tool"
+    )
+    part = tool_message.parts[0]
+    assert isinstance(part, dict)
+    assert part["result"] == {
+        "error": "Required WHM preflight evidence does not match this change request",
+        "error_code": "preflight_mismatch",
+        "details": [
+            "Missing successful whm_preflight_csf_entries results for target(s): '1.2.3.4'"
         ],
     }
 

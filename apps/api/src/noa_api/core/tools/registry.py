@@ -64,6 +64,7 @@ def _string_param(
     *,
     min_length: int = 1,
     format_name: str | None = None,
+    pattern: str | None = None,
 ) -> dict[str, Any]:
     schema: dict[str, Any] = {
         "type": "string",
@@ -73,6 +74,8 @@ def _string_param(
         schema["minLength"] = min_length
     if format_name is not None:
         schema["format"] = format_name
+    if pattern is not None:
+        schema["pattern"] = pattern
     return schema
 
 
@@ -102,8 +105,14 @@ def _string_array_param(
     item_description: str | None = None,
     min_items: int = 1,
     unique_items: bool = False,
+    item_format_name: str | None = None,
+    item_pattern: str | None = None,
 ) -> dict[str, Any]:
-    items = _string_param(item_description or "Non-empty string value")
+    items = _string_param(
+        item_description or "Non-empty string value",
+        format_name=item_format_name,
+        pattern=item_pattern,
+    )
     schema = {
         "type": "array",
         "description": description,
@@ -163,10 +172,12 @@ def _result_any_of(*variants: ToolResultSchema) -> ToolResultSchema:
 
 _SERVER_REF_PARAM = _string_param(
     "Server reference that resolves to exactly one configured WHM server. Use a server name or UUID and ask the user to choose if the tool returns choices.",
+    format_name="server-ref",
 )
 
 _USERNAME_PARAM = _string_param(
     "Exact WHM username. Trim whitespace and prefer identifiers confirmed by whm_search_accounts or whm_preflight_account.",
+    format_name="whm-username",
 )
 
 _REASON_PARAM = _string_param(
@@ -175,11 +186,13 @@ _REASON_PARAM = _string_param(
 
 _CSF_TARGET_PARAM = _string_param(
     "Single CSF target to inspect, such as an IP, CIDR, or hostname. Trim whitespace and do not invent values.",
+    format_name="csf-target",
 )
 
 _CSF_TARGETS_PARAM = _string_array_param(
     "One or more exact CSF targets to change. Preserve the user-provided values and include one result entry per target.",
     item_description="Exact IP, CIDR, or hostname target",
+    item_format_name="csf-target",
     unique_items=True,
 )
 
@@ -634,6 +647,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "targets": _string_array_param(
                     "One or more IPv4 addresses to allowlist temporarily. This TTL tool does not accept CIDRs, hostnames, or IPv6 targets.",
                     item_description="Exact IPv4 address target",
+                    item_format_name="ipv4",
                     unique_items=True,
                 ),
                 "duration_minutes": _integer_param(
@@ -662,6 +676,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "targets": _string_array_param(
                     "One or more IPv4 addresses to deny temporarily. This TTL tool does not accept CIDRs, hostnames, or IPv6 targets.",
                     item_description="Exact IPv4 address target",
+                    item_format_name="ipv4",
                     unique_items=True,
                 ),
                 "duration_minutes": _integer_param(
