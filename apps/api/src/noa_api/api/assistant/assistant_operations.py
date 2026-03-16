@@ -158,6 +158,18 @@ def _safe_report(telemetry: TelemetryRecorder | None, event: TelemetryEvent) -> 
         )
 
 
+def _apply_canonical_state(
+    state: dict[str, object],
+    canonical_state: dict[str, object],
+    *,
+    is_running: bool,
+) -> None:
+    state["messages"] = coerce_messages(canonical_state.get("messages"))
+    state["workflow"] = canonical_state.get("workflow") or []
+    state["pendingApprovals"] = canonical_state.get("pendingApprovals") or []
+    state["isRunning"] = is_running
+
+
 def _record_assistant_failure_telemetry(
     telemetry: TelemetryRecorder | None,
     *,
@@ -264,10 +276,15 @@ async def run_agent_phase(
         allowed_tools.add("update_workflow_todo")
 
         base_messages = coerce_messages(canonical_state.get("messages"))
+        controller.state["workflow"] = canonical_state.get("workflow") or []
+        controller.state["pendingApprovals"] = (
+            canonical_state.get("pendingApprovals") or []
+        )
         controller.state["messages"] = [
             *base_messages,
             make_streaming_placeholder(""),
         ]
+        controller.state["isRunning"] = True
         await flush_controller_state(controller)
 
         streamed_text = ""
@@ -379,7 +396,7 @@ async def run_agent_phase(
                 owner_user_id=current_user.user_id,
                 thread_id=payload.thread_id,
             )
-            controller.state["messages"] = coerce_messages(failed_state.get("messages"))
+            _apply_canonical_state(controller.state, failed_state, is_running=False)
 
             if not persisted_error_message:
                 controller.state["messages"] = append_fallback_error_message(
@@ -402,8 +419,7 @@ async def run_agent_phase(
             owner_user_id=current_user.user_id,
             thread_id=payload.thread_id,
         )
-        controller.state["messages"] = coerce_messages(updated_state.get("messages"))
-        controller.state["isRunning"] = False
+        _apply_canonical_state(controller.state, updated_state, is_running=False)
     except asyncio.CancelledError:
         raise
     except Exception as exc:

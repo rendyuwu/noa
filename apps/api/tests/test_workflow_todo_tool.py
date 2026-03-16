@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from uuid import uuid4
+
+import pytest
+
 
 async def test_update_workflow_todo_echoes_list() -> None:
     from noa_api.core.tools.workflow_todo import update_workflow_todo
@@ -45,3 +49,39 @@ async def test_update_workflow_todo_rejects_invalid_status() -> None:
 
     assert result["ok"] is False
     assert result["error_code"] == "invalid_todo_status"
+
+
+async def test_update_workflow_todo_persists_workflow_when_thread_context_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from noa_api.core.tools.workflow_todo import update_workflow_todo
+
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    todos = [
+        {"content": "Preflight", "status": "completed", "priority": "high"},
+        {
+            "content": "Request approval",
+            "status": "in_progress",
+            "priority": "high",
+        },
+    ]
+    thread_id = uuid4()
+
+    result = await update_workflow_todo(
+        todos=todos,
+        session=object(),
+        thread_id=thread_id,
+    )
+
+    assert result == {"ok": True, "todos": todos}
+    assert captured == {"thread_id": thread_id, "todos": todos}
