@@ -22,7 +22,12 @@ from noa_api.api.assistant.assistant_tool_result_operations import (
     AssistantMessageAuditRepositoryProtocol,
 )
 from noa_api.core.logging_context import log_context
-from noa_api.core.tool_error_sanitizer import sanitize_tool_error
+from noa_api.core.agent.runner import (
+    _require_matching_preflight,
+    _resolve_requested_server_id,
+)
+from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_error
+from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import get_tool_definition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
@@ -287,7 +292,35 @@ async def execute_approved_tool_run(
         )
         return
 
+    preflight_error = await _validate_approved_tool_preflight(
+        tool_name=approved_request.tool_name,
+        args=approved_request.args,
+        thread_id=thread_id,
+        repository=repository,
+        session=session,
+    )
+    if preflight_error is not None:
+        await _persist_failed_tool_run(
+            started_tool_run=started_tool_run,
+            approved_request=approved_request,
+            owner_user_email=owner_user_email,
+            thread_id=thread_id,
+            repository=repository,
+            action_tool_run_service=action_tool_run_service,
+            tool_run_error=preflight_error.error_code,
+            tool_result=preflight_error.as_result(),
+            audit_metadata={
+                "thread_id": str(thread_id),
+                "tool_run_id": str(started_tool_run.id),
+                "action_request_id": str(approved_request.id),
+                "error": preflight_error.error,
+                "error_code": preflight_error.error_code,
+            },
+        )
+        return
+
     try:
+        validate_tool_arguments(tool=tool, args=approved_request.args)
         result = await _execute_tool(
             tool=tool, args=approved_request.args, session=session
         )
@@ -354,6 +387,31 @@ async def execute_approved_tool_run(
                 "error_code": sanitized_error.error_code,
             },
         )
+
+
+async def _validate_approved_tool_preflight(
+    *,
+    tool_name: str,
+    args: dict[str, object],
+    thread_id: UUID,
+    repository: AssistantMessageAuditRepositoryProtocol,
+    session: AsyncSession | None,
+) -> SanitizedToolError | None:
+    messages = await repository.list_messages(thread_id=thread_id)
+    requested_server_id = await _resolve_requested_server_id(args=args, session=session)
+    working_messages: list[dict[str, object]] = []
+    for message in messages:
+        role = getattr(message, "role", None)
+        parts = getattr(message, "content", None)
+        if not isinstance(role, str) or not isinstance(parts, list):
+            continue
+        working_messages.append({"role": role, "parts": parts})
+    return _require_matching_preflight(
+        tool_name=tool_name,
+        args=args,
+        working_messages=working_messages,
+        requested_server_id=requested_server_id,
+    )
 
 
 async def _execute_tool(

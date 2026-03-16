@@ -150,7 +150,7 @@ async def request_validation_exception_handler(
 ) -> JSONResponse:
     return _json_error_response(
         status_code=422,
-        detail=exc.errors(),
+        detail=_normalize_validation_errors(exc.errors()),
         request=request,
         error_code=REQUEST_VALIDATION_ERROR,
     )
@@ -208,6 +208,20 @@ def _json_error_response(
         content=content,
         headers=response_headers,
     )
+
+
+def _normalize_validation_errors(errors: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    normalized_errors: list[dict[str, Any]] = []
+    for error in errors:
+        normalized_error = dict(error)
+        context = normalized_error.get("ctx")
+        if isinstance(context, dict):
+            normalized_error["ctx"] = {
+                key: str(value) if isinstance(value, Exception) else value
+                for key, value in context.items()
+            }
+        normalized_errors.append(normalized_error)
+    return normalized_errors
 
 
 def _get_or_create_request_id(request: Request) -> str:

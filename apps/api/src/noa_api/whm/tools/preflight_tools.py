@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
-from noa_api.whm.integrations.csf import parse_csf_grep_html
+from noa_api.whm.integrations.csf import parse_csf_grep_html, parse_csf_target
 from noa_api.whm.server_ref import resolve_whm_server_ref
+from noa_api.whm.tools.result_shapes import normalize_whm_account_summary
 
 
 def _resolution_error(result: Any) -> dict[str, object]:
@@ -25,7 +26,7 @@ async def whm_preflight_account(
     server_ref: str,
     username: str,
 ) -> dict[str, object]:
-    repo = SQLWHMServerRepository(session)
+    repo: Any = SQLWHMServerRepository(session)
     resolution = await resolve_whm_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)
@@ -55,7 +56,14 @@ async def whm_preflight_account(
             continue
         user_value = account.get("user")
         if isinstance(user_value, str) and user_value == normalized_username:
-            return {"ok": True, "account": account}
+            normalized_account = normalize_whm_account_summary(account)
+            if normalized_account is None:
+                break
+            return {
+                "ok": True,
+                "server_id": str(resolution.server_id),
+                "account": normalized_account,
+            }
 
     return {
         "ok": False,
@@ -70,7 +78,7 @@ async def whm_preflight_csf_entries(
     server_ref: str,
     target: str,
 ) -> dict[str, object]:
-    repo = SQLWHMServerRepository(session)
+    repo: Any = SQLWHMServerRepository(session)
     resolution = await resolve_whm_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)
@@ -83,6 +91,12 @@ async def whm_preflight_csf_entries(
             "ok": False,
             "error_code": "target_required",
             "message": "Target is required",
+        }
+    if parse_csf_target(normalized_target).kind == "unknown":
+        return {
+            "ok": False,
+            "error_code": "invalid_target",
+            "message": "Target must be a valid IP, CIDR, or hostname",
         }
 
     client = WHMClient(
@@ -110,6 +124,7 @@ async def whm_preflight_csf_entries(
     parsed = parse_csf_grep_html(html_value, target=normalized_target)
     return {
         "ok": True,
+        "server_id": str(resolution.server_id),
         "target": normalized_target,
         "verdict": parsed.verdict,
         "matches": parsed.matches,

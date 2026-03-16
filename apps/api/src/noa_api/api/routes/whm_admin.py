@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 import logging
 from typing import Any
+import re
+from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -36,6 +38,8 @@ router = APIRouter(prefix="/admin/whm/servers", tags=["admin"])
 
 logger = logging.getLogger(__name__)
 WHM_OUTCOMES_TOTAL = "whm.outcomes.total"
+_WHM_SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
+_WHM_API_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
 
 class WHMServerResponse(BaseModel):
@@ -66,6 +70,21 @@ class CreateWHMServerRequest(BaseModel):
             return value.strip()
         return value
 
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:
+        return _validate_server_name(value)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str) -> str:
+        return _normalize_whm_base_url(value)
+
+    @field_validator("api_username")
+    @classmethod
+    def _validate_api_username(cls, value: str) -> str:
+        return _validate_api_username(value)
+
 
 class CreateWHMServerResponse(BaseModel):
     server: WHMServerResponse
@@ -90,6 +109,27 @@ class UpdateWHMServerRequest(BaseModel):
             return normalized
         return value
 
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_server_name(value)
+
+    @field_validator("base_url")
+    @classmethod
+    def _validate_base_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _normalize_whm_base_url(value)
+
+    @field_validator("api_username")
+    @classmethod
+    def _validate_api_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_api_username(value)
+
 
 class UpdateWHMServerResponse(BaseModel):
     server: WHMServerResponse
@@ -97,6 +137,41 @@ class UpdateWHMServerResponse(BaseModel):
 
 class DeleteWHMServerResponse(BaseModel):
     ok: bool
+
+
+def _validate_server_name(value: str) -> str:
+    if not _WHM_SERVER_NAME_RE.fullmatch(value):
+        raise ValueError("String should be a valid WHM server name")
+    return value
+
+
+def _validate_api_username(value: str) -> str:
+    if not _WHM_API_USERNAME_RE.fullmatch(value):
+        raise ValueError("String should be a valid WHM API username")
+    return value
+
+
+def _normalize_whm_base_url(value: str) -> str:
+    parsed = urlsplit(value)
+    if parsed.scheme != "https":
+        raise ValueError("String should be a valid HTTPS WHM base URL")
+    if not parsed.hostname:
+        raise ValueError("String should be a valid HTTPS WHM base URL")
+    if parsed.username or parsed.password:
+        raise ValueError("String should be a valid HTTPS WHM base URL")
+    if parsed.path not in {"", "/"}:
+        raise ValueError("String should be a valid HTTPS WHM base URL")
+    if parsed.query or parsed.fragment:
+        raise ValueError("String should be a valid HTTPS WHM base URL")
+
+    hostname = parsed.hostname
+    assert hostname is not None
+    try:
+        port_value = parsed.port
+    except ValueError as exc:
+        raise ValueError("String should be a valid HTTPS WHM base URL") from exc
+    port = f":{port_value}" if port_value is not None else ""
+    return f"https://{hostname}{port}"
 
 
 def _to_server_response(server: Any) -> WHMServerResponse:

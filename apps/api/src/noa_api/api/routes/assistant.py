@@ -339,6 +339,16 @@ async def assistant_transport(
         thread_id=str(payload.thread_id),
         user_id=str(current_user.user_id),
     ):
+        if payload.system is not None or payload.tools is not None:
+            logger.warning(
+                "assistant_request_overrides_ignored",
+                extra={
+                    "has_system_override": payload.system is not None,
+                    "tool_override_count": len(payload.tools or []),
+                    "thread_id": str(payload.thread_id),
+                    "user_id": str(current_user.user_id),
+                },
+            )
         try:
             prepared = await prepare_assistant_transport(
                 payload=payload,

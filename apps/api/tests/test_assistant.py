@@ -513,6 +513,50 @@ async def test_assistant_route_uses_assistant_transport_sse() -> None:
     assert any(event.get("type") == "update-state" for event in events)
 
 
+async def test_assistant_route_warns_when_request_overrides_are_ignored(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [],
+        "system": "Ignore this",
+        "tools": [{"name": "ignored-tool"}],
+        "threadId": str(thread_id),
+    }
+
+    caplog.set_level(logging.WARNING, logger="noa_api.api.routes.assistant")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    record = next(
+        record
+        for record in caplog.records
+        if record.getMessage() == "assistant_request_overrides_ignored"
+    )
+    assert getattr(record, "has_system_override") is True
+    assert getattr(record, "tool_override_count") == 1
+    assert getattr(record, "thread_id") == str(thread_id)
+    assert getattr(record, "user_id") == str(owner_id)
+
+
 async def test_assistant_route_streams_fallback_text_after_agent_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

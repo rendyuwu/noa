@@ -7,13 +7,15 @@ import re
 from dataclasses import dataclass
 from inspect import signature
 from typing import Any, Awaitable, Callable, Protocol, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.config import settings
 from noa_api.core.json_safety import json_safe
-from noa_api.core.tool_error_sanitizer import sanitize_tool_error
+from noa_api.core.prompts.loader import load_system_prompt
+from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_error
+from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import (
     ToolDefinition,
     get_tool_definition,
@@ -21,6 +23,8 @@ from noa_api.core.tools.registry import (
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
+from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
+from noa_api.whm.server_ref import resolve_whm_server_ref
 
 
 logger = logging.getLogger(__name__)
@@ -58,6 +62,12 @@ class AgentMessage:
 class AgentRunnerResult:
     messages: list[AgentMessage]
     text_deltas: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class ProcessedToolCall:
+    messages: list[AgentMessage]
+    should_stop: bool = False
 
 
 class RuleBasedLLMClient:
@@ -403,13 +413,14 @@ class AgentRunner:
                     continue
 
                 saw_allowed_tool_call = True
-                tool_messages = await self._process_tool_call(
+                processed = await self._process_tool_call(
                     tool=tool,
                     args=tool_call.arguments,
                     working_messages=working_messages,
                     thread_id=thread_id,
                     requested_by_user_id=requested_by_user_id,
                 )
+                tool_messages = processed.messages
                 output_messages.extend(tool_messages)
                 for message in tool_messages:
                     working_messages.append(
@@ -419,7 +430,7 @@ class AgentRunner:
                         }
                     )
 
-                if tool.risk == ToolRisk.CHANGE:
+                if processed.should_stop:
                     return AgentRunnerResult(
                         messages=output_messages, text_deltas=text_deltas
                     )
@@ -464,8 +475,24 @@ class AgentRunner:
         working_messages: list[dict[str, object]],
         thread_id: UUID,
         requested_by_user_id: UUID,
-    ) -> list[AgentMessage]:
+    ) -> ProcessedToolCall:
         if tool.risk == ToolRisk.CHANGE:
+            validation_error = await self._validate_tool_call(
+                tool=tool,
+                args=args,
+                working_messages=working_messages,
+            )
+            if validation_error is not None:
+                tool_call_id = f"invalid-{uuid4()}"
+                return ProcessedToolCall(
+                    messages=_tool_error_messages(
+                        tool=tool,
+                        args=args,
+                        tool_call_id=tool_call_id,
+                        error=validation_error,
+                    )
+                )
+
             action_request = await self._action_tool_run_service.create_action_request(
                 thread_id=thread_id,
                 tool_name=tool.name,
@@ -473,40 +500,43 @@ class AgentRunner:
                 risk=tool.risk,
                 requested_by_user_id=requested_by_user_id,
             )
-            return [
-                AgentMessage(
-                    role="assistant",
-                    parts=[
-                        {
-                            "type": "tool-call",
-                            "toolName": tool.name,
-                            "toolCallId": f"proposal-{action_request.id}",
-                            "args": args,
-                        }
-                    ],
-                ),
-                AgentMessage(
-                    role="assistant",
-                    parts=[
-                        {
-                            "type": "tool-call",
-                            "toolName": "request_approval",
-                            "toolCallId": f"request-approval-{action_request.id}",
-                            "args": {
-                                "actionRequestId": str(action_request.id),
+            return ProcessedToolCall(
+                messages=[
+                    AgentMessage(
+                        role="assistant",
+                        parts=[
+                            {
+                                "type": "tool-call",
                                 "toolName": tool.name,
-                                "risk": tool.risk.value,
-                                "arguments": args,
-                                **_build_approval_context(
-                                    tool_name=tool.name,
-                                    args=args,
-                                    working_messages=working_messages,
-                                ),
-                            },
-                        }
-                    ],
-                ),
-            ]
+                                "toolCallId": f"proposal-{action_request.id}",
+                                "args": args,
+                            }
+                        ],
+                    ),
+                    AgentMessage(
+                        role="assistant",
+                        parts=[
+                            {
+                                "type": "tool-call",
+                                "toolName": "request_approval",
+                                "toolCallId": f"request-approval-{action_request.id}",
+                                "args": {
+                                    "actionRequestId": str(action_request.id),
+                                    "toolName": tool.name,
+                                    "risk": tool.risk.value,
+                                    "arguments": args,
+                                    **_build_approval_context(
+                                        tool_name=tool.name,
+                                        args=args,
+                                        working_messages=working_messages,
+                                    ),
+                                },
+                            }
+                        ],
+                    ),
+                ],
+                should_stop=True,
+            )
 
         started = await self._action_tool_run_service.start_tool_run(
             thread_id=thread_id,
@@ -529,6 +559,7 @@ class AgentRunner:
         )
 
         try:
+            validate_tool_arguments(tool=tool, args=args)
             result = await self._execute_tool(tool=tool, args=args)
             safe_result = json_safe(result)
             result_payload = (
@@ -549,7 +580,7 @@ class AgentRunner:
                     }
                 ],
             )
-            return [call_message, result_message]
+            return ProcessedToolCall(messages=[call_message, result_message])
         except Exception as exc:
             sanitized_error = sanitize_tool_error(exc)
             logger.exception(
@@ -576,7 +607,33 @@ class AgentRunner:
                     }
                 ],
             )
-            return [call_message, error_message]
+            return ProcessedToolCall(messages=[call_message, error_message])
+
+    async def _validate_tool_call(
+        self,
+        *,
+        tool: ToolDefinition,
+        args: dict[str, object],
+        working_messages: list[dict[str, object]],
+    ) -> SanitizedToolError | None:
+        try:
+            validate_tool_arguments(tool=tool, args=args)
+        except Exception as exc:
+            return sanitize_tool_error(exc)
+        if tool.risk == ToolRisk.CHANGE:
+            requested_server_id = await _resolve_requested_server_id(
+                args=args,
+                session=self._session,
+            )
+            preflight_error = _require_matching_preflight(
+                tool_name=tool.name,
+                args=args,
+                working_messages=working_messages,
+                requested_server_id=requested_server_id,
+            )
+            if preflight_error is not None:
+                return preflight_error
+        return None
 
     async def _execute_tool(
         self, *, tool: ToolDefinition, args: dict[str, object]
@@ -596,11 +653,12 @@ def create_default_llm_client() -> LLMClientProtocol:
         else ""
     )
     if api_key:
+        prompt = load_system_prompt(settings)
         return OpenAICompatibleLLMClient(
             model=settings.llm_model,
             api_key=api_key,
             base_url=settings.llm_base_url,
-            system_prompt=settings.llm_system_prompt,
+            system_prompt=prompt.text,
         )
     return RuleBasedLLMClient()
 
@@ -716,32 +774,275 @@ def _coerce_part_record(value: object) -> dict[str, object] | None:
     return value if isinstance(value, dict) else None
 
 
-def _collect_recent_preflight_results(
+def _messages_since_last_user(
     working_messages: list[dict[str, object]],
 ) -> list[dict[str, object]]:
-    results: list[dict[str, object]] = []
-    for message in reversed(working_messages):
+    last_user_index = -1
+    for index, message in enumerate(working_messages):
         if message.get("role") == "user":
-            break
+            last_user_index = index
+    return working_messages[last_user_index + 1 :]
+
+
+def _collect_recent_preflight_evidence(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    tool_calls_by_id: dict[str, dict[str, object]] = {}
+    evidence: list[dict[str, object]] = []
+
+    for message in _messages_since_last_user(working_messages):
         parts = message.get("parts")
         if not isinstance(parts, list):
             continue
-        for raw_part in reversed(parts):
+        for raw_part in parts:
             part = _coerce_part_record(raw_part)
-            if part is None or part.get("type") != "tool-result":
+            if part is None:
                 continue
+
+            part_type = part.get("type")
             tool_name = part.get("toolName")
-            result = part.get("result")
-            if (
-                not isinstance(tool_name, str)
-                or not tool_name.startswith("whm_preflight_")
-                or not isinstance(result, dict)
-                or part.get("isError") is True
+            if not isinstance(tool_name, str) or not tool_name.startswith(
+                "whm_preflight_"
             ):
                 continue
-            results.append({"toolName": tool_name, "result": json_safe(result)})
-    results.reverse()
-    return results
+
+            tool_call_id = part.get("toolCallId")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                continue
+
+            if part_type == "tool-call":
+                args = part.get("args")
+                args_obj = args if isinstance(args, dict) else {}
+                tool_calls_by_id[tool_call_id] = {
+                    "toolName": tool_name,
+                    "args": json_safe(args_obj),
+                }
+                continue
+
+            if part_type != "tool-result" or part.get("isError") is True:
+                continue
+
+            result = part.get("result")
+            if not isinstance(result, dict):
+                continue
+
+            call = tool_calls_by_id.get(tool_call_id, {})
+            entry: dict[str, object] = {
+                "toolName": tool_name,
+                "result": json_safe(result),
+            }
+            call_args = call.get("args")
+            if isinstance(call_args, dict):
+                entry["args"] = call_args
+            evidence.append(entry)
+
+    return evidence
+
+
+def _collect_recent_preflight_results(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        {
+            "toolName": item["toolName"],
+            "result": item["result"],
+        }
+        for item in _collect_recent_preflight_evidence(working_messages)
+    ]
+
+
+def _require_matching_preflight(
+    *,
+    tool_name: str,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    requested_server_id: str | None = None,
+) -> SanitizedToolError | None:
+    if tool_name in {
+        "whm_suspend_account",
+        "whm_unsuspend_account",
+        "whm_change_contact_email",
+    }:
+        return _require_account_preflight(
+            args=args,
+            working_messages=working_messages,
+            requested_server_id=requested_server_id,
+        )
+
+    if tool_name in {
+        "whm_csf_unblock",
+        "whm_csf_allowlist_remove",
+        "whm_csf_allowlist_add_ttl",
+        "whm_csf_denylist_add_ttl",
+    }:
+        return _require_csf_preflight(
+            args=args,
+            working_messages=working_messages,
+            requested_server_id=requested_server_id,
+        )
+
+    return None
+
+
+def _require_account_preflight(
+    *,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    requested_server_id: str | None,
+) -> SanitizedToolError | None:
+    requested_server_ref = _normalized_text(args.get("server_ref"))
+    requested_username = _normalized_text(args.get("username"))
+    if requested_server_ref is None or requested_username is None:
+        return None
+
+    evidence = [
+        item
+        for item in _collect_recent_preflight_evidence(working_messages)
+        if item.get("toolName") == "whm_preflight_account"
+        and isinstance(item.get("result"), dict)
+        and cast(dict[str, object], item["result"]).get("ok") is True
+    ]
+    if not evidence:
+        return SanitizedToolError(
+            error="Required WHM preflight evidence is missing",
+            error_code="preflight_required",
+            details=(
+                "Run whm_preflight_account with the same server_ref and username before requesting this change.",
+            ),
+        )
+
+    for item in evidence:
+        item_args = item.get("args")
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
+            continue
+        if not _server_identity_matches(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
+            continue
+        account = result.get("account")
+        if not isinstance(account, dict):
+            continue
+        if _normalized_text(account.get("user")) == requested_username:
+            return None
+
+    return SanitizedToolError(
+        error="Required WHM preflight evidence does not match this change request",
+        error_code="preflight_mismatch",
+        details=(
+            f"No successful whm_preflight_account was found for server_ref '{requested_server_ref}' and username '{requested_username}' in the current turn.",
+        ),
+    )
+
+
+def _require_csf_preflight(
+    *,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    requested_server_id: str | None,
+) -> SanitizedToolError | None:
+    requested_server_ref = _normalized_text(args.get("server_ref"))
+    requested_targets = _normalized_string_list(args.get("targets"))
+    if requested_server_ref is None or not requested_targets:
+        return None
+
+    evidence = [
+        item
+        for item in _collect_recent_preflight_evidence(working_messages)
+        if item.get("toolName") == "whm_preflight_csf_entries"
+        and isinstance(item.get("result"), dict)
+        and cast(dict[str, object], item["result"]).get("ok") is True
+    ]
+    if not evidence:
+        return SanitizedToolError(
+            error="Required WHM preflight evidence is missing",
+            error_code="preflight_required",
+            details=(
+                "Run whm_preflight_csf_entries for each target with the same server_ref before requesting this change.",
+            ),
+        )
+
+    matched_targets: set[str] = set()
+    for item in evidence:
+        item_args = item.get("args")
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
+            continue
+        if not _server_identity_matches(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
+            continue
+        target = _normalized_text(result.get("target"))
+        if target is not None:
+            matched_targets.add(target)
+
+    missing_targets = [
+        target for target in requested_targets if target not in matched_targets
+    ]
+    if not missing_targets:
+        return None
+
+    return SanitizedToolError(
+        error="Required WHM preflight evidence does not match this change request",
+        error_code="preflight_mismatch",
+        details=(
+            "Missing successful whm_preflight_csf_entries results for target(s): "
+            + ", ".join(f"'{target}'" for target in missing_targets),
+        ),
+    )
+
+
+def _normalized_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalized_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        text = _normalized_text(item)
+        if text is not None:
+            normalized.append(text)
+    return normalized
+
+
+async def _resolve_requested_server_id(
+    *, args: dict[str, object], session: AsyncSession | None
+) -> str | None:
+    requested_server_ref = _normalized_text(args.get("server_ref"))
+    if requested_server_ref is None or session is None:
+        return None
+    if not hasattr(session, "execute"):
+        return None
+
+    repo = SQLWHMServerRepository(session)
+    resolution = await resolve_whm_server_ref(requested_server_ref, repo=repo)
+    if not resolution.ok or resolution.server_id is None:
+        return None
+    return str(resolution.server_id)
+
+
+def _server_identity_matches(
+    *,
+    item_args: dict[str, object],
+    result: dict[str, object],
+    requested_server_ref: str,
+    requested_server_id: str | None,
+) -> bool:
+    result_server_id = _normalized_text(result.get("server_id"))
+    if requested_server_id is not None and result_server_id is not None:
+        return result_server_id == requested_server_id
+    return _normalized_text(item_args.get("server_ref")) == requested_server_ref
 
 
 def _format_argument_value(value: object) -> str:
@@ -781,16 +1082,20 @@ def _describe_activity(tool_name: str, args: dict[str, object]) -> str:
     if tool_name == "whm_change_contact_email":
         return (
             f"Change contact email for '{args.get('username', 'unknown')}' "
-            f"to '{args.get('email', 'unknown')}'"
+            f"to '{args.get('new_email', 'unknown')}'"
         )
     if tool_name == "whm_csf_unblock":
-        return f"Remove CSF block for '{args.get('target', 'unknown')}'"
+        return f"Remove CSF block for '{_format_argument_value(args.get('targets'))}'"
     if tool_name == "whm_csf_allowlist_add_ttl":
-        return f"Add '{args.get('target', 'unknown')}' to the CSF allowlist"
+        return (
+            f"Add '{_format_argument_value(args.get('targets'))}' to the CSF allowlist"
+        )
     if tool_name == "whm_csf_allowlist_remove":
-        return f"Remove '{args.get('target', 'unknown')}' from the CSF allowlist"
+        return f"Remove '{_format_argument_value(args.get('targets'))}' from the CSF allowlist"
     if tool_name == "whm_csf_denylist_add_ttl":
-        return f"Add '{args.get('target', 'unknown')}' to the CSF denylist"
+        return (
+            f"Add '{_format_argument_value(args.get('targets'))}' to the CSF denylist"
+        )
     return _humanize_tool_name(tool_name)
 
 
@@ -867,10 +1172,56 @@ def _to_openai_tool_schema(tool: ToolDefinition) -> dict[str, object]:
         "type": "function",
         "function": {
             "name": tool.name,
-            "description": tool.description,
+            "description": _llm_tool_description(tool),
             "parameters": tool.parameters_schema,
         },
     }
+
+
+def _llm_tool_description(tool: ToolDefinition) -> str:
+    parts = [tool.description, _tool_risk_note(tool)]
+    parts.extend(tool.prompt_hints)
+    return " ".join(part.rstrip(".") + "." for part in parts if part)
+
+
+def _tool_risk_note(tool: ToolDefinition) -> str:
+    if tool.risk == ToolRisk.CHANGE:
+        return "Risk: CHANGE. Requires persisted approval before execution"
+    return "Risk: READ. Evidence-gathering only; it does not change system state"
+
+
+def _tool_error_messages(
+    *,
+    tool: ToolDefinition,
+    args: dict[str, object],
+    tool_call_id: str,
+    error: SanitizedToolError,
+) -> list[AgentMessage]:
+    return [
+        AgentMessage(
+            role="assistant",
+            parts=[
+                {
+                    "type": "tool-call",
+                    "toolName": tool.name,
+                    "toolCallId": tool_call_id,
+                    "args": args,
+                }
+            ],
+        ),
+        AgentMessage(
+            role="tool",
+            parts=[
+                {
+                    "type": "tool-result",
+                    "toolName": tool.name,
+                    "toolCallId": tool_call_id,
+                    "result": error.as_result(),
+                    "isError": True,
+                }
+            ],
+        ),
+    ]
 
 
 def _split_text_deltas(text: str, *, chunk_size: int = 24) -> list[str]:

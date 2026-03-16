@@ -10,6 +10,8 @@ import pytest
 
 from noa_api.core.agent.runner import AgentRunner, LLMToolCall, LLMTurnResponse
 from noa_api.core.tools.registry import ToolDefinition
+from noa_api.core.tools.result_validation import ToolResultValidationError
+from noa_api.core.tool_error_sanitizer import sanitize_tool_error
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk, ToolRunStatus
 from noa_api.storage.postgres.models import ToolRun
@@ -194,3 +196,15 @@ async def test_tool_failure_contract_logs_original_exception(
     }
     assert "tool execution failed" in caplog.text
     assert "token=secret" in caplog.text
+
+
+def test_sanitize_tool_error_maps_invalid_tool_result() -> None:
+    sanitized = sanitize_tool_error(
+        ToolResultValidationError(details=["Missing required field 'flag'"])
+    )
+
+    assert sanitized.as_result() == {
+        "error": "Tool returned an invalid result",
+        "error_code": "invalid_tool_result",
+        "details": ["Missing required field 'flag'"],
+    }
