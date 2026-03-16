@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass
 
 from noa_api.core.tools.argument_validation import ToolArgumentValidationError
+from noa_api.core.tools.result_validation import ToolResultValidationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -24,6 +25,13 @@ class SanitizedToolError:
 
 def sanitize_tool_error(exc: Exception) -> SanitizedToolError:
     if isinstance(exc, ToolArgumentValidationError):
+        return SanitizedToolError(
+            error=exc.error,
+            error_code=exc.error_code,
+            details=exc.details,
+        )
+
+    if isinstance(exc, ToolResultValidationError):
         return SanitizedToolError(
             error=exc.error,
             error_code=exc.error_code,

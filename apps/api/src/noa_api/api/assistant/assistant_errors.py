@@ -9,6 +9,7 @@ from noa_api.api.error_codes import (
     ACTION_REQUEST_NOT_FOUND,
     CHANGE_APPROVAL_REQUIRED,
     INVALID_ACTION_REQUEST_ID,
+    INVALID_TOOL_RESULT,
     INVALID_TOOL_CALL_ID,
     MISSING_ACTION_REQUEST_ID,
     MISSING_TOOL_CALL_ID,
@@ -111,6 +112,14 @@ def tool_call_not_awaiting_result_error() -> AssistantDomainError:
         status_code=status.HTTP_409_CONFLICT,
         detail="Tool call is not awaiting result",
         error_code=TOOL_CALL_NOT_AWAITING_RESULT,
+    )
+
+
+def invalid_tool_result_error() -> AssistantDomainError:
+    return assistant_domain_error(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Invalid tool result payload",
+        error_code=INVALID_TOOL_RESULT,
     )
 
 

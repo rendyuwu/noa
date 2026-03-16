@@ -159,10 +159,13 @@ async def test_action_tool_run_service_transitions_core_states() -> None:
     )
     assert run.status == ToolRunStatus.STARTED
 
-    completed = await service.complete_tool_run(tool_run_id=run.id, result={"ok": True})
+    completed = await service.complete_tool_run(
+        tool_run_id=run.id,
+        result={"ok": True, "flag": {"key": "k", "value": "v"}},
+    )
     assert completed is not None
     assert completed.status == ToolRunStatus.COMPLETED
-    assert completed.result == {"ok": True}
+    assert completed.result == {"ok": True, "flag": {"key": "k", "value": "v"}}
     assert completed.error is None
 
 
@@ -228,7 +231,10 @@ async def test_action_tool_run_service_rejects_complete_then_failed_transition()
         action_request_id=None,
         requested_by_user_id=None,
     )
-    _ = await service.complete_tool_run(tool_run_id=run.id, result={"ok": True})
+    _ = await service.complete_tool_run(
+        tool_run_id=run.id,
+        result={"ok": True, "flag": {"key": "k", "value": "v"}},
+    )
 
     with pytest.raises(ValueError, match="already terminal"):
         await service.fail_tool_run(tool_run_id=run.id, error="should-not-transition")
@@ -265,9 +271,32 @@ async def test_action_tool_run_service_sanitizes_non_json_result_values() -> Non
         requested_by_user_id=None,
     )
 
-    raw = {"completed_at": datetime(2026, 3, 13, 12, 0, 0, tzinfo=UTC)}
+    raw = {
+        "ok": True,
+        "flag": {"completed_at": datetime(2026, 3, 13, 12, 0, 0, tzinfo=UTC)},
+    }
     completed = await service.complete_tool_run(tool_run_id=run.id, result=raw)
 
     assert completed is not None
     assert completed.result is not None
-    assert completed.result["completed_at"] == "2026-03-13T12:00:00+00:00"
+    assert completed.result["flag"]["completed_at"] == "2026-03-13T12:00:00+00:00"
+
+
+async def test_action_tool_run_service_rejects_invalid_tool_result_shape() -> None:
+    repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
+    service = ActionToolRunService(repository=repo)
+
+    run = await service.start_tool_run(
+        thread_id=uuid4(),
+        tool_name="set_demo_flag",
+        args={"key": "k", "value": "v"},
+        action_request_id=None,
+        requested_by_user_id=None,
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await service.complete_tool_run(tool_run_id=run.id, result={"ok": True})
+
+    assert type(exc_info.value).__name__ == "ToolResultValidationError"
+    assert getattr(exc_info.value, "error_code") == "invalid_tool_result"
+    assert getattr(exc_info.value, "details") == ("Missing required field 'flag'",)

@@ -505,6 +505,14 @@ async def test_execute_approved_tool_run_fails_on_risk_mismatch(monkeypatch) -> 
         "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
 
     await execute_approved_tool_run(
         started_tool_run=started,
@@ -585,6 +593,10 @@ async def test_execute_approved_tool_run_sanitizes_execution_errors(
         "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
 
     assistant_repo = _FakeAssistantRepository()
 
@@ -663,6 +675,10 @@ async def test_execute_approved_tool_run_completes_and_persists_result(
 
     monkeypatch.setattr(
         "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -1081,6 +1097,87 @@ async def test_assistant_service_approve_change_tool_blank_string_args_are_rejec
     }
 
 
+async def test_assistant_service_approve_change_tool_invalid_result_is_persisted(
+    monkeypatch,
+) -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="invalid_result_change",
+        args={"reason": "customer request"},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+
+    async def bad_result_change(*, session, reason: str, **kwargs):
+        _ = session, reason, kwargs
+        return {"ok": True}
+
+    tool = ToolDefinition(
+        name="invalid_result_change",
+        description="Returns an invalid change result.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
+            "additionalProperties": False,
+        },
+        execute=bad_result_change,
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean", "enum": [True]},
+                "status": {"type": "string", "enum": ["changed", "no-op"]},
+                "message": {"type": "string"},
+            },
+            "required": ["ok", "status", "message"],
+        },
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    await service.approve_action(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        action_request_id=str(request.id),
+        is_user_active=True,
+        authorize_tool_access=lambda _tool: _allow(),
+    )
+
+    run = next(iter(repo.tool_runs.values()))
+    assert run.status == ToolRunStatus.FAILED
+    assert run.error == "invalid_tool_result"
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
+        "error": "Tool returned an invalid result",
+        "error_code": "invalid_tool_result",
+        "details": [
+            "Missing required field 'status'",
+            "Missing required field 'message'",
+        ],
+    }
+
+
 async def test_assistant_service_approve_change_tool_logs_original_exception(
     monkeypatch,
     caplog: pytest.LogCaptureFixture,
@@ -1414,6 +1511,48 @@ async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() 
 
     assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
     assert assistant_repo.messages[-1]["role"] == "tool"
+
+
+async def test_assistant_service_add_tool_result_rejects_invalid_result_payload() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name="set_demo_flag",
+        args={"key": "feature_x", "value": True},
+        action_request_id=None,
+        requested_by_user_id=owner_id,
+    )
+
+    assistant_repo = _FakeAssistantRepository()
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await service.add_tool_result(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            tool_call_id=str(started.id),
+            result={"ok": True},
+        )
+
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=400,
+        detail="Invalid tool result payload",
+        error_code="invalid_tool_result",
+    )
+    assert repo.tool_runs[started.id].status == ToolRunStatus.STARTED
+    assert assistant_repo.messages == []
+    assert assistant_repo.audits == []
 
 
 @pytest.mark.parametrize(

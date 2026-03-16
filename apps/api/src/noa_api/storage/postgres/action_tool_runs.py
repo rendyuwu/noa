@@ -9,6 +9,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.json_safety import json_safe
+from noa_api.core.tools.registry import get_tool_definition
+from noa_api.core.tools.result_validation import validate_tool_result
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
     ToolRisk,
@@ -260,10 +262,14 @@ class ActionToolRunService:
             return None
         if tool_run.status in {ToolRunStatus.COMPLETED, ToolRunStatus.FAILED}:
             raise ValueError("Tool run is already terminal")
+        safe_result = _safe_dict(result)
+        tool = get_tool_definition(tool_run.tool_name)
+        if tool is not None:
+            validate_tool_result(tool=tool, result=safe_result)
         return await self._repository.finish_tool_run(
             tool_run_id=tool_run_id,
             status=ToolRunStatus.COMPLETED,
-            result=_safe_dict(result),
+            result=safe_result,
             error=None,
         )
 

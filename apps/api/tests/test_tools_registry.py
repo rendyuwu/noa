@@ -65,6 +65,11 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     assert search_schema["properties"]["limit"]["default"] == 20
     assert search_schema["properties"]["limit"]["minimum"] == 1
 
+    assert by_name["set_demo_flag"].result_schema is not None
+    assert by_name["update_workflow_todo"].result_schema is not None
+    assert by_name["whm_suspend_account"].result_schema is not None
+    assert by_name["whm_csf_unblock"].result_schema is not None
+
 
 async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
     suspend_tool = get_tool_definition("whm_suspend_account")

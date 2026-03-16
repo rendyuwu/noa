@@ -34,6 +34,7 @@ from noa_api.whm.tools.read_tools import (
 
 ToolExecutor = Callable[..., Awaitable[dict[str, Any]]]
 ToolParametersSchema = dict[str, Any]
+ToolResultSchema = dict[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,6 +45,7 @@ class ToolDefinition:
     parameters_schema: ToolParametersSchema
     execute: ToolExecutor
     prompt_hints: tuple[str, ...] = ()
+    result_schema: ToolResultSchema | None = None
 
 
 def _object_schema(
@@ -113,6 +115,52 @@ def _string_array_param(
     return schema
 
 
+def _result_object_schema(
+    *,
+    properties: dict[str, Any],
+    required: list[str],
+    additional_properties: bool = True,
+) -> ToolResultSchema:
+    schema: ToolResultSchema = {
+        "type": "object",
+        "properties": properties,
+        "required": required,
+    }
+    if not additional_properties:
+        schema["additionalProperties"] = False
+    return schema
+
+
+def _result_array_schema(
+    *, items: dict[str, Any], min_items: int | None = None
+) -> ToolResultSchema:
+    schema: ToolResultSchema = {
+        "type": "array",
+        "items": items,
+    }
+    if min_items is not None:
+        schema["minItems"] = min_items
+    return schema
+
+
+def _result_string_schema(*, enum: list[str] | None = None) -> ToolResultSchema:
+    schema: ToolResultSchema = {"type": "string"}
+    if enum is not None:
+        schema["enum"] = enum
+    return schema
+
+
+def _result_boolean_schema(*, value: bool | None = None) -> ToolResultSchema:
+    schema: ToolResultSchema = {"type": "boolean"}
+    if value is not None:
+        schema["enum"] = [value]
+    return schema
+
+
+def _result_any_of(*variants: ToolResultSchema) -> ToolResultSchema:
+    return {"anyOf": list(variants)}
+
+
 _SERVER_REF_PARAM = _string_param(
     "Server reference that resolves to exactly one configured WHM server. Use a server name or UUID and ask the user to choose if the tool returns choices.",
 )
@@ -155,6 +203,151 @@ _TODO_ITEM_SCHEMA = {
     "required": ["content", "status", "priority"],
     "additionalProperties": False,
 }
+
+_RESULT_ERROR_SCHEMA = _result_object_schema(
+    properties={
+        "ok": _result_boolean_schema(value=False),
+        "error_code": _result_string_schema(),
+        "message": _result_string_schema(),
+    },
+    required=["ok", "error_code", "message"],
+)
+
+_RESULT_SUCCESS_OK_SCHEMA = {"ok": _result_boolean_schema(value=True)}
+
+_WORKFLOW_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "todos": _result_array_schema(items=_TODO_ITEM_SCHEMA),
+        },
+        required=["ok", "todos"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_DEMO_FLAG_RESULT_SCHEMA = _result_object_schema(
+    properties={
+        **_RESULT_SUCCESS_OK_SCHEMA,
+        "flag": {"type": "object"},
+    },
+    required=["ok", "flag"],
+)
+
+_SERVERS_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "servers": _result_array_schema(items={"type": "object"}),
+        },
+        required=["ok", "servers"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_ACCOUNTS_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "accounts": _result_array_schema(items={"type": "object"}),
+        },
+        required=["ok", "accounts"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_SEARCH_ACCOUNTS_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "accounts": _result_array_schema(items={"type": "object"}),
+            "query": _result_string_schema(),
+        },
+        required=["ok", "accounts", "query"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_VALIDATE_SERVER_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "message": _result_string_schema(),
+        },
+        required=["ok", "message"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_PREFLIGHT_ACCOUNT_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "account": {"type": "object"},
+        },
+        required=["ok", "account"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_PREFLIGHT_CSF_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "target": _result_string_schema(),
+            "verdict": _result_string_schema(),
+            "matches": _result_array_schema(items=_result_string_schema()),
+        },
+        required=["ok", "target", "verdict", "matches"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_ACCOUNT_CHANGE_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "status": _result_string_schema(enum=["changed", "no-op"]),
+            "message": _result_string_schema(),
+        },
+        required=["ok", "status", "message"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
+
+_CSF_RESULT_ITEM_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            "target": _result_string_schema(),
+            "ok": _result_boolean_schema(value=True),
+            "status": _result_string_schema(enum=["changed", "no-op"]),
+            "verdict": _result_string_schema(),
+            "matches": _result_array_schema(items=_result_string_schema()),
+        },
+        required=["target", "ok", "status", "verdict", "matches"],
+    ),
+    _result_object_schema(
+        properties={
+            "target": _result_string_schema(),
+            "ok": _result_boolean_schema(value=False),
+            "status": _result_string_schema(enum=["error"]),
+            "error_code": _result_string_schema(),
+            "message": _result_string_schema(),
+        },
+        required=["target", "ok", "status", "error_code", "message"],
+    ),
+)
+
+_CSF_BATCH_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            "ok": _result_boolean_schema(),
+            "results": _result_array_schema(items=_CSF_RESULT_ITEM_SCHEMA),
+        },
+        required=["ok", "results"],
+    ),
+    _RESULT_ERROR_SCHEMA,
+)
 
 
 _MVP_TOOLS: tuple[ToolDefinition, ...] = (
@@ -200,6 +393,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Use only for explicit demo-flag requests.",
             "Successful results return `ok: true` and echo the saved `flag` payload.",
         ),
+        result_schema=_DEMO_FLAG_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="update_workflow_todo",
@@ -222,6 +416,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Do not use it for trivial Q and A.",
             "Successful results return the saved `todos`; invalid states return `ok: false` with an `error_code`.",
         ),
+        result_schema=_WORKFLOW_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_list_servers",
@@ -233,6 +428,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Use this when the user has not supplied a server_ref or when you need server choices for disambiguation.",
             "Successful results return `servers` and never include API tokens.",
         ),
+        result_schema=_SERVERS_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_validate_server",
@@ -247,6 +443,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Use this for connectivity or credential validation, not for account discovery.",
             "Success returns `ok: true` and `message: ok`; failures return `error_code`, `message`, and possibly `choices` if the server reference is ambiguous.",
         ),
+        result_schema=_VALIDATE_SERVER_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_list_accounts",
@@ -261,6 +458,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Use this for account discovery when you need the available usernames or domains on a server.",
             "Successful results return `accounts`; resolution failures return `choices` or `error_code`.",
         ),
+        result_schema=_ACCOUNTS_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_search_accounts",
@@ -286,6 +484,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Use this to discover the exact WHM username before account changes or preflight calls.",
             "Successful results return matching `accounts` and echo the original `query`.",
         ),
+        result_schema=_SEARCH_ACCOUNTS_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_preflight_account",
@@ -303,6 +502,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Run this before `whm_suspend_account`, `whm_unsuspend_account`, or `whm_change_contact_email` and summarize the evidence before proposing the change.",
             "Successful results return `account` with fields such as `user`, `domain`, `contactemail`, and `suspended`.",
         ),
+        result_schema=_PREFLIGHT_ACCOUNT_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_preflight_csf_entries",
@@ -320,6 +520,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Run this once per target before CSF unblock, allowlist, or denylist changes and summarize the verdict.",
             "Successful results return `target`, `verdict`, and matched CSF entries in `matches`.",
         ),
+        result_schema=_PREFLIGHT_CSF_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_suspend_account",
@@ -339,6 +540,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Idempotent result contract: returns `status` `no-op` if already suspended, or `status` `changed` only after postflight confirms the suspension.",
             "Failures return `ok: false` with `error_code` and `message`.",
         ),
+        result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_unsuspend_account",
@@ -358,6 +560,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Idempotent result contract: returns `status` `no-op` if the account is already active, or `status` `changed` only after postflight confirms the unsuspend.",
             "Failures return `ok: false` with `error_code` and `message`.",
         ),
+        result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_change_contact_email",
@@ -381,6 +584,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Idempotent result contract: returns `status` `no-op` if the email already matches, or `status` `changed` only after postflight verifies the new email.",
             "Failures return `ok: false` with `error_code` and `message`.",
         ),
+        result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_csf_unblock",
@@ -399,6 +603,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
+        result_schema=_CSF_BATCH_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_csf_allowlist_remove",
@@ -417,6 +622,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
+        result_schema=_CSF_BATCH_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_csf_allowlist_add_ttl",
@@ -444,6 +650,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
+        result_schema=_CSF_BATCH_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_csf_denylist_add_ttl",
@@ -471,6 +678,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
+        result_schema=_CSF_BATCH_RESULT_SCHEMA,
     ),
 )
 _MVP_TOOL_INDEX = {tool.name: tool for tool in _MVP_TOOLS}

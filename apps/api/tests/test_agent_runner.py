@@ -209,6 +209,10 @@ async def test_agent_runner_sanitizes_tool_result_message_parts(monkeypatch) -> 
         "noa_api.core.agent.runner.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
     monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
 
     class _TwoTurnLLM:
@@ -273,6 +277,10 @@ async def test_agent_runner_redacts_tool_execution_errors(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
@@ -558,6 +566,10 @@ async def test_agent_runner_fails_read_tool_run_when_args_do_not_match_schema(
         "noa_api.core.agent.runner.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
     monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
 
     class _TwoTurnLLM:
@@ -634,6 +646,10 @@ async def test_agent_runner_rejects_change_tool_when_args_do_not_match_schema(
 
     monkeypatch.setattr(
         "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
@@ -760,6 +776,93 @@ async def test_agent_runner_rejects_whitespace_only_string_arguments(
         "error": "Tool arguments are invalid",
         "error_code": "invalid_tool_arguments",
         "details": ["name must not be blank"],
+    }
+
+
+async def test_agent_runner_fails_when_tool_returns_invalid_result_shape(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def bad_result_tool() -> dict[str, object]:
+        return {"ok": True}
+
+    tool = ToolDefinition(
+        name="bad_result_tool",
+        description="Returns an invalid result payload.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {},
+            "required": [],
+            "additionalProperties": False,
+        },
+        execute=bad_result_tool,
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean", "enum": [True]},
+                "flag": {"type": "object"},
+            },
+            "required": ["ok", "flag"],
+        },
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[LLMToolCall(name=tool.name, arguments={})],
+                )
+            return LLMTurnResponse(text="Tool result was invalid.", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "go"}]}],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    run = next(iter(repo.tool_runs.values()))
+    assert run.status == ToolRunStatus.FAILED
+    assert run.error == "invalid_tool_result"
+
+    tool_message = next(
+        message for message in result.messages if message.role == "tool"
+    )
+    part = tool_message.parts[0]
+    assert isinstance(part, dict)
+    assert part["result"] == {
+        "error": "Tool returned an invalid result",
+        "error_code": "invalid_tool_result",
+        "details": ["Missing required field 'flag'"],
     }
 
 

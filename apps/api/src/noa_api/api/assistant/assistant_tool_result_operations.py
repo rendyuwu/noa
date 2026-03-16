@@ -5,6 +5,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from noa_api.api.assistant.assistant_errors import (
+    invalid_tool_result_error,
     parse_tool_call_id,
     tool_call_not_awaiting_result_error,
     tool_call_not_found_error,
@@ -12,6 +13,7 @@ from noa_api.api.assistant.assistant_errors import (
 )
 from noa_api.api.assistant.assistant_tool_execution import build_tool_result_part
 from noa_api.core.logging_context import log_context
+from noa_api.core.tools.result_validation import ToolResultValidationError
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRunStatus
 from noa_api.storage.postgres.models import ToolRun
@@ -52,9 +54,22 @@ async def record_tool_result(
     )
     tool_run_id = tool_run.id
 
-    completed = await action_tool_run_service.complete_tool_run(
-        tool_run_id=tool_run_id, result=result
-    )
+    try:
+        completed = await action_tool_run_service.complete_tool_run(
+            tool_run_id=tool_run_id, result=result
+        )
+    except ToolResultValidationError as exc:
+        logger.info(
+            "assistant_tool_result_rejected",
+            extra={
+                "thread_id": str(thread_id),
+                "tool_name": tool_run.tool_name,
+                "tool_run_id": str(tool_run.id),
+                "user_id": str(owner_user_id),
+                "error_code": exc.error_code,
+            },
+        )
+        raise invalid_tool_result_error() from exc
     persisted_result = (
         completed.result
         if completed is not None and isinstance(completed.result, dict)
