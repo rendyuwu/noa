@@ -98,6 +98,12 @@ async def whm_search_accounts(
             "error_code": "query_required",
             "message": "Query is required",
         }
+    if limit <= 0:
+        return {
+            "ok": False,
+            "error_code": "limit_invalid",
+            "message": "Limit must be a positive integer",
+        }
 
     listed = await whm_list_accounts(session=session, server_ref=server_ref)
     if listed.get("ok") is not True:

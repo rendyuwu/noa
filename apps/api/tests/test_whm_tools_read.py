@@ -197,6 +197,24 @@ async def test_whm_search_accounts_filters_results(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
+async def test_whm_search_accounts_rejects_non_positive_limit() -> None:
+    from noa_api.whm.tools import read_tools
+
+    result = await read_tools.whm_search_accounts(
+        session=_Session(),
+        server_ref="web1",
+        query="alice",
+        limit=0,
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "limit_invalid",
+        "message": "Limit must be a positive integer",
+    }
+
+
+@pytest.mark.asyncio
 async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
     from noa_api.whm.tools import preflight_tools
 

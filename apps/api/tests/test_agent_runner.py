@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from noa_api.core.agent.runner import (
+    _build_approval_context,
     AgentRunner,
     AgentRunnerResult,
     LLMToolCall,
@@ -528,6 +529,27 @@ async def test_agent_runner_creates_action_request_for_change_tools_without_exec
     approval_args = approval_part.get("args")
     assert isinstance(approval_args, dict)
     assert approval_args.get("actionRequestId") == str(request.id)
+
+
+async def test_build_approval_context_uses_correct_change_arguments_in_activity() -> (
+    None
+):
+    change_email_context = _build_approval_context(
+        tool_name="whm_change_contact_email",
+        args={"username": "alice", "new_email": "alice@example.com"},
+        working_messages=[],
+    )
+    unblock_context = _build_approval_context(
+        tool_name="whm_csf_unblock",
+        args={"targets": ["1.2.3.4", "5.6.7.8"]},
+        working_messages=[],
+    )
+
+    assert (
+        change_email_context["activity"]
+        == "Change contact email for 'alice' to 'alice@example.com'"
+    )
+    assert unblock_context["activity"] == "Remove CSF block for '1.2.3.4, 5.6.7.8'"
 
 
 async def test_rule_based_llm_responds_to_date_tool_result() -> None:

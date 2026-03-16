@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.config import settings
 from noa_api.core.json_safety import json_safe
+from noa_api.core.prompts.loader import load_system_prompt
 from noa_api.core.tool_error_sanitizer import sanitize_tool_error
 from noa_api.core.tools.registry import (
     ToolDefinition,
@@ -596,11 +597,12 @@ def create_default_llm_client() -> LLMClientProtocol:
         else ""
     )
     if api_key:
+        prompt = load_system_prompt(settings)
         return OpenAICompatibleLLMClient(
             model=settings.llm_model,
             api_key=api_key,
             base_url=settings.llm_base_url,
-            system_prompt=settings.llm_system_prompt,
+            system_prompt=prompt.text,
         )
     return RuleBasedLLMClient()
 
@@ -781,16 +783,20 @@ def _describe_activity(tool_name: str, args: dict[str, object]) -> str:
     if tool_name == "whm_change_contact_email":
         return (
             f"Change contact email for '{args.get('username', 'unknown')}' "
-            f"to '{args.get('email', 'unknown')}'"
+            f"to '{args.get('new_email', 'unknown')}'"
         )
     if tool_name == "whm_csf_unblock":
-        return f"Remove CSF block for '{args.get('target', 'unknown')}'"
+        return f"Remove CSF block for '{_format_argument_value(args.get('targets'))}'"
     if tool_name == "whm_csf_allowlist_add_ttl":
-        return f"Add '{args.get('target', 'unknown')}' to the CSF allowlist"
+        return (
+            f"Add '{_format_argument_value(args.get('targets'))}' to the CSF allowlist"
+        )
     if tool_name == "whm_csf_allowlist_remove":
-        return f"Remove '{args.get('target', 'unknown')}' from the CSF allowlist"
+        return f"Remove '{_format_argument_value(args.get('targets'))}' from the CSF allowlist"
     if tool_name == "whm_csf_denylist_add_ttl":
-        return f"Add '{args.get('target', 'unknown')}' to the CSF denylist"
+        return (
+            f"Add '{_format_argument_value(args.get('targets'))}' to the CSF denylist"
+        )
     return _humanize_tool_name(tool_name)
 
 
@@ -867,10 +873,22 @@ def _to_openai_tool_schema(tool: ToolDefinition) -> dict[str, object]:
         "type": "function",
         "function": {
             "name": tool.name,
-            "description": tool.description,
+            "description": _llm_tool_description(tool),
             "parameters": tool.parameters_schema,
         },
     }
+
+
+def _llm_tool_description(tool: ToolDefinition) -> str:
+    parts = [tool.description, _tool_risk_note(tool)]
+    parts.extend(tool.prompt_hints)
+    return " ".join(part.rstrip(".") + "." for part in parts if part)
+
+
+def _tool_risk_note(tool: ToolDefinition) -> str:
+    if tool.risk == ToolRisk.CHANGE:
+        return "Risk: CHANGE. Requires persisted approval before execution"
+    return "Risk: READ. Evidence-gathering only; it does not change system state"
 
 
 def _split_text_deltas(text: str, *, chunk_size: int = 24) -> list[str]:

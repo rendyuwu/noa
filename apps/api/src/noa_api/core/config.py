@@ -1,6 +1,6 @@
-from typing import Annotated
-
+import json
 import secrets
+from typing import Annotated
 
 from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -40,14 +40,10 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str | None = None
     llm_api_key: SecretStr | None = None
-    llm_system_prompt: str = (
-        "You are NOA. Use tools when they help answer the user request.\n"
-        "\n"
-        "When coordinating multi-step operational workflows:\n"
-        "- For any user request that involves actions or multiple steps, create a workflow todo immediately with update_workflow_todo and keep it up to date until the work is done.\n"
-        "- Before running any WHM CHANGE tool, run the relevant WHM preflight tool(s) and summarize evidence.\n"
-        "- For WHM CHANGE tools: after preflight and collecting required args, call the CHANGE tool and use the approval card (request_approval); do not ask the user to confirm in chat.\n"
-        "- For CSF TTL actions, convert durations to minutes and use duration_minutes.\n"
+    llm_system_prompt: str | None = None
+    llm_system_prompt_path: str | None = None
+    llm_system_prompt_extra_paths: Annotated[list[str], NoDecode] = Field(
+        default_factory=list
     )
 
     @field_validator("telemetry_otlp_headers", mode="before")
@@ -78,6 +74,41 @@ class Settings(BaseSettings):
             return []
         if isinstance(value, str):
             return [item.strip() for item in value.split(",") if item.strip()]
+        return value
+
+    @field_validator("llm_system_prompt", "llm_system_prompt_path", mode="before")
+    @classmethod
+    def _normalize_optional_prompt_strings(cls, value: object) -> object:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            normalized = value.strip()
+            return normalized or None
+        return value
+
+    @field_validator("llm_system_prompt_extra_paths", mode="before")
+    @classmethod
+    def _normalize_prompt_extra_paths(cls, value: object) -> object:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError:
+                    value = raw
+                else:
+                    if not isinstance(value, list):
+                        return []
+            if isinstance(value, str):
+                return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [
+                item.strip() for item in value if isinstance(item, str) and item.strip()
+            ]
         return value
 
     @model_validator(mode="after")
