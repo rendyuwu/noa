@@ -11,7 +11,6 @@ type GlobalErrorProps = {
 
 export default function GlobalError({ error, reset }: GlobalErrorProps) {
   useEffect(() => {
-    console.error(error);
     reportClientError(error, {
       source: "app.error-boundary",
       digest: error.digest,

@@ -48,7 +48,6 @@ describe("app/error", () => {
 
     render(<GlobalError error={error} reset={vi.fn()} />);
 
-    expect(console.error).toHaveBeenCalledWith(error);
     expect(reportClientError).toHaveBeenCalledWith(error, {
       digest: "digest-123",
       source: "app.error-boundary",

@@ -210,8 +210,10 @@ export const ClaudeThread: FC<{
 }> = ({ onOpenSidebar, showOpenSidebarButtonOnDesktop }) => {
   const { isHydrating } = useThreadHydration();
   const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
-  const workflowTodos = useAssistantState(({ thread }: any) =>
-    extractLatestWorkflowTodos(thread?.messages),
+  const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
+  const workflowTodos = useMemo(
+    () => extractLatestWorkflowTodos(threadMessages),
+    [threadMessages],
   );
   const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
 
