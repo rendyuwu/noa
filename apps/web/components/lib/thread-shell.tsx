@@ -12,6 +12,8 @@ import {
   useAssistantTransportSendCommand,
 } from "@assistant-ui/react";
 
+import { Button } from "@/components/lib/button";
+
 function ApprovalActions({ args }: { args: Record<string, unknown> }) {
   const sendCommand = useAssistantTransportSendCommand();
   const actionRequestId = typeof args.actionRequestId === "string" ? args.actionRequestId : "";
@@ -28,20 +30,12 @@ function ApprovalActions({ args }: { args: Record<string, unknown> }) {
         Tool: <code>{toolName}</code>
       </p>
       <div className="row">
-        <button
-          className="button button-primary"
-          onClick={() => sendCommand({ type: "approve-action", actionRequestId })}
-          type="button"
-        >
+        <Button onClick={() => sendCommand({ type: "approve-action", actionRequestId })} variant="primary">
           Approve
-        </button>
-        <button
-          className="button button-danger"
-          onClick={() => sendCommand({ type: "deny-action", actionRequestId })}
-          type="button"
-        >
+        </Button>
+        <Button onClick={() => sendCommand({ type: "deny-action", actionRequestId })} variant="danger">
           Deny
-        </button>
+        </Button>
       </div>
     </div>
   );

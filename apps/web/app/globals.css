@@ -6,11 +6,20 @@
   --bg: 30 3.3% 11.8%;
   --surface: 30 3% 14.5%;
   --surface-2: 30 3% 18%;
+  --surface-3: 30 4% 21%;
   --border: 30 3% 26%;
   --text: 30 9% 92%;
   --muted: 30 5% 70%;
   --accent: 22 90% 54%;
   --accent-ink: 22 96% 20%;
+  --danger-surface: 14 18% 20%;
+  --danger-surface-hover: 14 20% 24%;
+  --danger-border: 12 24% 34%;
+  --danger-text: 12 55% 91%;
+  --danger-muted: 12 26% 72%;
+  --success-surface: 145 14% 21%;
+  --success-border: 145 14% 33%;
+  --success-text: 120 24% 88%;
 
   /* Compatibility: older styles referenced --line */
   --line: var(--border);
@@ -75,15 +84,67 @@
   }
 
   .button {
-    @apply inline-flex items-center justify-center rounded-lg border border-border bg-surface px-3 py-2 text-sm font-medium text-text shadow-sm transition-colors hover:bg-surface-2;
+    @apply inline-flex items-center justify-center rounded-xl border border-border bg-transparent font-medium text-text shadow-sm transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out hover:border-transparent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:border-border disabled:hover:bg-transparent;
+  }
+
+  .button-secondary {
+    @apply border-border text-text;
   }
 
   .button-primary {
-    @apply border-transparent bg-accent text-white hover:bg-accent/90;
+    background-color: transparent;
+    color: hsl(var(--accent));
+    border-color: hsl(var(--accent) / 0.45);
+  }
+
+  .button-primary:hover {
+    color: white;
+    border-color: transparent;
+    background-color: hsl(var(--accent));
   }
 
   .button-danger {
-    @apply border-red-200 bg-red-50 text-red-800 hover:bg-red-100;
+    border-color: hsl(var(--danger-border));
+    color: hsl(var(--danger-text));
+  }
+
+  .button-danger:hover {
+    border-color: transparent;
+    background-color: hsl(var(--danger-surface-hover));
+  }
+
+  .button-danger:focus-visible {
+    --tw-ring-color: hsl(var(--danger-border) / 0.45);
+  }
+
+  .danger-zone {
+    @apply rounded-xl border px-3 py-3;
+    border-color: hsl(var(--danger-border) / 0.55);
+    background: linear-gradient(180deg, hsl(var(--danger-surface) / 0.34), hsl(var(--danger-surface) / 0.24));
+  }
+
+  .danger-zone-label {
+    color: hsl(var(--danger-text));
+  }
+
+  .danger-zone-copy {
+    color: hsl(var(--danger-muted));
+  }
+
+  .status-badge {
+    @apply rounded-full border px-2.5 py-1 text-xs font-medium tracking-[0.01em];
+  }
+
+  .status-badge-success {
+    border-color: hsl(var(--success-border) / 0.75);
+    background-color: hsl(var(--success-surface));
+    color: hsl(var(--success-text));
+  }
+
+  .status-badge-danger {
+    border-color: hsl(var(--danger-border) / 0.75);
+    background-color: hsl(var(--danger-surface));
+    color: hsl(var(--danger-text));
   }
 
   .input {

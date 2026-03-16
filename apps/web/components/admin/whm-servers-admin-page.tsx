@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
+import { Button } from "@/components/lib/button";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
@@ -199,18 +200,13 @@ export function WhmServersAdminPage() {
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="button"
-              disabled={loading}
-              onClick={() => void loadServers()}
-            >
+            <Button disabled={loading} onClick={() => void loadServers()} size="sm">
               Refresh
-            </button>
+            </Button>
             <Dialog.Trigger asChild>
-              <button type="button" className="button button-primary" onClick={openCreate}>
+              <Button onClick={openCreate} variant="primary" size="sm">
                 Add server
-              </button>
+              </Button>
             </Dialog.Trigger>
           </div>
         </div>
@@ -223,9 +219,9 @@ export function WhmServersAdminPage() {
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">{loadError}</div>
-              <button type="button" className="button shrink-0" onClick={() => void loadServers()}>
+              <Button className="shrink-0" onClick={() => void loadServers()} size="sm">
                 Retry
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
@@ -268,8 +264,8 @@ export function WhmServersAdminPage() {
                     validateResult === undefined
                       ? null
                       : validateResult.ok
-                        ? { label: "validated", className: "bg-emerald-50 text-emerald-800" }
-                        : { label: "failed", className: "bg-red-50 text-red-800" };
+                        ? { label: "validated", className: "status-badge-success" }
+                        : { label: "failed", className: "status-badge-danger" };
 
                   return (
                     <tr key={server.id}>
@@ -280,27 +276,27 @@ export function WhmServersAdminPage() {
                       <td className="px-4 py-3 text-muted">{formatTimestamp(server.updated_at)}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap items-center gap-2">
-                          <button
-                            type="button"
-                            className="button"
+                          <Button
                             disabled={busy || deleting}
                             onClick={() => void validateServer(server.id)}
+                            size="sm"
+                            variant="secondary"
                           >
                             {busy ? "Validating..." : "Validate"}
-                          </button>
+                          </Button>
 
-                          <button
-                            type="button"
-                            className="button button-danger"
+                          <Button
                             disabled={deleting || busy}
                             onClick={() => void deleteServer(server.id)}
+                            size="sm"
+                            variant="danger"
                           >
                             {deleting ? "Deleting..." : "Delete"}
-                          </button>
+                          </Button>
 
                           {badge ? (
                             <span
-                              className={["rounded px-2 py-1 text-xs font-medium", badge.className].join(" ")}
+                              className={["status-badge", badge.className].join(" ")}
                               title={validateResult?.message}
                             >
                               {badge.label}
@@ -334,13 +330,9 @@ export function WhmServersAdminPage() {
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <button
-                  type="button"
-                  className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2/60 hover:text-text"
-                  aria-label="Close"
-                >
+                <Button aria-label="Close" className="text-muted hover:text-text" size="icon">
                   <Cross2Icon width={18} height={18} />
-                </button>
+                </Button>
               </Dialog.Close>
             </div>
 
@@ -434,18 +426,13 @@ export function WhmServersAdminPage() {
 
               <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
                 <Dialog.Close asChild>
-                  <button type="button" className="button" disabled={creating}>
+                  <Button disabled={creating} size="sm">
                     Cancel
-                  </button>
+                  </Button>
                 </Dialog.Close>
-                <button
-                  type="button"
-                  className="button button-primary"
-                  disabled={creating}
-                  onClick={() => void createServer()}
-                >
+                <Button disabled={creating} onClick={() => void createServer()} size="sm" variant="primary">
                   {creating ? "Saving..." : "Save"}
-                </button>
+                </Button>
               </div>
             </div>
           </Dialog.Content>

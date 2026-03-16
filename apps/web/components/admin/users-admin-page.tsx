@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cross2Icon } from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
 
+import { Button } from "@/components/lib/button";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
@@ -290,14 +291,9 @@ export function UsersAdminPage() {
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">{loadError}</div>
-              <button
-                type="button"
-                className="button shrink-0"
-                disabled={loading}
-                onClick={() => void loadData()}
-              >
+              <Button className="shrink-0" disabled={loading} onClick={() => void loadData()} size="sm">
                 Retry
-              </button>
+              </Button>
             </div>
           </div>
         ) : null}
@@ -406,13 +402,9 @@ export function UsersAdminPage() {
                   ) : null}
                 </div>
                 <Dialog.Close asChild>
-                  <button
-                    type="button"
-                    className="button"
-                    aria-label="Close"
-                  >
+                  <Button aria-label="Close" size="icon">
                     <Cross2Icon width={16} height={16} />
-                  </button>
+                  </Button>
                 </Dialog.Close>
               </div>
 
@@ -425,18 +417,15 @@ export function UsersAdminPage() {
                         {selectedUser?.is_active === false ? "Inactive" : "Active"}
                       </div>
                     </div>
-                    <button
-                      type="button"
+                    <Button
+                      className="shrink-0"
                       disabled={!selectedUser || statusSaving}
-                      className={[
-                        "button shrink-0",
-                        selectedUser?.is_active === false ? "button-primary" : "button-danger",
-                        "disabled:cursor-not-allowed disabled:opacity-60",
-                      ].join(" ")}
+                      variant={selectedUser?.is_active === false ? "primary" : "danger"}
                       onClick={() => void toggleUserStatus()}
+                      size="sm"
                     >
                       {selectedUser?.is_active === false ? "Enable" : "Disable"}
-                    </button>
+                    </Button>
                   </div>
                 </div>
 
@@ -517,31 +506,31 @@ export function UsersAdminPage() {
                   </div>
 
                   <div className="mt-4 border-t border-border pt-4">
-                    <button
-                      type="button"
+                    <Button
+                      className="w-full"
                       disabled={!selectedUser || saving}
-                      className="button button-primary w-full disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={() => void saveTools()}
+                      variant="primary"
                     >
                       {saving ? "Saving..." : "Save"}
-                    </button>
+                    </Button>
                   </div>
 
-                  <div className="mt-6 rounded-xl border border-red-200 bg-red-50/70 px-3 py-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-red-800">
+                  <div className="danger-zone mt-6">
+                    <div className="danger-zone-label text-xs font-semibold uppercase tracking-wide">
                       Danger zone
                     </div>
-                    <p className="mt-1 text-sm text-red-800">
+                    <p className="danger-zone-copy mt-1 text-sm">
                       Delete this user account and remove its access from NOA.
                     </p>
-                    <button
-                      type="button"
+                    <Button
+                      className="mt-3 w-full"
                       disabled={!selectedUser || deleteSaving}
-                      className="button button-danger mt-3 w-full disabled:cursor-not-allowed disabled:opacity-60"
                       onClick={() => void deleteUser()}
+                      variant="danger"
                     >
                       {deleteSaving ? "Deleting..." : "Delete user"}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </div>
