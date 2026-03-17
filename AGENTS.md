@@ -123,6 +123,13 @@ Tools + approval gate:
 - Every tool is classified as `ToolRisk.READ` or `ToolRisk.CHANGE`.
 - Any mutating behavior must be `CHANGE` and go through the persisted approval flow (`request_approval` -> approve/deny).
 
+Assistant workflows:
+- Approval-oriented tool families register workflow templates in `apps/api/src/noa_api/core/workflows/registry.py`; avoid adding new family-specific branches in `apps/api/src/noa_api/core/agent/runner.py` when a template hook can own the behavior.
+- Shared workflow contract lives in `apps/api/src/noa_api/core/workflows/types.py`.
+- WHM is the reference implementation in `apps/api/src/noa_api/core/workflows/whm.py`.
+- When adding a new workflow family, set `ToolDefinition.workflow_family`, implement a template module, register it, and keep the existing web workflow UI generic unless the user explicitly asks for a new surface.
+- Canonical workflow UI/docs reference: `docs/assistant/workflow-templates.md`.
+
 ### TypeScript / Next.js (apps/web)
 Imports/formatting:
 - Order imports: React/Next, third-party, then internal `@/`.
