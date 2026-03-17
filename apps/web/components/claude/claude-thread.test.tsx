@@ -14,6 +14,7 @@ let mockAssistantMessage: any = {
   content: [{ type: "text", text: "" }],
 };
 const setText = vi.fn();
+const sendCommand = vi.fn();
 
 vi.mock("@/components/lib/auth-store", () => ({
   getAuthUser: vi.fn(() => ({
@@ -122,6 +123,7 @@ vi.mock("@assistant-ui/react", async () => {
     useAssistantApi: () => ({
       composer: () => ({ setText }),
     }),
+    useAssistantTransportSendCommand: () => sendCommand,
     useAssistantState: (selector: any) =>
       selector({
         message: mockAssistantMessage,
@@ -151,6 +153,7 @@ describe("ClaudeThread", () => {
       content: [{ type: "text", text: "" }],
     };
     setText.mockReset();
+    sendCommand.mockReset();
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 2, 10, 9, 0));
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

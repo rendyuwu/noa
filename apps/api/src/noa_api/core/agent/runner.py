@@ -387,6 +387,21 @@ class AgentRunner:
                     break
 
                 tool_calls_processed += 1
+                internal_tool_guidance = _internal_tool_guidance(tool_call.name)
+                if internal_tool_guidance is not None:
+                    working_messages.append(
+                        {
+                            "role": "assistant",
+                            "parts": [
+                                {
+                                    "type": "text",
+                                    "text": internal_tool_guidance,
+                                }
+                            ],
+                        }
+                    )
+                    continue
+
                 tool = get_tool_definition(tool_call.name)
                 if tool is None or tool.name not in available_tool_names:
                     saw_denied_tool_call = True
@@ -1238,6 +1253,15 @@ def _tool_error_messages(
             ],
         ),
     ]
+
+
+def _internal_tool_guidance(tool_name: str) -> str | None:
+    if tool_name == "request_approval":
+        return (
+            "Approval requests are created automatically after you call the "
+            "underlying CHANGE tool. Do not call request_approval directly."
+        )
+    return None
 
 
 def _split_text_deltas(text: str, *, chunk_size: int = 24) -> list[str]:

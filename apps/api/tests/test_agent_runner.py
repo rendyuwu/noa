@@ -499,6 +499,153 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
     assert final_part.get("text") == "Today's date is available."
 
 
+async def test_agent_runner_recovers_when_model_calls_request_approval_directly(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change(
+        *, server_ref: str, username: str, reason: str
+    ) -> dict[str, object]:
+        raise AssertionError(
+            f"unexpected execution for {server_ref} {username} {reason}"
+        )
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Requires approval before execution.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **kwargs: _async_return("server-1"),
+    )
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[LLMToolCall(name="request_approval", arguments={})],
+                )
+
+            saw_internal_guidance = False
+            for message in messages:
+                parts = message.get("parts")
+                if not isinstance(parts, list):
+                    continue
+                if any(
+                    isinstance(part, dict)
+                    and part.get("text")
+                    == (
+                        "Approval requests are created automatically after you call "
+                        "the underlying CHANGE tool. Do not call request_approval "
+                        "directly."
+                    )
+                    for part in parts
+                ):
+                    saw_internal_guidance = True
+                    break
+            assert saw_internal_guidance is True
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name="whm_suspend_account",
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "requested by customer",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {"ok": True, "account": {"user": "alice"}},
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    texts: list[str] = []
+    for message in result.messages:
+        part = message.parts[0]
+        if not isinstance(part, dict):
+            continue
+        if part.get("type") != "text":
+            continue
+        text = part.get("text")
+        if isinstance(text, str):
+            texts.append(text)
+    assert not any(
+        text and "You don't have permission to use tool 'request_approval'" in text
+        for text in texts
+    )
+    assert len(repo.action_requests) == 1
+    approval_part = result.messages[-1].parts[0]
+    assert isinstance(approval_part, dict)
+    assert approval_part["toolName"] == "request_approval"
+
+
 async def test_agent_runner_creates_action_request_for_change_tools_without_execution() -> (
     None
 ):

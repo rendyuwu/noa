@@ -7,7 +7,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus
-from noa_api.storage.postgres.models import ActionRequest, AuditLog, Message, Thread
+from noa_api.storage.postgres.models import (
+    ActionRequest,
+    AuditLog,
+    Message,
+    Thread,
+    ToolRun,
+)
 
 
 class SQLAssistantRepository:
@@ -42,6 +48,25 @@ class SQLAssistantRepository:
                 ActionRequest.status == ActionRequestStatus.PENDING,
             )
             .order_by(ActionRequest.created_at.asc(), ActionRequest.id.asc())
+        )
+        return list(result.scalars().all())
+
+    async def list_action_requests(self, *, thread_id: UUID) -> list[ActionRequest]:
+        result = await self._session.execute(
+            select(ActionRequest)
+            .where(ActionRequest.thread_id == thread_id)
+            .order_by(ActionRequest.created_at.asc(), ActionRequest.id.asc())
+        )
+        return list(result.scalars().all())
+
+    async def list_action_tool_runs(self, *, thread_id: UUID) -> list[ToolRun]:
+        result = await self._session.execute(
+            select(ToolRun)
+            .where(
+                ToolRun.thread_id == thread_id,
+                ToolRun.action_request_id.is_not(None),
+            )
+            .order_by(ToolRun.created_at.asc(), ToolRun.id.asc())
         )
         return list(result.scalars().all())
 

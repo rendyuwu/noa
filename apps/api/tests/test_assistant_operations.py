@@ -426,6 +426,16 @@ async def test_run_agent_phase_refreshes_workflow_and_pending_approvals() -> Non
                 "status": "PENDING",
             }
         ],
+        "actionRequests": [
+            {
+                "actionRequestId": str(uuid4()),
+                "toolName": "set_demo_flag",
+                "risk": "CHANGE",
+                "arguments": {"key": "feature_x", "value": True},
+                "status": "PENDING",
+                "lifecycleStatus": "requested",
+            }
+        ],
         "isRunning": False,
     }
     controller = _FakeController(state={})
@@ -441,6 +451,7 @@ async def test_run_agent_phase_refreshes_workflow_and_pending_approvals() -> Non
             "messages": [],
             "workflow": [],
             "pendingApprovals": [],
+            "actionRequests": [],
             "isRunning": False,
         },
         command_types=["add-message"],

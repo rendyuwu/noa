@@ -58,6 +58,7 @@ from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
 )
+from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRunStatus
 from noa_api.storage.postgres.models import ActionRequest
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.workflow_todos import (
@@ -102,12 +103,27 @@ class AssistantPendingApproval(BaseModel):
     model_config = {"populate_by_name": True}
 
 
+class AssistantActionRequest(BaseModel):
+    action_request_id: str = Field(alias="actionRequestId")
+    tool_name: str = Field(alias="toolName")
+    risk: str
+    arguments: dict[str, Any]
+    status: str
+    lifecycle_status: str = Field(alias="lifecycleStatus")
+
+    model_config = {"populate_by_name": True}
+
+
 class AssistantThreadStateResponse(BaseModel):
     messages: list[AssistantThreadStateMessage]
     workflow: list[AssistantWorkflowTodo] = Field(default_factory=list)
     pending_approvals: list[AssistantPendingApproval] = Field(
         default_factory=list,
         alias="pendingApprovals",
+    )
+    action_requests: list[AssistantActionRequest] = Field(
+        default_factory=list,
+        alias="actionRequests",
     )
     is_running: bool = Field(alias="isRunning")
 
@@ -121,6 +137,42 @@ def _serialize_pending_approval(request: ActionRequest) -> dict[str, object]:
         "risk": request.risk.value,
         "arguments": request.args,
         "status": request.status.value,
+    }
+
+
+def _action_request_lifecycle_status(
+    request: ActionRequest,
+    *,
+    latest_tool_run_status: ToolRunStatus | None,
+) -> str:
+    if request.status == ActionRequestStatus.PENDING:
+        return "requested"
+    if request.status == ActionRequestStatus.DENIED:
+        return "denied"
+    if latest_tool_run_status == ToolRunStatus.STARTED:
+        return "executing"
+    if latest_tool_run_status == ToolRunStatus.COMPLETED:
+        return "finished"
+    if latest_tool_run_status == ToolRunStatus.FAILED:
+        return "failed"
+    return "approved"
+
+
+def _serialize_action_request(
+    request: ActionRequest,
+    *,
+    latest_tool_run_status: ToolRunStatus | None,
+) -> dict[str, object]:
+    return {
+        "actionRequestId": str(request.id),
+        "toolName": request.tool_name,
+        "risk": request.risk.value,
+        "arguments": request.args,
+        "status": request.status.value,
+        "lifecycleStatus": _action_request_lifecycle_status(
+            request,
+            latest_tool_run_status=latest_tool_run_status,
+        ),
     }
 
 
@@ -159,6 +211,18 @@ class AssistantService:
             if self._workflow_todo_service is not None
             else []
         )
+        action_requests = await self._repository.list_action_requests(
+            thread_id=thread_id
+        )
+        latest_tool_run_status_by_request_id: dict[UUID, ToolRunStatus] = {}
+        for tool_run in await self._repository.list_action_tool_runs(
+            thread_id=thread_id
+        ):
+            if tool_run.action_request_id is None:
+                continue
+            latest_tool_run_status_by_request_id[tool_run.action_request_id] = (
+                tool_run.status
+            )
         pending_action_requests = await self._repository.get_pending_action_requests(
             thread_id=thread_id
         )
@@ -175,6 +239,15 @@ class AssistantService:
             "pendingApprovals": [
                 _serialize_pending_approval(request)
                 for request in pending_action_requests
+            ],
+            "actionRequests": [
+                _serialize_action_request(
+                    request,
+                    latest_tool_run_status=latest_tool_run_status_by_request_id.get(
+                        request.id
+                    ),
+                )
+                for request in action_requests
             ],
             "isRunning": False,
         }
