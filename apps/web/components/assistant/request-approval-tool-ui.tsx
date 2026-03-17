@@ -70,16 +70,17 @@ function summarizeDetails(items: DetailItem[]): string | null {
 function getReceiptLabel(lifecycleStatus: string): string {
   switch (lifecycleStatus) {
     case "finished":
-      return "Completed";
+      return "Done";
     case "failed":
       return "Failed";
     case "denied":
       return "Denied";
     case "approved":
+      return "Approved";
     case "executing":
-      return "Executing";
+      return "Running";
     default:
-      return "Approval needed";
+      return "Needs approval";
   }
 }
 
@@ -97,13 +98,19 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     )?.lifecycleStatus ?? "requested";
   const copy = getApprovalLifecyclePresentation(lifecycleStatus);
   const detailSheet = useAssistantDetailSheet();
-  const hasDetails = beforeState.length > 0 || argumentSummary.length > 0;
   const [pendingDecision, setPendingDecision] = useState<DecisionState | null>(null);
   const detailKey = `approval:${actionRequestId}`;
   const summaryText = useMemo(
     () => summarizeDetails(argumentSummary) ?? summarizeDetails(beforeState),
     [argumentSummary, beforeState],
   );
+  const risk = coerceString(args.risk) ?? "CHANGE";
+  const overview = [
+    { label: "Status", value: copy.title },
+    { label: "Tool", value: prettifyToolName(toolName) },
+    { label: "Risk", value: risk },
+    { label: "Action ID", value: actionRequestId },
+  ];
 
   useEffect(() => {
     if (lifecycleStatus !== "requested") {
@@ -136,6 +143,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
       badge: copy.badge,
       badgeClassName: copy.badgeClassName,
       sections: [
+        { title: "Overview", items: overview },
         { title: "Before state", items: beforeState },
         { title: "Requested change", items: argumentSummary },
       ].filter((section) => section.items.length > 0),
@@ -149,7 +157,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           <div className="min-w-0">
             <div className="text-sm font-medium text-text">{activity}</div>
             <div className="mt-1 text-xs text-muted">
-              {summaryText ?? "This change needs approval before execution can continue."}
+              {summaryText ?? copy.detail}
             </div>
           </div>
           <div
@@ -186,16 +194,14 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           >
             {pendingDecision === "denying" ? "Denying..." : "Deny"}
           </button>
-          {hasDetails ? (
-            <button
-              type="button"
-              onClick={openDetails}
-              className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text"
-            >
-              {detailSheet.open && detailSheet.key === detailKey ? "Hide details" : "Details"}
-              <ChevronRightIcon width={14} height={14} />
-            </button>
-          ) : null}
+          <button
+            type="button"
+            onClick={openDetails}
+            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text"
+          >
+            {detailSheet.open && detailSheet.key === detailKey ? "Hide details" : "Details"}
+            <ChevronRightIcon width={14} height={14} />
+          </button>
         </div>
       </div>
     );

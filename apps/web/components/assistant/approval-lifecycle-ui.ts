@@ -24,9 +24,9 @@ export function getApprovalLifecyclePresentation(
   switch (status) {
     case "requested":
       return {
-        title: "Approval requested",
+        title: "Approval needed",
         detail: "Review the proposed change before execution begins.",
-        badge: "requested",
+        badge: "needs approval",
         badgeClassName: "bg-accent/15 text-accent",
         Icon: ClockIcon,
       };
@@ -40,15 +40,15 @@ export function getApprovalLifecyclePresentation(
       };
     case "executing":
       return {
-        title: "Executing approved action",
+        title: "Applying approved change",
         detail: "NOA is running the approved change now.",
-        badge: "executing",
+        badge: "running",
         badgeClassName: "bg-sky-100/80 text-sky-900",
         Icon: RocketIcon,
       };
     case "finished":
       return {
-        title: "Approved action finished",
+        title: "Change complete",
         detail: "The approved change completed successfully.",
         badge: "done",
         badgeClassName: "bg-emerald-100/80 text-emerald-900",
@@ -56,7 +56,7 @@ export function getApprovalLifecyclePresentation(
       };
     case "failed":
       return {
-        title: "Approved action failed",
+        title: "Change failed",
         detail: "The approval succeeded, but the execution did not finish cleanly.",
         badge: "failed",
         badgeClassName: "bg-rose-100/80 text-rose-900",
@@ -64,7 +64,7 @@ export function getApprovalLifecyclePresentation(
       };
     case "denied":
       return {
-        title: "Action request denied",
+        title: "Change denied",
         detail: "Execution stops and the request is now terminal.",
         badge: "denied",
         badgeClassName: "bg-slate-200/80 text-slate-800",

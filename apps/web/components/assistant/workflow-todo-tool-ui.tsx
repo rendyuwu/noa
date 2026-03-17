@@ -1,9 +1,8 @@
 "use client";
 
-import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
+import { makeAssistantToolUI } from "@assistant-ui/react";
 import { CheckIcon, ChevronRightIcon, Cross2Icon, DotFilledIcon } from "@radix-ui/react-icons";
 
-import { extractLatestCanonicalActionRequests } from "@/components/assistant/approval-state";
 import {
   toggleAssistantDetailSheet,
   useAssistantDetailSheet,
@@ -140,8 +139,6 @@ export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[
 }
 
 export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
-  const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
-  const hasApprovalHistory = (extractLatestCanonicalActionRequests(threadMessages) ?? []).length > 0;
   const detailSheet = useAssistantDetailSheet();
   const detailKey = `workflow:${todos.map((todo) => `${todo.content}:${todo.status}`).join("|")}`;
   const completedCount = todos.filter((todo) => todo.status === "completed").length;
@@ -150,25 +147,30 @@ export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
     (todo) => todo.status === "completed" || todo.status === "cancelled",
   );
 
-  if (!todos.length || !isTerminal || hasApprovalHistory) {
+  if (!todos.length || !isTerminal) {
     return null;
   }
 
   const summaryParts = [
-    cancelledCount > 0 ? "Run ended" : "Completed",
+    cancelledCount > 0 ? "Ended" : "Completed",
     `${completedCount}/${todos.length} steps`,
+    cancelledCount > 0 ? `${cancelledCount} cancelled` : null,
   ].filter(Boolean);
+  const title = "Run summary";
+  const badge = cancelledCount > 0 ? "ended" : "done";
+  const badgeClassName =
+    cancelledCount > 0 ? "bg-slate-200/80 text-slate-800" : "bg-emerald-100/80 text-emerald-900";
 
   return (
     <div className="mt-3 rounded-lg border border-border/60 bg-bg/10 px-3 py-2">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm text-text">Run details</div>
+          <div className="text-sm text-text">{title}</div>
           <div className="mt-1 text-xs text-muted">{summaryParts.join(" · ")}</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div className="rounded-full bg-emerald-100/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-emerald-900">
-            {cancelledCount > 0 ? "ended" : "done"}
+          <div className={["rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]", badgeClassName].join(" ")}>
+            {badge}
           </div>
           <button
             type="button"
@@ -177,13 +179,10 @@ export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
                 open: true,
                 key: detailKey,
                 kind: "workflow",
-                title: "Run details",
+                title,
                 subtitle: summaryParts.join(" · "),
-                badge: cancelledCount > 0 ? "ended" : "done",
-                badgeClassName:
-                  cancelledCount > 0
-                    ? "bg-slate-200/80 text-slate-800"
-                    : "bg-emerald-100/80 text-emerald-900",
+                badge,
+                badgeClassName,
                 todos,
               });
             }}
