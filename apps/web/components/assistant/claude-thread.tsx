@@ -25,14 +25,7 @@ import {
   formatClaudeGreetingName,
   getClaudeTimeGreeting,
 } from "@/components/assistant/claude-greeting";
-import { ApprovalDock } from "@/components/assistant/approval-dock";
-import { extractLatestCanonicalActionRequests } from "@/components/assistant/approval-state";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/assistant/request-approval-tool-ui";
-import {
-  extractLatestCanonicalWorkflowTodos,
-  extractLatestWorkflowTodos,
-} from "@/components/assistant/workflow-todo-tool-ui";
-import { WorkflowDock } from "@/components/assistant/workflow-dock";
 import { getAuthUser } from "@/components/lib/auth-store";
 import { useThreadHydration } from "@/components/lib/thread-hydration";
 
@@ -213,26 +206,6 @@ export const ClaudeThread: FC<{
 }> = ({ onOpenSidebar, showOpenSidebarButtonOnDesktop }) => {
   const { isHydrating } = useThreadHydration();
   const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
-  const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
-  const threadIsRunning = useAssistantState(({ thread }: any) =>
-    Array.isArray(thread?.messages)
-      ? thread.messages.some(
-          (message: any) => message?.role === "assistant" && message?.status?.type === "running",
-        )
-      : false,
-  );
-  const canonicalWorkflowTodos = useMemo(
-    () => extractLatestCanonicalWorkflowTodos(threadMessages),
-    [threadMessages],
-  );
-  const canonicalActionRequests = useMemo(
-    () => extractLatestCanonicalActionRequests(threadMessages) ?? [],
-    [threadMessages],
-  );
-  const workflowTodos = useMemo(
-    () => canonicalWorkflowTodos ?? extractLatestWorkflowTodos(threadMessages),
-    [canonicalWorkflowTodos, threadMessages],
-  );
   const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
 
   const sidebarButtonClassName = [
@@ -241,7 +214,7 @@ export const ClaudeThread: FC<{
   ].join(" ");
 
   return (
-    <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg p-4 pt-14 font-serif">
+    <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg px-4 pb-4 pt-14 font-serif">
       {onOpenSidebar ? (
         <div className={sidebarButtonClassName}>
           <button
@@ -268,14 +241,11 @@ export const ClaudeThread: FC<{
           {showHydrationSkeleton ? <ThreadHydrationSkeleton /> : <EmptyLanding />}
         </ThreadPrimitive.Empty>
         <ThreadPrimitive.Messages components={{ Message: ChatMessage }} />
-        <div aria-hidden="true" className="h-4" />
+        <div aria-hidden="true" className="h-2" />
       </ThreadPrimitive.Viewport>
 
-        <AssistantIf condition={({ thread }) => !thread.isEmpty}>
-        <div className="mx-auto w-full max-w-3xl">
-          <ApprovalDock requests={canonicalActionRequests} />
-          <WorkflowDock todos={workflowTodos} isRunning={threadIsRunning} />
-
+      <AssistantIf condition={({ thread }) => !thread.isEmpty}>
+        <div className="mx-auto w-full max-w-3xl shrink-0" data-testid="composer-dock-stack">
           <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
             <div className="m-3.5 flex flex-col gap-3.5">
               <div className="relative">

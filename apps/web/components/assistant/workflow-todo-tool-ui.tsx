@@ -1,7 +1,13 @@
 "use client";
 
-import { makeAssistantToolUI } from "@assistant-ui/react";
-import { CheckIcon, Cross2Icon, DotFilledIcon } from "@radix-ui/react-icons";
+import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
+import { CheckIcon, ChevronRightIcon, Cross2Icon, DotFilledIcon } from "@radix-ui/react-icons";
+
+import { extractLatestCanonicalActionRequests } from "@/components/assistant/approval-state";
+import {
+  toggleAssistantDetailSheet,
+  useAssistantDetailSheet,
+} from "@/components/assistant/assistant-detail-sheet-store";
 
 export type WorkflowTodoStatus =
   | "pending"
@@ -134,49 +140,59 @@ export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[
 }
 
 export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
-  return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
-      <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-text">Workflow</div>
-          <div className="mt-0.5 text-xs text-muted">
-            {todos.length === 1 ? "1 step" : `${todos.length} steps`}
-          </div>
-        </div>
-      </div>
+  const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
+  const hasApprovalHistory = (extractLatestCanonicalActionRequests(threadMessages) ?? []).length > 0;
+  const detailSheet = useAssistantDetailSheet();
+  const detailKey = `workflow:${todos.map((todo) => `${todo.content}:${todo.status}`).join("|")}`;
+  const completedCount = todos.filter((todo) => todo.status === "completed").length;
+  const cancelledCount = todos.filter((todo) => todo.status === "cancelled").length;
+  const isTerminal = todos.every(
+    (todo) => todo.status === "completed" || todo.status === "cancelled",
+  );
 
-      <div className="px-4 py-3">
-        {todos.length ? (
-          <ul className="space-y-2">
-            {todos.map((todo, index) => {
-              const style = getWorkflowTodoStatusStyle(todo.status);
-              const Icon = style.Icon;
-              return (
-                <li
-                  key={`${todo.content}-${index}`}
-                  className="flex items-start justify-between gap-3 rounded-lg bg-bg/40 px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm text-text">{todo.content}</div>
-                  </div>
-                  <div
-                    className={[
-                      "shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
-                      style.className,
-                    ].join(" ")}
-                  >
-                    <Icon width={12} height={12} />
-                    <span className="leading-none">{style.label}</span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        ) : (
-          <div className="rounded-lg border border-border bg-bg/40 px-3 py-2 text-sm text-muted">
-            No workflow steps.
+  if (!todos.length || !isTerminal || hasApprovalHistory) {
+    return null;
+  }
+
+  const summaryParts = [
+    cancelledCount > 0 ? "Run ended" : "Completed",
+    `${completedCount}/${todos.length} steps`,
+  ].filter(Boolean);
+
+  return (
+    <div className="mt-3 rounded-lg border border-border/60 bg-bg/10 px-3 py-2">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-sm text-text">Run details</div>
+          <div className="mt-1 text-xs text-muted">{summaryParts.join(" · ")}</div>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="rounded-full bg-emerald-100/80 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-emerald-900">
+            {cancelledCount > 0 ? "ended" : "done"}
           </div>
-        )}
+          <button
+            type="button"
+            onClick={() => {
+              toggleAssistantDetailSheet({
+                open: true,
+                key: detailKey,
+                kind: "workflow",
+                title: "Run details",
+                subtitle: summaryParts.join(" · "),
+                badge: cancelledCount > 0 ? "ended" : "done",
+                badgeClassName:
+                  cancelledCount > 0
+                    ? "bg-slate-200/80 text-slate-800"
+                    : "bg-emerald-100/80 text-emerald-900",
+                todos,
+              });
+            }}
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-text"
+          >
+            {detailSheet.open && detailSheet.key === detailKey ? "Hide details" : "Details"}
+            <ChevronRightIcon width={14} height={14} />
+          </button>
+        </div>
       </div>
     </div>
   );

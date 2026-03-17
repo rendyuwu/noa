@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from "react";
 
-import { CheckIcon, ClockIcon, Cross2Icon, RocketIcon } from "@radix-ui/react-icons";
+import { CheckIcon, ChevronDownIcon, ClockIcon, Cross2Icon } from "@radix-ui/react-icons";
 import { useAssistantTransportSendCommand } from "@assistant-ui/react";
 
+import { getApprovalLifecyclePresentation } from "@/components/assistant/approval-lifecycle-ui";
 import type { AssistantActionLifecycleStatus, AssistantActionRequest } from "@/components/assistant/approval-state";
 
 type DecisionState = "approving" | "denying";
@@ -38,78 +39,39 @@ function describeLifecycle(status: AssistantActionLifecycleStatus, pendingDecisi
     };
   }
 
-  switch (status) {
-    case "requested":
-      return {
-        title: "Approval requested",
-        detail: "Review the proposed change before execution begins.",
-        badge: "requested",
-        badgeClassName: "bg-accent/15 text-accent",
-        Icon: ClockIcon,
-      };
-    case "approved":
-      return {
-        title: "Approval recorded",
-        detail: "The request is approved and about to execute.",
-        badge: "approved",
-        badgeClassName: "bg-emerald-100 text-emerald-900",
-        Icon: CheckIcon,
-      };
-    case "executing":
-      return {
-        title: "Executing approved action",
-        detail: "NOA is running the approved change now.",
-        badge: "executing",
-        badgeClassName: "bg-sky-100 text-sky-900",
-        Icon: RocketIcon,
-      };
-    case "finished":
-      return {
-        title: "Approved action finished",
-        detail: "The approved change completed successfully.",
-        badge: "finished",
-        badgeClassName: "bg-emerald-100 text-emerald-900",
-        Icon: CheckIcon,
-      };
-    case "failed":
-      return {
-        title: "Approved action failed",
-        detail: "The approval succeeded, but the execution did not finish cleanly.",
-        badge: "failed",
-        badgeClassName: "bg-red-50 text-red-800",
-        Icon: Cross2Icon,
-      };
-    case "denied":
-      return {
-        title: "Action request denied",
-        detail: "Execution stops and the request is now terminal.",
-        badge: "denied",
-        badgeClassName: "bg-slate-200 text-slate-800",
-        Icon: Cross2Icon,
-      };
-  }
+  return getApprovalLifecyclePresentation(status);
 }
 
 function getVisibleRequests(requests: AssistantActionRequest[]): AssistantActionRequest[] {
-  const liveRequests = requests.filter(
+  return requests.filter(
     (request) =>
       request.lifecycleStatus === "requested" ||
       request.lifecycleStatus === "approved" ||
       request.lifecycleStatus === "executing",
   );
-  if (liveRequests.length) {
-    return liveRequests;
+}
+
+function getHeaderCopy(requests: AssistantActionRequest[]) {
+  const requestedCount = requests.filter((request) => request.lifecycleStatus === "requested").length;
+  if (requestedCount > 0) {
+    return requestedCount === 1 ? "1 approval needed" : `${requestedCount} approvals needed`;
   }
 
-  const latestRequest = requests[requests.length - 1];
-  return latestRequest ? [latestRequest] : [];
+  const executingCount = requests.filter((request) => request.lifecycleStatus === "executing").length;
+  if (executingCount > 0) {
+    return executingCount === 1 ? "1 approval running" : `${executingCount} approvals running`;
+  }
+
+  return requests.length === 1 ? "1 approval" : `${requests.length} approvals`;
 }
 
 export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] }) {
   const sendCommand = useAssistantTransportSendCommand();
   const [pendingDecisions, setPendingDecisions] = useState<Record<string, DecisionState>>({});
+  const [collapsed, setCollapsed] = useState(true);
 
   const visibleRequests = useMemo(() => getVisibleRequests(requests), [requests]);
+  const previewRequest = visibleRequests[0];
 
   useEffect(() => {
     const requestedIds = new Set(
@@ -134,20 +96,35 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
   }
 
   return (
-    <div className="mb-3 overflow-hidden rounded-xl border border-border bg-surface shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
-      <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-text">Action approvals</div>
-          <div className="mt-0.5 text-xs text-muted">
-            Canonical approval state, independent from transcript cards.
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface/96 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
+      <button
+        type="button"
+        onClick={() => setCollapsed((value) => !value)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2/70"
+      >
+        <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-text">{getHeaderCopy(visibleRequests)}</div>
+          <div className="mt-1 truncate font-ui text-sm text-muted">
+            {previewRequest ? prettifyToolName(previewRequest.toolName) : "Waiting for a decision."}
           </div>
         </div>
-        <div className="shrink-0 rounded bg-surface px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted">
-          live
+        <div className="inline-flex shrink-0 items-center gap-2">
+          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-accent">
+            live
+          </span>
+          <ChevronDownIcon
+            width={16}
+            height={16}
+            className={[
+              "text-muted transition-transform duration-200",
+              collapsed ? "rotate-0" : "rotate-180",
+            ].join(" ")}
+          />
         </div>
-      </div>
+      </button>
 
-      <div className="space-y-3 px-4 py-3">
+      <div className={collapsed ? "hidden" : "space-y-2 border-t border-border px-3 py-3"}>
         {visibleRequests.map((request) => {
           const pendingDecision =
             request.lifecycleStatus === "requested"
@@ -159,28 +136,30 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
           return (
             <div
               key={request.actionRequestId}
-              className="rounded-lg border border-border bg-bg/40 px-3 py-3"
+              className="rounded-xl bg-bg/40 px-3 py-2.5"
               data-testid="approval-dock-card"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-text">{copy.title}</div>
-                  <div className="mt-1 text-xs text-muted">{copy.detail}</div>
+                  <div className="text-sm font-medium text-text">{prettifyToolName(request.toolName)}</div>
                   <div className="mt-1 text-xs text-muted">
-                    Tool: <code className="text-[11px]">{request.toolName}</code>
-                  </div>
-                  <div className="mt-1 text-sm text-text">
-                    {prettifyToolName(request.toolName)} request for action <code className="text-[11px]">{request.actionRequestId}</code>
+                    {copy.title} <span aria-hidden="true">·</span>{" "}
+                    <code className="text-[11px] text-muted">{request.actionRequestId}</code>
                   </div>
                 </div>
-                <div className={["inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px]", copy.badgeClassName].join(" ")}>
+                <div
+                  className={[
+                    "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
+                    copy.badgeClassName,
+                  ].join(" ")}
+                >
                   <copy.Icon width={12} height={12} />
                   <span className="leading-none">{copy.badge}</span>
                 </div>
               </div>
 
               {request.lifecycleStatus === "requested" ? (
-                <div className="mt-3 flex flex-wrap gap-2">
+                <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
                     disabled={!canAct}

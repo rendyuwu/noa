@@ -14,10 +14,11 @@ describe("WorkflowTodoCard", () => {
       />,
     );
 
-    expect(screen.getByText("Preflight")).toBeVisible();
-    expect(screen.getByText("Request approval")).toBeVisible();
-
-    expect(screen.getByText(/in progress/i)).toBeInTheDocument();
-    expect(screen.getByText(/pending/i)).toBeInTheDocument();
+    expect(screen.getByText("Workflow snapshot recorded")).toBeVisible();
+    expect(screen.getByText(/2 steps captured in this update/i)).toBeInTheDocument();
+    expect(screen.getByText(/1 active/i)).toBeInTheDocument();
+    expect(screen.getByText("View captured steps")).toBeInTheDocument();
+    expect(screen.getByText("Preflight")).toBeInTheDocument();
+    expect(screen.getByText("Request approval")).toBeInTheDocument();
   });
 });

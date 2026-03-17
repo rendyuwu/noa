@@ -46,7 +46,7 @@ describe("ApprovalDock", () => {
       />,
     );
 
-    expect(screen.getByText("Action request denied")).toBeInTheDocument();
+    expect(screen.queryByText("Action request denied")).not.toBeInTheDocument();
     expect(screen.queryByText("Sending denial")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Deny" })).not.toBeInTheDocument();
   });
@@ -87,8 +87,27 @@ describe("ApprovalDock", () => {
       />,
     );
 
-    expect(screen.getByText("Approved action finished")).toBeInTheDocument();
+    expect(screen.queryByText("Approved action finished")).not.toBeInTheDocument();
     expect(screen.queryByText("Sending approval")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Approve" })).not.toBeInTheDocument();
+  });
+
+  it("hides denied requests once nothing live remains", () => {
+    render(
+      <ApprovalDock
+        requests={[
+          {
+            actionRequestId: "approval-3",
+            toolName: "whm_suspend_account",
+            risk: "CHANGE",
+            arguments: { server_ref: "web2", username: "rendy", reason: "smoke deny" },
+            status: "DENIED",
+            lifecycleStatus: "denied",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByTestId("approval-dock-card")).not.toBeInTheDocument();
   });
 });
