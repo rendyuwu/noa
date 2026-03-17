@@ -29,6 +29,12 @@ from noa_api.core.agent.runner import (
 from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_error
 from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import get_tool_definition
+from noa_api.core.workflows.registry import (
+    build_workflow_todos,
+    collect_recent_preflight_evidence,
+    fetch_postflight_result,
+    persist_workflow_todos,
+)
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
@@ -78,6 +84,7 @@ async def deny_action_request(
     action_request_id: str | None,
     repository: AssistantMessageAuditRepositoryProtocol,
     action_tool_run_service: ActionToolRunService,
+    session: AsyncSession | None = None,
 ) -> None:
     request = await require_pending_action_request(
         owner_user_id=owner_user_id,
@@ -95,6 +102,24 @@ async def deny_action_request(
         raise action_request_already_decided_error() from exc
     if denied is None:
         raise action_request_not_found_error()
+
+    tool = get_tool_definition(denied.tool_name)
+    if tool is not None and tool.workflow_family is not None:
+        working_messages = await _list_working_messages(
+            repository=repository,
+            thread_id=thread_id,
+        )
+        await persist_workflow_todos(
+            session=session,
+            thread_id=thread_id,
+            todos=build_workflow_todos(
+                tool_name=denied.tool_name,
+                workflow_family=tool.workflow_family,
+                args=denied.args,
+                phase="denied",
+                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+            ),
+        )
 
     with log_context(
         action_request_id=str(denied.id),
@@ -319,6 +344,24 @@ async def execute_approved_tool_run(
         )
         return
 
+    working_messages = await _list_working_messages(
+        repository=repository,
+        thread_id=thread_id,
+    )
+    preflight_evidence = collect_recent_preflight_evidence(working_messages)
+    if tool.workflow_family is not None:
+        await persist_workflow_todos(
+            session=session,
+            thread_id=thread_id,
+            todos=build_workflow_todos(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="executing",
+                preflight_evidence=preflight_evidence,
+            ),
+        )
+
     try:
         validate_tool_arguments(tool=tool, args=approved_request.args)
         result = await _execute_tool(
@@ -337,6 +380,27 @@ async def execute_approved_tool_run(
             if completed is not None and isinstance(completed.result, dict)
             else result
         )
+        postflight_result: dict[str, object] | None = None
+        if tool.workflow_family is not None:
+            postflight_result = await fetch_postflight_result(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                session=session,
+            )
+            await persist_workflow_todos(
+                session=session,
+                thread_id=thread_id,
+                todos=build_workflow_todos(
+                    tool_name=approved_request.tool_name,
+                    workflow_family=tool.workflow_family,
+                    args=approved_request.args,
+                    phase="completed",
+                    preflight_evidence=preflight_evidence,
+                    result=persisted_result,
+                    postflight_result=postflight_result,
+                ),
+            )
         await repository.create_message(
             thread_id=thread_id,
             role="tool",
@@ -374,6 +438,19 @@ async def execute_approved_tool_run(
                 "user_id": str(owner_user_id),
             },
         )
+        if tool.workflow_family is not None:
+            await persist_workflow_todos(
+                session=session,
+                thread_id=thread_id,
+                todos=build_workflow_todos(
+                    tool_name=approved_request.tool_name,
+                    workflow_family=tool.workflow_family,
+                    args=approved_request.args,
+                    phase="failed",
+                    preflight_evidence=preflight_evidence,
+                    error_code=sanitized_error.error_code,
+                ),
+            )
         await _persist_failed_tool_run(
             started_tool_run=started_tool_run,
             approved_request=approved_request,
@@ -416,6 +493,22 @@ async def _validate_approved_tool_preflight(
         working_messages=working_messages,
         requested_server_id=requested_server_id,
     )
+
+
+async def _list_working_messages(
+    *,
+    repository: AssistantMessageAuditRepositoryProtocol,
+    thread_id: UUID,
+) -> list[dict[str, object]]:
+    messages = await repository.list_messages(thread_id=thread_id)
+    working_messages: list[dict[str, object]] = []
+    for message in messages:
+        role = getattr(message, "role", None)
+        parts = getattr(message, "content", None)
+        if not isinstance(role, str) or not isinstance(parts, list):
+            continue
+        working_messages.append({"role": role, "parts": parts})
+    return working_messages
 
 
 async def _execute_tool(

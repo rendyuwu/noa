@@ -97,6 +97,23 @@ async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
     assert "Keep exactly one item in_progress at a time" in todo_description
 
 
+async def test_whm_change_tools_expose_workflow_families() -> None:
+    by_name = {tool.name: tool for tool in get_tool_registry()}
+
+    assert by_name["whm_suspend_account"].workflow_family == "whm-account-lifecycle"
+    assert by_name["whm_unsuspend_account"].workflow_family == "whm-account-lifecycle"
+    assert (
+        by_name["whm_change_contact_email"].workflow_family
+        == "whm-account-contact-email"
+    )
+    assert by_name["whm_csf_unblock"].workflow_family == "whm-csf-batch-change"
+    assert by_name["whm_csf_allowlist_remove"].workflow_family == "whm-csf-batch-change"
+    assert (
+        by_name["whm_csf_allowlist_add_ttl"].workflow_family == "whm-csf-batch-change"
+    )
+    assert by_name["whm_csf_denylist_add_ttl"].workflow_family == "whm-csf-batch-change"
+
+
 async def test_tools_catalog_is_sourced_live_from_registry(monkeypatch) -> None:
     monkeypatch.setattr(catalog, "get_tool_names", lambda: ("dynamic_tool",))
 

@@ -46,6 +46,7 @@ class ToolDefinition:
     execute: ToolExecutor
     prompt_hints: tuple[str, ...] = ()
     result_schema: ToolResultSchema | None = None
+    workflow_family: str | None = None
 
 
 def _object_schema(
@@ -615,6 +616,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Failures return `ok: false` with `error_code` and `message`.",
         ),
         result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
+        workflow_family="whm-account-lifecycle",
     ),
     ToolDefinition(
         name="whm_unsuspend_account",
@@ -635,6 +637,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Failures return `ok: false` with `error_code` and `message`.",
         ),
         result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
+        workflow_family="whm-account-lifecycle",
     ),
     ToolDefinition(
         name="whm_change_contact_email",
@@ -659,6 +662,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Failures return `ok: false` with `error_code` and `message`.",
         ),
         result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
+        workflow_family="whm-account-contact-email",
     ),
     ToolDefinition(
         name="whm_csf_unblock",
@@ -678,6 +682,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
         result_schema=_CSF_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-csf-batch-change",
     ),
     ToolDefinition(
         name="whm_csf_allowlist_remove",
@@ -697,6 +702,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
         result_schema=_CSF_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-csf-batch-change",
     ),
     ToolDefinition(
         name="whm_csf_allowlist_add_ttl",
@@ -726,6 +732,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
         result_schema=_CSF_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-csf-batch-change",
     ),
     ToolDefinition(
         name="whm_csf_denylist_add_ttl",
@@ -755,6 +762,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
         result_schema=_CSF_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-csf-batch-change",
     ),
 )
 _MVP_TOOL_INDEX = {tool.name: tool for tool in _MVP_TOOLS}

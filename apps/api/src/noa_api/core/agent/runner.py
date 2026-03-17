@@ -21,6 +21,12 @@ from noa_api.core.tools.registry import (
     get_tool_definition,
     get_tool_registry,
 )
+from noa_api.core.workflows.registry import (
+    build_workflow_todos,
+    collect_recent_preflight_evidence,
+    collect_recent_preflight_results,
+    persist_workflow_todos,
+)
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
@@ -499,6 +505,13 @@ class AgentRunner:
             )
             if validation_error is not None:
                 tool_call_id = f"invalid-{uuid4()}"
+                await self._persist_deterministic_workflow_for_validation_error(
+                    tool=tool,
+                    args=args,
+                    working_messages=working_messages,
+                    thread_id=thread_id,
+                    error=validation_error,
+                )
                 return ProcessedToolCall(
                     messages=_tool_error_messages(
                         tool=tool,
@@ -514,6 +527,19 @@ class AgentRunner:
                 args=args,
                 risk=tool.risk,
                 requested_by_user_id=requested_by_user_id,
+            )
+            await persist_workflow_todos(
+                session=self._session,
+                thread_id=thread_id,
+                todos=build_workflow_todos(
+                    tool_name=tool.name,
+                    workflow_family=tool.workflow_family,
+                    args=args,
+                    phase="waiting_on_approval",
+                    preflight_evidence=collect_recent_preflight_evidence(
+                        working_messages
+                    ),
+                ),
             )
             return ProcessedToolCall(
                 messages=[
@@ -654,6 +680,31 @@ class AgentRunner:
             if preflight_error is not None:
                 return preflight_error
         return None
+
+    async def _persist_deterministic_workflow_for_validation_error(
+        self,
+        *,
+        tool: ToolDefinition,
+        args: dict[str, object],
+        working_messages: list[dict[str, object]],
+        thread_id: UUID,
+        error: SanitizedToolError,
+    ) -> None:
+        if error.error_code != "invalid_tool_arguments":
+            return
+        if not error.details or "Missing required field 'reason'" not in error.details:
+            return
+        await persist_workflow_todos(
+            session=self._session,
+            thread_id=thread_id,
+            todos=build_workflow_todos(
+                tool_name=tool.name,
+                workflow_family=tool.workflow_family,
+                args=args,
+                phase="waiting_on_user",
+                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+            ),
+        )
 
     async def _execute_tool(
         self,
@@ -815,73 +866,6 @@ def _messages_since_last_user(
     return working_messages[last_user_index + 1 :]
 
 
-def _collect_recent_preflight_evidence(
-    working_messages: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    tool_calls_by_id: dict[str, dict[str, object]] = {}
-    evidence: list[dict[str, object]] = []
-
-    for message in _messages_since_last_user(working_messages):
-        parts = message.get("parts")
-        if not isinstance(parts, list):
-            continue
-        for raw_part in parts:
-            part = _coerce_part_record(raw_part)
-            if part is None:
-                continue
-
-            part_type = part.get("type")
-            tool_name = part.get("toolName")
-            if not isinstance(tool_name, str) or not tool_name.startswith(
-                "whm_preflight_"
-            ):
-                continue
-
-            tool_call_id = part.get("toolCallId")
-            if not isinstance(tool_call_id, str) or not tool_call_id:
-                continue
-
-            if part_type == "tool-call":
-                args = part.get("args")
-                args_obj = args if isinstance(args, dict) else {}
-                tool_calls_by_id[tool_call_id] = {
-                    "toolName": tool_name,
-                    "args": json_safe(args_obj),
-                }
-                continue
-
-            if part_type != "tool-result" or part.get("isError") is True:
-                continue
-
-            result = part.get("result")
-            if not isinstance(result, dict):
-                continue
-
-            call = tool_calls_by_id.get(tool_call_id, {})
-            entry: dict[str, object] = {
-                "toolName": tool_name,
-                "result": json_safe(result),
-            }
-            call_args = call.get("args")
-            if isinstance(call_args, dict):
-                entry["args"] = call_args
-            evidence.append(entry)
-
-    return evidence
-
-
-def _collect_recent_preflight_results(
-    working_messages: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    return [
-        {
-            "toolName": item["toolName"],
-            "result": item["result"],
-        }
-        for item in _collect_recent_preflight_evidence(working_messages)
-    ]
-
-
 def _require_matching_preflight(
     *,
     tool_name: str,
@@ -928,7 +912,7 @@ def _require_account_preflight(
 
     evidence = [
         item
-        for item in _collect_recent_preflight_evidence(working_messages)
+        for item in collect_recent_preflight_evidence(working_messages)
         if item.get("toolName") == "whm_preflight_account"
         and isinstance(item.get("result"), dict)
         and cast(dict[str, object], item["result"]).get("ok") is True
@@ -982,7 +966,7 @@ def _require_csf_preflight(
 
     evidence = [
         item
-        for item in _collect_recent_preflight_evidence(working_messages)
+        for item in collect_recent_preflight_evidence(working_messages)
         if item.get("toolName") == "whm_preflight_csf_entries"
         and isinstance(item.get("result"), dict)
         and cast(dict[str, object], item["result"]).get("ok") is True
@@ -1189,7 +1173,7 @@ def _build_approval_context(
     args: dict[str, object],
     working_messages: list[dict[str, object]],
 ) -> dict[str, object]:
-    preflight_results = _collect_recent_preflight_results(working_messages)
+    preflight_results = collect_recent_preflight_results(working_messages)
     return {
         "activity": _describe_activity(tool_name, args),
         "argumentSummary": _summarize_arguments(args),

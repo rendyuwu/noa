@@ -342,6 +342,7 @@ class AssistantService:
             action_request_id=action_request_id,
             repository=self._repository,
             action_tool_run_service=self._action_tool_run_service,
+            session=self._session,
         )
 
     async def run_agent_turn(
