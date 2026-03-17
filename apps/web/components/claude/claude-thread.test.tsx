@@ -54,10 +54,18 @@ vi.mock("@assistant-ui/react", async () => {
 
   const passthrough = ({
     children,
+    autoScroll: _autoScroll,
+    scrollToBottomOnRunStart: _scrollToBottomOnRunStart,
+    scrollToBottomOnInitialize: _scrollToBottomOnInitialize,
+    scrollToBottomOnThreadSwitch: _scrollToBottomOnThreadSwitch,
     ...props
-  }: React.ComponentPropsWithoutRef<"div"> & { children?: ReactNode }) => (
-    <div {...props}>{children}</div>
-  );
+  }: React.ComponentPropsWithoutRef<"div"> & {
+    children?: ReactNode;
+    autoScroll?: boolean;
+    scrollToBottomOnRunStart?: boolean;
+    scrollToBottomOnInitialize?: boolean;
+    scrollToBottomOnThreadSwitch?: boolean;
+  }) => <div {...props}>{children}</div>;
 
   return {
     makeAssistantToolUI: ({ render }: { render: (props: any) => ReactNode }) => render,

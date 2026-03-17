@@ -73,7 +73,7 @@ describe("NoaAssistantRuntimeProvider", () => {
     assistantState = {
       threadListItem: {
         id: "thread-local-1",
-        remoteId: "thread-1",
+        remoteId: null,
         title: undefined,
         status: "regular",
       },
@@ -162,6 +162,8 @@ describe("NoaAssistantRuntimeProvider", () => {
   });
 
   it("hydrates persisted thread state into the runtime after remount", async () => {
+    assistantState.threadListItem.remoteId = "thread-1";
+
     const persistedState = {
       messages: [
         {
@@ -213,6 +215,7 @@ describe("NoaAssistantRuntimeProvider", () => {
   });
 
   it("generates titles for thread list items missing titles", async () => {
+    assistantState.threadListItem.remoteId = "thread-1";
     assistantState.threads.threadItems = [
       {
         id: "thread-local-1",
