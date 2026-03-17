@@ -19,7 +19,11 @@ def test_validate_tool_result_accepts_workflow_success_payload() -> None:
         result={
             "ok": True,
             "todos": [
-                {"content": "Preflight", "status": "in_progress", "priority": "high"}
+                {
+                    "content": "Request approval",
+                    "status": "waiting_on_approval",
+                    "priority": "high",
+                }
             ],
         },
     )

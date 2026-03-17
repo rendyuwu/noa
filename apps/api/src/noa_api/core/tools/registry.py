@@ -204,8 +204,15 @@ _TODO_ITEM_SCHEMA = {
         ),
         "status": {
             "type": "string",
-            "description": "Workflow state. Use pending, in_progress, completed, or cancelled. Only one todo item may be in_progress.",
-            "enum": ["pending", "in_progress", "completed", "cancelled"],
+            "description": "Workflow state. Use pending, in_progress, waiting_on_user, waiting_on_approval, completed, or cancelled. Only one todo item may be in_progress.",
+            "enum": [
+                "pending",
+                "in_progress",
+                "waiting_on_user",
+                "waiting_on_approval",
+                "completed",
+                "cancelled",
+            ],
         },
         "priority": {
             "type": "string",

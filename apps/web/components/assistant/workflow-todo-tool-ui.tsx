@@ -3,14 +3,22 @@
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { CheckIcon, Cross2Icon, DotFilledIcon } from "@radix-ui/react-icons";
 
-type WorkflowTodoStatus = "pending" | "in_progress" | "completed" | "cancelled";
-type WorkflowTodoPriority = "high" | "medium" | "low";
+export type WorkflowTodoStatus =
+  | "pending"
+  | "in_progress"
+  | "waiting_on_user"
+  | "waiting_on_approval"
+  | "completed"
+  | "cancelled";
+export type WorkflowTodoPriority = "high" | "medium" | "low";
 
 export type WorkflowTodoItem = {
   content: string;
   status: WorkflowTodoStatus;
   priority: WorkflowTodoPriority;
 };
+
+export const BLOCKED_WORKFLOW_TODO_STATUSES = ["waiting_on_user", "waiting_on_approval"] as const;
 
 type StatusStyle = {
   label: string;
@@ -27,6 +35,16 @@ const STATUS_STYLES: Record<WorkflowTodoStatus, StatusStyle> = {
   in_progress: {
     label: "in progress",
     className: "bg-accent/15 text-accent",
+    Icon: DotFilledIcon,
+  },
+  waiting_on_user: {
+    label: "waiting on user",
+    className: "bg-amber-100 text-amber-900",
+    Icon: DotFilledIcon,
+  },
+  waiting_on_approval: {
+    label: "waiting on approval",
+    className: "bg-sky-100 text-sky-900",
     Icon: DotFilledIcon,
   },
   completed: {
@@ -48,6 +66,8 @@ function isTodoItem(value: unknown): value is WorkflowTodoItem {
     typeof record.content === "string" &&
     (record.status === "pending" ||
       record.status === "in_progress" ||
+      record.status === "waiting_on_user" ||
+      record.status === "waiting_on_approval" ||
       record.status === "completed" ||
       record.status === "cancelled") &&
     (record.priority === "high" ||
@@ -56,10 +76,40 @@ function isTodoItem(value: unknown): value is WorkflowTodoItem {
   );
 }
 
+function coerceRecord(value: unknown): Record<string, unknown> | undefined {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
 export function coerceTodos(value: unknown): WorkflowTodoItem[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const todos = value.filter(isTodoItem);
   return todos.length ? todos : [];
+}
+
+export function getWorkflowTodoStatusStyle(status: WorkflowTodoStatus): StatusStyle {
+  return STATUS_STYLES[status] ?? STATUS_STYLES.pending;
+}
+
+export function isWorkflowTodoBlocked(status: WorkflowTodoStatus): boolean {
+  return BLOCKED_WORKFLOW_TODO_STATUSES.includes(
+    status as (typeof BLOCKED_WORKFLOW_TODO_STATUSES)[number],
+  );
+}
+
+export function extractLatestCanonicalWorkflowTodos(messages: unknown): WorkflowTodoItem[] | undefined {
+  if (!Array.isArray(messages)) return undefined;
+
+  for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex -= 1) {
+    const message = coerceRecord(messages[messageIndex]);
+    const metadata = coerceRecord(message?.metadata);
+    const custom = coerceRecord(metadata?.custom);
+    if (!custom || !("workflow" in custom)) continue;
+    return coerceTodos(custom.workflow);
+  }
+
+  return undefined;
 }
 
 export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[] {
@@ -99,7 +149,7 @@ export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
         {todos.length ? (
           <ul className="space-y-2">
             {todos.map((todo, index) => {
-              const style = STATUS_STYLES[todo.status] ?? STATUS_STYLES.pending;
+              const style = getWorkflowTodoStatusStyle(todo.status);
               const Icon = style.Icon;
               return (
                 <li

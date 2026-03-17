@@ -29,13 +29,20 @@ vi.mock("@/components/assistant/request-approval-tool-ui", () => ({
 }));
 
 vi.mock("@/components/assistant/workflow-todo-tool-ui", () => ({
-  WorkflowTodoCard: ({ todos }: { todos: Array<{ content: string }> }) => (
-    <div data-testid="workflow-card">{todos.map((todo) => todo.content).join(", ")}</div>
-  ),
+  extractLatestCanonicalWorkflowTodos: (messages: any[]) => {
+    const last = messages[messages.length - 1];
+    return last?.metadata?.custom?.workflow;
+  },
   extractLatestWorkflowTodos: (messages: any[]) => {
     const last = messages[messages.length - 1];
     return last?.metadata?.todos ?? [];
   },
+}));
+
+vi.mock("@/components/assistant/workflow-dock", () => ({
+  WorkflowDock: ({ todos }: { todos: Array<{ content: string }> }) => (
+    <div data-testid="workflow-card">{todos.map((todo) => todo.content).join(", ")}</div>
+  ),
 }));
 
 vi.mock("@/components/lib/thread-hydration", () => ({
@@ -231,20 +238,36 @@ describe("ClaudeThread", () => {
     expect(screen.queryByText(/Morning, Casey/)).not.toBeInTheDocument();
   });
 
-  it("pins the latest workflow todo card above the composer", () => {
+  it("pins the canonical workflow dock above the composer", () => {
     mockThreadIsEmpty = false;
     mockThreadMessages = [
       {
         metadata: {
-          todos: [{ content: "Delete user", status: "in_progress", priority: "high" }],
+          custom: {
+            workflow: [{ content: "Delete user", status: "in_progress", priority: "high" }],
+          },
         },
       },
     ];
 
     render(<ClaudeThread />);
 
-    expect(screen.getByTestId("workflow-todo-dock")).toBeInTheDocument();
     expect(screen.getByTestId("workflow-card")).toHaveTextContent("Delete user");
+  });
+
+  it("falls back to transcript-derived workflow for older threads", () => {
+    mockThreadIsEmpty = false;
+    mockThreadMessages = [
+      {
+        metadata: {
+          todos: [{ content: "Legacy workflow", status: "pending", priority: "high" }],
+        },
+      },
+    ];
+
+    render(<ClaudeThread />);
+
+    expect(screen.getByTestId("workflow-card")).toHaveTextContent("Legacy workflow");
   });
 
   it("does not render the assistant disclaimer footer", () => {
