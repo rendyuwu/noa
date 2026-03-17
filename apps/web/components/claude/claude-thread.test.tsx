@@ -29,19 +29,6 @@ vi.mock("@/components/assistant/request-approval-tool-ui", () => ({
   ClaudeToolGroup: () => null,
 }));
 
-vi.mock("@/components/assistant/workflow-todo-tool-ui", () => ({
-  extractLatestCanonicalWorkflowTodos: (messages: any[]) => {
-    const last = messages[messages.length - 1];
-    return last?.metadata?.custom?.workflow;
-  },
-}));
-
-vi.mock("@/components/assistant/workflow-dock", () => ({
-  WorkflowDock: ({ todos }: { todos: Array<{ content: string }> }) => (
-    <div data-testid="workflow-card">{todos.map((todo) => todo.content).join(", ")}</div>
-  ),
-}));
-
 vi.mock("@/components/lib/thread-hydration", () => ({
   useThreadHydration: () => ({ isHydrating: mockIsHydrating }),
 }));
@@ -245,7 +232,7 @@ describe("ClaudeThread", () => {
     expect(screen.queryByText(/Morning, Casey/)).not.toBeInTheDocument();
   });
 
-  it("pins the canonical workflow dock above the composer", () => {
+  it("keeps the thread shell focused on messages and composer without workflow chrome", () => {
     mockThreadIsEmpty = false;
     mockThreadMessages = [
       {
@@ -259,8 +246,8 @@ describe("ClaudeThread", () => {
 
     render(<ClaudeThread />);
 
-    expect(screen.getByTestId("workflow-card")).toHaveTextContent("Delete user");
-    expect(screen.getByTestId("workflow-rail")).toContainElement(screen.getByTestId("workflow-card"));
+    expect(screen.getByTestId("composer-dock-stack")).toBeInTheDocument();
+    expect(screen.queryByTestId("workflow-card")).not.toBeInTheDocument();
   });
 
   it("does not render the assistant disclaimer footer", () => {

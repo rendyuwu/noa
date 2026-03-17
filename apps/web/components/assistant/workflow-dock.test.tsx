@@ -35,6 +35,22 @@ describe("WorkflowDock", () => {
     expect(screen.getByText(/waiting on approval/i)).toBeInTheDocument();
   });
 
+  it("surfaces missing-input waits as blocked workflow state", () => {
+    render(
+      <WorkflowDock
+        isRunning={false}
+        todos={[
+          { content: "Ask for change reason", status: "waiting_on_user", priority: "high" },
+          { content: "Apply change", status: "pending", priority: "high" },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Workflow paused")).toBeInTheDocument();
+    expect(screen.getByTestId("workflow-active-step")).toHaveTextContent("Ask for change reason");
+    expect(screen.getByText(/waiting on user/i)).toBeInTheDocument();
+  });
+
   it("hides stale incomplete workflows after a run is no longer live", () => {
     vi.useFakeTimers();
 

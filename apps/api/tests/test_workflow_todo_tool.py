@@ -110,3 +110,31 @@ async def test_update_workflow_todo_persists_workflow_when_thread_context_presen
 
     assert result == {"ok": True, "todos": todos}
     assert captured == {"thread_id": thread_id, "todos": todos}
+
+
+async def test_update_workflow_todo_persists_empty_workflow_to_clear_thread_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from noa_api.core.tools.workflow_todo import update_workflow_todo
+
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    thread_id = uuid4()
+
+    result = await update_workflow_todo(
+        todos=[],
+        session=cast(AsyncSession, object()),
+        thread_id=thread_id,
+    )
+
+    assert result == {"ok": True, "todos": []}
+    assert captured == {"thread_id": thread_id, "todos": []}

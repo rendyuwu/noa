@@ -1590,6 +1590,160 @@ async def test_execute_approved_tool_run_persists_completed_whm_workflow_with_ev
     assert "moved from active to suspended" in todos[5]["content"]
 
 
+async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execution_errors(
+    monkeypatch,
+) -> None:
+    from noa_api.api.assistant.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_suspend_account",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "reason": "billing hold",
+        },
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def failing_change(*, session, **kwargs):
+        _ = session, kwargs
+        raise RuntimeError("backend exploded")
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Suspends an account.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "username": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "status": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "required": ["ok", "status", "message"],
+            "additionalProperties": False,
+        },
+        execute=failing_change,
+        workflow_family="whm-account-lifecycle",
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[{"type": "text", "text": "Suspend alice on web1."}],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {
+                                "user": "alice",
+                                "suspended": False,
+                                "domain": "example.com",
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
+    assert repo.tool_runs[started.id].error == "tool_execution_failed"
+    assert captured["thread_id"] == thread_id
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert [todo["status"] for todo in todos] == [
+        "completed",
+        "completed",
+        "completed",
+        "cancelled",
+        "cancelled",
+        "completed",
+    ]
+    assert "tool_execution_failed" in todos[5]["content"]
+
+    tool_message = assistant_repo.messages[-1]
+    assert tool_message["role"] == "tool"
+    part = tool_message["parts"][0]
+    assert part["type"] == "tool-result"
+    assert part["isError"] is True
+    assert part["result"]["error_code"] == "tool_execution_failed"
+
+
 async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(
     monkeypatch,
 ) -> None:

@@ -10,6 +10,7 @@ vi.mock("@assistant-ui/react", () => ({
       messages: mockThreadMessages,
     },
   }),
+  useAssistantTransportSendCommand: () => vi.fn(),
 }));
 
 import {
@@ -108,7 +109,7 @@ describe("ClaudeToolFallback", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders approval transcript entries as compact history with expandable details", () => {
+  it("hides resolved approval transcript entries once canonical approval state is terminal", () => {
     mockThreadMessages = [
       {
         metadata: {
@@ -140,10 +141,7 @@ describe("ClaudeToolFallback", () => {
       />,
     );
 
-    expect(screen.getByText("Suspend cPanel account")).toBeInTheDocument();
-    expect(screen.getByText("History snapshot")).toBeInTheDocument();
-    expect(screen.getByText(/^denied$/i)).toBeInTheDocument();
-    expect(screen.getByText("View request details")).toBeInTheDocument();
-    expect(screen.queryByText(/canonical approval panel/i)).not.toBeInTheDocument();
+    expect(screen.queryByText("Suspend cPanel account")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
   });
 });

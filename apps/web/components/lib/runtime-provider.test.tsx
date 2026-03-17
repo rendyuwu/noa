@@ -214,6 +214,173 @@ describe("NoaAssistantRuntimeProvider", () => {
     });
   });
 
+  it("hydrates persisted workflow and approval state without stripping canonical fields", async () => {
+    assistantState.threadListItem.remoteId = "thread-2";
+
+    const persistedState = {
+      messages: [
+        {
+          id: "server-2",
+          role: "assistant",
+          parts: [{ type: "text", text: "Waiting for approval" }],
+        },
+      ],
+      workflow: [
+        {
+          content: "Request approval",
+          status: "waiting_on_approval",
+          priority: "high",
+        },
+      ],
+      pendingApprovals: [
+        {
+          actionRequestId: "approval-1",
+          toolName: "whm_suspend_account",
+          risk: "CHANGE",
+          arguments: { server_ref: "web2", username: "rendy", reason: "billing hold" },
+          status: "PENDING",
+        },
+      ],
+      actionRequests: [
+        {
+          actionRequestId: "approval-1",
+          toolName: "whm_suspend_account",
+          risk: "CHANGE",
+          arguments: { server_ref: "web2", username: "rendy", reason: "billing hold" },
+          status: "PENDING",
+          lifecycleStatus: "requested",
+        },
+      ],
+      isRunning: false,
+    };
+
+    const response = new Response(JSON.stringify(persistedState), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+    fetchWithAuth.mockResolvedValue(response);
+    jsonOrThrow.mockResolvedValue(persistedState);
+
+    render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(fetchWithAuth).toHaveBeenCalledWith("/assistant/threads/thread-2/state");
+    });
+
+    await waitFor(() => {
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(persistedState);
+    });
+  });
+
+  it("hydrates cleared canonical workflow and approval state after a previously blocked thread", async () => {
+    assistantState.threadListItem.remoteId = "thread-3";
+
+    const blockedState = {
+      messages: [
+        {
+          id: "server-3",
+          role: "assistant",
+          parts: [{ type: "text", text: "Waiting for approval" }],
+        },
+      ],
+      workflow: [
+        {
+          content: "Request approval",
+          status: "waiting_on_approval",
+          priority: "high",
+        },
+      ],
+      pendingApprovals: [
+        {
+          actionRequestId: "approval-2",
+          toolName: "whm_suspend_account",
+          risk: "CHANGE",
+          arguments: { server_ref: "web2", username: "rendy", reason: "billing hold" },
+          status: "PENDING",
+        },
+      ],
+      actionRequests: [
+        {
+          actionRequestId: "approval-2",
+          toolName: "whm_suspend_account",
+          risk: "CHANGE",
+          arguments: { server_ref: "web2", username: "rendy", reason: "billing hold" },
+          status: "PENDING",
+          lifecycleStatus: "requested",
+        },
+      ],
+      isRunning: false,
+    };
+
+    const clearedState = {
+      messages: [
+        {
+          id: "server-4",
+          role: "assistant",
+          parts: [{ type: "text", text: "Done" }],
+        },
+      ],
+      workflow: [],
+      pendingApprovals: [],
+      actionRequests: [],
+      isRunning: false,
+    };
+
+    const blockedResponse = new Response(JSON.stringify(blockedState), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+    const clearedResponse = new Response(JSON.stringify(clearedState), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    fetchWithAuth.mockResolvedValueOnce(blockedResponse);
+    jsonOrThrow.mockResolvedValueOnce(blockedState);
+
+    const { unmount } = render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(blockedState);
+    });
+
+    unmount();
+    fetchWithAuth.mockClear();
+    jsonOrThrow.mockClear();
+    unstable_loadExternalState.mockClear();
+
+    fetchWithAuth.mockResolvedValueOnce(clearedResponse);
+    jsonOrThrow.mockResolvedValueOnce(clearedState);
+
+    render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    await waitFor(() => {
+      expect(fetchWithAuth).toHaveBeenCalledWith("/assistant/threads/thread-3/state");
+    });
+
+    await waitFor(() => {
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(clearedState);
+    });
+  });
+
   it("generates titles for thread list items missing titles", async () => {
     assistantState.threadListItem.remoteId = "thread-1";
     assistantState.threads.threadItems = [

@@ -1216,6 +1216,142 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
     assert approval_part["toolName"] == "request_approval"
 
 
+async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_state(
+    monkeypatch,
+) -> None:
+    from noa_api.core.tools.registry import get_tool_definition
+
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {
+        "previous_todos": [
+            {
+                "content": "Inspect account 'alice' on 'web1'.",
+                "status": "completed",
+                "priority": "high",
+            },
+            {
+                "content": "Request approval to suspend account 'alice' on 'web1'.",
+                "status": "waiting_on_approval",
+                "priority": "high",
+            },
+        ]
+    }
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_csf_unblock")
+    assert tool is not None
+
+    thread_id = uuid4()
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name="whm_csf_unblock",
+                        arguments={
+                            "server_ref": "web2",
+                            "targets": ["1.2.3.4", "5.6.7.8"],
+                            "reason": "customer request",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Remove CSF block for 1.2.3.4 and 5.6.7.8 on web2",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-csf-1",
+                        "args": {"server_ref": "web2", "target": "1.2.3.4"},
+                    },
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-csf-2",
+                        "args": {"server_ref": "web2", "target": "5.6.7.8"},
+                    },
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-csf-1",
+                        "result": {
+                            "ok": True,
+                            "target": "1.2.3.4",
+                            "matches": ["/etc/csf/csf.deny"],
+                            "verdict": "blocked",
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-csf-2",
+                        "result": {
+                            "ok": True,
+                            "target": "5.6.7.8",
+                            "matches": ["/etc/csf/csf.deny"],
+                            "verdict": "blocked",
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=thread_id,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    assert captured["thread_id"] == thread_id
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert len(todos) == 6
+    assert all("alice" not in todo["content"] for todo in todos)
+    assert any("1.2.3.4" in todo["content"] for todo in todos)
+    assert any("5.6.7.8" in todo["content"] for todo in todos)
+    assert todos[2]["status"] == "waiting_on_approval"
+
+    approval_part = result.messages[-1].parts[0]
+    assert isinstance(approval_part, dict)
+    assert approval_part["toolName"] == "request_approval"
+
+
 async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reason_after_preflight(
     monkeypatch,
 ) -> None:
