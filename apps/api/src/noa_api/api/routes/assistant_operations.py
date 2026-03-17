@@ -1,1 +1,1 @@
-from noa_api.api.assistant.assistant_operations import *
+from noa_api.api.assistant.assistant_operations import *  # noqa: F403

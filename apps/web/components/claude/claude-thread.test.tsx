@@ -14,6 +14,7 @@ let mockAssistantMessage: any = {
   content: [{ type: "text", text: "" }],
 };
 const setText = vi.fn();
+const sendCommand = vi.fn();
 
 vi.mock("@/components/lib/auth-store", () => ({
   getAuthUser: vi.fn(() => ({
@@ -54,10 +55,18 @@ vi.mock("@assistant-ui/react", async () => {
 
   const passthrough = ({
     children,
+    autoScroll: _autoScroll,
+    scrollToBottomOnRunStart: _scrollToBottomOnRunStart,
+    scrollToBottomOnInitialize: _scrollToBottomOnInitialize,
+    scrollToBottomOnThreadSwitch: _scrollToBottomOnThreadSwitch,
     ...props
-  }: React.ComponentPropsWithoutRef<"div"> & { children?: ReactNode }) => (
-    <div {...props}>{children}</div>
-  );
+  }: React.ComponentPropsWithoutRef<"div"> & {
+    children?: ReactNode;
+    autoScroll?: boolean;
+    scrollToBottomOnRunStart?: boolean;
+    scrollToBottomOnInitialize?: boolean;
+    scrollToBottomOnThreadSwitch?: boolean;
+  }) => <div {...props}>{children}</div>;
 
   return {
     makeAssistantToolUI: ({ render }: { render: (props: any) => ReactNode }) => render,
@@ -114,6 +123,7 @@ vi.mock("@assistant-ui/react", async () => {
     useAssistantApi: () => ({
       composer: () => ({ setText }),
     }),
+    useAssistantTransportSendCommand: () => sendCommand,
     useAssistantState: (selector: any) =>
       selector({
         message: mockAssistantMessage,
@@ -143,6 +153,7 @@ describe("ClaudeThread", () => {
       content: [{ type: "text", text: "" }],
     };
     setText.mockReset();
+    sendCommand.mockReset();
     vi.useFakeTimers();
     vi.setSystemTime(new Date(2026, 2, 10, 9, 0));
     vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {

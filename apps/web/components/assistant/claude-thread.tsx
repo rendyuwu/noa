@@ -25,6 +25,8 @@ import {
   formatClaudeGreetingName,
   getClaudeTimeGreeting,
 } from "@/components/assistant/claude-greeting";
+import { ApprovalDock } from "@/components/assistant/approval-dock";
+import { extractLatestCanonicalActionRequests } from "@/components/assistant/approval-state";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/assistant/request-approval-tool-ui";
 import {
   extractLatestCanonicalWorkflowTodos,
@@ -223,6 +225,10 @@ export const ClaudeThread: FC<{
     () => extractLatestCanonicalWorkflowTodos(threadMessages),
     [threadMessages],
   );
+  const canonicalActionRequests = useMemo(
+    () => extractLatestCanonicalActionRequests(threadMessages) ?? [],
+    [threadMessages],
+  );
   const workflowTodos = useMemo(
     () => canonicalWorkflowTodos ?? extractLatestWorkflowTodos(threadMessages),
     [canonicalWorkflowTodos, threadMessages],
@@ -265,8 +271,9 @@ export const ClaudeThread: FC<{
         <div aria-hidden="true" className="h-4" />
       </ThreadPrimitive.Viewport>
 
-      <AssistantIf condition={({ thread }) => !thread.isEmpty}>
+        <AssistantIf condition={({ thread }) => !thread.isEmpty}>
         <div className="mx-auto w-full max-w-3xl">
+          <ApprovalDock requests={canonicalActionRequests} />
           <WorkflowDock todos={workflowTodos} isRunning={threadIsRunning} />
 
           <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">

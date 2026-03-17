@@ -24,15 +24,11 @@ from noa_api.api.whm_admin.service import (
     WHMServerNameExistsError,
     WHMServerNotFoundError,
     WHMServerService,
-    WHMServerServiceError,
     get_whm_server_service,
 )
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
 from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
-from noa_api.storage.postgres.whm_servers import (
-    WHMServerRepositoryProtocol,
-)
 
 router = APIRouter(prefix="/admin/whm/servers", tags=["admin"])
 

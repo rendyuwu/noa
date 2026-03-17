@@ -167,6 +167,7 @@ def _apply_canonical_state(
     state["messages"] = coerce_messages(canonical_state.get("messages"))
     state["workflow"] = canonical_state.get("workflow") or []
     state["pendingApprovals"] = canonical_state.get("pendingApprovals") or []
+    state["actionRequests"] = canonical_state.get("actionRequests") or []
     state["isRunning"] = is_running
 
 
@@ -280,6 +281,7 @@ async def run_agent_phase(
         controller.state["pendingApprovals"] = (
             canonical_state.get("pendingApprovals") or []
         )
+        controller.state["actionRequests"] = canonical_state.get("actionRequests") or []
         controller.state["messages"] = [
             *base_messages,
             make_streaming_placeholder(""),

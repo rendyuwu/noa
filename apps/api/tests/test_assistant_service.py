@@ -87,6 +87,8 @@ class _FakeAssistantRepository:
     listed_messages: list[object] = field(default_factory=list)
     messages: list[dict[str, object]] = field(default_factory=list)
     audits: list[dict[str, object]] = field(default_factory=list)
+    action_requests: list[ActionRequest] = field(default_factory=list)
+    action_tool_runs: list[ToolRun] = field(default_factory=list)
 
     async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID):
         return SimpleNamespace(id=thread_id, owner_user_id=owner_user_id)
@@ -97,7 +99,19 @@ class _FakeAssistantRepository:
 
     async def get_pending_action_requests(self, *, thread_id: UUID):
         _ = thread_id
-        return []
+        return [
+            request
+            for request in self.action_requests
+            if request.status == ActionRequestStatus.PENDING
+        ]
+
+    async def list_action_requests(self, *, thread_id: UUID):
+        _ = thread_id
+        return list(self.action_requests)
+
+    async def list_action_tool_runs(self, *, thread_id: UUID):
+        _ = thread_id
+        return list(self.action_tool_runs)
 
     async def create_message(
         self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]
@@ -325,6 +339,8 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
     owner_id = uuid4()
     thread_id = uuid4()
     pending_request_id = uuid4()
+    denied_request_id = uuid4()
+    finished_request_id = uuid4()
     assistant_repo = _FakeAssistantRepository(
         listed_messages=[
             SimpleNamespace(
@@ -332,12 +348,8 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
                 role="assistant",
                 content=[{"type": "text", "text": "From DB"}],
             )
-        ]
-    )
-
-    async def _get_pending_action_requests(*, thread_id: UUID):
-        _ = thread_id
-        return [
+        ],
+        action_requests=[
             ActionRequest(
                 id=pending_request_id,
                 thread_id=thread_id,
@@ -350,10 +362,50 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
                 decided_at=None,
                 created_at=datetime.now(UTC),
                 updated_at=datetime.now(UTC),
+            ),
+            ActionRequest(
+                id=denied_request_id,
+                thread_id=thread_id,
+                tool_name="set_demo_flag",
+                args={"key": "feature_y", "value": False},
+                risk=ToolRisk.CHANGE,
+                status=ActionRequestStatus.DENIED,
+                requested_by_user_id=owner_id,
+                decided_by_user_id=owner_id,
+                decided_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            ),
+            ActionRequest(
+                id=finished_request_id,
+                thread_id=thread_id,
+                tool_name="set_demo_flag",
+                args={"key": "feature_z", "value": True},
+                risk=ToolRisk.CHANGE,
+                status=ActionRequestStatus.APPROVED,
+                requested_by_user_id=owner_id,
+                decided_by_user_id=owner_id,
+                decided_at=datetime.now(UTC),
+                created_at=datetime.now(UTC),
+                updated_at=datetime.now(UTC),
+            ),
+        ],
+        action_tool_runs=[
+            ToolRun(
+                id=uuid4(),
+                thread_id=thread_id,
+                tool_name="set_demo_flag",
+                args={"key": "feature_z", "value": True},
+                status=ToolRunStatus.COMPLETED,
+                result={"ok": True},
+                error=None,
+                action_request_id=finished_request_id,
+                requested_by_user_id=owner_id,
+                created_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
             )
-        ]
-
-    assistant_repo.get_pending_action_requests = _get_pending_action_requests  # type: ignore[attr-defined]
+        ],
+    )
 
     service = AssistantService(
         assistant_repo,
@@ -398,6 +450,32 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
             "arguments": {"key": "feature_x", "value": True},
             "status": "PENDING",
         }
+    ]
+    assert state["actionRequests"] == [
+        {
+            "actionRequestId": str(pending_request_id),
+            "toolName": "set_demo_flag",
+            "risk": "CHANGE",
+            "arguments": {"key": "feature_x", "value": True},
+            "status": "PENDING",
+            "lifecycleStatus": "requested",
+        },
+        {
+            "actionRequestId": str(denied_request_id),
+            "toolName": "set_demo_flag",
+            "risk": "CHANGE",
+            "arguments": {"key": "feature_y", "value": False},
+            "status": "DENIED",
+            "lifecycleStatus": "denied",
+        },
+        {
+            "actionRequestId": str(finished_request_id),
+            "toolName": "set_demo_flag",
+            "risk": "CHANGE",
+            "arguments": {"key": "feature_z", "value": True},
+            "status": "APPROVED",
+            "lifecycleStatus": "finished",
+        },
     ]
 
 

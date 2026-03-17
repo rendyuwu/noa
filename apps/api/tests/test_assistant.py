@@ -192,6 +192,7 @@ class _FakeAssistantService:
     messages: list[dict[str, object]] = field(default_factory=list)
     workflow: list[dict[str, object]] = field(default_factory=list)
     pending_approvals: list[dict[str, object]] = field(default_factory=list)
+    action_requests: list[dict[str, object]] = field(default_factory=list)
     runner_messages: list[AgentMessage] = field(default_factory=list)
     runner_text_deltas: list[str] = field(default_factory=list)
     seen_available_tools: set[str] = field(default_factory=set)
@@ -208,6 +209,7 @@ class _FakeAssistantService:
             "messages": list(self.messages),
             "workflow": list(self.workflow),
             "pendingApprovals": list(self.pending_approvals),
+            "actionRequests": list(self.action_requests),
             "isRunning": False,
         }
 
@@ -327,6 +329,14 @@ class _RouteAssistantRepository:
         return []
 
     async def get_pending_action_requests(self, *, thread_id: UUID):
+        _ = thread_id
+        return []
+
+    async def list_action_requests(self, *, thread_id: UUID):
+        _ = thread_id
+        return []
+
+    async def list_action_tool_runs(self, *, thread_id: UUID):
         _ = thread_id
         return []
 
@@ -481,6 +491,16 @@ async def test_thread_state_route_includes_workflow_and_pending_approvals() -> N
                 "status": "PENDING",
             }
         ],
+        action_requests=[
+            {
+                "actionRequestId": str(uuid4()),
+                "toolName": "set_demo_flag",
+                "risk": "CHANGE",
+                "arguments": {"key": "feature_x", "value": True},
+                "status": "PENDING",
+                "lifecycleStatus": "requested",
+            }
+        ],
     )
     app = _build_app(
         service,
@@ -502,6 +522,7 @@ async def test_thread_state_route_includes_workflow_and_pending_approvals() -> N
     data = response.json()
     assert data["workflow"] == service.workflow
     assert data["pendingApprovals"] == service.pending_approvals
+    assert data["actionRequests"] == service.action_requests
 
 
 async def test_assistant_route_streams_canonical_workflow_and_pending_approvals() -> (
@@ -534,6 +555,16 @@ async def test_assistant_route_streams_canonical_workflow_and_pending_approvals(
                 "risk": "CHANGE",
                 "arguments": {"key": "feature_x", "value": True},
                 "status": "PENDING",
+            }
+        ],
+        action_requests=[
+            {
+                "actionRequestId": str(uuid4()),
+                "toolName": "set_demo_flag",
+                "risk": "CHANGE",
+                "arguments": {"key": "feature_x", "value": True},
+                "status": "PENDING",
+                "lifecycleStatus": "requested",
             }
         ],
     )
@@ -576,6 +607,7 @@ async def test_assistant_route_streams_canonical_workflow_and_pending_approvals(
 
     assert state.get("workflow") == service.workflow
     assert state.get("pendingApprovals") == service.pending_approvals
+    assert state.get("actionRequests") == service.action_requests
 
 
 async def test_assistant_route_returns_structured_http_error_when_thread_missing() -> (

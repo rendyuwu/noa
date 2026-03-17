@@ -44,7 +44,7 @@ vi.mock("@radix-ui/react-dialog", async () => {
   };
 });
 
-vi.mock("@/components/claude/claude-thread-list", () => ({
+vi.mock("@/components/assistant/claude-thread-list", () => ({
   ClaudeThreadList: ({
     onCloseSidebar,
     onSelectThread,

@@ -132,6 +132,16 @@ describe("convertAssistantState", () => {
             status: "PENDING",
           },
         ],
+        actionRequests: [
+          {
+            actionRequestId: "approval-1",
+            toolName: "set_demo_flag",
+            risk: "CHANGE",
+            arguments: { key: "feature_x", value: true },
+            status: "PENDING",
+            lifecycleStatus: "requested",
+          },
+        ],
         messages: [
           {
             id: "m1",
@@ -157,6 +167,16 @@ describe("convertAssistantState", () => {
         risk: "CHANGE",
         arguments: { key: "feature_x", value: true },
         status: "PENDING",
+      },
+    ]);
+    expect((converted.messages[0] as any)?.metadata?.custom?.actionRequests).toEqual([
+      {
+        actionRequestId: "approval-1",
+        toolName: "set_demo_flag",
+        risk: "CHANGE",
+        arguments: { key: "feature_x", value: true },
+        status: "PENDING",
+        lifecycleStatus: "requested",
       },
     ]);
   });

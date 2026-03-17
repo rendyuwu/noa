@@ -1,7 +1,11 @@
 "use client";
 
-import { makeAssistantToolUI, useAssistantTransportSendCommand } from "@assistant-ui/react";
-import { CheckIcon, Cross2Icon } from "@radix-ui/react-icons";
+import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
+
+import {
+  extractLatestCanonicalActionRequests,
+  type AssistantActionLifecycleStatus,
+} from "@/components/assistant/approval-state";
 import type { ReactNode } from "react";
 
 function coerceString(value: unknown): string | undefined {
@@ -42,13 +46,53 @@ function prettifyToolName(value: string): string {
     .join(" ");
 }
 
+function getLifecycleCopy(status: AssistantActionLifecycleStatus) {
+  switch (status) {
+    case "requested":
+      return {
+        title: "Approval requested",
+        detail: "Use the live approval panel above the composer to decide this request.",
+      };
+    case "approved":
+      return {
+        title: "Approval recorded",
+        detail: "This request was approved and is queued to execute.",
+      };
+    case "executing":
+      return {
+        title: "Executing approved action",
+        detail: "The approval step is complete and execution is in progress.",
+      };
+    case "finished":
+      return {
+        title: "Approved action finished",
+        detail: "This request resolved successfully.",
+      };
+    case "failed":
+      return {
+        title: "Approved action failed",
+        detail: "Approval succeeded, but the follow-up execution failed.",
+      };
+    case "denied":
+      return {
+        title: "Action request denied",
+        detail: "This request reached a terminal denied state.",
+      };
+  }
+}
+
 function Actions({ args }: { args: Record<string, unknown> }) {
-  const sendCommand = useAssistantTransportSendCommand();
   const actionRequestId = coerceString(args.actionRequestId) ?? "";
   const toolName = coerceString(args.toolName) ?? "unknown";
   const activity = coerceString(args.activity) ?? `Run ${prettifyToolName(toolName).toLowerCase()}`;
   const beforeState = coerceDetailItems(args.beforeState);
   const argumentSummary = coerceDetailItems(args.argumentSummary);
+  const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
+  const lifecycleStatus =
+    extractLatestCanonicalActionRequests(threadMessages)?.find(
+      (request) => request.actionRequestId === actionRequestId,
+    )?.lifecycleStatus ?? "requested";
+  const copy = getLifecycleCopy(lifecycleStatus);
 
   if (!actionRequestId) {
     return (
@@ -62,11 +106,9 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
       <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-text">
-            Approval requested
-          </div>
+          <div className="text-sm font-semibold text-text">{copy.title}</div>
           <div className="mt-0.5 text-xs text-muted">
-            Tool: <code className="text-[11px]">{toolName}</code>
+            {copy.detail}
           </div>
         </div>
       </div>
@@ -103,23 +145,8 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           </div>
         ) : null}
 
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => sendCommand({ type: "approve-action", actionRequestId })}
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 active:scale-[0.98]"
-          >
-            <CheckIcon width={16} height={16} />
-            Approve
-          </button>
-          <button
-            type="button"
-            onClick={() => sendCommand({ type: "deny-action", actionRequestId })}
-            className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-text transition-all hover:bg-surface-2 active:scale-[0.98]"
-          >
-            <Cross2Icon width={16} height={16} />
-            Deny
-          </button>
+        <div className="mt-3 rounded-lg border border-dashed border-border bg-surface/50 px-3 py-2 text-xs text-muted">
+          Transcript cards now show approval history only. Use the canonical approval panel to approve or deny live requests.
         </div>
       </div>
     </div>
