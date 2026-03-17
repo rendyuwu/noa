@@ -22,10 +22,13 @@ from noa_api.core.tools.registry import (
     get_tool_registry,
 )
 from noa_api.core.workflows.registry import (
+    build_approval_context,
     build_workflow_todos,
     collect_recent_preflight_evidence,
-    collect_recent_preflight_results,
+    describe_workflow_activity,
+    infer_waiting_on_user_workflow_from_messages,
     persist_workflow_todos,
+    require_matching_preflight,
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
@@ -760,7 +763,10 @@ class AgentRunner:
         if not _assistant_is_requesting_reason(assistant_text):
             return
 
-        inferred = _infer_waiting_on_user_workflow_from_messages(working_messages)
+        inferred = _infer_waiting_on_user_workflow_from_messages(
+            working_messages,
+            assistant_text=assistant_text,
+        )
         if inferred is None:
             return
 
@@ -921,27 +927,6 @@ def _safe_json_object(raw: str | None) -> dict[str, object]:
     return {}
 
 
-def _humanize_tool_name(tool_name: str) -> str:
-    return (
-        " ".join(part.capitalize() for part in tool_name.split("_") if part.strip())
-        or "Tool"
-    )
-
-
-def _coerce_part_record(value: object) -> dict[str, object] | None:
-    return value if isinstance(value, dict) else None
-
-
-def _messages_since_last_user(
-    working_messages: list[dict[str, object]],
-) -> list[dict[str, object]]:
-    last_user_index = -1
-    for index, message in enumerate(working_messages):
-        if message.get("role") == "user":
-            last_user_index = index
-    return working_messages[last_user_index + 1 :]
-
-
 def _require_matching_preflight(
     *,
     tool_name: str,
@@ -949,143 +934,11 @@ def _require_matching_preflight(
     working_messages: list[dict[str, object]],
     requested_server_id: str | None = None,
 ) -> SanitizedToolError | None:
-    if tool_name in {
-        "whm_suspend_account",
-        "whm_unsuspend_account",
-        "whm_change_contact_email",
-    }:
-        return _require_account_preflight(
-            args=args,
-            working_messages=working_messages,
-            requested_server_id=requested_server_id,
-        )
-
-    if tool_name in {
-        "whm_csf_unblock",
-        "whm_csf_allowlist_remove",
-        "whm_csf_allowlist_add_ttl",
-        "whm_csf_denylist_add_ttl",
-    }:
-        return _require_csf_preflight(
-            args=args,
-            working_messages=working_messages,
-            requested_server_id=requested_server_id,
-        )
-
-    return None
-
-
-def _require_account_preflight(
-    *,
-    args: dict[str, object],
-    working_messages: list[dict[str, object]],
-    requested_server_id: str | None,
-) -> SanitizedToolError | None:
-    requested_server_ref = _normalized_text(args.get("server_ref"))
-    requested_username = _normalized_text(args.get("username"))
-    if requested_server_ref is None or requested_username is None:
-        return None
-
-    evidence = [
-        item
-        for item in collect_recent_preflight_evidence(working_messages)
-        if item.get("toolName") == "whm_preflight_account"
-        and isinstance(item.get("result"), dict)
-        and cast(dict[str, object], item["result"]).get("ok") is True
-    ]
-    if not evidence:
-        return SanitizedToolError(
-            error="Required WHM preflight evidence is missing",
-            error_code="preflight_required",
-            details=(
-                "Run whm_preflight_account with the same server_ref and username before requesting this change.",
-            ),
-        )
-
-    for item in evidence:
-        item_args = item.get("args")
-        result = item.get("result")
-        if not isinstance(item_args, dict) or not isinstance(result, dict):
-            continue
-        if not _server_identity_matches(
-            item_args=item_args,
-            result=result,
-            requested_server_ref=requested_server_ref,
-            requested_server_id=requested_server_id,
-        ):
-            continue
-        account = result.get("account")
-        if not isinstance(account, dict):
-            continue
-        if _normalized_text(account.get("user")) == requested_username:
-            return None
-
-    return SanitizedToolError(
-        error="Required WHM preflight evidence does not match this change request",
-        error_code="preflight_mismatch",
-        details=(
-            f"No successful whm_preflight_account was found for server_ref '{requested_server_ref}' and username '{requested_username}' in the current turn.",
-        ),
-    )
-
-
-def _require_csf_preflight(
-    *,
-    args: dict[str, object],
-    working_messages: list[dict[str, object]],
-    requested_server_id: str | None,
-) -> SanitizedToolError | None:
-    requested_server_ref = _normalized_text(args.get("server_ref"))
-    requested_targets = _normalized_string_list(args.get("targets"))
-    if requested_server_ref is None or not requested_targets:
-        return None
-
-    evidence = [
-        item
-        for item in collect_recent_preflight_evidence(working_messages)
-        if item.get("toolName") == "whm_preflight_csf_entries"
-        and isinstance(item.get("result"), dict)
-        and cast(dict[str, object], item["result"]).get("ok") is True
-    ]
-    if not evidence:
-        return SanitizedToolError(
-            error="Required WHM preflight evidence is missing",
-            error_code="preflight_required",
-            details=(
-                "Run whm_preflight_csf_entries for each target with the same server_ref before requesting this change.",
-            ),
-        )
-
-    matched_targets: set[str] = set()
-    for item in evidence:
-        item_args = item.get("args")
-        result = item.get("result")
-        if not isinstance(item_args, dict) or not isinstance(result, dict):
-            continue
-        if not _server_identity_matches(
-            item_args=item_args,
-            result=result,
-            requested_server_ref=requested_server_ref,
-            requested_server_id=requested_server_id,
-        ):
-            continue
-        target = _normalized_text(result.get("target"))
-        if target is not None:
-            matched_targets.add(target)
-
-    missing_targets = [
-        target for target in requested_targets if target not in matched_targets
-    ]
-    if not missing_targets:
-        return None
-
-    return SanitizedToolError(
-        error="Required WHM preflight evidence does not match this change request",
-        error_code="preflight_mismatch",
-        details=(
-            "Missing successful whm_preflight_csf_entries results for target(s): "
-            + ", ".join(f"'{target}'" for target in missing_targets),
-        ),
+    return require_matching_preflight(
+        tool_name=tool_name,
+        args=args,
+        working_messages=working_messages,
+        requested_server_id=requested_server_id,
     )
 
 
@@ -1094,17 +947,6 @@ def _normalized_text(value: object) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
-
-
-def _normalized_string_list(value: object) -> list[str]:
-    if not isinstance(value, list):
-        return []
-    normalized: list[str] = []
-    for item in value:
-        text = _normalized_text(item)
-        if text is not None:
-            normalized.append(text)
-    return normalized
 
 
 async def _resolve_requested_server_id(
@@ -1123,139 +965,17 @@ async def _resolve_requested_server_id(
     return str(resolution.server_id)
 
 
-def _server_identity_matches(
-    *,
-    item_args: dict[str, object],
-    result: dict[str, object],
-    requested_server_ref: str,
-    requested_server_id: str | None,
-) -> bool:
-    result_server_id = _normalized_text(result.get("server_id"))
-    if requested_server_id is not None and result_server_id is not None:
-        return result_server_id == requested_server_id
-    return _normalized_text(item_args.get("server_ref")) == requested_server_ref
-
-
-def _format_argument_value(value: object) -> str:
-    if isinstance(value, bool):
-        return "yes" if value else "no"
-    if isinstance(value, (int, float)):
-        return str(value)
-    if isinstance(value, str):
-        return value
-    if value is None:
-        return "none"
-    if isinstance(value, list):
-        return ", ".join(_format_argument_value(item) for item in value[:5])
-    return json.dumps(json_safe(value))
-
-
-def _summarize_arguments(args: dict[str, object]) -> list[dict[str, str]]:
-    hidden_keys = {"api_token", "password", "secret", "token"}
-    items: list[dict[str, str]] = []
-    for key, value in args.items():
-        if key in hidden_keys:
-            continue
-        items.append(
-            {
-                "label": key.replace("_", " ").capitalize(),
-                "value": _format_argument_value(value),
-            }
-        )
-    return items
-
-
-def _describe_activity(tool_name: str, args: dict[str, object]) -> str:
-    if tool_name == "whm_unsuspend_account":
-        return f"Unsuspend account '{args.get('username', 'unknown')}'"
-    if tool_name == "whm_suspend_account":
-        return f"Suspend account '{args.get('username', 'unknown')}'"
-    if tool_name == "whm_change_contact_email":
-        return (
-            f"Change contact email for '{args.get('username', 'unknown')}' "
-            f"to '{args.get('new_email', 'unknown')}'"
-        )
-    if tool_name == "whm_csf_unblock":
-        return f"Remove CSF block for '{_format_argument_value(args.get('targets'))}'"
-    if tool_name == "whm_csf_allowlist_add_ttl":
-        return (
-            f"Add '{_format_argument_value(args.get('targets'))}' to the CSF allowlist"
-        )
-    if tool_name == "whm_csf_allowlist_remove":
-        return f"Remove '{_format_argument_value(args.get('targets'))}' from the CSF allowlist"
-    if tool_name == "whm_csf_denylist_add_ttl":
-        return (
-            f"Add '{_format_argument_value(args.get('targets'))}' to the CSF denylist"
-        )
-    return _humanize_tool_name(tool_name)
-
-
-def _extract_before_state(
-    preflight_results: list[dict[str, object]],
-) -> list[dict[str, str]]:
-    before_state: list[dict[str, str]] = []
-    for item in preflight_results:
-        tool_name = item.get("toolName")
-        result = item.get("result")
-        if not isinstance(tool_name, str) or not isinstance(result, dict):
-            continue
-        if tool_name == "whm_preflight_account":
-            account = result.get("account")
-            if isinstance(account, dict):
-                for key, label in (
-                    ("user", "Username"),
-                    ("domain", "Domain"),
-                    ("contactemail", "Contact email"),
-                    ("suspended", "Suspended"),
-                    ("suspendreason", "Suspend reason"),
-                    ("plan", "Plan"),
-                ):
-                    value = account.get(key)
-                    if value in (None, ""):
-                        continue
-                    before_state.append(
-                        {"label": label, "value": _format_argument_value(value)}
-                    )
-        if tool_name == "whm_preflight_csf_entries":
-            verdict = result.get("verdict")
-            target = result.get("target")
-            if target not in (None, ""):
-                before_state.append(
-                    {"label": "Target", "value": _format_argument_value(target)}
-                )
-            if verdict not in (None, ""):
-                before_state.append(
-                    {
-                        "label": "Current CSF state",
-                        "value": _format_argument_value(verdict),
-                    }
-                )
-            matches = result.get("matches")
-            if isinstance(matches, list) and matches:
-                before_state.append(
-                    {
-                        "label": "Matched entries",
-                        "value": "; ".join(
-                            _format_argument_value(match) for match in matches[:3]
-                        ),
-                    }
-                )
-    return before_state
-
-
 def _build_approval_context(
     *,
     tool_name: str,
     args: dict[str, object],
     working_messages: list[dict[str, object]],
 ) -> dict[str, object]:
-    preflight_results = collect_recent_preflight_results(working_messages)
-    return {
-        "activity": _describe_activity(tool_name, args),
-        "argumentSummary": _summarize_arguments(args),
-        "beforeState": _extract_before_state(preflight_results),
-        "preflightResults": preflight_results,
-    }
+    return build_approval_context(
+        tool_name=tool_name,
+        args=args,
+        working_messages=working_messages,
+    )
 
 
 def _to_openai_tool_schema(tool: ToolDefinition) -> dict[str, object]:
@@ -1328,7 +1048,7 @@ def _assistant_guidance_for_change_validation_error(
     if not any("reason" in detail for detail in details):
         return None
 
-    activity = _describe_activity(tool_name, args).lower()
+    activity = describe_workflow_activity(tool_name=tool_name, args=args).lower()
     return (
         f"I need a short, human-readable reason before I can continue {activity}. "
         "Please provide the reason you want recorded for this change."
@@ -1363,92 +1083,18 @@ def _assistant_is_requesting_reason(text: str) -> bool:
 
 
 def _infer_waiting_on_user_workflow_from_messages(
-    working_messages: list[dict[str, object]],
+    working_messages: list[dict[str, object]], assistant_text: str | None = None
 ) -> dict[str, object] | None:
-    last_user_text = _latest_user_text(working_messages)
-    if last_user_text is None:
-        return None
-
-    tool_name = _infer_whm_account_lifecycle_tool_name(last_user_text)
-    if tool_name is None:
-        return None
-
-    evidence = collect_recent_preflight_evidence(working_messages)
-    account_candidates = [
-        item
-        for item in evidence
-        if item.get("toolName") == "whm_preflight_account"
-        and isinstance(item.get("args"), dict)
-    ]
-    if not account_candidates:
-        return None
-
-    match = _select_account_preflight_candidate(
-        account_candidates=account_candidates,
-        user_text=last_user_text,
+    inferred = infer_waiting_on_user_workflow_from_messages(
+        assistant_text=assistant_text or "",
+        working_messages=working_messages,
     )
-    if match is None:
+    if inferred is None:
         return None
-
-    args = cast(dict[str, object], match.get("args"))
-    server_ref = _normalized_text(args.get("server_ref"))
-    username = _normalized_text(args.get("username"))
-    if server_ref is None or username is None:
-        return None
-
     return {
-        "tool_name": tool_name,
-        "args": {
-            "server_ref": server_ref,
-            "username": username,
-        },
+        "tool_name": inferred.tool_name,
+        "args": inferred.args,
     }
-
-
-def _latest_user_text(working_messages: list[dict[str, object]]) -> str | None:
-    for message in reversed(working_messages):
-        if message.get("role") != "user":
-            continue
-        parts = message.get("parts")
-        if not isinstance(parts, list):
-            continue
-        for part in parts:
-            if not isinstance(part, dict) or part.get("type") != "text":
-                continue
-            text = part.get("text")
-            if isinstance(text, str) and text.strip():
-                return text.strip()
-    return None
-
-
-def _infer_whm_account_lifecycle_tool_name(user_text: str) -> str | None:
-    lowered = user_text.lower()
-    if "unsuspend" in lowered:
-        return "whm_unsuspend_account"
-    if "suspend" in lowered:
-        return "whm_suspend_account"
-    return None
-
-
-def _select_account_preflight_candidate(
-    *, account_candidates: list[dict[str, object]], user_text: str
-) -> dict[str, object] | None:
-    if len(account_candidates) == 1:
-        return account_candidates[0]
-
-    lowered = user_text.lower()
-    for candidate in reversed(account_candidates):
-        args = candidate.get("args")
-        if not isinstance(args, dict):
-            continue
-        server_ref = _normalized_text(args.get("server_ref"))
-        username = _normalized_text(args.get("username"))
-        if server_ref is None or username is None:
-            continue
-        if server_ref.lower() in lowered and username.lower() in lowered:
-            return candidate
-
-    return None
 
 
 def _split_text_deltas(text: str, *, chunk_size: int = 24) -> list[str]:
