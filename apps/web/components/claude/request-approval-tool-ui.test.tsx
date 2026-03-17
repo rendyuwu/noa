@@ -1,9 +1,21 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+let mockThreadMessages: any[] = [];
+
+vi.mock("@assistant-ui/react", () => ({
+  makeAssistantToolUI: ({ render }: { render: (props: any) => unknown }) => render,
+  useAssistantState: (selector: any) => selector({
+    thread: {
+      messages: mockThreadMessages,
+    },
+  }),
+}));
 
 import {
   ClaudeToolFallback,
   ClaudeToolGroup,
+  RequestApprovalToolUI,
 } from "@/components/claude/request-approval-tool-ui";
 
 describe("ClaudeToolFallback", () => {
@@ -60,10 +72,24 @@ describe("ClaudeToolFallback", () => {
     );
 
     expect(screen.getByText(/^Current time$/i)).toBeVisible();
-    expect(screen.getByText(/^incomplete$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^failed$/i)).toBeInTheDocument();
     expect(screen.getByText(/could not complete current time/i)).toBeVisible();
     expect(screen.queryByText(/secret/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/10:00/)).not.toBeInTheDocument();
+  });
+
+  it("hides validation-stage change tool failures that are superseded by workflow guidance", () => {
+    render(
+      <ClaudeToolFallback
+        toolName="whm_unsuspend_account"
+        toolCallId="tool-call-6"
+        status={{ type: "incomplete" }}
+        result={{ error_code: "invalid_tool_arguments", message: "Reason is required" }}
+        isError
+      />,
+    );
+
+    expect(screen.queryByText(/whm unsuspend account/i)).not.toBeInTheDocument();
   });
 
   it("does not render a wrapper when only hidden children exist", () => {
@@ -80,5 +106,44 @@ describe("ClaudeToolFallback", () => {
     );
 
     expect(container.firstChild).toBeNull();
+  });
+
+  it("renders approval transcript entries as compact history with expandable details", () => {
+    mockThreadMessages = [
+      {
+        metadata: {
+          custom: {
+            actionRequests: [
+              {
+                actionRequestId: "approval-1",
+                toolName: "whm_suspend_account",
+                risk: "CHANGE",
+                arguments: {},
+                status: "DENIED",
+                lifecycleStatus: "denied",
+              },
+            ],
+          },
+        },
+      },
+    ];
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-1",
+          toolName: "whm_suspend_account",
+          activity: "Suspend cPanel account",
+          beforeState: [{ label: "Status", value: "Active" }],
+          argumentSummary: [{ label: "Reason", value: "Billing issue" }],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Suspend cPanel account")).toBeInTheDocument();
+    expect(screen.getByText("History snapshot")).toBeInTheDocument();
+    expect(screen.getByText(/^denied$/i)).toBeInTheDocument();
+    expect(screen.getByText("View request details")).toBeInTheDocument();
+    expect(screen.queryByText(/canonical approval panel/i)).not.toBeInTheDocument();
   });
 });

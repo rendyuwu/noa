@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { CheckIcon, ClockIcon, Cross2Icon, RocketIcon } from "@radix-ui/react-icons";
 import { useAssistantTransportSendCommand } from "@assistant-ui/react";
 
+import { getApprovalLifecyclePresentation } from "@/components/assistant/approval-lifecycle-ui";
 import type { AssistantActionLifecycleStatus, AssistantActionRequest } from "@/components/assistant/approval-state";
 
 type DecisionState = "approving" | "denying";
@@ -38,71 +39,16 @@ function describeLifecycle(status: AssistantActionLifecycleStatus, pendingDecisi
     };
   }
 
-  switch (status) {
-    case "requested":
-      return {
-        title: "Approval requested",
-        detail: "Review the proposed change before execution begins.",
-        badge: "requested",
-        badgeClassName: "bg-accent/15 text-accent",
-        Icon: ClockIcon,
-      };
-    case "approved":
-      return {
-        title: "Approval recorded",
-        detail: "The request is approved and about to execute.",
-        badge: "approved",
-        badgeClassName: "bg-emerald-100 text-emerald-900",
-        Icon: CheckIcon,
-      };
-    case "executing":
-      return {
-        title: "Executing approved action",
-        detail: "NOA is running the approved change now.",
-        badge: "executing",
-        badgeClassName: "bg-sky-100 text-sky-900",
-        Icon: RocketIcon,
-      };
-    case "finished":
-      return {
-        title: "Approved action finished",
-        detail: "The approved change completed successfully.",
-        badge: "finished",
-        badgeClassName: "bg-emerald-100 text-emerald-900",
-        Icon: CheckIcon,
-      };
-    case "failed":
-      return {
-        title: "Approved action failed",
-        detail: "The approval succeeded, but the execution did not finish cleanly.",
-        badge: "failed",
-        badgeClassName: "bg-red-50 text-red-800",
-        Icon: Cross2Icon,
-      };
-    case "denied":
-      return {
-        title: "Action request denied",
-        detail: "Execution stops and the request is now terminal.",
-        badge: "denied",
-        badgeClassName: "bg-slate-200 text-slate-800",
-        Icon: Cross2Icon,
-      };
-  }
+  return getApprovalLifecyclePresentation(status);
 }
 
 function getVisibleRequests(requests: AssistantActionRequest[]): AssistantActionRequest[] {
-  const liveRequests = requests.filter(
+  return requests.filter(
     (request) =>
       request.lifecycleStatus === "requested" ||
       request.lifecycleStatus === "approved" ||
       request.lifecycleStatus === "executing",
   );
-  if (liveRequests.length) {
-    return liveRequests;
-  }
-
-  const latestRequest = requests[requests.length - 1];
-  return latestRequest ? [latestRequest] : [];
 }
 
 export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] }) {

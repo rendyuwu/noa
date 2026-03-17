@@ -379,6 +379,11 @@ class AgentRunner:
                     }
                 )
                 text_deltas.extend(_split_text_deltas(text))
+                await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
+                    assistant_text=text,
+                    working_messages=working_messages,
+                    thread_id=thread_id,
+                )
 
             if not llm_response.tool_calls:
                 return AgentRunnerResult(
@@ -505,12 +510,11 @@ class AgentRunner:
             )
             if validation_error is not None:
                 tool_call_id = f"invalid-{uuid4()}"
-                await self._persist_deterministic_workflow_for_validation_error(
+                await self._persist_waiting_on_user_workflow_if_reason_missing(
                     tool=tool,
                     args=args,
                     working_messages=working_messages,
                     thread_id=thread_id,
-                    error=validation_error,
                 )
                 return ProcessedToolCall(
                     messages=_tool_error_messages(
@@ -681,19 +685,50 @@ class AgentRunner:
                 return preflight_error
         return None
 
-    async def _persist_deterministic_workflow_for_validation_error(
+    async def _persist_waiting_on_user_workflow_if_reason_missing(
         self,
         *,
         tool: ToolDefinition,
         args: dict[str, object],
         working_messages: list[dict[str, object]],
         thread_id: UUID,
-        error: SanitizedToolError,
     ) -> None:
-        if error.error_code != "invalid_tool_arguments":
+        if tool.risk != ToolRisk.CHANGE or tool.workflow_family is None:
             return
-        if not error.details or "Missing required field 'reason'" not in error.details:
+        if _normalized_text(args.get("reason")) is not None:
             return
+        await persist_workflow_todos(
+            session=self._session,
+            thread_id=thread_id,
+            todos=build_workflow_todos(
+                tool_name=tool.name,
+                workflow_family=tool.workflow_family,
+                args=args,
+                phase="waiting_on_user",
+                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+            ),
+        )
+
+    async def _maybe_persist_waiting_on_user_workflow_from_text_turn(
+        self,
+        *,
+        assistant_text: str,
+        working_messages: list[dict[str, object]],
+        thread_id: UUID,
+    ) -> None:
+        if not _assistant_is_requesting_reason(assistant_text):
+            return
+
+        inferred = _infer_waiting_on_user_workflow_from_messages(working_messages)
+        if inferred is None:
+            return
+
+        tool_name = cast(str, inferred["tool_name"])
+        args = cast(dict[str, object], inferred["args"])
+        tool = get_tool_definition(tool_name)
+        if tool is None or tool.workflow_family is None:
+            return
+
         await persist_workflow_todos(
             session=self._session,
             thread_id=thread_id,
@@ -1245,6 +1280,109 @@ def _internal_tool_guidance(tool_name: str) -> str | None:
             "Approval requests are created automatically after you call the "
             "underlying CHANGE tool. Do not call request_approval directly."
         )
+    return None
+
+
+def _assistant_is_requesting_reason(text: str) -> bool:
+    lowered = text.lower()
+    return "reason" in lowered and any(
+        phrase in lowered
+        for phrase in (
+            "could you provide",
+            "please provide",
+            "need a brief human-readable reason",
+            "need a human-readable reason",
+            "what reason",
+        )
+    )
+
+
+def _infer_waiting_on_user_workflow_from_messages(
+    working_messages: list[dict[str, object]],
+) -> dict[str, object] | None:
+    last_user_text = _latest_user_text(working_messages)
+    if last_user_text is None:
+        return None
+
+    tool_name = _infer_whm_account_lifecycle_tool_name(last_user_text)
+    if tool_name is None:
+        return None
+
+    evidence = collect_recent_preflight_evidence(working_messages)
+    account_candidates = [
+        item
+        for item in evidence
+        if item.get("toolName") == "whm_preflight_account"
+        and isinstance(item.get("args"), dict)
+    ]
+    if not account_candidates:
+        return None
+
+    match = _select_account_preflight_candidate(
+        account_candidates=account_candidates,
+        user_text=last_user_text,
+    )
+    if match is None:
+        return None
+
+    args = cast(dict[str, object], match.get("args"))
+    server_ref = _normalized_text(args.get("server_ref"))
+    username = _normalized_text(args.get("username"))
+    if server_ref is None or username is None:
+        return None
+
+    return {
+        "tool_name": tool_name,
+        "args": {
+            "server_ref": server_ref,
+            "username": username,
+        },
+    }
+
+
+def _latest_user_text(working_messages: list[dict[str, object]]) -> str | None:
+    for message in reversed(working_messages):
+        if message.get("role") != "user":
+            continue
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict) or part.get("type") != "text":
+                continue
+            text = part.get("text")
+            if isinstance(text, str) and text.strip():
+                return text.strip()
+    return None
+
+
+def _infer_whm_account_lifecycle_tool_name(user_text: str) -> str | None:
+    lowered = user_text.lower()
+    if "unsuspend" in lowered:
+        return "whm_unsuspend_account"
+    if "suspend" in lowered:
+        return "whm_suspend_account"
+    return None
+
+
+def _select_account_preflight_candidate(
+    *, account_candidates: list[dict[str, object]], user_text: str
+) -> dict[str, object] | None:
+    if len(account_candidates) == 1:
+        return account_candidates[0]
+
+    lowered = user_text.lower()
+    for candidate in reversed(account_candidates):
+        args = candidate.get("args")
+        if not isinstance(args, dict):
+            continue
+        server_ref = _normalized_text(args.get("server_ref"))
+        username = _normalized_text(args.get("username"))
+        if server_ref is None or username is None:
+            continue
+        if server_ref.lower() in lowered and username.lower() in lowered:
+            return candidate
+
     return None
 
 

@@ -2,6 +2,7 @@
 
 import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
 
+import { getApprovalLifecyclePresentation } from "@/components/assistant/approval-lifecycle-ui";
 import {
   extractLatestCanonicalActionRequests,
   type AssistantActionLifecycleStatus,
@@ -46,41 +47,6 @@ function prettifyToolName(value: string): string {
     .join(" ");
 }
 
-function getLifecycleCopy(status: AssistantActionLifecycleStatus) {
-  switch (status) {
-    case "requested":
-      return {
-        title: "Approval requested",
-        detail: "Use the live approval panel above the composer to decide this request.",
-      };
-    case "approved":
-      return {
-        title: "Approval recorded",
-        detail: "This request was approved and is queued to execute.",
-      };
-    case "executing":
-      return {
-        title: "Executing approved action",
-        detail: "The approval step is complete and execution is in progress.",
-      };
-    case "finished":
-      return {
-        title: "Approved action finished",
-        detail: "This request resolved successfully.",
-      };
-    case "failed":
-      return {
-        title: "Approved action failed",
-        detail: "Approval succeeded, but the follow-up execution failed.",
-      };
-    case "denied":
-      return {
-        title: "Action request denied",
-        detail: "This request reached a terminal denied state.",
-      };
-  }
-}
-
 function Actions({ args }: { args: Record<string, unknown> }) {
   const actionRequestId = coerceString(args.actionRequestId) ?? "";
   const toolName = coerceString(args.toolName) ?? "unknown";
@@ -92,7 +58,8 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     extractLatestCanonicalActionRequests(threadMessages)?.find(
       (request) => request.actionRequestId === actionRequestId,
     )?.lifecycleStatus ?? "requested";
-  const copy = getLifecycleCopy(lifecycleStatus);
+  const copy = getApprovalLifecyclePresentation(lifecycleStatus);
+  const hasDetails = beforeState.length > 0 || argumentSummary.length > 0;
 
   if (!actionRequestId) {
     return (
@@ -103,52 +70,65 @@ function Actions({ args }: { args: Record<string, unknown> }) {
   }
 
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
-      <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
+    <div className="mt-3 rounded-xl border border-border bg-surface/65 px-3.5 py-3 shadow-[0_0.25rem_1rem_rgba(0,0,0,0.03),0_0_0_0.5px_rgba(0,0,0,0.06)]">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-text">{copy.title}</div>
-          <div className="mt-0.5 text-xs text-muted">
-            {copy.detail}
+          <div className="text-sm text-text">{activity}</div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
+            <span>{copy.title}</span>
+            <span aria-hidden="true">·</span>
+            <span>History snapshot</span>
+            <span aria-hidden="true">·</span>
+            <code className="text-[11px] text-muted">{actionRequestId}</code>
           </div>
+          <div className="mt-1 text-xs text-muted">{copy.detail}</div>
+        </div>
+        <div
+          className={[
+            "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
+            copy.badgeClassName,
+          ].join(" ")}
+        >
+          <copy.Icon width={12} height={12} />
+          <span className="leading-none">{copy.badge}</span>
         </div>
       </div>
-      <div className="px-4 py-3">
-        <div className="rounded-lg border border-border bg-bg/40 px-3 py-2.5 text-sm text-text">
-          {activity}
-        </div>
 
-        {beforeState.length ? (
-          <div className="mt-3 rounded-lg border border-border bg-bg/40 px-3 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Before state</div>
-            <dl className="mt-2 space-y-1.5 text-sm">
-              {beforeState.map((item) => (
-                <div key={`${item.label}-${item.value}`} className="grid grid-cols-[9rem_minmax(0,1fr)] gap-3">
-                  <dt className="text-muted">{item.label}</dt>
-                  <dd className="min-w-0 break-words text-text">{item.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ) : null}
+      {hasDetails ? (
+        <details className="mt-2 rounded-lg border border-border bg-bg/35 px-3 py-2.5">
+          <summary className="cursor-pointer list-none text-xs text-muted transition-colors hover:text-text">
+            View request details
+          </summary>
 
-        {argumentSummary.length ? (
-          <div className="mt-3 rounded-lg border border-border bg-bg/40 px-3 py-3">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Requested change</div>
-            <dl className="mt-2 space-y-1.5 text-sm">
-              {argumentSummary.map((item) => (
-                <div key={`${item.label}-${item.value}`} className="grid grid-cols-[9rem_minmax(0,1fr)] gap-3">
-                  <dt className="text-muted">{item.label}</dt>
-                  <dd className="min-w-0 break-words text-text">{item.value}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ) : null}
+          {beforeState.length ? (
+            <div className="mt-3 rounded-lg border border-border bg-bg/40 px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Before state</div>
+              <dl className="mt-2 space-y-1.5 text-sm">
+                {beforeState.map((item) => (
+                  <div key={`${item.label}-${item.value}`} className="grid grid-cols-[9rem_minmax(0,1fr)] gap-3">
+                    <dt className="text-muted">{item.label}</dt>
+                    <dd className="min-w-0 break-words text-text">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
 
-        <div className="mt-3 rounded-lg border border-dashed border-border bg-surface/50 px-3 py-2 text-xs text-muted">
-          Transcript cards now show approval history only. Use the canonical approval panel to approve or deny live requests.
-        </div>
-      </div>
+          {argumentSummary.length ? (
+            <div className="mt-3 rounded-lg border border-border bg-bg/40 px-3 py-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-muted">Requested change</div>
+              <dl className="mt-2 space-y-1.5 text-sm">
+                {argumentSummary.map((item) => (
+                  <div key={`${item.label}-${item.value}`} className="grid grid-cols-[9rem_minmax(0,1fr)] gap-3">
+                    <dt className="text-muted">{item.label}</dt>
+                    <dd className="min-w-0 break-words text-text">{item.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ) : null}
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -188,8 +168,8 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
     className: "bg-surface-2/60 text-muted",
   },
   incomplete: {
-    label: "incomplete",
-    className: "bg-red-50 text-red-800",
+    label: "failed",
+    className: "bg-rose-100/80 text-rose-900",
   },
   "requires-action": {
     label: "requires-action",
@@ -199,6 +179,22 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 
 function humanizeToolName(toolName: string): string {
   return prettifyToolName(toolName);
+}
+
+function isHiddenChangeToolValidationError(toolName: string, result: unknown): boolean {
+  if (!toolName.startsWith("whm_") || toolName.startsWith("whm_preflight_")) {
+    return false;
+  }
+  if (!result || typeof result !== "object") {
+    return false;
+  }
+
+  const errorCode = (result as Record<string, unknown>).error_code;
+  return (
+    errorCode === "invalid_tool_arguments" ||
+    errorCode === "preflight_required" ||
+    errorCode === "preflight_mismatch"
+  );
 }
 
 export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
@@ -237,6 +233,10 @@ export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
           : copy.doing;
 
   if (statusType !== "incomplete") {
+    return null;
+  }
+
+  if (isHiddenChangeToolValidationError(rawName, result)) {
     return null;
   }
 

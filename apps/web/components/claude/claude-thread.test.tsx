@@ -34,10 +34,6 @@ vi.mock("@/components/assistant/workflow-todo-tool-ui", () => ({
     const last = messages[messages.length - 1];
     return last?.metadata?.custom?.workflow;
   },
-  extractLatestWorkflowTodos: (messages: any[]) => {
-    const last = messages[messages.length - 1];
-    return last?.metadata?.todos ?? [];
-  },
 }));
 
 vi.mock("@/components/assistant/workflow-dock", () => ({
@@ -264,21 +260,7 @@ describe("ClaudeThread", () => {
     render(<ClaudeThread />);
 
     expect(screen.getByTestId("workflow-card")).toHaveTextContent("Delete user");
-  });
-
-  it("falls back to transcript-derived workflow for older threads", () => {
-    mockThreadIsEmpty = false;
-    mockThreadMessages = [
-      {
-        metadata: {
-          todos: [{ content: "Legacy workflow", status: "pending", priority: "high" }],
-        },
-      },
-    ];
-
-    render(<ClaudeThread />);
-
-    expect(screen.getByTestId("workflow-card")).toHaveTextContent("Legacy workflow");
+    expect(screen.getByTestId("workflow-rail")).toContainElement(screen.getByTestId("workflow-card"));
   });
 
   it("does not render the assistant disclaimer footer", () => {

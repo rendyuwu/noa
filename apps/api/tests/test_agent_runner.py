@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import cast
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from noa_api.core.agent.runner import (
@@ -897,7 +897,7 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
     runner = AgentRunner(
         llm_client=_SingleTurnLLM(),
         action_tool_run_service=ActionToolRunService(repository=repo),
-        session=cast(object, object()),
+        session=cast(Any, object()),
     )
 
     result = await runner.run_turn(
@@ -948,7 +948,8 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
     )
     part = tool_message.parts[0]
     assert isinstance(part, dict)
-    assert part["result"]["error_code"] == "invalid_tool_arguments"
+    result_payload = cast(dict[str, object], part["result"])
+    assert result_payload["error_code"] == "invalid_tool_arguments"
 
 
 async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_for_approval(
@@ -989,7 +990,7 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
             )
         ),
         action_tool_run_service=ActionToolRunService(repository=repo),
-        session=cast(object, object()),
+        session=cast(Any, object()),
     )
 
     result = await runner.run_turn(
@@ -1037,6 +1038,91 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
     approval_part = result.messages[-1].parts[0]
     assert isinstance(approval_part, dict)
     assert approval_part["toolName"] == "request_approval"
+
+
+async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reason_after_preflight(
+    monkeypatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    thread_id = uuid4()
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text=(
+                    "To proceed with unsuspending the account, I need a brief human-readable "
+                    "reason for the change. Could you provide the reason?"
+                ),
+                tool_calls=[],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Unsuspend account rendy on web2",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web2", "username": "rendy"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "rendy", "suspended": True},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names=set(),
+        thread_id=thread_id,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert result.messages[0].parts[0]["type"] == "text"
+    assert captured["thread_id"] == thread_id
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert len(todos) == 6
+    assert todos[0]["status"] == "completed"
+    assert todos[1]["status"] == "waiting_on_user"
+    assert todos[2]["status"] == "pending"
 
 
 async def test_agent_runner_rejects_whitespace_only_string_arguments(
@@ -2085,7 +2171,8 @@ async def test_agent_runner_rejects_change_proposal_when_server_id_differs(
     )
     part = tool_message.parts[0]
     assert isinstance(part, dict)
-    assert part["result"]["error_code"] == "preflight_mismatch"
+    result_payload = cast(dict[str, object], part["result"])
+    assert result_payload["error_code"] == "preflight_mismatch"
 
 
 async def test_build_approval_context_uses_correct_change_arguments_in_activity() -> (

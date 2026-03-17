@@ -134,20 +134,35 @@ export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[
 }
 
 export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
+  const completedCount = todos.filter((todo) => todo.status === "completed").length;
+  const blockedCount = todos.filter((todo) => isWorkflowTodoBlocked(todo.status)).length;
+  const activeCount = todos.filter((todo) => todo.status === "in_progress").length;
+  const summaryParts = [
+    `${todos.length} ${todos.length === 1 ? "step" : "steps"} captured in this update`,
+    completedCount ? `${completedCount} completed` : undefined,
+    activeCount ? `${activeCount} active` : undefined,
+    blockedCount ? `${blockedCount} blocked` : undefined,
+  ].filter(Boolean);
+
   return (
-    <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
-      <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-text">Workflow</div>
-          <div className="mt-0.5 text-xs text-muted">
-            {todos.length === 1 ? "1 step" : `${todos.length} steps`}
-          </div>
+    <div className="mt-3 rounded-xl border border-border bg-surface/65 px-3.5 py-3 shadow-[0_0.25rem_1rem_rgba(0,0,0,0.03),0_0_0_0.5px_rgba(0,0,0,0.06)]">
+      <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+          <div className="text-sm text-text">Workflow snapshot recorded</div>
+          <div className="mt-1 text-xs text-muted">{summaryParts.join(" · ") || "No workflow steps."}</div>
+        </div>
+        <div className="shrink-0 rounded bg-surface-2 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-muted">
+          history
         </div>
       </div>
 
-      <div className="px-4 py-3">
-        {todos.length ? (
-          <ul className="space-y-2">
+      {todos.length ? (
+        <details className="mt-2 rounded-lg border border-border bg-bg/35 px-3 py-2.5">
+          <summary className="cursor-pointer list-none text-xs text-muted transition-colors hover:text-text">
+            View captured steps
+          </summary>
+
+          <ul className="mt-3 space-y-2">
             {todos.map((todo, index) => {
               const style = getWorkflowTodoStatusStyle(todo.status);
               const Icon = style.Icon;
@@ -172,12 +187,8 @@ export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
               );
             })}
           </ul>
-        ) : (
-          <div className="rounded-lg border border-border bg-bg/40 px-3 py-2 text-sm text-muted">
-            No workflow steps.
-          </div>
-        )}
-      </div>
+        </details>
+      ) : null}
     </div>
   );
 }
