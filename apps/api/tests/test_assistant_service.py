@@ -4,6 +4,7 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import SimpleNamespace
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -1432,6 +1433,163 @@ async def test_execute_approved_tool_run_allows_matching_server_id_preflight(
     assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
 
 
+async def test_execute_approved_tool_run_persists_completed_whm_workflow_with_evidence(
+    monkeypatch,
+) -> None:
+    from noa_api.api.assistant.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_suspend_account",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "reason": "billing hold",
+        },
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def successful_change(*, session, **kwargs):
+        _ = session, kwargs
+        return {"ok": True, "status": "changed", "message": "Account suspended"}
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Suspends an account.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "username": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "status": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "required": ["ok", "status", "message"],
+            "additionalProperties": False,
+        },
+        execute=successful_change,
+        workflow_family="whm-account-lifecycle",
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    async def _postflight(**kwargs):
+        _ = kwargs
+        return {
+            "ok": True,
+            "account": {
+                "user": "alice",
+                "suspended": True,
+                "domain": "example.com",
+            },
+        }
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.fetch_postflight_result",
+        _postflight,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[{"type": "text", "text": "Suspend alice on web1."}],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {
+                                "user": "alice",
+                                "suspended": False,
+                                "domain": "example.com",
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
+    assert captured["thread_id"] == thread_id
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert len(todos) == 6
+    assert todos[3]["status"] == "completed"
+    assert todos[4]["status"] == "completed"
+    assert todos[5]["status"] == "completed"
+    assert "moved from active to suspended" in todos[5]["content"]
+
+
 async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(
     monkeypatch,
 ) -> None:
@@ -2596,6 +2754,432 @@ async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools
     part = tool_message["parts"][0]
     assert part["type"] == "tool-result"
     assert part["result"]["when"] == "2026-03-13T12:00:00+00:00"
+
+
+async def test_deny_action_request_persists_denied_whm_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import deny_action_request
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_change_contact_email",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_email": "new@example.com",
+            "reason": "customer request",
+        },
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Change alice contact email on web1."}
+                ],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {
+                                "user": "alice",
+                                "contactemail": "old@example.com",
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            ),
+        ]
+    )
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    await deny_action_request(
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        action_request_id=str(request.id),
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert captured["thread_id"] == thread_id
+    assert todos[2]["status"] == "cancelled"
+    assert todos[5]["status"] == "completed"
+    assert "approval denied" in todos[5]["content"]
+
+
+async def test_execute_approved_tool_run_persists_completed_contact_email_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from noa_api.api.assistant.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_change_contact_email",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_email": "new@example.com",
+            "reason": "customer request",
+        },
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def successful_change(*, session, **kwargs):
+        _ = session, kwargs
+        return {"ok": True, "status": "changed", "message": "Contact email updated"}
+
+    tool = ToolDefinition(
+        name="whm_change_contact_email",
+        description="Updates contact email.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "username": {"type": "string"},
+                "new_email": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["server_ref", "username", "new_email", "reason"],
+            "additionalProperties": False,
+        },
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "status": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "required": ["ok", "status", "message"],
+            "additionalProperties": False,
+        },
+        execute=successful_change,
+        workflow_family="whm-account-contact-email",
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    async def _postflight(**kwargs):
+        _ = kwargs
+        return {
+            "ok": True,
+            "account": {"user": "alice", "contactemail": "new@example.com"},
+        }
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.fetch_postflight_result",
+        _postflight,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Change alice contact email on web1."}
+                ],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {
+                                "user": "alice",
+                                "contactemail": "old@example.com",
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert captured["thread_id"] == thread_id
+    assert todos[4]["status"] == "completed"
+    assert "expected contact email 'new@example.com'" in todos[4]["content"]
+    assert "moved from 'old@example.com' to 'new@example.com'" in todos[5]["content"]
+
+
+async def test_execute_approved_tool_run_persists_completed_csf_workflow(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from noa_api.api.assistant.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_csf_unblock",
+        args={
+            "server_ref": "web1",
+            "targets": ["1.2.3.4", "5.6.7.8"],
+            "reason": "customer request",
+        },
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def successful_change(*, session, **kwargs):
+        _ = session, kwargs
+        return {
+            "ok": True,
+            "results": [
+                {
+                    "target": "1.2.3.4",
+                    "ok": True,
+                    "status": "changed",
+                    "verdict": "clear",
+                    "matches": [],
+                },
+                {
+                    "target": "5.6.7.8",
+                    "ok": True,
+                    "status": "no-op",
+                    "verdict": "clear",
+                    "matches": [],
+                },
+            ],
+        }
+
+    tool = ToolDefinition(
+        name="whm_csf_unblock",
+        description="Unblocks CSF targets.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "targets": {"type": "array", "items": {"type": "string"}},
+                "reason": {"type": "string"},
+            },
+            "required": ["server_ref", "targets", "reason"],
+            "additionalProperties": False,
+        },
+        result_schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}, "results": {"type": "array"}},
+            "required": ["ok", "results"],
+            "additionalProperties": False,
+        },
+        execute=successful_change,
+        workflow_family="whm-csf-batch-change",
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    captured: dict[str, object] = {}
+
+    async def _record_replace(self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    async def _postflight(**kwargs):
+        _ = kwargs
+        return {
+            "ok": True,
+            "results": [
+                {"ok": True, "target": "1.2.3.4", "verdict": "clear", "matches": []},
+                {"ok": True, "target": "5.6.7.8", "verdict": "clear", "matches": []},
+            ],
+        }
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.fetch_postflight_result",
+        _postflight,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Unblock 1.2.3.4 and 5.6.7.8 on web1."}
+                ],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "target": "1.2.3.4"},
+                    },
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-2",
+                        "args": {"server_ref": "web1", "target": "5.6.7.8"},
+                    },
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "target": "1.2.3.4",
+                            "verdict": "blocked",
+                            "matches": ["deny"],
+                        },
+                        "isError": False,
+                    },
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_csf_entries",
+                        "toolCallId": "preflight-2",
+                        "result": {
+                            "ok": True,
+                            "target": "5.6.7.8",
+                            "verdict": "clear",
+                            "matches": [],
+                        },
+                        "isError": False,
+                    },
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert captured["thread_id"] == thread_id
+    assert todos[4]["status"] == "completed"
+    assert "1.2.3.4: expected not blocked, observed clear" in todos[4]["content"]
+    assert "Changed: 1.2.3.4" in todos[5]["content"]
+    assert "No-op: 5.6.7.8" in todos[5]["content"]
 
 
 async def _allow() -> bool:
