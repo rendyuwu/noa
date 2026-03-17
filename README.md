@@ -8,6 +8,7 @@ The model interprets and proposes actions; the platform enforces permissions, ap
 Docs:
 - `ARCHITECTURE.md`
 - `docs/STATUS.md`
+- `docs/assistant/workflow-templates.md`
 - `docs/observability/README.md`
 - `docs/plans/2026-03-09-project-noa-mvp-design.md`
 - `docs/reports/2026-03-09-task-11-verification.md`
@@ -81,6 +82,16 @@ Open: http://localhost:3000
 - Thread persistence (list/create/rename/archive/delete) backed by Postgres
 - Assistant Transport streaming endpoint (`POST /assistant`)
 - Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools
+- Workflow template registry for approval-oriented tool families, with WHM as the reference implementation
+
+## Workflow Templates
+
+Approval-oriented tool families use workflow templates on the API side to drive the assistant workflow dock, approval context, preflight enforcement, postflight verification, and waiting-on-user state.
+
+- Shared contract: `apps/api/src/noa_api/core/workflows/types.py`
+- Registry: `apps/api/src/noa_api/core/workflows/registry.py`
+- WHM family implementation: `apps/api/src/noa_api/core/workflows/whm.py`
+- Extension guide: `docs/assistant/workflow-templates.md`
 
 ## Known Limitations
 
