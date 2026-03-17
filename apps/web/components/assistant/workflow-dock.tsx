@@ -1,6 +1,8 @@
 "use client";
 
-import { DotFilledIcon } from "@radix-ui/react-icons";
+import { useMemo, useState } from "react";
+
+import { ChevronDownIcon, DotFilledIcon } from "@radix-ui/react-icons";
 
 import type { WorkflowTodoItem } from "@/components/assistant/workflow-todo-tool-ui";
 import {
@@ -29,27 +31,42 @@ function getActiveTodoIndex(todos: WorkflowTodoItem[]): number {
 function getDockCopy(phase: ReturnType<typeof useWorkflowDockState>["phase"]) {
   if (phase === "blocked") {
     return {
-      eyebrow: "Workflow paused",
-      detail: "Waiting for input before the next step can continue.",
+      title: "Workflow paused",
+      badge: "blocked",
     };
   }
 
   if (phase === "close") {
     return {
-      eyebrow: "Workflow complete",
-      detail: "All recorded steps finished successfully.",
+      title: "Workflow complete",
+      badge: "done",
     };
   }
 
   return {
-    eyebrow: "Workflow running",
-    detail: "Live checklist from the canonical assistant state.",
+    title: "Workflow",
+    badge: "live",
   };
+}
+
+function getProgressLabel(todos: WorkflowTodoItem[]): string {
+  const done = todos.filter((todo) => todo.status === "completed").length;
+  return `${done}/${todos.length}`;
+}
+
+function getPreview(todo: WorkflowTodoItem | undefined): string {
+  if (!todo) return "No steps recorded.";
+  if (isWorkflowTodoBlocked(todo.status)) return `Waiting: ${todo.content}`;
+  if (todo.status === "completed") return `Last done: ${todo.content}`;
+  return todo.content;
 }
 
 export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; isRunning: boolean }) {
   const { phase, isBlocked, isMounted } = useWorkflowDockState({ todos, isRunning });
+  const [collapsed, setCollapsed] = useState(true);
   const activeTodoIndex = getActiveTodoIndex(todos);
+  const activeTodo = activeTodoIndex >= 0 ? todos[activeTodoIndex] : undefined;
+  const preview = useMemo(() => getPreview(activeTodo), [activeTodo]);
 
   if (!isMounted || !todos.length) {
     return null;
@@ -60,29 +77,64 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
   return (
     <div
       className={[
-        "mb-3 overflow-hidden rounded-xl border border-border bg-surface shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)] transition-all duration-200",
-        phase === "close" ? "opacity-70" : "opacity-100",
+        "overflow-hidden rounded-2xl border border-border bg-surface/96 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)] transition-all duration-200",
+        phase === "close" ? "opacity-75" : "opacity-100",
       ].join(" ")}
       data-testid="workflow-todo-dock"
       data-workflow-phase={phase}
     >
-      <div className="flex items-start justify-between gap-3 border-b border-border bg-surface-2 px-4 py-3">
-        <div className="min-w-0">
-          <div className="text-sm font-semibold text-text">{copy.eyebrow}</div>
-          <div className="mt-0.5 text-xs text-muted">{copy.detail}</div>
+      <button
+        type="button"
+        onClick={() => setCollapsed((value) => !value)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2/70"
+      >
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <div
+            className={[
+              "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
+              phase === "close" ? "bg-emerald-500/75" : isBlocked ? "bg-amber-500" : "bg-accent",
+            ].join(" ")}
+          />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-sm text-text">
+              <span className="font-semibold">{copy.title}</span>
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 font-ui text-[11px] text-muted">
+                {getProgressLabel(todos)}
+              </span>
+            </div>
+            <div className="mt-1 truncate font-ui text-sm text-muted">{preview}</div>
+          </div>
         </div>
         <div
           className={[
-            "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
-            isBlocked ? "bg-amber-100 text-amber-900" : "bg-accent/15 text-accent",
+            "inline-flex shrink-0 items-center gap-2",
           ].join(" ")}
         >
-          {isBlocked ? "blocked" : phase === "close" ? "done" : "live"}
+          <span
+            className={[
+              "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
+              isBlocked
+                ? "bg-amber-100 text-amber-900"
+                : phase === "close"
+                  ? "bg-emerald-100/80 text-emerald-900"
+                  : "bg-accent/15 text-accent",
+            ].join(" ")}
+          >
+            {copy.badge}
+          </span>
+          <ChevronDownIcon
+            width={16}
+            height={16}
+            className={[
+              "text-muted transition-transform duration-200",
+              collapsed ? "rotate-0" : "rotate-180",
+            ].join(" ")}
+          />
         </div>
-      </div>
+      </button>
 
-      <div className="px-4 py-3">
-        <ul className="space-y-2">
+      <div className={collapsed ? "hidden" : "border-t border-border px-3 pb-3"}>
+        <ul className="max-h-44 space-y-1.5 overflow-y-auto pt-3">
           {todos.map((todo, index) => {
             const style = getWorkflowTodoStatusStyle(todo.status);
             const isActive = index === activeTodoIndex;
@@ -91,25 +143,27 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
               <li
                 key={`${todo.content}-${index}`}
                 className={[
-                  "flex items-start justify-between gap-3 rounded-lg border px-3 py-2 transition-colors",
+                  "flex items-start justify-between gap-3 rounded-xl px-3 py-2 transition-colors",
                   isActive
                     ? isTodoBlocked
-                      ? "border-amber-300 bg-amber-50/70"
-                      : "border-accent/30 bg-accent/5"
-                    : "border-border bg-bg/40",
+                      ? "bg-amber-50/80 ring-1 ring-amber-200"
+                      : "bg-accent/6 ring-1 ring-accent/15"
+                    : "bg-bg/40",
                 ].join(" ")}
                 data-testid={isActive ? "workflow-active-step" : undefined}
               >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+                  <div className="flex items-center gap-1.5 text-[11px] text-muted">
                     <DotFilledIcon width={14} height={14} />
-                    {isActive ? (isTodoBlocked ? "Blocked step" : "Current step") : `Step ${index + 1}`}
+                    <span className="font-ui">
+                      {isActive ? (isTodoBlocked ? "Waiting" : "Current") : `Step ${index + 1}`}
+                    </span>
                   </div>
-                  <div className="mt-1 text-sm text-text">{todo.content}</div>
+                  <div className="mt-1 pr-2 text-sm text-text">{todo.content}</div>
                 </div>
                 <div
                   className={[
-                    "shrink-0 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px]",
+                    "shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
                     style.className,
                   ].join(" ")}
                 >

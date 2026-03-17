@@ -344,6 +344,7 @@ class AgentRunner:
         rounds = 0
         tool_calls_processed = 0
         hit_safety_limit = False
+        internal_guidance_counts: dict[str, int] = {}
 
         while rounds < max_rounds and tool_calls_processed < max_tool_calls:
             rounds += 1
@@ -392,6 +393,7 @@ class AgentRunner:
 
             saw_denied_tool_call = False
             saw_allowed_tool_call = False
+            saw_internal_guidance_stop = False
             for tool_call in llm_response.tool_calls:
                 if tool_calls_processed >= max_tool_calls:
                     hit_safety_limit = True
@@ -400,6 +402,9 @@ class AgentRunner:
                 tool_calls_processed += 1
                 internal_tool_guidance = _internal_tool_guidance(tool_call.name)
                 if internal_tool_guidance is not None:
+                    internal_guidance_counts[tool_call.name] = (
+                        internal_guidance_counts.get(tool_call.name, 0) + 1
+                    )
                     working_messages.append(
                         {
                             "role": "assistant",
@@ -411,6 +416,23 @@ class AgentRunner:
                             ],
                         }
                     )
+                    if _should_stop_after_internal_tool_guidance(
+                        tool_call.name,
+                        internal_guidance_counts.get(tool_call.name, 0),
+                    ):
+                        output_messages.append(
+                            AgentMessage(
+                                role="assistant",
+                                parts=[
+                                    {
+                                        "type": "text",
+                                        "text": internal_tool_guidance,
+                                    }
+                                ],
+                            )
+                        )
+                        saw_internal_guidance_stop = True
+                        break
                     continue
 
                 tool = get_tool_definition(tool_call.name)
@@ -460,6 +482,11 @@ class AgentRunner:
                     return AgentRunnerResult(
                         messages=output_messages, text_deltas=text_deltas
                     )
+
+            if saw_internal_guidance_stop:
+                return AgentRunnerResult(
+                    messages=output_messages, text_deltas=text_deltas
+                )
 
             # If the LLM proposed only tools the user cannot access, stop the turn
             # after emitting explicit permission guidance instead of looping again.
@@ -516,13 +543,27 @@ class AgentRunner:
                     working_messages=working_messages,
                     thread_id=thread_id,
                 )
-                return ProcessedToolCall(
-                    messages=_tool_error_messages(
-                        tool=tool,
-                        args=args,
-                        tool_call_id=tool_call_id,
-                        error=validation_error,
+                messages = _tool_error_messages(
+                    tool=tool,
+                    args=args,
+                    tool_call_id=tool_call_id,
+                    error=validation_error,
+                )
+                assistant_guidance = _assistant_guidance_for_change_validation_error(
+                    tool_name=tool.name,
+                    args=args,
+                    error=validation_error,
+                )
+                if assistant_guidance is not None:
+                    messages.append(
+                        AgentMessage(
+                            role="assistant",
+                            parts=[{"type": "text", "text": assistant_guidance}],
+                        )
                     )
+                return ProcessedToolCall(
+                    messages=messages,
+                    should_stop=assistant_guidance is not None,
                 )
 
             action_request = await self._action_tool_run_service.create_action_request(
@@ -1274,6 +1315,26 @@ def _tool_error_messages(
     ]
 
 
+def _assistant_guidance_for_change_validation_error(
+    *,
+    tool_name: str,
+    args: dict[str, object],
+    error: SanitizedToolError,
+) -> str | None:
+    if error.error_code != "invalid_tool_arguments":
+        return None
+
+    details = tuple(detail.lower() for detail in (error.details or ()))
+    if not any("reason" in detail for detail in details):
+        return None
+
+    activity = _describe_activity(tool_name, args).lower()
+    return (
+        f"I need a short, human-readable reason before I can continue {activity}. "
+        "Please provide the reason you want recorded for this change."
+    )
+
+
 def _internal_tool_guidance(tool_name: str) -> str | None:
     if tool_name == "request_approval":
         return (
@@ -1281,6 +1342,10 @@ def _internal_tool_guidance(tool_name: str) -> str | None:
             "underlying CHANGE tool. Do not call request_approval directly."
         )
     return None
+
+
+def _should_stop_after_internal_tool_guidance(tool_name: str, count: int) -> bool:
+    return tool_name == "request_approval" and count >= 2
 
 
 def _assistant_is_requesting_reason(text: str) -> bool:
