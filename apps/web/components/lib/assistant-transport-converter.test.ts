@@ -181,6 +181,26 @@ describe("convertAssistantState", () => {
     ]);
   });
 
+  it("clears canonical metadata arrays when workflow and approvals are absent", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [{ type: "text", text: "All done" }],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    expect((converted.messages[0] as any)?.metadata?.custom?.workflow).toEqual([]);
+    expect((converted.messages[0] as any)?.metadata?.custom?.pendingApprovals).toEqual([]);
+    expect((converted.messages[0] as any)?.metadata?.custom?.actionRequests).toEqual([]);
+  });
+
   it("drops proposal tool calls", () => {
     const converted = convertAssistantState(
       {

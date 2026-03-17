@@ -110,4 +110,23 @@ describe("ApprovalDock", () => {
 
     expect(screen.queryByTestId("approval-dock-card")).not.toBeInTheDocument();
   });
+
+  it("hides finished requests once nothing live remains", () => {
+    render(
+      <ApprovalDock
+        requests={[
+          {
+            actionRequestId: "approval-4",
+            toolName: "whm_unsuspend_account",
+            risk: "CHANGE",
+            arguments: { server_ref: "web2", username: "rendy", reason: "smoke restore" },
+            status: "APPROVED",
+            lifecycleStatus: "finished",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.queryByTestId("approval-dock-card")).not.toBeInTheDocument();
+  });
 });
