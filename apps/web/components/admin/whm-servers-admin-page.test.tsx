@@ -19,7 +19,7 @@ describe("WhmServersAdminPage", () => {
     mocks.jsonOrThrow.mockReset();
   });
 
-  it("DELETEs /admin/whm/servers/:id from the actions column", async () => {
+  it("opens the drawer and DELETEs /admin/whm/servers/:id from the danger zone", async () => {
     const serverId = "server-1";
     const listPayload = {
       servers: [
@@ -60,10 +60,14 @@ describe("WhmServersAdminPage", () => {
     render(<WhmServersAdminPage />);
 
     const table = screen.getByRole("table");
-    const row = (await within(table).findByText("web1")).closest("tr");
+    const row = (await within(table).findByRole("row", { name: /manage web1/i })).closest("tr");
     if (!row) throw new Error("Missing server row");
 
-    fireEvent.click(within(row).getByRole("button", { name: "Delete" }));
+    fireEvent.click(row);
+
+    expect(await screen.findByText("Server details")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete server" }));
 
     await waitFor(() => {
       expect(mocks.fetchWithAuth).toHaveBeenCalledWith(`/admin/whm/servers/${serverId}`, {
