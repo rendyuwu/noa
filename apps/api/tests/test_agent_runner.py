@@ -2506,6 +2506,12 @@ async def test_build_approval_context_uses_correct_change_arguments_in_activity(
         == "Change contact email for 'alice' to 'alice@example.com'"
     )
     assert unblock_context["activity"] == "Remove CSF block for '1.2.3.4, 5.6.7.8'"
+    change_reply = cast(dict[str, object], change_email_context["replyTemplate"])
+    unblock_reply = cast(dict[str, object], unblock_context["replyTemplate"])
+    assert change_reply["title"] == "Contact email approval requested"
+    assert change_reply["outcome"] == "info"
+    assert unblock_reply["title"] == "CSF change approval requested"
+    assert unblock_reply["outcome"] == "info"
 
 
 async def test_rule_based_llm_responds_to_date_tool_result() -> None:

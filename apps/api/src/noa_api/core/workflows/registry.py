@@ -7,10 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.core.tools.registry import get_tool_definition
 from noa_api.core.workflows.types import (
     WorkflowInference,
+    WorkflowReplyTemplate,
     WorkflowTemplate,
     WorkflowTemplateContext,
     collect_recent_preflight_evidence,
     collect_recent_preflight_results,
+    workflow_reply_template_payload,
 )
 from noa_api.core.workflows.whm import WORKFLOW_TEMPLATES as WHM_WORKFLOW_TEMPLATES
 from noa_api.storage.postgres.workflow_todos import (
@@ -23,6 +25,7 @@ _WORKFLOW_TEMPLATES: dict[str, WorkflowTemplate] = {}
 
 __all__ = [
     "build_approval_context",
+    "build_workflow_reply_template",
     "build_workflow_todos",
     "collect_recent_preflight_evidence",
     "collect_recent_preflight_results",
@@ -93,6 +96,33 @@ def build_workflow_todos(
         error_code=error_code,
     )
     return template.build_todos(context)
+
+
+def build_workflow_reply_template(
+    *,
+    tool_name: str,
+    workflow_family: str | None = None,
+    args: dict[str, object],
+    phase: str,
+    preflight_evidence: list[dict[str, object]],
+    result: dict[str, object] | None = None,
+    postflight_result: dict[str, object] | None = None,
+    error_code: str | None = None,
+) -> WorkflowReplyTemplate | None:
+    template = get_workflow_template(tool_name, workflow_family=workflow_family)
+    if template is None:
+        return None
+
+    context = WorkflowTemplateContext(
+        tool_name=tool_name,
+        args=args,
+        phase=phase,  # type: ignore[arg-type]
+        preflight_evidence=preflight_evidence,
+        result=result,
+        postflight_result=postflight_result,
+        error_code=error_code,
+    )
+    return template.build_reply_template(context)
 
 
 async def persist_workflow_todos(
@@ -168,6 +198,7 @@ def build_approval_context(
     args: dict[str, object],
     working_messages: list[dict[str, object]],
 ) -> dict[str, object]:
+    preflight_evidence = collect_recent_preflight_evidence(working_messages)
     preflight_results = collect_recent_preflight_results(working_messages)
     template = get_workflow_template(tool_name, workflow_family=workflow_family)
     before_state: list[dict[str, str]] = []
@@ -180,7 +211,15 @@ def build_approval_context(
         if isinstance(built_before_state, list):
             before_state = built_before_state
 
-    return {
+    reply_template = build_workflow_reply_template(
+        tool_name=tool_name,
+        workflow_family=workflow_family,
+        args=args,
+        phase="waiting_on_approval",
+        preflight_evidence=preflight_evidence,
+    )
+
+    context = {
         "activity": describe_workflow_activity(
             tool_name=tool_name,
             workflow_family=workflow_family,
@@ -190,6 +229,9 @@ def build_approval_context(
         "beforeState": before_state,
         "preflightResults": preflight_results,
     }
+    if reply_template is not None:
+        context["replyTemplate"] = workflow_reply_template_payload(reply_template)
+    return context
 
 
 def infer_waiting_on_user_workflow_from_messages(

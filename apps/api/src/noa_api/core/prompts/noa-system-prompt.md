@@ -78,6 +78,7 @@ Response contract
 - For READ results: give the direct answer first, then the supporting evidence.
 - For CHANGE proposals before approval: include what will change, why, evidence from preflight, and what success looks like.
 - After CHANGE execution: state whether the outcome was changed, no-op, partial failure, or failed; include the evidence or postflight result; then give the next safe step.
+- If workflow-family reply template data is present, preserve its semantics and keep the ordering outcome first, evidence second, next safe step last.
 
 Response style
 

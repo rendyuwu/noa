@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
 from noa_api.core.workflows.types import (
     WorkflowInference,
+    WorkflowReplyTemplate,
     WorkflowTemplate,
     WorkflowTemplateContext,
     WorkflowTemplatePhase,
@@ -32,6 +33,24 @@ class _WHMTemplate(WorkflowTemplate):
     ) -> list[dict[str, str]] | None:
         _ = args
         return _extract_before_state(preflight_results)
+
+
+def _build_account_lifecycle_reply_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    return _build_account_lifecycle_reply_template_impl(context)
+
+
+def _build_contact_email_reply_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    return _build_contact_email_reply_template_impl(context)
+
+
+def _build_csf_reply_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    return _build_csf_reply_template_impl(context)
 
 
 class _WHMAccountTemplate(_WHMTemplate):
@@ -164,6 +183,12 @@ class WHMAccountLifecycleTemplate(_WHMAccountTemplate):
             },
         ]
 
+    def build_reply_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowReplyTemplate | None:
+        return _build_account_lifecycle_reply_template(context)
+
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
     ) -> str | None:
@@ -276,6 +301,12 @@ class WHMAccountContactEmailTemplate(_WHMAccountTemplate):
                 "priority": "high",
             },
         ]
+
+    def build_reply_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowReplyTemplate | None:
+        return _build_contact_email_reply_template(context)
 
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
@@ -391,6 +422,12 @@ class WHMCSFBatchTemplate(_WHMTemplate):
                 "priority": "high",
             },
         ]
+
+    def build_reply_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowReplyTemplate | None:
+        return _build_csf_reply_template(context)
 
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
@@ -735,6 +772,431 @@ def _default_step_statuses(
     if reason is None and phase in {"completed", "denied", "failed"}:
         statuses["reason"] = "cancelled"
     return statuses
+
+
+def _build_account_lifecycle_reply_template_impl(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    subject = _account_subject(context.args)
+    action_label = _action_label(context.tool_name)
+    action_title = action_label.capitalize()
+    desired_state = (
+        "active" if context.tool_name == "whm_unsuspend_account" else "suspended"
+    )
+    before_account = _matching_account_preflight(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    after_account = _postflight_account(context.postflight_result)
+    reason = normalized_text(context.args.get("reason"))
+    before_state = _account_state(before_account) or "unknown"
+    after_state = _account_state(after_account) or before_state
+    result_ok = _result_ok(context.result)
+    result_status = _result_status(context.result)
+    result_message = _result_message(context.result)
+
+    if context.phase == "waiting_on_approval":
+        evidence = [
+            f"Preflight found {subject} in {before_state} state.",
+            f"Success condition: the account ends in {desired_state} state.",
+        ]
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title=f"{action_title} approval requested",
+            outcome="info",
+            summary=f"This will {action_label} {subject} after approval.",
+            evidence_summary=evidence,
+            next_step=(
+                f"Approve the request to {action_label} the account, or deny it to leave the current state unchanged."
+            ),
+        )
+
+    if context.phase == "denied":
+        evidence = [f"Last confirmed account state: {before_state}."]
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title=f"{action_title} denied",
+            outcome="denied",
+            summary=f"The request to {action_label} {subject} was denied. No change was applied.",
+            evidence_summary=evidence,
+            next_step=(
+                f"Submit a new approval request if you still need to {action_label} this account."
+            ),
+        )
+
+    if context.phase == "failed":
+        evidence = [f"Last confirmed account state: {before_state}."]
+        if context.error_code is not None:
+            evidence.append(f"Error code: {context.error_code}.")
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title=f"{action_title} failed",
+            outcome="failed",
+            summary=f"NOA could not complete the {action_label} request for {subject}.",
+            evidence_summary=evidence,
+            next_step="Run account preflight again to confirm the current state before retrying.",
+        )
+
+    if context.phase != "completed":
+        return None
+
+    evidence = [f"Before state: {before_state}."]
+    if result_message is not None:
+        evidence.append(f"Tool result: {result_message}.")
+    if after_account is not None:
+        evidence.append(f"Postflight state: {after_state}.")
+    if reason is not None:
+        evidence.append(f"Recorded reason: {reason}.")
+
+    if result_ok is False:
+        error_code = (
+            _result_error_code(context.result) or context.error_code or "unknown"
+        )
+        evidence.append(f"Error code: {error_code}.")
+        return WorkflowReplyTemplate(
+            title=f"{action_title} failed",
+            outcome="failed",
+            summary=f"NOA did not confirm the {action_label} for {subject}.",
+            evidence_summary=evidence,
+            next_step="Review the error and rerun account preflight before retrying.",
+        )
+
+    if result_status == "no-op":
+        return WorkflowReplyTemplate(
+            title=f"{action_title} no-op",
+            outcome="no_op",
+            summary=f"No change was needed for {subject}.",
+            evidence_summary=evidence,
+            next_step="No further action is required unless you expected a different account state.",
+        )
+
+    if after_account is None or after_state != desired_state:
+        if after_account is None:
+            evidence.append(
+                "Postflight verification did not confirm the final account state."
+            )
+        else:
+            evidence.append(f"Expected postflight state: {desired_state}.")
+        return WorkflowReplyTemplate(
+            title=f"{action_title} partially verified",
+            outcome="partial",
+            summary=f"The {action_label} call finished for {subject}, but NOA could not fully verify the final state.",
+            evidence_summary=evidence,
+            next_step="Run account preflight again before making another change.",
+        )
+
+    return WorkflowReplyTemplate(
+        title=f"{action_title} completed",
+        outcome="changed",
+        summary=f"{subject} moved from {before_state} to {after_state}.",
+        evidence_summary=evidence,
+    )
+
+
+def _build_contact_email_reply_template_impl(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    subject = _account_subject(context.args)
+    requested_email = (
+        normalized_text(context.args.get("new_email")) or "the requested email"
+    )
+    before_account = _matching_account_preflight(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    after_account = _postflight_account(context.postflight_result)
+    reason = normalized_text(context.args.get("reason"))
+    before_email = _account_email(before_account) or "unknown"
+    after_email = _account_email(after_account) or before_email
+    result_ok = _result_ok(context.result)
+    result_status = _result_status(context.result)
+    result_message = _result_message(context.result)
+
+    if context.phase == "waiting_on_approval":
+        evidence = [
+            f"Preflight found the current contact email as '{before_email}'.",
+            f"Success condition: the contact email changes to '{requested_email}'.",
+        ]
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="Contact email approval requested",
+            outcome="info",
+            summary=f"This will change the contact email for {subject} to '{requested_email}' after approval.",
+            evidence_summary=evidence,
+            next_step="Approve the request to apply the email change, or deny it to keep the current address.",
+        )
+
+    if context.phase == "denied":
+        evidence = [f"Last confirmed contact email: '{before_email}'."]
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="Contact email change denied",
+            outcome="denied",
+            summary=f"The request to change the contact email for {subject} was denied. No change was applied.",
+            evidence_summary=evidence,
+            next_step="Submit a new approval request if you still need to change this email.",
+        )
+
+    if context.phase == "failed":
+        evidence = [f"Last confirmed contact email: '{before_email}'."]
+        if context.error_code is not None:
+            evidence.append(f"Error code: {context.error_code}.")
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="Contact email change failed",
+            outcome="failed",
+            summary=f"NOA could not complete the contact email change for {subject}.",
+            evidence_summary=evidence,
+            next_step="Run account preflight again to confirm the current email before retrying.",
+        )
+
+    if context.phase != "completed":
+        return None
+
+    evidence = [f"Before email: '{before_email}'."]
+    if result_message is not None:
+        evidence.append(f"Tool result: {result_message}.")
+    if after_account is not None:
+        evidence.append(f"Postflight email: '{after_email}'.")
+    if reason is not None:
+        evidence.append(f"Recorded reason: {reason}.")
+
+    if result_ok is False:
+        error_code = (
+            _result_error_code(context.result) or context.error_code or "unknown"
+        )
+        evidence.append(f"Error code: {error_code}.")
+        return WorkflowReplyTemplate(
+            title="Contact email change failed",
+            outcome="failed",
+            summary=f"NOA did not confirm the contact email change for {subject}.",
+            evidence_summary=evidence,
+            next_step="Review the error and rerun account preflight before retrying.",
+        )
+
+    if result_status == "no-op":
+        return WorkflowReplyTemplate(
+            title="Contact email change no-op",
+            outcome="no_op",
+            summary=f"No contact email change was needed for {subject}.",
+            evidence_summary=evidence,
+            next_step="No further action is required unless you expected a different email address.",
+        )
+
+    if after_account is None or after_email.lower() != requested_email.lower():
+        if after_account is None:
+            evidence.append(
+                "Postflight verification did not confirm the final contact email."
+            )
+        else:
+            evidence.append(f"Expected final email: '{requested_email}'.")
+        return WorkflowReplyTemplate(
+            title="Contact email change partially verified",
+            outcome="partial",
+            summary=f"The contact email change finished for {subject}, but NOA could not fully verify the final email.",
+            evidence_summary=evidence,
+            next_step="Run account preflight again before making another change.",
+        )
+
+    return WorkflowReplyTemplate(
+        title="Contact email change completed",
+        outcome="changed",
+        summary=(
+            f"The contact email for {subject} moved from '{before_email}' to '{after_email}'."
+        ),
+        evidence_summary=evidence,
+    )
+
+
+def _build_csf_reply_template_impl(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    subject = _csf_subject(context.args)
+    action_phrase = _csf_action_phrase(context.tool_name)
+    before_entries = _matching_csf_preflight_entries(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    after_entries = _postflight_csf_entries(context.postflight_result)
+    targets = normalized_string_list(context.args.get("targets"))
+    reason = normalized_text(context.args.get("reason"))
+    duration_minutes = context.args.get("duration_minutes")
+    result_items = _result_items(context.result)
+    changed_targets = _targets_with_status(result_items, "changed")
+    noop_targets = _targets_with_status(result_items, "no-op")
+    failed_targets = _targets_with_status(result_items, "error")
+
+    if context.phase == "waiting_on_approval":
+        evidence = []
+        if before_entries:
+            evidence.extend(
+                f"Preflight: {target} is currently {verdict}."
+                for target, verdict in _target_verdict_pairs(before_entries)
+            )
+        if duration_minutes is not None:
+            evidence.append(f"Requested TTL: {duration_minutes} minute(s).")
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        evidence.append(
+            "Success condition: postflight reflects the requested CSF state."
+        )
+        return WorkflowReplyTemplate(
+            title="CSF change approval requested",
+            outcome="info",
+            summary=f"This will {action_phrase} for {subject} after approval.",
+            evidence_summary=evidence,
+            next_step="Approve the request to run the CSF change, or deny it to leave the current state unchanged.",
+        )
+
+    if context.phase == "denied":
+        evidence = []
+        if before_entries:
+            evidence.extend(
+                f"Last confirmed state: {target} is {verdict}."
+                for target, verdict in _target_verdict_pairs(before_entries)
+            )
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="CSF change denied",
+            outcome="denied",
+            summary=f"The request to {action_phrase} for {subject} was denied. No change was applied.",
+            evidence_summary=evidence,
+            next_step="Submit a new approval request if you still need this CSF change.",
+        )
+
+    if context.phase == "failed":
+        evidence = [f"Requested targets: {', '.join(targets) or 'unknown'}."]
+        if context.error_code is not None:
+            evidence.append(f"Error code: {context.error_code}.")
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="CSF change failed",
+            outcome="failed",
+            summary=f"NOA could not complete the request to {action_phrase} for {subject}.",
+            evidence_summary=evidence,
+            next_step="Run CSF preflight again for the affected targets before retrying.",
+        )
+
+    if context.phase != "completed":
+        return None
+
+    evidence = []
+    if before_entries:
+        evidence.append(f"Before: {_csf_entries_summary(before_entries)}.")
+    if after_entries:
+        evidence.append(f"Postflight: {_csf_entries_summary(after_entries)}.")
+    if changed_targets:
+        evidence.append("Changed targets: " + ", ".join(changed_targets) + ".")
+    if noop_targets:
+        evidence.append("No-op targets: " + ", ".join(noop_targets) + ".")
+    if failed_targets:
+        evidence.append("Failed targets: " + ", ".join(failed_targets) + ".")
+    if reason is not None:
+        evidence.append(f"Recorded reason: {reason}.")
+
+    result_ok = _result_ok(context.result)
+    if result_ok is False and not result_items:
+        error_code = (
+            _result_error_code(context.result) or context.error_code or "unknown"
+        )
+        evidence.append(f"Error code: {error_code}.")
+        return WorkflowReplyTemplate(
+            title="CSF change failed",
+            outcome="failed",
+            summary=f"NOA did not complete the request to {action_phrase} for {subject}.",
+            evidence_summary=evidence,
+            next_step="Review the error and rerun CSF preflight before retrying.",
+        )
+
+    if failed_targets:
+        return WorkflowReplyTemplate(
+            title="CSF change partially completed",
+            outcome="partial",
+            summary=f"The request to {action_phrase} for {subject} finished with mixed results.",
+            evidence_summary=evidence,
+            next_step="Rerun CSF preflight for the failed targets before retrying the change.",
+        )
+
+    if changed_targets and noop_targets:
+        return WorkflowReplyTemplate(
+            title="CSF change partially completed",
+            outcome="partial",
+            summary=f"The request to {action_phrase} for {subject} finished with mixed results: some targets changed and others were already in the desired state.",
+            evidence_summary=evidence,
+        )
+
+    if changed_targets:
+        return WorkflowReplyTemplate(
+            title="CSF change completed",
+            outcome="changed",
+            summary=f"The request to {action_phrase} for {subject} completed successfully.",
+            evidence_summary=evidence,
+        )
+
+    return WorkflowReplyTemplate(
+        title="CSF change no-op",
+        outcome="no_op",
+        summary=f"No CSF changes were needed for {subject}.",
+        evidence_summary=evidence,
+        next_step="No further action is required unless you expected a different CSF state.",
+    )
+
+
+def _result_ok(result: dict[str, object] | None) -> bool | None:
+    if not isinstance(result, dict):
+        return None
+    value = result.get("ok")
+    return value if isinstance(value, bool) else None
+
+
+def _result_status(result: dict[str, object] | None) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    return normalized_text(result.get("status"))
+
+
+def _result_message(result: dict[str, object] | None) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    return normalized_text(result.get("message"))
+
+
+def _result_error_code(result: dict[str, object] | None) -> str | None:
+    if not isinstance(result, dict):
+        return None
+    return normalized_text(result.get("error_code"))
+
+
+def _targets_with_status(
+    result_items: list[dict[str, object]],
+    status: str,
+) -> list[str]:
+    return [
+        target
+        for item in result_items
+        if normalized_text(item.get("status")) == status
+        for target in [normalized_text(item.get("target"))]
+        if target is not None
+    ]
+
+
+def _target_verdict_pairs(entries: list[dict[str, object]]) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
+    for entry in entries:
+        target = normalized_text(entry.get("target"))
+        verdict = normalized_text(entry.get("verdict"))
+        if target is None or verdict is None:
+            continue
+        pairs.append((target, verdict))
+    return pairs
 
 
 def _account_subject(args: dict[str, object]) -> str:

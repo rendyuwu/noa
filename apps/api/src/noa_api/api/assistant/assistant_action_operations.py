@@ -30,11 +30,13 @@ from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_
 from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import get_tool_definition
 from noa_api.core.workflows.registry import (
+    build_workflow_reply_template,
     build_workflow_todos,
     collect_recent_preflight_evidence,
     fetch_postflight_result,
     persist_workflow_todos,
 )
+from noa_api.core.workflows.types import render_workflow_reply_text
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
@@ -104,11 +106,13 @@ async def deny_action_request(
         raise action_request_not_found_error()
 
     tool = get_tool_definition(denied.tool_name)
+    reply_text: str | None = None
     if tool is not None and tool.workflow_family is not None:
         working_messages = await _list_working_messages(
             repository=repository,
             thread_id=thread_id,
         )
+        preflight_evidence = collect_recent_preflight_evidence(working_messages)
         await persist_workflow_todos(
             session=session,
             thread_id=thread_id,
@@ -117,9 +121,18 @@ async def deny_action_request(
                 workflow_family=tool.workflow_family,
                 args=denied.args,
                 phase="denied",
-                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+                preflight_evidence=preflight_evidence,
             ),
         )
+        reply_template = build_workflow_reply_template(
+            tool_name=denied.tool_name,
+            workflow_family=tool.workflow_family,
+            args=denied.args,
+            phase="denied",
+            preflight_evidence=preflight_evidence,
+        )
+        if reply_template is not None:
+            reply_text = render_workflow_reply_text(reply_template)
 
     with log_context(
         action_request_id=str(denied.id),
@@ -133,7 +146,8 @@ async def deny_action_request(
             parts=[
                 {
                     "type": "text",
-                    "text": f"Denied action request for tool '{denied.tool_name}'.",
+                    "text": reply_text
+                    or f"Denied action request for tool '{denied.tool_name}'.",
                 }
             ],
         )
@@ -285,6 +299,7 @@ async def execute_approved_tool_run(
             action_tool_run_service=action_tool_run_service,
             tool_run_error=error,
             tool_result={"error": error},
+            assistant_text=None,
             audit_metadata={
                 "thread_id": str(thread_id),
                 "tool_run_id": str(started_tool_run.id),
@@ -308,6 +323,7 @@ async def execute_approved_tool_run(
                 "expectedRisk": ToolRisk.CHANGE.value,
                 "actualRisk": tool.risk.value,
             },
+            assistant_text=None,
             audit_metadata={
                 "thread_id": str(thread_id),
                 "tool_run_id": str(started_tool_run.id),
@@ -325,6 +341,20 @@ async def execute_approved_tool_run(
         session=session,
     )
     if preflight_error is not None:
+        workflow_reply_text = None
+        if tool.workflow_family is not None:
+            working_messages = await _list_working_messages(
+                repository=repository,
+                thread_id=thread_id,
+            )
+            workflow_reply_text = _workflow_reply_text(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+                error_code=preflight_error.error_code,
+            )
         await _persist_failed_tool_run(
             started_tool_run=started_tool_run,
             approved_request=approved_request,
@@ -334,6 +364,7 @@ async def execute_approved_tool_run(
             action_tool_run_service=action_tool_run_service,
             tool_run_error=preflight_error.error_code,
             tool_result=preflight_error.as_result(),
+            assistant_text=workflow_reply_text,
             audit_metadata={
                 "thread_id": str(thread_id),
                 "tool_run_id": str(started_tool_run.id),
@@ -413,6 +444,23 @@ async def execute_approved_tool_run(
                 )
             ],
         )
+        workflow_reply_text = None
+        if tool.workflow_family is not None:
+            workflow_reply_text = _workflow_reply_text(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="completed",
+                preflight_evidence=preflight_evidence,
+                result=persisted_result,
+                postflight_result=postflight_result,
+            )
+        if workflow_reply_text is not None:
+            await repository.create_message(
+                thread_id=thread_id,
+                role="assistant",
+                parts=[{"type": "text", "text": workflow_reply_text}],
+            )
         await repository.create_audit_log(
             event_type="tool_completed",
             actor_email=owner_user_email,
@@ -451,6 +499,16 @@ async def execute_approved_tool_run(
                     error_code=sanitized_error.error_code,
                 ),
             )
+        workflow_reply_text = None
+        if tool.workflow_family is not None:
+            workflow_reply_text = _workflow_reply_text(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=preflight_evidence,
+                error_code=sanitized_error.error_code,
+            )
         await _persist_failed_tool_run(
             started_tool_run=started_tool_run,
             approved_request=approved_request,
@@ -460,6 +518,7 @@ async def execute_approved_tool_run(
             action_tool_run_service=action_tool_run_service,
             tool_run_error=sanitized_error.error_code,
             tool_result=cast(dict[str, object], sanitized_error.as_result()),
+            assistant_text=workflow_reply_text,
             audit_metadata={
                 "thread_id": str(thread_id),
                 "tool_run_id": str(started_tool_run.id),
@@ -533,6 +592,32 @@ async def _execute_tool(
     return await tool.execute(**args)
 
 
+def _workflow_reply_text(
+    *,
+    tool_name: str,
+    workflow_family: str,
+    args: dict[str, object],
+    phase: str,
+    preflight_evidence: list[dict[str, object]],
+    result: dict[str, object] | None = None,
+    postflight_result: dict[str, object] | None = None,
+    error_code: str | None = None,
+) -> str | None:
+    reply_template = build_workflow_reply_template(
+        tool_name=tool_name,
+        workflow_family=workflow_family,
+        args=args,
+        phase=phase,
+        preflight_evidence=preflight_evidence,
+        result=result,
+        postflight_result=postflight_result,
+        error_code=error_code,
+    )
+    if reply_template is None:
+        return None
+    return render_workflow_reply_text(reply_template)
+
+
 async def _persist_failed_tool_run(
     *,
     started_tool_run: ToolRun,
@@ -543,6 +628,7 @@ async def _persist_failed_tool_run(
     action_tool_run_service: ActionToolRunService,
     tool_run_error: str,
     tool_result: dict[str, object],
+    assistant_text: str | None,
     audit_metadata: dict[str, object],
 ) -> None:
     _ = await action_tool_run_service.fail_tool_run(
@@ -561,6 +647,12 @@ async def _persist_failed_tool_run(
             )
         ],
     )
+    if assistant_text is not None:
+        await repository.create_message(
+            thread_id=thread_id,
+            role="assistant",
+            parts=[{"type": "text", "text": assistant_text}],
+        )
     await repository.create_audit_log(
         event_type="tool_failed",
         actor_email=owner_user_email,

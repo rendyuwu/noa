@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
 from noa_api.core.workflows.registry import (
     build_approval_context,
+    build_workflow_reply_template,
     build_workflow_todos,
     describe_workflow_activity,
     fetch_postflight_result,
@@ -17,13 +18,15 @@ from noa_api.core.workflows.registry import (
 )
 from noa_api.core.workflows.types import (
     WorkflowInference,
+    WorkflowReplyTemplate,
     WorkflowTemplate,
     WorkflowTemplateContext,
 )
+from noa_api.storage.postgres.workflow_todos import WorkflowTodoItem
 
 
 class _CustomWorkflowTemplate(WorkflowTemplate):
-    def build_todos(self, context: WorkflowTemplateContext):
+    def build_todos(self, context: WorkflowTemplateContext) -> list[WorkflowTodoItem]:
         return [
             {
                 "content": f"Registered step for {context.tool_name}.",
@@ -31,6 +34,17 @@ class _CustomWorkflowTemplate(WorkflowTemplate):
                 "priority": "high",
             }
         ]
+
+    def build_reply_template(
+        self, context: WorkflowTemplateContext
+    ) -> WorkflowReplyTemplate | None:
+        return WorkflowReplyTemplate(
+            title=f"Reply for {context.tool_name}",
+            outcome="info",
+            summary=f"Workflow phase is {context.phase}.",
+            evidence_summary=["Custom evidence"],
+            next_step="Wait for user approval.",
+        )
 
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
@@ -113,6 +127,30 @@ async def test_workflow_registry_supports_registered_templates() -> None:
     assert approval_context["argumentSummary"] == [
         {"label": "Resource", "value": "alpha"}
     ]
+    assert approval_context["replyTemplate"] == {
+        "title": "Reply for custom_change",
+        "outcome": "info",
+        "summary": "Workflow phase is waiting_on_approval.",
+        "evidenceSummary": ["Custom evidence"],
+        "nextStep": "Wait for user approval.",
+        "assistantHint": None,
+    }
+
+    reply_template = build_workflow_reply_template(
+        tool_name="custom_change",
+        workflow_family=family,
+        args={"resource": "alpha"},
+        phase="completed",
+        preflight_evidence=[],
+        result={"ok": True},
+    )
+    assert reply_template == WorkflowReplyTemplate(
+        title="Reply for custom_change",
+        outcome="info",
+        summary="Workflow phase is completed.",
+        evidence_summary=["Custom evidence"],
+        next_step="Wait for user approval.",
+    )
 
     preflight_error = require_matching_preflight(
         tool_name="custom_change",
@@ -127,7 +165,7 @@ async def test_workflow_registry_supports_registered_templates() -> None:
         tool_name="custom_change",
         workflow_family=family,
         args={"resource": "alpha"},
-        session=cast(object, object()),
+        session=cast(Any, object()),
     )
     assert postflight_result == {"ok": True, "source": "custom-template"}
 
