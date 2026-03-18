@@ -17,12 +17,15 @@ Family-specific operational reply behavior should also live here rather than in 
 - `build_todos(...)`: required; returns canonical workflow steps for each lifecycle phase.
 - `describe_activity(...)`: optional; customizes approval activity copy.
 - `build_before_state(...)`: optional; maps preflight evidence into approval before-state rows.
+- `build_evidence_template(...)`: optional; returns structured evidence sections (`before_state`, `requested_change`, `after_state`, `verification`, `outcomes`, `failure`) for approval/completion receipts.
 - `build_reply_template(...)`: optional; returns structured proposal/completion/denial/no-op/partial/failure reply guidance for the family.
 - `require_preflight(...)`: optional; blocks unsafe CHANGE requests until matching evidence exists.
 - `fetch_postflight_result(...)`: optional; loads verification evidence after execution.
 - `infer_waiting_on_user_workflow(...)`: optional; seeds a waiting workflow when the assistant asks the user for missing input without emitting a CHANGE tool call yet.
 
-The reply template contract is structured data, not markdown-authored prose, so the same family-owned semantics can drive assistant replies now and richer receipts/detail views later.
+The reply/evidence contracts are structured data, not markdown-authored prose, so the same family-owned semantics can drive assistant replies now and richer receipts/detail views later.
+
+`build_before_state(...)` is now a compatibility shim. New workflow families should primarily implement `build_evidence_template(...)`; the registry projects `beforeState` from the `before_state` evidence section when present, and only falls back to `build_before_state(...)` for legacy templates.
 
 ## Family module shape
 

@@ -2,17 +2,10 @@
 
 import { useSyncExternalStore } from "react";
 
+import type { AssistantDetailEvidenceSection } from "@/components/assistant/approval-state";
 import type { WorkflowTodoItem } from "@/components/assistant/workflow-todo-tool-ui";
 
-export type DetailItem = {
-  label: string;
-  value: string;
-};
-
-export type DetailSection = {
-  title: string;
-  items: DetailItem[];
-};
+export type DetailSection = AssistantDetailEvidenceSection;
 
 type ClosedDetailSheet = {
   open: false;
@@ -38,6 +31,7 @@ type WorkflowDetailSheet = {
   badge: string;
   badgeClassName: string;
   todos: WorkflowTodoItem[];
+  sections: DetailSection[];
 };
 
 export type AssistantDetailSheetState =

@@ -7,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
 from noa_api.core.workflows.types import (
+    WorkflowEvidenceItem,
+    WorkflowEvidenceSection,
+    WorkflowEvidenceTemplate,
     WorkflowInference,
     WorkflowReplyTemplate,
     WorkflowTemplate,
@@ -31,7 +34,29 @@ class _WHMTemplate(WorkflowTemplate):
         args: dict[str, object],
         preflight_results: list[dict[str, object]],
     ) -> list[dict[str, str]] | None:
-        _ = args
+        context = WorkflowTemplateContext(
+            tool_name=tool_name,
+            args=args,
+            phase="waiting_on_approval",
+            preflight_evidence=[
+                {
+                    "toolName": item.get("toolName"),
+                    "result": item.get("result"),
+                }
+                for item in preflight_results
+                if isinstance(item, dict)
+            ],
+        )
+        evidence_template = self.build_evidence_template(context)
+        if evidence_template is not None:
+            for section in evidence_template.sections:
+                if section.key != "before_state":
+                    continue
+                return [
+                    {"label": item.label, "value": item.value}
+                    for item in section.items
+                    if item.label.strip() and item.value.strip()
+                ]
         return _extract_before_state(preflight_results)
 
 
@@ -189,6 +214,12 @@ class WHMAccountLifecycleTemplate(_WHMAccountTemplate):
     ) -> WorkflowReplyTemplate | None:
         return _build_account_lifecycle_reply_template(context)
 
+    def build_evidence_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowEvidenceTemplate | None:
+        return _build_account_lifecycle_evidence_template(context)
+
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
     ) -> str | None:
@@ -307,6 +338,12 @@ class WHMAccountContactEmailTemplate(_WHMAccountTemplate):
         context: WorkflowTemplateContext,
     ) -> WorkflowReplyTemplate | None:
         return _build_contact_email_reply_template(context)
+
+    def build_evidence_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowEvidenceTemplate | None:
+        return _build_contact_email_evidence_template(context)
 
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
@@ -428,6 +465,12 @@ class WHMCSFBatchTemplate(_WHMTemplate):
         context: WorkflowTemplateContext,
     ) -> WorkflowReplyTemplate | None:
         return _build_csf_reply_template(context)
+
+    def build_evidence_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowEvidenceTemplate | None:
+        return _build_csf_evidence_template(context)
 
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
@@ -1148,6 +1191,441 @@ def _build_csf_reply_template_impl(
         evidence_summary=evidence,
         next_step="No further action is required unless you expected a different CSF state.",
     )
+
+
+def _build_account_lifecycle_evidence_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowEvidenceTemplate | None:
+    subject = _account_subject(context.args)
+    action_label = _action_label(context.tool_name)
+    desired_state = (
+        "active" if context.tool_name == "whm_unsuspend_account" else "suspended"
+    )
+    before_account = _matching_account_preflight(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    after_account = _postflight_account(context.postflight_result)
+    reason = normalized_text(context.args.get("reason"))
+    before_state = _account_state(before_account) or "unknown"
+    after_state = _account_state(after_account) or before_state
+    result_status = _result_status(context.result)
+    result_ok = _result_ok(context.result)
+
+    sections: list[WorkflowEvidenceSection] = []
+    sections.append(
+        WorkflowEvidenceSection(
+            key="before_state",
+            title="Before state",
+            items=_account_before_state_items(before_account),
+        )
+    )
+    sections.append(
+        WorkflowEvidenceSection(
+            key="requested_change",
+            title="Requested change",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(label="Action", value=action_label),
+                    WorkflowEvidenceItem(label="Subject", value=subject),
+                    WorkflowEvidenceItem(label="Expected state", value=desired_state),
+                    WorkflowEvidenceItem(
+                        label="Reason", value=reason or "none provided"
+                    ),
+                ]
+            ),
+        )
+    )
+
+    if context.phase == "denied":
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=[
+                    WorkflowEvidenceItem(label="Status", value="denied"),
+                    WorkflowEvidenceItem(
+                        label="Result",
+                        value="Approval denied; no change executed.",
+                    ),
+                ],
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    if context.phase == "failed" or result_ok is False:
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=_clean_items(
+                    [
+                        WorkflowEvidenceItem(label="Status", value="failed"),
+                        WorkflowEvidenceItem(
+                            label="Error code",
+                            value=(
+                                _result_error_code(context.result)
+                                or context.error_code
+                                or "unknown"
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    sections.append(
+        WorkflowEvidenceSection(
+            key="after_state",
+            title="After state",
+            items=_account_after_state_items(
+                after_account, expected_state=desired_state
+            ),
+        )
+    )
+    sections.append(
+        WorkflowEvidenceSection(
+            key="verification",
+            title="Verification",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(
+                        label="Result status", value=result_status or "unknown"
+                    ),
+                    WorkflowEvidenceItem(label="Before", value=before_state),
+                    WorkflowEvidenceItem(label="After", value=after_state),
+                    WorkflowEvidenceItem(
+                        label="Verified",
+                        value=(
+                            "yes"
+                            if after_account is not None
+                            and after_state == desired_state
+                            else "partial"
+                            if after_account is not None
+                            else "no"
+                        ),
+                    ),
+                ]
+            ),
+        )
+    )
+    return WorkflowEvidenceTemplate(sections=sections)
+
+
+def _build_contact_email_evidence_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowEvidenceTemplate | None:
+    subject = _account_subject(context.args)
+    requested_email = normalized_text(context.args.get("new_email")) or "unknown"
+    before_account = _matching_account_preflight(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    after_account = _postflight_account(context.postflight_result)
+    reason = normalized_text(context.args.get("reason"))
+    before_email = _account_email(before_account) or "unknown"
+    after_email = _account_email(after_account) or before_email
+    result_status = _result_status(context.result)
+    result_ok = _result_ok(context.result)
+
+    sections: list[WorkflowEvidenceSection] = [
+        WorkflowEvidenceSection(
+            key="before_state",
+            title="Before state",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(label="Subject", value=subject),
+                    WorkflowEvidenceItem(label="Contact email", value=before_email),
+                ]
+            ),
+        ),
+        WorkflowEvidenceSection(
+            key="requested_change",
+            title="Requested change",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(label="Action", value="change contact email"),
+                    WorkflowEvidenceItem(
+                        label="Requested email", value=requested_email
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Reason", value=reason or "none provided"
+                    ),
+                ]
+            ),
+        ),
+    ]
+
+    if context.phase == "denied":
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=[
+                    WorkflowEvidenceItem(label="Status", value="denied"),
+                    WorkflowEvidenceItem(
+                        label="Result", value="Approval denied; no change executed."
+                    ),
+                ],
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    if context.phase == "failed" or result_ok is False:
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=_clean_items(
+                    [
+                        WorkflowEvidenceItem(label="Status", value="failed"),
+                        WorkflowEvidenceItem(
+                            label="Error code",
+                            value=(
+                                _result_error_code(context.result)
+                                or context.error_code
+                                or "unknown"
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    sections.append(
+        WorkflowEvidenceSection(
+            key="after_state",
+            title="After state",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(label="Observed email", value=after_email),
+                    WorkflowEvidenceItem(label="Expected email", value=requested_email),
+                ]
+            ),
+        )
+    )
+    sections.append(
+        WorkflowEvidenceSection(
+            key="verification",
+            title="Verification",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(
+                        label="Result status", value=result_status or "unknown"
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Verified",
+                        value=(
+                            "yes"
+                            if after_account is not None
+                            and after_email.lower() == requested_email.lower()
+                            else "partial"
+                            if after_account is not None
+                            else "no"
+                        ),
+                    ),
+                ]
+            ),
+        )
+    )
+    return WorkflowEvidenceTemplate(sections=sections)
+
+
+def _build_csf_evidence_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowEvidenceTemplate | None:
+    action_phrase = _csf_action_phrase(context.tool_name)
+    subject = _csf_subject(context.args)
+    targets = normalized_string_list(context.args.get("targets"))
+    reason = normalized_text(context.args.get("reason"))
+    before_entries = _matching_csf_preflight_entries(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    after_entries = _postflight_csf_entries(context.postflight_result)
+    result_items = _result_items(context.result)
+    changed_targets = _targets_with_status(result_items, "changed")
+    noop_targets = _targets_with_status(result_items, "no-op")
+    failed_targets = _targets_with_status(result_items, "error")
+    result_ok = _result_ok(context.result)
+
+    sections: list[WorkflowEvidenceSection] = [
+        WorkflowEvidenceSection(
+            key="before_state",
+            title="Before state",
+            items=(
+                _csf_entries_items(before_entries)
+                or [
+                    WorkflowEvidenceItem(
+                        label="Targets", value=", ".join(targets) or "unknown"
+                    )
+                ]
+            ),
+        ),
+        WorkflowEvidenceSection(
+            key="requested_change",
+            title="Requested change",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(label="Action", value=action_phrase),
+                    WorkflowEvidenceItem(label="Subject", value=subject),
+                    WorkflowEvidenceItem(
+                        label="Reason", value=reason or "none provided"
+                    ),
+                ]
+            ),
+        ),
+    ]
+
+    if context.phase == "denied":
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=[
+                    WorkflowEvidenceItem(label="Status", value="denied"),
+                    WorkflowEvidenceItem(
+                        label="Result", value="Approval denied; no change executed."
+                    ),
+                ],
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    if context.phase == "failed" or (result_ok is False and not result_items):
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=_clean_items(
+                    [
+                        WorkflowEvidenceItem(label="Status", value="failed"),
+                        WorkflowEvidenceItem(
+                            label="Error code",
+                            value=(
+                                _result_error_code(context.result)
+                                or context.error_code
+                                or "unknown"
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    sections.append(
+        WorkflowEvidenceSection(
+            key="after_state",
+            title="After state",
+            items=_csf_entries_items(after_entries),
+        )
+    )
+    sections.append(
+        WorkflowEvidenceSection(
+            key="outcomes",
+            title="Per-target outcomes",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(
+                        label="Changed", value=", ".join(changed_targets) or "none"
+                    ),
+                    WorkflowEvidenceItem(
+                        label="No-op", value=", ".join(noop_targets) or "none"
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Failed", value=", ".join(failed_targets) or "none"
+                    ),
+                ]
+            ),
+        )
+    )
+    sections.append(
+        WorkflowEvidenceSection(
+            key="verification",
+            title="Verification",
+            items=[
+                WorkflowEvidenceItem(
+                    label="Result",
+                    value=(
+                        "partial"
+                        if failed_targets or (changed_targets and noop_targets)
+                        else "changed"
+                        if changed_targets
+                        else "no-op"
+                    ),
+                )
+            ],
+        )
+    )
+    return WorkflowEvidenceTemplate(sections=sections)
+
+
+def _clean_items(items: list[WorkflowEvidenceItem]) -> list[WorkflowEvidenceItem]:
+    return [item for item in items if item.label.strip() and item.value.strip()]
+
+
+def _account_before_state_items(
+    account: dict[str, object] | None,
+) -> list[WorkflowEvidenceItem]:
+    if not isinstance(account, dict):
+        return []
+    items = [
+        WorkflowEvidenceItem(
+            label="Username",
+            value=normalized_text(account.get("user")) or "unknown",
+        ),
+        WorkflowEvidenceItem(
+            label="Domain",
+            value=normalized_text(account.get("domain")) or "unknown",
+        ),
+        WorkflowEvidenceItem(
+            label="Contact email",
+            value=_account_email(account) or "unknown",
+        ),
+        WorkflowEvidenceItem(
+            label="State",
+            value=_account_state(account) or "unknown",
+        ),
+    ]
+    suspend_reason = normalized_text(account.get("suspendreason"))
+    if suspend_reason is not None:
+        items.append(WorkflowEvidenceItem(label="Suspend reason", value=suspend_reason))
+    return _clean_items(items)
+
+
+def _account_after_state_items(
+    account: dict[str, object] | None,
+    *,
+    expected_state: str,
+) -> list[WorkflowEvidenceItem]:
+    if not isinstance(account, dict):
+        return [WorkflowEvidenceItem(label="Observed state", value="unknown")]
+    return _clean_items(
+        [
+            WorkflowEvidenceItem(
+                label="Expected state",
+                value=expected_state,
+            ),
+            WorkflowEvidenceItem(
+                label="Observed state",
+                value=_account_state(account) or "unknown",
+            ),
+        ]
+    )
+
+
+def _csf_entries_items(entries: list[dict[str, object]]) -> list[WorkflowEvidenceItem]:
+    items: list[WorkflowEvidenceItem] = []
+    for entry in entries:
+        target = normalized_text(entry.get("target"))
+        if target is None:
+            continue
+        verdict = normalized_text(entry.get("verdict")) or "unknown"
+        items.append(WorkflowEvidenceItem(label=target, value=verdict))
+    return items
 
 
 def _result_ok(result: dict[str, object] | None) -> bool | None:

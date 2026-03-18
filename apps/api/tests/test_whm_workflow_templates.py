@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from noa_api.core.workflows.registry import (
+    build_approval_context,
+    build_workflow_evidence_template,
     build_workflow_reply_template,
     build_workflow_todos,
 )
@@ -217,3 +219,164 @@ def test_whm_csf_completed_reply_template_marks_mixed_results_as_partial() -> No
     assert "mixed results" in reply.summary
     assert "Changed targets: 1.2.3.4." in reply.evidence_summary
     assert "No-op targets: 5.6.7.8." in reply.evidence_summary
+
+
+def test_whm_account_lifecycle_waiting_on_approval_evidence_has_canonical_sections() -> (
+    None
+):
+    evidence = build_workflow_evidence_template(
+        tool_name="whm_suspend_account",
+        workflow_family="whm-account-lifecycle",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "reason": "billing hold",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "suspended": False,
+                        "domain": "example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence is not None
+    assert [section.key for section in evidence.sections] == [
+        "before_state",
+        "requested_change",
+        "after_state",
+        "verification",
+    ]
+
+
+def test_whm_contact_email_denied_evidence_uses_failure_section() -> None:
+    evidence = build_workflow_evidence_template(
+        tool_name="whm_change_contact_email",
+        workflow_family="whm-account-contact-email",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_email": "new@example.com",
+        },
+        phase="denied",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "contactemail": "old@example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence is not None
+    assert evidence.sections[-1].key == "failure"
+    assert evidence.sections[-1].items[0].value == "denied"
+
+
+def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
+    evidence = build_workflow_evidence_template(
+        tool_name="whm_csf_unblock",
+        workflow_family="whm-csf-batch-change",
+        args={"server_ref": "web2", "targets": ["1.2.3.4", "5.6.7.8"]},
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_csf_entries",
+                "args": {"server_ref": "web2", "target": "1.2.3.4"},
+                "result": {"ok": True, "target": "1.2.3.4", "verdict": "blocked"},
+            }
+        ],
+        result={
+            "ok": True,
+            "results": [
+                {"target": "1.2.3.4", "status": "changed"},
+                {"target": "5.6.7.8", "status": "no-op"},
+            ],
+        },
+        postflight_result={
+            "ok": True,
+            "results": [
+                {"target": "1.2.3.4", "verdict": "clear"},
+                {"target": "5.6.7.8", "verdict": "clear"},
+            ],
+        },
+    )
+
+    assert evidence is not None
+    assert [section.key for section in evidence.sections] == [
+        "before_state",
+        "requested_change",
+        "after_state",
+        "outcomes",
+        "verification",
+    ]
+    outcomes = next(
+        section for section in evidence.sections if section.key == "outcomes"
+    )
+    assert any(
+        item.label == "Changed" and "1.2.3.4" in item.value for item in outcomes.items
+    )
+    assert any(
+        item.label == "No-op" and "5.6.7.8" in item.value for item in outcomes.items
+    )
+
+
+def test_build_approval_context_includes_evidence_sections_and_compat_before_state() -> (
+    None
+):
+    context = build_approval_context(
+        tool_name="whm_suspend_account",
+        workflow_family="whm-account-lifecycle",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "reason": "billing hold",
+        },
+        working_messages=[
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+    )
+
+    assert "evidenceSections" in context
+    assert isinstance(context["evidenceSections"], list)
+    assert context["beforeState"]

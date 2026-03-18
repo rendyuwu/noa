@@ -1,7 +1,10 @@
 import type { ThreadMessage } from "@assistant-ui/react";
 
 import type { WorkflowTodoItem } from "@/components/assistant/workflow-todo-tool-ui";
-import type { AssistantActionRequest } from "@/components/assistant/approval-state";
+import type {
+  AssistantActionRequest,
+  AssistantDetailEvidenceSection,
+} from "@/components/assistant/approval-state";
 
 type AssistantPendingApproval = {
   actionRequestId: string;
@@ -14,6 +17,7 @@ type AssistantPendingApproval = {
 export type AssistantState = {
   messages: Array<{ id?: string; role: string; parts: Array<Record<string, unknown>> }>;
   workflow?: WorkflowTodoItem[];
+  evidenceSections?: AssistantDetailEvidenceSection[];
   pendingApprovals?: AssistantPendingApproval[];
   actionRequests?: AssistantActionRequest[];
   isRunning: boolean;
@@ -41,7 +45,7 @@ const isEmptyAssistantMessage = (message: ThreadMessage): boolean => {
 
 const attachCanonicalMetadata = (
   messages: ThreadMessage[],
-  state: Pick<AssistantState, "workflow" | "pendingApprovals" | "actionRequests">,
+  state: Pick<AssistantState, "workflow" | "evidenceSections" | "pendingApprovals" | "actionRequests">,
 ) => {
   if (!messages.length) {
     return messages;
@@ -62,6 +66,7 @@ const attachCanonicalMetadata = (
       custom: {
         ...custom,
         workflow: Array.isArray(state.workflow) ? state.workflow : [],
+        evidenceSections: Array.isArray(state.evidenceSections) ? state.evidenceSections : [],
         pendingApprovals: Array.isArray(state.pendingApprovals) ? state.pendingApprovals : [],
         actionRequests: Array.isArray(state.actionRequests) ? state.actionRequests : [],
       },

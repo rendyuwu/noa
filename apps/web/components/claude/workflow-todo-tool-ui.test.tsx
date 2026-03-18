@@ -22,9 +22,90 @@ vi.mock("@/components/assistant/assistant-detail-sheet-store", () => ({
   useAssistantDetailSheet: () => ({ open: false, key: null }),
 }));
 
-import { WorkflowTodoCard } from "@/components/claude/workflow-todo-tool-ui";
+import { WorkflowTodoCard, WorkflowTodoToolUI } from "@/components/claude/workflow-todo-tool-ui";
 
 describe("WorkflowTodoCard", () => {
+  it("includes evidence sections from tool payload in workflow details", () => {
+    mockThreadMessages = [];
+
+    render(
+      <WorkflowTodoToolUI
+        args={{
+          todos: [
+            { content: "Preflight", status: "completed", priority: "high" },
+            { content: "Execute change", status: "completed", priority: "high" },
+          ],
+          evidenceSections: [
+            {
+              title: "Execution evidence",
+              items: [{ label: "Server", value: "cp01" }],
+            },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+
+    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "workflow",
+        todos: expect.arrayContaining([
+          expect.objectContaining({ content: "Preflight" }),
+          expect.objectContaining({ content: "Execute change" }),
+        ]),
+        sections: [
+          {
+            title: "Execution evidence",
+            items: [{ label: "Server", value: "cp01" }],
+          },
+        ],
+      }),
+    );
+  });
+
+  it("falls back to canonical metadata evidence sections when payload has none", () => {
+    mockThreadMessages = [
+      {
+        metadata: {
+          custom: {
+            evidenceSections: [
+              {
+                title: "Canonical evidence",
+                items: [{ label: "Ticket", value: "INC-42" }],
+              },
+            ],
+          },
+        },
+      },
+    ];
+
+    render(
+      <WorkflowTodoToolUI
+        args={{
+          todos: [
+            { content: "Preflight", status: "completed", priority: "high" },
+            { content: "Execute change", status: "completed", priority: "high" },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+
+    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "workflow",
+        sections: [
+          {
+            title: "Canonical evidence",
+            items: [{ label: "Ticket", value: "INC-42" }],
+          },
+        ],
+      }),
+    );
+  });
+
   it("renders terminal workflow runs as compact details with expandable summary", () => {
     mockThreadMessages = [];
 

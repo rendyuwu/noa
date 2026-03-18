@@ -1,5 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+
+const { mockToggleAssistantDetailSheet } = vi.hoisted(() => ({
+  mockToggleAssistantDetailSheet: vi.fn(),
+}));
 
 let mockThreadMessages: any[] = [];
 
@@ -13,6 +17,11 @@ vi.mock("@assistant-ui/react", () => ({
   useAssistantTransportSendCommand: () => vi.fn(),
 }));
 
+vi.mock("@/components/assistant/assistant-detail-sheet-store", () => ({
+  toggleAssistantDetailSheet: mockToggleAssistantDetailSheet,
+  useAssistantDetailSheet: () => ({ open: false, key: null }),
+}));
+
 import {
   ClaudeToolFallback,
   ClaudeToolGroup,
@@ -20,6 +29,79 @@ import {
 } from "@/components/claude/request-approval-tool-ui";
 
 describe("ClaudeToolFallback", () => {
+  it("prefers evidence sections for preview and details", () => {
+    mockThreadMessages = [];
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-2",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          evidenceSections: [
+            {
+              title: "Evidence",
+              items: [
+                { label: "Account", value: "alice" },
+                { label: "Reason", value: "Billing" },
+              ],
+            },
+          ],
+          beforeState: [{ label: "Status", value: "Active" }],
+          argumentSummary: [{ label: "Reason", value: "Should not be used" }],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Account: alice · Reason: Billing")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+
+    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "approval",
+        sections: [
+          {
+            title: "Evidence",
+            items: [
+              { label: "Account", value: "alice" },
+              { label: "Reason", value: "Billing" },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  it("falls back to legacy detail sections when evidence sections are absent", () => {
+    mockThreadMessages = [];
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-3",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          beforeState: [{ label: "Status", value: "Active" }],
+          argumentSummary: [{ label: "Reason", value: "Billing" }],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+
+    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "approval",
+        sections: expect.arrayContaining([
+          expect.objectContaining({ title: "Overview" }),
+          expect.objectContaining({ title: "Before state" }),
+          expect.objectContaining({ title: "Requested change" }),
+        ]),
+      }),
+    );
+  });
+
   it("hides successful tools", () => {
     render(
       <ClaudeToolFallback

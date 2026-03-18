@@ -16,37 +16,12 @@ import {
 } from "@/components/assistant/assistant-detail-sheet-store";
 import { getApprovalLifecyclePresentation } from "@/components/assistant/approval-lifecycle-ui";
 import {
+  coerceDetailEvidenceSections,
   extractLatestCanonicalActionRequests,
 } from "@/components/assistant/approval-state";
 
 function coerceString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
-}
-
-function coerceRecord(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-type DetailItem = {
-  label: string;
-  value: string;
-};
-
-function coerceDetailItems(value: unknown): DetailItem[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((entry) => {
-    const item = coerceRecord(entry);
-    const label = coerceString(item?.label);
-    const rawValue = item?.value;
-    if (!label) return [];
-    if (typeof rawValue === "string") return [{ label, value: rawValue }];
-    if (typeof rawValue === "number" || typeof rawValue === "boolean") {
-      return [{ label, value: String(rawValue) }];
-    }
-    return [];
-  });
 }
 
 function prettifyToolName(value: string): string {
@@ -59,7 +34,7 @@ function prettifyToolName(value: string): string {
 
 type DecisionState = "approving" | "denying";
 
-function summarizeDetails(items: DetailItem[]): string | null {
+function summarizeDetails(items: { label: string; value: string }[]): string | null {
   const preview = items
     .slice(0, 3)
     .map((item) => `${item.label}: ${item.value}`)
@@ -89,8 +64,10 @@ function Actions({ args }: { args: Record<string, unknown> }) {
   const actionRequestId = coerceString(args.actionRequestId) ?? "";
   const toolName = coerceString(args.toolName) ?? "unknown";
   const activity = coerceString(args.activity) ?? `Run ${prettifyToolName(toolName).toLowerCase()}`;
-  const beforeState = coerceDetailItems(args.beforeState);
-  const argumentSummary = coerceDetailItems(args.argumentSummary);
+  const evidenceSections = coerceDetailEvidenceSections(args.evidenceSections) ?? [];
+  const beforeState = coerceDetailEvidenceSections([{ title: "Before state", items: args.beforeState }]) ?? [];
+  const argumentSummary =
+    coerceDetailEvidenceSections([{ title: "Requested change", items: args.argumentSummary }]) ?? [];
   const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
   const lifecycleStatus =
     extractLatestCanonicalActionRequests(threadMessages)?.find(
@@ -100,9 +77,13 @@ function Actions({ args }: { args: Record<string, unknown> }) {
   const detailSheet = useAssistantDetailSheet();
   const [pendingDecision, setPendingDecision] = useState<DecisionState | null>(null);
   const detailKey = `approval:${actionRequestId}`;
+  const summarySourceItems =
+    evidenceSections.length > 0
+      ? evidenceSections.flatMap((section) => section.items)
+      : [...argumentSummary, ...beforeState].flatMap((section) => section.items);
   const summaryText = useMemo(
-    () => summarizeDetails(argumentSummary) ?? summarizeDetails(beforeState),
-    [argumentSummary, beforeState],
+    () => summarizeDetails(summarySourceItems),
+    [summarySourceItems],
   );
   const risk = coerceString(args.risk) ?? "CHANGE";
   const overview = [
@@ -134,6 +115,12 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     : getReceiptLabel(lifecycleStatus);
 
   const openDetails = () => {
+    const fallbackSections = [
+      { title: "Overview", items: overview },
+      ...beforeState,
+      ...argumentSummary,
+    ].filter((section) => section.items.length > 0);
+
     toggleAssistantDetailSheet({
       open: true,
       key: detailKey,
@@ -142,11 +129,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
       subtitle: `${copy.title}${summaryText ? ` · ${summaryText}` : ""}`,
       badge: copy.badge,
       badgeClassName: copy.badgeClassName,
-      sections: [
-        { title: "Overview", items: overview },
-        { title: "Before state", items: beforeState },
-        { title: "Requested change", items: argumentSummary },
-      ].filter((section) => section.items.length > 0),
+      sections: evidenceSections.length > 0 ? evidenceSections : fallbackSections,
     });
   };
 

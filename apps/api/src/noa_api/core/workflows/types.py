@@ -55,6 +55,24 @@ class WorkflowReplyTemplate:
     assistant_hint: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowEvidenceItem:
+    label: str
+    value: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEvidenceSection:
+    key: str
+    title: str
+    items: list[WorkflowEvidenceItem]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEvidenceTemplate:
+    sections: list[WorkflowEvidenceSection]
+
+
 class WorkflowTemplate:
     def build_todos(self, context: WorkflowTemplateContext) -> list[WorkflowTodoItem]:
         raise NotImplementedError
@@ -63,6 +81,12 @@ class WorkflowTemplate:
         self,
         context: WorkflowTemplateContext,
     ) -> WorkflowReplyTemplate | None:
+        return None
+
+    def build_evidence_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowEvidenceTemplate | None:
         return None
 
     def describe_activity(
@@ -202,6 +226,26 @@ def workflow_reply_template_payload(
         "evidenceSummary": list(template.evidence_summary),
         "nextStep": template.next_step,
         "assistantHint": template.assistant_hint,
+    }
+
+
+def workflow_evidence_template_payload(
+    template: WorkflowEvidenceTemplate,
+) -> dict[str, object]:
+    return {
+        "evidenceSections": [
+            {
+                "key": section.key,
+                "title": section.title,
+                "items": [
+                    {"label": item.label, "value": item.value}
+                    for item in section.items
+                    if item.label.strip() and item.value.strip()
+                ],
+            }
+            for section in template.sections
+            if section.key.strip() and section.title.strip()
+        ]
     }
 
 

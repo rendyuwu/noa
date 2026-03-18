@@ -7,6 +7,7 @@ import pytest
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
 from noa_api.core.workflows.registry import (
     build_approval_context,
+    build_workflow_evidence_template,
     build_workflow_reply_template,
     build_workflow_todos,
     describe_workflow_activity,
@@ -17,6 +18,9 @@ from noa_api.core.workflows.registry import (
     require_matching_preflight,
 )
 from noa_api.core.workflows.types import (
+    WorkflowEvidenceItem,
+    WorkflowEvidenceSection,
+    WorkflowEvidenceTemplate,
     WorkflowInference,
     WorkflowReplyTemplate,
     WorkflowTemplate,
@@ -44,6 +48,31 @@ class _CustomWorkflowTemplate(WorkflowTemplate):
             summary=f"Workflow phase is {context.phase}.",
             evidence_summary=["Custom evidence"],
             next_step="Wait for user approval.",
+        )
+
+    def build_evidence_template(
+        self, context: WorkflowTemplateContext
+    ) -> WorkflowEvidenceTemplate | None:
+        return WorkflowEvidenceTemplate(
+            sections=[
+                WorkflowEvidenceSection(
+                    key="before_state",
+                    title="Before state",
+                    items=[
+                        WorkflowEvidenceItem(label="Before", value="ready"),
+                    ],
+                ),
+                WorkflowEvidenceSection(
+                    key="requested_change",
+                    title="Requested change",
+                    items=[
+                        WorkflowEvidenceItem(
+                            label="Tool",
+                            value=context.tool_name,
+                        ),
+                    ],
+                ),
+            ]
         )
 
     def describe_activity(
@@ -124,6 +153,18 @@ async def test_workflow_registry_supports_registered_templates() -> None:
     )
     assert approval_context["activity"] == "Run custom workflow"
     assert approval_context["beforeState"] == [{"label": "Before", "value": "ready"}]
+    assert approval_context["evidenceSections"] == [
+        {
+            "key": "before_state",
+            "title": "Before state",
+            "items": [{"label": "Before", "value": "ready"}],
+        },
+        {
+            "key": "requested_change",
+            "title": "Requested change",
+            "items": [{"label": "Tool", "value": "custom_change"}],
+        },
+    ]
     assert approval_context["argumentSummary"] == [
         {"label": "Resource", "value": "alpha"}
     ]
@@ -151,6 +192,17 @@ async def test_workflow_registry_supports_registered_templates() -> None:
         evidence_summary=["Custom evidence"],
         next_step="Wait for user approval.",
     )
+
+    evidence_template = build_workflow_evidence_template(
+        tool_name="custom_change",
+        workflow_family=family,
+        args={"resource": "alpha"},
+        phase="completed",
+        preflight_evidence=[],
+        result={"ok": True},
+    )
+    assert evidence_template is not None
+    assert evidence_template.sections[0].key == "before_state"
 
     preflight_error = require_matching_preflight(
         tool_name="custom_change",
