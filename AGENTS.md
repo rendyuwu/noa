@@ -127,6 +127,8 @@ Assistant workflows:
 - Approval-oriented tool families register workflow templates in `apps/api/src/noa_api/core/workflows/registry.py`; avoid adding new family-specific branches in `apps/api/src/noa_api/core/agent/runner.py` when a template hook can own the behavior.
 - Shared workflow contract lives in `apps/api/src/noa_api/core/workflows/types.py`.
 - WHM is the reference implementation in `apps/api/src/noa_api/core/workflows/whm.py`.
+- Keep family-specific operational presentation in workflow templates: `build_reply_template(...)` owns conversational outcome wording, and `build_evidence_template(...)` owns structured before/after, verification, and batch-outcome evidence.
+- Treat `build_before_state(...)` as a compatibility shim; new workflow families should prefer `build_evidence_template(...)` and let the registry derive approval `beforeState` from the `before_state` evidence section.
 - When adding a new workflow family, set `ToolDefinition.workflow_family`, implement a template module, register it, and keep the existing web workflow UI generic unless the user explicitly asks for a new surface.
 - Canonical workflow UI/docs reference: `docs/assistant/workflow-templates.md`.
 

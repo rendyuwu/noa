@@ -6,6 +6,7 @@ NOA loads its system prompt from a bundled markdown file instead of an inline co
 
 - Edit `apps/api/src/noa_api/core/prompts/noa-system-prompt.md`.
 - Keep the prompt rules-first and operationally specific.
+- Preserve workflow-family structured reply semantics when `replyTemplate` data is present; keep outcome first, evidence second, and next safe step last.
 - Add or update tests in `apps/api/tests/test_system_prompt_loader.py` when behavior changes.
 
 ## Override by environment

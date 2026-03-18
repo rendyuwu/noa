@@ -31,6 +31,9 @@ The reply/evidence contracts are structured data, not markdown-authored prose, s
 
 ```python
 from noa_api.core.workflows.types import (
+    WorkflowEvidenceItem,
+    WorkflowEvidenceSection,
+    WorkflowEvidenceTemplate,
     WorkflowReplyTemplate,
     WorkflowTemplate,
     WorkflowTemplateContext,
@@ -53,6 +56,22 @@ class ProxmoxVmPowerTemplate(WorkflowTemplate):
             next_step="Approve the request to continue, or deny it to leave the VM unchanged.",
         )
 
+    def build_evidence_template(self, context: WorkflowTemplateContext):
+        return WorkflowEvidenceTemplate(
+            sections=[
+                WorkflowEvidenceSection(
+                    key="before_state",
+                    title="Before state",
+                    items=[WorkflowEvidenceItem(label="State", value="running")],
+                ),
+                WorkflowEvidenceSection(
+                    key="requested_change",
+                    title="Requested change",
+                    items=[WorkflowEvidenceItem(label="Action", value="power off")],
+                ),
+            ]
+        )
+
 
 WORKFLOW_TEMPLATES = {
     "proxmox-vm-power": ProxmoxVmPowerTemplate(),
@@ -73,3 +92,5 @@ for family, template in PROXMOX_WORKFLOW_TEMPLATES.items():
 - Shared contract: `apps/api/src/noa_api/core/workflows/types.py`
 - Registry: `apps/api/src/noa_api/core/workflows/registry.py`
 - WHM templates: `apps/api/src/noa_api/core/workflows/whm.py`
+- Generic detail rendering: `apps/web/components/assistant/assistant-detail-sheet.tsx`
+- Approval and workflow detail entry points: `apps/web/components/assistant/request-approval-tool-ui.tsx`, `apps/web/components/assistant/workflow-todo-tool-ui.tsx`
