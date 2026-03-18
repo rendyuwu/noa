@@ -1377,7 +1377,7 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
     assert len(repo.action_requests) == 1
     assert captured["thread_id"] == thread_id
     todos = cast(list[dict[str, str]], captured["todos"])
-    assert len(todos) == 6
+    assert len(todos) == 5
     assert all("alice" not in todo["content"] for todo in todos)
     assert any("1.2.3.4" in todo["content"] for todo in todos)
     assert any("5.6.7.8" in todo["content"] for todo in todos)

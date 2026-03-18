@@ -41,10 +41,8 @@ def test_whm_account_lifecycle_failed_phase_keeps_terminal_todo_shape() -> None:
         "completed",
         "cancelled",
         "cancelled",
-        "completed",
     ]
-    assert "tool_execution_failed" in todos[5]["content"]
-    assert "billing hold" in todos[5]["content"]
+    assert len(todos) == 5
 
 
 def test_whm_csf_waiting_for_approval_builds_target_specific_blocked_todos() -> None:
@@ -88,12 +86,50 @@ def test_whm_csf_waiting_for_approval_builds_target_specific_blocked_todos() -> 
         "waiting_on_approval",
         "pending",
         "pending",
-        "pending",
     ]
     assert "1.2.3.4" in todos[0]["content"]
     assert "5.6.7.8" in todos[0]["content"]
     assert "remove CSF blocks" in todos[2]["content"]
-    assert "customer request" in todos[5]["content"]
+    assert "customer request" in todos[1]["content"]
+    assert len(todos) == 5
+
+
+def test_whm_account_contact_email_waiting_on_approval_builds_five_step_todos() -> None:
+    todos = build_workflow_todos(
+        tool_name="whm_change_contact_email",
+        workflow_family="whm-account-contact-email",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_email": "new@example.com",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "contactemail": "old@example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert todos is not None
+    assert len(todos) == 5
+    assert [todo["status"] for todo in todos] == [
+        "completed",
+        "completed",
+        "waiting_on_approval",
+        "pending",
+        "pending",
+    ]
+    assert "Request approval" in todos[2]["content"]
 
 
 def test_whm_account_contact_email_completed_reply_template_summarizes_change() -> None:

@@ -299,20 +299,6 @@ class WHMAccountContactEmailTemplate(_WHMAccountTemplate):
                 "status": cast(Any, statuses["postflight"]),
                 "priority": "high",
             },
-            {
-                "content": _contact_email_conclusion_step_content(
-                    subject=subject,
-                    reason=reason,
-                    requested_email=new_email,
-                    before_account=before_account,
-                    after_account=after_account,
-                    result=context.result,
-                    phase=context.phase,
-                    error_code=context.error_code,
-                ),
-                "status": cast(Any, statuses["conclusion"]),
-                "priority": "high",
-            },
         ]
 
     def build_reply_template(
@@ -424,20 +410,6 @@ class WHMCSFBatchTemplate(_WHMTemplate):
                     postflight_result=context.postflight_result,
                 ),
                 "status": cast(Any, statuses["postflight"]),
-                "priority": "high",
-            },
-            {
-                "content": _csf_conclusion_step_content(
-                    tool_name=context.tool_name,
-                    subject=subject,
-                    reason=reason,
-                    before_entries=before_entries,
-                    after_entries=postflight_entries,
-                    result=context.result,
-                    phase=context.phase,
-                    error_code=context.error_code,
-                ),
-                "status": cast(Any, statuses["conclusion"]),
                 "priority": "high",
             },
         ]
@@ -770,7 +742,6 @@ def _default_step_statuses(
         "approval": "pending",
         "execute": "pending",
         "postflight": "pending",
-        "conclusion": "pending",
     }
     if phase == "waiting_on_user":
         statuses["reason"] = "waiting_on_user"
@@ -783,17 +754,14 @@ def _default_step_statuses(
         statuses["approval"] = "completed"
         statuses["execute"] = "completed"
         statuses["postflight"] = "completed"
-        statuses["conclusion"] = "completed"
     elif phase == "denied":
         statuses["approval"] = "cancelled"
         statuses["execute"] = "cancelled"
         statuses["postflight"] = "cancelled"
-        statuses["conclusion"] = "completed"
     elif phase == "failed":
         statuses["approval"] = "completed"
         statuses["execute"] = "cancelled"
         statuses["postflight"] = "cancelled"
-        statuses["conclusion"] = "completed"
     if reason is None and phase in {"completed", "denied", "failed"}:
         statuses["reason"] = "cancelled"
     return statuses
