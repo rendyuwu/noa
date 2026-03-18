@@ -5,7 +5,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from inspect import signature
 from typing import Any, Protocol, cast
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,39 @@ from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 logger = logging.getLogger(__name__)
+
+
+async def _emit_update_workflow_todo_messages(
+    *,
+    repository: AssistantMessageAuditRepositoryProtocol,
+    thread_id: UUID,
+    todos: list[dict[str, object]],
+) -> None:
+    tool_call_id = f"workflow-todo-{uuid4()}"
+    await repository.create_message(
+        thread_id=thread_id,
+        role="assistant",
+        parts=[
+            {
+                "type": "tool-call",
+                "toolName": "update_workflow_todo",
+                "toolCallId": tool_call_id,
+                "args": {"todos": todos},
+            }
+        ],
+    )
+    await repository.create_message(
+        thread_id=thread_id,
+        role="tool",
+        parts=[
+            build_tool_result_part(
+                tool_name="update_workflow_todo",
+                tool_call_id=tool_call_id,
+                result={"ok": True, "todos": todos},
+                is_error=False,
+            )
+        ],
+    )
 
 
 class ApprovedToolExecutor(Protocol):
@@ -113,17 +146,24 @@ async def deny_action_request(
             thread_id=thread_id,
         )
         preflight_evidence = collect_recent_preflight_evidence(working_messages)
+        workflow_todos = build_workflow_todos(
+            tool_name=denied.tool_name,
+            workflow_family=tool.workflow_family,
+            args=denied.args,
+            phase="denied",
+            preflight_evidence=preflight_evidence,
+        )
         await persist_workflow_todos(
             session=session,
             thread_id=thread_id,
-            todos=build_workflow_todos(
-                tool_name=denied.tool_name,
-                workflow_family=tool.workflow_family,
-                args=denied.args,
-                phase="denied",
-                preflight_evidence=preflight_evidence,
-            ),
+            todos=workflow_todos,
         )
+        if isinstance(workflow_todos, list):
+            await _emit_update_workflow_todo_messages(
+                repository=repository,
+                thread_id=thread_id,
+                todos=cast(list[dict[str, object]], workflow_todos),
+            )
         reply_template = build_workflow_reply_template(
             tool_name=denied.tool_name,
             workflow_family=tool.workflow_family,
@@ -347,12 +387,33 @@ async def execute_approved_tool_run(
                 repository=repository,
                 thread_id=thread_id,
             )
+            preflight_evidence = collect_recent_preflight_evidence(working_messages)
+            failed_todos = build_workflow_todos(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=preflight_evidence,
+                error_code=preflight_error.error_code,
+            )
+            await persist_workflow_todos(
+                session=session,
+                thread_id=thread_id,
+                todos=failed_todos,
+            )
+            if isinstance(failed_todos, list):
+                await _emit_update_workflow_todo_messages(
+                    repository=repository,
+                    thread_id=thread_id,
+                    todos=cast(list[dict[str, object]], failed_todos),
+                )
+
             workflow_reply_text = _workflow_reply_text(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
                 args=approved_request.args,
                 phase="failed",
-                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+                preflight_evidence=preflight_evidence,
                 error_code=preflight_error.error_code,
             )
         await _persist_failed_tool_run(
@@ -381,17 +442,24 @@ async def execute_approved_tool_run(
     )
     preflight_evidence = collect_recent_preflight_evidence(working_messages)
     if tool.workflow_family is not None:
+        executing_todos = build_workflow_todos(
+            tool_name=approved_request.tool_name,
+            workflow_family=tool.workflow_family,
+            args=approved_request.args,
+            phase="executing",
+            preflight_evidence=preflight_evidence,
+        )
         await persist_workflow_todos(
             session=session,
             thread_id=thread_id,
-            todos=build_workflow_todos(
-                tool_name=approved_request.tool_name,
-                workflow_family=tool.workflow_family,
-                args=approved_request.args,
-                phase="executing",
-                preflight_evidence=preflight_evidence,
-            ),
+            todos=executing_todos,
         )
+        if isinstance(executing_todos, list):
+            await _emit_update_workflow_todo_messages(
+                repository=repository,
+                thread_id=thread_id,
+                todos=cast(list[dict[str, object]], executing_todos),
+            )
 
     try:
         validate_tool_arguments(tool=tool, args=approved_request.args)
@@ -419,19 +487,26 @@ async def execute_approved_tool_run(
                 args=approved_request.args,
                 session=session,
             )
+            completed_todos = build_workflow_todos(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="completed",
+                preflight_evidence=preflight_evidence,
+                result=persisted_result,
+                postflight_result=postflight_result,
+            )
             await persist_workflow_todos(
                 session=session,
                 thread_id=thread_id,
-                todos=build_workflow_todos(
-                    tool_name=approved_request.tool_name,
-                    workflow_family=tool.workflow_family,
-                    args=approved_request.args,
-                    phase="completed",
-                    preflight_evidence=preflight_evidence,
-                    result=persisted_result,
-                    postflight_result=postflight_result,
-                ),
+                todos=completed_todos,
             )
+            if isinstance(completed_todos, list):
+                await _emit_update_workflow_todo_messages(
+                    repository=repository,
+                    thread_id=thread_id,
+                    todos=cast(list[dict[str, object]], completed_todos),
+                )
         await repository.create_message(
             thread_id=thread_id,
             role="tool",
@@ -455,7 +530,14 @@ async def execute_approved_tool_run(
                 result=persisted_result,
                 postflight_result=postflight_result,
             )
-        if workflow_reply_text is not None:
+        should_persist_workflow_completion_message = (
+            tool.workflow_family is not None
+            and tool.workflow_family != "whm-account-lifecycle"
+        )
+        if (
+            workflow_reply_text is not None
+            and should_persist_workflow_completion_message
+        ):
             await repository.create_message(
                 thread_id=thread_id,
                 role="assistant",
@@ -487,18 +569,25 @@ async def execute_approved_tool_run(
             },
         )
         if tool.workflow_family is not None:
+            failed_todos = build_workflow_todos(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=preflight_evidence,
+                error_code=sanitized_error.error_code,
+            )
             await persist_workflow_todos(
                 session=session,
                 thread_id=thread_id,
-                todos=build_workflow_todos(
-                    tool_name=approved_request.tool_name,
-                    workflow_family=tool.workflow_family,
-                    args=approved_request.args,
-                    phase="failed",
-                    preflight_evidence=preflight_evidence,
-                    error_code=sanitized_error.error_code,
-                ),
+                todos=failed_todos,
             )
+            if isinstance(failed_todos, list):
+                await _emit_update_workflow_todo_messages(
+                    repository=repository,
+                    thread_id=thread_id,
+                    todos=cast(list[dict[str, object]], failed_todos),
+                )
         workflow_reply_text = None
         if tool.workflow_family is not None:
             workflow_reply_text = _workflow_reply_text(

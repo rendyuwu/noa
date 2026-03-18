@@ -292,6 +292,13 @@ function ClaudeThinkingIndicator() {
 }
 
 const ChatMessage: FC = () => {
+  const assistantMessageContent = useAssistantState(({ message }: any) => {
+    if (message?.role !== "assistant") return null;
+    return message.content;
+  });
+  const assistantParts = useMemo(() => {
+    return Array.isArray(assistantMessageContent) ? assistantMessageContent : [];
+  }, [assistantMessageContent]);
   const showLoading = useAssistantState(({ message }: any) => {
     if (message?.role !== "assistant") return false;
     if (message?.status?.type !== "running") return false;
@@ -301,6 +308,48 @@ const ChatMessage: FC = () => {
       return typeof part.text === "string" ? part.text.trim() === "" : true;
     });
   });
+
+  const assistantHasNonEmptyText = useMemo(() => {
+    return assistantParts.some((part: any) => {
+      if (part?.type !== "text") return false;
+      return typeof part.text === "string" ? part.text.trim() !== "" : false;
+    });
+  }, [assistantParts]);
+
+  const assistantHasToolParts = useMemo(() => {
+    return assistantParts.some((part: any) => part?.type === "tool-call");
+  }, [assistantParts]);
+
+  const assistantHasVisibleToolParts = useMemo(() => {
+    const isTerminalTodoList = (value: unknown): boolean => {
+      if (!Array.isArray(value) || value.length === 0) return false;
+      return value.every((todo) => {
+        const status = (todo as any)?.status;
+        return status === "completed" || status === "cancelled";
+      });
+    };
+
+    return assistantParts.some((part: any) => {
+      if (part?.type !== "tool-call") return false;
+      if (part?.isError === true) return true;
+      const toolName = typeof part.toolName === "string" ? part.toolName : "";
+      if (toolName === "request_approval") return true;
+      if (toolName !== "update_workflow_todo") return false;
+
+      const todosFromResult = (part?.result as any)?.todos;
+      const todosFromArgs = (part?.args as any)?.todos;
+      return isTerminalTodoList(todosFromResult) || isTerminalTodoList(todosFromArgs);
+    });
+  }, [assistantParts]);
+
+  const assistantSpacingClassName =
+    showLoading || assistantHasNonEmptyText
+      ? "mb-12"
+      : assistantHasVisibleToolParts
+        ? "mb-4"
+        : assistantHasToolParts
+          ? "mb-0"
+          : "mb-0";
 
   const UserText = ({ text }: any) => {
     return <span className="whitespace-pre-wrap">{text}</span>;
@@ -322,7 +371,7 @@ const ChatMessage: FC = () => {
       </AssistantIf>
 
       <AssistantIf condition={(s) => s.message.role === "assistant"}>
-        <div className="relative mb-12 font-serif">
+        <div className={["relative font-serif", assistantSpacingClassName].join(" ")}>
           <div className="relative leading-[1.65rem]">
             <div className="grid grid-cols-1 gap-2.5">
               <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-text">

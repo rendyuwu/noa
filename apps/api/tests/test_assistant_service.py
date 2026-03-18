@@ -1583,11 +1583,22 @@ async def test_execute_approved_tool_run_persists_completed_whm_workflow_with_ev
     assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
     assert captured["thread_id"] == thread_id
     todos = cast(list[dict[str, str]], captured["todos"])
-    assert len(todos) == 6
+    assert len(todos) == 5
+    assert todos[2]["status"] == "completed"
     assert todos[3]["status"] == "completed"
     assert todos[4]["status"] == "completed"
-    assert todos[5]["status"] == "completed"
-    assert "moved from active to suspended" in todos[5]["content"]
+    assert "expected suspended" in todos[4]["content"]
+
+    todo_tool_call = next(
+        part
+        for message in assistant_repo.messages
+        if message.get("role") == "assistant"
+        for part in message.get("parts", [])
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "update_workflow_todo"
+    )
+    assert isinstance(todo_tool_call.get("args"), dict)
 
 
 async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execution_errors(
@@ -1732,9 +1743,7 @@ async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execu
         "completed",
         "cancelled",
         "cancelled",
-        "completed",
     ]
-    assert "tool_execution_failed" in todos[5]["content"]
 
     tool_message = assistant_repo.messages[-2]
     assert tool_message["role"] == "tool"
@@ -1745,6 +1754,17 @@ async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execu
     assistant_message = assistant_repo.messages[-1]
     assert assistant_message["role"] == "assistant"
     assert "Suspend failed" in cast(str, assistant_message["parts"][0]["text"])
+
+    todo_tool_call = next(
+        part
+        for message in assistant_repo.messages
+        if message.get("role") == "assistant"
+        for part in message.get("parts", [])
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "update_workflow_todo"
+    )
+    assert isinstance(todo_tool_call.get("args"), dict)
 
 
 async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(

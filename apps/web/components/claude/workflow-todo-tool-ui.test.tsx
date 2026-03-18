@@ -119,7 +119,7 @@ describe("WorkflowTodoCard", () => {
     );
 
     expect(screen.getByText("Run summary")).toBeVisible();
-    expect(screen.getByText(/completed .* 2\/2 steps/i)).toBeInTheDocument();
+    expect(screen.getByText(/2\/2 steps/i)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
@@ -128,6 +128,50 @@ describe("WorkflowTodoCard", () => {
         open: true,
         kind: "workflow",
         title: "Run summary",
+      }),
+    );
+  });
+
+  it("prefers canonical workflow todos when tool payload is terminal-only", () => {
+    mockThreadMessages = [
+      {
+        metadata: {
+          custom: {
+            workflow: [
+              { content: "Preflight check", status: "completed", priority: "high" },
+              { content: "Reason captured", status: "completed", priority: "high" },
+              { content: "Request approval", status: "completed", priority: "high" },
+              { content: "Execute change", status: "completed", priority: "high" },
+              { content: "Postflight verification", status: "completed", priority: "high" },
+            ],
+          },
+        },
+      },
+    ];
+
+    render(
+      <WorkflowTodoToolUI
+        args={{
+          todos: [{ content: "Execute change", status: "completed", priority: "high" }],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Run summary")).toBeVisible();
+    expect(screen.getByText(/5\/5 steps/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+
+    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "workflow",
+        todos: expect.arrayContaining([
+          expect.objectContaining({ content: "Preflight check" }),
+          expect.objectContaining({ content: "Reason captured" }),
+          expect.objectContaining({ content: "Request approval" }),
+          expect.objectContaining({ content: "Execute change" }),
+          expect.objectContaining({ content: "Postflight verification" }),
+        ]),
       }),
     );
   });

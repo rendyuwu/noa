@@ -129,7 +129,6 @@ class WHMAccountLifecycleTemplate(_WHMAccountTemplate):
         approval_step_status = "pending"
         execute_step_status = "pending"
         postflight_step_status = "pending"
-        conclusion_step_status = "pending"
 
         if context.phase == "waiting_on_user":
             reason_step_status = "waiting_on_user"
@@ -142,17 +141,14 @@ class WHMAccountLifecycleTemplate(_WHMAccountTemplate):
             approval_step_status = "completed"
             execute_step_status = "completed"
             postflight_step_status = "completed"
-            conclusion_step_status = "completed"
         elif context.phase == "denied":
             approval_step_status = "cancelled"
             execute_step_status = "cancelled"
             postflight_step_status = "cancelled"
-            conclusion_step_status = "completed"
         elif context.phase == "failed":
             approval_step_status = "completed"
             execute_step_status = "cancelled"
             postflight_step_status = "cancelled"
-            conclusion_step_status = "completed"
 
         if reason is None and context.phase in {"completed", "denied", "failed"}:
             reason_step_status = "cancelled"
@@ -190,20 +186,6 @@ class WHMAccountLifecycleTemplate(_WHMAccountTemplate):
                     postflight_result=context.postflight_result,
                 ),
                 "status": cast(Any, postflight_step_status),
-                "priority": "high",
-            },
-            {
-                "content": _conclusion_step_content(
-                    tool_name=context.tool_name,
-                    subject=subject,
-                    reason=reason,
-                    before_account=before_account,
-                    after_account=after_account,
-                    result=context.result,
-                    phase=context.phase,
-                    error_code=context.error_code,
-                ),
-                "status": cast(Any, conclusion_step_status),
                 "priority": "high",
             },
         ]

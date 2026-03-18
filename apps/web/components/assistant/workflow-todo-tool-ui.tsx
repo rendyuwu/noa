@@ -58,7 +58,7 @@ const STATUS_STYLES: Record<WorkflowTodoStatus, StatusStyle> = {
   },
   completed: {
     label: "done",
-    className: "bg-emerald-50 text-emerald-800",
+    className: "bg-surface-2 text-muted",
     Icon: CheckIcon,
   },
   cancelled: {
@@ -93,8 +93,9 @@ function coerceRecord(value: unknown): Record<string, unknown> | undefined {
 
 export function coerceTodos(value: unknown): WorkflowTodoItem[] | undefined {
   if (!Array.isArray(value)) return undefined;
+  if (value.length === 0) return [];
   const todos = value.filter(isTodoItem);
-  return todos.length ? todos : [];
+  return todos.length ? todos : undefined;
 }
 
 export function getWorkflowTodoStatusStyle(status: WorkflowTodoStatus): StatusStyle {
@@ -142,34 +143,54 @@ export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[
   return [];
 }
 
+function normalizeTodoContent(content: string): string {
+  return content.trim().toLowerCase();
+}
+
+function todosHaveOverlappingContent(a: WorkflowTodoItem[], b: WorkflowTodoItem[]): boolean {
+  const aContents = a.map((todo) => normalizeTodoContent(todo.content)).filter(Boolean);
+  const bContents = b.map((todo) => normalizeTodoContent(todo.content)).filter(Boolean);
+
+  for (const aContent of aContents) {
+    if (aContent.length < 8) continue;
+    for (const bContent of bContents) {
+      if (bContent.length < 8) continue;
+      if (aContent.includes(bContent) || bContent.includes(aContent)) return true;
+    }
+  }
+
+  return false;
+}
+
 export function WorkflowTodoCard({
   todos,
+  renderGateTodos,
   evidenceSections,
 }: {
   todos: WorkflowTodoItem[];
+  renderGateTodos?: WorkflowTodoItem[];
   evidenceSections?: { title: string; items: { label: string; value: string }[] }[];
 }) {
   const detailSheet = useAssistantDetailSheet();
   const detailKey = `workflow:${todos.map((todo) => `${todo.content}:${todo.status}`).join("|")}`;
   const completedCount = todos.filter((todo) => todo.status === "completed").length;
   const cancelledCount = todos.filter((todo) => todo.status === "cancelled").length;
+  const gateTodos = renderGateTodos ?? todos;
   const isTerminal = todos.every(
     (todo) => todo.status === "completed" || todo.status === "cancelled",
   );
 
-  if (!todos.length || !isTerminal) {
+  if (!gateTodos.length || !todos.length || !isTerminal) {
     return null;
   }
 
   const summaryParts = [
-    cancelledCount > 0 ? "Ended" : "Completed",
     `${completedCount}/${todos.length} steps`,
     cancelledCount > 0 ? `${cancelledCount} cancelled` : null,
   ].filter(Boolean);
   const title = "Run summary";
   const badge = cancelledCount > 0 ? "ended" : "done";
-  const badgeClassName =
-    cancelledCount > 0 ? "bg-slate-200/80 text-slate-800" : "bg-emerald-100/80 text-emerald-900";
+  const badgeClassName = "bg-surface-2 text-muted";
   const sections = evidenceSections ?? [];
 
   return (
@@ -218,7 +239,13 @@ export const WorkflowTodoToolUI = makeAssistantToolUI({
       result && typeof result === "object" && result !== null
         ? coerceTodos((result as Record<string, unknown>).todos)
         : undefined;
-    const todos = argsTodos ?? resultTodos ?? [];
+    const payloadTodos = argsTodos ?? resultTodos ?? [];
+    const canonicalTodos = extractLatestCanonicalWorkflowTodos(threadMessages);
+    const shouldPreferCanonicalTodos =
+      canonicalTodos &&
+      canonicalTodos.length > payloadTodos.length &&
+      todosHaveOverlappingContent(payloadTodos, canonicalTodos);
+    const todos = shouldPreferCanonicalTodos ? canonicalTodos : payloadTodos;
     const evidenceFromArgs = coerceDetailEvidenceSections(args.evidenceSections);
     const evidenceFromResult =
       result && typeof result === "object" && result !== null
@@ -227,6 +254,12 @@ export const WorkflowTodoToolUI = makeAssistantToolUI({
     const evidenceFromMetadata = extractLatestCanonicalEvidenceSections(threadMessages);
     const evidenceSections = evidenceFromArgs ?? evidenceFromResult ?? evidenceFromMetadata;
 
-    return <WorkflowTodoCard todos={todos} evidenceSections={evidenceSections} />;
+    return (
+      <WorkflowTodoCard
+        todos={todos}
+        renderGateTodos={payloadTodos}
+        evidenceSections={evidenceSections}
+      />
+    );
   },
 });

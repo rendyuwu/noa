@@ -79,6 +79,37 @@ class ProcessedToolCall:
     should_stop: bool = False
 
 
+def _workflow_todo_tool_messages(
+    *, todos: list[dict[str, object]]
+) -> list[AgentMessage]:
+    tool_call_id = f"workflow-todo-{uuid4()}"
+    return [
+        AgentMessage(
+            role="assistant",
+            parts=[
+                {
+                    "type": "tool-call",
+                    "toolName": "update_workflow_todo",
+                    "toolCallId": tool_call_id,
+                    "args": {"todos": todos},
+                }
+            ],
+        ),
+        AgentMessage(
+            role="tool",
+            parts=[
+                {
+                    "type": "tool-result",
+                    "toolName": "update_workflow_todo",
+                    "toolCallId": tool_call_id,
+                    "result": {"ok": True, "todos": todos},
+                    "isError": False,
+                }
+            ],
+        ),
+    ]
+
+
 class RuleBasedLLMClient:
     async def run_turn(
         self,
@@ -383,11 +414,22 @@ class AgentRunner:
                     }
                 )
                 text_deltas.extend(_split_text_deltas(text))
-                await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
-                    assistant_text=text,
-                    working_messages=working_messages,
-                    thread_id=thread_id,
+                workflow_messages = (
+                    await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
+                        assistant_text=text,
+                        working_messages=working_messages,
+                        thread_id=thread_id,
+                    )
                 )
+                if workflow_messages:
+                    output_messages.extend(workflow_messages)
+                    for message in workflow_messages:
+                        working_messages.append(
+                            {
+                                "role": message.role,
+                                "parts": message.parts,
+                            }
+                        )
 
             if not llm_response.tool_calls:
                 return AgentRunnerResult(
@@ -540,11 +582,13 @@ class AgentRunner:
             )
             if validation_error is not None:
                 tool_call_id = f"invalid-{uuid4()}"
-                await self._persist_waiting_on_user_workflow_if_reason_missing(
-                    tool=tool,
-                    args=args,
-                    working_messages=working_messages,
-                    thread_id=thread_id,
+                workflow_messages = (
+                    await self._persist_waiting_on_user_workflow_if_reason_missing(
+                        tool=tool,
+                        args=args,
+                        working_messages=working_messages,
+                        thread_id=thread_id,
+                    )
                 )
                 messages = _tool_error_messages(
                     tool=tool,
@@ -552,6 +596,8 @@ class AgentRunner:
                     tool_call_id=tool_call_id,
                     error=validation_error,
                 )
+                if workflow_messages:
+                    messages = [*workflow_messages, *messages]
                 assistant_guidance = _assistant_guidance_for_change_validation_error(
                     tool_name=tool.name,
                     args=args,
@@ -576,18 +622,24 @@ class AgentRunner:
                 risk=tool.risk,
                 requested_by_user_id=requested_by_user_id,
             )
+            workflow_todos = build_workflow_todos(
+                tool_name=tool.name,
+                workflow_family=tool.workflow_family,
+                args=args,
+                phase="waiting_on_approval",
+                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+            )
             await persist_workflow_todos(
                 session=self._session,
                 thread_id=thread_id,
-                todos=build_workflow_todos(
-                    tool_name=tool.name,
-                    workflow_family=tool.workflow_family,
-                    args=args,
-                    phase="waiting_on_approval",
-                    preflight_evidence=collect_recent_preflight_evidence(
-                        working_messages
-                    ),
-                ),
+                todos=workflow_todos,
+            )
+            workflow_todo_messages = (
+                _workflow_todo_tool_messages(
+                    todos=cast(list[dict[str, object]], workflow_todos)
+                )
+                if isinstance(workflow_todos, list)
+                else []
             )
             return ProcessedToolCall(
                 messages=[
@@ -623,6 +675,7 @@ class AgentRunner:
                             }
                         ],
                     ),
+                    *workflow_todo_messages,
                 ],
                 should_stop=True,
             )
@@ -736,21 +789,28 @@ class AgentRunner:
         args: dict[str, object],
         working_messages: list[dict[str, object]],
         thread_id: UUID,
-    ) -> None:
+    ) -> list[AgentMessage]:
         if tool.risk != ToolRisk.CHANGE or tool.workflow_family is None:
-            return
+            return []
         if _normalized_text(args.get("reason")) is not None:
-            return
+            return []
+
+        workflow_todos = build_workflow_todos(
+            tool_name=tool.name,
+            workflow_family=tool.workflow_family,
+            args=args,
+            phase="waiting_on_user",
+            preflight_evidence=collect_recent_preflight_evidence(working_messages),
+        )
         await persist_workflow_todos(
             session=self._session,
             thread_id=thread_id,
-            todos=build_workflow_todos(
-                tool_name=tool.name,
-                workflow_family=tool.workflow_family,
-                args=args,
-                phase="waiting_on_user",
-                preflight_evidence=collect_recent_preflight_evidence(working_messages),
-            ),
+            todos=workflow_todos,
+        )
+        if not isinstance(workflow_todos, list):
+            return []
+        return _workflow_todo_tool_messages(
+            todos=cast(list[dict[str, object]], workflow_todos)
         )
 
     async def _maybe_persist_waiting_on_user_workflow_from_text_turn(
@@ -759,33 +819,39 @@ class AgentRunner:
         assistant_text: str,
         working_messages: list[dict[str, object]],
         thread_id: UUID,
-    ) -> None:
+    ) -> list[AgentMessage]:
         if not _assistant_is_requesting_reason(assistant_text):
-            return
+            return []
 
         inferred = _infer_waiting_on_user_workflow_from_messages(
             working_messages,
             assistant_text=assistant_text,
         )
         if inferred is None:
-            return
+            return []
 
         tool_name = cast(str, inferred["tool_name"])
         args = cast(dict[str, object], inferred["args"])
         tool = get_tool_definition(tool_name)
         if tool is None or tool.workflow_family is None:
-            return
+            return []
 
+        workflow_todos = build_workflow_todos(
+            tool_name=tool.name,
+            workflow_family=tool.workflow_family,
+            args=args,
+            phase="waiting_on_user",
+            preflight_evidence=collect_recent_preflight_evidence(working_messages),
+        )
         await persist_workflow_todos(
             session=self._session,
             thread_id=thread_id,
-            todos=build_workflow_todos(
-                tool_name=tool.name,
-                workflow_family=tool.workflow_family,
-                args=args,
-                phase="waiting_on_user",
-                preflight_evidence=collect_recent_preflight_evidence(working_messages),
-            ),
+            todos=workflow_todos,
+        )
+        if not isinstance(workflow_todos, list):
+            return []
+        return _workflow_todo_tool_messages(
+            todos=cast(list[dict[str, object]], workflow_todos)
         )
 
     async def _execute_tool(

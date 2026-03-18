@@ -49,7 +49,7 @@ export function getApprovalLifecyclePresentation(
     case "finished":
       return {
         title: "Change complete",
-        detail: "The approved change completed successfully.",
+        detail: "Execution finished. Review the outcome in the thread.",
         badge: "done",
         badgeClassName: "bg-emerald-100/80 text-emerald-900",
         Icon: CheckIcon,

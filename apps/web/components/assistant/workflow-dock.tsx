@@ -92,7 +92,7 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
           <div
             className={[
               "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
-              phase === "close" ? "bg-emerald-500/75" : isBlocked ? "bg-amber-500" : "bg-accent",
+              phase === "close" ? "bg-surface-2" : isBlocked ? "bg-amber-500" : "bg-accent",
             ].join(" ")}
           />
           <div className="min-w-0 flex-1">
@@ -116,7 +116,7 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
               isBlocked
                 ? "bg-amber-100 text-amber-900"
                 : phase === "close"
-                  ? "bg-emerald-100/80 text-emerald-900"
+                  ? "bg-surface-2 text-muted"
                   : "bg-accent/15 text-accent",
             ].join(" ")}
           >

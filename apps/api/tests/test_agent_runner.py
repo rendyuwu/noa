@@ -642,9 +642,15 @@ async def test_agent_runner_recovers_when_model_calls_request_approval_directly(
         for text in texts
     )
     assert len(repo.action_requests) == 1
-    approval_part = result.messages[-1].parts[0]
-    assert isinstance(approval_part, dict)
-    assert approval_part["toolName"] == "request_approval"
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
 
 
 async def test_agent_runner_stops_after_repeated_direct_request_approval_calls(
@@ -1012,18 +1018,31 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
     assert repo.action_requests == {}
     assert captured["thread_id"] == thread_id
     todos = cast(list[dict[str, str]], captured["todos"])
-    assert len(todos) == 6
+    assert len(todos) == 5
     assert todos[0]["status"] == "completed"
     assert todos[1]["status"] == "waiting_on_user"
     assert todos[2]["status"] == "pending"
 
-    tool_message = next(
-        message for message in result.messages if message.role == "tool"
+    tool_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-result"
+        and part.get("toolName") == tool.name
     )
-    part = tool_message.parts[0]
-    assert isinstance(part, dict)
-    result_payload = cast(dict[str, object], part["result"])
+    result_payload = cast(dict[str, object], tool_part["result"])
     assert result_payload["error_code"] == "invalid_tool_arguments"
+
+    todo_tool_call = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "update_workflow_todo"
+    )
+    assert isinstance(todo_tool_call.get("args"), dict)
 
     final_part = result.messages[-1].parts[0]
     assert isinstance(final_part, dict)
@@ -1207,13 +1226,30 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
     assert len(repo.action_requests) == 1
     assert captured["thread_id"] == thread_id
     todos = cast(list[dict[str, str]], captured["todos"])
-    assert len(todos) == 6
+    assert len(todos) == 5
     assert todos[0]["status"] == "completed"
     assert todos[1]["status"] == "completed"
     assert todos[2]["status"] == "waiting_on_approval"
-    approval_part = result.messages[-1].parts[0]
-    assert isinstance(approval_part, dict)
-    assert approval_part["toolName"] == "request_approval"
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
+
+    todo_tool_call = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "update_workflow_todo"
+    )
+    assert isinstance(todo_tool_call.get("args"), dict)
 
 
 async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_state(
@@ -1347,9 +1383,25 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
     assert any("5.6.7.8" in todo["content"] for todo in todos)
     assert todos[2]["status"] == "waiting_on_approval"
 
-    approval_part = result.messages[-1].parts[0]
-    assert isinstance(approval_part, dict)
-    assert approval_part["toolName"] == "request_approval"
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
+
+    todo_tool_call = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "update_workflow_todo"
+    )
+    assert isinstance(todo_tool_call.get("args"), dict)
 
 
 async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reason_after_preflight(
@@ -1431,10 +1483,20 @@ async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reaso
     assert result.messages[0].parts[0]["type"] == "text"
     assert captured["thread_id"] == thread_id
     todos = cast(list[dict[str, str]], captured["todos"])
-    assert len(todos) == 6
+    assert len(todos) == 5
     assert todos[0]["status"] == "completed"
     assert todos[1]["status"] == "waiting_on_user"
     assert todos[2]["status"] == "pending"
+
+    todo_tool_call = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "update_workflow_todo"
+    )
+    assert isinstance(todo_tool_call.get("args"), dict)
 
 
 async def test_agent_runner_rejects_whitespace_only_string_arguments(
@@ -2265,9 +2327,15 @@ async def test_agent_runner_allows_change_proposal_when_matching_preflight_exist
     assert len(repo.action_requests) == 1
     request = next(iter(repo.action_requests.values()))
     assert request.tool_name == tool.name
-    approval_part = result.messages[-1].parts[0]
-    assert isinstance(approval_part, dict)
-    assert approval_part["toolName"] == "request_approval"
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
 
 
 async def test_agent_runner_allows_change_proposal_when_server_id_matches(
@@ -2366,9 +2434,15 @@ async def test_agent_runner_allows_change_proposal_when_server_id_matches(
     )
 
     assert len(repo.action_requests) == 1
-    approval_part = result.messages[-1].parts[0]
-    assert isinstance(approval_part, dict)
-    assert approval_part["toolName"] == "request_approval"
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
 
 
 async def test_agent_runner_rejects_change_proposal_when_server_id_differs(
