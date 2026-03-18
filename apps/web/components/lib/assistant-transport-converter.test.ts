@@ -123,6 +123,12 @@ describe("convertAssistantState", () => {
             priority: "high",
           },
         ],
+        evidenceSections: [
+          {
+            title: "Execution evidence",
+            items: [{ label: "Server", value: "cp01" }],
+          },
+        ],
         pendingApprovals: [
           {
             actionRequestId: "approval-1",
@@ -158,6 +164,12 @@ describe("convertAssistantState", () => {
         content: "Request approval",
         status: "waiting_on_approval",
         priority: "high",
+      },
+    ]);
+    expect((converted.messages[0] as any)?.metadata?.custom?.evidenceSections).toEqual([
+      {
+        title: "Execution evidence",
+        items: [{ label: "Server", value: "cp01" }],
       },
     ]);
     expect((converted.messages[0] as any)?.metadata?.custom?.pendingApprovals).toEqual([
@@ -197,6 +209,7 @@ describe("convertAssistantState", () => {
     );
 
     expect((converted.messages[0] as any)?.metadata?.custom?.workflow).toEqual([]);
+    expect((converted.messages[0] as any)?.metadata?.custom?.evidenceSections).toEqual([]);
     expect((converted.messages[0] as any)?.metadata?.custom?.pendingApprovals).toEqual([]);
     expect((converted.messages[0] as any)?.metadata?.custom?.actionRequests).toEqual([]);
   });

@@ -18,6 +18,15 @@ WorkflowTemplatePhase = Literal[
     "failed",
 ]
 
+WorkflowReplyOutcome = Literal[
+    "info",
+    "changed",
+    "no_op",
+    "partial",
+    "failed",
+    "denied",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class WorkflowTemplateContext:
@@ -36,9 +45,49 @@ class WorkflowInference:
     args: dict[str, object]
 
 
+@dataclass(frozen=True, slots=True)
+class WorkflowReplyTemplate:
+    title: str
+    outcome: WorkflowReplyOutcome
+    summary: str
+    evidence_summary: list[str]
+    next_step: str | None = None
+    assistant_hint: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEvidenceItem:
+    label: str
+    value: str
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEvidenceSection:
+    key: str
+    title: str
+    items: list[WorkflowEvidenceItem]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowEvidenceTemplate:
+    sections: list[WorkflowEvidenceSection]
+
+
 class WorkflowTemplate:
     def build_todos(self, context: WorkflowTemplateContext) -> list[WorkflowTodoItem]:
         raise NotImplementedError
+
+    def build_reply_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowReplyTemplate | None:
+        return None
+
+    def build_evidence_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowEvidenceTemplate | None:
+        return None
 
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
@@ -165,6 +214,50 @@ def normalized_string_list(value: object) -> list[str]:
         if text is not None:
             normalized.append(text)
     return normalized
+
+
+def workflow_reply_template_payload(
+    template: WorkflowReplyTemplate,
+) -> dict[str, object]:
+    return {
+        "title": template.title,
+        "outcome": template.outcome,
+        "summary": template.summary,
+        "evidenceSummary": list(template.evidence_summary),
+        "nextStep": template.next_step,
+        "assistantHint": template.assistant_hint,
+    }
+
+
+def workflow_evidence_template_payload(
+    template: WorkflowEvidenceTemplate,
+) -> dict[str, object]:
+    return {
+        "evidenceSections": [
+            {
+                "key": section.key,
+                "title": section.title,
+                "items": [
+                    {"label": item.label, "value": item.value}
+                    for item in section.items
+                    if item.label.strip() and item.value.strip()
+                ],
+            }
+            for section in template.sections
+            if section.key.strip() and section.title.strip()
+        ]
+    }
+
+
+def render_workflow_reply_text(template: WorkflowReplyTemplate) -> str:
+    sections: list[str] = [template.title, template.summary]
+    if template.evidence_summary:
+        sections.append(
+            "\n".join(f"- {item}" for item in template.evidence_summary if item.strip())
+        )
+    if template.next_step is not None and template.next_step.strip():
+        sections.append(f"Next safe step: {template.next_step.strip()}")
+    return "\n\n".join(section for section in sections if section.strip())
 
 
 def _coerce_part_record(value: object) -> dict[str, object] | None:

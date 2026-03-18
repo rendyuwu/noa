@@ -1,8 +1,12 @@
 "use client";
 
-import { makeAssistantToolUI } from "@assistant-ui/react";
+import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
 import { CheckIcon, ChevronRightIcon, Cross2Icon, DotFilledIcon } from "@radix-ui/react-icons";
 
+import {
+  coerceDetailEvidenceSections,
+  extractLatestCanonicalEvidenceSections,
+} from "@/components/assistant/approval-state";
 import {
   toggleAssistantDetailSheet,
   useAssistantDetailSheet,
@@ -138,7 +142,13 @@ export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[
   return [];
 }
 
-export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
+export function WorkflowTodoCard({
+  todos,
+  evidenceSections,
+}: {
+  todos: WorkflowTodoItem[];
+  evidenceSections?: { title: string; items: { label: string; value: string }[] }[];
+}) {
   const detailSheet = useAssistantDetailSheet();
   const detailKey = `workflow:${todos.map((todo) => `${todo.content}:${todo.status}`).join("|")}`;
   const completedCount = todos.filter((todo) => todo.status === "completed").length;
@@ -160,6 +170,7 @@ export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
   const badge = cancelledCount > 0 ? "ended" : "done";
   const badgeClassName =
     cancelledCount > 0 ? "bg-slate-200/80 text-slate-800" : "bg-emerald-100/80 text-emerald-900";
+  const sections = evidenceSections ?? [];
 
   return (
     <div className="mt-3 rounded-lg border border-border/60 bg-bg/10 px-3 py-2">
@@ -184,6 +195,7 @@ export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
                 badge,
                 badgeClassName,
                 todos,
+                sections,
               });
             }}
             className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-text"
@@ -200,12 +212,21 @@ export function WorkflowTodoCard({ todos }: { todos: WorkflowTodoItem[] }) {
 export const WorkflowTodoToolUI = makeAssistantToolUI({
   toolName: "update_workflow_todo",
   render: ({ args, result }: { args: Record<string, unknown>; result?: unknown }) => {
+    const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
     const argsTodos = coerceTodos(args.todos);
     const resultTodos =
       result && typeof result === "object" && result !== null
         ? coerceTodos((result as Record<string, unknown>).todos)
         : undefined;
     const todos = argsTodos ?? resultTodos ?? [];
-    return <WorkflowTodoCard todos={todos} />;
+    const evidenceFromArgs = coerceDetailEvidenceSections(args.evidenceSections);
+    const evidenceFromResult =
+      result && typeof result === "object" && result !== null
+        ? coerceDetailEvidenceSections((result as Record<string, unknown>).evidenceSections)
+        : undefined;
+    const evidenceFromMetadata = extractLatestCanonicalEvidenceSections(threadMessages);
+    const evidenceSections = evidenceFromArgs ?? evidenceFromResult ?? evidenceFromMetadata;
+
+    return <WorkflowTodoCard todos={todos} evidenceSections={evidenceSections} />;
   },
 });

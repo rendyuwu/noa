@@ -90,6 +90,7 @@ def test_default_prompt_contains_required_policy_lines() -> None:
         "Never fabricate tool results, tool arguments, identifiers, or approvals"
         in prompt
     )
+    assert "workflow-family reply template data is present" in prompt
 
 
 def test_settings_parse_prompt_extra_paths_from_env(

@@ -1736,12 +1736,15 @@ async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execu
     ]
     assert "tool_execution_failed" in todos[5]["content"]
 
-    tool_message = assistant_repo.messages[-1]
+    tool_message = assistant_repo.messages[-2]
     assert tool_message["role"] == "tool"
     part = tool_message["parts"][0]
     assert part["type"] == "tool-result"
     assert part["isError"] is True
     assert part["result"]["error_code"] == "tool_execution_failed"
+    assistant_message = assistant_repo.messages[-1]
+    assert assistant_message["role"] == "assistant"
+    assert "Suspend failed" in cast(str, assistant_message["parts"][0]["text"])
 
 
 async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(
@@ -2995,6 +2998,11 @@ async def test_deny_action_request_persists_denied_whm_workflow(
     assert todos[2]["status"] == "cancelled"
     assert todos[5]["status"] == "completed"
     assert "approval denied" in todos[5]["content"]
+    denied_message = assistant_repo.messages[-1]
+    assert denied_message["role"] == "assistant"
+    assert "Contact email change denied" in cast(
+        str, denied_message["parts"][0]["text"]
+    )
 
 
 async def test_execute_approved_tool_run_persists_completed_contact_email_workflow(
@@ -3148,6 +3156,16 @@ async def test_execute_approved_tool_run_persists_completed_contact_email_workfl
     assert todos[4]["status"] == "completed"
     assert "expected contact email 'new@example.com'" in todos[4]["content"]
     assert "moved from 'old@example.com' to 'new@example.com'" in todos[5]["content"]
+    tool_message = assistant_repo.messages[-2]
+    assert tool_message["role"] == "tool"
+    assistant_message = assistant_repo.messages[-1]
+    assert assistant_message["role"] == "assistant"
+    assert "Contact email change completed" in cast(
+        str, assistant_message["parts"][0]["text"]
+    )
+    assert "moved from 'old@example.com' to 'new@example.com'" in cast(
+        str, assistant_message["parts"][0]["text"]
+    )
 
 
 async def test_execute_approved_tool_run_persists_completed_csf_workflow(
@@ -3326,6 +3344,12 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         repository=assistant_repo,
         action_tool_run_service=ActionToolRunService(repository=repo),
         session=_FakeSession(),
+    )
+
+    assistant_message = assistant_repo.messages[-1]
+    assert assistant_message["role"] == "assistant"
+    assert "CSF change partially completed" in cast(
+        str, assistant_message["parts"][0]["text"]
     )
 
     todos = cast(list[dict[str, str]], captured["todos"])

@@ -5,6 +5,7 @@ import { CheckIcon, Cross2Icon } from "@radix-ui/react-icons";
 
 import {
   closeAssistantDetailSheet,
+  type DetailSection,
   useAssistantDetailSheet,
 } from "@/components/assistant/assistant-detail-sheet-store";
 import {
@@ -14,6 +15,41 @@ import {
 
 export function AssistantDetailSheet() {
   const detail = useAssistantDetailSheet();
+
+  const renderSections = (sections: DetailSection[], showEmptyState: boolean) => {
+    if (sections.length === 0) {
+      if (!showEmptyState) {
+        return null;
+      }
+      return (
+        <div className="rounded-xl border border-dashed border-border bg-bg/20 px-4 py-3 text-sm text-muted">
+          No structured evidence is available for this request.
+        </div>
+      );
+    }
+
+    return sections.map((section) => (
+      <section
+        key={section.title}
+        className="rounded-xl border border-border bg-bg/35 px-4 py-3"
+      >
+        <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+          {section.title}
+        </h3>
+        <dl className="mt-3 space-y-2 text-sm">
+          {section.items.map((item) => (
+            <div
+              key={`${section.title}-${item.label}-${item.value}`}
+              className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3"
+            >
+              <dt className="text-muted">{item.label}</dt>
+              <dd className="min-w-0 break-words text-text">{item.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
+    ));
+  };
 
   return (
     <Dialog.Root open={detail.open} onOpenChange={(open) => (open ? undefined : closeAssistantDetailSheet())}>
@@ -52,37 +88,9 @@ export function AssistantDetailSheet() {
 
               <div className="flex-1 overflow-y-auto px-4 py-4">
                 {detail.kind === "approval" ? (
-                  <div className="space-y-3">
-                    {detail.sections.length > 0 ? (
-                      detail.sections.map((section) => (
-                        <section
-                          key={section.title}
-                          className="rounded-xl border border-border bg-bg/35 px-4 py-3"
-                        >
-                          <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
-                            {section.title}
-                          </h3>
-                          <dl className="mt-3 space-y-2 text-sm">
-                            {section.items.map((item) => (
-                              <div
-                                key={`${section.title}-${item.label}-${item.value}`}
-                                className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3"
-                              >
-                                <dt className="text-muted">{item.label}</dt>
-                                <dd className="min-w-0 break-words text-text">{item.value}</dd>
-                              </div>
-                            ))}
-                          </dl>
-                        </section>
-                      ))
-                    ) : (
-                      <div className="rounded-xl border border-dashed border-border bg-bg/20 px-4 py-3 text-sm text-muted">
-                        No structured evidence is available for this request.
-                      </div>
-                    )}
-                  </div>
+                  <div className="space-y-3">{renderSections(detail.sections, true)}</div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="space-y-3">
                     <div className="grid grid-cols-3 gap-2 pb-1">
                       <div className="rounded-xl border border-border bg-bg/35 px-3 py-2">
                         <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
@@ -154,6 +162,7 @@ export function AssistantDetailSheet() {
                         </div>
                       );
                     })}
+                    {renderSections(detail.sections, false)}
                   </div>
                 )}
               </div>
