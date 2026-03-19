@@ -3015,9 +3015,14 @@ async def test_deny_action_request_persists_denied_whm_workflow(
 
     todos = cast(list[dict[str, str]], captured["todos"])
     assert captured["thread_id"] == thread_id
-    assert todos[2]["status"] == "cancelled"
-    assert todos[5]["status"] == "completed"
-    assert "approval denied" in todos[5]["content"]
+    assert len(todos) == 5
+    assert [todo["status"] for todo in todos] == [
+        "completed",
+        "completed",
+        "cancelled",
+        "cancelled",
+        "cancelled",
+    ]
     denied_message = assistant_repo.messages[-1]
     assert denied_message["role"] == "assistant"
     assert "Contact email change denied" in cast(
@@ -3175,16 +3180,22 @@ async def test_execute_approved_tool_run_persists_completed_contact_email_workfl
     assert captured["thread_id"] == thread_id
     assert todos[4]["status"] == "completed"
     assert "expected contact email 'new@example.com'" in todos[4]["content"]
-    assert "moved from 'old@example.com' to 'new@example.com'" in todos[5]["content"]
-    tool_message = assistant_repo.messages[-2]
+    assert len(todos) == 5
+
+    tool_message = assistant_repo.messages[-1]
     assert tool_message["role"] == "tool"
-    assistant_message = assistant_repo.messages[-1]
-    assert assistant_message["role"] == "assistant"
-    assert "Contact email change completed" in cast(
-        str, assistant_message["parts"][0]["text"]
-    )
-    assert "moved from 'old@example.com' to 'new@example.com'" in cast(
-        str, assistant_message["parts"][0]["text"]
+    assert tool_message["parts"][0]["toolName"] == "whm_change_contact_email"
+
+    assistant_text_messages = [
+        part.get("text")
+        for message in assistant_repo.messages
+        if message.get("role") == "assistant"
+        for part in cast(list[dict[str, object]], message.get("parts", []))
+        if part.get("type") == "text"
+    ]
+    assert not any(
+        isinstance(text, str) and "Contact email change completed" in text
+        for text in assistant_text_messages
     )
 
 
@@ -3366,18 +3377,28 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         session=_FakeSession(),
     )
 
-    assistant_message = assistant_repo.messages[-1]
-    assert assistant_message["role"] == "assistant"
-    assert "CSF change partially completed" in cast(
-        str, assistant_message["parts"][0]["text"]
-    )
+    tool_message = assistant_repo.messages[-1]
+    assert tool_message["role"] == "tool"
+    assert tool_message["parts"][0]["toolName"] == "whm_csf_unblock"
 
     todos = cast(list[dict[str, str]], captured["todos"])
     assert captured["thread_id"] == thread_id
     assert todos[4]["status"] == "completed"
     assert "1.2.3.4: expected not blocked, observed clear" in todos[4]["content"]
-    assert "Changed: 1.2.3.4" in todos[5]["content"]
-    assert "No-op: 5.6.7.8" in todos[5]["content"]
+    assert "5.6.7.8: expected not blocked, observed clear" in todos[4]["content"]
+    assert len(todos) == 5
+
+    assistant_text_messages = [
+        part.get("text")
+        for message in assistant_repo.messages
+        if message.get("role") == "assistant"
+        for part in cast(list[dict[str, object]], message.get("parts", []))
+        if part.get("type") == "text"
+    ]
+    assert not any(
+        isinstance(text, str) and "CSF change partially completed" in text
+        for text in assistant_text_messages
+    )
 
 
 async def _allow() -> bool:

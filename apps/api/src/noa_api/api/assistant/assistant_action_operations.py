@@ -530,9 +530,15 @@ async def execute_approved_tool_run(
                 result=persisted_result,
                 postflight_result=postflight_result,
             )
+        suppressed_workflow_completion_message_families = {
+            "whm-account-lifecycle",
+            "whm-account-contact-email",
+            "whm-csf-batch-change",
+        }
         should_persist_workflow_completion_message = (
             tool.workflow_family is not None
-            and tool.workflow_family != "whm-account-lifecycle"
+            and tool.workflow_family
+            not in suppressed_workflow_completion_message_families
         )
         if (
             workflow_reply_text is not None
