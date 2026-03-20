@@ -289,6 +289,31 @@ class ToolRun(Base):
     )
 
 
+class ActionReceipt(Base):
+    __tablename__ = "action_receipts"
+
+    action_request_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("action_requests.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    tool_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tool_runs.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    schema_version: Mapped[int] = mapped_column(
+        nullable=False,
+        server_default="1",
+    )
+    terminal_phase: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    payload: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
+
+
 class WHMServer(Base):
     __tablename__ = "whm_servers"
 

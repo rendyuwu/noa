@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from inspect import signature
 from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
@@ -30,13 +31,21 @@ from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_
 from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import get_tool_definition
 from noa_api.core.workflows.registry import (
+    build_workflow_evidence_template,
     build_workflow_reply_template,
     build_workflow_todos,
     collect_recent_preflight_evidence,
     fetch_postflight_result,
     persist_workflow_todos,
 )
-from noa_api.core.workflows.types import render_workflow_reply_text
+from noa_api.core.workflows.types import (
+    workflow_evidence_template_payload,
+    workflow_reply_template_payload,
+)
+from noa_api.storage.postgres.action_receipts import (
+    ActionReceiptService,
+    SQLActionReceiptRepository,
+)
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
@@ -75,6 +84,73 @@ async def _emit_update_workflow_todo_messages(
             )
         ],
     )
+
+
+async def _emit_workflow_receipt_messages(
+    *,
+    repository: AssistantMessageAuditRepositoryProtocol,
+    thread_id: UUID,
+    action_request_id: UUID,
+    payload: dict[str, object],
+) -> None:
+    tool_call_id = f"receipt-{action_request_id}"
+    await repository.create_message(
+        thread_id=thread_id,
+        role="assistant",
+        parts=[
+            {
+                "type": "tool-call",
+                "toolName": "workflow_receipt",
+                "toolCallId": tool_call_id,
+                "argsText": "Receipt",
+                "args": {"actionRequestId": str(action_request_id)},
+            }
+        ],
+    )
+    await repository.create_message(
+        thread_id=thread_id,
+        role="tool",
+        parts=[
+            build_tool_result_part(
+                tool_name="workflow_receipt",
+                tool_call_id=tool_call_id,
+                result=payload,
+                is_error=False,
+            )
+        ],
+    )
+
+
+def _build_change_receipt_v1(
+    *,
+    thread_id: UUID,
+    action_request_id: UUID,
+    tool_run_id: UUID | None,
+    tool_name: str,
+    workflow_family: str,
+    terminal_phase: str,
+    reply_template: dict[str, object] | None,
+    evidence_sections: list[dict[str, object]],
+    error_code: str | None = None,
+) -> dict[str, object]:
+    receipt_id = f"receipt-{action_request_id}"
+    generated_at = datetime.now(UTC).isoformat()
+    payload: dict[str, object] = {
+        "schemaVersion": 1,
+        "receiptId": receipt_id,
+        "threadId": str(thread_id),
+        "actionRequestId": str(action_request_id),
+        "toolRunId": str(tool_run_id) if tool_run_id is not None else None,
+        "toolName": tool_name,
+        "workflowFamily": workflow_family,
+        "terminalPhase": terminal_phase,
+        "generatedAt": generated_at,
+        "replyTemplate": reply_template,
+        "evidenceSections": evidence_sections,
+    }
+    if error_code is not None:
+        payload["errorCode"] = error_code
+    return payload
 
 
 class ApprovedToolExecutor(Protocol):
@@ -139,8 +215,16 @@ async def deny_action_request(
         raise action_request_not_found_error()
 
     tool = get_tool_definition(denied.tool_name)
-    reply_text: str | None = None
-    if tool is not None and tool.workflow_family is not None:
+    workflow_family: str | None = None
+    if tool is not None:
+        workflow_family = tool.workflow_family
+    should_create_workflow_receipt = (
+        workflow_family is not None and denied.risk == ToolRisk.CHANGE
+    )
+    receipt_payload: dict[str, object] | None = None
+    should_emit_receipt = False
+    if should_create_workflow_receipt:
+        assert workflow_family is not None
         working_messages = await _list_working_messages(
             repository=repository,
             thread_id=thread_id,
@@ -148,7 +232,7 @@ async def deny_action_request(
         preflight_evidence = collect_recent_preflight_evidence(working_messages)
         workflow_todos = build_workflow_todos(
             tool_name=denied.tool_name,
-            workflow_family=tool.workflow_family,
+            workflow_family=workflow_family,
             args=denied.args,
             phase="denied",
             preflight_evidence=preflight_evidence,
@@ -164,15 +248,63 @@ async def deny_action_request(
                 thread_id=thread_id,
                 todos=cast(list[dict[str, object]], workflow_todos),
             )
+
         reply_template = build_workflow_reply_template(
             tool_name=denied.tool_name,
-            workflow_family=tool.workflow_family,
+            workflow_family=workflow_family,
             args=denied.args,
             phase="denied",
             preflight_evidence=preflight_evidence,
         )
-        if reply_template is not None:
-            reply_text = render_workflow_reply_text(reply_template)
+        reply_payload = (
+            workflow_reply_template_payload(reply_template)
+            if reply_template is not None
+            else None
+        )
+        evidence_template = build_workflow_evidence_template(
+            tool_name=denied.tool_name,
+            workflow_family=workflow_family,
+            args=denied.args,
+            phase="denied",
+            preflight_evidence=preflight_evidence,
+        )
+        evidence_payload = (
+            workflow_evidence_template_payload(evidence_template)
+            if evidence_template is not None
+            else None
+        )
+        evidence_sections: list[dict[str, object]] = []
+        if evidence_payload is not None:
+            raw_sections = evidence_payload.get("evidenceSections")
+            if isinstance(raw_sections, list):
+                evidence_sections = [
+                    section for section in raw_sections if isinstance(section, dict)
+                ]
+
+        receipt_payload = _build_change_receipt_v1(
+            thread_id=thread_id,
+            action_request_id=denied.id,
+            tool_run_id=None,
+            tool_name=denied.tool_name,
+            workflow_family=workflow_family,
+            terminal_phase="denied",
+            reply_template=reply_payload,
+            evidence_sections=evidence_sections,
+        )
+        if session is not None:
+            receipt_service = ActionReceiptService(
+                repository=SQLActionReceiptRepository(session)
+            )
+            should_emit_receipt = (
+                await receipt_service.create_action_receipt_if_missing(
+                    action_request_id=denied.id,
+                    tool_run_id=None,
+                    terminal_phase="denied",
+                    payload=receipt_payload,
+                )
+            )
+        else:
+            should_emit_receipt = True
 
     with log_context(
         action_request_id=str(denied.id),
@@ -186,11 +318,19 @@ async def deny_action_request(
             parts=[
                 {
                     "type": "text",
-                    "text": reply_text
-                    or f"Denied action request for tool '{denied.tool_name}'.",
+                    "text": "Denied. Receipt below."
+                    if should_create_workflow_receipt
+                    else f"Denied action request for tool '{denied.tool_name}'.",
                 }
             ],
         )
+        if should_emit_receipt and receipt_payload is not None:
+            await _emit_workflow_receipt_messages(
+                repository=repository,
+                thread_id=thread_id,
+                action_request_id=denied.id,
+                payload=receipt_payload,
+            )
         await repository.create_audit_log(
             event_type="action_denied",
             actor_email=owner_user_email,
@@ -381,7 +521,7 @@ async def execute_approved_tool_run(
         session=session,
     )
     if preflight_error is not None:
-        workflow_reply_text = None
+        preflight_evidence: list[dict[str, object]] = []
         if tool.workflow_family is not None:
             working_messages = await _list_working_messages(
                 repository=repository,
@@ -407,15 +547,6 @@ async def execute_approved_tool_run(
                     thread_id=thread_id,
                     todos=cast(list[dict[str, object]], failed_todos),
                 )
-
-            workflow_reply_text = _workflow_reply_text(
-                tool_name=approved_request.tool_name,
-                workflow_family=tool.workflow_family,
-                args=approved_request.args,
-                phase="failed",
-                preflight_evidence=preflight_evidence,
-                error_code=preflight_error.error_code,
-            )
         await _persist_failed_tool_run(
             started_tool_run=started_tool_run,
             approved_request=approved_request,
@@ -425,7 +556,7 @@ async def execute_approved_tool_run(
             action_tool_run_service=action_tool_run_service,
             tool_run_error=preflight_error.error_code,
             tool_result=preflight_error.as_result(),
-            assistant_text=workflow_reply_text,
+            assistant_text=None,
             audit_metadata={
                 "thread_id": str(thread_id),
                 "tool_run_id": str(started_tool_run.id),
@@ -434,6 +565,71 @@ async def execute_approved_tool_run(
                 "error_code": preflight_error.error_code,
             },
         )
+        if tool.workflow_family is not None:
+            reply_template = build_workflow_reply_template(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=preflight_evidence,
+                error_code=preflight_error.error_code,
+            )
+            reply_payload = (
+                workflow_reply_template_payload(reply_template)
+                if reply_template is not None
+                else None
+            )
+            evidence_template = build_workflow_evidence_template(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=preflight_evidence,
+                error_code=preflight_error.error_code,
+            )
+            evidence_payload = (
+                workflow_evidence_template_payload(evidence_template)
+                if evidence_template is not None
+                else None
+            )
+            evidence_sections: list[dict[str, object]] = []
+            if evidence_payload is not None:
+                raw_sections = evidence_payload.get("evidenceSections")
+                if isinstance(raw_sections, list):
+                    evidence_sections = [
+                        section for section in raw_sections if isinstance(section, dict)
+                    ]
+            receipt_payload = _build_change_receipt_v1(
+                thread_id=thread_id,
+                action_request_id=approved_request.id,
+                tool_run_id=started_tool_run.id,
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                terminal_phase="failed",
+                reply_template=reply_payload,
+                evidence_sections=evidence_sections,
+                error_code=preflight_error.error_code,
+            )
+            should_emit_receipt = True
+            if session is not None:
+                receipt_service = ActionReceiptService(
+                    repository=SQLActionReceiptRepository(session)
+                )
+                should_emit_receipt = (
+                    await receipt_service.create_action_receipt_if_missing(
+                        action_request_id=approved_request.id,
+                        tool_run_id=started_tool_run.id,
+                        terminal_phase="failed",
+                        payload=receipt_payload,
+                    )
+                )
+            if should_emit_receipt:
+                await _emit_workflow_receipt_messages(
+                    repository=repository,
+                    thread_id=thread_id,
+                    action_request_id=approved_request.id,
+                    payload=receipt_payload,
+                )
         return
 
     working_messages = await _list_working_messages(
@@ -519,9 +715,8 @@ async def execute_approved_tool_run(
                 )
             ],
         )
-        workflow_reply_text = None
         if tool.workflow_family is not None:
-            workflow_reply_text = _workflow_reply_text(
+            reply_template = build_workflow_reply_template(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
                 args=approved_request.args,
@@ -530,25 +725,63 @@ async def execute_approved_tool_run(
                 result=persisted_result,
                 postflight_result=postflight_result,
             )
-        suppressed_workflow_completion_message_families = {
-            "whm-account-lifecycle",
-            "whm-account-contact-email",
-            "whm-csf-batch-change",
-        }
-        should_persist_workflow_completion_message = (
-            tool.workflow_family is not None
-            and tool.workflow_family
-            not in suppressed_workflow_completion_message_families
-        )
-        if (
-            workflow_reply_text is not None
-            and should_persist_workflow_completion_message
-        ):
-            await repository.create_message(
-                thread_id=thread_id,
-                role="assistant",
-                parts=[{"type": "text", "text": workflow_reply_text}],
+            reply_payload = (
+                workflow_reply_template_payload(reply_template)
+                if reply_template is not None
+                else None
             )
+            evidence_template = build_workflow_evidence_template(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="completed",
+                preflight_evidence=preflight_evidence,
+                result=persisted_result,
+                postflight_result=postflight_result,
+            )
+            evidence_payload = (
+                workflow_evidence_template_payload(evidence_template)
+                if evidence_template is not None
+                else None
+            )
+            evidence_sections: list[dict[str, object]] = []
+            if evidence_payload is not None:
+                raw_sections = evidence_payload.get("evidenceSections")
+                if isinstance(raw_sections, list):
+                    evidence_sections = [
+                        section for section in raw_sections if isinstance(section, dict)
+                    ]
+            receipt_payload = _build_change_receipt_v1(
+                thread_id=thread_id,
+                action_request_id=approved_request.id,
+                tool_run_id=started_tool_run.id,
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                terminal_phase="completed",
+                reply_template=reply_payload,
+                evidence_sections=evidence_sections,
+            )
+            should_emit_receipt = True
+            if session is not None:
+                receipt_service = ActionReceiptService(
+                    repository=SQLActionReceiptRepository(session)
+                )
+                should_emit_receipt = (
+                    await receipt_service.create_action_receipt_if_missing(
+                        action_request_id=approved_request.id,
+                        tool_run_id=started_tool_run.id,
+                        terminal_phase="completed",
+                        payload=receipt_payload,
+                    )
+                )
+            if should_emit_receipt:
+                await _emit_workflow_receipt_messages(
+                    repository=repository,
+                    thread_id=thread_id,
+                    action_request_id=approved_request.id,
+                    payload=receipt_payload,
+                )
+
         await repository.create_audit_log(
             event_type="tool_completed",
             actor_email=owner_user_email,
@@ -594,16 +827,6 @@ async def execute_approved_tool_run(
                     thread_id=thread_id,
                     todos=cast(list[dict[str, object]], failed_todos),
                 )
-        workflow_reply_text = None
-        if tool.workflow_family is not None:
-            workflow_reply_text = _workflow_reply_text(
-                tool_name=approved_request.tool_name,
-                workflow_family=tool.workflow_family,
-                args=approved_request.args,
-                phase="failed",
-                preflight_evidence=preflight_evidence,
-                error_code=sanitized_error.error_code,
-            )
         await _persist_failed_tool_run(
             started_tool_run=started_tool_run,
             approved_request=approved_request,
@@ -613,7 +836,7 @@ async def execute_approved_tool_run(
             action_tool_run_service=action_tool_run_service,
             tool_run_error=sanitized_error.error_code,
             tool_result=cast(dict[str, object], sanitized_error.as_result()),
-            assistant_text=workflow_reply_text,
+            assistant_text=None,
             audit_metadata={
                 "thread_id": str(thread_id),
                 "tool_run_id": str(started_tool_run.id),
@@ -622,6 +845,72 @@ async def execute_approved_tool_run(
                 "error_code": sanitized_error.error_code,
             },
         )
+
+        if tool.workflow_family is not None:
+            reply_template = build_workflow_reply_template(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=preflight_evidence,
+                error_code=sanitized_error.error_code,
+            )
+            reply_payload = (
+                workflow_reply_template_payload(reply_template)
+                if reply_template is not None
+                else None
+            )
+            evidence_template = build_workflow_evidence_template(
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                args=approved_request.args,
+                phase="failed",
+                preflight_evidence=preflight_evidence,
+                error_code=sanitized_error.error_code,
+            )
+            evidence_payload = (
+                workflow_evidence_template_payload(evidence_template)
+                if evidence_template is not None
+                else None
+            )
+            evidence_sections: list[dict[str, object]] = []
+            if evidence_payload is not None:
+                raw_sections = evidence_payload.get("evidenceSections")
+                if isinstance(raw_sections, list):
+                    evidence_sections = [
+                        section for section in raw_sections if isinstance(section, dict)
+                    ]
+            receipt_payload = _build_change_receipt_v1(
+                thread_id=thread_id,
+                action_request_id=approved_request.id,
+                tool_run_id=started_tool_run.id,
+                tool_name=approved_request.tool_name,
+                workflow_family=tool.workflow_family,
+                terminal_phase="failed",
+                reply_template=reply_payload,
+                evidence_sections=evidence_sections,
+                error_code=sanitized_error.error_code,
+            )
+            should_emit_receipt = True
+            if session is not None:
+                receipt_service = ActionReceiptService(
+                    repository=SQLActionReceiptRepository(session)
+                )
+                should_emit_receipt = (
+                    await receipt_service.create_action_receipt_if_missing(
+                        action_request_id=approved_request.id,
+                        tool_run_id=started_tool_run.id,
+                        terminal_phase="failed",
+                        payload=receipt_payload,
+                    )
+                )
+            if should_emit_receipt:
+                await _emit_workflow_receipt_messages(
+                    repository=repository,
+                    thread_id=thread_id,
+                    action_request_id=approved_request.id,
+                    payload=receipt_payload,
+                )
 
 
 async def _validate_approved_tool_preflight(
@@ -685,32 +974,6 @@ async def _execute_tool(
     if execute_kwargs is not args:
         return await tool.execute(**execute_kwargs)
     return await tool.execute(**args)
-
-
-def _workflow_reply_text(
-    *,
-    tool_name: str,
-    workflow_family: str,
-    args: dict[str, object],
-    phase: str,
-    preflight_evidence: list[dict[str, object]],
-    result: dict[str, object] | None = None,
-    postflight_result: dict[str, object] | None = None,
-    error_code: str | None = None,
-) -> str | None:
-    reply_template = build_workflow_reply_template(
-        tool_name=tool_name,
-        workflow_family=workflow_family,
-        args=args,
-        phase=phase,
-        preflight_evidence=preflight_evidence,
-        result=result,
-        postflight_result=postflight_result,
-        error_code=error_code,
-    )
-    if reply_template is None:
-        return None
-    return render_workflow_reply_text(reply_template)
 
 
 async def _persist_failed_tool_run(

@@ -8,6 +8,7 @@ import { AssistantDetailSheet } from "@/components/assistant/assistant-detail-sh
 import { ClaudeThread } from "@/components/assistant/claude-thread";
 import { ClaudeThreadList } from "@/components/assistant/claude-thread-list";
 import { RequestApprovalToolUI } from "@/components/assistant/request-approval-tool-ui";
+import { WorkflowReceiptToolUI } from "@/components/assistant/workflow-receipt-tool-ui";
 import { WorkflowTodoToolUI } from "@/components/assistant/workflow-todo-tool-ui";
 
 export function ClaudeWorkspace() {
@@ -45,6 +46,7 @@ export function ClaudeWorkspace() {
       <section className="relative h-dvh w-full overflow-hidden bg-bg">
         <RequestApprovalToolUI />
         <WorkflowTodoToolUI />
+        <WorkflowReceiptToolUI />
         <AssistantDetailSheet />
 
         <div
