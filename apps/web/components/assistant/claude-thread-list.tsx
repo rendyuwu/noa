@@ -7,6 +7,7 @@ import type { FC, ReactNode } from "react";
 import {
   ThreadListItemPrimitive,
   ThreadListPrimitive,
+  useAssistantApi,
 } from "@assistant-ui/react";
 import {
   ArchiveIcon,
@@ -23,6 +24,7 @@ import {
 
 import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting";
 import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
+import { ConfirmAction } from "@/components/lib/confirm-dialog";
 
 function DisabledNavItem({ icon, label }: { icon: ReactNode; label: string }) {
   return (
@@ -64,6 +66,8 @@ function NavLinkItem({
 }
 
 const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
+  const api = useAssistantApi();
+
   return (
     <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-lg px-4 py-2 transition-colors hover:bg-surface-2/60 data-[active]:bg-surface-2/60">
       <ThreadListItemPrimitive.Trigger
@@ -75,12 +79,27 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
         </span>
       </ThreadListItemPrimitive.Trigger>
 
-      <ThreadListItemPrimitive.Delete
-        className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-2/60 hover:text-text group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-        aria-label="Delete thread"
-      >
-        <TrashIcon width={16} height={16} />
-      </ThreadListItemPrimitive.Delete>
+      <ConfirmAction
+        title="Delete thread?"
+        description="This permanently deletes this thread."
+        confirmLabel="Delete thread"
+        confirmVariant="danger"
+        onConfirm={() => api.threadListItem().delete()}
+        trigger={({ open, disabled }) => (
+          <ThreadListItemPrimitive.Delete
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-2/60 hover:text-text group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            aria-label="Delete thread"
+            disabled={disabled}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              open();
+            }}
+          >
+            <TrashIcon width={16} height={16} />
+          </ThreadListItemPrimitive.Delete>
+        )}
+      />
     </ThreadListItemPrimitive.Root>
   );
 };
@@ -208,13 +227,23 @@ export function ClaudeThreadList({
         </div>
 
         <div className="mt-2 flex items-center justify-end gap-3">
-          <button
-            type="button"
-            onClick={clearAuth}
-            className="text-sm text-muted underline decoration-border/60 underline-offset-4 hover:text-text hover:decoration-border"
-          >
-            Logout
-          </button>
+          <ConfirmAction
+            title="Log out?"
+            description="This ends your NOA session on this device."
+            confirmLabel="Log out"
+            confirmVariant="primary"
+            onConfirm={clearAuth}
+            trigger={({ open, disabled }) => (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={open}
+                className="text-sm text-muted underline decoration-border/60 underline-offset-4 hover:text-text hover:decoration-border disabled:opacity-55"
+              >
+                Logout
+              </button>
+            )}
+          />
         </div>
       </div>
     </ThreadListPrimitive.Root>

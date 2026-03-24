@@ -69,6 +69,9 @@ describe("WhmServersAdminPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Delete server" }));
 
+    const confirmDialog = await screen.findByRole("dialog", { name: "Delete server?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Delete server" }));
+
     await waitFor(() => {
       expect(mocks.fetchWithAuth).toHaveBeenCalledWith(`/admin/whm/servers/${serverId}`, {
         method: "DELETE",

@@ -21,6 +21,11 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("@assistant-ui/react", () => ({
+  useAssistantApi: () => ({
+    threadListItem: () => ({
+      delete: () => {},
+    }),
+  }),
   ThreadListPrimitive: {
     Root: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
     New: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => <button {...props}>{children}</button>,
@@ -150,6 +155,10 @@ describe("ClaudeThreadList", () => {
     expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    expect(mocks.clearAuth).toHaveBeenCalledTimes(0);
+
+    const confirmDialog = screen.getByRole("dialog", { name: "Log out?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Log out" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
   });
 
