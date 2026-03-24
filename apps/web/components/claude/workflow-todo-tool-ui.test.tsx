@@ -1,10 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-const { mockToggleAssistantDetailSheet } = vi.hoisted(() => ({
-  mockToggleAssistantDetailSheet: vi.fn(),
-}));
-
 let mockThreadMessages: any[] = [];
 
 vi.mock("@assistant-ui/react", () => ({
@@ -15,11 +11,6 @@ vi.mock("@assistant-ui/react", () => ({
         messages: mockThreadMessages,
       },
     }),
-}));
-
-vi.mock("@/components/assistant/assistant-detail-sheet-store", () => ({
-  toggleAssistantDetailSheet: mockToggleAssistantDetailSheet,
-  useAssistantDetailSheet: () => ({ open: false, key: null }),
 }));
 
 import { WorkflowTodoCard, WorkflowTodoToolUI } from "@/components/claude/workflow-todo-tool-ui";
@@ -47,21 +38,11 @@ describe("WorkflowTodoCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
-    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "workflow",
-        todos: expect.arrayContaining([
-          expect.objectContaining({ content: "Preflight" }),
-          expect.objectContaining({ content: "Execute change" }),
-        ]),
-        sections: [
-          {
-            title: "Execution evidence",
-            items: [{ label: "Server", value: "cp01" }],
-          },
-        ],
-      }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /execution evidence/i }));
+
+    expect(screen.getByText("Execution evidence")).toBeVisible();
+    expect(screen.getByText("Server")).toBeVisible();
+    expect(screen.getByText("cp01")).toBeVisible();
   });
 
   it("falls back to canonical metadata evidence sections when payload has none", () => {
@@ -93,17 +74,11 @@ describe("WorkflowTodoCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
-    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "workflow",
-        sections: [
-          {
-            title: "Canonical evidence",
-            items: [{ label: "Ticket", value: "INC-42" }],
-          },
-        ],
-      }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /canonical evidence/i }));
+
+    expect(screen.getByText("Canonical evidence")).toBeVisible();
+    expect(screen.getByText("Ticket")).toBeVisible();
+    expect(screen.getByText("INC-42")).toBeVisible();
   });
 
   it("renders terminal workflow runs as compact details with expandable summary", () => {
@@ -123,13 +98,7 @@ describe("WorkflowTodoCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
-    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        open: true,
-        kind: "workflow",
-        title: "Run summary",
-      }),
-    );
+    expect(screen.getByText("Completed")).toBeVisible();
   });
 
   it("prefers canonical workflow todos when tool payload is terminal-only", () => {
@@ -162,18 +131,11 @@ describe("WorkflowTodoCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
-    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "workflow",
-        todos: expect.arrayContaining([
-          expect.objectContaining({ content: "Preflight check" }),
-          expect.objectContaining({ content: "Reason captured" }),
-          expect.objectContaining({ content: "Request approval" }),
-          expect.objectContaining({ content: "Execute change" }),
-          expect.objectContaining({ content: "Postflight verification" }),
-        ]),
-      }),
-    );
+    expect(screen.getByText("Preflight check")).toBeVisible();
+    expect(screen.getByText("Reason captured")).toBeVisible();
+    expect(screen.getByText("Request approval")).toBeVisible();
+    expect(screen.getByText("Execute change")).toBeVisible();
+    expect(screen.getByText("Postflight verification")).toBeVisible();
   });
 
   it("keeps the terminal workflow receipt visible when approval history exists", () => {

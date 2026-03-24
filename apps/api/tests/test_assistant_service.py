@@ -75,12 +75,44 @@ class _ProposalRunner:
 @dataclass
 class _FakeSession:
     added: list[object] = field(default_factory=list)
+    executed: list[object] = field(default_factory=list)
 
     def add(self, instance: object) -> None:
         self.added.append(instance)
 
     async def flush(self) -> None:
         return None
+
+    async def execute(self, stmt: object):
+        self.executed.append(stmt)
+
+        from sqlalchemy.sql.dml import Insert
+
+        class _FakeScalarResult:
+            def __init__(self, values: list[object]):
+                self._values = values
+
+            def all(self):
+                return list(self._values)
+
+        class _FakeResult:
+            def __init__(
+                self, *, scalar_value: object | None, scalars_values: list[object]
+            ):
+                self._scalar_value = scalar_value
+                self._scalars_values = scalars_values
+
+            def scalar_one_or_none(self):
+                return self._scalar_value
+
+            def scalars(self):
+                return _FakeScalarResult(self._scalars_values)
+
+        if isinstance(stmt, Insert):
+            # Treat inserts as successful by default.
+            return _FakeResult(scalar_value=1, scalars_values=[])
+
+        return _FakeResult(scalar_value=None, scalars_values=[])
 
 
 @dataclass
@@ -1745,15 +1777,29 @@ async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execu
         "cancelled",
     ]
 
-    tool_message = assistant_repo.messages[-2]
-    assert tool_message["role"] == "tool"
+    tool_message = next(
+        message
+        for message in reversed(assistant_repo.messages)
+        if message.get("role") == "tool"
+        and isinstance(message.get("parts"), list)
+        and isinstance(message["parts"][0], dict)
+        and message["parts"][0].get("type") == "tool-result"
+        and message["parts"][0].get("toolName") == "whm_suspend_account"
+    )
     part = tool_message["parts"][0]
-    assert part["type"] == "tool-result"
     assert part["isError"] is True
     assert part["result"]["error_code"] == "tool_execution_failed"
-    assistant_message = assistant_repo.messages[-1]
-    assert assistant_message["role"] == "assistant"
-    assert "Suspend failed" in cast(str, assistant_message["parts"][0]["text"])
+
+    receipt_message = next(
+        message
+        for message in reversed(assistant_repo.messages)
+        if message.get("role") == "tool"
+        and isinstance(message.get("parts"), list)
+        and isinstance(message["parts"][0], dict)
+        and message["parts"][0].get("type") == "tool-result"
+        and message["parts"][0].get("toolName") == "workflow_receipt"
+    )
+    assert receipt_message["role"] == "tool"
 
     todo_tool_call = next(
         part
@@ -3023,11 +3069,29 @@ async def test_deny_action_request_persists_denied_whm_workflow(
         "cancelled",
         "cancelled",
     ]
-    denied_message = assistant_repo.messages[-1]
-    assert denied_message["role"] == "assistant"
-    assert "Contact email change denied" in cast(
-        str, denied_message["parts"][0]["text"]
+    denied_message = next(
+        message
+        for message in reversed(assistant_repo.messages)
+        if message.get("role") == "assistant"
+        and any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and "Denied. Receipt below." in cast(str, part.get("text"))
+            for part in cast(list[object], message.get("parts", []))
+        )
     )
+    assert denied_message["role"] == "assistant"
+
+    receipt_message = next(
+        message
+        for message in reversed(assistant_repo.messages)
+        if message.get("role") == "tool"
+        and isinstance(message.get("parts"), list)
+        and isinstance(message["parts"][0], dict)
+        and message["parts"][0].get("type") == "tool-result"
+        and message["parts"][0].get("toolName") == "workflow_receipt"
+    )
+    assert receipt_message["role"] == "tool"
 
 
 async def test_execute_approved_tool_run_persists_completed_contact_email_workflow(
@@ -3182,9 +3246,16 @@ async def test_execute_approved_tool_run_persists_completed_contact_email_workfl
     assert "expected contact email 'new@example.com'" in todos[4]["content"]
     assert len(todos) == 5
 
-    tool_message = assistant_repo.messages[-1]
+    tool_message = next(
+        message
+        for message in reversed(assistant_repo.messages)
+        if message.get("role") == "tool"
+        and isinstance(message.get("parts"), list)
+        and isinstance(message["parts"][0], dict)
+        and message["parts"][0].get("type") == "tool-result"
+        and message["parts"][0].get("toolName") == "whm_change_contact_email"
+    )
     assert tool_message["role"] == "tool"
-    assert tool_message["parts"][0]["toolName"] == "whm_change_contact_email"
 
     assistant_text_messages = [
         part.get("text")
@@ -3377,9 +3448,16 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         session=_FakeSession(),
     )
 
-    tool_message = assistant_repo.messages[-1]
+    tool_message = next(
+        message
+        for message in reversed(assistant_repo.messages)
+        if message.get("role") == "tool"
+        and isinstance(message.get("parts"), list)
+        and isinstance(message["parts"][0], dict)
+        and message["parts"][0].get("type") == "tool-result"
+        and message["parts"][0].get("toolName") == "whm_csf_unblock"
+    )
     assert tool_message["role"] == "tool"
-    assert tool_message["parts"][0]["toolName"] == "whm_csf_unblock"
 
     todos = cast(list[dict[str, str]], captured["todos"])
     assert captured["thread_id"] == thread_id

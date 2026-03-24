@@ -1,8 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import * as Dialog from "@radix-ui/react-dialog";
+
+import { useAssistantApi } from "@assistant-ui/react";
 
 import { AssistantDetailSheet } from "@/components/assistant/assistant-detail-sheet";
 import { ClaudeThread } from "@/components/assistant/claude-thread";
@@ -12,8 +14,10 @@ import { WorkflowReceiptToolUI } from "@/components/assistant/workflow-receipt-t
 import { WorkflowTodoToolUI } from "@/components/assistant/workflow-todo-tool-ui";
 
 export function ClaudeWorkspace() {
+  const api = useAssistantApi();
   const [open, setOpen] = useState(false);
   const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const lastDeepLinkThreadId = useRef<string | null>(null);
 
   const openSidebar = useCallback(() => {
     setDesktopSidebarOpen(true);
@@ -40,6 +44,28 @@ export function ClaudeWorkspace() {
     mediaQuery.addListener(closeOnDesktop);
     return () => mediaQuery.removeListener(closeOnDesktop);
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    const threadId = url.searchParams.get("threadId");
+    if (!threadId) return;
+    if (lastDeepLinkThreadId.current === threadId) return;
+    lastDeepLinkThreadId.current = threadId;
+
+    void (async () => {
+      try {
+        await api.threads().switchToThread(threadId);
+      } catch (error) {
+        console.error("Failed to switch to thread", error);
+      } finally {
+        try {
+          url.searchParams.delete("threadId");
+          window.history.replaceState({}, "", url.toString());
+        } catch {}
+      }
+    })();
+  }, [api]);
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
