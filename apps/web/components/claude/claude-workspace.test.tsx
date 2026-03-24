@@ -33,6 +33,10 @@ vi.mock("@/components/assistant/workflow-todo-tool-ui", () => ({
   WorkflowTodoToolUI: () => <div data-testid="workflow-todo-tool-ui" />,
 }));
 
+vi.mock("@/components/assistant/workflow-receipt-tool-ui", () => ({
+  WorkflowReceiptToolUI: () => <div data-testid="workflow-receipt-tool-ui" />,
+}));
+
 vi.mock("@/components/lib/auth-store", () => ({
   getAuthUser: () => null,
   useRequireAuth: () => true,

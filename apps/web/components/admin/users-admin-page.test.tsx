@@ -577,6 +577,9 @@ describe("UsersAdminPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete user" }));
 
+    const confirmDialog = await screen.findByRole("dialog", { name: "Delete user?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Delete user" }));
+
     await waitFor(() => {
       expect(mocks.fetchWithAuth).toHaveBeenCalledWith(`/admin/users/${userId}`, {
         method: "DELETE",

@@ -6,6 +6,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
 import { Button } from "@/components/lib/button";
+import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
@@ -588,14 +589,37 @@ export function WhmServersAdminPage() {
                   <p className="danger-zone-copy mt-1 text-sm">
                     Delete this server configuration from NOA. Stored validation state for this session is removed too.
                   </p>
-                  <Button
-                    className="mt-3 w-full"
-                    disabled={!selectedServer || deleteBusyId === selectedServer.id || validateBusyId === selectedServer.id}
-                    onClick={() => selectedServer && void deleteServer(selectedServer.id)}
-                    variant="danger"
-                  >
-                    {selectedServer && deleteBusyId === selectedServer.id ? "Deleting..." : "Delete server"}
-                  </Button>
+                  <ConfirmAction
+                    title="Delete server?"
+                    description={
+                      selectedServer
+                        ? `This permanently deletes the ${selectedServer.name} server configuration from NOA.`
+                        : "This permanently deletes this server configuration from NOA."
+                    }
+                    confirmLabel="Delete server"
+                    confirmBusyLabel="Deleting..."
+                    confirmVariant="danger"
+                    busy={Boolean(selectedServer && deleteBusyId === selectedServer.id)}
+                    error={actionError}
+                    onConfirm={() => selectedServer && void deleteServer(selectedServer.id)}
+                    trigger={({ open, disabled }) => (
+                      <Button
+                        className="mt-3 w-full"
+                        disabled={
+                          !selectedServer ||
+                          disabled ||
+                          (selectedServer && validateBusyId === selectedServer.id)
+                        }
+                        onClick={() => {
+                          setActionError(null);
+                          open();
+                        }}
+                        variant="danger"
+                      >
+                        Delete server
+                      </Button>
+                    )}
+                  />
                 </div>
               </div>
             </div>

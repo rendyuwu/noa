@@ -6,6 +6,7 @@ import { Cross2Icon } from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
 
 import { Button } from "@/components/lib/button";
+import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
@@ -408,7 +409,7 @@ export function UsersAdminPage() {
                 </Dialog.Close>
               </div>
 
-              <div className="flex-1 overflow-hidden p-4 font-ui">
+              <div className="flex-1 min-h-0 overflow-y-auto p-4 font-ui">
                 <div className="rounded-xl border border-border bg-surface px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -523,14 +524,33 @@ export function UsersAdminPage() {
                     <p className="danger-zone-copy mt-1 text-sm">
                       Delete this user account and remove its access from NOA.
                     </p>
-                    <Button
-                      className="mt-3 w-full"
-                      disabled={!selectedUser || deleteSaving}
-                      onClick={() => void deleteUser()}
-                      variant="danger"
-                    >
-                      {deleteSaving ? "Deleting..." : "Delete user"}
-                    </Button>
+                    <ConfirmAction
+                      title="Delete user?"
+                      description={
+                        selectedUser
+                          ? `This permanently deletes ${selectedUser.email} and removes access from NOA.`
+                          : "This permanently deletes this user and removes access from NOA."
+                      }
+                      confirmLabel="Delete user"
+                      confirmBusyLabel="Deleting..."
+                      confirmVariant="danger"
+                      busy={deleteSaving}
+                      error={deleteError}
+                      onConfirm={() => void deleteUser()}
+                      trigger={({ open, disabled }) => (
+                        <Button
+                          className="mt-3 w-full"
+                          disabled={!selectedUser || disabled}
+                          onClick={() => {
+                            setDeleteError(null);
+                            open();
+                          }}
+                          variant="danger"
+                        >
+                          Delete user
+                        </Button>
+                      )}
+                    />
                   </div>
                 </div>
               </div>
