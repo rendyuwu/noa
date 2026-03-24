@@ -16,11 +16,15 @@ function clampStyle(lines: number) {
 
 export function DisclosureSection({
   title,
+  icon,
+  meta,
   count,
   defaultOpen = false,
   children,
 }: {
   title: string;
+  icon?: ReactNode;
+  meta?: string;
   count?: number;
   defaultOpen?: boolean;
   children: ReactNode;
@@ -45,8 +49,16 @@ export function DisclosureSection({
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
         ].join(" ")}
       >
-        <span className="min-w-0 truncate">{title}</span>
+        <span className="flex min-w-0 items-center gap-2">
+          {icon ? <span className="text-muted">{icon}</span> : null}
+          <span className="min-w-0 truncate">{title}</span>
+        </span>
         <span className="flex shrink-0 items-center gap-2">
+          {meta ? (
+            <span className="rounded-full bg-bg/40 px-2 py-0.5 font-ui text-[11px] text-muted">
+              {meta}
+            </span>
+          ) : null}
           {typeof count === "number" ? (
             <span className="rounded-full bg-bg/40 px-2 py-0.5 font-ui text-[11px] text-muted">
               {count}

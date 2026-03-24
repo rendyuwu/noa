@@ -1,11 +1,14 @@
 "use client";
 
 import { useId, useMemo, useState } from "react";
+import { createRoot } from "react-dom/client";
 
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { ChevronRightIcon } from "@radix-ui/react-icons";
 
 import { DetailSections } from "@/components/assistant/detail-sections";
+import { WorkflowReceiptSurface } from "@/components/assistant/workflow-receipt-renderer";
+import { captureElementToPngBlob, copyPngBlobToClipboard, downloadBlob } from "@/components/lib/image-export";
 
 type ReceiptOutcome = "changed" | "partial" | "no_op" | "failed" | "denied" | "info";
 
@@ -194,8 +197,59 @@ function buildReceiptPlaintext(payload: {
   return lines.join("\n").trim();
 }
 
+async function captureStandaloneReceiptPngBlob(
+  payload: Record<string, unknown>,
+  {
+    actionRequestId,
+  }: {
+    actionRequestId?: string;
+  } = {},
+): Promise<Blob> {
+  const container = document.createElement("div");
+  container.style.position = "fixed";
+  container.style.top = "0";
+  container.style.left = "-100000px";
+  container.style.width = "900px";
+  container.style.pointerEvents = "none";
+  container.style.zIndex = "-1";
+  document.body.appendChild(container);
+
+  const root = createRoot(container);
+
+  try {
+    root.render(
+      <div className="w-[52rem] p-6">
+        <WorkflowReceiptSurface
+          payload={payload}
+          className="w-[52rem]"
+          captureId={actionRequestId ? `thread-${actionRequestId}` : "thread"}
+        />
+      </div>,
+    );
+
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+
+    const captureEl = container.querySelector("[data-receipt-capture]");
+    if (!(captureEl instanceof HTMLElement)) {
+      throw new Error("Receipt capture element unavailable");
+    }
+    return await captureElementToPngBlob(captureEl);
+  } finally {
+    try {
+      root.unmount();
+    } catch {}
+    container.remove();
+  }
+}
+
 function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
+  const [copyImageState, setCopyImageState] = useState<
+    "idle" | "copied" | "downloaded" | "failed"
+  >("idle");
+  const [downloadState, setDownloadState] = useState<"idle" | "done" | "failed">("idle");
+  const [imageBusy, setImageBusy] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const baseId = useId();
   const toggleId = `${baseId}-receipt-details-toggle`;
@@ -288,6 +342,44 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
     }
   };
 
+  const copyImage = async () => {
+    if (typeof window === "undefined") return;
+    setImageBusy(true);
+    setCopyImageState("idle");
+
+    try {
+      const blob = await captureStandaloneReceiptPngBlob(payload, { actionRequestId });
+      try {
+        await copyPngBlobToClipboard(blob);
+        setCopyImageState("copied");
+      } catch {
+        downloadBlob(blob, `receipt-${actionRequestId ?? "workflow"}.png`);
+        setCopyImageState("downloaded");
+      }
+    } catch {
+      setCopyImageState("failed");
+    } finally {
+      setImageBusy(false);
+      window.setTimeout(() => setCopyImageState("idle"), 1400);
+    }
+  };
+
+  const downloadPng = async () => {
+    if (typeof window === "undefined") return;
+    setImageBusy(true);
+    setDownloadState("idle");
+    try {
+      const blob = await captureStandaloneReceiptPngBlob(payload, { actionRequestId });
+      downloadBlob(blob, `receipt-${actionRequestId ?? "workflow"}.png`);
+      setDownloadState("done");
+    } catch {
+      setDownloadState("failed");
+    } finally {
+      setImageBusy(false);
+      window.setTimeout(() => setDownloadState("idle"), 1400);
+    }
+  };
+
   const renderPreviewBlock = (
     title: string,
     items: ReceiptEvidenceItem[],
@@ -361,14 +453,42 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
             aria-hidden="true"
           />
         </button>
-        <button
-          type="button"
-          onClick={copyReceipt}
-          disabled={!canClipboard}
-          className="inline-flex h-8 items-center justify-center rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {copyState === "copied" ? "Copied" : "Copy receipt"}
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={copyReceipt}
+            disabled={!canClipboard}
+            className="inline-flex h-8 items-center justify-center rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {copyState === "copied" ? "Copied" : "Copy receipt"}
+          </button>
+          <button
+            type="button"
+            onClick={copyImage}
+            disabled={imageBusy}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {copyImageState === "copied"
+              ? "Copied"
+              : copyImageState === "downloaded"
+                ? "Downloaded"
+                : copyImageState === "failed"
+                  ? "Failed"
+                : "Copy image"}
+          </button>
+          <button
+            type="button"
+            onClick={downloadPng}
+            disabled={imageBusy}
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {downloadState === "done"
+              ? "Downloaded"
+              : downloadState === "failed"
+                ? "Failed"
+                : "Download PNG"}
+          </button>
+        </div>
       </div>
 
       <div

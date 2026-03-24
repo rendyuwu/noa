@@ -9,6 +9,7 @@ import type {
 import { DisclosureSection, TruncatedText } from "@/components/assistant/inline-disclosure";
 
 type DetailVariant = "sheet" | "inline";
+type DetailOpenMode = "default" | "export";
 
 function normalizeTitle(value: string): string {
   return value.trim().toLowerCase();
@@ -27,6 +28,7 @@ function shouldSectionStartOpen(title: string): boolean {
   const normalized = normalizeTitle(title);
   if (isNoisySectionTitle(title)) return false;
   if (normalized.includes("overview")) return true;
+  if (normalized.includes("before")) return true;
   if (normalized.includes("requested")) return true;
   if (normalized.includes("after")) return true;
   if (normalized.includes("verification")) return true;
@@ -95,10 +97,12 @@ export function DetailSections({
   sections,
   variant = "sheet",
   showEmptyState = false,
+  openMode = "default",
 }: {
   sections: AssistantDetailEvidenceSection[];
   variant?: DetailVariant;
   showEmptyState?: boolean;
+  openMode?: DetailOpenMode;
 }) {
   if (sections.length === 0) {
     if (!showEmptyState) return null;
@@ -110,9 +114,26 @@ export function DetailSections({
   }
 
   if (variant === "inline") {
-    return <div className="space-y-3">{sections.map((section) => (
-      <InlineEvidenceSection key={section.title} section={section} />
-    ))}</div>;
+    return (
+      <div className="space-y-3">
+        {sections.map((section) => {
+          const shouldOpen =
+            openMode === "export"
+              ? !isNoisySectionTitle(section.title)
+              : shouldSectionStartOpen(section.title);
+          return (
+            <DisclosureSection
+              key={section.title}
+              title={section.title}
+              count={section.items.length}
+              defaultOpen={shouldOpen}
+            >
+              <InlineEvidenceSection section={section} />
+            </DisclosureSection>
+          );
+        })}
+      </div>
+    );
   }
 
   return sections.map((section) => (

@@ -11,6 +11,7 @@ import {
 } from "@assistant-ui/react";
 import {
   ArchiveIcon,
+  ActivityLogIcon,
   ChevronDownIcon,
   ColumnsIcon,
   CodeIcon,
@@ -158,6 +159,9 @@ export function ClaudeThreadList({
             <DisabledNavItem icon={<MagnifyingGlassIcon width={16} height={16} />} label="Search" />
             {isAdmin ? (
               <NavLinkItem icon={<PersonIcon width={16} height={16} />} label="Users" href="/admin/users" />
+            ) : null}
+            {isAdmin ? (
+              <NavLinkItem icon={<ActivityLogIcon width={16} height={16} />} label="Audit" href="/admin/audit" />
             ) : null}
             {isAdmin ? (
               <div>
