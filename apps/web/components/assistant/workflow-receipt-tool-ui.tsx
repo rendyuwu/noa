@@ -1,14 +1,11 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useId, useMemo, useState } from "react";
 
 import { makeAssistantToolUI } from "@assistant-ui/react";
 import { ChevronRightIcon } from "@radix-ui/react-icons";
 
-import {
-  toggleAssistantDetailSheet,
-  useAssistantDetailSheet,
-} from "@/components/assistant/assistant-detail-sheet-store";
+import { DetailSections } from "@/components/assistant/detail-sections";
 
 type ReceiptOutcome = "changed" | "partial" | "no_op" | "failed" | "denied" | "info";
 
@@ -198,8 +195,11 @@ function buildReceiptPlaintext(payload: {
 }
 
 function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
-  const detailSheet = useAssistantDetailSheet();
   const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const baseId = useId();
+  const toggleId = `${baseId}-receipt-details-toggle`;
+  const panelId = `${baseId}-receipt-details-panel`;
 
   const replyTemplate = coerceReplyTemplate(payload.replyTemplate);
   const evidenceSections = useMemo(
@@ -221,7 +221,6 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
   }
 
   const badge = getBadge(replyTemplate.outcome);
-  const detailKey = `receipt:${receiptId ?? toolRunId ?? actionRequestId ?? replyTemplate.title}`;
   const sectionsForDetail = [
     {
       title: "Overview",
@@ -242,18 +241,25 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
   const totalCount = evidenceSections.reduce((sum, section) => sum + section.items.length, 0);
   const moreCount = Math.max(0, totalCount - shownCount);
 
-  const openDetails = () => {
-    toggleAssistantDetailSheet({
-      open: true,
-      key: detailKey,
-      kind: "approval",
-      title: replyTemplate.title,
-      subtitle: replyTemplate.summary,
-      badge: badge.label,
-      badgeClassName: badge.className,
-      sections: sectionsForDetail,
-    });
-  };
+  const rawJson = useMemo(() => {
+    if (!detailsOpen) return null;
+    try {
+      return JSON.stringify(payload, null, 2);
+    } catch {
+      return null;
+    }
+  }, [detailsOpen, payload]);
+
+  const sectionsForInline = useMemo(() => {
+    if (!rawJson) return sectionsForDetail;
+    return [
+      ...sectionsForDetail,
+      {
+        title: "Raw JSON",
+        items: [{ label: "Payload", value: rawJson }],
+      },
+    ];
+  }, [rawJson, sectionsForDetail]);
 
   const canClipboard =
     typeof window !== "undefined" &&
@@ -338,11 +344,22 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
       <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
-          onClick={openDetails}
+          id={toggleId}
+          aria-expanded={detailsOpen}
+          aria-controls={panelId}
+          onClick={() => setDetailsOpen((value) => !value)}
           className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text"
         >
-          {detailSheet.open && detailSheet.key === detailKey ? "Hide details" : "Details"}
-          <ChevronRightIcon width={14} height={14} />
+          {detailsOpen ? "Hide details" : "Details"}
+          <ChevronRightIcon
+            width={14}
+            height={14}
+            className={[
+              "transition-transform duration-200 motion-reduce:transition-none",
+              detailsOpen ? "rotate-90" : "rotate-0",
+            ].join(" ")}
+            aria-hidden="true"
+          />
         </button>
         <button
           type="button"
@@ -352,6 +369,20 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         >
           {copyState === "copied" ? "Copied" : "Copy receipt"}
         </button>
+      </div>
+
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={toggleId}
+        hidden={!detailsOpen}
+        className="mt-3"
+      >
+        {detailsOpen ? (
+          <div className="rounded-xl border border-border bg-bg/15 px-3 py-3">
+            <DetailSections sections={sectionsForInline} variant="inline" showEmptyState />
+          </div>
+        ) : null}
       </div>
     </div>
   );
