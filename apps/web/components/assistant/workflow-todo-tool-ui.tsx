@@ -1,16 +1,21 @@
 "use client";
 
+import { useId, useState } from "react";
+
 import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
 import { CheckIcon, ChevronRightIcon, Cross2Icon, DotFilledIcon } from "@radix-ui/react-icons";
 
+import type { AssistantDetailEvidenceSection } from "@/components/assistant/approval-state";
 import {
   coerceDetailEvidenceSections,
   extractLatestCanonicalEvidenceSections,
 } from "@/components/assistant/approval-state";
+import { DetailSections } from "@/components/assistant/detail-sections";
 import {
-  toggleAssistantDetailSheet,
-  useAssistantDetailSheet,
-} from "@/components/assistant/assistant-detail-sheet-store";
+  DisclosureSection,
+  TruncatedItemList,
+  TruncatedText,
+} from "@/components/assistant/inline-disclosure";
 
 export type WorkflowTodoStatus =
   | "pending"
@@ -169,10 +174,12 @@ export function WorkflowTodoCard({
 }: {
   todos: WorkflowTodoItem[];
   renderGateTodos?: WorkflowTodoItem[];
-  evidenceSections?: { title: string; items: { label: string; value: string }[] }[];
+  evidenceSections?: AssistantDetailEvidenceSection[];
 }) {
-  const detailSheet = useAssistantDetailSheet();
-  const detailKey = `workflow:${todos.map((todo) => `${todo.content}:${todo.status}`).join("|")}`;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const baseId = useId();
+  const toggleId = `${baseId}-workflow-details-toggle`;
+  const panelId = `${baseId}-workflow-details-panel`;
   const completedCount = todos.filter((todo) => todo.status === "completed").length;
   const cancelledCount = todos.filter((todo) => todo.status === "cancelled").length;
   const gateTodos = renderGateTodos ?? todos;
@@ -206,26 +213,161 @@ export function WorkflowTodoCard({
           </div>
           <button
             type="button"
-            onClick={() => {
-              toggleAssistantDetailSheet({
-                open: true,
-                key: detailKey,
-                kind: "workflow",
-                title,
-                subtitle: summaryParts.join(" · "),
-                badge,
-                badgeClassName,
-                todos,
-                sections,
-              });
-            }}
+            id={toggleId}
+            aria-expanded={detailsOpen}
+            aria-controls={panelId}
+            onClick={() => setDetailsOpen((value) => !value)}
             className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-text"
           >
-            {detailSheet.open && detailSheet.key === detailKey ? "Hide details" : "Details"}
-            <ChevronRightIcon width={14} height={14} />
+            {detailsOpen ? "Hide details" : "Details"}
+            <ChevronRightIcon
+              width={14}
+              height={14}
+              className={[
+                "transition-transform duration-200 motion-reduce:transition-none",
+                detailsOpen ? "rotate-90" : "rotate-0",
+              ].join(" ")}
+              aria-hidden="true"
+            />
           </button>
         </div>
       </div>
+
+      <div
+        id={panelId}
+        role="region"
+        aria-labelledby={toggleId}
+        hidden={!detailsOpen}
+        className="mt-3"
+      >
+        {detailsOpen ? (
+          <div className="rounded-xl border border-border bg-bg/15 px-3 py-3">
+            <WorkflowRunDetailsBody todos={todos} sections={sections} variant="inline" />
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+type WorkflowRunDetailsVariant = "sheet" | "inline";
+
+function WorkflowTodoStatsGrid({ todos }: { todos: WorkflowTodoItem[] }) {
+  return (
+    <div className="grid grid-cols-3 gap-2 pb-1">
+      <div className="rounded-xl border border-border bg-bg/35 px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+          Completed
+        </div>
+        <div className="mt-1 text-sm font-medium text-text">
+          {todos.filter((todo) => todo.status === "completed").length}
+        </div>
+      </div>
+      <div className="rounded-xl border border-border bg-bg/35 px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Blocked</div>
+        <div className="mt-1 text-sm font-medium text-text">
+          {todos.filter((todo) => isWorkflowTodoBlocked(todo.status)).length}
+        </div>
+      </div>
+      <div className="rounded-xl border border-border bg-bg/35 px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+          Cancelled
+        </div>
+        <div className="mt-1 text-sm font-medium text-text">
+          {todos.filter((todo) => todo.status === "cancelled").length}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WorkflowTodoRow({ todo, index }: { todo: WorkflowTodoItem; index: number }) {
+  const style = getWorkflowTodoStatusStyle(todo.status);
+  const Icon = style.Icon;
+  const isBlocked = isWorkflowTodoBlocked(todo.status);
+  const isDone = todo.status === "completed";
+  const isCancelled = todo.status === "cancelled";
+
+  return (
+    <div
+      className={[
+        "flex items-start justify-between gap-3 rounded-xl px-3 py-3",
+        isBlocked
+          ? "bg-amber-50/80 ring-1 ring-amber-200"
+          : todo.status === "in_progress"
+            ? "bg-accent/6 ring-1 ring-accent/15"
+            : "bg-bg/35",
+      ].join(" ")}
+    >
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-[11px] text-muted">
+          <span className="font-ui">Step {index + 1}</span>
+          {isDone ? <CheckIcon width={12} height={12} /> : null}
+        </div>
+        <div
+          className={[
+            "mt-1 text-sm text-text",
+            isDone || isCancelled ? "opacity-70" : "opacity-100",
+          ].join(" ")}
+        >
+          {todo.content}
+        </div>
+      </div>
+      <span
+        className={[
+          "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
+          style.className,
+        ].join(" ")}
+      >
+        <Icon width={12} height={12} />
+        {style.label}
+      </span>
+    </div>
+  );
+}
+
+export function WorkflowRunDetailsBody({
+  todos,
+  sections,
+  variant = "sheet",
+}: {
+  todos: WorkflowTodoItem[];
+  sections: AssistantDetailEvidenceSection[];
+  variant?: WorkflowRunDetailsVariant;
+}) {
+  if (variant === "inline") {
+    const rawJson = JSON.stringify({ todos, sections }, null, 2);
+
+    return (
+      <div className="space-y-3">
+        <DisclosureSection title="Overview" defaultOpen>
+          <WorkflowTodoStatsGrid todos={todos} />
+        </DisclosureSection>
+        <DisclosureSection title="Steps" count={todos.length} defaultOpen>
+          <TruncatedItemList
+            items={todos}
+            initialCount={6}
+            getKey={(todo, index) => `${todo.content}-${index}`}
+            renderItem={(todo, index) => <WorkflowTodoRow todo={todo} index={index} />}
+          />
+        </DisclosureSection>
+        <DetailSections sections={sections} variant="inline" />
+        <DisclosureSection title="Raw JSON" defaultOpen={false}>
+          <div className="text-sm">
+            <TruncatedText text={rawJson} initialLines={12} mono />
+          </div>
+        </DisclosureSection>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <WorkflowTodoStatsGrid todos={todos} />
+      {todos.map((todo, index) => (
+        <WorkflowTodoRow key={`${todo.content}-${index}`} todo={todo} index={index} />
+      ))}
+      <DetailSections sections={sections} variant="sheet" />
     </div>
   );
 }
