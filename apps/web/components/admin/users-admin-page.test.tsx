@@ -285,6 +285,67 @@ describe("UsersAdminPage", () => {
     });
   });
 
+  it("shows legacy direct grants as read-only (no clear action)", async () => {
+    const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
+    const usersPayload = {
+      users: [
+        {
+          id: userId,
+          email: "casey@example.com",
+          display_name: "Casey Rivers",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: "2026-02-03T04:05:06.000Z",
+          is_active: true,
+          roles: ["member"],
+          tools: ["get_current_time"],
+          direct_tools: ["legacy_tool"],
+        },
+      ],
+    };
+
+    const rolesPayload = {
+      roles: [{ name: "member" }, { name: "admin" }],
+    };
+
+    const usersResponse = new Response(JSON.stringify(usersPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string) => {
+      if (path === "/admin/users") return usersResponse;
+      if (path === "/admin/roles") return rolesResponse;
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === usersResponse) return usersPayload;
+      if (response === rolesResponse) return rolesPayload;
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<UsersAdminPage />);
+
+    const table = screen.getByRole("table");
+    const emailCell = await within(table).findByText("casey@example.com");
+    const row = emailCell.closest("tr");
+    if (!row) throw new Error("Unable to locate user row");
+    fireEvent.click(row);
+
+    expect(await screen.findByText("Legacy direct grants")).toBeInTheDocument();
+    expect(screen.getByText("legacy_tool")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /clear direct grants/i })).not.toBeInTheDocument();
+  });
+
   it("PATCHes /admin/users/:id to disable an active user from the drawer", async () => {
     const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
     const usersPayload = {

@@ -182,4 +182,66 @@ describe("RolesAdminPage", () => {
       expect(within(table).queryByText("support")).not.toBeInTheDocument();
     });
   });
+
+  it("migrates legacy direct grants via POST /admin/migrations/direct-grants", async () => {
+    const rolesPayload = {
+      roles: [{ name: "admin" }],
+    };
+    const toolsPayload = {
+      tools: ["get_current_time"],
+    };
+    const migratePayload = {
+      users_migrated: 2,
+      roles_created: 1,
+      roles_reused: 3,
+    };
+
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    const migrateResponse = new Response(JSON.stringify(migratePayload), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/admin/roles") return rolesResponse;
+      if (path === "/admin/tools") return toolsResponse;
+      if (path === "/admin/migrations/direct-grants" && init?.method === "POST") return migrateResponse;
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === rolesResponse) return rolesPayload;
+      if (response === toolsResponse) return toolsPayload;
+      if (response === migrateResponse) return migratePayload;
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<RolesAdminPage />);
+
+    const migrateButton = await screen.findByRole("button", { name: "Migrate legacy direct grants" });
+    await waitFor(() => {
+      expect(migrateButton).not.toBeDisabled();
+    });
+    fireEvent.click(migrateButton);
+    const confirmDialog = await screen.findByRole("dialog", { name: "Migrate legacy direct grants?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Migrate" }));
+
+    await waitFor(() => {
+      expect(mocks.fetchWithAuth).toHaveBeenCalledWith("/admin/migrations/direct-grants", {
+        method: "POST",
+      });
+    });
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("2 users migrated");
+    expect(status).toHaveTextContent("1 role created");
+    expect(status).toHaveTextContent("3 roles reused");
+  });
 });

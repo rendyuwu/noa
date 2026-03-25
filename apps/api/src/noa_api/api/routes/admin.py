@@ -3,13 +3,14 @@ from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_codes import (
     ADMIN_ACCESS_REQUIRED,
     ADMIN_ROLE_NOT_FOUND,
     ADMIN_USER_NOT_FOUND,
+    DIRECT_TOOL_GRANTS_DISABLED,
     INTERNAL_ROLE_FORBIDDEN,
     INVALID_ROLE_NAME,
     LAST_ACTIVE_ADMIN,
@@ -78,6 +79,15 @@ class AdminToolsResponse(BaseModel):
 
 class SetUserToolsRequest(BaseModel):
     tools: list[str]
+
+
+class DirectGrantsMigrationResponse(BaseModel):
+    users_migrated: int
+    roles_created: int
+    roles_reused: int
+    internal_roles_deleted: int
+    tool_grant_count: int
+    created_roles: list[str] = Field(default_factory=list)
 
 
 def _to_user_response(user: AuthorizationUser) -> AdminUserResponse:
@@ -431,63 +441,54 @@ async def set_user_tools(
     admin_user: AuthorizationUser = Depends(_require_admin),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
 ) -> UpdateUserResponse:
+    _ = payload
+    _ = authorization_service
     with log_context(target_user_id=str(id), user_id=str(admin_user.user_id)):
-        try:
-            user = await authorization_service.set_user_tools(
-                id, payload.tools, actor_email=admin_user.email
-            )
-        except UnknownToolError as exc:
-            logger.info(
-                "admin_unknown_tools",
-                extra={"requested_tools": payload.tools},
-            )
-            _record_admin_outcome(
-                request,
-                event_name="admin_unknown_tools",
-                status_code=status.HTTP_400_BAD_REQUEST,
-                trace_attributes={
-                    "target_user_id": str(id),
-                    "user_id": str(admin_user.user_id),
-                },
-                error_code=UNKNOWN_TOOLS,
-            )
-            raise ApiHTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(exc),
-                error_code=UNKNOWN_TOOLS,
-            ) from exc
-        if user is None:
-            logger.info("admin_user_not_found")
-            _record_admin_outcome(
-                request,
-                event_name="admin_user_not_found",
-                status_code=status.HTTP_404_NOT_FOUND,
-                trace_attributes={
-                    "target_user_id": str(id),
-                    "user_id": str(admin_user.user_id),
-                },
-                error_code=ADMIN_USER_NOT_FOUND,
-            )
-            raise ApiHTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found",
-                error_code=ADMIN_USER_NOT_FOUND,
-            )
-        logger.info(
-            "admin_user_tools_updated",
-            extra={"assigned_tool_count": len(user.tools)},
-        )
+        logger.info("admin_direct_tool_grants_disabled")
         _record_admin_outcome(
             request,
-            event_name="admin_user_tools_updated",
-            status_code=status.HTTP_200_OK,
+            event_name="admin_direct_tool_grants_disabled",
+            status_code=status.HTTP_410_GONE,
             trace_attributes={
-                "assigned_tool_count": len(user.tools),
                 "target_user_id": str(id),
                 "user_id": str(admin_user.user_id),
             },
+            error_code=DIRECT_TOOL_GRANTS_DISABLED,
         )
-    return UpdateUserResponse(user=_to_user_response(user))
+        raise ApiHTTPException(
+            status_code=status.HTTP_410_GONE,
+            detail="Direct tool grants are disabled",
+            error_code=DIRECT_TOOL_GRANTS_DISABLED,
+        )
+
+
+@router.post(
+    "/migrations/direct-grants",
+    response_model=DirectGrantsMigrationResponse,
+)
+async def migrate_direct_grants(
+    request: Request,
+    admin_user: AuthorizationUser = Depends(_require_admin),
+    authorization_service: AuthorizationService = Depends(get_authorization_service),
+) -> DirectGrantsMigrationResponse:
+    with log_context(user_id=str(admin_user.user_id), user_email=admin_user.email):
+        summary = await authorization_service.migrate_legacy_direct_grants(
+            actor_email=admin_user.email
+        )
+        logger.info("admin_migration_direct_grants_completed", extra=summary)
+        _record_admin_outcome(
+            request,
+            event_name="admin_migration_direct_grants_completed",
+            status_code=status.HTTP_200_OK,
+            trace_attributes={
+                "user_id": str(admin_user.user_id),
+                "users_migrated": summary["users_migrated"],
+                "roles_created": summary["roles_created"],
+                "roles_reused": summary["roles_reused"],
+                "internal_roles_deleted": summary["internal_roles_deleted"],
+            },
+        )
+    return DirectGrantsMigrationResponse(**summary)
 
 
 @router.get("/roles", response_model=AdminRolesResponse)

@@ -6,7 +6,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
 import { Button } from "@/components/lib/button";
-import { ConfirmAction } from "@/components/lib/confirm-dialog";
+import { ConfirmAction, ConfirmDialog } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
@@ -25,6 +25,8 @@ type AdminToolsResponse = {
 type AdminRoleToolsResponse = {
   tools: string[];
 };
+
+type DirectGrantsMigrationResponse = Record<string, unknown>;
 
 function coerceStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
@@ -48,10 +50,65 @@ function sanitizeIdPart(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, "-");
 }
 
+function coerceFiniteNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function pickCount(payload: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = coerceFiniteNumber(payload[key]);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
+function formatDirectGrantsMigrationSummary(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "Migration completed.";
+  const record = payload as Record<string, unknown>;
+
+  const usersMigrated = pickCount(record, [
+    "users_migrated",
+    "usersMigrated",
+    "migrated_users",
+    "migratedUsers",
+  ]);
+  const rolesCreated = pickCount(record, [
+    "roles_created",
+    "rolesCreated",
+    "created_roles",
+    "createdRoles",
+  ]);
+  const rolesReused = pickCount(record, [
+    "roles_reused",
+    "rolesReused",
+    "reused_roles",
+    "reusedRoles",
+  ]);
+
+  const parts: string[] = [];
+  if (usersMigrated !== null) {
+    parts.push(`${usersMigrated} user${usersMigrated === 1 ? "" : "s"} migrated`);
+  }
+  if (rolesCreated !== null) {
+    parts.push(`${rolesCreated} role${rolesCreated === 1 ? "" : "s"} created`);
+  }
+  if (rolesReused !== null) {
+    parts.push(`${rolesReused} role${rolesReused === 1 ? "" : "s"} reused`);
+  }
+
+  if (parts.length === 0) return "Migration completed.";
+  return `Migration complete: ${parts.join("; ")}.`;
+}
+
 export function RolesAdminPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
   const [roleToolsByName, setRoleToolsByName] = useState<Record<string, string[]>>({});
+
+  const [migrationBusy, setMigrationBusy] = useState(false);
+  const [migrationError, setMigrationError] = useState<string | null>(null);
+  const [migrationSummary, setMigrationSummary] = useState<string | null>(null);
+  const [migrationOpen, setMigrationOpen] = useState(false);
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -93,6 +150,26 @@ export function RolesAdminPage() {
     return () => {
       loadSeqRef.current += 1;
     };
+  }, [loadData]);
+
+  const migrateLegacyDirectGrants = useCallback(async () => {
+    setMigrationBusy(true);
+    setMigrationError(null);
+    setMigrationSummary(null);
+
+    try {
+      const response = await fetchWithAuth("/admin/migrations/direct-grants", {
+        method: "POST",
+      });
+      const payload = await jsonOrThrow<DirectGrantsMigrationResponse>(response);
+      setMigrationSummary(formatDirectGrantsMigrationSummary(payload));
+      setMigrationOpen(false);
+      void loadData();
+    } catch (error) {
+      setMigrationError(toUserMessage(error, "Unable to migrate legacy direct grants"));
+    } finally {
+      setMigrationBusy(false);
+    }
   }, [loadData]);
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -323,6 +400,16 @@ export function RolesAdminPage() {
             </div>
 
             <div className="flex items-center gap-2">
+              <Button
+                disabled={loading || migrationBusy}
+                onClick={() => {
+                  setMigrationError(null);
+                  setMigrationOpen(true);
+                }}
+                size="sm"
+              >
+                Migrate legacy direct grants
+              </Button>
               <Button disabled={loading} onClick={() => void loadData()} size="sm">
                 Refresh
               </Button>
@@ -346,6 +433,16 @@ export function RolesAdminPage() {
                   Retry
                 </Button>
               </div>
+            </div>
+          ) : null}
+
+          {migrationSummary ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-ui text-sm text-emerald-800"
+            >
+              {migrationSummary}
             </div>
           ) : null}
 
@@ -456,6 +553,20 @@ export function RolesAdminPage() {
           </Dialog.Portal>
         </main>
       </Dialog.Root>
+
+      <ConfirmDialog
+        open={migrationOpen}
+        onOpenChange={setMigrationOpen}
+        title="Migrate legacy direct grants?"
+        description="Convert any remaining per-user direct tool grants into role-based grants. Safe to run multiple times."
+        confirmLabel="Migrate"
+        confirmBusyLabel="Migrating..."
+        confirmVariant="primary"
+        cancelLabel="Close"
+        busy={migrationBusy}
+        error={migrationError}
+        onConfirm={migrateLegacyDirectGrants}
+      />
 
       <Dialog.Root
         open={selectedRoleName !== null}

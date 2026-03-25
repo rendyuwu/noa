@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import logging
@@ -14,6 +15,7 @@ from httpx import ASGITransport, AsyncClient
 from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_codes import (
     ADMIN_ROLE_NOT_FOUND,
+    DIRECT_TOOL_GRANTS_DISABLED,
     INTERNAL_ROLE_FORBIDDEN,
     INVALID_ROLE_NAME,
     INVALID_TOKEN,
@@ -194,6 +196,19 @@ class _InMemoryAuthorizationRepository:
     async def get_user_allowlist_tools(self, user_id: UUID) -> list[str]:
         role_name = f"user:{user_id}"
         return sorted(self.role_tools.get(role_name, set()))
+
+    async def remove_user_allowlist_role(self, user_id: UUID) -> bool:
+        role_name = f"user:{user_id}"
+        if role_name not in self.roles:
+            self.role_tools.pop(role_name, None)
+            for roles in self.user_roles.values():
+                roles.discard(role_name)
+            return False
+        self.roles.discard(role_name)
+        self.role_tools.pop(role_name, None)
+        for roles in self.user_roles.values():
+            roles.discard(role_name)
+        return True
 
     async def list_all_tools(self) -> list[str]:
         all_tools: set[str] = set()
@@ -463,20 +478,13 @@ async def test_authorization_service_list_users_includes_created_and_last_login(
 
 async def test_authorization_service_rejects_unknown_tool_updates() -> None:
     repo = _InMemoryAuthorizationRepository()
-    user_id = uuid4()
-    repo.users[user_id] = _RepoUser(
-        id=user_id,
-        email="member@example.com",
-        display_name="Member",
-        is_active=True,
-        created_at=datetime.now(UTC),
-        last_login_at=None,
-    )
     service = _build_authorization_service(repo)
 
+    await repo.ensure_role("member")
+
     try:
-        await service.set_user_tools(
-            user_id,
+        await service.set_role_tools(
+            "member",
             ["get_current_time", "unknown-tool"],
             actor_email="admin@example.com",
         )
@@ -499,6 +507,10 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
         last_login_at=None,
     )
     service = _build_authorization_service(repo)
+    await repo.ensure_role("member")
+    await service.set_role_tools(
+        "member", ["get_current_time"], actor_email="admin@example.com"
+    )
     user = AuthorizationUser(
         user_id=user_id,
         email="member@example.com",
@@ -511,8 +523,8 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
 
     assert await service.authorize_tool_access(user, "get_current_time") is False
 
-    updated = await service.set_user_tools(
-        user_id, ["get_current_time"], actor_email="admin@example.com"
+    updated = await service.set_user_roles(
+        user_id, ["member"], actor_email="admin@example.com"
     )
     assert updated is not None
 
@@ -540,17 +552,18 @@ async def test_authorization_service_writes_audit_events_for_admin_changes() -> 
         last_login_at=None,
     )
     service = _build_authorization_service(repo)
+    await repo.ensure_role("member")
 
     await service.set_user_active(
         user_id, is_active=False, actor_email="admin@example.com"
     )
-    await service.set_user_tools(
-        user_id, ["get_current_time"], actor_email="admin@example.com"
+    await service.set_role_tools(
+        "member", ["get_current_time"], actor_email="admin@example.com"
     )
 
     assert [event["event_type"] for event in repo.audit_events] == [
         "admin_user_status_updated",
-        "admin_user_tools_updated",
+        "admin_role_tools_updated",
     ]
 
 
@@ -842,13 +855,11 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
     assert patch_response.json()["user"]["is_active"] is False
     assert service.last_is_active is False
 
-    assert put_response.status_code == 200
-    assert put_response.json()["user"]["tools"] == ["get_current_date", "set_demo_flag"]
-    assert put_response.json()["user"]["direct_tools"] == [
-        "get_current_date",
-        "set_demo_flag",
-    ]
-    assert service.last_set_tools == ["set_demo_flag", "get_current_date"]
+    assert put_response.status_code == 410
+    put_body = put_response.json()
+    assert put_body["detail"] == "Direct tool grants are disabled"
+    assert put_body["error_code"] == DIRECT_TOOL_GRANTS_DISABLED
+    assert service.last_set_tools is None
 
     payloads = _load_log_payloads(stream)
 
@@ -889,16 +900,15 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
     ]
     assert active_update_events == []
 
-    tool_update_events = [
+    disabled_events = [
         payload
         for payload in payloads
-        if payload["event"] == "admin_user_tools_updated"
+        if payload["event"] == "admin_direct_tool_grants_disabled"
     ]
-    assert len(tool_update_events) == 1
-    assert tool_update_events[0]["assigned_tool_count"] == 2
-    assert tool_update_events[0]["user_id"] == str(admin_user.user_id)
+    assert len(disabled_events) == 1
+    assert disabled_events[0]["user_id"] == str(admin_user.user_id)
     assert (
-        tool_update_events[0]["request_path"]
+        disabled_events[0]["request_path"]
         == f"/admin/users/{service.target_user_id}/tools"
     )
 
@@ -939,9 +949,10 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
             },
         ),
         TelemetryEvent(
-            name="admin_user_tools_updated",
+            name="admin_direct_tool_grants_disabled",
             attributes={
-                "assigned_tool_count": 2,
+                "error_code": DIRECT_TOOL_GRANTS_DISABLED,
+                "status_code": 410,
                 "target_user_id": str(service.target_user_id),
                 "user_id": str(admin_user.user_id),
             },
@@ -982,8 +993,9 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
             TelemetryEvent(
                 name="admin.outcomes.total",
                 attributes={
-                    "event_name": "admin_user_tools_updated",
-                    "status_family": "2xx",
+                    "error_code": DIRECT_TOOL_GRANTS_DISABLED,
+                    "event_name": "admin_direct_tool_grants_disabled",
+                    "status_family": "4xx",
                 },
             ),
             1,
@@ -1069,7 +1081,7 @@ async def test_admin_route_blocks_self_delete_with_409() -> None:
     assert response.headers["x-request-id"] == body["request_id"]
 
 
-async def test_admin_route_rejects_unknown_tools_with_400() -> None:
+async def test_admin_route_disables_direct_tool_grants_with_410() -> None:
     app = _create_admin_app()
     service = _FakeAuthorizationService()
     app.dependency_overrides[get_authorization_service] = lambda: service
@@ -1091,10 +1103,10 @@ async def test_admin_route_rejects_unknown_tools_with_400() -> None:
             headers={"x-request-id": "admin-unknown-tools"},
         )
 
-    assert response.status_code == 400
+    assert response.status_code == 410
     body = response.json()
-    assert body["detail"] == "Unknown tools: unknown-tool"
-    assert body["error_code"] == "unknown_tools"
+    assert body["detail"] == "Direct tool grants are disabled"
+    assert body["error_code"] == DIRECT_TOOL_GRANTS_DISABLED
     assert body["request_id"] == "admin-unknown-tools"
     assert response.headers["x-request-id"] == body["request_id"]
 
@@ -1301,6 +1313,89 @@ async def test_admin_role_endpoints_reject_invalid_role_name() -> None:
 
     assert response.status_code == 400
     assert response.json()["error_code"] == INVALID_ROLE_NAME
+
+
+async def test_admin_migration_direct_grants_converts_internal_roles_to_shared_roles() -> (
+    None
+):
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    tools = ["get_current_date", "set_demo_flag"]
+    joined = "\n".join(sorted(tools))
+    role_name = f"legacy_tools_{hashlib.sha256(joined.encode('utf-8')).hexdigest()[:8]}"
+
+    user_1 = uuid4()
+    user_2 = uuid4()
+    now = datetime.now(UTC)
+    repo.users[user_1] = _RepoUser(
+        id=user_1,
+        email="a@example.com",
+        display_name=None,
+        is_active=True,
+        created_at=now,
+        last_login_at=None,
+    )
+    repo.users[user_2] = _RepoUser(
+        id=user_2,
+        email="b@example.com",
+        display_name=None,
+        is_active=True,
+        created_at=now,
+        last_login_at=None,
+    )
+
+    internal_role_1 = f"user:{user_1}"
+    internal_role_2 = f"user:{user_2}"
+    repo.roles.update({"admin", internal_role_1, internal_role_2})
+    repo.user_roles[user_1] = {internal_role_1}
+    repo.user_roles[user_2] = {internal_role_2}
+    repo.role_tools[internal_role_1] = set(tools)
+    repo.role_tools[internal_role_2] = set(tools)
+
+    service = _build_authorization_service(repo)
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/admin/migrations/direct-grants")
+        assert response.status_code == 200
+        body = response.json()
+
+        assert body["users_migrated"] == 2
+        assert body["roles_created"] == 1
+        assert body["roles_reused"] == 1
+        assert body["internal_roles_deleted"] == 2
+        assert body["tool_grant_count"] == 4
+        assert body["created_roles"] == [role_name]
+
+        second = await client.post("/admin/migrations/direct-grants")
+        assert second.status_code == 200
+        assert second.json()["users_migrated"] == 0
+
+    assert role_name in repo.roles
+    assert repo.role_tools[role_name] == set(tools)
+
+    assert internal_role_1 not in repo.roles
+    assert internal_role_2 not in repo.roles
+    assert internal_role_1 not in repo.user_roles[user_1]
+    assert internal_role_2 not in repo.user_roles[user_2]
+    assert role_name in repo.user_roles[user_1]
+    assert role_name in repo.user_roles[user_2]
+
+    assert any(
+        event["event_type"] == "admin_migration_direct_grants_completed"
+        for event in repo.audit_events
+    )
 
 
 async def test_admin_user_roles_endpoint_replaces_non_internal_roles_and_preserves_internal() -> (

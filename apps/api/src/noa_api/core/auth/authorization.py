@@ -3,8 +3,9 @@ from __future__ import annotations
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass, field
 from datetime import datetime
+import hashlib
 import re
-from typing import Protocol
+from typing import Protocol, TypedDict
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -125,6 +126,8 @@ class AuthorizationRepositoryProtocol(Protocol):
 
     async def get_user_allowlist_tools(self, user_id: UUID) -> list[str]: ...
 
+    async def remove_user_allowlist_role(self, user_id: UUID) -> bool: ...
+
     async def create_audit_log(
         self,
         *,
@@ -133,6 +136,15 @@ class AuthorizationRepositoryProtocol(Protocol):
         tool_name: str | None,
         metadata: dict[str, object],
     ) -> None: ...
+
+
+class DirectGrantsMigrationSummary(TypedDict):
+    users_migrated: int
+    roles_created: int
+    roles_reused: int
+    internal_roles_deleted: int
+    tool_grant_count: int
+    created_roles: list[str]
 
 
 class SQLAuthorizationRepository:
@@ -258,23 +270,7 @@ class SQLAuthorizationRepository:
         if user is None:
             return None
 
-        allowlist_role_name = f"user:{user_id}"
-        role_result = await self._session.execute(
-            select(Role).where(Role.name == allowlist_role_name)
-        )
-        allowlist_role = role_result.scalar_one_or_none()
-        if allowlist_role is not None:
-            await self._session.execute(
-                delete(RoleToolPermission).where(
-                    RoleToolPermission.role_id == allowlist_role.id
-                )
-            )
-            await self._session.execute(
-                delete(UserRole).where(UserRole.role_id == allowlist_role.id)
-            )
-            await self._session.execute(
-                delete(Role).where(Role.id == allowlist_role.id)
-            )
+        await self.remove_user_allowlist_role(user_id)
 
         await self._session.delete(user)
         await self._session.flush()
@@ -339,6 +335,16 @@ class SQLAuthorizationRepository:
             .where(Role.name == role_name)
         )
         return sorted({str(name) for name in result.scalars().all()})
+
+    async def remove_user_allowlist_role(self, user_id: UUID) -> bool:
+        role_name = f"user:{user_id}"
+        result = await self._session.execute(select(Role).where(Role.name == role_name))
+        role = result.scalar_one_or_none()
+        if role is None:
+            return False
+        await self._session.delete(role)
+        await self._session.flush()
+        return True
 
     async def create_audit_log(
         self,
@@ -545,59 +551,59 @@ class AuthorizationService:
             last_login_at=user.last_login_at,
         )
 
-    async def set_user_tools(
-        self,
-        user_id: UUID,
-        tool_names: list[str],
-        *,
-        actor_email: str | None = None,
-    ) -> AuthorizationUser | None:
-        user = await self._repository.get_user_by_id(user_id)
-        if user is None:
-            return None
+    async def migrate_legacy_direct_grants(
+        self, *, actor_email: str | None = None
+    ) -> DirectGrantsMigrationSummary:
+        users = await self._repository.list_users()
+        users_migrated = 0
+        roles_created = 0
+        roles_reused = 0
+        internal_roles_deleted = 0
+        tool_grant_count = 0
+        created_roles: list[str] = []
 
-        normalized = sorted({name.strip() for name in tool_names if name.strip()})
-        unknown = [name for name in normalized if name not in self._known_tools]
-        if unknown:
-            raise UnknownToolError(unknown)
+        for user in users:
+            direct_tools = await self._repository.get_user_allowlist_tools(user.id)
+            if not direct_tools:
+                continue
 
-        role_name = f"user:{user_id}"
-        await self._repository.ensure_role(role_name)
-        await self._repository.assign_role(user_id, role_name)
-        await self._repository.replace_role_tool_permissions(role_name, normalized)
+            joined = "\n".join(direct_tools)
+            hash8 = hashlib.sha256(joined.encode("utf-8")).hexdigest()[:8]
+            role_name = self._validate_role_name(f"legacy_tools_{hash8}")
 
-        roles = await self._repository.get_role_names(user.id)
-        direct_tools = await self._repository.get_user_allowlist_tools(user.id)
-        effective_tools = sorted(
-            await self.get_allowed_tool_names(
-                AuthorizationUser(
-                    user_id=user.id,
-                    email=user.email,
-                    display_name=user.display_name,
-                    is_active=user.is_active,
-                    roles=roles,
-                    tools=[],
-                    direct_tools=[],
-                )
+            if await self._repository.role_exists(role_name):
+                roles_reused += 1
+            else:
+                roles_created += 1
+                created_roles.append(role_name)
+
+            await self._repository.ensure_role(role_name)
+            await self._repository.replace_role_tool_permissions(
+                role_name, direct_tools
             )
-        )
+            await self._repository.assign_role(user.id, role_name)
+
+            if await self._repository.remove_user_allowlist_role(user.id):
+                internal_roles_deleted += 1
+
+            users_migrated += 1
+            tool_grant_count += len(direct_tools)
+
+        summary: DirectGrantsMigrationSummary = {
+            "users_migrated": users_migrated,
+            "roles_created": roles_created,
+            "roles_reused": roles_reused,
+            "internal_roles_deleted": internal_roles_deleted,
+            "tool_grant_count": tool_grant_count,
+            "created_roles": created_roles,
+        }
         await self._repository.create_audit_log(
-            event_type="admin_user_tools_updated",
+            event_type="admin_migration_direct_grants_completed",
             actor_email=actor_email,
             tool_name=None,
-            metadata={"target_user_id": str(user.id), "tools": direct_tools},
+            metadata=summary,
         )
-        return AuthorizationUser(
-            user_id=user.id,
-            email=user.email,
-            display_name=user.display_name,
-            is_active=user.is_active,
-            roles=roles,
-            tools=effective_tools,
-            direct_tools=direct_tools,
-            created_at=user.created_at,
-            last_login_at=user.last_login_at,
-        )
+        return summary
 
     async def list_roles(self) -> list[str]:
         return await self._repository.list_manageable_role_names()
