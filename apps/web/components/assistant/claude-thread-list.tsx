@@ -16,6 +16,7 @@ import {
   ColumnsIcon,
   CodeIcon,
   DesktopIcon,
+  ExitIcon,
   GearIcon,
   MagnifyingGlassIcon,
   PersonIcon,
@@ -108,16 +109,166 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
 export function ClaudeThreadList({
   onSelectThread,
   onCloseSidebar,
+  onExpandSidebar,
+  onCollapseSidebar,
+  variant = "expanded",
 }: {
   onSelectThread?: () => void;
   onCloseSidebar?: () => void;
+  onExpandSidebar?: () => void;
+  onCollapseSidebar?: () => void;
+  variant?: "expanded" | "collapsed";
 }) {
   const user = getAuthUser();
   const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
   const secondary = user?.email?.trim() || user?.roles?.join(", ") || "Signed in";
   const isAdmin = user?.roles?.includes("admin") ?? false;
+
+  if (variant === "collapsed") {
+    const railButtonClassName =
+      "flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2/60 hover:text-text active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg";
+
+    const RailItem: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
+      return (
+        <div className="group relative flex">
+          {children}
+          <div
+            aria-hidden="true"
+            className={[
+              "pointer-events-none absolute top-1/2 left-full z-20 ml-2 -translate-y-1/2",
+              "whitespace-nowrap rounded-md border border-border bg-surface px-2 py-1 font-ui text-xs text-text shadow-sm",
+              "opacity-0 translate-x-1 transition",
+              "group-hover:translate-x-0 group-hover:opacity-100",
+              "group-focus-within:translate-x-0 group-focus-within:opacity-100",
+            ].join(" ")}
+          >
+            {label}
+          </div>
+        </div>
+      );
+    };
+
+    const DisabledRailButton: FC<{ label: string; icon: ReactNode }> = ({ label, icon }) => {
+      return (
+        <RailItem label={`${label} (coming soon)`}>
+          <button
+            type="button"
+            aria-disabled="true"
+            title="Coming soon"
+            onClick={(event) => event.preventDefault()}
+            className={railButtonClassName}
+          >
+            <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">
+              {icon}
+            </span>
+          </button>
+        </RailItem>
+      );
+    };
+
+    return (
+      <ThreadListPrimitive.Root className="flex h-full flex-col bg-bg py-3">
+        <div className="flex flex-1 flex-col items-center gap-1">
+          {onExpandSidebar ? (
+            <RailItem label="Expand sidebar">
+              <button
+                type="button"
+                onClick={onExpandSidebar}
+                aria-label="Expand sidebar"
+                className={railButtonClassName}
+              >
+                <ColumnsIcon width={14} height={14} />
+              </button>
+            </RailItem>
+          ) : null}
+
+          <RailItem label="New chat">
+            <ThreadListPrimitive.New
+              onClick={onSelectThread}
+              aria-label="New chat"
+              className={[railButtonClassName, "mt-4"].join(" ")}
+            >
+              <PlusIcon width={14} height={14} />
+            </ThreadListPrimitive.New>
+          </RailItem>
+
+          <DisabledRailButton
+            label="Search"
+            icon={<MagnifyingGlassIcon width={14} height={14} />}
+          />
+
+          {isAdmin ? (
+            <RailItem label="Users">
+              <Link href="/admin/users" aria-label="Users" className={railButtonClassName}>
+                <PersonIcon width={14} height={14} />
+              </Link>
+            </RailItem>
+          ) : null}
+
+          {isAdmin ? (
+            <RailItem label="Audit">
+              <Link href="/admin/audit" aria-label="Audit" className={railButtonClassName}>
+                <ActivityLogIcon width={14} height={14} />
+              </Link>
+            </RailItem>
+          ) : null}
+
+          {isAdmin ? (
+            <RailItem label="WHM Servers">
+              <Link
+                href="/admin/whm/servers"
+                aria-label="WHM Servers"
+                className={railButtonClassName}
+              >
+                <DesktopIcon width={14} height={14} />
+              </Link>
+            </RailItem>
+          ) : null}
+
+          <DisabledRailButton label="Artifacts" icon={<ArchiveIcon width={14} height={14} />} />
+          <DisabledRailButton label="Code" icon={<CodeIcon width={14} height={14} />} />
+
+          <div className="mt-auto flex flex-col items-center gap-2 pt-3">
+            <RailItem label={`${name} • ${secondary}`}>
+              <div
+                aria-hidden="true"
+                className="flex h-9 w-9 items-center justify-center rounded-full bg-text font-ui text-sm font-semibold text-bg"
+              >
+                {initial}
+              </div>
+            </RailItem>
+
+            <ConfirmAction
+              title="Log out?"
+              description="This ends your NOA session on this device."
+              confirmLabel="Log out"
+              confirmVariant="primary"
+              onConfirm={clearAuth}
+              trigger={({ open, disabled }) => (
+                <RailItem label="Logout">
+                  <button
+                    type="button"
+                    disabled={disabled}
+                    onClick={open}
+                    aria-label="Logout"
+                    className={railButtonClassName}
+                  >
+                    <ExitIcon width={14} height={14} />
+                  </button>
+                </RailItem>
+              )}
+            />
+          </div>
+        </div>
+      </ThreadListPrimitive.Root>
+    );
+  }
+
   const [backendOpen, setBackendOpen] = useState(false);
+
+  const closeAction = onCollapseSidebar ?? onCloseSidebar;
+  const closeActionLabel = onCollapseSidebar ? "Collapse sidebar" : "Close sidebar";
 
   return (
     <ThreadListPrimitive.Root className="flex h-full flex-col bg-bg">
@@ -127,11 +278,11 @@ export function ClaudeThreadList({
             NOA
           </div>
 
-          {onCloseSidebar ? (
+          {closeAction ? (
             <button
               type="button"
-              onClick={onCloseSidebar}
-              aria-label="Close sidebar"
+              onClick={closeAction}
+              aria-label={closeActionLabel}
               className="flex h-9 w-9 items-center justify-center rounded-lg text-muted transition-colors hover:bg-surface-2/60 hover:text-text active:scale-[0.98]"
             >
               <ColumnsIcon width={18} height={18} />

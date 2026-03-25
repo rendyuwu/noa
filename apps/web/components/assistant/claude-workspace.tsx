@@ -13,19 +13,51 @@ import { RequestApprovalToolUI } from "@/components/assistant/request-approval-t
 import { WorkflowReceiptToolUI } from "@/components/assistant/workflow-receipt-tool-ui";
 import { WorkflowTodoToolUI } from "@/components/assistant/workflow-todo-tool-ui";
 
+type DesktopSidebarMode = "expanded" | "collapsed";
+
+const DESKTOP_SIDEBAR_MODE_STORAGE_KEY = "noa.sidebar.mode.v1";
+
 export function ClaudeWorkspace() {
   const api = useAssistantApi();
   const [open, setOpen] = useState(false);
-  const [desktopSidebarOpen, setDesktopSidebarOpen] = useState(true);
+  const [desktopSidebarMode, setDesktopSidebarMode] = useState<DesktopSidebarMode>("expanded");
   const lastDeepLinkThreadId = useRef<string | null>(null);
 
-  const openSidebar = useCallback(() => {
-    setDesktopSidebarOpen(true);
-    if (window.matchMedia("(min-width: 768px)").matches) return;
-    setOpen(true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const stored = window.localStorage.getItem(DESKTOP_SIDEBAR_MODE_STORAGE_KEY);
+      if (stored === "expanded" || stored === "collapsed") {
+        setDesktopSidebarMode(stored);
+      }
+    } catch {}
   }, []);
+
+  const setDesktopSidebarModePersisted = useCallback((mode: DesktopSidebarMode) => {
+    setDesktopSidebarMode(mode);
+    try {
+      window.localStorage.setItem(DESKTOP_SIDEBAR_MODE_STORAGE_KEY, mode);
+    } catch {}
+  }, []);
+
+  const expandDesktopSidebar = useCallback(
+    () => setDesktopSidebarModePersisted("expanded"),
+    [setDesktopSidebarModePersisted],
+  );
+  const collapseDesktopSidebar = useCallback(
+    () => setDesktopSidebarModePersisted("collapsed"),
+    [setDesktopSidebarModePersisted],
+  );
+
+  const openSidebar = useCallback(() => {
+    if (window.matchMedia("(min-width: 768px)").matches) {
+      expandDesktopSidebar();
+      return;
+    }
+
+    setOpen(true);
+  }, [expandDesktopSidebar]);
   const closeSidebar = useCallback(() => setOpen(false), []);
-  const closeDesktopSidebar = useCallback(() => setDesktopSidebarOpen(false), []);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(min-width: 768px)");
@@ -77,21 +109,22 @@ export function ClaudeWorkspace() {
 
         <div
           className={[
-            "grid h-full min-h-0 grid-cols-1",
-            desktopSidebarOpen ? "md:grid-cols-[18rem_minmax(0,1fr)]" : "md:grid-cols-1",
+            "grid h-full min-h-0 grid-cols-1 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none",
+            desktopSidebarMode === "expanded"
+              ? "md:grid-cols-[18rem_minmax(0,1fr)]"
+              : "md:grid-cols-[3rem_minmax(0,1fr)]",
           ].join(" ")}
         >
-          {desktopSidebarOpen ? (
-            <aside className="hidden h-full min-h-0 border-border border-r md:block">
-              <ClaudeThreadList onCloseSidebar={closeDesktopSidebar} />
-            </aside>
-          ) : null}
+          <aside className="hidden h-full min-h-0 border-border border-r md:block">
+            <ClaudeThreadList
+              variant={desktopSidebarMode}
+              onCollapseSidebar={collapseDesktopSidebar}
+              onExpandSidebar={expandDesktopSidebar}
+            />
+          </aside>
 
           <div className="h-full min-h-0 min-w-0">
-            <ClaudeThread
-              onOpenSidebar={openSidebar}
-              showOpenSidebarButtonOnDesktop={!desktopSidebarOpen}
-            />
+            <ClaudeThread onOpenSidebar={openSidebar} />
           </div>
         </div>
 

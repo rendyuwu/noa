@@ -202,21 +202,15 @@ function ThreadHydrationSkeleton() {
 
 export const ClaudeThread: FC<{
   onOpenSidebar?: () => void;
-  showOpenSidebarButtonOnDesktop?: boolean;
-}> = ({ onOpenSidebar, showOpenSidebarButtonOnDesktop }) => {
+}> = ({ onOpenSidebar }) => {
   const { isHydrating } = useThreadHydration();
   const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
   const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
 
-  const sidebarButtonClassName = [
-    "absolute top-3 left-3 z-10 flex items-center gap-2",
-    showOpenSidebarButtonOnDesktop ? "" : "md:hidden",
-  ].join(" ");
-
   return (
     <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg px-4 pb-4 pt-14 font-serif">
       {onOpenSidebar ? (
-        <div className={sidebarButtonClassName}>
+        <div className="absolute top-3 left-3 z-10 flex items-center gap-2 md:hidden">
           <button
             type="button"
             onClick={onOpenSidebar}
