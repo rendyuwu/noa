@@ -26,6 +26,10 @@ type AdminUsersResponse = {
   users: AdminUser[];
 };
 
+type UpdateUserResponse = {
+  user: AdminUser;
+};
+
 type AdminRole = {
   name: string;
 };
@@ -89,6 +93,9 @@ export function UsersAdminPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  const [directSaving, setDirectSaving] = useState(false);
+  const [directError, setDirectError] = useState<string | null>(null);
+
   const [statusSaving, setStatusSaving] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
   const [deleteSaving, setDeleteSaving] = useState(false);
@@ -149,6 +156,8 @@ export function UsersAdminPage() {
     setRoleAssignments([]);
     setSaveError(null);
     setSaving(false);
+    setDirectError(null);
+    setDirectSaving(false);
     setStatusError(null);
     setStatusSaving(false);
     setDeleteError(null);
@@ -164,6 +173,8 @@ export function UsersAdminPage() {
     setRoleAssignments(coerceStringArray(user.roles));
     setSaveError(null);
     setSaving(false);
+    setDirectError(null);
+    setDirectSaving(false);
     setStatusError(null);
     setStatusSaving(false);
     setDeleteError(null);
@@ -200,14 +211,10 @@ export function UsersAdminPage() {
         body: JSON.stringify({ roles: requestedRoles }),
       });
 
-      await jsonOrThrow(response);
+      const payload = await jsonOrThrow<UpdateUserResponse>(response);
+      const updatedUser = payload.user;
 
-      setUsers((prev) =>
-        prev.map((u) => {
-          if (u.id !== userId) return u;
-          return { ...u, roles: requestedRoles };
-        })
-      );
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
       if (panelStillMatches(seq, userId)) {
         closePanel();
       }
@@ -218,6 +225,38 @@ export function UsersAdminPage() {
     } finally {
       if (panelStillMatches(seq, userId)) {
         setSaving(false);
+      }
+    }
+  };
+
+  const clearDirectGrants = async () => {
+    if (!selectedUser) return;
+
+    const seq = panelSeqRef.current;
+    const userId = selectedUser.id;
+
+    setDirectSaving(true);
+    setDirectError(null);
+
+    try {
+      const response = await fetchWithAuth(`/admin/users/${userId}/tools`, {
+        method: "PUT",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ tools: [] }),
+      });
+
+      const payload = await jsonOrThrow<UpdateUserResponse>(response);
+      const updatedUser = payload.user;
+      setUsers((prev) => prev.map((u) => (u.id === userId ? updatedUser : u)));
+    } catch (error) {
+      if (panelStillMatches(seq, userId)) {
+        setDirectError(toUserMessage(error, "Unable to clear direct grants"));
+      }
+    } finally {
+      if (panelStillMatches(seq, userId)) {
+        setDirectSaving(false);
       }
     }
   };
@@ -553,6 +592,7 @@ export function UsersAdminPage() {
                       <p className="mt-1 text-sm text-muted">
                         These tools are granted directly to the user (legacy behavior) and are not managed by roles.
                       </p>
+
                       <div className="mt-2 overflow-hidden rounded-lg border border-border bg-bg/25">
                         <div className="max-h-48 overflow-auto p-2">
                           <ul className="space-y-1">
@@ -564,6 +604,30 @@ export function UsersAdminPage() {
                           </ul>
                         </div>
                       </div>
+
+                      <ConfirmAction
+                        title="Clear legacy direct grants?"
+                        description="This removes the legacy direct tool grants from the user. Role-based grants remain."
+                        confirmLabel="Clear direct grants"
+                        confirmBusyLabel="Clearing..."
+                        confirmVariant="danger"
+                        busy={directSaving}
+                        error={directError}
+                        onConfirm={() => void clearDirectGrants()}
+                        trigger={({ open, disabled }) => (
+                          <Button
+                            className="mt-3 w-full"
+                            disabled={!selectedUser || disabled}
+                            onClick={() => {
+                              setDirectError(null);
+                              open();
+                            }}
+                            variant="danger"
+                          >
+                            Clear direct grants
+                          </Button>
+                        )}
+                      />
                     </div>
                   ) : null}
 

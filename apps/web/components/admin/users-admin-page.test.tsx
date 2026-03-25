@@ -232,7 +232,14 @@ describe("UsersAdminPage", () => {
       },
     });
 
-    const putResponse = new Response(JSON.stringify({ ok: true }), {
+    const putPayload = {
+      user: {
+        ...usersPayload.users[0],
+        roles: ["admin", "member"],
+      },
+    };
+
+    const putResponse = new Response(JSON.stringify(putPayload), {
       status: 200,
       headers: {
         "content-type": "application/json",
@@ -249,7 +256,7 @@ describe("UsersAdminPage", () => {
     mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
       if (response === usersResponse) return usersPayload;
       if (response === rolesResponse) return rolesPayload;
-      if (response === putResponse) return { ok: true };
+      if (response === putResponse) return putPayload;
       throw new Error("Unexpected jsonOrThrow response");
     });
 

@@ -1346,10 +1346,12 @@ async def test_admin_user_roles_endpoint_replaces_non_internal_roles_and_preserv
     assert response.status_code == 200
     body = response.json()["user"]
     assert "member" in body["roles"]
-    assert internal_role in body["roles"]
     assert "viewer" not in body["roles"]
     assert body["direct_tools"] == ["set_demo_flag"]
     assert body["tools"] == ["get_current_time", "set_demo_flag"]
+
+    # Internal roles stay assigned (direct grants preserved).
+    assert internal_role in repo.user_roles[target_user_id]
 
 
 async def test_admin_user_roles_endpoint_blocks_internal_roles_in_payload() -> None:

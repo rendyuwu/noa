@@ -89,7 +89,7 @@ def _to_user_response(user: AuthorizationUser) -> AdminUserResponse:
         is_active=user.is_active,
         created_at=user.created_at,
         last_login_at=user.last_login_at,
-        roles=user.roles,
+        roles=[role for role in user.roles if not role.startswith("user:")],
         tools=user.tools,
         direct_tools=user.direct_tools,
     )
