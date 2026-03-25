@@ -19,18 +19,37 @@ type AdminUser = {
   is_active?: boolean;
   roles?: string[];
   tools?: string[];
+  direct_tools?: string[];
 };
 
 type AdminUsersResponse = {
   users: AdminUser[];
 };
 
-type AdminToolsResponse = {
-  tools: string[];
+type AdminRole = {
+  name: string;
+};
+
+type AdminRolesResponse = {
+  roles: AdminRole[] | string[];
 };
 
 function coerceStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+}
+
+function coerceRoleNames(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const strings = value.filter((v): v is string => typeof v === "string");
+  if (strings.length) return strings;
+
+  const names: string[] = [];
+  for (const item of value) {
+    if (item && typeof item === "object" && "name" in item && typeof (item as any).name === "string") {
+      names.push((item as any).name);
+    }
+  }
+  return names;
 }
 
 function sanitizeIdPart(value: string): string {
@@ -46,7 +65,7 @@ function formatTimestamp(value: unknown): string {
 
 export function UsersAdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [availableRoles, setAvailableRoles] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -65,8 +84,8 @@ export function UsersAdminPage() {
     selectedUserIdRef.current = selectedUserId;
   }, [selectedUserId]);
 
-  const [toolFilter, setToolFilter] = useState("");
-  const [toolAllowlist, setToolAllowlist] = useState<string[]>([]);
+  const [roleFilter, setRoleFilter] = useState("");
+  const [roleAssignments, setRoleAssignments] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -81,19 +100,20 @@ export function UsersAdminPage() {
     setLoadError(null);
 
     try {
-      const [usersResponse, toolsResponse] = await Promise.all([
+      const [usersResponse, rolesResponse] = await Promise.all([
         fetchWithAuth("/admin/users"),
-        fetchWithAuth("/admin/tools"),
+        fetchWithAuth("/admin/roles"),
       ]);
 
-      const [usersPayload, toolsPayload] = await Promise.all([
+      const [usersPayload, rolesPayload] = await Promise.all([
         jsonOrThrow<AdminUsersResponse>(usersResponse),
-        jsonOrThrow<AdminToolsResponse>(toolsResponse),
+        jsonOrThrow<AdminRolesResponse>(rolesResponse),
       ]);
 
       if (seq !== loadSeqRef.current) return;
       setUsers(Array.isArray(usersPayload.users) ? usersPayload.users : []);
-      setAvailableTools(coerceStringArray(toolsPayload.tools));
+      const roleNames = coerceRoleNames(rolesPayload.roles);
+      setAvailableRoles(Array.from(new Set(roleNames)).sort((a, b) => a.localeCompare(b)));
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
       setLoadError(toUserMessage(error, "Unable to load users"));
@@ -110,23 +130,23 @@ export function UsersAdminPage() {
     };
   }, [loadData]);
 
-  const allToolNames = useMemo(() => {
-    const merged = new Set<string>([...coerceStringArray(availableTools), ...coerceStringArray(toolAllowlist)]);
+  const allRoleNames = useMemo(() => {
+    const merged = new Set<string>([...coerceStringArray(availableRoles), ...coerceStringArray(roleAssignments)]);
     return Array.from(merged).sort((a, b) => a.localeCompare(b));
-  }, [availableTools, toolAllowlist]);
+  }, [availableRoles, roleAssignments]);
 
-  const filteredToolNames = useMemo(() => {
-    const needle = toolFilter.trim().toLowerCase();
-    if (!needle) return allToolNames;
-    return allToolNames.filter((name) => name.toLowerCase().includes(needle));
-  }, [allToolNames, toolFilter]);
+  const filteredRoleNames = useMemo(() => {
+    const needle = roleFilter.trim().toLowerCase();
+    if (!needle) return allRoleNames;
+    return allRoleNames.filter((name) => name.toLowerCase().includes(needle));
+  }, [allRoleNames, roleFilter]);
 
   const closePanel = () => {
     panelSeqRef.current += 1;
     selectedUserIdRef.current = null;
     setSelectedUserId(null);
-    setToolFilter("");
-    setToolAllowlist([]);
+    setRoleFilter("");
+    setRoleAssignments([]);
     setSaveError(null);
     setSaving(false);
     setStatusError(null);
@@ -140,8 +160,8 @@ export function UsersAdminPage() {
     openerRef.current = opener;
     selectedUserIdRef.current = user.id;
     setSelectedUserId(user.id);
-    setToolFilter("");
-    setToolAllowlist(coerceStringArray(user.tools));
+    setRoleFilter("");
+    setRoleAssignments(coerceStringArray(user.roles));
     setSaveError(null);
     setSaving(false);
     setStatusError(null);
@@ -150,10 +170,10 @@ export function UsersAdminPage() {
     setDeleteSaving(false);
   };
 
-  const toggleTool = (toolName: string) => {
-    setToolAllowlist((prev) => {
-      if (prev.includes(toolName)) return prev.filter((t) => t !== toolName);
-      return [...prev, toolName].sort((a, b) => a.localeCompare(b));
+  const toggleRole = (roleName: string) => {
+    setRoleAssignments((prev) => {
+      if (prev.includes(roleName)) return prev.filter((r) => r !== roleName);
+      return [...prev, roleName].sort((a, b) => a.localeCompare(b));
     });
   };
 
@@ -161,23 +181,23 @@ export function UsersAdminPage() {
     return panelSeqRef.current === seq && selectedUserIdRef.current === userId;
   };
 
-  const saveTools = async () => {
+  const saveRoles = async () => {
     if (!selectedUser) return;
 
     const seq = panelSeqRef.current;
     const userId = selectedUser.id;
-    const requestedTools = toolAllowlist.slice();
+    const requestedRoles = roleAssignments.slice();
 
     setSaving(true);
     setSaveError(null);
 
     try {
-      const response = await fetchWithAuth(`/admin/users/${userId}/tools`, {
+      const response = await fetchWithAuth(`/admin/users/${userId}/roles`, {
         method: "PUT",
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({ tools: requestedTools }),
+        body: JSON.stringify({ roles: requestedRoles }),
       });
 
       await jsonOrThrow(response);
@@ -185,7 +205,7 @@ export function UsersAdminPage() {
       setUsers((prev) =>
         prev.map((u) => {
           if (u.id !== userId) return u;
-          return { ...u, tools: requestedTools };
+          return { ...u, roles: requestedRoles };
         })
       );
       if (panelStillMatches(seq, userId)) {
@@ -193,7 +213,7 @@ export function UsersAdminPage() {
       }
     } catch (error) {
       if (panelStillMatches(seq, userId)) {
-        setSaveError(toUserMessage(error, "Unable to save tool allowlist"));
+        setSaveError(toUserMessage(error, "Unable to save roles"));
       }
     } finally {
       if (panelStillMatches(seq, userId)) {
@@ -342,7 +362,7 @@ export function UsersAdminPage() {
                       key={user.id}
                       tabIndex={0}
                       aria-haspopup="dialog"
-                      aria-label={`Edit tools for ${user.email}`}
+                      aria-label={`Manage roles for ${user.email}`}
                       className="cursor-pointer transition-colors hover:bg-surface-2/60 focus-visible:bg-surface-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
                       onClick={(event) => openPanelForUser(user, event.currentTarget)}
                       onKeyDown={(event) => {
@@ -387,9 +407,9 @@ export function UsersAdminPage() {
               openerRef.current?.focus();
             }}
           >
-            <Dialog.Title className="sr-only">Edit user tools</Dialog.Title>
+            <Dialog.Title className="sr-only">Manage user roles</Dialog.Title>
             <Dialog.Description className="sr-only">
-              Edit the selected user's authorized tools.
+              Edit the selected user's roles and review effective tools.
             </Dialog.Description>
 
             <div className="flex h-full flex-col">
@@ -461,31 +481,31 @@ export function UsersAdminPage() {
                     </p>
                   ) : null}
 
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="tool-filter">
-                    Tool allowlist
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="role-filter">
+                    Role assignment
                   </label>
                   <input
-                    id="tool-filter"
+                    id="role-filter"
                     className="input mt-2"
-                    placeholder="Filter tools..."
-                    value={toolFilter}
-                    onChange={(e) => setToolFilter(e.target.value)}
+                    placeholder="Filter roles..."
+                    value={roleFilter}
+                    onChange={(e) => setRoleFilter(e.target.value)}
                   />
 
                   <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
                     <div className="max-h-[62vh] overflow-auto p-2">
-                      {filteredToolNames.length === 0 ? (
-                        <div className="px-2 py-3 text-sm text-muted">No matching tools.</div>
+                      {filteredRoleNames.length === 0 ? (
+                        <div className="px-2 py-3 text-sm text-muted">No matching roles.</div>
                       ) : (
                         <ul className="space-y-1">
-                          {filteredToolNames.map((toolName) => {
-                            const checked = toolAllowlist.includes(toolName);
-                            const toolIdPart = sanitizeIdPart(toolName);
+                          {filteredRoleNames.map((roleName) => {
+                            const checked = roleAssignments.includes(roleName);
+                            const roleIdPart = sanitizeIdPart(roleName);
                             const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
-                            const inputId = `tool-${userIdPart}-${toolIdPart}`;
+                            const inputId = `role-${userIdPart}-${roleIdPart}`;
 
                             return (
-                              <li key={toolName}>
+                              <li key={roleName}>
                                 <label
                                   className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
                                   htmlFor={inputId}
@@ -494,9 +514,9 @@ export function UsersAdminPage() {
                                     id={inputId}
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={() => toggleTool(toolName)}
+                                    onChange={() => toggleRole(roleName)}
                                   />
-                                  <span className="text-sm text-text">{toolName}</span>
+                                  <span className="text-sm text-text">{roleName}</span>
                                 </label>
                               </li>
                             );
@@ -506,11 +526,52 @@ export function UsersAdminPage() {
                     </div>
                   </div>
 
+                  <div className="mt-4 rounded-xl border border-border bg-surface px-3 py-3">
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted">Effective tools</div>
+                    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-bg/25">
+                      <div className="max-h-48 overflow-auto p-2">
+                        {coerceStringArray(selectedUser?.tools).length === 0 ? (
+                          <div className="px-2 py-2 text-sm text-muted">No tools granted.</div>
+                        ) : (
+                          <ul className="space-y-1">
+                            {coerceStringArray(selectedUser?.tools).map((toolName) => (
+                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-text">
+                                {toolName}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {coerceStringArray(selectedUser?.direct_tools).length ? (
+                    <div className="mt-4 rounded-xl border border-border bg-surface px-3 py-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">
+                        Legacy direct grants
+                      </div>
+                      <p className="mt-1 text-sm text-muted">
+                        These tools are granted directly to the user (legacy behavior) and are not managed by roles.
+                      </p>
+                      <div className="mt-2 overflow-hidden rounded-lg border border-border bg-bg/25">
+                        <div className="max-h-48 overflow-auto p-2">
+                          <ul className="space-y-1">
+                            {coerceStringArray(selectedUser?.direct_tools).map((toolName) => (
+                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-text">
+                                {toolName}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="mt-4 border-t border-border pt-4">
                     <Button
                       className="w-full"
                       disabled={!selectedUser || saving}
-                      onClick={() => void saveTools()}
+                      onClick={() => void saveRoles()}
                       variant="primary"
                     >
                       {saving ? "Saving..." : "Save"}

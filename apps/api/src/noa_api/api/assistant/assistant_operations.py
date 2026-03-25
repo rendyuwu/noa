@@ -41,6 +41,8 @@ class AssistantPreparationServiceProtocol(Protocol):
 class AssistantAuthorizationServiceProtocol(Protocol):
     async def authorize_tool_access(self, user: Any, tool_name: str) -> bool: ...
 
+    async def get_allowed_tool_names(self, user: Any) -> set[str]: ...
+
 
 class AssistantAgentServiceProtocol(Protocol):
     async def load_state(
@@ -266,13 +268,8 @@ async def run_agent_phase(
         controller.state = {}
 
     try:
-        allowed_tools: set[str] = set()
-        for tool in get_tool_registry():
-            tool_name = tool.name
-            if await authorization_service.authorize_tool_access(
-                current_user, tool_name
-            ):
-                allowed_tools.add(tool_name)
+        allowed_tools = await authorization_service.get_allowed_tool_names(current_user)
+        allowed_tools &= {tool.name for tool in get_tool_registry()}
 
         allowed_tools.add("update_workflow_todo")
 

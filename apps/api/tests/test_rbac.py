@@ -12,7 +12,17 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from noa_api.api.auth_dependencies import get_current_auth_user
-from noa_api.api.error_codes import INVALID_TOKEN, MISSING_BEARER_TOKEN
+from noa_api.api.error_codes import (
+    ADMIN_ROLE_NOT_FOUND,
+    INTERNAL_ROLE_FORBIDDEN,
+    INVALID_ROLE_NAME,
+    INVALID_TOKEN,
+    MISSING_BEARER_TOKEN,
+    RESERVED_ROLE,
+    SELF_REMOVE_ADMIN_ROLE,
+    UNKNOWN_ROLES,
+    UNKNOWN_TOOLS,
+)
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.admin import router as admin_router
 from noa_api.core.auth.auth_service import AuthUser
@@ -102,6 +112,43 @@ class _InMemoryAuthorizationRepository:
             tools.update(self.role_tools.get(role_name, set()))
         return sorted(tools)
 
+    async def list_manageable_role_names(self) -> list[str]:
+        return sorted({name for name in self.roles if not name.startswith("user:")})
+
+    async def role_exists(self, role_name: str) -> bool:
+        return role_name in self.roles
+
+    async def create_role(self, role_name: str) -> str:
+        self.roles.add(role_name)
+        return role_name
+
+    async def delete_role(self, role_name: str) -> bool:
+        if role_name not in self.roles:
+            return False
+        self.roles.discard(role_name)
+        self.role_tools.pop(role_name, None)
+        for roles in self.user_roles.values():
+            roles.discard(role_name)
+        return True
+
+    async def list_existing_role_names(self, role_names: list[str]) -> list[str]:
+        normalized = {name.strip() for name in role_names if name.strip()}
+        return sorted({name for name in normalized if name in self.roles})
+
+    async def get_role_tool_names_for_role(self, role_name: str) -> list[str]:
+        return sorted(self.role_tools.get(role_name, set()))
+
+    async def replace_user_non_internal_roles(
+        self, user_id: UUID, role_names: list[str]
+    ) -> None:
+        internal = {
+            name
+            for name in self.user_roles.get(user_id, set())
+            if name.startswith("user:")
+        }
+        updated = internal | set(role_names)
+        self.user_roles[user_id] = set(updated)
+
     async def list_users(self) -> list[_RepoUser]:
         return sorted(self.users.values(), key=lambda user: user.email)
 
@@ -184,6 +231,7 @@ class _FakeAuthorizationService:
                 is_active=True,
                 roles=["member"],
                 tools=["get_current_time"],
+                direct_tools=["get_current_time"],
                 created_at=created_at,
                 last_login_at=None,
             )
@@ -240,7 +288,9 @@ class _FakeAuthorizationService:
         self.last_set_tools = tool_names
         if user_id != self.target_user_id:
             return None
-        self.users[0].tools = sorted(set(tool_names))
+        updated = sorted(set(tool_names))
+        self.users[0].tools = updated
+        self.users[0].direct_tools = updated
         return self.users[0]
 
 
@@ -291,8 +341,9 @@ async def test_authorization_service_admin_requires_explicit_tool_permissions() 
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
-    assert await service.authorize_tool_access(user, "get_current_time") is False
+    assert await service.authorize_tool_access(user, "get_current_time") is True
 
 
 async def test_authorization_service_admin_allows_when_role_grants_tool() -> None:
@@ -306,8 +357,24 @@ async def test_authorization_service_admin_allows_when_role_grants_tool() -> Non
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
     assert await service.authorize_tool_access(user, "get_current_time") is True
+
+
+async def test_authorization_service_admin_bypass_still_rejects_unknown_tools() -> None:
+    repo = _InMemoryAuthorizationRepository()
+    service = _build_authorization_service(repo)
+    user = AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+    assert await service.authorize_tool_access(user, "not-a-real-tool") is False
 
 
 async def test_authorization_service_disabled_user_has_zero_permissions() -> None:
@@ -322,6 +389,7 @@ async def test_authorization_service_disabled_user_has_zero_permissions() -> Non
             is_active=False,
             roles=["admin", "member"],
             tools=[],
+            direct_tools=[],
         ),
         "get_current_time",
     )
@@ -339,6 +407,7 @@ async def test_authorization_service_non_admin_depends_on_tool_permissions() -> 
         is_active=True,
         roles=["member"],
         tools=[],
+        direct_tools=[],
     )
     assert await service.authorize_tool_access(user, "get_current_time") is True
     assert await service.authorize_tool_access(user, "set_demo_flag") is False
@@ -437,6 +506,7 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
         is_active=True,
         roles=[],
         tools=[],
+        direct_tools=[],
     )
 
     assert await service.authorize_tool_access(user, "get_current_time") is False
@@ -453,6 +523,7 @@ async def test_authorization_service_permission_updates_take_effect_immediately(
         is_active=True,
         roles=updated.roles,
         tools=updated.tools,
+        direct_tools=updated.direct_tools,
     )
     assert await service.authorize_tool_access(updated_user, "get_current_time") is True
 
@@ -554,6 +625,7 @@ async def test_admin_routes_forbid_non_admin_users() -> None:
         is_active=True,
         roles=["member"],
         tools=[],
+        direct_tools=[],
     )
 
     transport = ASGITransport(app=app)
@@ -739,6 +811,7 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
     app.dependency_overrides[get_authorization_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: admin_user
@@ -771,6 +844,10 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
 
     assert put_response.status_code == 200
     assert put_response.json()["user"]["tools"] == ["get_current_date", "set_demo_flag"]
+    assert put_response.json()["user"]["direct_tools"] == [
+        "get_current_date",
+        "set_demo_flag",
+    ]
     assert service.last_set_tools == ["set_demo_flag", "get_current_date"]
 
     payloads = _load_log_payloads(stream)
@@ -927,6 +1004,7 @@ async def test_admin_route_deletes_user() -> None:
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
     app.dependency_overrides[get_authorization_service] = lambda: service
     app.dependency_overrides[get_current_auth_user] = lambda: admin_user
@@ -973,6 +1051,7 @@ async def test_admin_route_blocks_self_delete_with_409() -> None:
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
 
     transport = ASGITransport(app=app)
@@ -1001,6 +1080,7 @@ async def test_admin_route_rejects_unknown_tools_with_400() -> None:
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
 
     transport = ASGITransport(app=app)
@@ -1030,6 +1110,7 @@ async def test_admin_route_returns_error_code_for_missing_user_404() -> None:
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
 
     transport = ASGITransport(app=app)
@@ -1072,6 +1153,7 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
         is_active=True,
         roles=["admin"],
         tools=[],
+        direct_tools=[],
     )
 
     app.dependency_overrides[get_authorization_service] = lambda: service
@@ -1128,3 +1210,299 @@ async def test_admin_route_blocks_disabling_last_active_admin_with_409() -> None
         )
     ]
     assert recorder.report_events == []
+
+
+async def test_admin_role_endpoints_manage_roles_and_tools() -> None:
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    repo.roles.update({"admin", "user:legacy"})
+    service = _build_authorization_service(repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        create = await client.post("/admin/roles", json={"name": "member"})
+        assert create.status_code == 200
+        assert create.json() == {"name": "member"}
+
+        listed = await client.get("/admin/roles")
+        assert listed.status_code == 200
+        assert "user:legacy" not in listed.json()["roles"]
+        assert "admin" in listed.json()["roles"]
+        assert "member" in listed.json()["roles"]
+
+        put_tools = await client.put(
+            "/admin/roles/member/tools", json={"tools": ["get_current_time"]}
+        )
+        assert put_tools.status_code == 200
+        assert put_tools.json() == {"tools": ["get_current_time"]}
+
+        get_tools = await client.get("/admin/roles/member/tools")
+        assert get_tools.status_code == 200
+        assert get_tools.json() == {"tools": ["get_current_time"]}
+
+        unknown_tools = await client.put(
+            "/admin/roles/member/tools", json={"tools": ["unknown-tool"]}
+        )
+        assert unknown_tools.status_code == 400
+        assert unknown_tools.json()["error_code"] == UNKNOWN_TOOLS
+
+        reserved_edit = await client.put(
+            "/admin/roles/admin/tools", json={"tools": ["get_current_time"]}
+        )
+        assert reserved_edit.status_code == 403
+        assert reserved_edit.json()["error_code"] == RESERVED_ROLE
+
+        deleted = await client.delete("/admin/roles/member")
+        assert deleted.status_code == 200
+        assert deleted.json() == {"ok": True}
+
+        delete_reserved = await client.delete("/admin/roles/admin")
+        assert delete_reserved.status_code == 403
+        assert delete_reserved.json()["error_code"] == RESERVED_ROLE
+
+        missing_role = await client.get("/admin/roles/nope/tools")
+        assert missing_role.status_code == 404
+        assert missing_role.json()["error_code"] == ADMIN_ROLE_NOT_FOUND
+
+
+async def test_admin_role_endpoints_reject_invalid_role_name() -> None:
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    repo.roles.add("admin")
+    service = _build_authorization_service(repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/admin/roles", json={"name": "bad role"})
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == INVALID_ROLE_NAME
+
+
+async def test_admin_user_roles_endpoint_replaces_non_internal_roles_and_preserves_internal() -> (
+    None
+):
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    target_user_id = uuid4()
+    internal_role = f"user:{target_user_id}"
+    repo.users[target_user_id] = _RepoUser(
+        id=target_user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
+    repo.roles.update({"admin", "member", "viewer"})
+    repo.user_roles[target_user_id] = {"member", "viewer", internal_role}
+    repo.role_tools["member"] = {"get_current_time"}
+    repo.role_tools[internal_role] = {"set_demo_flag"}
+    service = _build_authorization_service(repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            f"/admin/users/{target_user_id}/roles",
+            json={"roles": ["member"]},
+        )
+
+    assert response.status_code == 200
+    body = response.json()["user"]
+    assert "member" in body["roles"]
+    assert internal_role in body["roles"]
+    assert "viewer" not in body["roles"]
+    assert body["direct_tools"] == ["set_demo_flag"]
+    assert body["tools"] == ["get_current_time", "set_demo_flag"]
+
+
+async def test_admin_user_roles_endpoint_blocks_internal_roles_in_payload() -> None:
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    target_user_id = uuid4()
+    repo.users[target_user_id] = _RepoUser(
+        id=target_user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
+    repo.roles.add("admin")
+    service = _build_authorization_service(repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            f"/admin/users/{target_user_id}/roles",
+            json={"roles": [f"user:{target_user_id}"]},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == INTERNAL_ROLE_FORBIDDEN
+
+
+async def test_admin_user_roles_endpoint_rejects_unknown_roles() -> None:
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    target_user_id = uuid4()
+    repo.users[target_user_id] = _RepoUser(
+        id=target_user_id,
+        email="member@example.com",
+        display_name="Member",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
+    repo.roles.add("admin")
+    service = _build_authorization_service(repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            f"/admin/users/{target_user_id}/roles",
+            json={"roles": ["member"]},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["error_code"] == UNKNOWN_ROLES
+
+
+async def test_admin_user_roles_endpoint_blocks_self_removing_admin_role() -> None:
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    admin_id = uuid4()
+    repo.users[admin_id] = _RepoUser(
+        id=admin_id,
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
+    repo.roles.update({"admin", "member"})
+    repo.user_roles[admin_id] = {"admin"}
+    service = _build_authorization_service(repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=admin_id,
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            f"/admin/users/{admin_id}/roles",
+            json={"roles": ["member"]},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == SELF_REMOVE_ADMIN_ROLE
+
+
+async def test_admin_user_roles_endpoint_blocks_removing_admin_from_last_active_admin() -> (
+    None
+):
+    app = _create_admin_app()
+
+    repo = _InMemoryAuthorizationRepository()
+    admin_id = uuid4()
+    repo.users[admin_id] = _RepoUser(
+        id=admin_id,
+        email="admin@example.com",
+        display_name="Admin",
+        is_active=True,
+        created_at=datetime.now(UTC),
+        last_login_at=None,
+    )
+    repo.roles.update({"admin", "member"})
+    repo.user_roles[admin_id] = {"admin"}
+    service = _build_authorization_service(repo)
+
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=uuid4(),
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.put(
+            f"/admin/users/{admin_id}/roles",
+            json={"roles": ["member"]},
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error_code"] == "last_active_admin"

@@ -126,6 +126,10 @@ class _FakeAuthorizationService:
         self.calls.append((user.user_id, tool_name))
         return tool_name in self.allowed_tools
 
+    async def get_allowed_tool_names(self, user: AuthorizationUser) -> set[str]:
+        _ = user
+        return set(self.allowed_tools)
+
 
 def _make_user(*, user_id: UUID) -> AuthorizationUser:
     return AuthorizationUser(

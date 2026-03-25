@@ -143,6 +143,10 @@ class _FakeAuthorizationService:
         _ = user
         return tool_name in self.allowed_tools
 
+    async def get_allowed_tool_names(self, user: AuthorizationUser) -> set[str]:
+        _ = user
+        return set(self.allowed_tools)
+
 
 @dataclass
 class _FakeController:

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
+import re
 from typing import Protocol
 from uuid import UUID
 
@@ -40,6 +41,34 @@ class SelfDeleteAdminError(Exception):
     pass
 
 
+class InvalidRoleNameError(Exception):
+    pass
+
+
+class ReservedRoleError(Exception):
+    pass
+
+
+class InternalRoleError(Exception):
+    pass
+
+
+class RoleNotFoundError(Exception):
+    pass
+
+
+class UnknownRoleError(Exception):
+    def __init__(self, unknown_roles: list[str]) -> None:
+        self.unknown_roles = sorted(
+            {name.strip() for name in unknown_roles if name.strip()}
+        )
+        super().__init__(f"Unknown roles: {', '.join(self.unknown_roles)}")
+
+
+class SelfRemoveAdminRoleError(Exception):
+    pass
+
+
 @dataclass
 class AuthorizationUser:
     user_id: UUID
@@ -48,12 +77,29 @@ class AuthorizationUser:
     is_active: bool
     roles: list[str]
     tools: list[str]
+    direct_tools: list[str] = field(default_factory=list)
     created_at: datetime | None = None
     last_login_at: datetime | None = None
 
 
 class AuthorizationRepositoryProtocol(Protocol):
     async def get_role_tool_names(self, role_names: list[str]) -> list[str]: ...
+
+    async def list_manageable_role_names(self) -> list[str]: ...
+
+    async def role_exists(self, role_name: str) -> bool: ...
+
+    async def create_role(self, role_name: str) -> str: ...
+
+    async def delete_role(self, role_name: str) -> bool: ...
+
+    async def list_existing_role_names(self, role_names: list[str]) -> list[str]: ...
+
+    async def get_role_tool_names_for_role(self, role_name: str) -> list[str]: ...
+
+    async def replace_user_non_internal_roles(
+        self, user_id: UUID, role_names: list[str]
+    ) -> None: ...
 
     async def list_users(self) -> list[User]: ...
 
@@ -102,6 +148,83 @@ class SQLAuthorizationRepository:
             .where(Role.name.in_(role_names))
         )
         return sorted({str(name) for name in result.scalars().all()})
+
+    async def list_manageable_role_names(self) -> list[str]:
+        result = await self._session.execute(
+            select(Role.name).where(~Role.name.like("user:%")).order_by(Role.name.asc())
+        )
+        return [str(name) for name in result.scalars().all()]
+
+    async def role_exists(self, role_name: str) -> bool:
+        result = await self._session.execute(
+            select(Role.id).where(Role.name == role_name)
+        )
+        return result.scalar_one_or_none() is not None
+
+    async def create_role(self, role_name: str) -> str:
+        return await self.ensure_role(role_name)
+
+    async def delete_role(self, role_name: str) -> bool:
+        result = await self._session.execute(select(Role).where(Role.name == role_name))
+        role = result.scalar_one_or_none()
+        if role is None:
+            return False
+        await self._session.delete(role)
+        await self._session.flush()
+        return True
+
+    async def list_existing_role_names(self, role_names: list[str]) -> list[str]:
+        normalized = [name.strip() for name in role_names if name.strip()]
+        if not normalized:
+            return []
+        result = await self._session.execute(
+            select(Role.name).where(Role.name.in_(normalized))
+        )
+        return sorted({str(name) for name in result.scalars().all()})
+
+    async def get_role_tool_names_for_role(self, role_name: str) -> list[str]:
+        result = await self._session.execute(
+            select(RoleToolPermission.tool_name)
+            .join(Role, Role.id == RoleToolPermission.role_id)
+            .where(Role.name == role_name)
+        )
+        return sorted({str(name) for name in result.scalars().all()})
+
+    async def replace_user_non_internal_roles(
+        self, user_id: UUID, role_names: list[str]
+    ) -> None:
+        normalized = sorted({name.strip() for name in role_names if name.strip()})
+
+        # Delete all non-internal roles (keep roles starting with user:).
+        await self._session.execute(
+            delete(UserRole).where(
+                UserRole.user_id == user_id,
+                UserRole.role_id.in_(select(Role.id).where(~Role.name.like("user:%"))),
+            )
+        )
+
+        if not normalized:
+            await self._session.flush()
+            return
+
+        roles_result = await self._session.execute(
+            select(Role.id, Role.name).where(Role.name.in_(normalized))
+        )
+        roles_by_name = {str(name): role_id for role_id, name in roles_result.all()}
+
+        existing_result = await self._session.execute(
+            select(UserRole.role_id).where(UserRole.user_id == user_id)
+        )
+        existing_role_ids = {role_id for role_id in existing_result.scalars().all()}
+
+        for role_name in normalized:
+            role_id = roles_by_name.get(role_name)
+            if role_id is None:
+                continue
+            if role_id in existing_role_ids:
+                continue
+            self._session.add(UserRole(user_id=user_id, role_id=role_id))
+        await self._session.flush()
 
     async def list_users(self) -> list[User]:
         result = await self._session.execute(select(User).order_by(User.email.asc()))
@@ -241,20 +364,56 @@ class AuthorizationService:
         self._repository = repository
         self._known_tools = set(get_tool_catalog())
 
+    @staticmethod
+    def _validate_role_name(role_name: str) -> str:
+        normalized = role_name.strip()
+        if not normalized:
+            raise InvalidRoleNameError("Role name cannot be empty")
+        if len(normalized) > 100:
+            raise InvalidRoleNameError("Role name is too long")
+        if normalized.startswith("user:"):
+            raise InvalidRoleNameError("Role name cannot start with user:")
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", normalized):
+            raise InvalidRoleNameError("Role name contains invalid characters")
+        return normalized
+
+    async def get_allowed_tool_names(self, user: AuthorizationUser) -> set[str]:
+        if not user.is_active:
+            return set()
+        if "admin" in user.roles:
+            return set(self._known_tools)
+        role_tools = await self._repository.get_role_tool_names(user.roles)
+        return {name for name in role_tools if name in self._known_tools}
+
     async def authorize_tool_access(
         self, user: AuthorizationUser, tool_name: str
     ) -> bool:
         if not user.is_active:
             return False
+        if "admin" in user.roles:
+            return tool_name in self._known_tools
         role_tools = await self._repository.get_role_tool_names(user.roles)
-        return tool_name in role_tools
+        return tool_name in self._known_tools and tool_name in role_tools
 
     async def list_users(self) -> list[AuthorizationUser]:
         users = await self._repository.list_users()
         result: list[AuthorizationUser] = []
         for user in users:
             roles = await self._repository.get_role_names(user.id)
-            tools = await self._repository.get_user_allowlist_tools(user.id)
+            direct_tools = await self._repository.get_user_allowlist_tools(user.id)
+            effective_tools = sorted(
+                await self.get_allowed_tool_names(
+                    AuthorizationUser(
+                        user_id=user.id,
+                        email=user.email,
+                        display_name=user.display_name,
+                        is_active=user.is_active,
+                        roles=roles,
+                        tools=[],
+                        direct_tools=[],
+                    )
+                )
+            )
             result.append(
                 AuthorizationUser(
                     user_id=user.id,
@@ -262,7 +421,8 @@ class AuthorizationService:
                     display_name=user.display_name,
                     is_active=user.is_active,
                     roles=roles,
-                    tools=tools,
+                    tools=effective_tools,
+                    direct_tools=direct_tools,
                     created_at=user.created_at,
                     last_login_at=user.last_login_at,
                 )
@@ -295,7 +455,20 @@ class AuthorizationService:
         if user is None:
             return None
 
-        tools = await self._repository.get_user_allowlist_tools(user.id)
+        direct_tools = await self._repository.get_user_allowlist_tools(user.id)
+        effective_tools = sorted(
+            await self.get_allowed_tool_names(
+                AuthorizationUser(
+                    user_id=user.id,
+                    email=user.email,
+                    display_name=user.display_name,
+                    is_active=user.is_active,
+                    roles=roles,
+                    tools=[],
+                    direct_tools=[],
+                )
+            )
+        )
         await self._repository.create_audit_log(
             event_type="admin_user_status_updated",
             actor_email=actor_email,
@@ -308,7 +481,8 @@ class AuthorizationService:
             display_name=user.display_name,
             is_active=user.is_active,
             roles=roles,
-            tools=tools,
+            tools=effective_tools,
+            direct_tools=direct_tools,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
         )
@@ -328,7 +502,20 @@ class AuthorizationService:
             return None
 
         roles = await self._repository.get_role_names(user.id)
-        tools = await self._repository.get_user_allowlist_tools(user.id)
+        direct_tools = await self._repository.get_user_allowlist_tools(user.id)
+        effective_tools = sorted(
+            await self.get_allowed_tool_names(
+                AuthorizationUser(
+                    user_id=user.id,
+                    email=user.email,
+                    display_name=user.display_name,
+                    is_active=user.is_active,
+                    roles=roles,
+                    tools=[],
+                    direct_tools=[],
+                )
+            )
+        )
         is_admin_user = "admin" in roles
         if actor_user_id is not None and actor_user_id == user_id:
             raise SelfDeleteAdminError("Admins cannot delete their own account")
@@ -352,7 +539,8 @@ class AuthorizationService:
             display_name=user.display_name,
             is_active=user.is_active,
             roles=roles,
-            tools=tools,
+            tools=effective_tools,
+            direct_tools=direct_tools,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
         )
@@ -379,12 +567,25 @@ class AuthorizationService:
         await self._repository.replace_role_tool_permissions(role_name, normalized)
 
         roles = await self._repository.get_role_names(user.id)
-        tools = await self._repository.get_user_allowlist_tools(user.id)
+        direct_tools = await self._repository.get_user_allowlist_tools(user.id)
+        effective_tools = sorted(
+            await self.get_allowed_tool_names(
+                AuthorizationUser(
+                    user_id=user.id,
+                    email=user.email,
+                    display_name=user.display_name,
+                    is_active=user.is_active,
+                    roles=roles,
+                    tools=[],
+                    direct_tools=[],
+                )
+            )
+        )
         await self._repository.create_audit_log(
             event_type="admin_user_tools_updated",
             actor_email=actor_email,
             tool_name=None,
-            metadata={"target_user_id": str(user.id), "tools": tools},
+            metadata={"target_user_id": str(user.id), "tools": direct_tools},
         )
         return AuthorizationUser(
             user_id=user.id,
@@ -392,7 +593,143 @@ class AuthorizationService:
             display_name=user.display_name,
             is_active=user.is_active,
             roles=roles,
-            tools=tools,
+            tools=effective_tools,
+            direct_tools=direct_tools,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+        )
+
+    async def list_roles(self) -> list[str]:
+        return await self._repository.list_manageable_role_names()
+
+    async def create_role(self, name: str, *, actor_email: str | None = None) -> str:
+        role_name = self._validate_role_name(name)
+        if role_name == "admin":
+            raise ReservedRoleError("Role admin is reserved")
+        created = await self._repository.create_role(role_name)
+        await self._repository.create_audit_log(
+            event_type="admin_role_created",
+            actor_email=actor_email,
+            tool_name=None,
+            metadata={"role": created},
+        )
+        return created
+
+    async def delete_role(self, name: str, *, actor_email: str | None = None) -> bool:
+        role_name = self._validate_role_name(name)
+        if role_name == "admin":
+            raise ReservedRoleError("Role admin is reserved")
+        deleted = await self._repository.delete_role(role_name)
+        if deleted:
+            await self._repository.create_audit_log(
+                event_type="admin_role_deleted",
+                actor_email=actor_email,
+                tool_name=None,
+                metadata={"role": role_name},
+            )
+        return deleted
+
+    async def get_role_tools(self, name: str) -> list[str] | None:
+        role_name = self._validate_role_name(name)
+        if not await self._repository.role_exists(role_name):
+            return None
+        return await self._repository.get_role_tool_names_for_role(role_name)
+
+    async def set_role_tools(
+        self,
+        name: str,
+        tool_names: list[str],
+        *,
+        actor_email: str | None = None,
+    ) -> list[str] | None:
+        role_name = self._validate_role_name(name)
+        if role_name == "admin":
+            raise ReservedRoleError("Role admin is reserved")
+        if not await self._repository.role_exists(role_name):
+            return None
+
+        normalized = sorted({name.strip() for name in tool_names if name.strip()})
+        unknown = [name for name in normalized if name not in self._known_tools]
+        if unknown:
+            raise UnknownToolError(unknown)
+
+        await self._repository.replace_role_tool_permissions(role_name, normalized)
+        await self._repository.create_audit_log(
+            event_type="admin_role_tools_updated",
+            actor_email=actor_email,
+            tool_name=None,
+            metadata={"role": role_name, "tools": normalized},
+        )
+        return await self._repository.get_role_tool_names_for_role(role_name)
+
+    async def set_user_roles(
+        self,
+        user_id: UUID,
+        role_names: list[str],
+        *,
+        actor_email: str | None = None,
+        actor_user_id: UUID | None = None,
+    ) -> AuthorizationUser | None:
+        user = await self._repository.get_user_by_id(user_id)
+        if user is None:
+            return None
+
+        normalized: list[str] = []
+        for role_name in role_names:
+            raw = role_name.strip()
+            if raw.startswith("user:"):
+                raise InternalRoleError("Cannot assign internal roles")
+            candidate = self._validate_role_name(raw)
+            normalized.append(candidate)
+        normalized = sorted(dict.fromkeys(normalized))
+
+        existing = await self._repository.list_existing_role_names(normalized)
+        missing = sorted(set(normalized) - set(existing))
+        if missing:
+            raise UnknownRoleError(missing)
+
+        current_roles = await self._repository.get_role_names(user.id)
+        was_admin = "admin" in current_roles
+        removing_admin = was_admin and "admin" not in normalized
+        if removing_admin and actor_user_id is not None and actor_user_id == user_id:
+            raise SelfRemoveAdminRoleError("Admins cannot remove their own admin role")
+        if removing_admin and user.is_active:
+            if await self._repository.count_active_admin_users() <= 1:
+                raise LastActiveAdminError(
+                    "Cannot remove admin from the last active admin"
+                )
+
+        await self._repository.replace_user_non_internal_roles(user.id, normalized)
+
+        roles = await self._repository.get_role_names(user.id)
+        direct_tools = await self._repository.get_user_allowlist_tools(user.id)
+        effective_tools = sorted(
+            await self.get_allowed_tool_names(
+                AuthorizationUser(
+                    user_id=user.id,
+                    email=user.email,
+                    display_name=user.display_name,
+                    is_active=user.is_active,
+                    roles=roles,
+                    tools=[],
+                    direct_tools=[],
+                )
+            )
+        )
+        await self._repository.create_audit_log(
+            event_type="admin_user_roles_updated",
+            actor_email=actor_email,
+            tool_name=None,
+            metadata={"target_user_id": str(user.id), "roles": roles},
+        )
+        return AuthorizationUser(
+            user_id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            is_active=user.is_active,
+            roles=roles,
+            tools=effective_tools,
+            direct_tools=direct_tools,
             created_at=user.created_at,
             last_login_at=user.last_login_at,
         )

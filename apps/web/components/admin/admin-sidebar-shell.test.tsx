@@ -46,16 +46,39 @@ vi.mock("@radix-ui/react-dialog", async () => {
 
 vi.mock("@/components/assistant/claude-thread-list", () => ({
   ClaudeThreadList: ({
+    variant,
     onCloseSidebar,
+    onCollapseSidebar,
+    onExpandSidebar,
     onSelectThread,
   }: {
+    variant?: string;
     onCloseSidebar?: () => void;
+    onCollapseSidebar?: () => void;
+    onExpandSidebar?: () => void;
     onSelectThread?: () => void;
   }) => (
     <div data-testid="sidebar-thread-list">
-      <button type="button" onClick={onCloseSidebar}>
-        Close sidebar
-      </button>
+      {variant ? <div data-testid="sidebar-variant">{variant}</div> : null}
+
+      {onExpandSidebar ? (
+        <button type="button" onClick={onExpandSidebar}>
+          Expand sidebar
+        </button>
+      ) : null}
+
+      {onCollapseSidebar ? (
+        <button type="button" onClick={onCollapseSidebar}>
+          Collapse sidebar
+        </button>
+      ) : null}
+
+      {onCloseSidebar ? (
+        <button type="button" onClick={onCloseSidebar}>
+          Close sidebar
+        </button>
+      ) : null}
+
       <button type="button" onClick={onSelectThread}>
         Select thread
       </button>
@@ -116,6 +139,7 @@ describe("AdminSidebarShell", () => {
 
   beforeEach(() => {
     mocks.push.mockReset();
+    window.localStorage.clear();
     mediaController = createMatchMediaController(true);
     vi.stubGlobal("matchMedia", mediaController.matchMedia);
   });
@@ -124,48 +148,48 @@ describe("AdminSidebarShell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("starts desktop expanded and shows the thread list", () => {
+  it("starts desktop collapsed and shows the thread list", () => {
     const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
     expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
   });
 
-  it("collapses desktop sidebar when Close sidebar clicked", () => {
+  it("expands and collapses desktop sidebar", () => {
     const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
 
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
     expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
-    expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
-
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
   });
 
-  it("keeps desktop sidebar collapsed after explicit close across viewport changes", () => {
+  it("keeps desktop sidebar collapsed across viewport changes", () => {
     const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "Close sidebar" }));
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
 
     mediaController.setDesktopMatch(false);
     act(() => {
       mediaController.setDesktopMatch(true);
     });
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
   });
 
   it("routes to /assistant when a sidebar thread action is selected", () => {
@@ -233,13 +257,13 @@ describe("AdminSidebarShell", () => {
       </AdminSidebarShell>,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-1");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
 
     act(() => {
       mediaController.setDesktopMatch(true);
     });
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
     expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
   });
 });

@@ -52,7 +52,7 @@ function InlineEvidenceItem({
   );
 }
 
-function InlineEvidenceSection({ section }: { section: AssistantDetailEvidenceSection }) {
+function InlineEvidenceSectionBody({ section }: { section: AssistantDetailEvidenceSection }) {
   const [showAllItems, setShowAllItems] = useState(false);
   const mono = isNoisySectionTitle(section.title);
   const initialCount = normalizeTitle(section.title).includes("overview") ? 999 : 6;
@@ -60,36 +60,30 @@ function InlineEvidenceSection({ section }: { section: AssistantDetailEvidenceSe
   const hiddenCount = Math.max(0, section.items.length - items.length);
 
   return (
-    <DisclosureSection
-      title={section.title}
-      count={section.items.length}
-      defaultOpen={shouldSectionStartOpen(section.title)}
-    >
-      <div className="space-y-2">
-        <dl className="space-y-2 text-sm">
-          {items.map((item, index) => (
-            <InlineEvidenceItem
-              key={`${section.title}-${item.label}-${index}`}
-              item={item}
-              mono={mono}
-            />
-          ))}
-        </dl>
-        {section.items.length > initialCount ? (
-          <button
-            type="button"
-            onClick={() => setShowAllItems((value) => !value)}
-            className={[
-              "inline-flex items-center text-[11px] font-medium text-muted",
-              "transition-colors hover:text-text",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-            ].join(" ")}
-          >
-            {showAllItems ? "Show less" : `Show ${hiddenCount} more`}
-          </button>
-        ) : null}
-      </div>
-    </DisclosureSection>
+    <div className="space-y-2">
+      <dl className="space-y-2 text-sm">
+        {items.map((item, index) => (
+          <InlineEvidenceItem
+            key={`${section.title}-${item.label}-${index}`}
+            item={item}
+            mono={mono}
+          />
+        ))}
+      </dl>
+      {section.items.length > initialCount ? (
+        <button
+          type="button"
+          onClick={() => setShowAllItems((value) => !value)}
+          className={[
+            "inline-flex items-center text-[11px] font-medium text-muted",
+            "transition-colors hover:text-text",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+          ].join(" ")}
+        >
+          {showAllItems ? "Show less" : `Show ${hiddenCount} more`}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -128,7 +122,7 @@ export function DetailSections({
               count={section.items.length}
               defaultOpen={shouldOpen}
             >
-              <InlineEvidenceSection section={section} />
+              <InlineEvidenceSectionBody section={section} />
             </DisclosureSection>
           );
         })}

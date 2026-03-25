@@ -47,8 +47,8 @@ describe("UsersAdminPage", () => {
       ],
     };
 
-    const toolsPayload = {
-      tools: ["get_current_time", "get_current_date", "set_demo_flag"],
+    const rolesPayload = {
+      roles: [{ name: "member" }, { name: "admin" }],
     };
 
     const usersResponse = new Response(JSON.stringify(usersPayload), {
@@ -58,7 +58,7 @@ describe("UsersAdminPage", () => {
       },
     });
 
-    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
       status: 200,
       headers: {
         "content-type": "application/json",
@@ -69,8 +69,8 @@ describe("UsersAdminPage", () => {
       if (path === "/admin/users") {
         return usersResponse;
       }
-      if (path === "/admin/tools") {
-        return toolsResponse;
+      if (path === "/admin/roles") {
+        return rolesResponse;
       }
       throw new Error(`Unexpected fetchWithAuth path: ${path}`);
     });
@@ -79,8 +79,8 @@ describe("UsersAdminPage", () => {
       if (response === usersResponse) {
         return usersPayload;
       }
-      if (response === toolsResponse) {
-        return toolsPayload;
+      if (response === rolesResponse) {
+        return rolesPayload;
       }
       throw new Error("Unexpected jsonOrThrow response");
     });
@@ -93,7 +93,7 @@ describe("UsersAdminPage", () => {
 
     await waitFor(() => {
       const calledPaths = mocks.fetchWithAuth.mock.calls.map((call) => call[0]);
-      expect(calledPaths).toEqual(expect.arrayContaining(["/admin/users", "/admin/tools"]));
+      expect(calledPaths).toEqual(expect.arrayContaining(["/admin/users", "/admin/roles"]));
     });
 
     expect(await within(table).findByText("casey@example.com")).toBeInTheDocument();
@@ -125,8 +125,8 @@ describe("UsersAdminPage", () => {
       ],
     };
 
-    const toolsPayload = {
-      tools: ["get_current_time"],
+    const rolesPayload = {
+      roles: [{ name: "member" }, { name: "admin" }],
     };
 
     const usersResponse = new Response(JSON.stringify(usersPayload), {
@@ -136,7 +136,7 @@ describe("UsersAdminPage", () => {
       },
     });
 
-    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
       status: 200,
       headers: {
         "content-type": "application/json",
@@ -147,8 +147,8 @@ describe("UsersAdminPage", () => {
       if (path === "/admin/users") {
         return usersResponse;
       }
-      if (path === "/admin/tools") {
-        return toolsResponse;
+      if (path === "/admin/roles") {
+        return rolesResponse;
       }
       throw new Error(`Unexpected fetchWithAuth path: ${path}`);
     });
@@ -157,8 +157,8 @@ describe("UsersAdminPage", () => {
       if (response === usersResponse) {
         return usersPayload;
       }
-      if (response === toolsResponse) {
-        return toolsPayload;
+      if (response === rolesResponse) {
+        return rolesPayload;
       }
       throw new Error("Unexpected jsonOrThrow response");
     });
@@ -169,7 +169,7 @@ describe("UsersAdminPage", () => {
 
     await waitFor(() => {
       const calledPaths = mocks.fetchWithAuth.mock.calls.map((call) => call[0]);
-      expect(calledPaths).toEqual(expect.arrayContaining(["/admin/users", "/admin/tools"]));
+      expect(calledPaths).toEqual(expect.arrayContaining(["/admin/users", "/admin/roles"]));
     });
 
     expect(within(table).getByRole("columnheader", { name: "Created" })).toBeInTheDocument();
@@ -183,7 +183,7 @@ describe("UsersAdminPage", () => {
 
   it("shows contextual fallback copy instead of raw load errors", async () => {
     mocks.fetchWithAuth.mockImplementation(async (path: string) => {
-      if (path === "/admin/users" || path === "/admin/tools") {
+      if (path === "/admin/users" || path === "/admin/roles") {
         throw new Error("database connection exploded");
       }
       throw new Error(`Unexpected fetchWithAuth path: ${path}`);
@@ -194,6 +194,88 @@ describe("UsersAdminPage", () => {
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("Unable to load users");
     expect(alert).not.toHaveTextContent("database connection exploded");
+  });
+
+  it("PUTs /admin/users/:id/roles to update role assignments from the drawer", async () => {
+    const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
+    const usersPayload = {
+      users: [
+        {
+          id: userId,
+          email: "casey@example.com",
+          display_name: "Casey Rivers",
+          created_at: "2026-01-02T03:04:05.000Z",
+          last_login_at: "2026-02-03T04:05:06.000Z",
+          is_active: true,
+          roles: ["member"],
+          tools: ["get_current_time"],
+          direct_tools: ["legacy_tool"],
+        },
+      ],
+    };
+
+    const rolesPayload = {
+      roles: [{ name: "member" }, { name: "admin" }],
+    };
+
+    const usersResponse = new Response(JSON.stringify(usersPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    const putResponse = new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: {
+        "content-type": "application/json",
+      },
+    });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/admin/users") return usersResponse;
+      if (path === "/admin/roles") return rolesResponse;
+      if (path === `/admin/users/${userId}/roles` && init?.method === "PUT") return putResponse;
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === usersResponse) return usersPayload;
+      if (response === rolesResponse) return rolesPayload;
+      if (response === putResponse) return { ok: true };
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<UsersAdminPage />);
+
+    const table = screen.getByRole("table");
+    const emailCell = await within(table).findByText("casey@example.com");
+    const row = emailCell.closest("tr");
+    if (!row) throw new Error("Unable to locate user row");
+    fireEvent.click(row);
+
+    fireEvent.click(await screen.findByLabelText("admin"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => {
+      expect(mocks.fetchWithAuth).toHaveBeenCalledWith(
+        `/admin/users/${userId}/roles`,
+        expect.objectContaining({
+          method: "PUT",
+          headers: expect.objectContaining({
+            "content-type": "application/json",
+          }),
+          body: JSON.stringify({ roles: ["admin", "member"] }),
+        })
+      );
+    });
   });
 
   it("PATCHes /admin/users/:id to disable an active user from the drawer", async () => {
@@ -213,8 +295,8 @@ describe("UsersAdminPage", () => {
       ],
     };
 
-    const toolsPayload = {
-      tools: ["get_current_time"],
+    const rolesPayload = {
+      roles: [{ name: "member" }, { name: "admin" }],
     };
 
     const usersResponse = new Response(JSON.stringify(usersPayload), {
@@ -224,7 +306,7 @@ describe("UsersAdminPage", () => {
       },
     });
 
-    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
       status: 200,
       headers: {
         "content-type": "application/json",
@@ -242,8 +324,8 @@ describe("UsersAdminPage", () => {
       if (path === "/admin/users") {
         return usersResponse;
       }
-      if (path === "/admin/tools") {
-        return toolsResponse;
+      if (path === "/admin/roles") {
+        return rolesResponse;
       }
       if (path === `/admin/users/${userId}`) {
         return patchResponse;
@@ -255,8 +337,8 @@ describe("UsersAdminPage", () => {
       if (response === usersResponse) {
         return usersPayload;
       }
-      if (response === toolsResponse) {
-        return toolsPayload;
+      if (response === rolesResponse) {
+        return rolesPayload;
       }
       if (response === patchResponse) {
         return { ok: true };
@@ -307,8 +389,8 @@ describe("UsersAdminPage", () => {
       ],
     };
 
-    const toolsPayload = {
-      tools: ["get_current_time"],
+    const rolesPayload = {
+      roles: [{ name: "member" }, { name: "admin" }],
     };
 
     const usersResponse = new Response(JSON.stringify(usersPayload), {
@@ -318,7 +400,7 @@ describe("UsersAdminPage", () => {
       },
     });
 
-    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
       status: 200,
       headers: {
         "content-type": "application/json",
@@ -336,8 +418,8 @@ describe("UsersAdminPage", () => {
       if (path === "/admin/users") {
         return usersResponse;
       }
-      if (path === "/admin/tools") {
-        return toolsResponse;
+      if (path === "/admin/roles") {
+        return rolesResponse;
       }
       if (path === `/admin/users/${userId}`) {
         return patchResponse;
@@ -349,8 +431,8 @@ describe("UsersAdminPage", () => {
       if (response === usersResponse) {
         return usersPayload;
       }
-      if (response === toolsResponse) {
-        return toolsPayload;
+      if (response === rolesResponse) {
+        return rolesPayload;
       }
       if (response === patchResponse) {
         throw new ApiError(409, conflictMessage);
@@ -403,8 +485,8 @@ describe("UsersAdminPage", () => {
       ],
     };
 
-    const toolsPayload = {
-      tools: ["get_current_time"],
+    const rolesPayload = {
+      roles: [{ name: "admin" }],
     };
 
     const usersResponse = new Response(JSON.stringify(usersPayload), {
@@ -414,7 +496,7 @@ describe("UsersAdminPage", () => {
       },
     });
 
-    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
       status: 200,
       headers: {
         "content-type": "application/json",
@@ -437,8 +519,8 @@ describe("UsersAdminPage", () => {
       if (path === "/admin/users") {
         return usersResponse;
       }
-      if (path === "/admin/tools") {
-        return toolsResponse;
+      if (path === "/admin/roles") {
+        return rolesResponse;
       }
       if (path === `/admin/users/${userAId}`) {
         return userAPatchPromise;
@@ -450,8 +532,8 @@ describe("UsersAdminPage", () => {
       if (response === usersResponse) {
         return usersPayload;
       }
-      if (response === toolsResponse) {
-        return toolsPayload;
+      if (response === rolesResponse) {
+        return rolesPayload;
       }
       if (response === patchResponse) {
         throw new ApiError(409, conflictMessage);
@@ -516,8 +598,8 @@ describe("UsersAdminPage", () => {
       ],
     };
 
-    const toolsPayload = {
-      tools: ["get_current_time"],
+    const rolesPayload = {
+      roles: [{ name: "member" }, { name: "admin" }],
     };
 
     const usersResponse = new Response(JSON.stringify(usersPayload), {
@@ -527,7 +609,7 @@ describe("UsersAdminPage", () => {
       },
     });
 
-    const toolsResponse = new Response(JSON.stringify(toolsPayload), {
+    const rolesResponse = new Response(JSON.stringify(rolesPayload), {
       status: 200,
       headers: {
         "content-type": "application/json",
@@ -545,8 +627,8 @@ describe("UsersAdminPage", () => {
       if (path === "/admin/users") {
         return usersResponse;
       }
-      if (path === "/admin/tools") {
-        return toolsResponse;
+      if (path === "/admin/roles") {
+        return rolesResponse;
       }
       if (path === `/admin/users/${userId}` && init?.method === "DELETE") {
         return deleteResponse;
@@ -558,8 +640,8 @@ describe("UsersAdminPage", () => {
       if (response === usersResponse) {
         return usersPayload;
       }
-      if (response === toolsResponse) {
-        return toolsPayload;
+      if (response === rolesResponse) {
+        return rolesPayload;
       }
       if (response === deleteResponse) {
         return { ok: true };

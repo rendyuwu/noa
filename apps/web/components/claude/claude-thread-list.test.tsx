@@ -122,6 +122,7 @@ describe("ClaudeThreadList", () => {
     const navSection = within(newChatButton.parentElement as HTMLElement);
 
     expect(navSection.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
+    expect(navSection.getByRole("link", { name: "Roles" })).toHaveAttribute("href", "/admin/roles");
   });
 
   it("renders the Users nav link when roles include admin among others", () => {
@@ -134,6 +135,7 @@ describe("ClaudeThreadList", () => {
     const navSection = within(newChatButton.parentElement as HTMLElement);
 
     expect(navSection.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
+    expect(navSection.getByRole("link", { name: "Roles" })).toHaveAttribute("href", "/admin/roles");
   });
 
   it("applies active styling to the selected thread row", () => {
@@ -168,6 +170,7 @@ describe("ClaudeThreadList", () => {
     render(<ClaudeThreadList />);
 
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
   });
 
   it("hides the Backend nav group for non-admin users", () => {
@@ -184,11 +187,13 @@ describe("ClaudeThreadList", () => {
 
     const { unmount } = render(<ClaudeThreadList />);
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
     unmount();
 
     delete (mocks.user as any).roles;
     render(<ClaudeThreadList />);
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
   });
 
   it("hides the Users nav link when auth user data is missing", () => {
@@ -197,6 +202,7 @@ describe("ClaudeThreadList", () => {
     render(<ClaudeThreadList />);
 
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
   });
 
   it("uses a neutral account fallback when auth user data is missing", () => {

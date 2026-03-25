@@ -22,6 +22,7 @@ import {
   PersonIcon,
   PlusIcon,
   TrashIcon,
+  IdCardIcon,
 } from "@radix-ui/react-icons";
 
 import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting";
@@ -207,6 +208,14 @@ export function ClaudeThreadList({
           ) : null}
 
           {isAdmin ? (
+            <RailItem label="Roles">
+              <Link href="/admin/roles" aria-label="Roles" className={railButtonClassName}>
+                <IdCardIcon width={14} height={14} />
+              </Link>
+            </RailItem>
+          ) : null}
+
+          {isAdmin ? (
             <RailItem label="Audit">
               <Link href="/admin/audit" aria-label="Audit" className={railButtonClassName}>
                 <ActivityLogIcon width={14} height={14} />
@@ -310,6 +319,9 @@ export function ClaudeThreadList({
             <DisabledNavItem icon={<MagnifyingGlassIcon width={16} height={16} />} label="Search" />
             {isAdmin ? (
               <NavLinkItem icon={<PersonIcon width={16} height={16} />} label="Users" href="/admin/users" />
+            ) : null}
+            {isAdmin ? (
+              <NavLinkItem icon={<IdCardIcon width={16} height={16} />} label="Roles" href="/admin/roles" />
             ) : null}
             {isAdmin ? (
               <NavLinkItem icon={<ActivityLogIcon width={16} height={16} />} label="Audit" href="/admin/audit" />

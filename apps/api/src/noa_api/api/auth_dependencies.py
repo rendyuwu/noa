@@ -146,6 +146,7 @@ def _to_authorization_user(user: AuthUser) -> AuthorizationUser:
         is_active=user.is_active,
         roles=user.roles,
         tools=[],
+        direct_tools=[],
     )
 
 

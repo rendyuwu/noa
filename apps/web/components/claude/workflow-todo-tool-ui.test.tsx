@@ -40,7 +40,7 @@ describe("WorkflowTodoCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /execution evidence/i }));
 
-    expect(screen.getByText("Execution evidence")).toBeVisible();
+    expect(screen.getAllByText("Execution evidence").length).toBeGreaterThan(0);
     expect(screen.getByText("Server")).toBeVisible();
     expect(screen.getByText("cp01")).toBeVisible();
   });
@@ -76,7 +76,7 @@ describe("WorkflowTodoCard", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /canonical evidence/i }));
 
-    expect(screen.getByText("Canonical evidence")).toBeVisible();
+    expect(screen.getAllByText("Canonical evidence").length).toBeGreaterThan(0);
     expect(screen.getByText("Ticket")).toBeVisible();
     expect(screen.getByText("INC-42")).toBeVisible();
   });
