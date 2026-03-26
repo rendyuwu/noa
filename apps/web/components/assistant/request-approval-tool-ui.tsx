@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 import {
   makeAssistantToolUI,
@@ -10,10 +10,7 @@ import {
 import { ChevronRightIcon } from "@radix-ui/react-icons";
 import type { ReactNode } from "react";
 
-import {
-  toggleAssistantDetailSheet,
-  useAssistantDetailSheet,
-} from "@/components/assistant/assistant-detail-sheet-store";
+import { DetailSections } from "@/components/assistant/detail-sections";
 import { getApprovalLifecyclePresentation } from "@/components/assistant/approval-lifecycle-ui";
 import {
   coerceDetailEvidenceSections,
@@ -74,9 +71,11 @@ function Actions({ args }: { args: Record<string, unknown> }) {
       (request) => request.actionRequestId === actionRequestId,
     )?.lifecycleStatus ?? "requested";
   const copy = getApprovalLifecyclePresentation(lifecycleStatus);
-  const detailSheet = useAssistantDetailSheet();
   const [pendingDecision, setPendingDecision] = useState<DecisionState | null>(null);
-  const detailKey = `approval:${actionRequestId}`;
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const baseId = useId();
+  const toggleId = `${baseId}-approval-details-toggle`;
+  const panelId = `${baseId}-approval-details-panel`;
   const summarySourceItems =
     evidenceSections.length > 0
       ? evidenceSections.flatMap((section) => section.items)
@@ -99,6 +98,12 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     }
   }, [lifecycleStatus]);
 
+  useEffect(() => {
+    if (lifecycleStatus !== "requested") {
+      setDetailsOpen(false);
+    }
+  }, [lifecycleStatus]);
+
   if (!actionRequestId) {
     return (
       <div className="mt-2 rounded-lg border border-border bg-surface/70 p-3 text-sm text-muted">
@@ -113,25 +118,12 @@ function Actions({ args }: { args: Record<string, unknown> }) {
       ? "Approving"
       : "Denying"
     : getReceiptLabel(lifecycleStatus);
-
-  const openDetails = () => {
-    const fallbackSections = [
-      { title: "Overview", items: overview },
-      ...beforeState,
-      ...argumentSummary,
-    ].filter((section) => section.items.length > 0);
-
-    toggleAssistantDetailSheet({
-      open: true,
-      key: detailKey,
-      kind: "approval",
-      title: activity,
-      subtitle: `${copy.title}${summaryText ? ` · ${summaryText}` : ""}`,
-      badge: copy.badge,
-      badgeClassName: copy.badgeClassName,
-      sections: evidenceSections.length > 0 ? evidenceSections : fallbackSections,
-    });
-  };
+  const fallbackSections = [
+    { title: "Overview", items: overview },
+    ...beforeState,
+    ...argumentSummary,
+  ].filter((section) => section.items.length > 0);
+  const sectionsForInline = evidenceSections.length > 0 ? evidenceSections : fallbackSections;
 
   if (lifecycleStatus === "requested") {
     return (
@@ -179,12 +171,37 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           </button>
           <button
             type="button"
-            onClick={openDetails}
+            id={toggleId}
+            aria-expanded={detailsOpen}
+            aria-controls={panelId}
+            onClick={() => setDetailsOpen((value) => !value)}
             className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text"
           >
-            {detailSheet.open && detailSheet.key === detailKey ? "Hide details" : "Details"}
-            <ChevronRightIcon width={14} height={14} />
+            {detailsOpen ? "Hide details" : "Details"}
+            <ChevronRightIcon
+              width={14}
+              height={14}
+              className={[
+                "transition-transform duration-200 motion-reduce:transition-none",
+                detailsOpen ? "rotate-90" : "rotate-0",
+              ].join(" ")}
+              aria-hidden="true"
+            />
           </button>
+        </div>
+
+        <div
+          id={panelId}
+          role="region"
+          aria-labelledby={toggleId}
+          hidden={!detailsOpen}
+          className="mt-3"
+        >
+          {detailsOpen ? (
+            <div className="rounded-xl border border-border bg-bg/15 px-3 py-3">
+              <DetailSections sections={sectionsForInline} variant="inline" showEmptyState />
+            </div>
+          ) : null}
         </div>
       </div>
     );
