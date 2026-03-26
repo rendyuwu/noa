@@ -8,7 +8,12 @@ import { ChevronRightIcon } from "@radix-ui/react-icons";
 
 import { DetailSections } from "@/components/assistant/detail-sections";
 import { WorkflowReceiptSurface } from "@/components/assistant/workflow-receipt-renderer";
-import { captureElementToPngBlob, copyPngBlobToClipboard, downloadBlob } from "@/components/lib/image-export";
+import {
+  canWriteClipboardPng,
+  captureElementToPngBlob,
+  copyPngBlobToClipboard,
+  downloadBlob,
+} from "@/components/lib/image-export";
 
 type ReceiptOutcome = "changed" | "partial" | "no_op" | "failed" | "denied" | "info";
 
@@ -160,43 +165,6 @@ function clampStyle(lines: number) {
   };
 }
 
-function buildReceiptPlaintext(payload: {
-  title: string;
-  badge: ReceiptBadge;
-  summary: string;
-  actionRequestId?: string;
-  toolRunId?: string;
-  receiptId?: string;
-  evidenceSections: ReceiptEvidenceSection[];
-  nextStep?: string | null;
-}) {
-  const lines: string[] = [];
-  lines.push(payload.title);
-  lines.push(`Status: ${payload.badge.label}`);
-  lines.push("");
-  lines.push(payload.summary);
-  lines.push("");
-
-  for (const section of payload.evidenceSections) {
-    lines.push(`${section.title}:`);
-    for (const item of section.items) {
-      lines.push(`- ${item.label}: ${item.value}`);
-    }
-    lines.push("");
-  }
-
-  if (payload.nextStep && payload.nextStep.trim()) {
-    lines.push(`Next step: ${payload.nextStep.trim()}`);
-    lines.push("");
-  }
-
-  if (payload.actionRequestId) lines.push(`Action ID: ${payload.actionRequestId}`);
-  if (payload.toolRunId) lines.push(`Tool run ID: ${payload.toolRunId}`);
-  if (payload.receiptId) lines.push(`Receipt ID: ${payload.receiptId}`);
-
-  return lines.join("\n").trim();
-}
-
 async function captureStandaloneReceiptPngBlob(
   payload: Record<string, unknown>,
   {
@@ -208,7 +176,9 @@ async function captureStandaloneReceiptPngBlob(
   const container = document.createElement("div");
   container.style.position = "fixed";
   container.style.top = "0";
-  container.style.left = "-100000px";
+  // Keep the capture root off-screen but not absurdly far, to avoid
+  // browser/layout edge cases during HTML->image rendering.
+  container.style.left = "-10000px";
   container.style.width = "900px";
   container.style.pointerEvents = "none";
   container.style.zIndex = "-1";
@@ -244,9 +214,8 @@ async function captureStandaloneReceiptPngBlob(
 }
 
 function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
-  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const [copyImageState, setCopyImageState] = useState<
-    "idle" | "copied" | "downloaded" | "failed"
+    "idle" | "copied" | "failed"
   >("idle");
   const [downloadState, setDownloadState] = useState<"idle" | "done" | "failed">("idle");
   const [imageBusy, setImageBusy] = useState(false);
@@ -315,47 +284,24 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
     ];
   }, [rawJson, sectionsForDetail]);
 
-  const canClipboard =
-    typeof window !== "undefined" &&
-    typeof navigator !== "undefined" &&
-    Boolean(navigator.clipboard?.writeText);
-
-  const copyReceipt = async () => {
-    if (!canClipboard) return;
-    try {
-      await navigator.clipboard.writeText(
-        buildReceiptPlaintext({
-          title: replyTemplate.title,
-          badge,
-          summary: replyTemplate.summary,
-          actionRequestId,
-          toolRunId,
-          receiptId,
-          evidenceSections,
-          nextStep: replyTemplate.nextStep,
-        }),
-      );
-      setCopyState("copied");
-      window.setTimeout(() => setCopyState("idle"), 1400);
-    } catch {
-      // no-op
-    }
-  };
+  const canCopyImage = canWriteClipboardPng();
 
   const copyImage = async () => {
     if (typeof window === "undefined") return;
+
+    if (!canWriteClipboardPng()) {
+      setCopyImageState("failed");
+      window.setTimeout(() => setCopyImageState("idle"), 1400);
+      return;
+    }
+
     setImageBusy(true);
     setCopyImageState("idle");
 
     try {
-      const blob = await captureStandaloneReceiptPngBlob(payload, { actionRequestId });
-      try {
-        await copyPngBlobToClipboard(blob);
-        setCopyImageState("copied");
-      } catch {
-        downloadBlob(blob, `receipt-${actionRequestId ?? "workflow"}.png`);
-        setCopyImageState("downloaded");
-      }
+      const blobPromise = captureStandaloneReceiptPngBlob(payload, { actionRequestId });
+      await copyPngBlobToClipboard(blobPromise);
+      setCopyImageState("copied");
     } catch {
       setCopyImageState("failed");
     } finally {
@@ -456,24 +402,19 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={copyReceipt}
-            disabled={!canClipboard}
-            className="inline-flex h-8 items-center justify-center rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {copyState === "copied" ? "Copied" : "Copy receipt"}
-          </button>
-          <button
-            type="button"
             onClick={copyImage}
             disabled={imageBusy}
+            title={
+              canCopyImage
+                ? undefined
+                : "Copy image requires HTTPS (or localhost) and browser support for ClipboardItem."
+            }
             className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {copyImageState === "copied"
               ? "Copied"
-              : copyImageState === "downloaded"
-                ? "Downloaded"
-                : copyImageState === "failed"
-                  ? "Failed"
+              : copyImageState === "failed"
+                ? "Failed"
                 : "Copy image"}
           </button>
           <button

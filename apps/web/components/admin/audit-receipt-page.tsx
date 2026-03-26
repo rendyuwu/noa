@@ -1,26 +1,26 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import {
-  buildWorkflowReceiptPlaintext,
-  parseWorkflowReceiptPayload,
-  WorkflowReceiptSurface,
-} from "@/components/assistant/workflow-receipt-renderer";
+import { WorkflowReceiptSurface } from "@/components/assistant/workflow-receipt-renderer";
 import { Button } from "@/components/lib/button";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
-import { captureElementToPngBlob, copyPngBlobToClipboard, downloadBlob } from "@/components/lib/image-export";
+import {
+  canWriteClipboardPng,
+  captureElementToPngBlob,
+  copyPngBlobToClipboard,
+  downloadBlob,
+} from "@/components/lib/image-export";
 
 export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string }) {
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [copyTextState, setCopyTextState] = useState<"idle" | "copied">("idle");
   const [copyImageState, setCopyImageState] = useState<
-    "idle" | "copied" | "downloaded" | "failed"
+    "idle" | "copied" | "failed"
   >("idle");
   const [downloadState, setDownloadState] = useState<"idle" | "done" | "failed">("idle");
 
@@ -53,10 +53,7 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
     };
   }, [actionRequestId]);
 
-  const parsed = useMemo(() => (payload ? parseWorkflowReceiptPayload(payload) : null), [payload]);
-
-  const canClipboardText =
-    typeof window !== "undefined" && typeof navigator !== "undefined" && Boolean(navigator.clipboard?.writeText);
+  const canCopyImage = canWriteClipboardPng();
 
   const resolveCaptureElement = useCallback((): HTMLElement | null => {
     const root = captureWrapperRef.current;
@@ -64,19 +61,6 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
     const el = root.querySelector("[data-receipt-capture]");
     return el instanceof HTMLElement ? el : null;
   }, []);
-
-  const copyText = useCallback(async () => {
-    if (!parsed) return;
-    if (!canClipboardText) return;
-
-    try {
-      await navigator.clipboard.writeText(buildWorkflowReceiptPlaintext(parsed));
-      setCopyTextState("copied");
-      window.setTimeout(() => setCopyTextState("idle"), 1400);
-    } catch {
-      // no-op
-    }
-  }, [canClipboardText, parsed]);
 
   const capturePngBlob = useCallback(async (): Promise<Blob> => {
     const el = resolveCaptureElement();
@@ -88,19 +72,17 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
     if (!payload) return;
     setCopyImageState("idle");
     try {
-      const blob = await capturePngBlob();
-      try {
-        await copyPngBlobToClipboard(blob);
-        setCopyImageState("copied");
-      } catch {
-        downloadBlob(blob, `receipt-${actionRequestId}.png`);
-        setCopyImageState("downloaded");
+      if (!canWriteClipboardPng()) {
+        throw new Error("Clipboard image write unsupported");
       }
+      const blobPromise = capturePngBlob();
+      await copyPngBlobToClipboard(blobPromise);
+      setCopyImageState("copied");
     } catch {
       setCopyImageState("failed");
     }
     window.setTimeout(() => setCopyImageState("idle"), 1400);
-  }, [actionRequestId, capturePngBlob, payload]);
+  }, [capturePngBlob, payload]);
 
   const downloadPng = useCallback(async () => {
     if (!payload) return;
@@ -150,17 +132,21 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={copyText} disabled={!parsed || !canClipboardText}>
-            {copyTextState === "copied" ? "Copied" : "Copy text"}
-          </Button>
-          <Button size="sm" onClick={copyImage} disabled={!payload || loading}>
+          <Button
+            size="sm"
+            onClick={copyImage}
+            disabled={!payload || loading}
+            title={
+              canCopyImage
+                ? undefined
+                : "Copy image requires HTTPS (or localhost) and browser support for ClipboardItem."
+            }
+          >
             {copyImageState === "copied"
               ? "Copied"
-              : copyImageState === "downloaded"
-                ? "Downloaded"
-                : copyImageState === "failed"
-                  ? "Failed"
-                  : "Copy image"}
+              : copyImageState === "failed"
+                ? "Failed"
+                : "Copy image"}
           </Button>
           <Button size="sm" variant="secondary" onClick={downloadPng} disabled={!payload || loading}>
             {downloadState === "done" ? "Downloaded" : downloadState === "failed" ? "Download failed" : "Download PNG"}
