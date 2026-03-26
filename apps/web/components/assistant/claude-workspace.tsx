@@ -6,7 +6,6 @@ import * as Dialog from "@radix-ui/react-dialog";
 
 import { useAssistantApi } from "@assistant-ui/react";
 
-import { AssistantDetailSheet } from "@/components/assistant/assistant-detail-sheet";
 import { ClaudeThread } from "@/components/assistant/claude-thread";
 import { ClaudeThreadList } from "@/components/assistant/claude-thread-list";
 import { RequestApprovalToolUI } from "@/components/assistant/request-approval-tool-ui";
@@ -105,7 +104,6 @@ export function ClaudeWorkspace() {
         <RequestApprovalToolUI />
         <WorkflowTodoToolUI />
         <WorkflowReceiptToolUI />
-        <AssistantDetailSheet />
 
         <div
           className={[

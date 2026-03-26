@@ -1,10 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-const { mockToggleAssistantDetailSheet } = vi.hoisted(() => ({
-  mockToggleAssistantDetailSheet: vi.fn(),
-}));
-
 let mockThreadMessages: any[] = [];
 
 vi.mock("@assistant-ui/react", () => ({
@@ -15,11 +11,6 @@ vi.mock("@assistant-ui/react", () => ({
     },
   }),
   useAssistantTransportSendCommand: () => vi.fn(),
-}));
-
-vi.mock("@/components/assistant/assistant-detail-sheet-store", () => ({
-  toggleAssistantDetailSheet: mockToggleAssistantDetailSheet,
-  useAssistantDetailSheet: () => ({ open: false, key: null }),
 }));
 
 import {
@@ -57,20 +48,10 @@ describe("ClaudeToolFallback", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
-    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "approval",
-        sections: [
-          {
-            title: "Evidence",
-            items: [
-              { label: "Account", value: "alice" },
-              { label: "Reason", value: "Billing" },
-            ],
-          },
-        ],
-      }),
-    );
+    fireEvent.click(screen.getByRole("button", { name: /evidence/i }));
+
+    expect(screen.getByText(/^Account$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^alice$/i)).toBeInTheDocument();
   });
 
   it("falls back to legacy detail sections when evidence sections are absent", () => {
@@ -90,15 +71,17 @@ describe("ClaudeToolFallback", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
-    expect(mockToggleAssistantDetailSheet).toHaveBeenCalledWith(
-      expect.objectContaining({
-        kind: "approval",
-        sections: expect.arrayContaining([
-          expect.objectContaining({ title: "Overview" }),
-          expect.objectContaining({ title: "Before state" }),
-          expect.objectContaining({ title: "Requested change" }),
-        ]),
-      }),
+    expect(screen.getByRole("button", { name: /overview/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /before state/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: /requested change/i })).toHaveAttribute(
+      "aria-expanded",
+      "true",
     );
   });
 
