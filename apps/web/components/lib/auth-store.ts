@@ -83,7 +83,12 @@ export const useRequireAuth = (): boolean => {
   useEffect(() => {
     const token = getAuthToken();
     if (!token) {
-      router.replace("/login");
+      const returnTo =
+        typeof window === "undefined"
+          ? "/assistant"
+          : `${window.location.pathname}${window.location.search}${window.location.hash}`;
+      const encoded = encodeURIComponent(returnTo);
+      router.replace(`/login?returnTo=${encoded}`);
       return;
     }
     setReady(true);

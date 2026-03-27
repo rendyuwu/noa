@@ -19,6 +19,16 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  const getSafeReturnTo = () => {
+    if (typeof window === "undefined") return null;
+    const url = new URL(window.location.href);
+    const raw = url.searchParams.get("returnTo");
+    if (!raw) return null;
+    if (!raw.startsWith("/")) return null;
+    if (raw.startsWith("//")) return null;
+    return raw;
+  };
+
   const labelClass = "block text-sm font-medium text-text";
   const inputClass =
     "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70";
@@ -39,7 +49,7 @@ export default function LoginPage() {
 
       setAuthToken(payload.access_token);
       setAuthUser(payload.user ?? null);
-      router.push("/assistant");
+      router.push(getSafeReturnTo() ?? "/assistant");
     } catch (error) {
       setError(toUserMessage(error, "Login failed"));
     } finally {

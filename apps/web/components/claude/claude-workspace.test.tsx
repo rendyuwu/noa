@@ -1,6 +1,18 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: vi.fn(),
+    replace: vi.fn(),
+  }),
+  usePathname: () => "/assistant",
+  useSearchParams: () => ({
+    get: () => null,
+  }),
+  useParams: () => ({}),
+}));
+
 vi.mock("@radix-ui/react-dialog", async () => {
   const React = await import("react");
 
@@ -49,7 +61,23 @@ vi.mock("@/components/lib/runtime-provider", async () => {
   };
 });
 
-import AssistantPage from "@/app/(app)/assistant/page";
+vi.mock("@assistant-ui/react", () => ({
+  useAssistantApi: () => ({
+    threads: () => ({
+      switchToThread: async () => {},
+      switchToNewThread: async () => {},
+    }),
+  }),
+  useAssistantState: (selector: any) =>
+    selector({
+      threadListItem: {
+        remoteId: null,
+        status: "new",
+      },
+    }),
+}));
+
+import AssistantPage from "@/app/(app)/assistant/[[...threadId]]/page";
 import { ClaudeWorkspace } from "@/components/assistant/claude-workspace";
 
 describe("/assistant full-bleed shell", () => {

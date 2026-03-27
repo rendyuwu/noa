@@ -2,6 +2,7 @@
 
 import type { PropsWithChildren } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import {
   AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
@@ -28,27 +29,51 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
   const threadItems = useAssistantState(({ threads }) => threads.threadItems);
 
   const [hydratedRemoteId, setHydratedRemoteId] = useState<string | null>(null);
+  const [hydrationInFlightRemoteId, setHydrationInFlightRemoteId] = useState<string | null>(null);
+  const [hydrationCompleted, setHydrationCompleted] = useState<
+    | {
+        remoteId: string;
+        expectsMessages: boolean;
+      }
+    | null
+  >(null);
   const generatedTitles = useRef<Set<string>>(new Set());
 
   const shouldHydrate = Boolean(remoteId) && messageCount === 0 && hydratedRemoteId !== remoteId;
+
+  const expectsMessages =
+    Boolean(remoteId) && hydrationCompleted?.remoteId === remoteId
+      ? hydrationCompleted.expectsMessages
+      : false;
+
+  const isHydrating = Boolean(remoteId) &&
+    messageCount === 0 &&
+    (hydrationInFlightRemoteId === remoteId || shouldHydrate || expectsMessages);
 
   useEffect(() => {
     if (!remoteId) return;
     if (!shouldHydrate) return;
 
     let cancelled = false;
+    setHydrationInFlightRemoteId(remoteId);
 
     void (async () => {
+      let nextExpectsMessages = false;
       try {
         const response = await fetchWithAuth(`/assistant/threads/${remoteId}/state`);
         const persistedState = await jsonOrThrow<AssistantState>(response);
         if (cancelled) return;
 
+        nextExpectsMessages = Array.isArray(persistedState.messages) && persistedState.messages.length > 0;
+
         runtime.thread.unstable_loadExternalState(persistedState);
       } catch (error) {
         console.error("Failed to hydrate persisted thread state", error);
       } finally {
-        if (!cancelled) setHydratedRemoteId(remoteId);
+        if (cancelled) return;
+        setHydrationCompleted({ remoteId, expectsMessages: nextExpectsMessages });
+        setHydratedRemoteId(remoteId);
+        setHydrationInFlightRemoteId(null);
       }
     })();
 
@@ -56,6 +81,27 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
       cancelled = true;
     };
   }, [remoteId, runtime, shouldHydrate]);
+
+  useEffect(() => {
+    if (!remoteId) return;
+    if (messageCount > 0) return;
+    if (hydratedRemoteId !== remoteId) return;
+    if (hydrationInFlightRemoteId === remoteId) return;
+    if (!expectsMessages) return;
+
+    const timeout = window.setTimeout(() => {
+      setHydrationCompleted((current) => {
+        if (!current) return current;
+        if (current.remoteId !== remoteId) return current;
+        if (!current.expectsMessages) return current;
+        return { ...current, expectsMessages: false };
+      });
+    }, 750);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [expectsMessages, hydratedRemoteId, hydrationInFlightRemoteId, messageCount, remoteId]);
 
   useEffect(() => {
     let remaining = 3;
@@ -73,7 +119,25 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
     }
   }, [api, threadItems]);
 
-  return <ThreadHydrationProvider isHydrating={shouldHydrate}>{children}</ThreadHydrationProvider>;
+  return <ThreadHydrationProvider isHydrating={isHydrating}>{children}</ThreadHydrationProvider>;
+}
+
+function ThreadUrlSync() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+  const lastRoutedRemoteId = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!remoteId) return;
+    if (pathname !== "/assistant") return;
+    const desired = `/assistant/${remoteId}`;
+    if (lastRoutedRemoteId.current === remoteId) return;
+    lastRoutedRemoteId.current = remoteId;
+    router.replace(desired);
+  }, [pathname, remoteId, router]);
+
+  return null;
 }
 
 function useThreadAwareAssistantTransportRuntime() {
@@ -128,7 +192,10 @@ export function NoaAssistantRuntimeProvider({ children }: PropsWithChildren) {
 
   return (
     <AssistantRuntimeProvider runtime={runtime}>
-      <ThreadMaintenanceProvider>{children}</ThreadMaintenanceProvider>
+      <ThreadMaintenanceProvider>
+        <ThreadUrlSync />
+        {children}
+      </ThreadMaintenanceProvider>
     </AssistantRuntimeProvider>
   );
 }

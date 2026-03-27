@@ -2,6 +2,13 @@ import { render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    replace: vi.fn(),
+  }),
+  usePathname: () => "/assistant",
+}));
+
 const useAssistantTransportRuntime = vi.fn(() => ({}));
 const unstable_useRemoteThreadListRuntime = vi.fn(
   ({ runtimeHook }: { runtimeHook: () => unknown }) => runtimeHook(),

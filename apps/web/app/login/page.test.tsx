@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -28,6 +28,7 @@ describe("LoginPage", () => {
     mocks.setAuthToken.mockReset();
     mocks.setAuthUser.mockReset();
     vi.stubGlobal("fetch", mocks.fetch);
+    window.history.replaceState({}, "", "/login");
   });
 
   afterEach(() => {
@@ -87,5 +88,38 @@ describe("LoginPage", () => {
 
     expect(alert).toHaveTextContent("Login failed");
     expect(alert).not.toHaveTextContent("socket hang up");
+  });
+
+  it("redirects to returnTo after successful login", async () => {
+    window.history.replaceState(
+      {},
+      "",
+      "/login?returnTo=/assistant/49870dcd-933a-4a6e-a605-7f302b82d9a2",
+    );
+
+    mocks.fetch.mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "token", user: null }), {
+        status: 200,
+        headers: {
+          "content-type": "application/json",
+        },
+      }),
+    );
+
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(mocks.push).toHaveBeenCalledWith(
+        "/assistant/49870dcd-933a-4a6e-a605-7f302b82d9a2",
+      );
+    });
   });
 });

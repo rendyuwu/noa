@@ -7,6 +7,7 @@ let mockThreadIsEmpty = true;
 let mockThreadListItemStatus: "archived" | "regular" | "new" | "deleted" = "new";
 let mockIsHydrating = false;
 let mockThreadMessages: any[] = [];
+let mockRouteThreadId: string[] | undefined;
 let mockAssistantMessage: any = {
   role: "assistant",
   isLast: true,
@@ -15,6 +16,12 @@ let mockAssistantMessage: any = {
 };
 const setText = vi.fn();
 const sendCommand = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  useParams: () => ({
+    threadId: mockRouteThreadId,
+  }),
+}));
 
 vi.mock("@/components/lib/auth-store", () => ({
   getAuthUser: vi.fn(() => ({
@@ -129,6 +136,7 @@ describe("ClaudeThread", () => {
     mockThreadListItemStatus = "new";
     mockIsHydrating = false;
     mockThreadMessages = [];
+    mockRouteThreadId = undefined;
     mockAssistantMessage = {
       role: "assistant",
       isLast: true,

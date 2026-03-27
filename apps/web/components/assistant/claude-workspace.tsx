@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 
 import * as Dialog from "@radix-ui/react-dialog";
 
-import { useAssistantApi } from "@assistant-ui/react";
+import { useAssistantApi, useAssistantState } from "@assistant-ui/react";
 
 import { ClaudeThread } from "@/components/assistant/claude-thread";
 import { ClaudeThreadList } from "@/components/assistant/claude-thread-list";
@@ -18,9 +19,38 @@ const DESKTOP_SIDEBAR_MODE_STORAGE_KEY = "noa.sidebar.mode.v1";
 
 export function ClaudeWorkspace() {
   const api = useAssistantApi();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const params = useParams();
+
+  const activeRemoteId = useAssistantState(({ threadListItem }: any) => threadListItem?.remoteId);
+  const activeStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
+  const activeMessageCount = useAssistantState(({ thread }: any) => thread?.messages?.length ?? 0);
+
+  const routeThreadId = (() => {
+    const value = (params as any).threadId;
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : null;
+    return null;
+  })();
+  const legacyThreadId = searchParams.get("threadId");
+
   const [open, setOpen] = useState(false);
   const [desktopSidebarMode, setDesktopSidebarMode] = useState<DesktopSidebarMode>("expanded");
-  const lastDeepLinkThreadId = useRef<string | null>(null);
+  const lastRoutedKey = useRef<string | null>(null);
+  const [routeThreadError, setRouteThreadError] = useState<string | null>(null);
+
+  const forceHydrationSkeleton =
+    Boolean(routeThreadId) &&
+    !routeThreadError &&
+    (activeRemoteId !== routeThreadId || activeMessageCount === 0);
+
+  const isUuidLike = useCallback((value: string) => {
+    return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+      value,
+    );
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -77,26 +107,60 @@ export function ClaudeWorkspace() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    const threadId = url.searchParams.get("threadId");
-    if (!threadId) return;
-    if (lastDeepLinkThreadId.current === threadId) return;
-    lastDeepLinkThreadId.current = threadId;
+    if (!routeThreadId && legacyThreadId && pathname === "/assistant") {
+      const next = `/assistant/${legacyThreadId}`;
+      router.replace(next);
+      return;
+    }
+
+    const key = routeThreadId ? `thread:${routeThreadId}` : "new";
+    if (lastRoutedKey.current === key) return;
+    lastRoutedKey.current = key;
+
+    const alreadyOnThread = Boolean(routeThreadId) && activeRemoteId === routeThreadId;
+    const alreadyOnDraft = !routeThreadId && !activeRemoteId && activeStatus === "new";
+
+    if (alreadyOnThread || alreadyOnDraft) {
+      setRouteThreadError(null);
+      return;
+    }
+
+    setRouteThreadError(null);
 
     void (async () => {
       try {
-        await api.threads().switchToThread(threadId);
+        if (routeThreadId) {
+          if (!isUuidLike(routeThreadId)) {
+            setRouteThreadError("Invalid chat link.");
+            try {
+              await api.threads().switchToNewThread();
+            } catch {}
+            return;
+          }
+
+          await api.threads().switchToThread(routeThreadId);
+          return;
+        }
+
+        await api.threads().switchToNewThread();
       } catch (error) {
+        setRouteThreadError("This chat link is invalid or you don't have access.");
         console.error("Failed to switch to thread", error);
-      } finally {
         try {
-          url.searchParams.delete("threadId");
-          window.history.replaceState({}, "", url.toString());
+          await api.threads().switchToNewThread();
         } catch {}
       }
     })();
-  }, [api]);
+  }, [
+    activeRemoteId,
+    activeStatus,
+    api,
+    isUuidLike,
+    legacyThreadId,
+    pathname,
+    routeThreadId,
+    router,
+  ]);
 
   return (
     <Dialog.Root open={open} onOpenChange={setOpen}>
@@ -121,10 +185,29 @@ export function ClaudeWorkspace() {
             />
           </aside>
 
-          <div className="h-full min-h-0 min-w-0">
-            <ClaudeThread onOpenSidebar={openSidebar} />
+           <div className="h-full min-h-0 min-w-0">
+             {routeThreadError ? (
+               <div className="mx-auto max-w-[56rem] px-4 pt-4">
+                 <div className="rounded-2xl border border-border bg-surface/70 px-4 py-3 font-ui text-sm text-text shadow-sm">
+                   <div className="flex flex-wrap items-center justify-between gap-3">
+                     <p>{routeThreadError}</p>
+                     <button
+                       type="button"
+                       onClick={() => router.push("/assistant")}
+                       className="inline-flex items-center justify-center rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 active:scale-[0.99]"
+                     >
+                       New chat
+                     </button>
+                   </div>
+                 </div>
+               </div>
+             ) : null}
+              <ClaudeThread
+                onOpenSidebar={openSidebar}
+                forceHydrationSkeleton={forceHydrationSkeleton}
+              />
+            </div>
           </div>
-        </div>
 
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0 md:hidden" />

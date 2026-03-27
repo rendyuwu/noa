@@ -1,13 +1,15 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import type { FC, ReactNode } from "react";
 
 import {
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   useAssistantApi,
+  useAssistantState,
 } from "@assistant-ui/react";
 import {
   ArchiveIcon,
@@ -70,11 +72,25 @@ function NavLinkItem({
 
 const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
   const api = useAssistantApi();
+  const router = useRouter();
+  const pathname = usePathname();
+  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+
+  if (!remoteId) {
+    return null;
+  }
 
   return (
     <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-lg px-4 py-2 transition-colors hover:bg-surface-2/60 data-[active]:bg-surface-2/60">
       <ThreadListItemPrimitive.Trigger
-        onClick={onSelect}
+        onClick={() => {
+          onSelect?.();
+
+          const href = `/assistant/${remoteId}`;
+          if (pathname !== href) {
+            router.push(href);
+          }
+        }}
         className="min-w-0 flex-1 rounded-md text-left font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
         <span className="block truncate">
@@ -120,6 +136,55 @@ export function ClaudeThreadList({
   onCollapseSidebar?: () => void;
   variant?: "expanded" | "collapsed";
 }) {
+  const api = useAssistantApi();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const threadIds = useAssistantState(({ threads }: any) => threads?.threadIds ?? []);
+  const threadItems = useAssistantState(({ threads }: any) => threads?.threadItems ?? []);
+
+  const uniqueThreadIndexes = useMemo(() => {
+    const idToItem = new Map<string, any>();
+    for (const item of threadItems) {
+      if (item && typeof item.id === "string") {
+        idToItem.set(item.id, item);
+      }
+    }
+
+    const seenRemoteIds = new Set<string>();
+    const result: number[] = [];
+
+    for (let i = 0; i < threadIds.length; i += 1) {
+      const id = threadIds[i];
+      if (typeof id !== "string") continue;
+      const item = idToItem.get(id);
+      const remoteId = item?.remoteId;
+
+      if (typeof remoteId !== "string" || !remoteId) {
+        continue;
+      }
+
+      if (seenRemoteIds.has(remoteId)) {
+        continue;
+      }
+
+      seenRemoteIds.add(remoteId);
+      result.push(i);
+    }
+
+    return result;
+  }, [threadIds, threadItems]);
+
+  const handleNewChat = async () => {
+    await api.threads().switchToNewThread();
+
+    if (pathname !== "/assistant") {
+      router.push("/assistant");
+    }
+
+    onSelectThread?.();
+  };
+
   const user = getAuthUser();
   const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
@@ -185,13 +250,14 @@ export function ClaudeThreadList({
           ) : null}
 
           <RailItem label="New chat">
-            <ThreadListPrimitive.New
-              onClick={onSelectThread}
+            <button
+              type="button"
+              onClick={handleNewChat}
               aria-label="New chat"
               className={[railButtonClassName, "mt-4"].join(" ")}
             >
               <PlusIcon width={14} height={14} />
-            </ThreadListPrimitive.New>
+            </button>
           </RailItem>
 
           <DisabledRailButton
@@ -302,8 +368,9 @@ export function ClaudeThreadList({
         </div>
 
         <div className="mt-3">
-          <ThreadListPrimitive.New
-            onClick={onSelectThread}
+          <button
+            type="button"
+            onClick={handleNewChat}
             className="flex w-full items-center gap-3 rounded-lg px-4 py-2 font-ui text-sm text-text transition-colors hover:bg-surface-2/60 active:scale-[0.99]"
           >
             <span
@@ -313,7 +380,7 @@ export function ClaudeThreadList({
               <PlusIcon width={14} height={14} />
             </span>
             New chat
-          </ThreadListPrimitive.New>
+          </button>
 
           <div className="mt-2">
             <DisabledNavItem icon={<MagnifyingGlassIcon width={16} height={16} />} label="Search" />
@@ -371,13 +438,15 @@ export function ClaudeThreadList({
       <div className="mt-4 flex min-h-0 flex-1 flex-col font-ui">
         <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Recents</p>
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
-          <ThreadListPrimitive.Items
-            components={{
-              ThreadListItem: (props: any) => (
-                <ThreadListItem {...props} onSelect={onSelectThread} />
-              ),
-            }}
-          />
+          {uniqueThreadIndexes.map((index) => (
+            <ThreadListPrimitive.ItemByIndex
+              key={String(threadIds[index] ?? index)}
+              index={index}
+              components={{
+                ThreadListItem: (props: any) => <ThreadListItem {...props} onSelect={onSelectThread} />,
+              }}
+            />
+          ))}
         </div>
       </div>
 

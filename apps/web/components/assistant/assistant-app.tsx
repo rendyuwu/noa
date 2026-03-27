@@ -4,7 +4,7 @@ import { useRequireAuth } from "@/components/lib/auth-store";
 import { NoaAssistantRuntimeProvider } from "@/components/lib/runtime-provider";
 import { ClaudeWorkspace } from "@/components/assistant/claude-workspace";
 
-export default function AssistantPage() {
+export function AssistantApp() {
   const ready = useRequireAuth();
 
   if (!ready) {

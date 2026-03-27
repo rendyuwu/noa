@@ -4,12 +4,38 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clearAuth: vi.fn(),
+  push: vi.fn(),
+  switchToNewThread: vi.fn(),
+  pathname: "/assistant/11111111-1111-1111-1111-111111111111",
+  remoteId: "11111111-1111-1111-1111-111111111111",
+  threadIds: ["thread-a", "thread-b"],
+  threadItems: [
+    {
+      id: "thread-a",
+      remoteId: "11111111-1111-1111-1111-111111111111",
+      title: "Hello",
+      status: "regular",
+    },
+    {
+      id: "thread-b",
+      remoteId: "22222222-2222-2222-2222-222222222222",
+      title: "Howdy",
+      status: "regular",
+    },
+  ],
   user: {
     id: "1",
     email: "casey@example.com",
     display_name: "Casey Rivers",
     roles: ["admin"],
   },
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: mocks.push,
+  }),
+  usePathname: () => mocks.pathname,
 }));
 
 vi.mock("next/link", () => ({
@@ -22,17 +48,27 @@ vi.mock("next/link", () => ({
 
 vi.mock("@assistant-ui/react", () => ({
   useAssistantApi: () => ({
+    threads: () => ({
+      switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
+    }),
     threadListItem: () => ({
       delete: () => {},
     }),
   }),
+  useAssistantState: (selector: any) => selector({
+    threadListItem: {
+      remoteId: mocks.remoteId,
+    },
+    threads: {
+      threadIds: mocks.threadIds,
+      threadItems: mocks.threadItems,
+    },
+  }),
   ThreadListPrimitive: {
     Root: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-    New: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => <button {...props}>{children}</button>,
-    Items: ({ components }: { components?: { ThreadListItem?: (props: any) => ReactNode } }) => {
+    ItemByIndex: ({ components }: { components?: { ThreadListItem?: (props: any) => ReactNode } }) => {
       const ThreadListItem = components?.ThreadListItem;
-
-      return <div data-testid="thread-items">{ThreadListItem ? <ThreadListItem /> : null}</div>;
+      return <div data-testid="thread-item">{ThreadListItem ? <ThreadListItem /> : null}</div>;
     },
   },
   ThreadListItemPrimitive: {
@@ -57,6 +93,25 @@ import { ClaudeThreadList } from "./claude-thread-list";
 describe("ClaudeThreadList", () => {
   beforeEach(() => {
     mocks.clearAuth.mockReset();
+    mocks.push.mockReset();
+    mocks.switchToNewThread.mockReset();
+    mocks.pathname = "/assistant/11111111-1111-1111-1111-111111111111";
+    mocks.remoteId = "11111111-1111-1111-1111-111111111111";
+    mocks.threadIds = ["thread-a", "thread-b"];
+    mocks.threadItems = [
+      {
+        id: "thread-a",
+        remoteId: "11111111-1111-1111-1111-111111111111",
+        title: "Hello",
+        status: "regular",
+      },
+      {
+        id: "thread-b",
+        remoteId: "22222222-2222-2222-2222-222222222222",
+        title: "Howdy",
+        status: "regular",
+      },
+    ];
     mocks.user = {
       id: "1",
       email: "casey@example.com",
@@ -141,11 +196,39 @@ describe("ClaudeThreadList", () => {
   it("applies active styling to the selected thread row", () => {
     render(<ClaudeThreadList />);
 
-    const trigger = screen.getByRole("button", { name: "Untitled" });
+    const trigger = screen.getAllByRole("button", { name: "Untitled" })[0];
     const row = trigger.closest("[data-active]");
 
     expect(row).not.toBeNull();
     expect(row!).toHaveClass("data-[active]:bg-surface-2/60");
+  });
+
+  it("dedupes recents by remoteId", () => {
+    mocks.threadIds = ["thread-a", "thread-b", "thread-a-dup"];
+    mocks.threadItems = [
+      {
+        id: "thread-a",
+        remoteId: "11111111-1111-1111-1111-111111111111",
+        title: "Hello",
+        status: "regular",
+      },
+      {
+        id: "thread-b",
+        remoteId: "22222222-2222-2222-2222-222222222222",
+        title: "Howdy",
+        status: "regular",
+      },
+      {
+        id: "thread-a-dup",
+        remoteId: "11111111-1111-1111-1111-111111111111",
+        title: "Hello",
+        status: "regular",
+      },
+    ];
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.getAllByRole("button", { name: "Untitled" })).toHaveLength(2);
   });
 
   it("renders a user footer with avatar initial, name, email, and logout action", () => {

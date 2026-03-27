@@ -2,6 +2,7 @@
 
 import type { FC, ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
+import { useParams } from "next/navigation";
 
 import {
   AssistantIf,
@@ -202,10 +203,19 @@ function ThreadHydrationSkeleton() {
 
 export const ClaudeThread: FC<{
   onOpenSidebar?: () => void;
-}> = ({ onOpenSidebar }) => {
+  forceHydrationSkeleton?: boolean;
+}> = ({ onOpenSidebar, forceHydrationSkeleton = false }) => {
+  const params = useParams();
   const { isHydrating } = useThreadHydration();
   const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
-  const showHydrationSkeleton = Boolean(isHydrating) && threadStatus !== "new";
+  const routeThreadId = (() => {
+    const value = (params as any).threadId;
+    if (typeof value === "string") return value;
+    if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : null;
+    return null;
+  })();
+  const showHydrationSkeleton =
+    forceHydrationSkeleton || (Boolean(routeThreadId || isHydrating) && threadStatus !== "new");
 
   return (
     <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg px-4 pb-4 pt-14 font-serif">
