@@ -13,6 +13,8 @@ import { RequestApprovalToolUI } from "@/components/assistant/request-approval-t
 import { WorkflowReceiptToolUI } from "@/components/assistant/workflow-receipt-tool-ui";
 import { WorkflowTodoToolUI } from "@/components/assistant/workflow-todo-tool-ui";
 
+import { ApiError } from "@/components/lib/fetch-helper";
+
 type DesktopSidebarMode = "expanded" | "collapsed";
 
 const DESKTOP_SIDEBAR_MODE_STORAGE_KEY = "noa.sidebar.mode.v1";
@@ -144,6 +146,15 @@ export function ClaudeWorkspace() {
 
         await api.threads().switchToNewThread();
       } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          setRouteThreadError(null);
+          router.replace("/assistant");
+          try {
+            await api.threads().switchToNewThread();
+          } catch {}
+          return;
+        }
+
         setRouteThreadError("This chat link is invalid or you don't have access.");
         console.error("Failed to switch to thread", error);
         try {

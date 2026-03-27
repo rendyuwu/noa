@@ -6,6 +6,7 @@ import { useMemo, useState } from "react";
 import type { FC, ReactNode } from "react";
 
 import {
+  ThreadListItemByIdProvider,
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   useAssistantApi,
@@ -75,6 +76,7 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
   const router = useRouter();
   const pathname = usePathname();
   const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   if (!remoteId) {
     return null;
@@ -87,9 +89,18 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
           onSelect?.();
 
           const href = `/assistant/${remoteId}`;
-          if (pathname !== href) {
-            router.push(href);
-          }
+
+          void (async () => {
+            try {
+              await api.threadListItem().switchTo();
+            } catch (error) {
+              console.error("Failed to switch to selected thread", error);
+            }
+
+            if (pathname !== href) {
+              router.push(href);
+            }
+          })();
         }}
         className="min-w-0 flex-1 rounded-md text-left font-ui text-sm text-text outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
       >
@@ -103,7 +114,27 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
         description="This permanently deletes this thread."
         confirmLabel="Delete thread"
         confirmVariant="danger"
-        onConfirm={() => api.threadListItem().delete()}
+        error={deleteError}
+        onConfirm={async () => {
+          setDeleteError(null);
+
+          const itemApi = api.threadListItem();
+
+          if (pathname === `/assistant/${remoteId}`) {
+            router.replace("/assistant");
+            try {
+              await api.threads().switchToNewThread();
+            } catch (error) {
+              console.error("Failed to switch away from thread before deletion", error);
+            }
+          }
+
+          try {
+            await itemApi.delete();
+          } catch (error) {
+            setDeleteError(error instanceof Error ? error.message : "Failed to delete thread.");
+          }
+        }}
         trigger={({ open, disabled }) => (
           <ThreadListItemPrimitive.Delete
             className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-2/60 hover:text-text group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
@@ -143,7 +174,7 @@ export function ClaudeThreadList({
   const threadIds = useAssistantState(({ threads }: any) => threads?.threadIds ?? []);
   const threadItems = useAssistantState(({ threads }: any) => threads?.threadItems ?? []);
 
-  const uniqueThreadIndexes = useMemo(() => {
+  const uniqueThreadIds = useMemo(() => {
     const idToItem = new Map<string, any>();
     for (const item of threadItems) {
       if (item && typeof item.id === "string") {
@@ -152,10 +183,9 @@ export function ClaudeThreadList({
     }
 
     const seenRemoteIds = new Set<string>();
-    const result: number[] = [];
+    const result: string[] = [];
 
-    for (let i = 0; i < threadIds.length; i += 1) {
-      const id = threadIds[i];
+    for (const id of threadIds) {
       if (typeof id !== "string") continue;
       const item = idToItem.get(id);
       const remoteId = item?.remoteId;
@@ -169,7 +199,7 @@ export function ClaudeThreadList({
       }
 
       seenRemoteIds.add(remoteId);
-      result.push(i);
+      result.push(id);
     }
 
     return result;
@@ -438,14 +468,10 @@ export function ClaudeThreadList({
       <div className="mt-4 flex min-h-0 flex-1 flex-col font-ui">
         <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Recents</p>
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
-          {uniqueThreadIndexes.map((index) => (
-            <ThreadListPrimitive.ItemByIndex
-              key={String(threadIds[index] ?? index)}
-              index={index}
-              components={{
-                ThreadListItem: (props: any) => <ThreadListItem {...props} onSelect={onSelectThread} />,
-              }}
-            />
+          {uniqueThreadIds.map((id) => (
+            <ThreadListItemByIdProvider key={id} id={id}>
+              <ThreadListItem onSelect={onSelectThread} />
+            </ThreadListItemByIdProvider>
           ))}
         </div>
       </div>

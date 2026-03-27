@@ -5,7 +5,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   clearAuth: vi.fn(),
   push: vi.fn(),
+  replace: vi.fn(),
   switchToNewThread: vi.fn(),
+  switchToThreadItem: vi.fn(),
   pathname: "/assistant/11111111-1111-1111-1111-111111111111",
   remoteId: "11111111-1111-1111-1111-111111111111",
   threadIds: ["thread-a", "thread-b"],
@@ -34,6 +36,7 @@ const mocks = vi.hoisted(() => ({
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mocks.push,
+    replace: mocks.replace,
   }),
   usePathname: () => mocks.pathname,
 }));
@@ -52,6 +55,7 @@ vi.mock("@assistant-ui/react", () => ({
       switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
     }),
     threadListItem: () => ({
+      switchTo: (...args: unknown[]) => mocks.switchToThreadItem(...args),
       delete: () => {},
     }),
   }),
@@ -64,12 +68,9 @@ vi.mock("@assistant-ui/react", () => ({
       threadItems: mocks.threadItems,
     },
   }),
+  ThreadListItemByIdProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
   ThreadListPrimitive: {
     Root: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
-    ItemByIndex: ({ components }: { components?: { ThreadListItem?: (props: any) => ReactNode } }) => {
-      const ThreadListItem = components?.ThreadListItem;
-      return <div data-testid="thread-item">{ThreadListItem ? <ThreadListItem /> : null}</div>;
-    },
   },
   ThreadListItemPrimitive: {
     Root: ({ children, ...props }: React.ComponentPropsWithoutRef<"div">) => (
@@ -94,7 +95,9 @@ describe("ClaudeThreadList", () => {
   beforeEach(() => {
     mocks.clearAuth.mockReset();
     mocks.push.mockReset();
+    mocks.replace.mockReset();
     mocks.switchToNewThread.mockReset();
+    mocks.switchToThreadItem.mockReset();
     mocks.pathname = "/assistant/11111111-1111-1111-1111-111111111111";
     mocks.remoteId = "11111111-1111-1111-1111-111111111111";
     mocks.threadIds = ["thread-a", "thread-b"];

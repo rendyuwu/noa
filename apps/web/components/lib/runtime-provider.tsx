@@ -129,9 +129,15 @@ function ThreadUrlSync() {
   const lastRoutedRemoteId = useRef<string | null>(null);
 
   useEffect(() => {
+    const isAssistantRoute = pathname === "/assistant" || pathname.startsWith("/assistant/");
+    if (!isAssistantRoute) return;
     if (!remoteId) return;
-    if (pathname !== "/assistant") return;
+
     const desired = `/assistant/${remoteId}`;
+    if (pathname === desired) {
+      lastRoutedRemoteId.current = remoteId;
+      return;
+    }
     if (lastRoutedRemoteId.current === remoteId) return;
     lastRoutedRemoteId.current = remoteId;
     router.replace(desired);
