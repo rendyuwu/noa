@@ -291,14 +291,25 @@ export function ClaudeThreadList({
   }, [threadIds, threadItems]);
 
   const handleNewChat = async () => {
-    if (pathname !== "/assistant") {
-      router.push("/assistant", { scroll: false });
+    const shouldSwitchToNewThread = activeStatus !== "new" || Boolean(activeRemoteId);
+    const isAssistantRoute = pathname === "/assistant" || pathname.startsWith("/assistant/");
+
+    if (isAssistantRoute && shouldSwitchToNewThread) {
+      await api.threads().switchToNewThread();
+
+      // Update URL without triggering Next.js navigation (avoids double render)
+      if (pathname !== "/assistant") {
+        window.history.replaceState(window.history.state, "", "/assistant");
+      }
+
       onSelectThread?.();
       return;
     }
 
-    if (activeStatus !== "new" || activeRemoteId) {
-      await api.threads().switchToNewThread();
+    if (pathname !== "/assistant") {
+      router.push("/assistant", { scroll: false });
+      onSelectThread?.();
+      return;
     }
 
     onSelectThread?.();
