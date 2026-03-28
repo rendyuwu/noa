@@ -18,9 +18,10 @@ This is a living checklist of what is implemented in the MVP and what is intenti
   - Tool registry (READ vs CHANGE) + demo tools
   - Approval gate for CHANGE tools, including approve/deny execution path
   - Audit log events for auth/admin/actions/tools
-  - WHM server inventory with encrypted API token storage
+  - WHM server inventory with encrypted API token storage for WHM API-backed tools
   - Optional WHM SSH credential storage with encrypted password/private key/passphrase fields
   - Existing WHM server validation flow now also bootstraps and verifies SSH host-key trust when SSH is configured
+  - CSF/firewall WHM tools now execute over SSH/bash instead of the WHM API token path
   - Shared SSH execution layer for future server-backed tools
   - READ-only WHM SSH binary checker tool
 

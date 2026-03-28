@@ -142,7 +142,9 @@ function validateForm(
   if (!form.name.trim()) return "Name is required";
   if (!form.baseUrl.trim()) return "Base URL is required";
   if (!form.apiUsername.trim()) return "API username is required";
-  if (mode === "create" && !form.apiToken.trim()) return "API token is required";
+  if (mode === "create" && !form.apiToken.trim()) {
+    return "API token is required for WHM API operations";
+  }
 
   if (!form.enableSsh) return null;
 
@@ -275,8 +277,8 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
 
   const storedSshCopy =
     mode === "update"
-      ? "Leave secret fields blank to keep the stored values. Enter a new value to replace them."
-      : "SSH is optional. Configure it now if this server will be used by SSH-backed tools.";
+      ? "Leave secret fields blank to keep the stored values. Enter a new value to replace them. CSF and firewall tools use these SSH credentials."
+      : "SSH is optional, but required for CSF and other SSH-backed tools.";
 
   return (
     <div className="grid gap-4">
@@ -357,7 +359,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
               disabled={disabled}
             />
             {mode === "update" ? (
-              <p className={helperClass}>Leave blank to keep the stored API token.</p>
+              <p className={helperClass}>Leave blank to keep the stored API token for WHM API tools.</p>
             ) : null}
           </div>
         </div>
@@ -367,7 +369,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-muted">SSH access</div>
-            <p className={helperClass}>Used for SSH-backed server tools.</p>
+            <p className={helperClass}>Used for CSF, firewall, and other SSH-backed server tools.</p>
           </div>
           <label className="flex items-center gap-2 text-sm text-text">
             <input
@@ -497,7 +499,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
             )}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-muted">Not configured. SSH-backed tools will be unavailable until you add SSH credentials and run Validate.</p>
+          <p className="mt-3 text-sm text-muted">Not configured. CSF, firewall, and other SSH-backed tools will be unavailable until you add SSH credentials and run Validate.</p>
         )}
       </div>
     </div>
@@ -765,7 +767,7 @@ export function WhmServersAdminPage() {
             <div>
               <h1 className="text-2xl font-semibold">WHM Servers</h1>
               <p className="mt-1 font-ui text-sm text-muted">
-                Store WHM credentials in NOA (token is never shown after save).
+                Store WHM API and SSH credentials in NOA. CSF and firewall tools run over SSH, and secrets are never shown after save.
               </p>
             </div>
 
@@ -893,7 +895,7 @@ export function WhmServersAdminPage() {
                 <div className="min-w-0">
                   <Dialog.Title className="text-lg font-semibold text-text">Add WHM server</Dialog.Title>
                   <Dialog.Description className="mt-1 font-ui text-sm text-muted">
-                    API token and SSH credentials are stored securely and never displayed again.
+                    WHM API token and SSH credentials are stored securely and never displayed again. CSF and firewall tools use the SSH path.
                   </Dialog.Description>
                 </div>
                 <Dialog.Close asChild>
@@ -1119,11 +1121,11 @@ export function WhmServersAdminPage() {
                           <span className="status-badge">Not run</span>
                         )}
                       </div>
-                      <p className="mt-2 text-sm text-muted">
-                        {selectedServer && validateResultById[selectedServer.id]
-                          ? validateResultById[selectedServer.id]?.message
-                          : "Validate checks WHM API and SSH (if configured), and refreshes the pinned SSH host key fingerprint."}
-                      </p>
+                        <p className="mt-2 text-sm text-muted">
+                          {selectedServer && validateResultById[selectedServer.id]
+                            ? validateResultById[selectedServer.id]?.message
+                            : "Validate checks the WHM API token path, then SSH (if configured) for CSF and other SSH-backed tools, and refreshes the pinned SSH host key fingerprint."}
+                        </p>
                     </div>
                     <Button
                       className="shrink-0"

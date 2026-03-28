@@ -49,7 +49,7 @@ uv run uvicorn noa_api.main:app --reload --port 8000
 
 Notes:
 - `AUTH_BOOTSTRAP_ADMIN_EMAILS` and `API_CORS_ALLOWED_ORIGINS` must be JSON arrays (see examples).
-- `NOA_DB_SECRET_KEY` is required for encrypted database-backed secrets such as WHM API tokens and SSH credentials. Use a valid Fernet key.
+- `NOA_DB_SECRET_KEY` is required for encrypted database-backed secrets such as WHM API tokens and SSH credentials. CSF/firewall execution uses the SSH credentials, not the WHM API token. Use a valid Fernet key.
 - `python-ldap` may require OS packages to build (Ubuntu example: `sudo apt-get install -y libldap2-dev libsasl2-dev libssl-dev`).
 
 ### 3) Configure + run web
@@ -84,8 +84,9 @@ Open: http://localhost:3000
 - Assistant Transport streaming endpoint (`POST /assistant`)
 - Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools
 - Workflow template registry for approval-oriented tool families, with WHM as the reference implementation
-- WHM server inventory with encrypted stored API tokens
+- WHM server inventory with encrypted stored API tokens for WHM API-backed tools
 - Optional WHM SSH credentials with DB-pinned host fingerprints captured during validation
+- CSF/firewall WHM tools now execute over SSH/bash instead of the WHM API token path
 - Shared SSH execution layer for future server-backed READ/CHANGE tools
 - READ-only WHM SSH binary checker tool (`whm_check_binary_exists`)
 

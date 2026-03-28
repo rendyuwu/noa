@@ -143,13 +143,14 @@ The backend writes audit events for:
 ## WHM Validation + SSH Trust
 
 - `POST /admin/whm/servers/{server_id}/validate` remains the single admin validation entry point
-- Validation first checks the WHM API token using a lightweight WHM API call
+- Validation first checks the WHM API token using a lightweight WHM API call for WHM API-backed operations
 - If SSH credentials are configured for that WHM server, validation then:
   - derives the SSH host from the WHM `base_url`
   - connects with the stored SSH credentials
   - captures the remote host key fingerprint
   - overwrites the pinned fingerprint on the WHM server record (TOFU refresh behavior)
   - runs a harmless SSH command to verify command execution
+- CSF/firewall tools use the SSH execution path rather than the WHM API token path
 - Normal SSH-backed tools require a pinned fingerprint to be present and fail closed if it is missing or does not match
 
 ## What’s Next (Short List)
