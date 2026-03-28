@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   clearAuth: vi.fn(),
   cancelRun: vi.fn(),
+  detachThreadItem: vi.fn(),
   deleteThreadItem: vi.fn(),
   deleteThreadRemote: vi.fn(),
   itemApiById: new Map<string, { delete: ReturnType<typeof vi.fn> }>(),
@@ -80,6 +81,7 @@ vi.mock("@assistant-ui/react", () => ({
           getState: () => ({ id }),
           switchTo: (...args: unknown[]) => mocks.switchToThreadItem(...args),
           unstable_on: () => () => {},
+          detach: (...args: unknown[]) => mocks.detachThreadItem(id, ...args),
           delete: (...args: unknown[]) => itemApi.delete(...args),
         };
       },
@@ -91,7 +93,7 @@ vi.mock("@assistant-ui/react", () => ({
       remoteId: mocks.remoteId,
     },
     threads: {
-      mainThreadId: "thread-a",
+      mainThreadId: mocks.mainThreadId,
       threadIds: mocks.threadIds,
       threadItems: mocks.threadItems,
     },
@@ -123,6 +125,7 @@ describe("ClaudeThreadList", () => {
   beforeEach(() => {
     mocks.clearAuth.mockReset();
     mocks.cancelRun.mockReset();
+    mocks.detachThreadItem.mockReset();
     mocks.deleteThreadItem.mockReset();
     mocks.deleteThreadRemote.mockReset();
     mocks.push.mockReset();
@@ -131,6 +134,16 @@ describe("ClaudeThreadList", () => {
     mocks.switchToNewThread.mockReset();
     mocks.switchToNewThread.mockImplementation(async () => {
       mocks.mainThreadId = "draft-thread";
+      const existing = mocks.threadItems.filter((item) => item.id !== "draft-thread");
+      mocks.threadItems = [
+        ...existing,
+        {
+          id: "draft-thread",
+          remoteId: null,
+          title: undefined,
+          status: "new",
+        },
+      ];
     });
     mocks.switchToThreadItem.mockReset();
     mocks.deleteThreadItem.mockResolvedValue(undefined);
@@ -288,7 +301,7 @@ describe("ClaudeThreadList", () => {
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
   });
 
-  it("deletes the active thread after switching away and normalizes the route", async () => {
+  it("deletes the active thread after switching away (ThreadUrlSync handles route)", async () => {
     render(<ClaudeThreadList />);
 
     fireEvent.click(screen.getAllByRole("button", { name: "Delete thread" })[0]);
@@ -302,7 +315,8 @@ describe("ClaudeThreadList", () => {
 
     expect(mocks.cancelRun).not.toHaveBeenCalled();
     expect(mocks.switchToNewThread).toHaveBeenCalledTimes(1);
-    expect(mocks.replace).toHaveBeenCalledWith("/assistant", { scroll: false });
+    // Note: router.replace is no longer called; ThreadUrlSync updates the URL
+    // once the new thread initializes with a remoteId.
   });
 
   it("treats a missing active thread item lookup during delete as already deleted", async () => {
@@ -313,6 +327,16 @@ describe("ClaudeThreadList", () => {
     const confirmDialog = screen.getByRole("dialog", { name: "Delete thread?" });
     mocks.switchToNewThread.mockImplementationOnce(async () => {
       mocks.mainThreadId = "draft-thread";
+      const existing = mocks.threadItems.filter((item) => item.id !== "draft-thread");
+      mocks.threadItems = [
+        ...existing,
+        {
+          id: "draft-thread",
+          remoteId: null,
+          title: undefined,
+          status: "new",
+        },
+      ];
       mocks.itemApiById.delete("thread-a");
     });
     mocks.deleteThreadItem.mockRejectedValueOnce(new Error("tapLookupResources: Resource not found for lookup"));
@@ -323,7 +347,7 @@ describe("ClaudeThreadList", () => {
       expect(mocks.switchToNewThread).toHaveBeenCalledTimes(1);
     });
 
-    expect(mocks.replace).toHaveBeenCalledWith("/assistant", { scroll: false });
+    // No explicit router.replace; ThreadUrlSync handles it when new thread initializes.
     expect(screen.queryByText("tapLookupResources: Resource not found for lookup")).not.toBeInTheDocument();
   });
 

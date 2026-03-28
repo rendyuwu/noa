@@ -20,7 +20,15 @@ export type ConfirmDialogProps = {
   cancelLabel?: string;
   busy?: boolean;
   error?: string | null;
-  onConfirm: () => void | Promise<void>;
+  /**
+   * When true, close the dialog after a successful confirm.
+   *
+   * Success is determined by the return value of `onConfirm`:
+   * - return `false` to keep the dialog open
+   * - any other return value closes when the handler completes
+   */
+  closeOnConfirm?: boolean;
+  onConfirm: () => void | boolean | Promise<void | boolean>;
   children?: ReactNode;
 };
 
@@ -39,6 +47,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   busy: busyProp,
   error,
+  closeOnConfirm = false,
   onConfirm,
   children,
 }: ConfirmDialogProps) {
@@ -62,16 +71,31 @@ export function ConfirmDialog({
   const handleConfirm = useCallback(async () => {
     if (busy) return;
 
-    const result = onConfirm();
-    if (!busyProp && result && typeof (result as any).then === "function") {
-      setLocalBusy(true);
-      try {
-        await result;
-      } finally {
-        setLocalBusy(false);
+    const maybePromise = onConfirm();
+    const isPromise = maybePromise && typeof (maybePromise as any).then === "function";
+
+    let outcome: void | boolean = undefined;
+
+    if (isPromise) {
+      if (!busyProp) {
+        setLocalBusy(true);
       }
+
+      try {
+        outcome = await (maybePromise as Promise<void | boolean>);
+      } finally {
+        if (!busyProp) {
+          setLocalBusy(false);
+        }
+      }
+    } else {
+      outcome = maybePromise as void | boolean;
     }
-  }, [busy, busyProp, onConfirm]);
+
+    if (closeOnConfirm && outcome !== false) {
+      handleOpenChange(false);
+    }
+  }, [busy, busyProp, closeOnConfirm, handleOpenChange, onConfirm]);
 
   return (
     <Dialog.Root open={open} onOpenChange={handleOpenChange}>

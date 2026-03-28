@@ -33,6 +33,10 @@ import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
+import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
+import { useResetAssistantRuntime } from "@/components/lib/runtime-provider";
+
+const sleep = (durationMs: number) => new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 
 function isMissingThreadItemLookupError(error: unknown) {
   return error instanceof Error && error.message.includes("Resource not found for lookup");
@@ -89,6 +93,7 @@ const ThreadListItem: FC<{
   remoteId,
 }) => {
   const runtime = useAssistantRuntime();
+  const resetRuntime = useResetAssistantRuntime();
   const router = useRouter();
   const pathname = usePathname();
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -126,12 +131,16 @@ const ThreadListItem: FC<{
         confirmLabel="Delete thread"
         confirmVariant="danger"
         error={deleteError}
+        closeOnConfirm
         onConfirm={async () => {
           setDeleteError(null);
 
           const deletingThreadId = itemId;
-          const isActiveThread = activeRemoteId === remoteId;
-          const isActiveRoute = pathname === `/assistant/${remoteId}`;
+          const deletingRemoteId = remoteId;
+          const isActiveThread =
+            activeRemoteId === deletingRemoteId ||
+            runtime.threads.getState().mainThreadId === deletingThreadId;
+          const isActiveRoute = pathname === `/assistant/${deletingRemoteId}`;
 
           try {
             if (isActiveThread && runtime.thread.getState().isRunning) {
@@ -149,25 +158,59 @@ const ThreadListItem: FC<{
             if (isActiveThread || isActiveRoute) {
               await runtime.threads.switchToNewThread();
 
-              for (let attempt = 0; attempt < 20; attempt += 1) {
-                if (runtime.threads.getState().mainThreadId !== deletingThreadId) {
+              const start = Date.now();
+              let switchedAway = false;
+
+              while (Date.now() - start < 2000) {
+                const mainThreadId = runtime.threads.getState().mainThreadId;
+                const leftDeletingThread = mainThreadId !== deletingThreadId;
+
+                if (leftDeletingThread) {
+                  switchedAway = true;
                   break;
                 }
 
-                await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+                await sleep(25);
               }
 
-              router.replace("/assistant", { scroll: false });
-              await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+              if (!switchedAway) {
+                console.warn(
+                  "Failed to switch away from deleting thread within timeout; resetting assistant runtime",
+                  {
+                    deletingThreadId,
+                    deletingRemoteId,
+                    mainThreadId: runtime.threads.getState().mainThreadId,
+                  },
+                );
+
+                try {
+                  runtime.threads.getItemById(deletingThreadId).detach();
+                } catch {}
+
+                resetRuntime();
+                await sleep(0);
+
+                const response = await fetchWithAuth(`/threads/${deletingRemoteId}`, { method: "DELETE" });
+                if (response.status !== 204 && response.status !== 404 && !response.ok) {
+                  await jsonOrThrow(response);
+                }
+
+                return true;
+              }
             }
 
-            await runtime.threads.getItemById(deletingThreadId).delete();
+            const deletingItem = runtime.threads.getItemById(deletingThreadId);
+            deletingItem.detach();
+            await sleep(0);
+            await deletingItem.delete();
+            return true;
           } catch (error) {
             if (isMissingThreadItemLookupError(error)) {
-              return;
+              return true;
             }
 
             setDeleteError(error instanceof Error ? error.message : "Failed to delete thread.");
+            return false;
           }
         }}
         trigger={({ open, disabled }) => (

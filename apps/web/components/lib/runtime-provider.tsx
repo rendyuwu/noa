@@ -155,7 +155,14 @@ function ThreadUrlSync() {
     }
     if (lastRoutedRemoteId.current === remoteId) return;
     lastRoutedRemoteId.current = remoteId;
-    router.replace(desired, { scroll: false });
+
+    const timeout = window.setTimeout(() => {
+      router.replace(desired, { scroll: false });
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
   }, [pathname, remoteId, router]);
 
   return null;
