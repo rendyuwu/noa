@@ -380,6 +380,7 @@ class AgentRunner:
         tool_calls_processed = 0
         hit_safety_limit = False
         internal_guidance_counts: dict[str, int] = {}
+        post_tool_followup_prompted = False
 
         while rounds < max_rounds and tool_calls_processed < max_tool_calls:
             rounds += 1
@@ -433,6 +434,50 @@ class AgentRunner:
                         )
 
             if not llm_response.tool_calls:
+                if not text:
+                    followup_guidance = _post_tool_followup_guidance(working_messages)
+                    if (
+                        followup_guidance is not None
+                        and not post_tool_followup_prompted
+                    ):
+                        post_tool_followup_prompted = True
+                        working_messages.append(
+                            {
+                                "role": "assistant",
+                                "parts": [
+                                    {
+                                        "type": "text",
+                                        "text": followup_guidance,
+                                    }
+                                ],
+                            }
+                        )
+                        continue
+
+                    fallback_text = _fallback_assistant_reply_from_recent_tool_result(
+                        working_messages
+                    )
+                    if fallback_text:
+                        assistant_parts = [
+                            {
+                                "type": "text",
+                                "text": fallback_text,
+                            }
+                        ]
+                        output_messages.append(
+                            AgentMessage(role="assistant", parts=assistant_parts)
+                        )
+                        working_messages.append(
+                            {
+                                "role": "assistant",
+                                "parts": assistant_parts,
+                            }
+                        )
+                        text_deltas.extend(_split_text_deltas(fallback_text))
+                        if on_text_delta is not None:
+                            for chunk in _split_text_deltas(fallback_text):
+                                await on_text_delta(chunk)
+
                 return AgentRunnerResult(
                     messages=output_messages, text_deltas=text_deltas
                 )
@@ -1145,6 +1190,176 @@ def _internal_tool_guidance(tool_name: str) -> str | None:
 
 def _should_stop_after_internal_tool_guidance(tool_name: str, count: int) -> bool:
     return tool_name == "request_approval" and count >= 2
+
+
+def _latest_tool_result_part(
+    working_messages: list[dict[str, object]],
+) -> dict[str, object] | None:
+    for message in reversed(working_messages):
+        if message.get("role") != "tool":
+            continue
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in reversed(parts):
+            if isinstance(part, dict) and part.get("type") == "tool-result":
+                return part
+    return None
+
+
+def _tool_call_args_for_id(
+    working_messages: list[dict[str, object]], tool_call_id: str
+) -> dict[str, object] | None:
+    for message in reversed(working_messages):
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict) or part.get("type") != "tool-call":
+                continue
+            if part.get("toolCallId") != tool_call_id:
+                continue
+            args = part.get("args")
+            if isinstance(args, dict):
+                return args
+            return {}
+    return None
+
+
+def _post_tool_followup_guidance(
+    working_messages: list[dict[str, object]],
+) -> str | None:
+    latest_tool_result = _latest_tool_result_part(working_messages)
+    if latest_tool_result is None:
+        return None
+    return (
+        "Using the latest tool result you already have, answer the user directly now. "
+        "If the tool succeeded, give the direct answer first and then short supporting evidence. "
+        "If the tool failed, explain the error code, likely cause, and next safe step. "
+        "If a workflow receipt is already present, keep the narration to 1-2 lines and refer to it. "
+        "Do not call another tool unless another fact is strictly required. Reply in the user's language."
+    )
+
+
+def _fallback_assistant_reply_from_recent_tool_result(
+    working_messages: list[dict[str, object]],
+) -> str | None:
+    latest_tool_result = _latest_tool_result_part(working_messages)
+    if latest_tool_result is None:
+        return None
+
+    tool_name = latest_tool_result.get("toolName")
+    tool_call_id = latest_tool_result.get("toolCallId")
+    result = latest_tool_result.get("result")
+    is_error = latest_tool_result.get("isError") is True
+
+    if not isinstance(tool_name, str):
+        return None
+
+    if tool_name == "whm_preflight_csf_entries" and isinstance(result, dict):
+        target = _normalized_text(result.get("target")) or "the target"
+        verdict = _normalized_text(result.get("verdict")) or "unknown"
+        matches = result.get("matches")
+        match_count = (
+            len([item for item in matches if isinstance(item, str) and item.strip()])
+            if isinstance(matches, list)
+            else 0
+        )
+        args = (
+            _tool_call_args_for_id(working_messages, tool_call_id)
+            if isinstance(tool_call_id, str)
+            else None
+        )
+        server_ref = _normalized_text(args.get("server_ref")) if args else None
+        location = f" on server {server_ref}" if server_ref else ""
+
+        if verdict == "blocked":
+            answer = f"CSF result: {target}{location} is blocked."
+        elif verdict == "allowlisted":
+            answer = f"CSF result: {target}{location} is allowlisted."
+        elif verdict == "not_found":
+            answer = f"CSF result: {target}{location} was not found in CSF."
+        else:
+            answer = f"CSF result: {target}{location} returned an inconclusive verdict ({verdict})."
+
+        if verdict == "not_found":
+            evidence = "No matching CSF entries were found."
+        elif match_count > 0:
+            evidence = f"Found {match_count} matching CSF entr{'y' if match_count == 1 else 'ies'}."
+        else:
+            evidence = "The tool returned no matching evidence lines."
+
+        return f"{answer}\n\nEvidence: {evidence}"
+
+    if isinstance(result, dict):
+        error_code = _normalized_text(result.get("error_code"))
+        message = _normalized_text(result.get("message"))
+        if is_error or result.get("ok") is False:
+            if error_code and message:
+                return f"The tool failed with {error_code}: {message}"
+            if message:
+                return message
+            if error_code:
+                return f"The tool failed with {error_code}."
+        if message and message != "ok":
+            return message
+
+    tool = get_tool_definition(tool_name)
+    if tool is None or tool.risk != ToolRisk.READ or is_error:
+        return None
+
+    return _generic_read_success_fallback(result)
+
+    return None
+
+
+def _generic_read_success_fallback(result: object) -> str:
+    if not isinstance(result, dict):
+        return "The check completed successfully."
+
+    summary_parts: list[str] = []
+
+    for key in ("datetime", "date", "time", "timestamp", "verdict"):
+        value = _normalized_text(result.get(key))
+        if value is not None:
+            summary_parts.append(f"{key}: {value}")
+
+    found = result.get("found")
+    if isinstance(found, bool):
+        summary_parts.append(f"found: {'yes' if found else 'no'}")
+
+    count = _generic_read_result_count(result)
+    if count is not None:
+        summary_parts.append(f"count: {count}")
+
+    for key in ("path", "file", "filepath"):
+        value = _normalized_text(result.get(key))
+        if value is not None:
+            summary_parts.append(f"{key}: {value}")
+            break
+
+    message = _normalized_text(result.get("message"))
+    if message is not None and message != "ok":
+        summary_parts.append(f"message: {message}")
+
+    if summary_parts:
+        return f"Read result: {'; '.join(summary_parts[:5])}."
+
+    return "The check completed successfully."
+
+
+def _generic_read_result_count(result: dict[str, object]) -> int | None:
+    for key in ("count", "total", "total_count", "match_count", "matches_count"):
+        value = result.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+
+    for key in ("matches", "items", "results", "entries", "paths"):
+        value = result.get(key)
+        if isinstance(value, list):
+            return len(value)
+
+    return None
 
 
 def _assistant_is_requesting_reason(text: str) -> bool:

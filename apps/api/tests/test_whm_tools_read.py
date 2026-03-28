@@ -6,6 +6,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from noa_api.core.remote_exec.types import CommandResult
+
 
 @dataclass
 class _Server:
@@ -290,18 +292,18 @@ async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
     repo = _Repo([server])
     monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
 
-    class _Client:
-        def __init__(self, **kwargs) -> None:
-            _ = kwargs
+    async def _run_csf_command(server_obj, *, args: list[str]) -> CommandResult:
+        assert server_obj is server
+        assert args == ["-g", "1.2.3.4"]
+        return CommandResult(
+            command="TERM=dumb /usr/sbin/csf -g 1.2.3.4",
+            exit_code=0,
+            stdout="csf.deny: 1.2.3.4 # test block",
+            stderr="",
+            duration_ms=1,
+        )
 
-        async def csf_grep(self, *, target: str) -> dict[str, object]:
-            return {
-                "ok": True,
-                "message": "ok",
-                "html": f"<html><body><pre>Found {target} in /etc/csf/csf.deny</pre></body></html>",
-            }
-
-    monkeypatch.setattr(preflight_tools, "WHMClient", _Client)
+    monkeypatch.setattr(preflight_tools, "run_csf_command", _run_csf_command)
 
     result = await preflight_tools.whm_preflight_csf_entries(
         session=_Session(),
@@ -333,11 +335,10 @@ async def test_whm_preflight_csf_entries_rejects_invalid_target(monkeypatch) -> 
     repo = _Repo([server])
     monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
 
-    class _Client:
-        def __init__(self, **kwargs) -> None:
-            raise AssertionError("client should not be created for invalid targets")
+    async def _run_csf_command(server_obj, *, args: list[str]) -> CommandResult:
+        raise AssertionError("CSF command should not run for invalid targets")
 
-    monkeypatch.setattr(preflight_tools, "WHMClient", _Client)
+    monkeypatch.setattr(preflight_tools, "run_csf_command", _run_csf_command)
 
     result = await preflight_tools.whm_preflight_csf_entries(
         session=_Session(),

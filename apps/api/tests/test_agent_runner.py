@@ -1499,6 +1499,299 @@ async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reaso
     assert isinstance(todo_tool_call.get("args"), dict)
 
 
+async def test_agent_runner_reprompts_model_after_empty_post_tool_turn(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def preflight_tool(*, server_ref: str, target: str) -> dict[str, object]:
+        assert server_ref == "web2"
+        assert target == "187.150.230.11"
+        return {
+            "ok": True,
+            "server_id": str(uuid4()),
+            "target": target,
+            "verdict": "blocked",
+            "matches": ["filter DENYIN ... 187.150.230.11"],
+        }
+
+    tool = ToolDefinition(
+        name="whm_preflight_csf_entries",
+        description="Inspect CSF state for one target.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "target": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "target"],
+            "additionalProperties": False,
+        },
+        execute=preflight_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _ThreeTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="Saya akan memeriksa status CSF untuk IP tersebut di server web2.",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web2",
+                                "target": "187.150.230.11",
+                            },
+                        )
+                    ],
+                )
+
+            if self.turn == 2:
+                assert any(message.get("role") == "tool" for message in messages)
+                return LLMTurnResponse(text="", tool_calls=[])
+
+            assert any(
+                isinstance(part, dict)
+                and part.get("type") == "text"
+                and isinstance(part.get("text"), str)
+                and "Using the latest tool result you already have" in part["text"]
+                for message in messages
+                for part in cast(list[object], message.get("parts") or [])
+            )
+            return LLMTurnResponse(
+                text="IP 187.150.230.11 terblokir di CSF server web2.",
+                tool_calls=[],
+            )
+
+    runner = AgentRunner(
+        llm_client=_ThreeTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Cek apakah IP 187.150.230.11 terblock csf, di whm web2",
+                    }
+                ],
+            }
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert result.messages[-1].role == "assistant"
+    assert (
+        result.messages[-1].parts[0]["text"]
+        == "IP 187.150.230.11 terblokir di CSF server web2."
+    )
+
+
+async def test_agent_runner_falls_back_when_model_stays_empty_after_tool_result(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def preflight_tool(*, server_ref: str, target: str) -> dict[str, object]:
+        return {
+            "ok": True,
+            "server_id": str(uuid4()),
+            "target": target,
+            "verdict": "blocked",
+            "matches": ["filter DENYIN ... 187.150.230.11"],
+        }
+
+    tool = ToolDefinition(
+        name="whm_preflight_csf_entries",
+        description="Inspect CSF state for one target.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "target": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "target"],
+            "additionalProperties": False,
+        },
+        execute=preflight_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _SilentAfterToolLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="Saya akan memeriksa status CSF.",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web2",
+                                "target": "187.150.230.11",
+                            },
+                        )
+                    ],
+                )
+            return LLMTurnResponse(text="", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_SilentAfterToolLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Check whether 187.150.230.11 is blocked in CSF on web2",
+                    }
+                ],
+            }
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert result.messages[-1].role == "assistant"
+    assert result.messages[-1].parts[0]["text"] == (
+        "CSF result: 187.150.230.11 on server web2 is blocked.\n\n"
+        "Evidence: Found 1 matching CSF entry."
+    )
+
+
+async def test_agent_runner_falls_back_for_generic_read_success_when_model_stays_empty(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def backup_status_tool(*, path: str) -> dict[str, object]:
+        assert path == "/var/backups/latest.tar.gz"
+        return {
+            "date": "2026-03-28",
+            "verdict": "ready",
+            "count": 2,
+            "path": path,
+        }
+
+    tool = ToolDefinition(
+        name="get_backup_status",
+        description="Inspect backup status.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string", "minLength": 1},
+            },
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+        execute=backup_status_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _SilentAfterToolLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="I'll inspect the latest backup status.",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={"path": "/var/backups/latest.tar.gz"},
+                        )
+                    ],
+                )
+            return LLMTurnResponse(text="", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_SilentAfterToolLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Check the latest backup status",
+                    }
+                ],
+            }
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert result.messages[-1].role == "assistant"
+    assert result.messages[-1].parts[0]["text"] == (
+        "Read result: date: 2026-03-28; verdict: ready; count: 2; "
+        "path: /var/backups/latest.tar.gz."
+    )
+
+
 async def test_agent_runner_rejects_whitespace_only_string_arguments(
     monkeypatch,
 ) -> None:

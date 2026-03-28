@@ -15,6 +15,7 @@ const unstable_useRemoteThreadListRuntime = vi.fn(
 );
 const unstable_loadExternalState = vi.fn();
 const generateTitle = vi.fn();
+const missingLookupItemIds = new Set<string>();
 const threadsItem = vi.fn(() => ({ generateTitle }));
 const fetchWithAuth = vi.fn();
 const jsonOrThrow = vi.fn();
@@ -46,6 +47,10 @@ const runtime = {
     getState: () => ({ mainThreadId: assistantState.threads.mainThreadId }),
     getItemById: (...args: any[]) => {
       const [id] = args;
+      if (missingLookupItemIds.has(id)) {
+        throw new Error("tapLookupResources: Resource not found for lookup");
+      }
+
       if (id === assistantState.threads.mainThreadId) {
         return getCurrentThreadItemRuntime();
       }
@@ -93,6 +98,7 @@ describe("NoaAssistantRuntimeProvider", () => {
     threadsItem.mockClear();
     fetchWithAuth.mockReset();
     jsonOrThrow.mockReset();
+    missingLookupItemIds.clear();
 
     assistantState = {
       threadListItem: {
@@ -425,5 +431,36 @@ describe("NoaAssistantRuntimeProvider", () => {
     });
 
     expect(threadsItem).not.toHaveBeenCalled();
+  });
+
+  it("ignores missing thread item lookups while generating titles", async () => {
+    assistantState.threadListItem.remoteId = "thread-1";
+    assistantState.threads.threadItems = [
+      {
+        id: "thread-deleted",
+        remoteId: "thread-deleted",
+        title: undefined,
+        status: "regular",
+      },
+      {
+        id: "thread-local-1",
+        remoteId: "thread-1",
+        title: undefined,
+        status: "regular",
+      },
+    ];
+    missingLookupItemIds.add("thread-deleted");
+
+    expect(() => {
+      render(
+        <NoaAssistantRuntimeProvider>
+          <div />
+        </NoaAssistantRuntimeProvider>,
+      );
+    }).not.toThrow();
+
+    await waitFor(() => {
+      expect(generateTitle).toHaveBeenCalledTimes(1);
+    });
   });
 });

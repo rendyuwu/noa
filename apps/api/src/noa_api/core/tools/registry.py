@@ -636,6 +636,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         prompt_hints=(
             "Run this once per target before CSF unblock, allowlist, or denylist changes and summarize the verdict.",
             "Successful results return `target`, `verdict`, and matched CSF entries in `matches`.",
+            "After a successful run, explicitly answer whether the target is blocked, allowlisted, or not found before doing anything else.",
         ),
         result_schema=_PREFLIGHT_CSF_RESULT_SCHEMA,
     ),

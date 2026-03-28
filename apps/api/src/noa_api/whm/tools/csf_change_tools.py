@@ -4,10 +4,13 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
-from noa_api.whm.integrations.client import WHMClient
-from noa_api.whm.integrations.csf import parse_csf_grep_html, parse_csf_target
+from noa_api.whm.integrations.csf import parse_csf_grep_output, parse_csf_target
+from noa_api.whm.integrations.csf_cli import (
+    CSFCLIError,
+    require_csf_success,
+    run_csf_command,
+)
 from noa_api.whm.server_ref import resolve_whm_server_ref
 
 
@@ -21,23 +24,22 @@ def _resolution_error(result: Any) -> dict[str, object]:
 
 
 async def _csf_preflight(client: Any, *, target: str) -> tuple[str, list[str]]:
-    grep_result = await client.csf_grep(target=target)
-    if grep_result.get("ok") is not True:
-        raise RuntimeError(str(grep_result.get("message") or "CSF grep failed"))
-    html_value = grep_result.get("html")
-    if not isinstance(html_value, str):
+    grep_result = await run_csf_command(client, args=["-g", target])
+    output = require_csf_success(grep_result, default_message="CSF grep failed")
+    if not output.strip():
         raise RuntimeError("CSF grep returned an invalid response")
-    parsed = parse_csf_grep_html(html_value, target=target)
+    parsed = parse_csf_grep_output(output, target=target)
     return parsed.verdict, parsed.matches
 
 
-def _client_for_server(server: Any) -> WHMClient:
-    return WHMClient(
-        base_url=str(getattr(server, "base_url")),
-        api_username=str(getattr(server, "api_username")),
-        api_token=maybe_decrypt_text(str(getattr(server, "api_token"))),
-        verify_ssl=bool(getattr(server, "verify_ssl")),
-    )
+async def _run_csf_change(
+    server: Any,
+    *,
+    args: list[str],
+    default_message: str,
+) -> None:
+    result = await run_csf_command(server, args=args)
+    require_csf_success(result, default_message=default_message)
 
 
 async def whm_csf_unblock(
@@ -61,7 +63,6 @@ async def whm_csf_unblock(
 
     server = resolution.server
     assert server is not None
-    client = _client_for_server(server)
 
     results: list[dict[str, object]] = []
     overall_ok = True
@@ -81,7 +82,7 @@ async def whm_csf_unblock(
             continue
 
         try:
-            verdict, matches = await _csf_preflight(client, target=target)
+            verdict, matches = await _csf_preflight(server, target=target)
         except Exception as exc:
             overall_ok = False
             results.append(
@@ -107,25 +108,32 @@ async def whm_csf_unblock(
             )
             continue
 
-        mutation = await client.csf_request_action(
-            action="unblock",
-            params={"target": target, "reason": reason.strip()},
-        )
-        if mutation.get("ok") is not True:
+        try:
+            await _run_csf_change(
+                server,
+                args=["-tr", target],
+                default_message="Unblock failed",
+            )
+            await _run_csf_change(
+                server,
+                args=["-dr", target],
+                default_message="Unblock failed",
+            )
+        except CSFCLIError as exc:
             overall_ok = False
             results.append(
                 {
                     "target": target,
                     "ok": False,
                     "status": "error",
-                    "error_code": str(mutation.get("error_code") or "unknown"),
-                    "message": str(mutation.get("message") or "Unblock failed"),
+                    "error_code": exc.code,
+                    "message": exc.message,
                 }
             )
             continue
 
         try:
-            post_verdict, post_matches = await _csf_preflight(client, target=target)
+            post_verdict, post_matches = await _csf_preflight(server, target=target)
         except Exception as exc:
             overall_ok = False
             results.append(
@@ -187,7 +195,6 @@ async def whm_csf_allowlist_remove(
 
     server = resolution.server
     assert server is not None
-    client = _client_for_server(server)
 
     results: list[dict[str, object]] = []
     overall_ok = True
@@ -206,7 +213,21 @@ async def whm_csf_allowlist_remove(
             )
             continue
 
-        verdict, matches = await _csf_preflight(client, target=target)
+        try:
+            verdict, matches = await _csf_preflight(server, target=target)
+        except Exception as exc:
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "preflight_failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+
         if verdict != "allowlisted":
             results.append(
                 {
@@ -219,26 +240,45 @@ async def whm_csf_allowlist_remove(
             )
             continue
 
-        mutation = await client.csf_request_action(
-            action="allow_remove",
-            params={"target": target, "reason": reason.strip()},
-        )
-        if mutation.get("ok") is not True:
+        try:
+            await _run_csf_change(
+                server,
+                args=["-tra", target],
+                default_message="Allowlist remove failed",
+            )
+            await _run_csf_change(
+                server,
+                args=["-ar", target],
+                default_message="Allowlist remove failed",
+            )
+        except CSFCLIError as exc:
             overall_ok = False
             results.append(
                 {
                     "target": target,
                     "ok": False,
                     "status": "error",
-                    "error_code": str(mutation.get("error_code") or "unknown"),
-                    "message": str(
-                        mutation.get("message") or "Allowlist remove failed"
-                    ),
+                    "error_code": exc.code,
+                    "message": exc.message,
                 }
             )
             continue
 
-        post_verdict, post_matches = await _csf_preflight(client, target=target)
+        try:
+            post_verdict, post_matches = await _csf_preflight(server, target=target)
+        except Exception as exc:
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "postflight_failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+
         if post_verdict == "allowlisted":
             overall_ok = False
             results.append(
@@ -294,7 +334,6 @@ async def whm_csf_allowlist_add_ttl(
 
     server = resolution.server
     assert server is not None
-    client = _client_for_server(server)
 
     results: list[dict[str, object]] = []
     overall_ok = True
@@ -327,7 +366,21 @@ async def whm_csf_allowlist_add_ttl(
             )
             continue
 
-        verdict, matches = await _csf_preflight(client, target=target)
+        try:
+            verdict, matches = await _csf_preflight(server, target=target)
+        except Exception as exc:
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "preflight_failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+
         if verdict == "allowlisted":
             results.append(
                 {
@@ -340,29 +393,42 @@ async def whm_csf_allowlist_add_ttl(
             )
             continue
 
-        mutation = await client.csf_request_action(
-            action="allow_ttl",
-            params={
-                "target": target,
-                "timeout": duration_minutes,
-                "dur": "m",
-                "reason": reason.strip(),
-            },
-        )
-        if mutation.get("ok") is not True:
+        duration_seconds = duration_minutes * 60
+
+        try:
+            await _run_csf_change(
+                server,
+                args=["-ta", target, str(duration_seconds), reason.strip()],
+                default_message="Allowlist TTL failed",
+            )
+        except CSFCLIError as exc:
             overall_ok = False
             results.append(
                 {
                     "target": target,
                     "ok": False,
                     "status": "error",
-                    "error_code": str(mutation.get("error_code") or "unknown"),
-                    "message": str(mutation.get("message") or "Allowlist TTL failed"),
+                    "error_code": exc.code,
+                    "message": exc.message,
                 }
             )
             continue
 
-        post_verdict, post_matches = await _csf_preflight(client, target=target)
+        try:
+            post_verdict, post_matches = await _csf_preflight(server, target=target)
+        except Exception as exc:
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "postflight_failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+
         if post_verdict != "allowlisted":
             overall_ok = False
             results.append(
@@ -418,7 +484,6 @@ async def whm_csf_denylist_add_ttl(
 
     server = resolution.server
     assert server is not None
-    client = _client_for_server(server)
 
     results: list[dict[str, object]] = []
     overall_ok = True
@@ -451,7 +516,21 @@ async def whm_csf_denylist_add_ttl(
             )
             continue
 
-        verdict, matches = await _csf_preflight(client, target=target)
+        try:
+            verdict, matches = await _csf_preflight(server, target=target)
+        except Exception as exc:
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "preflight_failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+
         if verdict == "blocked":
             results.append(
                 {
@@ -464,29 +543,42 @@ async def whm_csf_denylist_add_ttl(
             )
             continue
 
-        mutation = await client.csf_request_action(
-            action="deny_ttl",
-            params={
-                "target": target,
-                "timeout": duration_minutes,
-                "dur": "m",
-                "reason": reason.strip(),
-            },
-        )
-        if mutation.get("ok") is not True:
+        duration_seconds = duration_minutes * 60
+
+        try:
+            await _run_csf_change(
+                server,
+                args=["-td", target, str(duration_seconds), reason.strip()],
+                default_message="Denylist TTL failed",
+            )
+        except CSFCLIError as exc:
             overall_ok = False
             results.append(
                 {
                     "target": target,
                     "ok": False,
                     "status": "error",
-                    "error_code": str(mutation.get("error_code") or "unknown"),
-                    "message": str(mutation.get("message") or "Denylist TTL failed"),
+                    "error_code": exc.code,
+                    "message": exc.message,
                 }
             )
             continue
 
-        post_verdict, post_matches = await _csf_preflight(client, target=target)
+        try:
+            post_verdict, post_matches = await _csf_preflight(server, target=target)
+        except Exception as exc:
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "postflight_failed",
+                    "message": str(exc),
+                }
+            )
+            continue
+
         if post_verdict != "blocked":
             overall_ok = False
             results.append(

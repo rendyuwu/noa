@@ -64,6 +64,7 @@ def parse_csf_target(raw: str) -> CSFTarget:
 
 
 _TAG_RE = re.compile(r"<[^>]+>")
+_ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 _HOSTNAME_LABEL_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
 
@@ -76,6 +77,16 @@ def _is_valid_hostname(value: str) -> bool:
     return all(_HOSTNAME_LABEL_RE.fullmatch(label) for label in labels)
 
 
+def _text_to_lines(text_value: str) -> list[str]:
+    text = html.unescape(_ANSI_ESCAPE_RE.sub("", text_value))
+    lines = []
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            lines.append(stripped)
+    return lines
+
+
 def _html_to_text_lines(html_value: str) -> list[str]:
     normalized = re.sub(r"<\s*br\s*/?>", "\n", html_value, flags=re.IGNORECASE)
     normalized = re.sub(
@@ -85,37 +96,81 @@ def _html_to_text_lines(html_value: str) -> list[str]:
         flags=re.IGNORECASE,
     )
     text = _TAG_RE.sub("", normalized)
-    text = html.unescape(text)
-    lines = []
-    for line in text.splitlines():
-        stripped = line.strip()
-        if stripped:
-            lines.append(stripped)
-    return lines
+    return _text_to_lines(text)
 
 
-def parse_csf_grep_html(
-    html_value: str, *, target: str, max_matches: int = 20
+def _is_block_match(line: str) -> bool:
+    lower_line = line.lower()
+    return any(
+        marker in lower_line
+        for marker in (
+            "csf.deny",
+            "/etc/csf/csf.deny",
+            "temporary blocks:",
+            "denyin",
+            "denyout",
+        )
+    )
+
+
+def _is_allow_match(line: str) -> bool:
+    lower_line = line.lower()
+    return any(
+        marker in lower_line
+        for marker in (
+            "csf.allow",
+            "/etc/csf/csf.allow",
+            "temporary allows:",
+            "allowin",
+            "allowout",
+        )
+    )
+
+
+def _is_not_found_match(line: str) -> bool:
+    lower_line = line.lower()
+    return lower_line.startswith("no matches found for ") or lower_line.startswith(
+        "no matches for "
+    )
+
+
+def _parse_csf_grep_lines(
+    lines: list[str], *, target: str, max_matches: int = 20
 ) -> CSFGrepParsed:
     target_value = target.strip()
     if not target_value:
         raise ValueError("CSF grep target is required")
 
-    lines = _html_to_text_lines(html_value)
     matches = [line for line in lines if target_value in line]
     bounded = matches[: max_matches if max_matches > 0 else 0]
 
-    verdict: CSFGrepVerdict = "unknown"
-    lower_matches = "\n".join(bounded).lower()
-    if not matches:
-        verdict = "not_found"
-    elif (
-        "csf.deny" in lower_matches
-        or "tempban" in lower_matches
-        or "deny" in lower_matches
-    ):
-        verdict = "blocked"
-    elif "csf.allow" in lower_matches or "allow" in lower_matches:
+    if any(_is_block_match(line) for line in matches):
+        verdict: CSFGrepVerdict = "blocked"
+    elif any(_is_allow_match(line) for line in matches):
         verdict = "allowlisted"
+    elif matches and all(_is_not_found_match(line) for line in matches):
+        verdict = "not_found"
+    elif not matches and any(_is_not_found_match(line) for line in lines):
+        verdict = "not_found"
+    else:
+        verdict = "unknown"
 
     return CSFGrepParsed(verdict=verdict, matches=bounded)
+
+
+def parse_csf_grep_output(
+    output: str, *, target: str, max_matches: int = 20
+) -> CSFGrepParsed:
+    return _parse_csf_grep_lines(
+        _text_to_lines(output), target=target, max_matches=max_matches
+    )
+
+
+def parse_csf_grep_html(
+    html_value: str, *, target: str, max_matches: int = 20
+) -> CSFGrepParsed:
+    return _parse_csf_grep_lines(
+        _html_to_text_lines(html_value),
+        target=target,
+        max_matches=max_matches,
+    )

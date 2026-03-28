@@ -33,8 +33,10 @@ import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
-import { useResetAssistantRuntime } from "@/components/lib/runtime-provider";
-import { threadListAdapter } from "@/components/lib/thread-list-adapter";
+
+function isMissingThreadItemLookupError(error: unknown) {
+  return error instanceof Error && error.message.includes("Resource not found for lookup");
+}
 
 function DisabledNavItem({ icon, label }: { icon: ReactNode; label: string }) {
   return (
@@ -87,7 +89,6 @@ const ThreadListItem: FC<{
   remoteId,
 }) => {
   const runtime = useAssistantRuntime();
-  const resetAssistantRuntime = useResetAssistantRuntime();
   const router = useRouter();
   const pathname = usePathname();
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -128,25 +129,24 @@ const ThreadListItem: FC<{
         onConfirm={async () => {
           setDeleteError(null);
 
-          const itemApi = runtime.threads.getItemById(itemId);
           const deletingThreadId = itemId;
           const isActiveThread = activeRemoteId === remoteId;
           const isActiveRoute = pathname === `/assistant/${remoteId}`;
 
           try {
-            if (isActiveThread || isActiveRoute) {
-              if (runtime.thread.getState().isRunning) {
-                runtime.thread.cancelRun();
+            if (isActiveThread && runtime.thread.getState().isRunning) {
+              runtime.thread.cancelRun();
 
-                for (let attempt = 0; attempt < 20; attempt += 1) {
-                  if (!runtime.thread.getState().isRunning) {
-                    break;
-                  }
-
-                  await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+              for (let attempt = 0; attempt < 20; attempt += 1) {
+                if (!runtime.thread.getState().isRunning) {
+                  break;
                 }
-              }
 
+                await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+              }
+            }
+
+            if (isActiveThread || isActiveRoute) {
               await runtime.threads.switchToNewThread();
 
               for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -159,17 +159,14 @@ const ThreadListItem: FC<{
 
               router.replace("/assistant", { scroll: false });
               await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
-              await threadListAdapter.delete(remoteId);
-              resetAssistantRuntime();
+            }
+
+            await runtime.threads.getItemById(deletingThreadId).delete();
+          } catch (error) {
+            if (isMissingThreadItemLookupError(error)) {
               return;
             }
 
-            await itemApi.delete();
-
-            if (isActiveThread || isActiveRoute) {
-              router.replace("/assistant", { scroll: false });
-            }
-          } catch (error) {
             setDeleteError(error instanceof Error ? error.message : "Failed to delete thread.");
           }
         }}
@@ -509,7 +506,7 @@ export function ClaudeThreadList({
         <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Recents</p>
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
           {uniqueThreadItems.map((item) => (
-            <ThreadListItemByIdProvider key={item.id} id={item.id}>
+            <ThreadListItemByIdProvider key={`${item.remoteId}:${item.id}`} id={item.id}>
               <ThreadListItem
                 onSelect={onSelectThread}
                 activeRemoteId={activeRemoteId}

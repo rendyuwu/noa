@@ -23,6 +23,10 @@ import { threadListAdapter } from "@/components/lib/thread-list-adapter";
 
 const ResetAssistantRuntimeContext = createContext<() => void>(() => {});
 
+function isMissingThreadItemLookupError(error: unknown) {
+  return error instanceof Error && error.message.includes("Resource not found for lookup");
+}
+
 export function useResetAssistantRuntime() {
   return useContext(ResetAssistantRuntimeContext);
 }
@@ -119,8 +123,14 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
       if (generatedTitles.current.has(item.id)) continue;
 
       generatedTitles.current.add(item.id);
-      runtime.threads.getItemById(item.id).generateTitle();
-      remaining -= 1;
+      try {
+        runtime.threads.getItemById(item.id).generateTitle();
+        remaining -= 1;
+      } catch (error) {
+        if (!isMissingThreadItemLookupError(error)) {
+          throw error;
+        }
+      }
     }
   }, [runtime, threadItems]);
 

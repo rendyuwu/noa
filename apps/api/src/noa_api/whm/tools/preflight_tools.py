@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
-from noa_api.whm.integrations.csf import parse_csf_grep_html, parse_csf_target
+from noa_api.whm.integrations.csf import parse_csf_grep_output, parse_csf_target
+from noa_api.whm.integrations.csf_cli import (
+    CSFCLIError,
+    require_csf_success,
+    run_csf_command,
+)
 from noa_api.whm.server_ref import resolve_whm_server_ref
 from noa_api.whm.tools.result_shapes import normalize_whm_account_summary
 
@@ -104,24 +109,24 @@ async def whm_preflight_csf_entries(
             "message": "Target must be a valid IP, CIDR, or hostname",
         }
 
-    client = _client_for_server(server)
-    grep_result = await client.csf_grep(target=normalized_target)
-    if grep_result.get("ok") is not True:
+    try:
+        grep_result = await run_csf_command(server, args=["-g", normalized_target])
+        output = require_csf_success(grep_result, default_message="CSF grep failed")
+    except CSFCLIError as exc:
         return {
             "ok": False,
-            "error_code": str(grep_result.get("error_code") or "unknown"),
-            "message": str(grep_result.get("message") or "CSF grep failed"),
+            "error_code": exc.code,
+            "message": exc.message,
         }
 
-    html_value = grep_result.get("html")
-    if not isinstance(html_value, str):
+    if not output.strip():
         return {
             "ok": False,
             "error_code": "invalid_response",
             "message": "CSF grep returned an invalid response",
         }
 
-    parsed = parse_csf_grep_html(html_value, target=normalized_target)
+    parsed = parse_csf_grep_output(output, target=normalized_target)
     return {
         "ok": True,
         "server_id": str(resolution.server_id),
