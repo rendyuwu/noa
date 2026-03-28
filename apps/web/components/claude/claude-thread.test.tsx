@@ -121,8 +121,14 @@ vi.mock("@assistant-ui/react", async () => {
           isEmpty: mockThreadIsEmpty,
           messages: mockThreadMessages,
         },
-        threadListItem: {
-          status: mockThreadListItemStatus,
+        threads: {
+          mainThreadId: "thread-local-1",
+          threadItems: [
+            {
+              id: "thread-local-1",
+              status: mockThreadListItemStatus,
+            },
+          ],
         },
       }),
   };
@@ -238,6 +244,28 @@ describe("ClaudeThread", () => {
 
     expect(screen.getByLabelText("Loading conversation")).toBeInTheDocument();
     expect(screen.queryByText(/Morning, Casey/)).not.toBeInTheDocument();
+  });
+
+  it("does not get stuck on the skeleton once a routed thread is no longer hydrating", () => {
+    mockThreadIsEmpty = true;
+    mockThreadListItemStatus = "regular";
+    mockIsHydrating = false;
+    mockRouteThreadId = ["11111111-1111-1111-1111-111111111111"];
+
+    render(<ClaudeThread />);
+
+    expect(screen.queryByLabelText("Loading conversation")).not.toBeInTheDocument();
+    expect(screen.getByText(/Morning, Casey/)).toBeInTheDocument();
+  });
+
+  it("can still force the skeleton while switching onto a routed thread", () => {
+    mockThreadIsEmpty = true;
+    mockThreadListItemStatus = "regular";
+    mockIsHydrating = false;
+
+    render(<ClaudeThread forceHydrationSkeleton />);
+
+    expect(screen.getByLabelText("Loading conversation")).toBeInTheDocument();
   });
 
   it("keeps the thread shell focused on messages and composer without workflow chrome", () => {

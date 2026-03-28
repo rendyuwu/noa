@@ -21,20 +21,38 @@ const jsonOrThrow = vi.fn();
 
 let assistantState: any;
 
+const syncActiveThreadItem = () => {
+  assistantState.threads.threadItems = [
+    {
+      id: assistantState.threads.mainThreadId,
+      remoteId: assistantState.threadListItem.remoteId,
+      title: assistantState.threadListItem.title,
+      status: assistantState.threadListItem.status,
+    },
+  ];
+};
+
+const getCurrentThreadItemRuntime = () => ({
+  getState: () => assistantState.threadListItem,
+  initialize: async () => ({ remoteId: assistantState.threadListItem.remoteId }),
+  generateTitle,
+});
+
 const runtime = {
   thread: {
     unstable_loadExternalState,
   },
-};
+  threads: {
+    getState: () => ({ mainThreadId: assistantState.threads.mainThreadId }),
+    getItemById: (...args: any[]) => {
+      const [id] = args;
+      if (id === assistantState.threads.mainThreadId) {
+        return getCurrentThreadItemRuntime();
+      }
 
-const api = {
-  threadListItem: () => ({
-    getState: () => assistantState.threadListItem,
-    initialize: async () => ({ remoteId: assistantState.threadListItem.remoteId }),
-  }),
-  threads: () => ({
-    item: (...args: any[]) => threadsItem(...args),
-  }),
+      return threadsItem(...args);
+    },
+  },
 };
 
 vi.mock("@assistant-ui/react", async () => {
@@ -44,7 +62,6 @@ vi.mock("@assistant-ui/react", async () => {
     AssistantRuntimeProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
     unstable_useRemoteThreadListRuntime: (...args: any[]) =>
       unstable_useRemoteThreadListRuntime(...args),
-    useAssistantApi: () => api,
     useAssistantRuntime: () => runtime,
     useAssistantState: (selector: any) => selector(assistantState),
     useAssistantTransportRuntime: (...args: any[]) => useAssistantTransportRuntime(...args),
@@ -88,9 +105,11 @@ describe("NoaAssistantRuntimeProvider", () => {
         messages: [],
       },
       threads: {
+        mainThreadId: "thread-local-1",
         threadItems: [],
       },
     };
+    syncActiveThreadItem();
 
     const emptyState = { messages: [], isRunning: false };
     const response = new Response(JSON.stringify(emptyState), {
@@ -170,6 +189,7 @@ describe("NoaAssistantRuntimeProvider", () => {
 
   it("hydrates persisted thread state into the runtime after remount", async () => {
     assistantState.threadListItem.remoteId = "thread-1";
+    syncActiveThreadItem();
 
     const persistedState = {
       messages: [
@@ -223,6 +243,7 @@ describe("NoaAssistantRuntimeProvider", () => {
 
   it("hydrates persisted workflow and approval state without stripping canonical fields", async () => {
     assistantState.threadListItem.remoteId = "thread-2";
+    syncActiveThreadItem();
 
     const persistedState = {
       messages: [
@@ -287,6 +308,7 @@ describe("NoaAssistantRuntimeProvider", () => {
 
   it("hydrates cleared canonical workflow and approval state after a previously blocked thread", async () => {
     assistantState.threadListItem.remoteId = "thread-3";
+    syncActiveThreadItem();
 
     const blockedState = {
       messages: [
@@ -390,14 +412,7 @@ describe("NoaAssistantRuntimeProvider", () => {
 
   it("generates titles for thread list items missing titles", async () => {
     assistantState.threadListItem.remoteId = "thread-1";
-    assistantState.threads.threadItems = [
-      {
-        id: "thread-local-1",
-        remoteId: "thread-1",
-        title: undefined,
-        status: "regular",
-      },
-    ];
+    syncActiveThreadItem();
 
     render(
       <NoaAssistantRuntimeProvider>
@@ -406,11 +421,9 @@ describe("NoaAssistantRuntimeProvider", () => {
     );
 
     await waitFor(() => {
-      expect(threadsItem).toHaveBeenCalledWith({ id: "thread-local-1" });
-    });
-
-    await waitFor(() => {
       expect(generateTitle).toHaveBeenCalled();
     });
+
+    expect(threadsItem).not.toHaveBeenCalled();
   });
 });

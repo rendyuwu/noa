@@ -10,6 +10,7 @@ import {
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   useAssistantApi,
+  useAssistantRuntime,
   useAssistantState,
 } from "@assistant-ui/react";
 import {
@@ -29,8 +30,11 @@ import {
 } from "@radix-ui/react-icons";
 
 import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting";
+import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
+import { useResetAssistantRuntime } from "@/components/lib/runtime-provider";
+import { threadListAdapter } from "@/components/lib/thread-list-adapter";
 
 function DisabledNavItem({ icon, label }: { icon: ReactNode; label: string }) {
   return (
@@ -71,16 +75,22 @@ function NavLinkItem({
   );
 }
 
-const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
-  const api = useAssistantApi();
+const ThreadListItem: FC<{
+  onSelect?: () => void;
+  activeRemoteId?: string | null;
+  itemId: string;
+  remoteId: string;
+}> = ({
+  onSelect,
+  activeRemoteId,
+  itemId,
+  remoteId,
+}) => {
+  const runtime = useAssistantRuntime();
+  const resetAssistantRuntime = useResetAssistantRuntime();
   const router = useRouter();
   const pathname = usePathname();
-  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-
-  if (!remoteId) {
-    return null;
-  }
 
   return (
     <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-lg px-4 py-2 transition-colors hover:bg-surface-2/60 data-[active]:bg-surface-2/60">
@@ -92,13 +102,13 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
 
           void (async () => {
             try {
-              await api.threadListItem().switchTo();
+              await runtime.threads.getItemById(itemId).switchTo();
             } catch (error) {
               console.error("Failed to switch to selected thread", error);
             }
 
             if (pathname !== href) {
-              router.push(href);
+              router.push(href, { scroll: false });
             }
           })();
         }}
@@ -118,19 +128,47 @@ const ThreadListItem: FC<{ onSelect?: () => void }> = ({ onSelect }) => {
         onConfirm={async () => {
           setDeleteError(null);
 
-          const itemApi = api.threadListItem();
-
-          if (pathname === `/assistant/${remoteId}`) {
-            router.replace("/assistant");
-            try {
-              await api.threads().switchToNewThread();
-            } catch (error) {
-              console.error("Failed to switch away from thread before deletion", error);
-            }
-          }
+          const itemApi = runtime.threads.getItemById(itemId);
+          const deletingThreadId = itemId;
+          const isActiveThread = activeRemoteId === remoteId;
+          const isActiveRoute = pathname === `/assistant/${remoteId}`;
 
           try {
+            if (isActiveThread || isActiveRoute) {
+              if (runtime.thread.getState().isRunning) {
+                runtime.thread.cancelRun();
+
+                for (let attempt = 0; attempt < 20; attempt += 1) {
+                  if (!runtime.thread.getState().isRunning) {
+                    break;
+                  }
+
+                  await new Promise<void>((resolve) => window.setTimeout(resolve, 50));
+                }
+              }
+
+              await runtime.threads.switchToNewThread();
+
+              for (let attempt = 0; attempt < 20; attempt += 1) {
+                if (runtime.threads.getState().mainThreadId !== deletingThreadId) {
+                  break;
+                }
+
+                await new Promise<void>((resolve) => window.setTimeout(resolve, 25));
+              }
+
+              router.replace("/assistant", { scroll: false });
+              await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+              await threadListAdapter.delete(remoteId);
+              resetAssistantRuntime();
+              return;
+            }
+
             await itemApi.delete();
+
+            if (isActiveThread || isActiveRoute) {
+              router.replace("/assistant", { scroll: false });
+            }
           } catch (error) {
             setDeleteError(error instanceof Error ? error.message : "Failed to delete thread.");
           }
@@ -170,11 +208,15 @@ export function ClaudeThreadList({
   const api = useAssistantApi();
   const router = useRouter();
   const pathname = usePathname();
+  const activeRemoteId = useAssistantState(
+    ({ threads }: any) => getActiveThreadListItem(threads)?.remoteId ?? null,
+  );
+  const [backendOpen, setBackendOpen] = useState(false);
 
   const threadIds = useAssistantState(({ threads }: any) => threads?.threadIds ?? []);
   const threadItems = useAssistantState(({ threads }: any) => threads?.threadItems ?? []);
 
-  const uniqueThreadIds = useMemo(() => {
+  const uniqueThreadItems = useMemo(() => {
     const idToItem = new Map<string, any>();
     for (const item of threadItems) {
       if (item && typeof item.id === "string") {
@@ -183,7 +225,7 @@ export function ClaudeThreadList({
     }
 
     const seenRemoteIds = new Set<string>();
-    const result: string[] = [];
+    const result: Array<{ id: string; remoteId: string }> = [];
 
     for (const id of threadIds) {
       if (typeof id !== "string") continue;
@@ -199,7 +241,7 @@ export function ClaudeThreadList({
       }
 
       seenRemoteIds.add(remoteId);
-      result.push(id);
+      result.push({ id, remoteId });
     }
 
     return result;
@@ -209,7 +251,7 @@ export function ClaudeThreadList({
     await api.threads().switchToNewThread();
 
     if (pathname !== "/assistant") {
-      router.push("/assistant");
+      router.push("/assistant", { scroll: false });
     }
 
     onSelectThread?.();
@@ -370,8 +412,6 @@ export function ClaudeThreadList({
     );
   }
 
-  const [backendOpen, setBackendOpen] = useState(false);
-
   const closeAction = onCollapseSidebar ?? onCloseSidebar;
   const closeActionLabel = onCollapseSidebar ? "Collapse sidebar" : "Close sidebar";
 
@@ -468,9 +508,14 @@ export function ClaudeThreadList({
       <div className="mt-4 flex min-h-0 flex-1 flex-col font-ui">
         <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Recents</p>
         <div className="min-h-0 flex-1 overflow-y-auto pb-3">
-          {uniqueThreadIds.map((id) => (
-            <ThreadListItemByIdProvider key={id} id={id}>
-              <ThreadListItem onSelect={onSelectThread} />
+          {uniqueThreadItems.map((item) => (
+            <ThreadListItemByIdProvider key={item.id} id={item.id}>
+              <ThreadListItem
+                onSelect={onSelectThread}
+                activeRemoteId={activeRemoteId}
+                itemId={item.id}
+                remoteId={item.remoteId}
+              />
             </ThreadListItemByIdProvider>
           ))}
         </div>

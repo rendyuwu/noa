@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.core.config import settings
 from noa_api.core.json_safety import json_safe
 from noa_api.core.prompts.loader import load_system_prompt
+from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_error
 from noa_api.core.tools.argument_validation import validate_tool_arguments
 from noa_api.core.tools.registry import (
@@ -641,6 +642,12 @@ class AgentRunner:
                 if isinstance(workflow_todos, list)
                 else []
             )
+            redacted_args = redact_sensitive_data(args)
+            safe_message_args = (
+                redacted_args
+                if isinstance(redacted_args, dict)
+                else {"value": redacted_args}
+            )
             return ProcessedToolCall(
                 messages=[
                     AgentMessage(
@@ -650,7 +657,7 @@ class AgentRunner:
                                 "type": "tool-call",
                                 "toolName": tool.name,
                                 "toolCallId": f"proposal-{action_request.id}",
-                                "args": args,
+                                "args": safe_message_args,
                             }
                         ],
                     ),
@@ -665,7 +672,7 @@ class AgentRunner:
                                     "actionRequestId": str(action_request.id),
                                     "toolName": tool.name,
                                     "risk": tool.risk.value,
-                                    "arguments": args,
+                                    "arguments": safe_message_args,
                                     **_build_approval_context(
                                         tool_name=tool.name,
                                         args=args,
@@ -688,6 +695,12 @@ class AgentRunner:
             requested_by_user_id=requested_by_user_id,
         )
         tool_call_id = str(started.id)
+        redacted_args = redact_sensitive_data(args)
+        safe_message_args = (
+            redacted_args
+            if isinstance(redacted_args, dict)
+            else {"value": redacted_args}
+        )
         call_message = AgentMessage(
             role="assistant",
             parts=[
@@ -695,7 +708,7 @@ class AgentRunner:
                     "type": "tool-call",
                     "toolName": tool.name,
                     "toolCallId": tool_call_id,
-                    "args": args,
+                    "args": safe_message_args,
                 }
             ],
         )

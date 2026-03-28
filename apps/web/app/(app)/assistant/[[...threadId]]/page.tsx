@@ -1,5 +1,5 @@
-import { AssistantApp } from "@/components/assistant/assistant-app";
+import { ClaudeWorkspace } from "@/components/assistant/claude-workspace";
 
 export default function AssistantPage() {
-  return <AssistantApp />;
+  return <ClaudeWorkspace />;
 }

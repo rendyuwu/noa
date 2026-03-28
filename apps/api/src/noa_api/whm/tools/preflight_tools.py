@@ -4,6 +4,7 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
 from noa_api.whm.integrations.csf import parse_csf_grep_html, parse_csf_target
@@ -20,6 +21,15 @@ def _resolution_error(result: Any) -> dict[str, object]:
     }
 
 
+def _client_for_server(server: Any) -> WHMClient:
+    return WHMClient(
+        base_url=str(getattr(server, "base_url")),
+        api_username=str(getattr(server, "api_username")),
+        api_token=maybe_decrypt_text(str(getattr(server, "api_token"))),
+        verify_ssl=bool(getattr(server, "verify_ssl")),
+    )
+
+
 async def whm_preflight_account(
     *,
     session: AsyncSession,
@@ -34,12 +44,7 @@ async def whm_preflight_account(
     server = resolution.server
     assert server is not None
 
-    client = WHMClient(
-        base_url=str(getattr(server, "base_url")),
-        api_username=str(getattr(server, "api_username")),
-        api_token=str(getattr(server, "api_token")),
-        verify_ssl=bool(getattr(server, "verify_ssl")),
-    )
+    client = _client_for_server(server)
     result = await client.list_accounts()
     if result.get("ok") is not True:
         return {
@@ -99,12 +104,7 @@ async def whm_preflight_csf_entries(
             "message": "Target must be a valid IP, CIDR, or hostname",
         }
 
-    client = WHMClient(
-        base_url=str(getattr(server, "base_url")),
-        api_username=str(getattr(server, "api_username")),
-        api_token=str(getattr(server, "api_token")),
-        verify_ssl=bool(getattr(server, "verify_ssl")),
-    )
+    client = _client_for_server(server)
     grep_result = await client.csf_grep(target=normalized_target)
     if grep_result.get("ok") is not True:
         return {

@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from noa_api.core.secrets.redaction import is_sensitive_key
 from noa_api.core.tools.registry import get_tool_definition
 from noa_api.core.workflows.types import (
     WorkflowEvidenceTemplate,
@@ -328,10 +329,9 @@ def _format_argument_value(value: object) -> str:
 
 
 def _summarize_arguments(args: dict[str, object]) -> list[dict[str, str]]:
-    hidden_keys = {"api_token", "password", "secret", "token"}
     items: list[dict[str, str]] = []
     for key, value in args.items():
-        if key in hidden_keys:
+        if is_sensitive_key(key):
             continue
         items.append(
             {

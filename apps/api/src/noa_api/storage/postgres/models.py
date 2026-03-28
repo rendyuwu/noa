@@ -328,6 +328,14 @@ class WHMServer(Base):
     base_url: Mapped[str] = mapped_column(String(500), nullable=False)
     api_username: Mapped[str] = mapped_column(String(255), nullable=False)
     api_token: Mapped[str] = mapped_column(Text, nullable=False)
+    ssh_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    ssh_port: Mapped[int | None] = mapped_column(nullable=True)
+    ssh_password: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ssh_private_key: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ssh_private_key_passphrase: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ssh_host_key_fingerprint: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
     verify_ssl: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="true"
     )
@@ -347,6 +355,11 @@ class WHMServer(Base):
             "name": self.name,
             "base_url": self.base_url,
             "api_username": self.api_username,
+            "ssh_username": self.ssh_username,
+            "ssh_port": self.ssh_port,
+            "ssh_host_key_fingerprint": self.ssh_host_key_fingerprint,
+            "has_ssh_password": self.ssh_password is not None,
+            "has_ssh_private_key": self.ssh_private_key is not None,
             "verify_ssl": self.verify_ssl,
             "created_at": self.created_at,
             "updated_at": self.updated_at,

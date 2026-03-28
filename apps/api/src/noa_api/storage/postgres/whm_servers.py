@@ -23,6 +23,12 @@ class WHMServerRepositoryProtocol(Protocol):
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
         verify_ssl: bool,
     ) -> WHMServer: ...
 
@@ -34,6 +40,19 @@ class WHMServerRepositoryProtocol(Protocol):
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
+        clear_ssh_configuration: bool = False,
+        clear_ssh_username: bool = False,
+        clear_ssh_port: bool = False,
+        clear_ssh_password: bool = False,
+        clear_ssh_private_key: bool = False,
+        clear_ssh_private_key_passphrase: bool = False,
+        clear_ssh_host_key_fingerprint: bool = False,
         verify_ssl: bool | None = None,
     ) -> WHMServer | None: ...
 
@@ -69,6 +88,12 @@ class SQLWHMServerRepository:
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
         verify_ssl: bool,
     ) -> WHMServer:
         server = WHMServer(
@@ -76,10 +101,17 @@ class SQLWHMServerRepository:
             base_url=base_url,
             api_username=api_username,
             api_token=api_token,
+            ssh_username=ssh_username,
+            ssh_port=ssh_port,
+            ssh_password=ssh_password,
+            ssh_private_key=ssh_private_key,
+            ssh_private_key_passphrase=ssh_private_key_passphrase,
+            ssh_host_key_fingerprint=ssh_host_key_fingerprint,
             verify_ssl=verify_ssl,
         )
         self._session.add(server)
         await self._session.flush()
+        await self._session.refresh(server)
         return server
 
     async def update(
@@ -90,11 +122,45 @@ class SQLWHMServerRepository:
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
+        clear_ssh_configuration: bool = False,
+        clear_ssh_username: bool = False,
+        clear_ssh_port: bool = False,
+        clear_ssh_password: bool = False,
+        clear_ssh_private_key: bool = False,
+        clear_ssh_private_key_passphrase: bool = False,
+        clear_ssh_host_key_fingerprint: bool = False,
         verify_ssl: bool | None = None,
     ) -> WHMServer | None:
         server = await self.get_by_id(server_id=server_id)
         if server is None:
             return None
+
+        if clear_ssh_configuration:
+            server.ssh_username = None
+            server.ssh_port = None
+            server.ssh_password = None
+            server.ssh_private_key = None
+            server.ssh_private_key_passphrase = None
+            server.ssh_host_key_fingerprint = None
+
+        if clear_ssh_username:
+            server.ssh_username = None
+        if clear_ssh_port:
+            server.ssh_port = None
+        if clear_ssh_password:
+            server.ssh_password = None
+        if clear_ssh_private_key:
+            server.ssh_private_key = None
+        if clear_ssh_private_key_passphrase:
+            server.ssh_private_key_passphrase = None
+        if clear_ssh_host_key_fingerprint:
+            server.ssh_host_key_fingerprint = None
 
         if name is not None:
             server.name = name
@@ -104,10 +170,23 @@ class SQLWHMServerRepository:
             server.api_username = api_username
         if api_token is not None:
             server.api_token = api_token
+        if ssh_username is not None:
+            server.ssh_username = ssh_username
+        if ssh_port is not None:
+            server.ssh_port = ssh_port
+        if ssh_password is not None:
+            server.ssh_password = ssh_password
+        if ssh_private_key is not None:
+            server.ssh_private_key = ssh_private_key
+        if ssh_private_key_passphrase is not None:
+            server.ssh_private_key_passphrase = ssh_private_key_passphrase
+        if ssh_host_key_fingerprint is not None:
+            server.ssh_host_key_fingerprint = ssh_host_key_fingerprint
         if verify_ssl is not None:
             server.verify_ssl = verify_ssl
 
         await self._session.flush()
+        await self._session.refresh(server)
         return server
 
     async def delete(self, *, server_id: UUID) -> bool:

@@ -1,10 +1,11 @@
 "use client";
 
+import type { PropsWithChildren } from "react";
+
 import { useRequireAuth } from "@/components/lib/auth-store";
 import { NoaAssistantRuntimeProvider } from "@/components/lib/runtime-provider";
-import { ClaudeWorkspace } from "@/components/assistant/claude-workspace";
 
-export function AssistantApp() {
+export function AssistantApp({ children }: PropsWithChildren) {
   const ready = useRequireAuth();
 
   if (!ready) {
@@ -14,7 +15,7 @@ export function AssistantApp() {
   return (
     <main className="min-h-dvh bg-bg p-0">
       <NoaAssistantRuntimeProvider>
-        <ClaudeWorkspace />
+        {children}
       </NoaAssistantRuntimeProvider>
     </main>
   );

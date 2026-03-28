@@ -2,7 +2,6 @@
 
 import type { FC, ReactNode } from "react";
 import { useMemo, useRef, useState } from "react";
-import { useParams } from "next/navigation";
 
 import {
   AssistantIf,
@@ -27,6 +26,7 @@ import {
   getClaudeTimeGreeting,
 } from "@/components/assistant/claude-greeting";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/assistant/request-approval-tool-ui";
+import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { getAuthUser } from "@/components/lib/auth-store";
 import { useThreadHydration } from "@/components/lib/thread-hydration";
 
@@ -205,17 +205,12 @@ export const ClaudeThread: FC<{
   onOpenSidebar?: () => void;
   forceHydrationSkeleton?: boolean;
 }> = ({ onOpenSidebar, forceHydrationSkeleton = false }) => {
-  const params = useParams();
   const { isHydrating } = useThreadHydration();
-  const threadStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
-  const routeThreadId = (() => {
-    const value = (params as any).threadId;
-    if (typeof value === "string") return value;
-    if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : null;
-    return null;
-  })();
+  const threadStatus = useAssistantState(
+    ({ threads }: any) => getActiveThreadListItem(threads)?.status ?? "new",
+  );
   const showHydrationSkeleton =
-    forceHydrationSkeleton || (Boolean(routeThreadId || isHydrating) && threadStatus !== "new");
+    threadStatus !== "new" && (forceHydrationSkeleton || isHydrating);
 
   return (
     <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg px-4 pb-4 pt-14 font-serif">

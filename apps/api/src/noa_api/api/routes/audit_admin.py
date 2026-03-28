@@ -21,6 +21,7 @@ from noa_api.api.error_codes import (
 )
 from noa_api.api.error_handling import ApiHTTPException
 from noa_api.core.auth.authorization import AuthorizationUser
+from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.storage.postgres.models import ActionReceipt, ActionRequest, ToolRun, User
@@ -336,7 +337,7 @@ class SQLAuditRepository:
             toolName=action_request.tool_name,
             risk=action_request.risk,
             status=action_request.status,
-            args=action_request.args,
+            args=redact_sensitive_data(action_request.args),
             requestedByEmail=requested_by_email,
             decidedByEmail=decided_by_email,
             decidedAt=action_request.decided_at,
@@ -358,8 +359,10 @@ class SQLAuditRepository:
         if payload is None:
             return None
         if isinstance(payload, dict):
-            return payload
-        return {"value": payload}
+            redacted = redact_sensitive_data(payload)
+            return redacted if isinstance(redacted, dict) else {"value": redacted}
+        redacted = redact_sensitive_data(payload)
+        return {"value": redacted}
 
 
 class AuditService:

@@ -1,12 +1,11 @@
 "use client";
 
 import type { PropsWithChildren } from "react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import {
   AssistantRuntimeProvider,
   unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
-  useAssistantApi,
   useAssistantRuntime,
   useAssistantState,
   useAssistantTransportRuntime,
@@ -17,14 +16,20 @@ import {
   convertAssistantState,
 } from "@/components/lib/assistant-transport-converter";
 import { getAuthToken } from "@/components/lib/auth-store";
+import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { fetchWithAuth, getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { ThreadHydrationProvider } from "@/components/lib/thread-hydration";
 import { threadListAdapter } from "@/components/lib/thread-list-adapter";
 
+const ResetAssistantRuntimeContext = createContext<() => void>(() => {});
+
+export function useResetAssistantRuntime() {
+  return useContext(ResetAssistantRuntimeContext);
+}
+
 function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
-  const api = useAssistantApi();
   const runtime = useAssistantRuntime();
-  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+  const remoteId = useAssistantState(({ threads }) => getActiveThreadListItem(threads)?.remoteId ?? null);
   const messageCount = useAssistantState(({ thread }) => thread.messages.length);
   const threadItems = useAssistantState(({ threads }) => threads.threadItems);
 
@@ -114,10 +119,10 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
       if (generatedTitles.current.has(item.id)) continue;
 
       generatedTitles.current.add(item.id);
-      api.threads().item({ id: item.id }).generateTitle();
+      runtime.threads.getItemById(item.id).generateTitle();
       remaining -= 1;
     }
-  }, [api, threadItems]);
+  }, [runtime, threadItems]);
 
   return <ThreadHydrationProvider isHydrating={isHydrating}>{children}</ThreadHydrationProvider>;
 }
@@ -125,7 +130,7 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
 function ThreadUrlSync() {
   const router = useRouter();
   const pathname = usePathname();
-  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+  const remoteId = useAssistantState(({ threads }) => getActiveThreadListItem(threads)?.remoteId ?? null);
   const lastRoutedRemoteId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -140,34 +145,47 @@ function ThreadUrlSync() {
     }
     if (lastRoutedRemoteId.current === remoteId) return;
     lastRoutedRemoteId.current = remoteId;
-    router.replace(desired);
+    router.replace(desired, { scroll: false });
   }, [pathname, remoteId, router]);
 
   return null;
 }
 
 function useThreadAwareAssistantTransportRuntime() {
-  const api = useAssistantApi();
-  const remoteId = useAssistantState(({ threadListItem }) => threadListItem.remoteId);
+  const runtime = useAssistantRuntime();
+  const remoteId = useAssistantState(({ threads }) => getActiveThreadListItem(threads)?.remoteId ?? null);
 
   const ensureThreadId = useCallback(async () => {
     if (remoteId) {
       return remoteId;
     }
 
-    const threadListItem = api.threadListItem();
-    const current = threadListItem.getState();
-    if (current.remoteId) {
-      return current.remoteId;
-    }
+    try {
+      const mainThreadId = runtime.threads.getState().mainThreadId;
+      const threadListItem = runtime.threads.getItemById(mainThreadId);
+      const current = threadListItem.getState();
+      if (current.remoteId) {
+        return current.remoteId;
+      }
 
-    const initialized = await threadListItem.initialize();
-    if (initialized.remoteId) {
-      return initialized.remoteId;
+      const initialized = await threadListItem.initialize();
+      if (initialized.remoteId) {
+        return initialized.remoteId;
+      }
+    } catch (error) {
+      console.warn("Failed to resolve current thread item, switching to a new thread", error);
+      await runtime.threads.switchToNewThread();
+
+      const nextMainThreadId = runtime.threads.getState().mainThreadId;
+      const nextThreadListItem = runtime.threads.getItemById(nextMainThreadId);
+      const initialized = await nextThreadListItem.initialize();
+      if (initialized.remoteId) {
+        return initialized.remoteId;
+      }
     }
 
     throw new Error("Unable to resolve thread id before sending assistant commands");
-  }, [api, remoteId]);
+  }, [remoteId, runtime]);
 
   return useAssistantTransportRuntime({
     api: `${getApiUrl()}/assistant`,
@@ -190,7 +208,7 @@ function useThreadAwareAssistantTransportRuntime() {
   });
 }
 
-export function NoaAssistantRuntimeProvider({ children }: PropsWithChildren) {
+function RuntimeProviderInstance({ children }: PropsWithChildren) {
   const runtime = useRemoteThreadListRuntime({
     adapter: threadListAdapter,
     runtimeHook: () => useThreadAwareAssistantTransportRuntime(),
@@ -203,5 +221,18 @@ export function NoaAssistantRuntimeProvider({ children }: PropsWithChildren) {
         {children}
       </ThreadMaintenanceProvider>
     </AssistantRuntimeProvider>
+  );
+}
+
+export function NoaAssistantRuntimeProvider({ children }: PropsWithChildren) {
+  const [epoch, setEpoch] = useState(0);
+  const resetRuntime = useCallback(() => {
+    setEpoch((current) => current + 1);
+  }, []);
+
+  return (
+    <ResetAssistantRuntimeContext.Provider value={resetRuntime}>
+      <RuntimeProviderInstance key={epoch}>{children}</RuntimeProviderInstance>
+    </ResetAssistantRuntimeContext.Provider>
   );
 }

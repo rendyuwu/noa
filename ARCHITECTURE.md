@@ -39,6 +39,11 @@ Core entities:
   - `action_requests` (thread_id, tool_name, args, risk, status)
   - `tool_runs` (thread_id, tool_name, args, status, result/error, optional `action_request_id`)
 
+- WHM inventory
+  - `whm_servers` (name, base_url, API auth, SSL verification)
+  - WHM secrets at rest are application-encrypted in Postgres using `NOA_DB_SECRET_KEY`
+  - Optional SSH settings are stored per WHM server (username, port, encrypted password/private key/passphrase, pinned host key fingerprint)
+
 ## Auth & RBAC
 
 - Login: `POST /auth/login`
@@ -60,6 +65,11 @@ Core entities:
 
 - Tool metadata is registered in a tool registry:
   - `name`, `description`, `risk: READ|CHANGE`, and `parameters_schema` (JSON Schema for LLM tool calling)
+
+- Remote execution model:
+  - SSH execution is implemented as a shared backend capability, not a generic end-user "run arbitrary command" tool
+  - Purpose-built tools resolve an approved server record from the DB, decrypt its credentials server-side, and call the shared SSH executor with a normalized connection config
+  - This keeps secrets out of tool arguments and lets future integrations (WHM, Proxmox, other server inventories) reuse one SSH layer with server-type-specific credential providers
 
 - Safety policy:
   - READ tools can execute immediately if the user is permitted.
@@ -130,9 +140,21 @@ The backend writes audit events for:
 - action requested/approved/denied
 - tool started/completed/failed
 
+## WHM Validation + SSH Trust
+
+- `POST /admin/whm/servers/{server_id}/validate` remains the single admin validation entry point
+- Validation first checks the WHM API token using a lightweight WHM API call
+- If SSH credentials are configured for that WHM server, validation then:
+  - derives the SSH host from the WHM `base_url`
+  - connects with the stored SSH credentials
+  - captures the remote host key fingerprint
+  - overwrites the pinned fingerprint on the WHM server record (TOFU refresh behavior)
+  - runs a harmless SSH command to verify command execution
+- Normal SSH-backed tools require a pinned fingerprint to be present and fail closed if it is missing or does not match
+
 ## What’s Next (Short List)
 
-- Real integrations (WHM/Proxmox/DNS/etc.) via new tool packages
+- Extend the shared SSH-backed server pattern to additional integrations (Proxmox/DNS/etc.) via new tool packages
 - True LLM token streaming (server-side streaming completions)
 - Org/tenant model, shared threads, and finer-grained RBAC
 - Stronger UX around approval previews, diffs, and reversibility

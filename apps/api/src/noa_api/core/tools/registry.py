@@ -26,6 +26,7 @@ from noa_api.whm.tools.preflight_tools import (
     whm_preflight_csf_entries,
 )
 from noa_api.whm.tools.read_tools import (
+    whm_check_binary_exists,
     whm_list_accounts,
     whm_list_servers,
     whm_search_accounts,
@@ -181,6 +182,11 @@ _USERNAME_PARAM = _string_param(
     format_name="whm-username",
 )
 
+_BINARY_NAME_PARAM = _string_param(
+    "Exact remote binary name to look up over SSH, such as `imunify360-agent` or `python3`.",
+    pattern=r"^[A-Za-z0-9._+-]{1,128}$",
+)
+
 _REASON_PARAM = _string_param(
     "Human-readable reason for the requested operational change. Required and must come from the user or verified context.",
 )
@@ -261,6 +267,11 @@ _SERVER_SAFE_RESULT_SCHEMA = _result_object_schema(
         "name": _result_string_schema(),
         "base_url": _result_string_schema(),
         "api_username": _result_string_schema(),
+        "ssh_username": {"type": ["string", "null"]},
+        "ssh_port": {"type": ["integer", "null"]},
+        "ssh_host_key_fingerprint": {"type": ["string", "null"]},
+        "has_ssh_password": _result_boolean_schema(),
+        "has_ssh_private_key": _result_boolean_schema(),
         "verify_ssl": _result_boolean_schema(),
         "created_at": _result_string_schema(),
         "updated_at": _result_string_schema(),
@@ -348,6 +359,19 @@ _VALIDATE_SERVER_RESULT_SCHEMA = _result_any_of(
             "message": _result_string_schema(),
         },
         required=["ok", "message"],
+    ),
+    _WHM_RESULT_ERROR_SCHEMA,
+)
+
+_CHECK_BINARY_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "binary_name": _result_string_schema(),
+            "found": _result_boolean_schema(),
+            "path": {"type": ["string", "null"]},
+        },
+        required=["ok", "binary_name", "found", "path"],
     ),
     _WHM_RESULT_ERROR_SCHEMA,
 )
@@ -519,6 +543,24 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Success returns `ok: true` and `message: ok`; failures return `error_code`, `message`, and possibly `choices` if the server reference is ambiguous.",
         ),
         result_schema=_VALIDATE_SERVER_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="whm_check_binary_exists",
+        description="Check whether a specific binary exists over SSH on one resolved WHM server.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "binary_name": _BINARY_NAME_PARAM,
+            },
+            required=["server_ref", "binary_name"],
+        ),
+        execute=whm_check_binary_exists,
+        prompt_hints=(
+            "Use this after the WHM server has SSH credentials and a validated host key fingerprint.",
+            "Successful results return `found` plus the resolved binary `path` when present.",
+        ),
+        result_schema=_CHECK_BINARY_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="whm_list_accounts",

@@ -17,6 +17,12 @@ class _Server:
     verify_ssl: bool
     created_at: datetime
     updated_at: datetime
+    ssh_username: str | None = None
+    ssh_port: int | None = None
+    ssh_password: str | None = None
+    ssh_private_key: str | None = None
+    ssh_private_key_passphrase: str | None = None
+    ssh_host_key_fingerprint: str | None = None
 
     def to_safe_dict(self) -> dict[str, object]:
         return {
@@ -24,6 +30,11 @@ class _Server:
             "name": self.name,
             "base_url": self.base_url,
             "api_username": self.api_username,
+            "ssh_username": self.ssh_username,
+            "ssh_port": self.ssh_port,
+            "ssh_host_key_fingerprint": self.ssh_host_key_fingerprint,
+            "has_ssh_password": self.ssh_password is not None,
+            "has_ssh_private_key": self.ssh_private_key is not None,
             "verify_ssl": self.verify_ssl,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -149,6 +160,53 @@ async def test_whm_validate_server_propagates_client_errors(monkeypatch) -> None
 
     assert result["ok"] is False
     assert result["error_code"] == "auth_failed"
+
+
+@pytest.mark.asyncio
+async def test_whm_check_binary_exists_reports_resolved_path(monkeypatch) -> None:
+    from noa_api.core.remote_exec.types import CommandResult
+    from noa_api.whm.tools import read_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        ssh_password="SSH_PASSWORD",
+        ssh_host_key_fingerprint="SHA256:known",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(read_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    async def _fake_ssh_exec(config, *, command: str, timeout_seconds: float = 20.0):
+        _ = (config, command, timeout_seconds)
+        return CommandResult(
+            command="command -v python3",
+            exit_code=0,
+            stdout="/usr/bin/python3\n",
+            stderr="",
+            duration_ms=12,
+        )
+
+    monkeypatch.setattr(read_tools, "ssh_exec", _fake_ssh_exec)
+
+    result = await read_tools.whm_check_binary_exists(
+        session=_Session(),
+        server_ref="web1",
+        binary_name="python3",
+    )
+
+    assert result == {
+        "ok": True,
+        "binary_name": "python3",
+        "found": True,
+        "path": "/usr/bin/python3",
+    }
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,11 @@ class WHMServerResponse(BaseModel):
     name: str
     base_url: str
     api_username: str
+    ssh_username: str | None = None
+    ssh_port: int | None = None
+    ssh_host_key_fingerprint: str | None = None
+    has_ssh_password: bool = False
+    has_ssh_private_key: bool = False
     verify_ssl: bool
     created_at: datetime
     updated_at: datetime
@@ -57,13 +62,29 @@ class CreateWHMServerRequest(BaseModel):
     base_url: str = Field(min_length=1, max_length=500)
     api_username: str = Field(min_length=1, max_length=255)
     api_token: str = Field(min_length=1)
+    ssh_username: str | None = Field(default=None, max_length=255)
+    ssh_port: int | None = Field(default=None, ge=1, le=65535)
+    ssh_password: str | None = Field(default=None)
+    ssh_private_key: str | None = Field(default=None)
+    ssh_private_key_passphrase: str | None = Field(default=None)
     verify_ssl: bool = True
 
-    @field_validator("name", "base_url", "api_username", "api_token", mode="before")
+    @field_validator(
+        "name",
+        "base_url",
+        "api_username",
+        "api_token",
+        "ssh_username",
+        "ssh_password",
+        "ssh_private_key",
+        "ssh_private_key_passphrase",
+        mode="before",
+    )
     @classmethod
     def _normalize_text(cls, value: object) -> object:
         if isinstance(value, str):
-            return value.strip()
+            normalized = value.strip()
+            return normalized or None
         return value
 
     @field_validator("name")
@@ -91,9 +112,31 @@ class UpdateWHMServerRequest(BaseModel):
     base_url: str | None = Field(default=None, max_length=500)
     api_username: str | None = Field(default=None, max_length=255)
     api_token: str | None = Field(default=None, min_length=1)
+    ssh_username: str | None = Field(default=None, max_length=255)
+    ssh_port: int | None = Field(default=None, ge=1, le=65535)
+    ssh_password: str | None = Field(default=None)
+    ssh_private_key: str | None = Field(default=None)
+    ssh_private_key_passphrase: str | None = Field(default=None)
+    clear_ssh_configuration: bool = False
+    clear_ssh_username: bool = False
+    clear_ssh_port: bool = False
+    clear_ssh_password: bool = False
+    clear_ssh_private_key: bool = False
+    clear_ssh_private_key_passphrase: bool = False
+    clear_ssh_host_key_fingerprint: bool = False
     verify_ssl: bool | None = None
 
-    @field_validator("name", "base_url", "api_username", "api_token", mode="before")
+    @field_validator(
+        "name",
+        "base_url",
+        "api_username",
+        "api_token",
+        "ssh_username",
+        "ssh_password",
+        "ssh_private_key",
+        "ssh_private_key_passphrase",
+        mode="before",
+    )
     @classmethod
     def _normalize_optional_text(cls, value: object) -> object:
         if value is None:
@@ -308,6 +351,11 @@ async def create_whm_server(
                 base_url=payload.base_url,
                 api_username=payload.api_username,
                 api_token=payload.api_token,
+                ssh_username=payload.ssh_username,
+                ssh_port=payload.ssh_port,
+                ssh_password=payload.ssh_password,
+                ssh_private_key=payload.ssh_private_key,
+                ssh_private_key_passphrase=payload.ssh_private_key_passphrase,
                 verify_ssl=payload.verify_ssl,
             )
         except WHMServerNameExistsError as exc:
@@ -364,6 +412,18 @@ async def update_whm_server(
                 base_url=payload.base_url,
                 api_username=payload.api_username,
                 api_token=payload.api_token,
+                ssh_username=payload.ssh_username,
+                ssh_port=payload.ssh_port,
+                ssh_password=payload.ssh_password,
+                ssh_private_key=payload.ssh_private_key,
+                ssh_private_key_passphrase=payload.ssh_private_key_passphrase,
+                clear_ssh_configuration=payload.clear_ssh_configuration,
+                clear_ssh_username=payload.clear_ssh_username,
+                clear_ssh_port=payload.clear_ssh_port,
+                clear_ssh_password=payload.clear_ssh_password,
+                clear_ssh_private_key=payload.clear_ssh_private_key,
+                clear_ssh_private_key_passphrase=payload.clear_ssh_private_key_passphrase,
+                clear_ssh_host_key_fingerprint=payload.clear_ssh_host_key_fingerprint,
                 verify_ssl=payload.verify_ssl,
             )
         except WHMServerNameExistsError as exc:

@@ -38,6 +38,7 @@ from noa_api.api.assistant.assistant_operations import (
     prepare_assistant_transport,
     run_agent_phase,
 )
+from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.api.assistant.assistant_repository import SQLAssistantRepository
 from noa_api.api.assistant.assistant_streaming import _stream_assistant_text
 from noa_api.api.assistant.assistant_tool_result_operations import record_tool_result
@@ -135,7 +136,7 @@ def _serialize_pending_approval(request: ActionRequest) -> dict[str, object]:
         "actionRequestId": str(request.id),
         "toolName": request.tool_name,
         "risk": request.risk.value,
-        "arguments": request.args,
+        "arguments": redact_sensitive_data(request.args),
         "status": request.status.value,
     }
 
@@ -167,7 +168,7 @@ def _serialize_action_request(
         "actionRequestId": str(request.id),
         "toolName": request.tool_name,
         "risk": request.risk.value,
-        "arguments": request.args,
+        "arguments": redact_sensitive_data(request.args),
         "status": request.status.value,
         "lifecycleStatus": _action_request_lifecycle_status(
             request,

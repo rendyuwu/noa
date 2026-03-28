@@ -1,5 +1,6 @@
 "use client";
 
+import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import * as Dialog from "@radix-ui/react-dialog";
@@ -15,6 +16,11 @@ type WhmServer = {
   name: string;
   base_url: string;
   api_username: string;
+  ssh_username: string | null;
+  ssh_port: number | null;
+  ssh_host_key_fingerprint: string | null;
+  has_ssh_password: boolean;
+  has_ssh_private_key: boolean;
   verify_ssl: boolean;
   created_at?: string;
   updated_at?: string;
@@ -28,10 +34,51 @@ type CreateWhmServerResponse = {
   server: WhmServer;
 };
 
+type UpdateWhmServerResponse = {
+  server: WhmServer;
+};
+
 type ValidateWhmServerResponse = {
   ok: boolean;
   error_code?: string | null;
   message: string;
+};
+
+type SshAuthMode = "password" | "private_key";
+
+type WhmServerFormState = {
+  name: string;
+  baseUrl: string;
+  apiUsername: string;
+  apiToken: string;
+  verifySsl: boolean;
+  enableSsh: boolean;
+  sshUsername: string;
+  sshPort: string;
+  sshAuthMode: SshAuthMode;
+  sshPassword: string;
+  sshPrivateKey: string;
+  sshPrivateKeyPassphrase: string;
+};
+
+const labelClass = "block text-sm font-medium text-text";
+const inputClass =
+  "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70";
+const helperClass = "mt-1 font-ui text-xs text-muted";
+
+const EMPTY_FORM_STATE: WhmServerFormState = {
+  name: "",
+  baseUrl: "",
+  apiUsername: "",
+  apiToken: "",
+  verifySsl: true,
+  enableSsh: false,
+  sshUsername: "",
+  sshPort: "",
+  sshAuthMode: "private_key",
+  sshPassword: "",
+  sshPrivateKey: "",
+  sshPrivateKeyPassphrase: "",
 };
 
 function formatTimestamp(value: unknown): string {
@@ -41,10 +88,427 @@ function formatTimestamp(value: unknown): string {
   return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
 }
 
+function getSshStatus(server: WhmServer | null): { label: string; className: string } {
+  if (!server) return { label: "Not configured", className: "status-badge" };
+  if (server.has_ssh_password || server.has_ssh_private_key) {
+    return { label: "Configured", className: "status-badge-success" };
+  }
+  return { label: "Not configured", className: "status-badge" };
+}
+
+function getSshAuthLabel(server: WhmServer | null): string {
+  if (!server) return "-";
+  if (server.has_ssh_private_key) return "SSH key";
+  if (server.has_ssh_password) return "Password";
+  return "-";
+}
+
+function formStateFromServer(server: WhmServer): WhmServerFormState {
+  return {
+    name: server.name,
+    baseUrl: server.base_url,
+    apiUsername: server.api_username,
+    apiToken: "",
+    verifySsl: server.verify_ssl,
+    enableSsh:
+      server.has_ssh_password ||
+      server.has_ssh_private_key ||
+      Boolean(server.ssh_username) ||
+      server.ssh_port !== null,
+    sshUsername: server.ssh_username ?? "",
+    sshPort: server.ssh_port != null ? String(server.ssh_port) : "",
+    sshAuthMode: server.has_ssh_private_key ? "private_key" : "password",
+    sshPassword: "",
+    sshPrivateKey: "",
+    sshPrivateKeyPassphrase: "",
+  };
+}
+
+function parseOptionalPort(value: string): number | null {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  const parsed = Number(normalized);
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > 65535) {
+    return Number.NaN;
+  }
+  return parsed;
+}
+
+function validateForm(
+  form: WhmServerFormState,
+  mode: "create" | "update",
+  existingServer?: WhmServer | null,
+): string | null {
+  if (!form.name.trim()) return "Name is required";
+  if (!form.baseUrl.trim()) return "Base URL is required";
+  if (!form.apiUsername.trim()) return "API username is required";
+  if (mode === "create" && !form.apiToken.trim()) return "API token is required";
+
+  if (!form.enableSsh) return null;
+
+  const sshPort = parseOptionalPort(form.sshPort);
+  if (Number.isNaN(sshPort)) return "SSH port must be between 1 and 65535";
+
+  const hadPassword = existingServer?.has_ssh_password ?? false;
+  const hadPrivateKey = existingServer?.has_ssh_private_key ?? false;
+
+  if (form.sshAuthMode === "password") {
+    const requiresNewPassword = mode === "create" || !hadPassword || hadPrivateKey;
+    if (requiresNewPassword && !form.sshPassword.trim()) {
+      return "SSH password is required when password authentication is selected";
+    }
+    return null;
+  }
+
+  const requiresNewPrivateKey = mode === "create" || !hadPrivateKey || hadPassword;
+  if (requiresNewPrivateKey && !form.sshPrivateKey.trim()) {
+    return "SSH private key is required when SSH key authentication is selected";
+  }
+  return null;
+}
+
+function buildCreatePayload(form: WhmServerFormState): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    name: form.name.trim(),
+    base_url: form.baseUrl.trim(),
+    api_username: form.apiUsername.trim(),
+    api_token: form.apiToken.trim(),
+    verify_ssl: form.verifySsl,
+  };
+
+  if (!form.enableSsh) return payload;
+
+  const sshUsername = form.sshUsername.trim();
+  const sshPort = parseOptionalPort(form.sshPort);
+  if (sshUsername) payload.ssh_username = sshUsername;
+  if (sshPort !== null && !Number.isNaN(sshPort)) payload.ssh_port = sshPort;
+
+  if (form.sshAuthMode === "password") {
+    payload.ssh_password = form.sshPassword.trim();
+  } else {
+    payload.ssh_private_key = form.sshPrivateKey.trim();
+    const passphrase = form.sshPrivateKeyPassphrase.trim();
+    if (passphrase) payload.ssh_private_key_passphrase = passphrase;
+  }
+
+  return payload;
+}
+
+function buildUpdatePayload(
+  form: WhmServerFormState,
+  existingServer: WhmServer,
+): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    name: form.name.trim(),
+    base_url: form.baseUrl.trim(),
+    api_username: form.apiUsername.trim(),
+    verify_ssl: form.verifySsl,
+  };
+
+  if (form.apiToken.trim()) {
+    payload.api_token = form.apiToken.trim();
+  }
+
+  const hadSshConfig =
+    existingServer.has_ssh_password ||
+    existingServer.has_ssh_private_key ||
+    Boolean(existingServer.ssh_username) ||
+    existingServer.ssh_port !== null ||
+    Boolean(existingServer.ssh_host_key_fingerprint);
+
+  if (!form.enableSsh) {
+    if (hadSshConfig) payload.clear_ssh_configuration = true;
+    return payload;
+  }
+
+  const normalizedUsername = form.sshUsername.trim();
+  if (normalizedUsername) {
+    payload.ssh_username = normalizedUsername;
+  } else if (existingServer.ssh_username) {
+    payload.clear_ssh_username = true;
+  }
+
+  const sshPort = parseOptionalPort(form.sshPort);
+  if (sshPort !== null && !Number.isNaN(sshPort)) {
+    payload.ssh_port = sshPort;
+  } else if (existingServer.ssh_port !== null) {
+    payload.clear_ssh_port = true;
+  }
+
+  if (form.sshAuthMode === "password") {
+    if (existingServer.has_ssh_private_key) {
+      payload.clear_ssh_private_key = true;
+      payload.clear_ssh_private_key_passphrase = true;
+    }
+    if (form.sshPassword.trim()) {
+      payload.ssh_password = form.sshPassword.trim();
+    }
+  } else {
+    if (existingServer.has_ssh_password) {
+      payload.clear_ssh_password = true;
+    }
+    if (form.sshPrivateKey.trim()) {
+      payload.ssh_private_key = form.sshPrivateKey.trim();
+      if (form.sshPrivateKeyPassphrase.trim()) {
+        payload.ssh_private_key_passphrase = form.sshPrivateKeyPassphrase.trim();
+      } else {
+        payload.clear_ssh_private_key_passphrase = true;
+      }
+    }
+  }
+
+  return payload;
+}
+
+type FormFieldsProps = {
+  form: WhmServerFormState;
+  setForm: Dispatch<SetStateAction<WhmServerFormState>>;
+  disabled: boolean;
+  mode: "create" | "update";
+  existingServer?: WhmServer | null;
+};
+
+function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: FormFieldsProps) {
+  const updateForm = <K extends keyof WhmServerFormState>(key: K, value: WhmServerFormState[K]) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const storedSshCopy =
+    mode === "update"
+      ? "Leave secret fields blank to keep the stored values. Enter a new value to replace them."
+      : "SSH is optional. Configure it now if this server will be used by SSH-backed tools.";
+
+  return (
+    <div className="grid gap-4">
+      <div className="rounded-xl border border-border bg-surface/50 px-4 py-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted">WHM API</div>
+        <div className="mt-3 grid gap-4">
+          <div>
+            <label className={labelClass} htmlFor={`${mode}-whm-name`}>
+              Name
+            </label>
+            <input
+              id={`${mode}-whm-name`}
+              className={inputClass}
+              value={form.name}
+              onChange={(event) => updateForm("name", event.target.value)}
+              placeholder="web1"
+              required
+              disabled={disabled}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor={`${mode}-whm-base-url`}>
+              Base URL
+            </label>
+            <input
+              id={`${mode}-whm-base-url`}
+              className={inputClass}
+              value={form.baseUrl}
+              onChange={(event) => updateForm("baseUrl", event.target.value)}
+              placeholder="https://whm.example.com:2087"
+              required
+              disabled={disabled}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className={labelClass} htmlFor={`${mode}-whm-api-username`}>
+                API username
+              </label>
+              <input
+                id={`${mode}-whm-api-username`}
+                className={inputClass}
+                value={form.apiUsername}
+                onChange={(event) => updateForm("apiUsername", event.target.value)}
+                placeholder="root"
+                required
+                disabled={disabled}
+              />
+            </div>
+            <div className="flex items-center gap-2 pt-7">
+              <input
+                id={`${mode}-whm-verify-ssl`}
+                type="checkbox"
+                checked={form.verifySsl}
+                onChange={(event) => updateForm("verifySsl", event.target.checked)}
+                disabled={disabled}
+              />
+              <label htmlFor={`${mode}-whm-verify-ssl`} className="text-sm text-text">
+                Verify SSL
+              </label>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass} htmlFor={`${mode}-whm-api-token`}>
+              API token
+            </label>
+            <input
+              id={`${mode}-whm-api-token`}
+              type="password"
+              className={inputClass}
+              value={form.apiToken}
+              onChange={(event) => updateForm("apiToken", event.target.value)}
+              placeholder={mode === "create" ? "••••••••••" : "Stored — enter a new token to replace"}
+              required={mode === "create"}
+              disabled={disabled}
+            />
+            {mode === "update" ? (
+              <p className={helperClass}>Leave blank to keep the stored API token.</p>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-surface/50 px-4 py-4">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted">SSH access</div>
+            <p className={helperClass}>Used for SSH-backed server tools.</p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-text">
+            <input
+              type="checkbox"
+              checked={form.enableSsh}
+              onChange={(event) => updateForm("enableSsh", event.target.checked)}
+              disabled={disabled}
+            />
+            Enable SSH
+          </label>
+        </div>
+
+        {form.enableSsh ? (
+          <div className="mt-3 grid gap-4">
+            <p className={helperClass}>{storedSshCopy}</p>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className={labelClass} htmlFor={`${mode}-whm-ssh-username`}>
+                  SSH username
+                </label>
+                <input
+                  id={`${mode}-whm-ssh-username`}
+                  className={inputClass}
+                  value={form.sshUsername}
+                  onChange={(event) => updateForm("sshUsername", event.target.value)}
+                  placeholder={existingServer?.ssh_username ?? "root (default)"}
+                  disabled={disabled}
+                />
+                <p className={helperClass}>Leave blank to fall back to root.</p>
+              </div>
+              <div>
+                <label className={labelClass} htmlFor={`${mode}-whm-ssh-port`}>
+                  SSH port
+                </label>
+                <input
+                  id={`${mode}-whm-ssh-port`}
+                  type="number"
+                  min={1}
+                  max={65535}
+                  className={inputClass}
+                  value={form.sshPort}
+                  onChange={(event) => updateForm("sshPort", event.target.value)}
+                  placeholder={existingServer?.ssh_port != null ? String(existingServer.ssh_port) : "22"}
+                  disabled={disabled}
+                />
+                <p className={helperClass}>Leave blank to use port 22.</p>
+              </div>
+            </div>
+
+            <fieldset>
+              <legend className={labelClass}>Authentication</legend>
+              <div className="mt-2 flex flex-wrap gap-4 text-sm text-text">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`${mode}-ssh-auth-mode`}
+                    checked={form.sshAuthMode === "private_key"}
+                    onChange={() => updateForm("sshAuthMode", "private_key")}
+                    disabled={disabled}
+                  />
+                  SSH key
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`${mode}-ssh-auth-mode`}
+                    checked={form.sshAuthMode === "password"}
+                    onChange={() => updateForm("sshAuthMode", "password")}
+                    disabled={disabled}
+                  />
+                  Password
+                </label>
+              </div>
+            </fieldset>
+
+            {form.sshAuthMode === "password" ? (
+              <div>
+                <label className={labelClass} htmlFor={`${mode}-whm-ssh-password`}>
+                  SSH password
+                </label>
+                <input
+                  id={`${mode}-whm-ssh-password`}
+                  type="password"
+                  className={inputClass}
+                  value={form.sshPassword}
+                  onChange={(event) => updateForm("sshPassword", event.target.value)}
+                  placeholder={mode === "create" ? "••••••••••" : "Stored — enter a new password to replace"}
+                  disabled={disabled}
+                />
+              </div>
+            ) : (
+              <>
+                <div>
+                  <label className={labelClass} htmlFor={`${mode}-whm-ssh-private-key`}>
+                    SSH private key
+                  </label>
+                  <textarea
+                    id={`${mode}-whm-ssh-private-key`}
+                    className={`${inputClass} min-h-32 font-mono text-xs`}
+                    value={form.sshPrivateKey}
+                    onChange={(event) => updateForm("sshPrivateKey", event.target.value)}
+                    placeholder={
+                      mode === "create"
+                        ? "-----BEGIN OPENSSH PRIVATE KEY-----"
+                        : "Stored — paste a new private key to replace"
+                    }
+                    disabled={disabled}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass} htmlFor={`${mode}-whm-ssh-private-key-passphrase`}>
+                    Key passphrase
+                  </label>
+                  <input
+                    id={`${mode}-whm-ssh-private-key-passphrase`}
+                    type="password"
+                    className={inputClass}
+                    value={form.sshPrivateKeyPassphrase}
+                    onChange={(event) => updateForm("sshPrivateKeyPassphrase", event.target.value)}
+                    placeholder={mode === "create" ? "Optional" : "Stored — enter a new passphrase to replace"}
+                    disabled={disabled}
+                  />
+                  <p className={helperClass}>Optional. If you replace the private key and leave this blank, the stored passphrase is cleared.</p>
+                </div>
+              </>
+            )}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-muted">Not configured. SSH-backed tools will be unavailable until you add SSH credentials and run Validate.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function WhmServersAdminPage() {
   const [servers, setServers] = useState<WhmServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionStatus, setActionStatus] = useState<string | null>(null);
 
   const panelSeqRef = useRef(0);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -57,14 +521,14 @@ export function WhmServersAdminPage() {
   }, [selectedServerId, servers]);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [createForm, setCreateForm] = useState<WhmServerFormState>(EMPTY_FORM_STATE);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  const [name, setName] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
-  const [apiUsername, setApiUsername] = useState("");
-  const [apiToken, setApiToken] = useState("");
-  const [verifySsl, setVerifySsl] = useState(true);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editForm, setEditForm] = useState<WhmServerFormState>(EMPTY_FORM_STATE);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
 
   const [validateBusyId, setValidateBusyId] = useState<string | null>(null);
   const [validateResultById, setValidateResultById] = useState<Record<string, ValidateWhmServerResponse>>({});
@@ -108,11 +572,7 @@ export function WhmServersAdminPage() {
   }, [servers]);
 
   const resetCreateForm = () => {
-    setName("");
-    setBaseUrl("");
-    setApiUsername("");
-    setApiToken("");
-    setVerifySsl(true);
+    setCreateForm(EMPTY_FORM_STATE);
     setCreateError(null);
     setCreating(false);
   };
@@ -122,6 +582,8 @@ export function WhmServersAdminPage() {
     selectedServerIdRef.current = null;
     openerRef.current = null;
     setSelectedServerId(null);
+    setEditOpen(false);
+    setEditError(null);
   };
 
   const openPanelForServer = (server: WhmServer, opener: HTMLElement | null) => {
@@ -130,6 +592,10 @@ export function WhmServersAdminPage() {
     selectedServerIdRef.current = server.id;
     setSelectedServerId(server.id);
     setActionError(null);
+    setActionStatus(null);
+    setEditOpen(false);
+    setEditError(null);
+    setEditForm(formStateFromServer(server));
   };
 
   const panelStillMatches = (seq: number, serverId: string) => {
@@ -138,12 +604,28 @@ export function WhmServersAdminPage() {
 
   const openCreate = () => {
     resetCreateForm();
+    setActionStatus(null);
     setCreateOpen(true);
   };
 
+  const openEdit = () => {
+    if (!selectedServer) return;
+    setEditForm(formStateFromServer(selectedServer));
+    setEditError(null);
+    setActionStatus(null);
+    setEditOpen(true);
+  };
+
   const createServer = async () => {
+    const validationError = validateForm(createForm, "create");
+    if (validationError) {
+      setCreateError(validationError);
+      return;
+    }
+
     setCreating(true);
     setCreateError(null);
+    setActionStatus(null);
 
     try {
       const response = await fetchWithAuth("/admin/whm/servers", {
@@ -151,30 +633,69 @@ export function WhmServersAdminPage() {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          name,
-          base_url: baseUrl,
-          api_username: apiUsername,
-          api_token: apiToken,
-          verify_ssl: verifySsl,
-        }),
+        body: JSON.stringify(buildCreatePayload(createForm)),
       });
 
       const payload = await jsonOrThrow<CreateWhmServerResponse>(response);
       setServers((prev) => [...prev, payload.server]);
       setCreateOpen(false);
       resetCreateForm();
+      setActionError(null);
+      setActionStatus(`Saved ${payload.server.name}.`);
     } catch (error) {
       setCreateError(toUserMessage(error, "Unable to create WHM server"));
     } finally {
       setCreating(false);
-      setApiToken("");
+      setCreateForm((prev) => ({ ...prev, apiToken: "", sshPassword: "", sshPrivateKey: "", sshPrivateKeyPassphrase: "" }));
+    }
+  };
+
+  const updateServer = async () => {
+    if (!selectedServer) return;
+
+    const validationError = validateForm(editForm, "update", selectedServer);
+    if (validationError) {
+      setEditError(validationError);
+      return;
+    }
+
+    setSavingEdit(true);
+    setEditError(null);
+    setActionStatus(null);
+
+    try {
+      const response = await fetchWithAuth(`/admin/whm/servers/${selectedServer.id}`, {
+        method: "PATCH",
+        headers: {
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(buildUpdatePayload(editForm, selectedServer)),
+      });
+
+      const payload = await jsonOrThrow<UpdateWhmServerResponse>(response);
+      setServers((prev) => prev.map((server) => (server.id === payload.server.id ? payload.server : server)));
+      setValidateResultById((prev) => {
+        const next = { ...prev };
+        delete next[selectedServer.id];
+        return next;
+      });
+      setEditOpen(false);
+      setEditForm(formStateFromServer(payload.server));
+      setActionError(null);
+      setActionStatus(`Saved changes for ${payload.server.name}.`);
+    } catch (error) {
+      setEditError(toUserMessage(error, "Unable to update WHM server"));
+    } finally {
+      setSavingEdit(false);
+      setEditForm((prev) => ({ ...prev, apiToken: "", sshPassword: "", sshPrivateKey: "", sshPrivateKeyPassphrase: "" }));
     }
   };
 
   const validateServer = async (serverId: string) => {
     if (!serverId) return;
     setValidateBusyId(serverId);
+    setActionError(null);
+    setActionStatus(null);
 
     try {
       const response = await fetchWithAuth(`/admin/whm/servers/${serverId}/validate`, {
@@ -182,14 +703,22 @@ export function WhmServersAdminPage() {
       });
       const payload = await jsonOrThrow<ValidateWhmServerResponse>(response);
       setValidateResultById((prev) => ({ ...prev, [serverId]: payload }));
+      if (payload.ok) {
+        setActionStatus(payload.message && payload.message !== "ok" ? payload.message : "Validation succeeded.");
+      } else {
+        setActionError(payload.message || "Validation failed");
+      }
+      await loadServers();
     } catch (error) {
+      const message = toUserMessage(error, "Validation failed");
       setValidateResultById((prev) => ({
         ...prev,
         [serverId]: {
           ok: false,
-          message: toUserMessage(error, "Validation failed"),
+          message,
         },
       }));
+      setActionError(message);
     } finally {
       setValidateBusyId((prev) => (prev === serverId ? null : prev));
     }
@@ -200,6 +729,7 @@ export function WhmServersAdminPage() {
     const seq = panelSeqRef.current;
     setDeleteBusyId(serverId);
     setActionError(null);
+    setActionStatus(null);
 
     try {
       const response = await fetchWithAuth(`/admin/whm/servers/${serverId}`, {
@@ -212,6 +742,7 @@ export function WhmServersAdminPage() {
         delete next[serverId];
         return next;
       });
+      setActionStatus("WHM server deleted.");
       if (panelStillMatches(seq, serverId)) {
         closePanel();
       }
@@ -224,58 +755,66 @@ export function WhmServersAdminPage() {
     }
   };
 
-  const labelClass = "block text-sm font-medium text-text";
-  const inputClass =
-    "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70";
+  const sshStatus = getSshStatus(selectedServer);
 
   return (
     <>
       <Dialog.Root open={createOpen} onOpenChange={setCreateOpen}>
         <main className="min-h-dvh bg-bg p-6">
-        <div className="flex items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-semibold">WHM Servers</h1>
-            <p className="mt-1 font-ui text-sm text-muted">
-              Store WHM credentials in NOA (token is never shown after save).
-            </p>
-          </div>
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h1 className="text-2xl font-semibold">WHM Servers</h1>
+              <p className="mt-1 font-ui text-sm text-muted">
+                Store WHM credentials in NOA (token is never shown after save).
+              </p>
+            </div>
 
-          <div className="flex items-center gap-2">
-            <Button disabled={loading} onClick={() => void loadServers()} size="sm">
-              Refresh
-            </Button>
-            <Dialog.Trigger asChild>
-              <Button onClick={openCreate} variant="primary" size="sm">
-                Add server
+            <div className="flex items-center gap-2">
+              <Button disabled={loading} onClick={() => void loadServers()} size="sm">
+                Refresh
               </Button>
-            </Dialog.Trigger>
-          </div>
-        </div>
-
-        {loadError ? (
-          <div
-            role="alert"
-            aria-live="assertive"
-            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">{loadError}</div>
-              <Button className="shrink-0" onClick={() => void loadServers()} size="sm">
-                Retry
-              </Button>
+              <Dialog.Trigger asChild>
+                <Button onClick={openCreate} variant="primary" size="sm">
+                  Add server
+                </Button>
+              </Dialog.Trigger>
             </div>
           </div>
-        ) : null}
 
-        {actionError ? (
-          <div
-            role="alert"
-            aria-live="assertive"
-            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
-          >
-            {actionError}
-          </div>
-        ) : null}
+          {loadError ? (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">{loadError}</div>
+                <Button className="shrink-0" onClick={() => void loadServers()} size="sm">
+                  Retry
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {actionError ? (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+            >
+              {actionError}
+            </div>
+          ) : null}
+
+          {actionStatus ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-ui text-sm text-emerald-800"
+            >
+              {actionStatus}
+            </div>
+          ) : null}
 
           <div className="panel mt-6 overflow-hidden">
             <table className="w-full font-ui text-sm">
@@ -323,7 +862,9 @@ export function WhmServersAdminPage() {
                       >
                         <td className="px-4 py-3 text-text">
                           <div className="font-medium text-text">{server.name}</div>
-                          {badge ? <div className={["status-badge mt-1", badge.className].join(" ")}>{badge.label}</div> : null}
+                          <div className="mt-1 flex flex-wrap items-center gap-2">
+                            {badge ? <span className={["status-badge", badge.className].join(" ")}>{badge.label}</span> : null}
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-muted">{server.base_url}</td>
                         <td className="px-4 py-3 text-muted">{server.api_username}</td>
@@ -347,12 +888,12 @@ export function WhmServersAdminPage() {
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
 
-            <Dialog.Content className="fixed top-1/2 left-1/2 z-50 w-[min(92vw,520px)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-2xl border border-border bg-bg shadow-[0_1.25rem_3rem_rgba(0,0,0,0.22)] outline-none">
+            <Dialog.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-bg shadow-[0_1.25rem_3rem_rgba(0,0,0,0.22)] outline-none">
               <div className="flex items-start justify-between gap-3 border-b border-border bg-surface/50 px-5 py-4">
                 <div className="min-w-0">
                   <Dialog.Title className="text-lg font-semibold text-text">Add WHM server</Dialog.Title>
                   <Dialog.Description className="mt-1 font-ui text-sm text-muted">
-                    Token is stored securely and never displayed.
+                    API token and SSH credentials are stored securely and never displayed again.
                   </Dialog.Description>
                 </div>
                 <Dialog.Close asChild>
@@ -362,83 +903,8 @@ export function WhmServersAdminPage() {
                 </Dialog.Close>
               </div>
 
-              <div className="px-5 py-4 font-ui">
-                <div className="grid gap-4">
-                  <div>
-                    <label className={labelClass} htmlFor="whm-name">
-                      Name
-                    </label>
-                    <input
-                      id="whm-name"
-                      className={inputClass}
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="web1"
-                      required
-                      disabled={creating}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={labelClass} htmlFor="whm-base-url">
-                      Base URL
-                    </label>
-                    <input
-                      id="whm-base-url"
-                      className={inputClass}
-                      value={baseUrl}
-                      onChange={(e) => setBaseUrl(e.target.value)}
-                      placeholder="https://whm.example.com:2087"
-                      required
-                      disabled={creating}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                    <div>
-                      <label className={labelClass} htmlFor="whm-api-username">
-                        API username
-                      </label>
-                      <input
-                        id="whm-api-username"
-                        className={inputClass}
-                        value={apiUsername}
-                        onChange={(e) => setApiUsername(e.target.value)}
-                        placeholder="root"
-                        required
-                        disabled={creating}
-                      />
-                    </div>
-                    <div className="flex items-center gap-2 pt-7">
-                      <input
-                        id="whm-verify-ssl"
-                        type="checkbox"
-                        checked={verifySsl}
-                        onChange={(e) => setVerifySsl(e.target.checked)}
-                        disabled={creating}
-                      />
-                      <label htmlFor="whm-verify-ssl" className="text-sm text-text">
-                        Verify SSL
-                      </label>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className={labelClass} htmlFor="whm-api-token">
-                      API token
-                    </label>
-                    <input
-                      id="whm-api-token"
-                      type="password"
-                      className={inputClass}
-                      value={apiToken}
-                      onChange={(e) => setApiToken(e.target.value)}
-                      placeholder="••••••••••"
-                      required
-                      disabled={creating}
-                    />
-                  </div>
-                </div>
+              <div className="overflow-y-auto px-5 py-4 font-ui">
+                <WhmServerFormFields form={createForm} setForm={setCreateForm} disabled={creating} mode="create" />
 
                 {createError ? (
                   <p
@@ -449,21 +915,73 @@ export function WhmServersAdminPage() {
                     {createError}
                   </p>
                 ) : null}
+              </div>
 
-                <div className="mt-5 flex items-center justify-end gap-2 border-t border-border pt-4">
-                  <Dialog.Close asChild>
-                    <Button disabled={creating} size="sm">
-                      Cancel
-                    </Button>
-                  </Dialog.Close>
-                  <Button disabled={creating} onClick={() => void createServer()} size="sm" variant="primary">
-                    {creating ? "Saving..." : "Save"}
+              <div className="mt-auto flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+                <Dialog.Close asChild>
+                  <Button disabled={creating} size="sm">
+                    Cancel
                   </Button>
-                </div>
+                </Dialog.Close>
+                <Button disabled={creating} onClick={() => void createServer()} size="sm" variant="primary">
+                  {creating ? "Saving..." : "Save"}
+                </Button>
               </div>
             </Dialog.Content>
           </Dialog.Portal>
         </main>
+      </Dialog.Root>
+
+      <Dialog.Root open={editOpen} onOpenChange={setEditOpen}>
+        <Dialog.Portal>
+          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
+          <Dialog.Content className="fixed top-1/2 left-1/2 z-[60] flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-bg shadow-[0_1.25rem_3rem_rgba(0,0,0,0.22)] outline-none">
+            <div className="flex items-start justify-between gap-3 border-b border-border bg-surface/50 px-5 py-4">
+              <div className="min-w-0">
+                <Dialog.Title className="text-lg font-semibold text-text">Edit WHM server</Dialog.Title>
+                <Dialog.Description className="mt-1 font-ui text-sm text-muted">
+                  Stored secrets can be replaced, but they are never shown again.
+                </Dialog.Description>
+              </div>
+              <Dialog.Close asChild>
+                <Button aria-label="Close" className="text-muted hover:text-text" size="icon">
+                  <Cross2Icon width={18} height={18} />
+                </Button>
+              </Dialog.Close>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-4 font-ui">
+              <WhmServerFormFields
+                form={editForm}
+                setForm={setEditForm}
+                disabled={savingEdit}
+                mode="update"
+                existingServer={selectedServer}
+              />
+
+              {editError ? (
+                <p
+                  role="alert"
+                  aria-live="assertive"
+                  className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                >
+                  {editError}
+                </p>
+              ) : null}
+            </div>
+
+            <div className="mt-auto flex items-center justify-end gap-2 border-t border-border px-5 py-4">
+              <Dialog.Close asChild>
+                <Button disabled={savingEdit} size="sm">
+                  Cancel
+                </Button>
+              </Dialog.Close>
+              <Button disabled={savingEdit} onClick={() => void updateServer()} size="sm" variant="primary">
+                {savingEdit ? "Saving..." : "Save changes"}
+              </Button>
+            </div>
+          </Dialog.Content>
+        </Dialog.Portal>
       </Dialog.Root>
 
       <Dialog.Root
@@ -489,7 +1007,7 @@ export function WhmServersAdminPage() {
           >
             <Dialog.Title className="sr-only">Manage WHM server</Dialog.Title>
             <Dialog.Description className="sr-only">
-              Review server details, validate the connection, or delete the server.
+              Review server details, edit stored credentials, validate the connection, or delete the server.
             </Dialog.Description>
 
             <div className="flex h-full flex-col">
@@ -509,7 +1027,14 @@ export function WhmServersAdminPage() {
 
               <div className="flex-1 overflow-auto p-4 font-ui">
                 <div className="rounded-xl border border-border bg-surface px-4 py-4">
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted">Server details</div>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Server details</div>
+                    </div>
+                    <Button disabled={!selectedServer || deleteBusyId === selectedServer.id} onClick={openEdit} size="sm">
+                      Edit server
+                    </Button>
+                  </div>
                   <dl className="mt-3 grid gap-3 text-sm">
                     <div>
                       <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Name</dt>
@@ -538,6 +1063,44 @@ export function WhmServersAdminPage() {
 
                 <div className="mt-4 rounded-xl border border-border bg-surface px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">SSH access</div>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className={["status-badge", sshStatus.className].join(" ")}>{sshStatus.label}</span>
+                        {selectedServer?.ssh_host_key_fingerprint ? (
+                          <span className="status-badge status-badge-success">Host key pinned</span>
+                        ) : (
+                          <span className="status-badge">Fingerprint missing</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <dl className="mt-3 grid gap-3 text-sm">
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">SSH user</dt>
+                        <dd className="mt-1 text-text">{selectedServer?.ssh_username || "root (default)"}</dd>
+                      </div>
+                      <div>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">SSH port</dt>
+                        <dd className="mt-1 text-text">{selectedServer?.ssh_port ?? 22}</dd>
+                      </div>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Authentication</dt>
+                      <dd className="mt-1 text-text">{getSshAuthLabel(selectedServer)}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Host key fingerprint</dt>
+                      <dd className="mt-1 break-all font-mono text-xs text-text">
+                        {selectedServer?.ssh_host_key_fingerprint ?? "Not validated yet"}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-border bg-surface px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-muted">Latest validation</div>
                       <div className="mt-2 flex items-center gap-2">
@@ -559,7 +1122,7 @@ export function WhmServersAdminPage() {
                       <p className="mt-2 text-sm text-muted">
                         {selectedServer && validateResultById[selectedServer.id]
                           ? validateResultById[selectedServer.id]?.message
-                          : "Run validation to confirm this server can be reached with the stored credentials."}
+                          : "Validate checks WHM API and SSH (if configured), and refreshes the pinned SSH host key fingerprint."}
                       </p>
                     </div>
                     <Button

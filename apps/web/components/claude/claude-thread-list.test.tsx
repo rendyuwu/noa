@@ -1,13 +1,17 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clearAuth: vi.fn(),
+  cancelRun: vi.fn(),
+  deleteThreadItem: vi.fn(),
+  deleteThreadRemote: vi.fn(),
   push: vi.fn(),
   replace: vi.fn(),
   switchToNewThread: vi.fn(),
   switchToThreadItem: vi.fn(),
+  mainThreadId: "thread-a",
   pathname: "/assistant/11111111-1111-1111-1111-111111111111",
   remoteId: "11111111-1111-1111-1111-111111111111",
   threadIds: ["thread-a", "thread-b"],
@@ -54,16 +58,29 @@ vi.mock("@assistant-ui/react", () => ({
     threads: () => ({
       switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
     }),
-    threadListItem: () => ({
-      switchTo: (...args: unknown[]) => mocks.switchToThreadItem(...args),
-      delete: () => {},
-    }),
+  }),
+  useAssistantRuntime: () => ({
+    thread: {
+      cancelRun: (...args: unknown[]) => mocks.cancelRun(...args),
+      getState: () => ({ isRunning: false }),
+    },
+    threads: {
+      getState: () => ({ mainThreadId: mocks.mainThreadId }),
+      getItemById: () => ({
+        getState: () => ({ id: "thread-a" }),
+        switchTo: (...args: unknown[]) => mocks.switchToThreadItem(...args),
+        unstable_on: () => () => {},
+        delete: (...args: unknown[]) => mocks.deleteThreadItem(...args),
+      }),
+      switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
+    },
   }),
   useAssistantState: (selector: any) => selector({
     threadListItem: {
       remoteId: mocks.remoteId,
     },
     threads: {
+      mainThreadId: "thread-a",
       threadIds: mocks.threadIds,
       threadItems: mocks.threadItems,
     },
@@ -89,15 +106,30 @@ vi.mock("@/components/lib/auth-store", () => ({
   getAuthUser: () => mocks.user,
 }));
 
+vi.mock("@/components/lib/thread-list-adapter", () => ({
+  threadListAdapter: {
+    delete: (...args: unknown[]) => mocks.deleteThreadRemote(...args),
+  },
+}));
+
 import { ClaudeThreadList } from "./claude-thread-list";
 
 describe("ClaudeThreadList", () => {
   beforeEach(() => {
     mocks.clearAuth.mockReset();
+    mocks.cancelRun.mockReset();
+    mocks.deleteThreadItem.mockReset();
+    mocks.deleteThreadRemote.mockReset();
     mocks.push.mockReset();
     mocks.replace.mockReset();
+    mocks.mainThreadId = "thread-a";
     mocks.switchToNewThread.mockReset();
+    mocks.switchToNewThread.mockImplementation(async () => {
+      mocks.mainThreadId = "draft-thread";
+    });
     mocks.switchToThreadItem.mockReset();
+    mocks.deleteThreadItem.mockResolvedValue(undefined);
+    mocks.deleteThreadRemote.mockResolvedValue(undefined);
     mocks.pathname = "/assistant/11111111-1111-1111-1111-111111111111";
     mocks.remoteId = "11111111-1111-1111-1111-111111111111";
     mocks.threadIds = ["thread-a", "thread-b"];
@@ -248,6 +280,24 @@ describe("ClaudeThreadList", () => {
     const confirmDialog = screen.getByRole("dialog", { name: "Log out?" });
     fireEvent.click(within(confirmDialog).getByRole("button", { name: "Log out" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes the active thread after switching away and normalizes the route", async () => {
+    render(<ClaudeThreadList />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete thread" })[0]);
+
+    const confirmDialog = screen.getByRole("dialog", { name: "Delete thread?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Delete thread" }));
+
+    await waitFor(() => {
+      expect(mocks.deleteThreadRemote).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.cancelRun).not.toHaveBeenCalled();
+    expect(mocks.switchToNewThread).toHaveBeenCalledTimes(1);
+    expect(mocks.deleteThreadItem).not.toHaveBeenCalled();
+    expect(mocks.replace).toHaveBeenCalledWith("/assistant", { scroll: false });
   });
 
   it("hides the Users nav link for non-admin users", () => {

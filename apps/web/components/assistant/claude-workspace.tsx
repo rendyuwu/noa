@@ -13,6 +13,7 @@ import { RequestApprovalToolUI } from "@/components/assistant/request-approval-t
 import { WorkflowReceiptToolUI } from "@/components/assistant/workflow-receipt-tool-ui";
 import { WorkflowTodoToolUI } from "@/components/assistant/workflow-todo-tool-ui";
 
+import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { ApiError } from "@/components/lib/fetch-helper";
 
 type DesktopSidebarMode = "expanded" | "collapsed";
@@ -26,9 +27,12 @@ export function ClaudeWorkspace() {
   const searchParams = useSearchParams();
   const params = useParams();
 
-  const activeRemoteId = useAssistantState(({ threadListItem }: any) => threadListItem?.remoteId);
-  const activeStatus = useAssistantState(({ threadListItem }: any) => threadListItem?.status);
-  const activeMessageCount = useAssistantState(({ thread }: any) => thread?.messages?.length ?? 0);
+  const activeRemoteId = useAssistantState(
+    ({ threads }: any) => getActiveThreadListItem(threads)?.remoteId ?? null,
+  );
+  const activeStatus = useAssistantState(
+    ({ threads }: any) => getActiveThreadListItem(threads)?.status ?? "new",
+  );
 
   const routeThreadId = (() => {
     const value = (params as any).threadId;
@@ -46,7 +50,7 @@ export function ClaudeWorkspace() {
   const forceHydrationSkeleton =
     Boolean(routeThreadId) &&
     !routeThreadError &&
-    (activeRemoteId !== routeThreadId || activeMessageCount === 0);
+    activeRemoteId !== routeThreadId;
 
   const isUuidLike = useCallback((value: string) => {
     return /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
@@ -111,7 +115,7 @@ export function ClaudeWorkspace() {
   useEffect(() => {
     if (!routeThreadId && legacyThreadId && pathname === "/assistant") {
       const next = `/assistant/${legacyThreadId}`;
-      router.replace(next);
+      router.replace(next, { scroll: false });
       return;
     }
 
@@ -148,7 +152,7 @@ export function ClaudeWorkspace() {
       } catch (error) {
         if (error instanceof ApiError && error.status === 404) {
           setRouteThreadError(null);
-          router.replace("/assistant");
+          router.replace("/assistant", { scroll: false });
           try {
             await api.threads().switchToNewThread();
           } catch {}
@@ -202,11 +206,11 @@ export function ClaudeWorkspace() {
                  <div className="rounded-2xl border border-border bg-surface/70 px-4 py-3 font-ui text-sm text-text shadow-sm">
                    <div className="flex flex-wrap items-center justify-between gap-3">
                      <p>{routeThreadError}</p>
-                     <button
-                       type="button"
-                       onClick={() => router.push("/assistant")}
-                       className="inline-flex items-center justify-center rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 active:scale-[0.99]"
-                     >
+                      <button
+                        type="button"
+                        onClick={() => router.push("/assistant", { scroll: false })}
+                        className="inline-flex items-center justify-center rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 active:scale-[0.99]"
+                      >
                        New chat
                      </button>
                    </div>

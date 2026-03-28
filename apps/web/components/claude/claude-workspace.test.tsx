@@ -70,14 +70,21 @@ vi.mock("@assistant-ui/react", () => ({
   }),
   useAssistantState: (selector: any) =>
     selector({
-      threadListItem: {
-        remoteId: null,
-        status: "new",
+      threads: {
+        mainThreadId: "thread-local-1",
+        threadItems: [
+          {
+            id: "thread-local-1",
+            remoteId: null,
+            status: "new",
+          },
+        ],
       },
     }),
 }));
 
 import AssistantPage from "@/app/(app)/assistant/[[...threadId]]/page";
+import AssistantLayout from "@/app/(app)/assistant/layout";
 import { ClaudeWorkspace } from "@/components/assistant/claude-workspace";
 
 describe("/assistant full-bleed shell", () => {
@@ -98,8 +105,12 @@ describe("/assistant full-bleed shell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the assistant route as a full-bleed surface (no page-shell padding)", () => {
-    render(<AssistantPage />);
+  it("renders the assistant route inside a full-bleed layout shell", () => {
+    render(
+      <AssistantLayout>
+        <AssistantPage />
+      </AssistantLayout>,
+    );
 
     const main = screen.getByRole("main");
     expect(main).not.toHaveClass("page-shell");

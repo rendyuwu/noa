@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     postgres_url: PostgresDsn = (
         "postgresql+asyncpg://postgres:postgres@localhost:5432/noa"
     )
+    noa_db_secret_key: SecretStr | None = None
     telemetry_enabled: bool = False
     telemetry_service_name: str = "noa-api"
     telemetry_otlp_endpoint: str | None = None

@@ -33,6 +33,12 @@ class _WHMServer:
     verify_ssl: bool
     created_at: datetime
     updated_at: datetime
+    ssh_username: str | None = None
+    ssh_port: int | None = None
+    ssh_password: str | None = None
+    ssh_private_key: str | None = None
+    ssh_private_key_passphrase: str | None = None
+    ssh_host_key_fingerprint: str | None = None
 
     def to_safe_dict(self) -> dict[str, object]:
         return {
@@ -40,6 +46,11 @@ class _WHMServer:
             "name": self.name,
             "base_url": self.base_url,
             "api_username": self.api_username,
+            "ssh_username": self.ssh_username,
+            "ssh_port": self.ssh_port,
+            "ssh_host_key_fingerprint": self.ssh_host_key_fingerprint,
+            "has_ssh_password": self.ssh_password is not None,
+            "has_ssh_private_key": self.ssh_private_key is not None,
             "verify_ssl": self.verify_ssl,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
@@ -56,6 +67,11 @@ class _WHMServerServiceProtocol(Protocol):
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
         verify_ssl: bool,
     ) -> _WHMServer: ...
 
@@ -67,6 +83,19 @@ class _WHMServerServiceProtocol(Protocol):
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
+        clear_ssh_configuration: bool = False,
+        clear_ssh_username: bool = False,
+        clear_ssh_port: bool = False,
+        clear_ssh_password: bool = False,
+        clear_ssh_private_key: bool = False,
+        clear_ssh_private_key_passphrase: bool = False,
+        clear_ssh_host_key_fingerprint: bool = False,
         verify_ssl: bool | None = None,
     ) -> _WHMServer | None: ...
 
@@ -91,6 +120,11 @@ class _FakeWHMServerService:
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
         verify_ssl: bool,
     ) -> _WHMServer:
         now = datetime.now(UTC)
@@ -100,6 +134,11 @@ class _FakeWHMServerService:
             base_url=base_url,
             api_username=api_username,
             api_token=api_token,
+            ssh_username=ssh_username,
+            ssh_port=ssh_port,
+            ssh_password=ssh_password,
+            ssh_private_key=ssh_private_key,
+            ssh_private_key_passphrase=ssh_private_key_passphrase,
             verify_ssl=verify_ssl,
             created_at=now,
             updated_at=now,
@@ -115,18 +154,63 @@ class _FakeWHMServerService:
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
+        clear_ssh_configuration: bool = False,
+        clear_ssh_username: bool = False,
+        clear_ssh_port: bool = False,
+        clear_ssh_password: bool = False,
+        clear_ssh_private_key: bool = False,
+        clear_ssh_private_key_passphrase: bool = False,
+        clear_ssh_host_key_fingerprint: bool = False,
         verify_ssl: bool | None = None,
     ) -> _WHMServer | None:
-        _ = api_token
         server = self._servers.get(server_id)
         if server is None:
             return None
+        if clear_ssh_configuration:
+            server.ssh_username = None
+            server.ssh_port = None
+            server.ssh_password = None
+            server.ssh_private_key = None
+            server.ssh_private_key_passphrase = None
+            server.ssh_host_key_fingerprint = None
+        if clear_ssh_username:
+            server.ssh_username = None
+        if clear_ssh_port:
+            server.ssh_port = None
+        if clear_ssh_password:
+            server.ssh_password = None
+        if clear_ssh_private_key:
+            server.ssh_private_key = None
+        if clear_ssh_private_key_passphrase:
+            server.ssh_private_key_passphrase = None
+        if clear_ssh_host_key_fingerprint:
+            server.ssh_host_key_fingerprint = None
         if name is not None:
             server.name = name
         if base_url is not None:
             server.base_url = base_url
         if api_username is not None:
             server.api_username = api_username
+        if api_token is not None:
+            server.api_token = api_token
+        if ssh_username is not None:
+            server.ssh_username = ssh_username
+        if ssh_port is not None:
+            server.ssh_port = ssh_port
+        if ssh_password is not None:
+            server.ssh_password = ssh_password
+        if ssh_private_key is not None:
+            server.ssh_private_key = ssh_private_key
+        if ssh_private_key_passphrase is not None:
+            server.ssh_private_key_passphrase = ssh_private_key_passphrase
+        if ssh_host_key_fingerprint is not None:
+            server.ssh_host_key_fingerprint = ssh_host_key_fingerprint
         if verify_ssl is not None:
             server.verify_ssl = verify_ssl
         server.updated_at = datetime.now(UTC)
@@ -220,9 +304,27 @@ class _IntegrityErrorWHMServerRepository:
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
         verify_ssl: bool,
     ) -> _WHMServer:
-        _ = (name, base_url, api_username, api_token, verify_ssl)
+        _ = (
+            name,
+            base_url,
+            api_username,
+            api_token,
+            ssh_username,
+            ssh_port,
+            ssh_password,
+            ssh_private_key,
+            ssh_private_key_passphrase,
+            ssh_host_key_fingerprint,
+            verify_ssl,
+        )
         raise IntegrityError("insert into whm_servers", {}, Exception("duplicate key"))
 
     async def update(
@@ -233,9 +335,28 @@ class _IntegrityErrorWHMServerRepository:
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
         verify_ssl: bool | None = None,
     ) -> _WHMServer | None:
-        _ = (server_id, name, base_url, api_username, api_token, verify_ssl)
+        _ = (
+            server_id,
+            name,
+            base_url,
+            api_username,
+            api_token,
+            ssh_username,
+            ssh_port,
+            ssh_password,
+            ssh_private_key,
+            ssh_private_key_passphrase,
+            ssh_host_key_fingerprint,
+            verify_ssl,
+        )
         raise AssertionError("update should not be called")
 
     async def delete(self, *, server_id: UUID) -> bool:
@@ -258,9 +379,27 @@ class _MissingWHMServerRepository:
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
         verify_ssl: bool,
     ) -> _WHMServer:
-        _ = (name, base_url, api_username, api_token, verify_ssl)
+        _ = (
+            name,
+            base_url,
+            api_username,
+            api_token,
+            ssh_username,
+            ssh_port,
+            ssh_password,
+            ssh_private_key,
+            ssh_private_key_passphrase,
+            ssh_host_key_fingerprint,
+            verify_ssl,
+        )
         raise AssertionError("create should not be called")
 
     async def update(
@@ -271,9 +410,28 @@ class _MissingWHMServerRepository:
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
         verify_ssl: bool | None = None,
     ) -> _WHMServer | None:
-        _ = (server_id, name, base_url, api_username, api_token, verify_ssl)
+        _ = (
+            server_id,
+            name,
+            base_url,
+            api_username,
+            api_token,
+            ssh_username,
+            ssh_port,
+            ssh_password,
+            ssh_private_key,
+            ssh_private_key_passphrase,
+            ssh_host_key_fingerprint,
+            verify_ssl,
+        )
         raise AssertionError("update should not be called")
 
     async def delete(self, *, server_id: UUID) -> bool:
@@ -295,9 +453,25 @@ class _ConflictCreateWHMServerService:
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
         verify_ssl: bool,
     ) -> _WHMServer:
-        _ = (name, base_url, api_username, api_token, verify_ssl)
+        _ = (
+            name,
+            base_url,
+            api_username,
+            api_token,
+            ssh_username,
+            ssh_port,
+            ssh_password,
+            ssh_private_key,
+            ssh_private_key_passphrase,
+            verify_ssl,
+        )
         raise self._error
 
     async def update_server(
@@ -308,9 +482,28 @@ class _ConflictCreateWHMServerService:
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
         verify_ssl: bool | None = None,
     ) -> _WHMServer | None:
-        _ = (server_id, name, base_url, api_username, api_token, verify_ssl)
+        _ = (
+            server_id,
+            name,
+            base_url,
+            api_username,
+            api_token,
+            ssh_username,
+            ssh_port,
+            ssh_password,
+            ssh_private_key,
+            ssh_private_key_passphrase,
+            ssh_host_key_fingerprint,
+            verify_ssl,
+        )
         raise AssertionError("update should not be called")
 
     async def delete_server(self, *, server_id: UUID) -> bool:
@@ -356,6 +549,8 @@ async def test_whm_admin_routes_never_return_api_token() -> None:
                 "base_url": "https://whm.example.com:2087",
                 "api_username": "root",
                 "api_token": "SECRET",
+                "ssh_password": "SSH_SECRET",
+                "ssh_private_key": "PRIVATE_KEY_SECRET",
                 "verify_ssl": True,
             },
         )
@@ -366,11 +561,17 @@ async def test_whm_admin_routes_never_return_api_token() -> None:
 
     assert "api_token" not in create_response.json()["server"]
     assert "SECRET" not in create_response.text
+    assert "SSH_SECRET" not in create_response.text
+    assert "PRIVATE_KEY_SECRET" not in create_response.text
 
     list_payload = list_response.json()
     assert "SECRET" not in list_response.text
+    assert "SSH_SECRET" not in list_response.text
+    assert "PRIVATE_KEY_SECRET" not in list_response.text
     assert list_payload["servers"][0]["name"] == "web1"
     assert "api_token" not in list_payload["servers"][0]
+    assert list_payload["servers"][0]["has_ssh_password"] is True
+    assert list_payload["servers"][0]["has_ssh_private_key"] is True
 
 
 async def test_whm_admin_route_returns_error_contract_for_missing_server() -> None:
@@ -622,17 +823,28 @@ async def test_whm_server_service_raises_typed_conflict_error_for_duplicate_name
     None
 ):
     from noa_api.api.routes.whm_admin import WHMServerService
+    from noa_api.api.whm_admin import service as whm_admin_service
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(
+        whm_admin_service,
+        "encrypt_text",
+        lambda value: f"enc::{value}",
+    )
 
     service = WHMServerService(cast(Any, _IntegrityErrorWHMServerRepository()))
 
-    with pytest.raises(Exception) as exc_info:
-        await service.create_server(
-            name="web1",
-            base_url="https://whm.example.com:2087",
-            api_username="root",
-            api_token="SECRET",
-            verify_ssl=True,
-        )
+    try:
+        with pytest.raises(Exception) as exc_info:
+            await service.create_server(
+                name="web1",
+                base_url="https://whm.example.com:2087",
+                api_username="root",
+                api_token="SECRET",
+                verify_ssl=True,
+            )
+    finally:
+        monkeypatch.undo()
 
     assert type(exc_info.value).__name__ == "WHMServerNameExistsError"
     assert not isinstance(exc_info.value, ApiHTTPException)
@@ -729,6 +941,35 @@ async def test_whm_admin_create_normalizes_validated_fields() -> None:
     assert body["server"]["name"] == "web-1"
     assert body["server"]["base_url"] == "https://whm.example.com:2087"
     assert body["server"]["api_username"] == "root"
+
+
+async def test_whm_admin_update_forwards_clear_ssh_flags() -> None:
+    service = _FakeWHMServerService()
+    server = await service.create_server(
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+    )
+    app = _create_whm_admin_app(service)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.patch(
+            f"/admin/whm/servers/{server.id}",
+            json={
+                "name": server.name,
+                "base_url": server.base_url,
+                "api_username": server.api_username,
+                "verify_ssl": server.verify_ssl,
+                "clear_ssh_configuration": True,
+                "clear_ssh_host_key_fingerprint": True,
+            },
+        )
+
+    assert response.status_code == 200
+    assert service._servers[server.id].ssh_host_key_fingerprint is None
 
 
 async def test_whm_admin_update_rejects_invalid_api_username() -> None:

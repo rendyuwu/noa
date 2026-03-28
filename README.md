@@ -49,6 +49,7 @@ uv run uvicorn noa_api.main:app --reload --port 8000
 
 Notes:
 - `AUTH_BOOTSTRAP_ADMIN_EMAILS` and `API_CORS_ALLOWED_ORIGINS` must be JSON arrays (see examples).
+- `NOA_DB_SECRET_KEY` is required for encrypted database-backed secrets such as WHM API tokens and SSH credentials. Use a valid Fernet key.
 - `python-ldap` may require OS packages to build (Ubuntu example: `sudo apt-get install -y libldap2-dev libsasl2-dev libssl-dev`).
 
 ### 3) Configure + run web
@@ -83,6 +84,10 @@ Open: http://localhost:3000
 - Assistant Transport streaming endpoint (`POST /assistant`)
 - Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools
 - Workflow template registry for approval-oriented tool families, with WHM as the reference implementation
+- WHM server inventory with encrypted stored API tokens
+- Optional WHM SSH credentials with DB-pinned host fingerprints captured during validation
+- Shared SSH execution layer for future server-backed READ/CHANGE tools
+- READ-only WHM SSH binary checker tool (`whm_check_binary_exists`)
 
 ## Workflow Templates
 
@@ -95,7 +100,8 @@ Approval-oriented tool families use workflow templates on the API side to drive 
 
 ## Known Limitations
 
-- No real infrastructure integrations yet (demo tools only)
+- WHM is currently the only real server integration wired into the tool layer
+- SSH trust is pinned per WHM server record; admins must run server validation after SSH credentials are added or rotated
 - LLM token streaming is not implemented; assistant text is chunked after completion
 - No multi-tenant orgs or shared threads (threads are owner-scoped)
 - The assistant workspace is intentionally styled as a Claude-like UI; some controls are visible-but-disabled ("Coming soon") for layout parity: Edit/Reload, attachments, tools menu, extended thinking toggle, model selector, feedback.

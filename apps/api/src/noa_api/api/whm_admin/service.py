@@ -6,10 +6,21 @@ from uuid import UUID
 from sqlalchemy.exc import IntegrityError
 
 from noa_api.api.whm_admin.schemas import ValidateWHMServerResponse
+from noa_api.core.remote_exec.ssh import (
+    SSHExecutionError,
+    ssh_exec,
+    ssh_get_host_fingerprint,
+)
+from noa_api.core.secrets.crypto import encrypt_text
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.whm_servers import (
     SQLWHMServerRepository,
     WHMServerRepositoryProtocol,
+)
+from noa_api.whm.integrations.ssh import (
+    build_whm_client,
+    has_ssh_credentials,
+    resolve_whm_ssh_config,
 )
 
 
@@ -42,6 +53,11 @@ class WHMServerService:
         base_url: str,
         api_username: str,
         api_token: str,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
         verify_ssl: bool,
     ):
         try:
@@ -49,7 +65,18 @@ class WHMServerService:
                 name=name,
                 base_url=base_url,
                 api_username=api_username,
-                api_token=api_token,
+                api_token=encrypt_text(api_token),
+                ssh_username=ssh_username,
+                ssh_port=ssh_port,
+                ssh_password=(encrypt_text(ssh_password) if ssh_password else None),
+                ssh_private_key=(
+                    encrypt_text(ssh_private_key) if ssh_private_key else None
+                ),
+                ssh_private_key_passphrase=(
+                    encrypt_text(ssh_private_key_passphrase)
+                    if ssh_private_key_passphrase
+                    else None
+                ),
                 verify_ssl=verify_ssl,
             )
         except IntegrityError as exc:
@@ -63,15 +90,63 @@ class WHMServerService:
         base_url: str | None = None,
         api_username: str | None = None,
         api_token: str | None = None,
+        ssh_username: str | None = None,
+        ssh_port: int | None = None,
+        ssh_password: str | None = None,
+        ssh_private_key: str | None = None,
+        ssh_private_key_passphrase: str | None = None,
+        ssh_host_key_fingerprint: str | None = None,
+        clear_ssh_configuration: bool = False,
+        clear_ssh_username: bool = False,
+        clear_ssh_port: bool = False,
+        clear_ssh_password: bool = False,
+        clear_ssh_private_key: bool = False,
+        clear_ssh_private_key_passphrase: bool = False,
+        clear_ssh_host_key_fingerprint: bool = False,
         verify_ssl: bool | None = None,
     ):
+        current_server = await self._repository.get_by_id(server_id=server_id)
+        if current_server is None:
+            return None
+
+        should_clear_host_key_fingerprint = clear_ssh_host_key_fingerprint
+        if base_url is not None and base_url != current_server.base_url:
+            should_clear_host_key_fingerprint = True
+        if ssh_port is not None and ssh_port != current_server.ssh_port:
+            should_clear_host_key_fingerprint = True
+        if clear_ssh_configuration:
+            should_clear_host_key_fingerprint = True
+
         try:
             return await self._repository.update(
                 server_id=server_id,
                 name=name,
                 base_url=base_url,
                 api_username=api_username,
-                api_token=api_token,
+                api_token=(encrypt_text(api_token) if api_token is not None else None),
+                ssh_username=ssh_username,
+                ssh_port=ssh_port,
+                ssh_password=(
+                    encrypt_text(ssh_password) if ssh_password is not None else None
+                ),
+                ssh_private_key=(
+                    encrypt_text(ssh_private_key)
+                    if ssh_private_key is not None
+                    else None
+                ),
+                ssh_private_key_passphrase=(
+                    encrypt_text(ssh_private_key_passphrase)
+                    if ssh_private_key_passphrase is not None
+                    else None
+                ),
+                ssh_host_key_fingerprint=ssh_host_key_fingerprint,
+                clear_ssh_configuration=clear_ssh_configuration,
+                clear_ssh_username=clear_ssh_username,
+                clear_ssh_port=clear_ssh_port,
+                clear_ssh_password=clear_ssh_password,
+                clear_ssh_private_key=clear_ssh_private_key,
+                clear_ssh_private_key_passphrase=clear_ssh_private_key_passphrase,
+                clear_ssh_host_key_fingerprint=should_clear_host_key_fingerprint,
                 verify_ssl=verify_ssl,
             )
         except IntegrityError as exc:
@@ -85,22 +160,42 @@ class WHMServerService:
         if server is None:
             raise WHMServerNotFoundError
 
-        from noa_api.whm.integrations.client import WHMClient
-
-        client = WHMClient(
-            base_url=server.base_url,
-            api_username=server.api_username,
-            api_token=server.api_token,
-            verify_ssl=server.verify_ssl,
-        )
+        client = build_whm_client(server)
         result = await client.applist()
-        if result.get("ok") is True:
+        if result.get("ok") is not True:
+            return ValidateWHMServerResponse(
+                ok=False,
+                error_code=str(result.get("error_code") or "unknown"),
+                message=str(result.get("message") or "WHM validation failed"),
+            )
+
+        if not has_ssh_credentials(server):
             return ValidateWHMServerResponse(ok=True, message="ok")
-        return ValidateWHMServerResponse(
-            ok=False,
-            error_code=str(result.get("error_code") or "unknown"),
-            message=str(result.get("message") or "WHM validation failed"),
-        )
+
+        try:
+            bootstrap_config = resolve_whm_ssh_config(
+                server,
+                require_host_key_fingerprint=False,
+            )
+            fingerprint = await ssh_get_host_fingerprint(bootstrap_config)
+            updated = await self.update_server(
+                server_id=server_id,
+                ssh_host_key_fingerprint=fingerprint,
+            )
+            validated_server = updated or server
+            ssh_config = resolve_whm_ssh_config(
+                validated_server,
+                require_host_key_fingerprint=True,
+            )
+            await ssh_exec(ssh_config, command="true")
+        except SSHExecutionError as exc:
+            return ValidateWHMServerResponse(
+                ok=False,
+                error_code=exc.code,
+                message=exc.message,
+            )
+
+        return ValidateWHMServerResponse(ok=True, message="ok")
 
 
 async def get_whm_server_service() -> AsyncGenerator[WHMServerService, None]:
