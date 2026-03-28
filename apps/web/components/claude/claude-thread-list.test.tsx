@@ -234,6 +234,18 @@ describe("ClaudeThreadList", () => {
     expect(navSection.getByRole("link", { name: "Roles" })).toHaveAttribute("href", "/admin/roles");
   });
 
+  it("navigates to /assistant without switching threads when starting a new chat from a thread route", async () => {
+    render(<ClaudeThreadList />);
+
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+
+    await waitFor(() => {
+      expect(mocks.push).toHaveBeenCalledWith("/assistant", { scroll: false });
+    });
+
+    expect(mocks.switchToNewThread).not.toHaveBeenCalled();
+  });
+
   it("renders the Users nav link when roles include admin among others", () => {
     mocks.user.roles = ["member", "admin"];
 

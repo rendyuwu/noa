@@ -251,6 +251,9 @@ export function ClaudeThreadList({
   const activeRemoteId = useAssistantState(
     ({ threads }: any) => getActiveThreadListItem(threads)?.remoteId ?? null,
   );
+  const activeStatus = useAssistantState(
+    ({ threads }: any) => getActiveThreadListItem(threads)?.status ?? "new",
+  );
   const [backendOpen, setBackendOpen] = useState(false);
 
   const threadIds = useAssistantState(({ threads }: any) => threads?.threadIds ?? []);
@@ -288,10 +291,14 @@ export function ClaudeThreadList({
   }, [threadIds, threadItems]);
 
   const handleNewChat = async () => {
-    await api.threads().switchToNewThread();
-
     if (pathname !== "/assistant") {
       router.push("/assistant", { scroll: false });
+      onSelectThread?.();
+      return;
+    }
+
+    if (activeStatus !== "new" || activeRemoteId) {
+      await api.threads().switchToNewThread();
     }
 
     onSelectThread?.();
