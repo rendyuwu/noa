@@ -3366,7 +3366,13 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         return {
             "ok": True,
             "results": [
-                {"ok": True, "target": "1.2.3.4", "verdict": "clear", "matches": []},
+                {
+                    "ok": True,
+                    "target": "1.2.3.4",
+                    "verdict": "clear",
+                    "matches": [],
+                    "raw_output": "No matches\n\ncsf: unblock applied",
+                },
                 {"ok": True, "target": "5.6.7.8", "verdict": "clear", "matches": []},
             ],
         }
@@ -3417,6 +3423,7 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
                             "target": "1.2.3.4",
                             "verdict": "blocked",
                             "matches": ["deny"],
+                            "raw_output": "Header\n\nTemporary Deny: 1.2.3.4",
                         },
                         "isError": False,
                     },
@@ -3458,6 +3465,39 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         and message["parts"][0].get("toolName") == "whm_csf_unblock"
     )
     assert tool_message["role"] == "tool"
+
+    receipt_message = next(
+        message
+        for message in reversed(assistant_repo.messages)
+        if message.get("role") == "tool"
+        and isinstance(message.get("parts"), list)
+        and isinstance(message["parts"][0], dict)
+        and message["parts"][0].get("type") == "tool-result"
+        and message["parts"][0].get("toolName") == "workflow_receipt"
+    )
+    receipt_part = cast(dict[str, object], receipt_message["parts"][0])
+    receipt_result = cast(dict[str, object], receipt_part["result"])
+    evidence_sections = cast(
+        list[dict[str, object]], receipt_result["evidenceSections"]
+    )
+    before_state = next(
+        section for section in evidence_sections if section.get("key") == "before_state"
+    )
+    after_state = next(
+        section for section in evidence_sections if section.get("key") == "after_state"
+    )
+    before_items = cast(list[dict[str, str]], before_state["items"])
+    after_items = cast(list[dict[str, str]], after_state["items"])
+    assert any(
+        item.get("label") == "1.2.3.4 raw tail"
+        and item.get("value") == "Temporary Deny: 1.2.3.4"
+        for item in before_items
+    )
+    assert any(
+        item.get("label") == "1.2.3.4 raw tail"
+        and item.get("value") == "csf: unblock applied"
+        for item in after_items
+    )
 
     todos = cast(list[dict[str, str]], captured["todos"])
     assert captured["thread_id"] == thread_id

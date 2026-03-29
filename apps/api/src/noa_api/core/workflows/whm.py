@@ -1400,13 +1400,19 @@ def _build_csf_evidence_template(
     noop_targets = _targets_with_status(result_items, "no-op")
     failed_targets = _targets_with_status(result_items, "error")
     result_ok = _result_ok(context.result)
+    include_raw_tail = context.phase == "completed" and _is_csf_removal_tool(
+        context.tool_name
+    )
 
     sections: list[WorkflowEvidenceSection] = [
         WorkflowEvidenceSection(
             key="before_state",
             title="Before state",
             items=(
-                _csf_entries_items(before_entries)
+                _csf_entries_items(
+                    before_entries,
+                    include_raw_tail=include_raw_tail,
+                )
                 or [
                     WorkflowEvidenceItem(
                         label="Targets", value=", ".join(targets) or "unknown"
@@ -1470,7 +1476,10 @@ def _build_csf_evidence_template(
         WorkflowEvidenceSection(
             key="after_state",
             title="After state",
-            items=_csf_entries_items(after_entries),
+            items=_csf_entries_items(
+                after_entries,
+                include_raw_tail=include_raw_tail,
+            ),
         )
     )
     sections.append(
@@ -1567,7 +1576,9 @@ def _account_after_state_items(
     )
 
 
-def _csf_entries_items(entries: list[dict[str, object]]) -> list[WorkflowEvidenceItem]:
+def _csf_entries_items(
+    entries: list[dict[str, object]], *, include_raw_tail: bool = False
+) -> list[WorkflowEvidenceItem]:
     items: list[WorkflowEvidenceItem] = []
     for entry in entries:
         target = normalized_text(entry.get("target"))
@@ -1575,7 +1586,26 @@ def _csf_entries_items(entries: list[dict[str, object]]) -> list[WorkflowEvidenc
             continue
         verdict = normalized_text(entry.get("verdict")) or "unknown"
         items.append(WorkflowEvidenceItem(label=target, value=verdict))
+        raw_tail = _csf_entry_raw_tail(entry) if include_raw_tail else None
+        if raw_tail is not None:
+            items.append(
+                WorkflowEvidenceItem(label=f"{target} raw tail", value=raw_tail)
+            )
     return items
+
+
+def _csf_entry_raw_tail(entry: dict[str, object]) -> str | None:
+    raw_output = entry.get("raw_output")
+    if not isinstance(raw_output, str):
+        return None
+    lines = [line.strip() for line in raw_output.splitlines() if line.strip()]
+    if not lines:
+        return None
+    return lines[-1]
+
+
+def _is_csf_removal_tool(tool_name: str) -> bool:
+    return tool_name in {"whm_csf_unblock", "whm_csf_allowlist_remove"}
 
 
 def _result_ok(result: dict[str, object] | None) -> bool | None:

@@ -334,7 +334,12 @@ def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
             {
                 "toolName": "whm_preflight_csf_entries",
                 "args": {"server_ref": "web2", "target": "1.2.3.4"},
-                "result": {"ok": True, "target": "1.2.3.4", "verdict": "blocked"},
+                "result": {
+                    "ok": True,
+                    "target": "1.2.3.4",
+                    "verdict": "blocked",
+                    "raw_output": "Header\n\nTemporary Deny: 1.2.3.4",
+                },
             }
         ],
         result={
@@ -347,7 +352,11 @@ def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
         postflight_result={
             "ok": True,
             "results": [
-                {"target": "1.2.3.4", "verdict": "clear"},
+                {
+                    "target": "1.2.3.4",
+                    "verdict": "clear",
+                    "raw_output": "No matches\n\ncsf: unblock applied",
+                },
                 {"target": "5.6.7.8", "verdict": "clear"},
             ],
         },
@@ -361,6 +370,20 @@ def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
         "outcomes",
         "verification",
     ]
+    before_state = next(
+        section for section in evidence.sections if section.key == "before_state"
+    )
+    after_state = next(
+        section for section in evidence.sections if section.key == "after_state"
+    )
+    assert any(
+        item.label == "1.2.3.4 raw tail" and item.value == "Temporary Deny: 1.2.3.4"
+        for item in before_state.items
+    )
+    assert any(
+        item.label == "1.2.3.4 raw tail" and item.value == "csf: unblock applied"
+        for item in after_state.items
+    )
     outcomes = next(
         section for section in evidence.sections if section.key == "outcomes"
     )
@@ -370,6 +393,108 @@ def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
     assert any(
         item.label == "No-op" and "5.6.7.8" in item.value for item in outcomes.items
     )
+
+
+def test_whm_csf_allowlist_remove_completed_evidence_includes_raw_tail_items() -> None:
+    evidence = build_workflow_evidence_template(
+        tool_name="whm_csf_allowlist_remove",
+        workflow_family="whm-csf-batch-change",
+        args={"server_ref": "web2", "targets": ["103.103.11.123"]},
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_csf_entries",
+                "args": {"server_ref": "web2", "target": "103.103.11.123"},
+                "result": {
+                    "ok": True,
+                    "target": "103.103.11.123",
+                    "verdict": "allowlisted",
+                    "raw_output": (
+                        "filter ALLOWIN\n\n"
+                        "Temporary Allows: IP:103.103.11.123 Port: Dir:inout TTL:432000"
+                    ),
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "results": [{"target": "103.103.11.123", "status": "changed"}],
+        },
+        postflight_result={
+            "ok": True,
+            "results": [
+                {
+                    "target": "103.103.11.123",
+                    "verdict": "not_found",
+                    "raw_output": "ip6tables:\n\nNo matches found for 103.103.11.123",
+                }
+            ],
+        },
+    )
+
+    assert evidence is not None
+    before_state = next(
+        section for section in evidence.sections if section.key == "before_state"
+    )
+    after_state = next(
+        section for section in evidence.sections if section.key == "after_state"
+    )
+    assert any(
+        item.label == "103.103.11.123 raw tail"
+        and item.value
+        == "Temporary Allows: IP:103.103.11.123 Port: Dir:inout TTL:432000"
+        for item in before_state.items
+    )
+    assert any(
+        item.label == "103.103.11.123 raw tail"
+        and item.value == "No matches found for 103.103.11.123"
+        for item in after_state.items
+    )
+
+
+def test_whm_csf_add_ttl_completed_evidence_keeps_existing_item_shape() -> None:
+    evidence = build_workflow_evidence_template(
+        tool_name="whm_csf_allowlist_add_ttl",
+        workflow_family="whm-csf-batch-change",
+        args={"server_ref": "web2", "targets": ["103.103.11.123"], "ttlMinutes": 60},
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_csf_entries",
+                "args": {"server_ref": "web2", "target": "103.103.11.123"},
+                "result": {
+                    "ok": True,
+                    "target": "103.103.11.123",
+                    "verdict": "clear",
+                    "raw_output": "Header\n\nTemporary Allows: IP:103.103.11.123",
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "results": [{"target": "103.103.11.123", "status": "changed"}],
+        },
+        postflight_result={
+            "ok": True,
+            "results": [
+                {
+                    "target": "103.103.11.123",
+                    "verdict": "allowlisted",
+                    "raw_output": "Header\n\nTemporary Allows: IP:103.103.11.123",
+                }
+            ],
+        },
+    )
+
+    assert evidence is not None
+    before_state = next(
+        section for section in evidence.sections if section.key == "before_state"
+    )
+    after_state = next(
+        section for section in evidence.sections if section.key == "after_state"
+    )
+    assert all(not item.label.endswith("raw tail") for item in before_state.items)
+    assert all(not item.label.endswith("raw tail") for item in after_state.items)
 
 
 def test_build_approval_context_includes_evidence_sections_and_compat_before_state() -> (
