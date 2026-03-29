@@ -396,8 +396,9 @@ _PREFLIGHT_CSF_RESULT_SCHEMA = _result_any_of(
             "target": _result_string_schema(),
             "verdict": _result_string_schema(),
             "matches": _result_array_schema(items=_result_string_schema()),
+            "raw_output": _result_string_schema(),
         },
-        required=["ok", "server_id", "target", "verdict", "matches"],
+        required=["ok", "server_id", "target", "verdict", "matches", "raw_output"],
     ),
     _WHM_RESULT_ERROR_SCHEMA,
 )

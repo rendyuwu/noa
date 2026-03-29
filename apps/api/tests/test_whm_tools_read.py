@@ -295,10 +295,11 @@ async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
     async def _run_csf_command(server_obj, *, args: list[str]) -> CommandResult:
         assert server_obj is server
         assert args == ["-g", "1.2.3.4"]
+        raw_output = "csf.deny: 1.2.3.4 # test block"
         return CommandResult(
             command="TERM=dumb /usr/sbin/csf -g 1.2.3.4",
             exit_code=0,
-            stdout="csf.deny: 1.2.3.4 # test block",
+            stdout=raw_output,
             stderr="",
             duration_ms=1,
         )
@@ -315,6 +316,7 @@ async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
     assert result["server_id"] == str(server.id)
     assert result["verdict"] == "blocked"
     assert len(result["matches"]) <= 20
+    assert result["raw_output"] == "csf.deny: 1.2.3.4 # test block"
 
 
 @pytest.mark.asyncio

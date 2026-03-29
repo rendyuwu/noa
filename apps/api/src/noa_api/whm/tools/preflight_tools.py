@@ -133,4 +133,5 @@ async def whm_preflight_csf_entries(
         "target": normalized_target,
         "verdict": parsed.verdict,
         "matches": parsed.matches,
+        "raw_output": output,
     }

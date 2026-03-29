@@ -1622,6 +1622,7 @@ async def test_agent_runner_falls_back_when_model_stays_empty_after_tool_result(
             "target": target,
             "verdict": "blocked",
             "matches": ["filter DENYIN ... 187.150.230.11"],
+            "raw_output": "filter DENYIN ... 187.150.230.11",
         }
 
     tool = ToolDefinition(
@@ -1699,8 +1700,159 @@ async def test_agent_runner_falls_back_when_model_stays_empty_after_tool_result(
     assert result.messages[-1].role == "assistant"
     assert result.messages[-1].parts[0]["text"] == (
         "CSF result: 187.150.230.11 on server web2 is blocked.\n\n"
-        "Evidence: Found 1 matching CSF entry."
+        "Evidence: Found 1 matching CSF entry.\n\n"
+        "Raw preflight output:\n"
+        "```\n"
+        "filter DENYIN ... 187.150.230.11\n"
+        "```"
     )
+
+
+async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_before_approval(
+    monkeypatch,
+) -> None:
+    from noa_api.core.tools.registry import get_tool_definition
+
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    raw_output = "ALLOWIN 103.103.11.123 # allow\nALLOWOUT 103.103.11.123 # allow"
+
+    async def preflight_tool(*, server_ref: str, target: str) -> dict[str, object]:
+        assert server_ref == "web2"
+        assert target == "103.103.11.123"
+        return {
+            "ok": True,
+            "server_id": str(uuid4()),
+            "target": target,
+            "verdict": "allowlisted",
+            "matches": ["/etc/csf/csf.allow"],
+            "raw_output": raw_output,
+        }
+
+    preflight_def = ToolDefinition(
+        name="whm_preflight_csf_entries",
+        description="Inspect CSF state for one target.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "target": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "target"],
+            "additionalProperties": False,
+        },
+        execute=preflight_tool,
+    )
+
+    change_def = get_tool_definition("whm_csf_allowlist_remove")
+    assert change_def is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: (
+            preflight_def
+            if name == preflight_def.name
+            else change_def
+            if name == change_def.name
+            else None
+        ),
+    )
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_registry",
+        lambda: (preflight_def, change_def),
+    )
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="Saya akan cek status CSF dulu.",
+                    tool_calls=[
+                        LLMToolCall(
+                            name="whm_preflight_csf_entries",
+                            arguments={
+                                "server_ref": "web2",
+                                "target": "103.103.11.123",
+                            },
+                        )
+                    ],
+                )
+            return LLMTurnResponse(
+                text=(
+                    "Evidence: IP 103.103.11.123 saat ini allowlisted di server web2.\n\n"
+                    "Proposed change: Remove 103.103.11.123 from the CSF allowlist on web2."
+                ),
+                tool_calls=[
+                    LLMToolCall(
+                        name="whm_csf_allowlist_remove",
+                        arguments={
+                            "server_ref": "web2",
+                            "targets": ["103.103.11.123"],
+                            "reason": "Ticket #232123",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=None,
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Remove this IP 103.103.11.123 from whitelist whm web2, reason: Ticket #232123",
+                    }
+                ],
+            }
+        ],
+        available_tool_names={preflight_def.name, change_def.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    # Raw CSF output should be appended to the follow-up narration before approval tool UI.
+    narration_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if message.role == "assistant"
+        and any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part.get("text"), str)
+            and "Raw preflight output for 103.103.11.123" in part["text"]
+            for part in message.parts
+        )
+    )
+    request_approval_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if any(
+            isinstance(part, dict)
+            and part.get("type") == "tool-call"
+            and part.get("toolName") == "request_approval"
+            for part in message.parts
+        )
+    )
+    assert narration_index < request_approval_index
 
 
 async def test_agent_runner_falls_back_for_generic_read_success_when_model_stays_empty(

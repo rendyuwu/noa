@@ -48,6 +48,8 @@ export type WorkflowReceiptParsed = {
   errorCode?: string;
 };
 
+type WorkflowReceiptOpenMode = "default" | "export";
+
 function coerceString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
@@ -229,7 +231,13 @@ export function buildWorkflowReceiptPlaintext(parsed: WorkflowReceiptParsed): st
   return lines.join("\n").trim();
 }
 
-export function WorkflowReceiptContent({ payload }: { payload: Record<string, unknown> }) {
+export function WorkflowReceiptContent({
+  payload,
+  openMode = "default",
+}: {
+  payload: Record<string, unknown>;
+  openMode?: WorkflowReceiptOpenMode;
+}) {
   const parsed = useMemo(() => parseWorkflowReceiptPayload(payload), [payload]);
 
   if (!parsed) {
@@ -259,7 +267,7 @@ export function WorkflowReceiptContent({ payload }: { payload: Record<string, un
       </div>
       <div className="text-sm text-muted">{parsed.replyTemplate.summary}</div>
 
-      <DetailSections sections={sections} variant="inline" showEmptyState />
+      <DetailSections sections={sections} variant="inline" showEmptyState openMode={openMode} />
     </div>
   );
 }
@@ -268,10 +276,12 @@ export function WorkflowReceiptSurface({
   payload,
   className,
   captureId,
+  openMode = "default",
 }: {
   payload: Record<string, unknown>;
   className?: string;
   captureId?: string;
+  openMode?: WorkflowReceiptOpenMode;
 }) {
   return (
     <div
@@ -286,7 +296,7 @@ export function WorkflowReceiptSurface({
         .filter(Boolean)
         .join(" ")}
     >
-      <WorkflowReceiptContent payload={payload} />
+      <WorkflowReceiptContent payload={payload} openMode={openMode} />
     </div>
   );
 }

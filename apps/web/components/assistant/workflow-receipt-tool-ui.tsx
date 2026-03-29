@@ -193,6 +193,7 @@ async function captureStandaloneReceiptPngBlob(
           payload={payload}
           className="w-[52rem]"
           captureId={actionRequestId ? `thread-${actionRequestId}` : "thread"}
+          openMode="export"
         />
       </div>,
     );

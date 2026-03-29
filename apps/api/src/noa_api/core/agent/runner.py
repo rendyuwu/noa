@@ -376,6 +376,7 @@ class AgentRunner:
         working_messages = list(thread_messages)
         output_messages: list[AgentMessage] = []
         text_deltas: list[str] = []
+        pending_csf_preflight_raw: list[tuple[str, str]] = []
         rounds = 0
         tool_calls_processed = 0
         hit_safety_limit = False
@@ -398,6 +399,11 @@ class AgentRunner:
 
             text = llm_response.text.strip()
             if text:
+                if pending_csf_preflight_raw:
+                    text = _append_csf_preflight_raw_output(
+                        text, pending_csf_preflight_raw
+                    )
+                    pending_csf_preflight_raw.clear()
                 assistant_text_part: dict[str, object] = {
                     "type": "text",
                     "text": text,
@@ -552,6 +558,27 @@ class AgentRunner:
                     continue
 
                 saw_allowed_tool_call = True
+
+                if tool.risk == ToolRisk.CHANGE and pending_csf_preflight_raw:
+                    raw_text = _render_csf_preflight_raw_output(
+                        pending_csf_preflight_raw
+                    )
+                    pending_csf_preflight_raw.clear()
+                    raw_parts = [{"type": "text", "text": raw_text}]
+                    output_messages.append(
+                        AgentMessage(role="assistant", parts=raw_parts)
+                    )
+                    working_messages.append(
+                        {
+                            "role": "assistant",
+                            "parts": raw_parts,
+                        }
+                    )
+                    text_deltas.extend(_split_text_deltas(raw_text))
+                    if on_text_delta is not None:
+                        for chunk in _split_text_deltas(raw_text):
+                            await on_text_delta(chunk)
+
                 processed = await self._process_tool_call(
                     tool=tool,
                     args=tool_call.arguments,
@@ -561,6 +588,10 @@ class AgentRunner:
                 )
                 tool_messages = processed.messages
                 output_messages.extend(tool_messages)
+
+                pending_csf_preflight_raw.extend(
+                    _extract_csf_preflight_raw_outputs(tool_messages)
+                )
                 for message in tool_messages:
                     working_messages.append(
                         {
@@ -1241,6 +1272,53 @@ def _post_tool_followup_guidance(
     )
 
 
+def _extract_csf_preflight_raw_outputs(
+    messages: list[AgentMessage],
+) -> list[tuple[str, str]]:
+    outputs: list[tuple[str, str]] = []
+    for message in messages:
+        for part in message.parts:
+            if not isinstance(part, dict) or part.get("type") != "tool-result":
+                continue
+            if part.get("toolName") != "whm_preflight_csf_entries":
+                continue
+            result = part.get("result")
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                continue
+            verdict = _normalized_text(result.get("verdict"))
+            if verdict not in {"blocked", "allowlisted"}:
+                continue
+            raw_output = result.get("raw_output")
+            raw_text = (
+                raw_output
+                if isinstance(raw_output, str) and raw_output.strip()
+                else None
+            )
+            if raw_text is None:
+                continue
+            target = _normalized_text(result.get("target")) or "the target"
+            outputs.append((target, raw_text))
+    return outputs
+
+
+def _render_csf_preflight_raw_output(raw_outputs: list[tuple[str, str]]) -> str:
+    blocks: list[str] = []
+    for target, raw_output in raw_outputs:
+        blocks.append(f"Raw preflight output for {target}:\n```\n{raw_output}\n```")
+    return "\n\n".join(blocks).strip()
+
+
+def _append_csf_preflight_raw_output(
+    text: str, raw_outputs: list[tuple[str, str]]
+) -> str:
+    appendix = _render_csf_preflight_raw_output(raw_outputs)
+    if not appendix:
+        return text
+    if not text.strip():
+        return appendix
+    return f"{text}\n\n{appendix}"
+
+
 def _fallback_assistant_reply_from_recent_tool_result(
     working_messages: list[dict[str, object]],
 ) -> str | None:
@@ -1259,6 +1337,10 @@ def _fallback_assistant_reply_from_recent_tool_result(
     if tool_name == "whm_preflight_csf_entries" and isinstance(result, dict):
         target = _normalized_text(result.get("target")) or "the target"
         verdict = _normalized_text(result.get("verdict")) or "unknown"
+        raw_output = result.get("raw_output")
+        raw_output_text = (
+            raw_output if isinstance(raw_output, str) and raw_output.strip() else None
+        )
         matches = result.get("matches")
         match_count = (
             len([item for item in matches if isinstance(item, str) and item.strip()])
@@ -1289,7 +1371,10 @@ def _fallback_assistant_reply_from_recent_tool_result(
         else:
             evidence = "The tool returned no matching evidence lines."
 
-        return f"{answer}\n\nEvidence: {evidence}"
+        reply = f"{answer}\n\nEvidence: {evidence}"
+        if verdict in {"blocked", "allowlisted"} and raw_output_text is not None:
+            reply = f"{reply}\n\nRaw preflight output:\n```\n{raw_output_text}\n```"
+        return reply
 
     if isinstance(result, dict):
         error_code = _normalized_text(result.get("error_code"))

@@ -157,7 +157,12 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
       <div className="mt-4" ref={captureWrapperRef}>
         {payload ? (
           <div className="mx-auto w-full max-w-[52rem]">
-            <WorkflowReceiptSurface payload={payload} className="w-full" captureId={`audit-${actionRequestId}`} />
+            <WorkflowReceiptSurface
+              payload={payload}
+              className="w-full"
+              captureId={`audit-${actionRequestId}`}
+              openMode="export"
+            />
           </div>
         ) : (
           <div className="panel mx-auto w-full max-w-[52rem] p-6 font-ui text-sm text-muted">
