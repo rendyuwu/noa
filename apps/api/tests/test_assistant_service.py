@@ -1123,6 +1123,137 @@ async def test_execute_approved_tool_run_allows_execution_with_matching_prefligh
     assert assistant_repo.messages[-1]["parts"][0]["result"] == {"ok": True}
 
 
+async def test_execute_approved_tool_run_allows_execution_after_reason_follow_up(
+    monkeypatch,
+) -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        execute_approved_tool_run,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="whm_suspend_account",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "reason": "requested by customer",
+        },
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    request.status = ActionRequestStatus.APPROVED
+    started = await repo.start_tool_run(
+        thread_id=thread_id,
+        tool_name=request.tool_name,
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=owner_id,
+    )
+
+    async def successful_change(*, session, **kwargs):
+        _ = session, kwargs
+        return {"ok": True}
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Suspends an account.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string"},
+                "username": {"type": "string"},
+                "reason": {"type": "string"},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        result_schema={
+            "type": "object",
+            "properties": {"ok": {"type": "boolean"}},
+            "required": ["ok"],
+            "additionalProperties": False,
+        },
+        execute=successful_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                role="user",
+                content=[{"type": "text", "text": "Suspend alice on web1."}],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="tool",
+                content=[
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {"ok": True, "account": {"user": "alice"}},
+                        "isError": False,
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="assistant",
+                content=[
+                    {
+                        "type": "text",
+                        "text": (
+                            "To proceed with suspending the account, I need a brief "
+                            "human-readable reason for the change. Could you provide the reason?"
+                        ),
+                    }
+                ],
+            ),
+            SimpleNamespace(
+                role="user",
+                content=[
+                    {"type": "text", "text": "Requested by customer in ticket #121233."}
+                ],
+            ),
+        ]
+    )
+
+    await execute_approved_tool_run(
+        started_tool_run=started,
+        approved_request=request,
+        owner_user_id=owner_id,
+        owner_user_email="owner@example.com",
+        thread_id=thread_id,
+        repository=assistant_repo,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=_FakeSession(),
+    )
+
+    assert repo.tool_runs[started.id].status == ToolRunStatus.COMPLETED
+    assert assistant_repo.messages[-1]["parts"][0]["result"] == {"ok": True}
+
+
 async def test_execute_approved_tool_run_rejects_mismatched_account_preflight_result(
     monkeypatch,
 ) -> None:

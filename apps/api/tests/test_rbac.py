@@ -452,6 +452,11 @@ async def test_authorization_service_lists_canonical_tools() -> None:
         "whm_csf_allowlist_remove",
         "whm_csf_allowlist_add_ttl",
         "whm_csf_denylist_add_ttl",
+        "whm_preflight_firewall_entries",
+        "whm_firewall_unblock",
+        "whm_firewall_allowlist_add_ttl",
+        "whm_firewall_allowlist_remove",
+        "whm_firewall_denylist_add_ttl",
     ]
 
 

@@ -99,6 +99,10 @@ def _grep_output(*, target: str, blocked: bool, allowlisted: bool) -> str:
     )
 
 
+async def _check_csf_binary_true(_server) -> bool:
+    return True
+
+
 @pytest.mark.asyncio
 async def test_whm_csf_unblock_changes_when_blocked(monkeypatch) -> None:
     from noa_api.whm.tools import csf_change_tools
@@ -118,6 +122,7 @@ async def test_whm_csf_unblock_changes_when_blocked(monkeypatch) -> None:
     monkeypatch.setattr(
         csf_change_tools, "SQLWHMServerRepository", lambda session: repo
     )
+    monkeypatch.setattr(csf_change_tools, "check_csf_binary", _check_csf_binary_true)
 
     state = _CSFState(blocked={"1.2.3.4"})
 
@@ -182,6 +187,7 @@ async def test_whm_csf_unblock_is_noop_when_not_blocked(monkeypatch) -> None:
     monkeypatch.setattr(
         csf_change_tools, "SQLWHMServerRepository", lambda session: repo
     )
+    monkeypatch.setattr(csf_change_tools, "check_csf_binary", _check_csf_binary_true)
 
     state = _CSFState(blocked=set())
 
@@ -238,6 +244,7 @@ async def test_whm_csf_allowlist_add_ttl_rejects_cidr_and_ipv6_and_converts_minu
     monkeypatch.setattr(
         csf_change_tools, "SQLWHMServerRepository", lambda session: repo
     )
+    monkeypatch.setattr(csf_change_tools, "check_csf_binary", _check_csf_binary_true)
 
     state = _CSFState()
 
@@ -308,6 +315,7 @@ async def test_whm_csf_allowlist_remove_changes_when_allowlisted(monkeypatch) ->
     monkeypatch.setattr(
         csf_change_tools, "SQLWHMServerRepository", lambda session: repo
     )
+    monkeypatch.setattr(csf_change_tools, "check_csf_binary", _check_csf_binary_true)
 
     state = _CSFState(allowlisted={"1.2.3.4"})
 
@@ -374,6 +382,7 @@ async def test_whm_csf_allowlist_remove_is_noop_when_not_allowlisted(
     monkeypatch.setattr(
         csf_change_tools, "SQLWHMServerRepository", lambda session: repo
     )
+    monkeypatch.setattr(csf_change_tools, "check_csf_binary", _check_csf_binary_true)
 
     state = _CSFState(allowlisted=set())
 
@@ -428,6 +437,7 @@ async def test_whm_csf_denylist_add_ttl_converts_minutes(monkeypatch) -> None:
     monkeypatch.setattr(
         csf_change_tools, "SQLWHMServerRepository", lambda session: repo
     )
+    monkeypatch.setattr(csf_change_tools, "check_csf_binary", _check_csf_binary_true)
 
     state = _CSFState(blocked=set())
 

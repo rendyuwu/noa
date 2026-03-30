@@ -62,6 +62,10 @@ class _Session:
     pass
 
 
+async def _check_csf_binary_true(_server) -> bool:
+    return True
+
+
 @pytest.mark.asyncio
 async def test_whm_list_servers_excludes_api_token(monkeypatch) -> None:
     from noa_api.whm.tools import read_tools
@@ -291,6 +295,7 @@ async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
     )
     repo = _Repo([server])
     monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
+    monkeypatch.setattr(preflight_tools, "check_csf_binary", _check_csf_binary_true)
 
     async def _run_csf_command(server_obj, *, args: list[str]) -> CommandResult:
         assert server_obj is server
@@ -336,6 +341,7 @@ async def test_whm_preflight_csf_entries_rejects_invalid_target(monkeypatch) -> 
     )
     repo = _Repo([server])
     monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
+    monkeypatch.setattr(preflight_tools, "check_csf_binary", _check_csf_binary_true)
 
     async def _run_csf_command(server_obj, *, args: list[str]) -> CommandResult:
         raise AssertionError("CSF command should not run for invalid targets")

@@ -137,7 +137,7 @@ def collect_recent_preflight_evidence(
     tool_calls_by_id: dict[str, dict[str, object]] = {}
     evidence: list[dict[str, object]] = []
 
-    for message in _messages_since_last_user(working_messages):
+    for message in _messages_for_recent_preflight(working_messages):
         parts = message.get("parts")
         if not isinstance(parts, list):
             continue
@@ -272,3 +272,72 @@ def _messages_since_last_user(
         if message.get("role") == "user":
             last_user_index = index
     return working_messages[last_user_index + 1 :]
+
+
+def _messages_for_recent_preflight(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    last_user_index = _last_user_index(working_messages)
+    if last_user_index < 0:
+        return working_messages
+
+    current_window = working_messages[last_user_index + 1 :]
+    if not _assistant_requested_reason_before_user(
+        working_messages=working_messages,
+        user_index=last_user_index,
+    ):
+        return current_window
+
+    previous_user_index = _last_user_index(working_messages[:last_user_index])
+    return working_messages[previous_user_index + 1 :]
+
+
+def _last_user_index(working_messages: list[dict[str, object]]) -> int:
+    for index in range(len(working_messages) - 1, -1, -1):
+        if working_messages[index].get("role") == "user":
+            return index
+    return -1
+
+
+def _assistant_requested_reason_before_user(
+    *,
+    working_messages: list[dict[str, object]],
+    user_index: int,
+) -> bool:
+    for index in range(user_index - 1, -1, -1):
+        message = working_messages[index]
+        role = message.get("role")
+        if role == "assistant":
+            return _message_requests_reason(message)
+        if role == "user":
+            return False
+    return False
+
+
+def _message_requests_reason(message: dict[str, object]) -> bool:
+    parts = message.get("parts")
+    if not isinstance(parts, list):
+        return False
+
+    for raw_part in parts:
+        part = _coerce_part_record(raw_part)
+        if part is None or part.get("type") != "text":
+            continue
+        text = normalized_text(part.get("text"))
+        if text is not None and _assistant_is_requesting_reason(text):
+            return True
+    return False
+
+
+def _assistant_is_requesting_reason(text: str) -> bool:
+    lowered = text.lower()
+    return "reason" in lowered and any(
+        phrase in lowered
+        for phrase in (
+            "could you provide",
+            "please provide",
+            "need a brief human-readable reason",
+            "need a human-readable reason",
+            "what reason",
+        )
+    )

@@ -13,6 +13,7 @@ from noa_api.whm.integrations.csf_cli import (
     require_csf_success,
     run_csf_command,
 )
+from noa_api.whm.integrations.imunify_cli import check_csf_binary
 from noa_api.whm.server_ref import resolve_whm_server_ref
 from noa_api.whm.tools.result_shapes import normalize_whm_account_summary
 
@@ -95,6 +96,15 @@ async def whm_preflight_csf_entries(
 
     server = resolution.server
     assert server is not None
+
+    # Check CSF binary availability
+    if not await check_csf_binary(server):
+        return {
+            "ok": False,
+            "error_code": "csf_not_available",
+            "message": "CSF is not installed on this server",
+        }
+
     normalized_target = target.strip()
     if not normalized_target:
         return {

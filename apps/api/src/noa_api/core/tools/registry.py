@@ -21,6 +21,13 @@ from noa_api.whm.tools.csf_change_tools import (
     whm_csf_denylist_add_ttl,
     whm_csf_unblock,
 )
+from noa_api.whm.tools.firewall_tools import (
+    whm_firewall_allowlist_add_ttl,
+    whm_firewall_allowlist_remove,
+    whm_firewall_denylist_add_ttl,
+    whm_firewall_unblock,
+    whm_preflight_firewall_entries,
+)
 from noa_api.whm.tools.preflight_tools import (
     whm_preflight_account,
     whm_preflight_csf_entries,
@@ -449,6 +456,65 @@ _CSF_BATCH_RESULT_SCHEMA = _result_any_of(
     _WHM_RESULT_ERROR_SCHEMA,
 )
 
+# Firewall (unified CSF + Imunify) result schemas
+_AVAILABLE_TOOLS_SCHEMA = _result_object_schema(
+    properties={
+        "csf": _result_boolean_schema(),
+        "imunify": _result_boolean_schema(),
+    },
+    required=["csf", "imunify"],
+)
+
+_PREFLIGHT_FIREWALL_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "server_id": _result_string_schema(),
+            "target": _result_string_schema(),
+            "available_tools": _AVAILABLE_TOOLS_SCHEMA,
+            "combined_verdict": _result_string_schema(),
+            "matches": _result_array_schema(items=_result_string_schema()),
+            "csf": {"type": "object"},
+            "imunify": {"type": "object"},
+        },
+        required=[
+            "ok",
+            "server_id",
+            "target",
+            "available_tools",
+            "combined_verdict",
+            "matches",
+        ],
+        additional_properties=True,
+    ),
+    _WHM_RESULT_ERROR_SCHEMA,
+)
+
+_FIREWALL_RESULT_ITEM_SCHEMA = _result_object_schema(
+    properties={
+        "target": _result_string_schema(),
+        "ok": _result_boolean_schema(),
+        "status": _result_string_schema(enum=["changed", "no-op", "error"]),
+        "available_tools": _AVAILABLE_TOOLS_SCHEMA,
+        "csf": {"type": ["object", "null"]},
+        "imunify": {"type": ["object", "null"]},
+    },
+    required=["target", "ok", "status", "available_tools"],
+    additional_properties=True,
+)
+
+_FIREWALL_BATCH_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            "ok": _result_boolean_schema(),
+            "available_tools": _AVAILABLE_TOOLS_SCHEMA,
+            "results": _result_array_schema(items=_FIREWALL_RESULT_ITEM_SCHEMA),
+        },
+        required=["ok", "available_tools", "results"],
+    ),
+    _WHM_RESULT_ERROR_SCHEMA,
+)
+
 
 _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ToolDefinition(
@@ -624,7 +690,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="whm_preflight_csf_entries",
-        description="Inspect the current CSF state for one target before a CSF or firewall change.",
+        description="Inspect the current CSF-only state for one target. Prefer `whm_preflight_firewall_entries` to also check Imunify when available.",
         risk=ToolRisk.READ,
         parameters_schema=_object_schema(
             properties={
@@ -635,7 +701,8 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=whm_preflight_csf_entries,
         prompt_hints=(
-            "Run this once per target before CSF unblock, allowlist, or denylist changes and summarize the verdict.",
+            "Prefer `whm_preflight_firewall_entries` which checks both CSF and Imunify automatically.",
+            "Run this once per target before CSF-only unblock, allowlist, or denylist changes and summarize the verdict.",
             "Successful results return `target`, `verdict`, and matched CSF entries in `matches`.",
             "After a successful run, explicitly answer whether the target is blocked, allowlisted, or not found before doing anything else.",
         ),
@@ -710,7 +777,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="whm_csf_unblock",
-        description="Remove CSF block entries for one or more targets after target-by-target preflight.",
+        description="Remove CSF-only block entries for one or more targets. Prefer `whm_firewall_unblock` to also handle Imunify when available.",
         risk=ToolRisk.CHANGE,
         parameters_schema=_object_schema(
             properties={
@@ -722,6 +789,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=whm_csf_unblock,
         prompt_hints=(
+            "Prefer `whm_firewall_unblock` which handles both CSF and Imunify automatically.",
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
@@ -730,7 +798,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="whm_csf_allowlist_remove",
-        description="Remove one or more targets from the CSF allowlist after target-by-target preflight.",
+        description="Remove one or more targets from the CSF-only allowlist. Prefer `whm_firewall_allowlist_remove` to also handle Imunify when available.",
         risk=ToolRisk.CHANGE,
         parameters_schema=_object_schema(
             properties={
@@ -742,6 +810,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=whm_csf_allowlist_remove,
         prompt_hints=(
+            "Prefer `whm_firewall_allowlist_remove` which handles both CSF and Imunify automatically.",
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
@@ -750,7 +819,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="whm_csf_allowlist_add_ttl",
-        description="Temporarily add one or more IPv4 targets to the CSF allowlist after target-by-target preflight.",
+        description="Temporarily add one or more IPv4 targets to the CSF-only allowlist. Prefer `whm_firewall_allowlist_add_ttl` to also handle Imunify when available.",
         risk=ToolRisk.CHANGE,
         parameters_schema=_object_schema(
             properties={
@@ -772,6 +841,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=whm_csf_allowlist_add_ttl,
         prompt_hints=(
+            "Prefer `whm_firewall_allowlist_add_ttl` which handles both CSF and Imunify automatically.",
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
@@ -780,7 +850,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="whm_csf_denylist_add_ttl",
-        description="Temporarily add one or more IPv4 targets to the CSF denylist after target-by-target preflight.",
+        description="Temporarily add one or more IPv4 targets to the CSF-only denylist. Prefer `whm_firewall_denylist_add_ttl` to also handle Imunify when available.",
         risk=ToolRisk.CHANGE,
         parameters_schema=_object_schema(
             properties={
@@ -802,11 +872,139 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=whm_csf_denylist_add_ttl,
         prompt_hints=(
+            "Prefer `whm_firewall_denylist_add_ttl` which handles both CSF and Imunify automatically.",
             "Run `whm_preflight_csf_entries` once per target before proposing this tool.",
             "Batch result contract: returns `results` entries per target with `status` `changed`, `no-op`, or `error`, plus `verdict`, `matches`, and `error_code` when relevant.",
         ),
         result_schema=_CSF_BATCH_RESULT_SCHEMA,
         workflow_family="whm-csf-batch-change",
+    ),
+    # -------------------------------------------------------------------------
+    # Unified Firewall Tools (CSF + Imunify)
+    # -------------------------------------------------------------------------
+    ToolDefinition(
+        name="whm_preflight_firewall_entries",
+        description="Inspect the current firewall state (CSF and/or Imunify) for one target before a firewall change. This is the preferred preflight tool for IP operations.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "target": _CSF_TARGET_PARAM,
+            },
+            required=["server_ref", "target"],
+        ),
+        execute=whm_preflight_firewall_entries,
+        prompt_hints=(
+            "Use this as the primary tool for checking IP status before firewall changes.",
+            "Automatically detects which firewall tools (CSF, Imunify, or both) are available.",
+            "Returns `combined_verdict` plus individual `csf` and `imunify` results when available.",
+            "After a successful run, summarize the combined verdict and available tools before proposing changes.",
+        ),
+        result_schema=_PREFLIGHT_FIREWALL_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="whm_firewall_unblock",
+        description="Remove firewall block entries from CSF and/or Imunify (based on availability) for one or more targets.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "targets": _CSF_TARGETS_PARAM,
+                "reason": _REASON_PARAM,
+            },
+            required=["server_ref", "targets", "reason"],
+        ),
+        execute=whm_firewall_unblock,
+        prompt_hints=(
+            "Run `whm_preflight_firewall_entries` once per target before proposing this tool.",
+            "Automatically operates on all available firewall tools (CSF, Imunify, or both).",
+            "Batch result contract: returns `results` per target with `status` `changed`, `no-op`, or `error`.",
+        ),
+        result_schema=_FIREWALL_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-firewall-batch-change",
+    ),
+    ToolDefinition(
+        name="whm_firewall_allowlist_add_ttl",
+        description="Temporarily add one or more IPv4 targets to the firewall allowlist (CSF and/or Imunify based on availability).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "targets": _string_array_param(
+                    "One or more IPv4 addresses to allowlist temporarily. This TTL tool does not accept CIDRs, hostnames, or IPv6 targets.",
+                    item_description="Exact IPv4 address target",
+                    item_format_name="ipv4",
+                    unique_items=True,
+                ),
+                "duration_minutes": _integer_param(
+                    "Duration already converted to minutes before calling the tool.",
+                    minimum=1,
+                    maximum=525600,
+                ),
+                "reason": _REASON_PARAM,
+            },
+            required=["server_ref", "targets", "duration_minutes", "reason"],
+        ),
+        execute=whm_firewall_allowlist_add_ttl,
+        prompt_hints=(
+            "Run `whm_preflight_firewall_entries` once per target before proposing this tool.",
+            "Automatically operates on all available firewall tools (CSF, Imunify, or both).",
+            "Batch result contract: returns `results` per target with `status` `changed`, `no-op`, or `error`.",
+        ),
+        result_schema=_FIREWALL_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-firewall-batch-change",
+    ),
+    ToolDefinition(
+        name="whm_firewall_allowlist_remove",
+        description="Remove one or more targets from the firewall allowlist (CSF and/or Imunify based on availability).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "targets": _CSF_TARGETS_PARAM,
+                "reason": _REASON_PARAM,
+            },
+            required=["server_ref", "targets", "reason"],
+        ),
+        execute=whm_firewall_allowlist_remove,
+        prompt_hints=(
+            "Run `whm_preflight_firewall_entries` once per target before proposing this tool.",
+            "Automatically operates on all available firewall tools (CSF, Imunify, or both).",
+            "Batch result contract: returns `results` per target with `status` `changed`, `no-op`, or `error`.",
+        ),
+        result_schema=_FIREWALL_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-firewall-batch-change",
+    ),
+    ToolDefinition(
+        name="whm_firewall_denylist_add_ttl",
+        description="Temporarily add one or more IPv4 targets to the firewall denylist/blacklist (CSF and/or Imunify based on availability).",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "targets": _string_array_param(
+                    "One or more IPv4 addresses to deny/block temporarily. This TTL tool does not accept CIDRs, hostnames, or IPv6 targets.",
+                    item_description="Exact IPv4 address target",
+                    item_format_name="ipv4",
+                    unique_items=True,
+                ),
+                "duration_minutes": _integer_param(
+                    "Duration already converted to minutes before calling the tool.",
+                    minimum=1,
+                    maximum=525600,
+                ),
+                "reason": _REASON_PARAM,
+            },
+            required=["server_ref", "targets", "duration_minutes", "reason"],
+        ),
+        execute=whm_firewall_denylist_add_ttl,
+        prompt_hints=(
+            "Run `whm_preflight_firewall_entries` once per target before proposing this tool.",
+            "Automatically operates on all available firewall tools (CSF, Imunify, or both).",
+            "Batch result contract: returns `results` per target with `status` `changed`, `no-op`, or `error`.",
+        ),
+        result_schema=_FIREWALL_BATCH_RESULT_SCHEMA,
+        workflow_family="whm-firewall-batch-change",
     ),
 )
 _MVP_TOOL_INDEX = {tool.name: tool for tool in _MVP_TOOLS}

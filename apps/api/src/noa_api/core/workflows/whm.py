@@ -24,6 +24,9 @@ from noa_api.whm.tools.preflight_tools import (
     whm_preflight_account,
     whm_preflight_csf_entries,
 )
+from noa_api.whm.tools.firewall_tools import (
+    whm_preflight_firewall_entries,
+)
 
 
 class _WHMTemplate(WorkflowTemplate):
@@ -471,10 +474,126 @@ class WHMCSFBatchTemplate(_WHMTemplate):
         return {"ok": True, "results": results}
 
 
+class WHMFirewallBatchTemplate(_WHMTemplate):
+    """
+    Workflow template for unified firewall operations (CSF + Imunify).
+
+    Similar to WHMCSFBatchTemplate but handles whm_preflight_firewall_entries
+    and combined CSF/Imunify results.
+    """
+
+    def build_todos(self, context: WorkflowTemplateContext) -> list[WorkflowTodoItem]:
+        targets = normalized_string_list(context.args.get("targets"))
+        subject = _firewall_subject(context.args)
+        reason = normalized_text(context.args.get("reason"))
+        before_entries = _matching_firewall_preflight_entries(
+            preflight_evidence=context.preflight_evidence,
+            args=context.args,
+        )
+        postflight_entries = _postflight_firewall_entries(context.postflight_result)
+        statuses = _default_step_statuses(reason=reason, phase=context.phase)
+        preflight_complete = len(before_entries) == len(targets) and len(targets) > 0
+
+        return [
+            {
+                "content": _firewall_preflight_step_content(
+                    subject=subject, entries=before_entries, targets=targets
+                ),
+                "status": "completed" if preflight_complete else "in_progress",
+                "priority": "high",
+            },
+            {
+                "content": _reason_step_content(
+                    action_label=_firewall_action_phrase(context.tool_name),
+                    reason=reason,
+                ),
+                "status": cast(Any, statuses["reason"]),
+                "priority": "high",
+            },
+            {
+                "content": f"Request approval to {_firewall_action_phrase(context.tool_name)} for {subject}.",
+                "status": cast(Any, statuses["approval"]),
+                "priority": "high",
+            },
+            {
+                "content": f"Execute {_firewall_action_phrase(context.tool_name)} for {subject}.",
+                "status": cast(Any, statuses["execute"]),
+                "priority": "high",
+            },
+            {
+                "content": _firewall_postflight_step_content(
+                    tool_name=context.tool_name,
+                    subject=subject,
+                    entries=postflight_entries,
+                    postflight_result=context.postflight_result,
+                ),
+                "status": cast(Any, statuses["postflight"]),
+                "priority": "high",
+            },
+        ]
+
+    def build_reply_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowReplyTemplate | None:
+        return _build_firewall_reply_template(context)
+
+    def build_evidence_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowEvidenceTemplate | None:
+        return _build_firewall_evidence_template(context)
+
+    def describe_activity(
+        self, *, tool_name: str, args: dict[str, object]
+    ) -> str | None:
+        return f"{_firewall_activity_phrase(tool_name)} '{_format_argument_value(args.get('targets'))}'"
+
+    def require_preflight(
+        self,
+        *,
+        tool_name: str,
+        args: dict[str, object],
+        working_messages: list[dict[str, object]],
+        requested_server_id: str | None,
+    ) -> SanitizedToolError | None:
+        _ = tool_name
+        return _require_firewall_preflight(
+            args=args,
+            working_messages=working_messages,
+            requested_server_id=requested_server_id,
+        )
+
+    async def fetch_postflight_result(
+        self,
+        *,
+        tool_name: str,
+        args: dict[str, object],
+        session: AsyncSession,
+    ) -> dict[str, object] | None:
+        _ = tool_name
+        server_ref = normalized_text(args.get("server_ref"))
+        targets = normalized_string_list(args.get("targets"))
+        if server_ref is None or not targets:
+            return None
+
+        results: list[dict[str, object]] = []
+        for target in targets:
+            result = await whm_preflight_firewall_entries(
+                session=session,
+                server_ref=server_ref,
+                target=target,
+            )
+            if isinstance(result, dict):
+                results.append(result)
+        return {"ok": True, "results": results}
+
+
 WORKFLOW_TEMPLATES: dict[str, WorkflowTemplate] = {
     "whm-account-lifecycle": WHMAccountLifecycleTemplate(),
     "whm-account-contact-email": WHMAccountContactEmailTemplate(),
     "whm-csf-batch-change": WHMCSFBatchTemplate(),
+    "whm-firewall-batch-change": WHMFirewallBatchTemplate(),
 }
 
 
@@ -2046,3 +2165,225 @@ def _csf_entries_summary(entries: list[dict[str, object]]) -> str:
         for entry in entries
         if normalized_text(entry.get("target")) is not None
     )
+
+
+# ---------------------------------------------------------------------------
+# Firewall (unified CSF + Imunify) helper functions
+# ---------------------------------------------------------------------------
+
+
+def _firewall_subject(args: dict[str, object]) -> str:
+    """Format subject string for firewall operations."""
+    targets = normalized_string_list(args.get("targets"))
+    server_ref = normalized_text(args.get("server_ref")) or "the server"
+    if not targets:
+        return f"the requested targets on '{server_ref}'"
+    return f"{', '.join(repr(target) for target in targets)} on '{server_ref}'"
+
+
+def _firewall_action_phrase(tool_name: str) -> str:
+    """Get action phrase for firewall tool names."""
+    phrases = {
+        "whm_firewall_unblock": "unblock",
+        "whm_firewall_allowlist_add_ttl": "add to allowlist",
+        "whm_firewall_allowlist_remove": "remove from allowlist",
+        "whm_firewall_denylist_add_ttl": "add to denylist",
+    }
+    return phrases.get(tool_name, "change firewall")
+
+
+def _firewall_activity_phrase(tool_name: str) -> str:
+    """Get activity phrase for firewall tool names."""
+    phrases = {
+        "whm_firewall_unblock": "Unblock",
+        "whm_firewall_allowlist_add_ttl": "Add to firewall allowlist",
+        "whm_firewall_allowlist_remove": "Remove from firewall allowlist",
+        "whm_firewall_denylist_add_ttl": "Add to firewall denylist",
+    }
+    return phrases.get(tool_name, "Firewall change")
+
+
+def _firewall_preflight_step_content(
+    *, subject: str, entries: list[dict[str, object]], targets: list[str]
+) -> str:
+    """Build preflight step content for firewall operations."""
+    if not entries:
+        return f"Firewall lookup / preflight for {subject}."
+    seen_targets = {normalized_text(entry.get("target")) for entry in entries}
+    summaries = []
+    for entry in entries:
+        target = normalized_text(entry.get("target"))
+        if target is None:
+            continue
+        combined = entry.get("combined_verdict", "unknown")
+        available = entry.get("available_tools", {})
+        tools_str = []
+        if available.get("csf"):
+            tools_str.append("CSF")
+        if available.get("imunify"):
+            tools_str.append("Imunify")
+        tools_desc = "+".join(tools_str) if tools_str else "none"
+        summaries.append(f"{target}: {combined} [{tools_desc}]")
+    missing = [target for target in targets if target not in seen_targets]
+    if missing:
+        summaries.append("missing: " + ", ".join(missing))
+    return f"Firewall lookup / preflight for {subject}: {'; '.join(summaries)}."
+
+
+def _firewall_postflight_step_content(
+    *,
+    tool_name: str,
+    subject: str,
+    entries: list[dict[str, object]],
+    postflight_result: dict[str, object] | None,
+) -> str:
+    """Build postflight step content for firewall operations."""
+    if not entries:
+        if (
+            isinstance(postflight_result, dict)
+            and postflight_result.get("ok") is not True
+        ):
+            error_code = (
+                normalized_text(postflight_result.get("error_code")) or "unknown"
+            )
+            return f"Postflight verification for {subject} could not be completed ({error_code})."
+        return f"Postflight verification for {subject}."
+    expectations = {
+        "whm_firewall_unblock": "not blocked",
+        "whm_firewall_allowlist_remove": "not allowlisted",
+        "whm_firewall_allowlist_add_ttl": "allowlisted",
+        "whm_firewall_denylist_add_ttl": "blocked",
+    }
+    expected = expectations.get(tool_name, "updated")
+    summaries = [
+        f"{entry.get('target')}: expected {expected}, observed {entry.get('combined_verdict')}"
+        for entry in entries
+        if normalized_text(entry.get("target")) is not None
+    ]
+    return f"Postflight verification for {subject}: {'; '.join(summaries)}."
+
+
+def _matching_firewall_preflight_entries(
+    *, preflight_evidence: list[dict[str, object]], args: dict[str, object]
+) -> list[dict[str, object]]:
+    """Extract matching firewall preflight entries for the given args."""
+    requested_server_ref = normalized_text(args.get("server_ref"))
+    requested_targets = set(normalized_string_list(args.get("targets")))
+    matches: list[dict[str, object]] = []
+    for item in preflight_evidence:
+        if item.get("toolName") != "whm_preflight_firewall_entries":
+            continue
+        item_args = item.get("args")
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
+            continue
+        if result.get("ok") is not True:
+            continue
+        if normalized_text(item_args.get("server_ref")) != requested_server_ref:
+            continue
+        target = normalized_text(result.get("target"))
+        if target is None or target not in requested_targets:
+            continue
+        matches.append(result)
+    matches.sort(key=lambda entry: normalized_text(entry.get("target")) or "")
+    return matches
+
+
+def _postflight_firewall_entries(
+    postflight_result: dict[str, object] | None,
+) -> list[dict[str, object]]:
+    """Extract postflight entries from firewall postflight result."""
+    if not isinstance(postflight_result, dict):
+        return []
+    results = postflight_result.get("results")
+    if not isinstance(results, list):
+        return []
+    return [item for item in results if isinstance(item, dict)]
+
+
+def _firewall_entries_summary(entries: list[dict[str, object]]) -> str:
+    """Summarize firewall entries for display."""
+    if not entries:
+        return "no evidence"
+    return "; ".join(
+        f"{entry.get('target')}={entry.get('combined_verdict')}"
+        for entry in entries
+        if normalized_text(entry.get("target")) is not None
+    )
+
+
+def _require_firewall_preflight(
+    *,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    requested_server_id: str | None,
+) -> SanitizedToolError | None:
+    """Require matching firewall preflight evidence before allowing firewall change."""
+    requested_server_ref = normalized_text(args.get("server_ref"))
+    requested_targets = normalized_string_list(args.get("targets"))
+    if requested_server_ref is None or not requested_targets:
+        return None
+
+    evidence = [
+        item
+        for item in collect_recent_preflight_evidence(working_messages)
+        if item.get("toolName") == "whm_preflight_firewall_entries"
+        and isinstance(item.get("result"), dict)
+        and cast(dict[str, object], item["result"]).get("ok") is True
+    ]
+    if not evidence:
+        return SanitizedToolError(
+            error="Required firewall preflight evidence is missing",
+            error_code="preflight_required",
+            details=(
+                "Run whm_preflight_firewall_entries for each target with the same server_ref before requesting this change.",
+            ),
+        )
+
+    matched_targets: set[str] = set()
+    for item in evidence:
+        item_args = item.get("args")
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
+            continue
+        if not _server_identity_matches(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
+            continue
+        target = normalized_text(result.get("target"))
+        if target is not None:
+            matched_targets.add(target)
+
+    missing_targets = [
+        target for target in requested_targets if target not in matched_targets
+    ]
+    if not missing_targets:
+        return None
+
+    return SanitizedToolError(
+        error="Required firewall preflight evidence does not match this change request",
+        error_code="preflight_mismatch",
+        details=(
+            "Missing successful whm_preflight_firewall_entries results for target(s): "
+            + ", ".join(f"'{target}'" for target in missing_targets),
+        ),
+    )
+
+
+def _build_firewall_reply_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    """Build reply template for firewall operations (reuse CSF reply logic)."""
+    # Reuse the CSF reply template logic with slight modifications for firewall context
+    return _build_csf_reply_template_impl(context)
+
+
+def _build_firewall_evidence_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowEvidenceTemplate | None:
+    """Build evidence template for firewall operations (reuse CSF evidence logic)."""
+    # Reuse the CSF evidence template logic
+    return _build_csf_evidence_template(context)
