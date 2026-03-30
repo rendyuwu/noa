@@ -45,10 +45,12 @@ def test_whm_account_lifecycle_failed_phase_keeps_terminal_todo_shape() -> None:
     assert len(todos) == 5
 
 
-def test_whm_csf_waiting_for_approval_builds_target_specific_blocked_todos() -> None:
+def test_whm_firewall_waiting_for_approval_builds_target_specific_blocked_todos() -> (
+    None
+):
     todos = build_workflow_todos(
-        tool_name="whm_csf_unblock",
-        workflow_family="whm-csf-batch-change",
+        tool_name="whm_firewall_unblock",
+        workflow_family="whm-firewall-batch-change",
         args={
             "server_ref": "web2",
             "targets": ["5.6.7.8", "1.2.3.4"],
@@ -57,23 +59,25 @@ def test_whm_csf_waiting_for_approval_builds_target_specific_blocked_todos() -> 
         phase="waiting_on_approval",
         preflight_evidence=[
             {
-                "toolName": "whm_preflight_csf_entries",
+                "toolName": "whm_preflight_firewall_entries",
                 "args": {"server_ref": "web2", "target": "5.6.7.8"},
                 "result": {
                     "ok": True,
                     "target": "5.6.7.8",
                     "matches": ["/etc/csf/csf.deny"],
-                    "verdict": "blocked",
+                    "available_tools": {"csf": True, "imunify": False},
+                    "combined_verdict": "blocked",
                 },
             },
             {
-                "toolName": "whm_preflight_csf_entries",
+                "toolName": "whm_preflight_firewall_entries",
                 "args": {"server_ref": "web2", "target": "1.2.3.4"},
                 "result": {
                     "ok": True,
                     "target": "1.2.3.4",
                     "matches": ["/etc/csf/csf.deny"],
-                    "verdict": "blocked",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "combined_verdict": "blocked",
                 },
             },
         ],
@@ -89,7 +93,7 @@ def test_whm_csf_waiting_for_approval_builds_target_specific_blocked_todos() -> 
     ]
     assert "1.2.3.4" in todos[0]["content"]
     assert "5.6.7.8" in todos[0]["content"]
-    assert "remove CSF blocks" in todos[2]["content"]
+    assert "Request approval to unblock" in todos[2]["content"]
     assert "customer request" in todos[1]["content"]
     assert len(todos) == 5
 
@@ -201,10 +205,10 @@ def test_whm_account_lifecycle_denied_reply_template_preserves_no_change_languag
     assert reply.next_step is not None and "new approval request" in reply.next_step
 
 
-def test_whm_csf_completed_reply_template_marks_mixed_results_as_partial() -> None:
+def test_whm_firewall_completed_reply_template_marks_mixed_results_as_partial() -> None:
     reply = build_workflow_reply_template(
-        tool_name="whm_csf_unblock",
-        workflow_family="whm-csf-batch-change",
+        tool_name="whm_firewall_unblock",
+        workflow_family="whm-firewall-batch-change",
         args={
             "server_ref": "web2",
             "targets": ["1.2.3.4", "5.6.7.8"],
@@ -213,22 +217,24 @@ def test_whm_csf_completed_reply_template_marks_mixed_results_as_partial() -> No
         phase="completed",
         preflight_evidence=[
             {
-                "toolName": "whm_preflight_csf_entries",
+                "toolName": "whm_preflight_firewall_entries",
                 "args": {"server_ref": "web2", "target": "1.2.3.4"},
                 "result": {
                     "ok": True,
                     "target": "1.2.3.4",
-                    "verdict": "blocked",
+                    "combined_verdict": "blocked",
+                    "available_tools": {"csf": True, "imunify": True},
                     "matches": ["/etc/csf/csf.deny"],
                 },
             },
             {
-                "toolName": "whm_preflight_csf_entries",
+                "toolName": "whm_preflight_firewall_entries",
                 "args": {"server_ref": "web2", "target": "5.6.7.8"},
                 "result": {
                     "ok": True,
                     "target": "5.6.7.8",
-                    "verdict": "blocked",
+                    "combined_verdict": "blocked",
+                    "available_tools": {"csf": True, "imunify": False},
                     "matches": ["/etc/csf/csf.deny"],
                 },
             },
@@ -243,15 +249,15 @@ def test_whm_csf_completed_reply_template_marks_mixed_results_as_partial() -> No
         postflight_result={
             "ok": True,
             "results": [
-                {"target": "1.2.3.4", "verdict": "clear"},
-                {"target": "5.6.7.8", "verdict": "clear"},
+                {"target": "1.2.3.4", "combined_verdict": "not_found"},
+                {"target": "5.6.7.8", "combined_verdict": "not_found"},
             ],
         },
     )
 
     assert reply is not None
     assert reply.outcome == "partial"
-    assert reply.title == "CSF change partially completed"
+    assert reply.title == "Firewall change partially completed"
     assert "mixed results" in reply.summary
     assert "Changed targets: 1.2.3.4." in reply.evidence_summary
     assert "No-op targets: 5.6.7.8." in reply.evidence_summary
@@ -324,21 +330,42 @@ def test_whm_contact_email_denied_evidence_uses_failure_section() -> None:
     assert evidence.sections[-1].items[0].value == "denied"
 
 
-def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
+def test_whm_firewall_completed_evidence_tracks_per_target_outcomes() -> None:
     evidence = build_workflow_evidence_template(
-        tool_name="whm_csf_unblock",
-        workflow_family="whm-csf-batch-change",
+        tool_name="whm_firewall_unblock",
+        workflow_family="whm-firewall-batch-change",
         args={"server_ref": "web2", "targets": ["1.2.3.4", "5.6.7.8"]},
         phase="completed",
         preflight_evidence=[
             {
-                "toolName": "whm_preflight_csf_entries",
+                "toolName": "whm_preflight_firewall_entries",
                 "args": {"server_ref": "web2", "target": "1.2.3.4"},
                 "result": {
                     "ok": True,
                     "target": "1.2.3.4",
-                    "verdict": "blocked",
-                    "raw_output": "Header\n\nTemporary Deny: 1.2.3.4",
+                    "combined_verdict": "blocked",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "csf": {
+                        "verdict": "blocked",
+                        "raw_output": (
+                            "filter DENYIN\n\n"
+                            "Temporary Blocks: IP:1.2.3.4 Port: Dir:in TTL:432000"
+                            " (osTicket #121312)"
+                        ),
+                    },
+                    "imunify": {
+                        "verdict": "blacklisted",
+                        "entries": [
+                            {
+                                "ip": "1.2.3.4",
+                                "purpose": "drop",
+                                "comment": "osTicket #121312",
+                                "manual": True,
+                                "expiration": 1775225644,
+                                "country_name": "United States",
+                            }
+                        ],
+                    },
                 },
             }
         ],
@@ -354,10 +381,23 @@ def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
             "results": [
                 {
                     "target": "1.2.3.4",
-                    "verdict": "clear",
-                    "raw_output": "No matches\n\ncsf: unblock applied",
+                    "combined_verdict": "not_found",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "csf": {
+                        "verdict": "not_found",
+                        "raw_output": "ip6tables:\n\nNo matches found for 1.2.3.4 in ip6tables",
+                    },
+                    "imunify": {"verdict": "not_found", "entries": []},
                 },
-                {"target": "5.6.7.8", "verdict": "clear"},
+                {
+                    "target": "5.6.7.8",
+                    "combined_verdict": "not_found",
+                    "available_tools": {"csf": True, "imunify": False},
+                    "csf": {
+                        "verdict": "not_found",
+                        "raw_output": "ip6tables:\n\nNo matches found for 5.6.7.8 in ip6tables",
+                    },
+                },
             ],
         },
     )
@@ -377,11 +417,24 @@ def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
         section for section in evidence.sections if section.key == "after_state"
     )
     assert any(
-        item.label == "1.2.3.4 raw tail" and item.value == "Temporary Deny: 1.2.3.4"
+        item.label == "1.2.3.4 · CSF"
+        and item.value
+        == "Temporary Blocks: IP:1.2.3.4 Port: Dir:in TTL:432000 (osTicket #121312)"
         for item in before_state.items
     )
     assert any(
-        item.label == "1.2.3.4 raw tail" and item.value == "csf: unblock applied"
+        item.label == "1.2.3.4 · Imunify"
+        and "Blacklist entry for 1.2.3.4" in item.value
+        for item in before_state.items
+    )
+    assert any(
+        item.label == "1.2.3.4 · CSF"
+        and item.value == "No matches found for 1.2.3.4 in ip6tables"
+        for item in after_state.items
+    )
+    assert any(
+        item.label == "1.2.3.4 · Imunify"
+        and item.value == "No Imunify entry found for 1.2.3.4"
         for item in after_state.items
     )
     outcomes = next(
@@ -395,24 +448,40 @@ def test_whm_csf_completed_evidence_tracks_per_target_outcomes() -> None:
     )
 
 
-def test_whm_csf_allowlist_remove_completed_evidence_includes_raw_tail_items() -> None:
+def test_whm_firewall_allowlist_remove_completed_evidence_includes_human_readable_after_state() -> (
+    None
+):
     evidence = build_workflow_evidence_template(
-        tool_name="whm_csf_allowlist_remove",
-        workflow_family="whm-csf-batch-change",
+        tool_name="whm_firewall_allowlist_remove",
+        workflow_family="whm-firewall-batch-change",
         args={"server_ref": "web2", "targets": ["103.103.11.123"]},
         phase="completed",
         preflight_evidence=[
             {
-                "toolName": "whm_preflight_csf_entries",
+                "toolName": "whm_preflight_firewall_entries",
                 "args": {"server_ref": "web2", "target": "103.103.11.123"},
                 "result": {
                     "ok": True,
                     "target": "103.103.11.123",
-                    "verdict": "allowlisted",
-                    "raw_output": (
-                        "filter ALLOWIN\n\n"
-                        "Temporary Allows: IP:103.103.11.123 Port: Dir:inout TTL:432000"
-                    ),
+                    "combined_verdict": "allowlisted",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "csf": {
+                        "verdict": "allowlisted",
+                        "raw_output": (
+                            "filter ALLOWIN\n\n"
+                            "Temporary Allows: IP:103.103.11.123 Port: Dir:inout TTL:432000"
+                        ),
+                    },
+                    "imunify": {
+                        "verdict": "whitelisted",
+                        "entries": [
+                            {
+                                "ip": "103.103.11.123",
+                                "purpose": "white",
+                                "manual": True,
+                            }
+                        ],
+                    },
                 },
             }
         ],
@@ -425,8 +494,13 @@ def test_whm_csf_allowlist_remove_completed_evidence_includes_raw_tail_items() -
             "results": [
                 {
                     "target": "103.103.11.123",
-                    "verdict": "not_found",
-                    "raw_output": "ip6tables:\n\nNo matches found for 103.103.11.123",
+                    "combined_verdict": "not_found",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "csf": {
+                        "verdict": "not_found",
+                        "raw_output": "ip6tables:\n\nNo matches found for 103.103.11.123 in ip6tables",
+                    },
+                    "imunify": {"verdict": "not_found", "entries": []},
                 }
             ],
         },
@@ -440,33 +514,52 @@ def test_whm_csf_allowlist_remove_completed_evidence_includes_raw_tail_items() -
         section for section in evidence.sections if section.key == "after_state"
     )
     assert any(
-        item.label == "103.103.11.123 raw tail"
+        item.label == "103.103.11.123 · CSF"
         and item.value
         == "Temporary Allows: IP:103.103.11.123 Port: Dir:inout TTL:432000"
         for item in before_state.items
     )
     assert any(
-        item.label == "103.103.11.123 raw tail"
-        and item.value == "No matches found for 103.103.11.123"
+        item.label == "103.103.11.123 · Imunify"
+        and item.value == "Whitelist entry for 103.103.11.123; manual"
+        for item in before_state.items
+    )
+    assert any(
+        item.label == "103.103.11.123 · CSF"
+        and item.value == "No matches found for 103.103.11.123 in ip6tables"
+        for item in after_state.items
+    )
+    assert any(
+        item.label == "103.103.11.123 · Imunify"
+        and item.value == "No Imunify entry found for 103.103.11.123"
         for item in after_state.items
     )
 
 
-def test_whm_csf_add_ttl_completed_evidence_keeps_existing_item_shape() -> None:
+def test_whm_firewall_add_ttl_completed_evidence_includes_requested_ttl() -> None:
     evidence = build_workflow_evidence_template(
-        tool_name="whm_csf_allowlist_add_ttl",
-        workflow_family="whm-csf-batch-change",
-        args={"server_ref": "web2", "targets": ["103.103.11.123"], "ttlMinutes": 60},
+        tool_name="whm_firewall_allowlist_add_ttl",
+        workflow_family="whm-firewall-batch-change",
+        args={
+            "server_ref": "web2",
+            "targets": ["103.103.11.123"],
+            "duration_minutes": 60,
+        },
         phase="completed",
         preflight_evidence=[
             {
-                "toolName": "whm_preflight_csf_entries",
+                "toolName": "whm_preflight_firewall_entries",
                 "args": {"server_ref": "web2", "target": "103.103.11.123"},
                 "result": {
                     "ok": True,
                     "target": "103.103.11.123",
-                    "verdict": "clear",
-                    "raw_output": "Header\n\nTemporary Allows: IP:103.103.11.123",
+                    "combined_verdict": "not_found",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "csf": {
+                        "verdict": "not_found",
+                        "raw_output": "ip6tables:\n\nNo matches found for 103.103.11.123 in ip6tables",
+                    },
+                    "imunify": {"verdict": "not_found", "entries": []},
                 },
             }
         ],
@@ -479,22 +572,49 @@ def test_whm_csf_add_ttl_completed_evidence_keeps_existing_item_shape() -> None:
             "results": [
                 {
                     "target": "103.103.11.123",
-                    "verdict": "allowlisted",
-                    "raw_output": "Header\n\nTemporary Allows: IP:103.103.11.123",
+                    "combined_verdict": "allowlisted",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "csf": {
+                        "verdict": "allowlisted",
+                        "raw_output": "Header\n\nTemporary Allows: IP:103.103.11.123",
+                    },
+                    "imunify": {
+                        "verdict": "whitelisted",
+                        "entries": [
+                            {
+                                "ip": "103.103.11.123",
+                                "purpose": "white",
+                                "comment": "Ticket #232123",
+                                "manual": True,
+                            }
+                        ],
+                    },
                 }
             ],
         },
     )
 
     assert evidence is not None
-    before_state = next(
-        section for section in evidence.sections if section.key == "before_state"
+    requested_change = next(
+        section for section in evidence.sections if section.key == "requested_change"
     )
     after_state = next(
         section for section in evidence.sections if section.key == "after_state"
     )
-    assert all(not item.label.endswith("raw tail") for item in before_state.items)
-    assert all(not item.label.endswith("raw tail") for item in after_state.items)
+    assert any(
+        item.label == "Requested TTL" and item.value == "60 minute(s)"
+        for item in requested_change.items
+    )
+    assert any(
+        item.label == "103.103.11.123 · CSF"
+        and item.value == "Temporary Allows: IP:103.103.11.123"
+        for item in after_state.items
+    )
+    assert any(
+        item.label == "103.103.11.123 · Imunify"
+        and "Whitelist entry for 103.103.11.123" in item.value
+        for item in after_state.items
+    )
 
 
 def test_build_approval_context_includes_evidence_sections_and_compat_before_state() -> (

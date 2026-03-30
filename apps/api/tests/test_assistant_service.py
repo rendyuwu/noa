@@ -1363,7 +1363,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_account_preflight_re
     }
 
 
-async def test_execute_approved_tool_run_rejects_mismatched_csf_preflight_result(
+async def test_execute_approved_tool_run_rejects_mismatched_firewall_preflight_result(
     monkeypatch,
 ) -> None:
     from noa_api.api.routes.assistant_action_operations import (
@@ -1375,7 +1375,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_csf_preflight_result
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="whm_csf_unblock",
+        tool_name="whm_firewall_unblock",
         args={"server_ref": "web1", "targets": ["1.2.3.4"]},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
@@ -1394,8 +1394,8 @@ async def test_execute_approved_tool_run_rejects_mismatched_csf_preflight_result
         raise AssertionError("tool should not execute with mismatched preflight result")
 
     tool = ToolDefinition(
-        name="whm_csf_unblock",
-        description="Unblocks CSF targets.",
+        name="whm_firewall_unblock",
+        description="Unblocks firewall targets.",
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
@@ -1433,7 +1433,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_csf_preflight_result
                 content=[
                     {
                         "type": "tool-call",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-1",
                         "args": {"server_ref": "web1", "target": "1.2.3.4"},
                     }
@@ -1444,13 +1444,14 @@ async def test_execute_approved_tool_run_rejects_mismatched_csf_preflight_result
                 content=[
                     {
                         "type": "tool-result",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-1",
                         "result": {
                             "ok": True,
                             "target": "9.9.9.9",
-                            "verdict": "blocked",
+                            "combined_verdict": "blocked",
                             "matches": ["/etc/csf/csf.deny"],
+                            "available_tools": {"csf": True, "imunify": False},
                         },
                         "isError": False,
                     }
@@ -1473,10 +1474,10 @@ async def test_execute_approved_tool_run_rejects_mismatched_csf_preflight_result
     assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
     assert repo.tool_runs[started.id].error == "preflight_mismatch"
     assert assistant_repo.messages[-1]["parts"][0]["result"] == {
-        "error": "Required WHM preflight evidence does not match this change request",
+        "error": "Required firewall preflight evidence does not match this change request",
         "error_code": "preflight_mismatch",
         "details": [
-            "Missing successful whm_preflight_csf_entries results for target(s): '1.2.3.4'"
+            "Missing successful whm_preflight_firewall_entries results for target(s): '1.2.3.4'"
         ],
     }
 
@@ -3401,7 +3402,7 @@ async def test_execute_approved_tool_run_persists_completed_contact_email_workfl
     )
 
 
-async def test_execute_approved_tool_run_persists_completed_csf_workflow(
+async def test_execute_approved_tool_run_persists_completed_firewall_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from noa_api.api.assistant.assistant_action_operations import (
@@ -3413,7 +3414,7 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="whm_csf_unblock",
+        tool_name="whm_firewall_unblock",
         args={
             "server_ref": "web1",
             "targets": ["1.2.3.4", "5.6.7.8"],
@@ -3454,8 +3455,8 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         }
 
     tool = ToolDefinition(
-        name="whm_csf_unblock",
-        description="Unblocks CSF targets.",
+        name="whm_firewall_unblock",
+        description="Unblocks firewall targets.",
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
@@ -3474,7 +3475,7 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
             "additionalProperties": False,
         },
         execute=successful_change,
-        workflow_family="whm-csf-batch-change",
+        workflow_family="whm-firewall-batch-change",
     )
 
     monkeypatch.setattr(
@@ -3500,11 +3501,26 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
                 {
                     "ok": True,
                     "target": "1.2.3.4",
-                    "verdict": "clear",
+                    "combined_verdict": "not_found",
                     "matches": [],
-                    "raw_output": "No matches\n\ncsf: unblock applied",
+                    "available_tools": {"csf": True, "imunify": True},
+                    "csf": {
+                        "verdict": "not_found",
+                        "raw_output": "ip6tables:\n\nNo matches found for 1.2.3.4 in ip6tables",
+                    },
+                    "imunify": {"verdict": "not_found", "entries": []},
                 },
-                {"ok": True, "target": "5.6.7.8", "verdict": "clear", "matches": []},
+                {
+                    "ok": True,
+                    "target": "5.6.7.8",
+                    "combined_verdict": "not_found",
+                    "matches": [],
+                    "available_tools": {"csf": True, "imunify": False},
+                    "csf": {
+                        "verdict": "not_found",
+                        "raw_output": "ip6tables:\n\nNo matches found for 5.6.7.8 in ip6tables",
+                    },
+                },
             ],
         }
 
@@ -3530,13 +3546,13 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
                 content=[
                     {
                         "type": "tool-call",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-1",
                         "args": {"server_ref": "web1", "target": "1.2.3.4"},
                     },
                     {
                         "type": "tool-call",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-2",
                         "args": {"server_ref": "web1", "target": "5.6.7.8"},
                     },
@@ -3547,26 +3563,43 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
                 content=[
                     {
                         "type": "tool-result",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-1",
                         "result": {
                             "ok": True,
                             "target": "1.2.3.4",
-                            "verdict": "blocked",
+                            "combined_verdict": "blocked",
                             "matches": ["deny"],
-                            "raw_output": "Header\n\nTemporary Deny: 1.2.3.4",
+                            "available_tools": {"csf": True, "imunify": True},
+                            "csf": {
+                                "verdict": "blocked",
+                                "raw_output": (
+                                    "filter DENYIN\n\n"
+                                    "Temporary Blocks: IP:1.2.3.4 Port: Dir:in TTL:432000"
+                                    " (osTicket #121312)"
+                                ),
+                            },
+                            "imunify": {
+                                "verdict": "blacklisted",
+                                "entries": [{"ip": "1.2.3.4", "purpose": "drop"}],
+                            },
                         },
                         "isError": False,
                     },
                     {
                         "type": "tool-result",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-2",
                         "result": {
                             "ok": True,
                             "target": "5.6.7.8",
-                            "verdict": "clear",
+                            "combined_verdict": "not_found",
                             "matches": [],
+                            "available_tools": {"csf": True, "imunify": False},
+                            "csf": {
+                                "verdict": "not_found",
+                                "raw_output": "ip6tables:\n\nNo matches found for 5.6.7.8 in ip6tables",
+                            },
                         },
                         "isError": False,
                     },
@@ -3593,7 +3626,7 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         and isinstance(message.get("parts"), list)
         and isinstance(message["parts"][0], dict)
         and message["parts"][0].get("type") == "tool-result"
-        and message["parts"][0].get("toolName") == "whm_csf_unblock"
+        and message["parts"][0].get("toolName") == "whm_firewall_unblock"
     )
     assert tool_message["role"] == "tool"
 
@@ -3620,21 +3653,22 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
     before_items = cast(list[dict[str, str]], before_state["items"])
     after_items = cast(list[dict[str, str]], after_state["items"])
     assert any(
-        item.get("label") == "1.2.3.4 raw tail"
-        and item.get("value") == "Temporary Deny: 1.2.3.4"
+        item.get("label") == "1.2.3.4 · CSF"
+        and item.get("value")
+        == "Temporary Blocks: IP:1.2.3.4 Port: Dir:in TTL:432000 (osTicket #121312)"
         for item in before_items
     )
     assert any(
-        item.get("label") == "1.2.3.4 raw tail"
-        and item.get("value") == "csf: unblock applied"
+        item.get("label") == "1.2.3.4 · CSF"
+        and item.get("value") == "No matches found for 1.2.3.4 in ip6tables"
         for item in after_items
     )
 
     todos = cast(list[dict[str, str]], captured["todos"])
     assert captured["thread_id"] == thread_id
     assert todos[4]["status"] == "completed"
-    assert "1.2.3.4: expected not blocked, observed clear" in todos[4]["content"]
-    assert "5.6.7.8: expected not blocked, observed clear" in todos[4]["content"]
+    assert "1.2.3.4: expected not blocked, observed not_found" in todos[4]["content"]
+    assert "5.6.7.8: expected not blocked, observed not_found" in todos[4]["content"]
     assert len(todos) == 5
 
     assistant_text_messages = [
@@ -3645,7 +3679,7 @@ async def test_execute_approved_tool_run_persists_completed_csf_workflow(
         if part.get("type") == "text"
     ]
     assert not any(
-        isinstance(text, str) and "CSF change partially completed" in text
+        isinstance(text, str) and "Firewall change partially completed" in text
         for text in assistant_text_messages
     )
 

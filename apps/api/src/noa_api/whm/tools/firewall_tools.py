@@ -21,6 +21,7 @@ from noa_api.whm.integrations.imunify import (
 from noa_api.whm.integrations.imunify_cli import (
     ImunifyCLIError,
     check_firewall_binaries,
+    command_output_text as imunify_command_output_text,
     parse_imunify_json_output,
     run_imunify_command,
 )
@@ -65,6 +66,7 @@ async def _csf_preflight(server: Any, *, target: str) -> dict[str, object]:
             "ok": True,
             "verdict": parsed.verdict,
             "matches": parsed.matches,
+            "raw_output": output,
         }
     except CSFCLIError as exc:
         return {
@@ -135,6 +137,7 @@ async def _imunify_preflight(server: Any, *, target: str) -> dict[str, object]:
         result = await run_imunify_command(
             server, args=["ip-list", "local", "list", "--by-ip", target, "--json"]
         )
+        raw_output = imunify_command_output_text(result)
         data = parse_imunify_json_output(result)
         parsed = parse_imunify_ip_list_response(data, target)
         return {
@@ -142,6 +145,8 @@ async def _imunify_preflight(server: Any, *, target: str) -> dict[str, object]:
             "verdict": parsed.verdict,
             "entries": [imunify_entry_to_dict(e) for e in parsed.entries],
             "matches": format_imunify_matches(parsed.entries),
+            "raw_data": data,
+            "raw_output": raw_output,
         }
     except ImunifyCLIError as exc:
         return {

@@ -40,8 +40,8 @@ def test_validate_tool_result_rejects_missing_required_fields() -> None:
     assert exc_info.value.details == ("Missing required field 'flag'",)
 
 
-def test_validate_tool_result_rejects_invalid_csf_error_item_shape() -> None:
-    tool = get_tool_definition("whm_csf_unblock")
+def test_validate_tool_result_rejects_invalid_firewall_item_shape() -> None:
+    tool = get_tool_definition("whm_firewall_unblock")
 
     assert tool is not None
 
@@ -50,6 +50,7 @@ def test_validate_tool_result_rejects_invalid_csf_error_item_shape() -> None:
             tool=tool,
             result={
                 "ok": True,
+                "available_tools": {"csf": True, "imunify": False},
                 "results": [
                     {
                         "target": "1.2.3.4",
@@ -61,7 +62,9 @@ def test_validate_tool_result_rejects_invalid_csf_error_item_shape() -> None:
             },
         )
 
-    assert exc_info.value.details == ("Missing required field 'results[0].error_code'",)
+    assert exc_info.value.details == (
+        "Missing required field 'results[0].available_tools'",
+    )
 
 
 def test_validate_tool_result_rejects_whm_resolution_choices_with_missing_fields() -> (

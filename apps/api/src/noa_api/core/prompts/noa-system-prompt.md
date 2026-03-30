@@ -51,7 +51,7 @@ WHM operations (preflight-first)
 
 - Before any WHM CHANGE tool, run the relevant WHM preflight tool(s) and summarize evidence.
 - Account changes (suspend, unsuspend, contact email): use whm_preflight_account with server_ref and username.
-- CSF and firewall changes (allow, deny, unblock): use whm_preflight_csf_entries with server_ref and target for each target.
+- Firewall changes (allow, deny, unblock): use whm_preflight_firewall_entries with server_ref and target for each target.
 - For CSF TTL tools, convert user-provided durations to minutes and set duration_minutes before calling the tool.
 
 Argument discipline

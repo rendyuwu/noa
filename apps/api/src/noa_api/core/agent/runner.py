@@ -376,7 +376,7 @@ class AgentRunner:
         working_messages = list(thread_messages)
         output_messages: list[AgentMessage] = []
         text_deltas: list[str] = []
-        pending_csf_preflight_raw: list[tuple[str, str]] = []
+        pending_firewall_preflight_raw: list[tuple[str, str]] = []
         rounds = 0
         tool_calls_processed = 0
         hit_safety_limit = False
@@ -399,11 +399,11 @@ class AgentRunner:
 
             text = llm_response.text.strip()
             if text:
-                if pending_csf_preflight_raw:
-                    text = _append_csf_preflight_raw_output(
-                        text, pending_csf_preflight_raw
+                if pending_firewall_preflight_raw:
+                    text = _append_firewall_preflight_raw_output(
+                        text, pending_firewall_preflight_raw
                     )
-                    pending_csf_preflight_raw.clear()
+                    pending_firewall_preflight_raw.clear()
                 assistant_text_part: dict[str, object] = {
                     "type": "text",
                     "text": text,
@@ -559,11 +559,11 @@ class AgentRunner:
 
                 saw_allowed_tool_call = True
 
-                if tool.risk == ToolRisk.CHANGE and pending_csf_preflight_raw:
-                    raw_text = _render_csf_preflight_raw_output(
-                        pending_csf_preflight_raw
+                if tool.risk == ToolRisk.CHANGE and pending_firewall_preflight_raw:
+                    raw_text = _render_firewall_preflight_raw_output(
+                        pending_firewall_preflight_raw
                     )
-                    pending_csf_preflight_raw.clear()
+                    pending_firewall_preflight_raw.clear()
                     raw_parts = [{"type": "text", "text": raw_text}]
                     output_messages.append(
                         AgentMessage(role="assistant", parts=raw_parts)
@@ -589,8 +589,8 @@ class AgentRunner:
                 tool_messages = processed.messages
                 output_messages.extend(tool_messages)
 
-                pending_csf_preflight_raw.extend(
-                    _extract_csf_preflight_raw_outputs(tool_messages)
+                pending_firewall_preflight_raw.extend(
+                    _extract_firewall_preflight_raw_outputs(tool_messages)
                 )
                 for message in tool_messages:
                     working_messages.append(
@@ -1272,7 +1272,7 @@ def _post_tool_followup_guidance(
     )
 
 
-def _extract_csf_preflight_raw_outputs(
+def _extract_firewall_preflight_raw_outputs(
     messages: list[AgentMessage],
 ) -> list[tuple[str, str]]:
     outputs: list[tuple[str, str]] = []
@@ -1280,15 +1280,19 @@ def _extract_csf_preflight_raw_outputs(
         for part in message.parts:
             if not isinstance(part, dict) or part.get("type") != "tool-result":
                 continue
-            if part.get("toolName") != "whm_preflight_csf_entries":
+            if part.get("toolName") != "whm_preflight_firewall_entries":
                 continue
             result = part.get("result")
             if not isinstance(result, dict) or result.get("ok") is not True:
                 continue
-            verdict = _normalized_text(result.get("verdict"))
+            target = _normalized_text(result.get("target")) or "the target"
+            csf_result = result.get("csf")
+            if not isinstance(csf_result, dict):
+                continue
+            verdict = _normalized_text(csf_result.get("verdict"))
             if verdict not in {"blocked", "allowlisted"}:
                 continue
-            raw_output = result.get("raw_output")
+            raw_output = csf_result.get("raw_output")
             raw_text = (
                 raw_output
                 if isinstance(raw_output, str) and raw_output.strip()
@@ -1296,22 +1300,21 @@ def _extract_csf_preflight_raw_outputs(
             )
             if raw_text is None:
                 continue
-            target = _normalized_text(result.get("target")) or "the target"
-            outputs.append((target, raw_text))
+            outputs.append((f"{target} (CSF)", raw_text))
     return outputs
 
 
-def _render_csf_preflight_raw_output(raw_outputs: list[tuple[str, str]]) -> str:
+def _render_firewall_preflight_raw_output(raw_outputs: list[tuple[str, str]]) -> str:
     blocks: list[str] = []
     for target, raw_output in raw_outputs:
         blocks.append(f"Raw preflight output for {target}:\n```\n{raw_output}\n```")
     return "\n\n".join(blocks).strip()
 
 
-def _append_csf_preflight_raw_output(
+def _append_firewall_preflight_raw_output(
     text: str, raw_outputs: list[tuple[str, str]]
 ) -> str:
-    appendix = _render_csf_preflight_raw_output(raw_outputs)
+    appendix = _render_firewall_preflight_raw_output(raw_outputs)
     if not appendix:
         return text
     if not text.strip():
@@ -1334,10 +1337,13 @@ def _fallback_assistant_reply_from_recent_tool_result(
     if not isinstance(tool_name, str):
         return None
 
-    if tool_name == "whm_preflight_csf_entries" and isinstance(result, dict):
+    if tool_name == "whm_preflight_firewall_entries" and isinstance(result, dict):
         target = _normalized_text(result.get("target")) or "the target"
-        verdict = _normalized_text(result.get("verdict")) or "unknown"
-        raw_output = result.get("raw_output")
+        verdict = _normalized_text(result.get("combined_verdict")) or "unknown"
+        csf_result = result.get("csf")
+        raw_output = (
+            csf_result.get("raw_output") if isinstance(csf_result, dict) else None
+        )
         raw_output_text = (
             raw_output if isinstance(raw_output, str) and raw_output.strip() else None
         )
@@ -1354,26 +1360,40 @@ def _fallback_assistant_reply_from_recent_tool_result(
         )
         server_ref = _normalized_text(args.get("server_ref")) if args else None
         location = f" on server {server_ref}" if server_ref else ""
+        available_tools = result.get("available_tools")
+        available_labels: list[str] = []
+        if isinstance(available_tools, dict):
+            if available_tools.get("csf") is True:
+                available_labels.append("CSF")
+            if available_tools.get("imunify") is True:
+                available_labels.append("Imunify")
+        available_text = (
+            f" Available tools: {', '.join(available_labels)}."
+            if available_labels
+            else ""
+        )
 
         if verdict == "blocked":
-            answer = f"CSF result: {target}{location} is blocked."
+            answer = f"Firewall result: {target}{location} is blocked."
         elif verdict == "allowlisted":
-            answer = f"CSF result: {target}{location} is allowlisted."
+            answer = f"Firewall result: {target}{location} is allowlisted."
         elif verdict == "not_found":
-            answer = f"CSF result: {target}{location} was not found in CSF."
+            answer = f"Firewall result: {target}{location} was not found in the available firewall tools."
         else:
-            answer = f"CSF result: {target}{location} returned an inconclusive verdict ({verdict})."
+            answer = f"Firewall result: {target}{location} returned an inconclusive verdict ({verdict})."
 
         if verdict == "not_found":
-            evidence = "No matching CSF entries were found."
+            evidence = "No matching firewall entries were found."
         elif match_count > 0:
-            evidence = f"Found {match_count} matching CSF entr{'y' if match_count == 1 else 'ies'}."
+            evidence = f"Found {match_count} matching firewall entr{'y' if match_count == 1 else 'ies'}."
         else:
             evidence = "The tool returned no matching evidence lines."
 
-        reply = f"{answer}\n\nEvidence: {evidence}"
+        reply = f"{answer}\n\nEvidence: {evidence}{available_text}"
         if verdict in {"blocked", "allowlisted"} and raw_output_text is not None:
-            reply = f"{reply}\n\nRaw preflight output:\n```\n{raw_output_text}\n```"
+            reply = (
+                f"{reply}\n\nRaw preflight output (CSF):\n```\n{raw_output_text}\n```"
+            )
         return reply
 
     if isinstance(result, dict):

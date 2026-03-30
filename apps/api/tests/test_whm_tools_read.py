@@ -279,89 +279,6 @@ async def test_whm_search_accounts_rejects_non_positive_limit() -> None:
 
 
 @pytest.mark.asyncio
-async def test_whm_preflight_csf_entries_parses_verdict(monkeypatch) -> None:
-    from noa_api.whm.tools import preflight_tools
-
-    now = datetime.now(UTC)
-    server = _Server(
-        id=uuid4(),
-        name="web1",
-        base_url="https://whm.example.com:2087",
-        api_username="root",
-        api_token="SECRET",
-        verify_ssl=True,
-        created_at=now,
-        updated_at=now,
-    )
-    repo = _Repo([server])
-    monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
-    monkeypatch.setattr(preflight_tools, "check_csf_binary", _check_csf_binary_true)
-
-    async def _run_csf_command(server_obj, *, args: list[str]) -> CommandResult:
-        assert server_obj is server
-        assert args == ["-g", "1.2.3.4"]
-        raw_output = "csf.deny: 1.2.3.4 # test block"
-        return CommandResult(
-            command="TERM=dumb /usr/sbin/csf -g 1.2.3.4",
-            exit_code=0,
-            stdout=raw_output,
-            stderr="",
-            duration_ms=1,
-        )
-
-    monkeypatch.setattr(preflight_tools, "run_csf_command", _run_csf_command)
-
-    result = await preflight_tools.whm_preflight_csf_entries(
-        session=_Session(),
-        server_ref="web1",
-        target="1.2.3.4",
-    )
-
-    assert result["ok"] is True
-    assert result["server_id"] == str(server.id)
-    assert result["verdict"] == "blocked"
-    assert len(result["matches"]) <= 20
-    assert result["raw_output"] == "csf.deny: 1.2.3.4 # test block"
-
-
-@pytest.mark.asyncio
-async def test_whm_preflight_csf_entries_rejects_invalid_target(monkeypatch) -> None:
-    from noa_api.whm.tools import preflight_tools
-
-    now = datetime.now(UTC)
-    server = _Server(
-        id=uuid4(),
-        name="web1",
-        base_url="https://whm.example.com:2087",
-        api_username="root",
-        api_token="SECRET",
-        verify_ssl=True,
-        created_at=now,
-        updated_at=now,
-    )
-    repo = _Repo([server])
-    monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
-    monkeypatch.setattr(preflight_tools, "check_csf_binary", _check_csf_binary_true)
-
-    async def _run_csf_command(server_obj, *, args: list[str]) -> CommandResult:
-        raise AssertionError("CSF command should not run for invalid targets")
-
-    monkeypatch.setattr(preflight_tools, "run_csf_command", _run_csf_command)
-
-    result = await preflight_tools.whm_preflight_csf_entries(
-        session=_Session(),
-        server_ref="web1",
-        target="bad_target",
-    )
-
-    assert result == {
-        "ok": False,
-        "error_code": "invalid_target",
-        "message": "Target must be a valid IP, CIDR, or hostname",
-    }
-
-
-@pytest.mark.asyncio
 async def test_whm_preflight_account_finds_account(monkeypatch) -> None:
     from noa_api.whm.tools import preflight_tools
 
@@ -418,4 +335,4 @@ async def test_whm_read_and_preflight_tools_are_registered() -> None:
     assert get_tool_definition("whm_list_accounts") is not None
     assert get_tool_definition("whm_search_accounts") is not None
     assert get_tool_definition("whm_preflight_account") is not None
-    assert get_tool_definition("whm_preflight_csf_entries") is not None
+    assert get_tool_definition("whm_preflight_firewall_entries") is not None

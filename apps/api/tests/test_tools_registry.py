@@ -68,7 +68,7 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     assert by_name["set_demo_flag"].result_schema is not None
     assert by_name["update_workflow_todo"].result_schema is not None
     assert by_name["whm_suspend_account"].result_schema is not None
-    assert by_name["whm_csf_unblock"].result_schema is not None
+    assert by_name["whm_firewall_unblock"].result_schema is not None
 
 
 async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
@@ -106,12 +106,21 @@ async def test_whm_change_tools_expose_workflow_families() -> None:
         by_name["whm_change_contact_email"].workflow_family
         == "whm-account-contact-email"
     )
-    assert by_name["whm_csf_unblock"].workflow_family == "whm-csf-batch-change"
-    assert by_name["whm_csf_allowlist_remove"].workflow_family == "whm-csf-batch-change"
     assert (
-        by_name["whm_csf_allowlist_add_ttl"].workflow_family == "whm-csf-batch-change"
+        by_name["whm_firewall_unblock"].workflow_family == "whm-firewall-batch-change"
     )
-    assert by_name["whm_csf_denylist_add_ttl"].workflow_family == "whm-csf-batch-change"
+    assert (
+        by_name["whm_firewall_allowlist_remove"].workflow_family
+        == "whm-firewall-batch-change"
+    )
+    assert (
+        by_name["whm_firewall_allowlist_add_ttl"].workflow_family
+        == "whm-firewall-batch-change"
+    )
+    assert (
+        by_name["whm_firewall_denylist_add_ttl"].workflow_family
+        == "whm-firewall-batch-change"
+    )
 
 
 async def test_tools_catalog_is_sourced_live_from_registry(monkeypatch) -> None:

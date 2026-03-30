@@ -7,13 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
-from noa_api.whm.integrations.csf import parse_csf_grep_output, parse_csf_target
-from noa_api.whm.integrations.csf_cli import (
-    CSFCLIError,
-    require_csf_success,
-    run_csf_command,
-)
-from noa_api.whm.integrations.imunify_cli import check_csf_binary
 from noa_api.whm.server_ref import resolve_whm_server_ref
 from noa_api.whm.tools.result_shapes import normalize_whm_account_summary
 
@@ -80,68 +73,4 @@ async def whm_preflight_account(
         "ok": False,
         "error_code": "account_not_found",
         "message": f"No WHM account found for username '{normalized_username}'",
-    }
-
-
-async def whm_preflight_csf_entries(
-    *,
-    session: AsyncSession,
-    server_ref: str,
-    target: str,
-) -> dict[str, object]:
-    repo: Any = SQLWHMServerRepository(session)
-    resolution = await resolve_whm_server_ref(server_ref, repo=repo)
-    if not resolution.ok:
-        return _resolution_error(resolution)
-
-    server = resolution.server
-    assert server is not None
-
-    # Check CSF binary availability
-    if not await check_csf_binary(server):
-        return {
-            "ok": False,
-            "error_code": "csf_not_available",
-            "message": "CSF is not installed on this server",
-        }
-
-    normalized_target = target.strip()
-    if not normalized_target:
-        return {
-            "ok": False,
-            "error_code": "target_required",
-            "message": "Target is required",
-        }
-    if parse_csf_target(normalized_target).kind == "unknown":
-        return {
-            "ok": False,
-            "error_code": "invalid_target",
-            "message": "Target must be a valid IP, CIDR, or hostname",
-        }
-
-    try:
-        grep_result = await run_csf_command(server, args=["-g", normalized_target])
-        output = require_csf_success(grep_result, default_message="CSF grep failed")
-    except CSFCLIError as exc:
-        return {
-            "ok": False,
-            "error_code": exc.code,
-            "message": exc.message,
-        }
-
-    if not output.strip():
-        return {
-            "ok": False,
-            "error_code": "invalid_response",
-            "message": "CSF grep returned an invalid response",
-        }
-
-    parsed = parse_csf_grep_output(output, target=normalized_target)
-    return {
-        "ok": True,
-        "server_id": str(resolution.server_id),
-        "target": normalized_target,
-        "verdict": parsed.verdict,
-        "matches": parsed.matches,
-        "raw_output": output,
     }

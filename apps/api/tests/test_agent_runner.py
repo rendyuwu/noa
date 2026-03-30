@@ -1252,7 +1252,7 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
     assert isinstance(todo_tool_call.get("args"), dict)
 
 
-async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_state(
+async def test_agent_runner_replaces_prior_whm_family_workflow_with_firewall_waiting_state(
     monkeypatch,
 ) -> None:
     from noa_api.core.tools.registry import get_tool_definition
@@ -1282,7 +1282,7 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
         _record_replace,
     )
 
-    tool = get_tool_definition("whm_csf_unblock")
+    tool = get_tool_definition("whm_firewall_unblock")
     assert tool is not None
 
     thread_id = uuid4()
@@ -1292,7 +1292,7 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
                 text="",
                 tool_calls=[
                     LLMToolCall(
-                        name="whm_csf_unblock",
+                        name="whm_firewall_unblock",
                         arguments={
                             "server_ref": "web2",
                             "targets": ["1.2.3.4", "5.6.7.8"],
@@ -1313,7 +1313,7 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
                 "parts": [
                     {
                         "type": "text",
-                        "text": "Remove CSF block for 1.2.3.4 and 5.6.7.8 on web2",
+                        "text": "Remove firewall block for 1.2.3.4 and 5.6.7.8 on web2",
                     }
                 ],
             },
@@ -1322,13 +1322,13 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
                 "parts": [
                     {
                         "type": "tool-call",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-1",
                         "args": {"server_ref": "web2", "target": "1.2.3.4"},
                     },
                     {
                         "type": "tool-call",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-2",
                         "args": {"server_ref": "web2", "target": "5.6.7.8"},
                     },
@@ -1339,13 +1339,14 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
                 "parts": [
                     {
                         "type": "tool-result",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-1",
                         "result": {
                             "ok": True,
                             "target": "1.2.3.4",
                             "matches": ["/etc/csf/csf.deny"],
-                            "verdict": "blocked",
+                            "available_tools": {"csf": True, "imunify": False},
+                            "combined_verdict": "blocked",
                         },
                         "isError": False,
                     }
@@ -1356,13 +1357,14 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_csf_waiting_
                 "parts": [
                     {
                         "type": "tool-result",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-2",
                         "result": {
                             "ok": True,
                             "target": "5.6.7.8",
                             "matches": ["/etc/csf/csf.deny"],
-                            "verdict": "blocked",
+                            "available_tools": {"csf": True, "imunify": False},
+                            "combined_verdict": "blocked",
                         },
                         "isError": False,
                     }
@@ -1511,13 +1513,14 @@ async def test_agent_runner_reprompts_model_after_empty_post_tool_turn(
             "ok": True,
             "server_id": str(uuid4()),
             "target": target,
-            "verdict": "blocked",
+            "combined_verdict": "blocked",
             "matches": ["filter DENYIN ... 187.150.230.11"],
+            "available_tools": {"csf": True, "imunify": False},
         }
 
     tool = ToolDefinition(
-        name="whm_preflight_csf_entries",
-        description="Inspect CSF state for one target.",
+        name="whm_preflight_firewall_entries",
+        description="Inspect firewall state for one target.",
         risk=ToolRisk.READ,
         parameters_schema={
             "type": "object",
@@ -1593,7 +1596,7 @@ async def test_agent_runner_reprompts_model_after_empty_post_tool_turn(
                 "parts": [
                     {
                         "type": "text",
-                        "text": "Cek apakah IP 187.150.230.11 terblock csf, di whm web2",
+                        "text": "Cek apakah IP 187.150.230.11 terblock firewall, di whm web2",
                     }
                 ],
             }
@@ -1620,14 +1623,18 @@ async def test_agent_runner_falls_back_when_model_stays_empty_after_tool_result(
             "ok": True,
             "server_id": str(uuid4()),
             "target": target,
-            "verdict": "blocked",
+            "combined_verdict": "blocked",
             "matches": ["filter DENYIN ... 187.150.230.11"],
-            "raw_output": "filter DENYIN ... 187.150.230.11",
+            "available_tools": {"csf": True, "imunify": False},
+            "csf": {
+                "verdict": "blocked",
+                "raw_output": "filter DENYIN ... 187.150.230.11",
+            },
         }
 
     tool = ToolDefinition(
-        name="whm_preflight_csf_entries",
-        description="Inspect CSF state for one target.",
+        name="whm_preflight_firewall_entries",
+        description="Inspect firewall state for one target.",
         risk=ToolRisk.READ,
         parameters_schema={
             "type": "object",
@@ -1687,7 +1694,7 @@ async def test_agent_runner_falls_back_when_model_stays_empty_after_tool_result(
                 "parts": [
                     {
                         "type": "text",
-                        "text": "Check whether 187.150.230.11 is blocked in CSF on web2",
+                        "text": "Check whether 187.150.230.11 is blocked in the firewall on web2",
                     }
                 ],
             }
@@ -1699,16 +1706,16 @@ async def test_agent_runner_falls_back_when_model_stays_empty_after_tool_result(
 
     assert result.messages[-1].role == "assistant"
     assert result.messages[-1].parts[0]["text"] == (
-        "CSF result: 187.150.230.11 on server web2 is blocked.\n\n"
-        "Evidence: Found 1 matching CSF entry.\n\n"
-        "Raw preflight output:\n"
+        "Firewall result: 187.150.230.11 on server web2 is blocked.\n\n"
+        "Evidence: Found 1 matching firewall entry. Available tools: CSF.\n\n"
+        "Raw preflight output (CSF):\n"
         "```\n"
         "filter DENYIN ... 187.150.230.11\n"
         "```"
     )
 
 
-async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_before_approval(
+async def test_agent_runner_appends_firewall_preflight_raw_output_to_followup_text_before_approval(
     monkeypatch,
 ) -> None:
     from noa_api.core.tools.registry import get_tool_definition
@@ -1724,14 +1731,18 @@ async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_be
             "ok": True,
             "server_id": str(uuid4()),
             "target": target,
-            "verdict": "allowlisted",
+            "combined_verdict": "allowlisted",
             "matches": ["/etc/csf/csf.allow"],
-            "raw_output": raw_output,
+            "available_tools": {"csf": True, "imunify": False},
+            "csf": {
+                "verdict": "allowlisted",
+                "raw_output": raw_output,
+            },
         }
 
     preflight_def = ToolDefinition(
-        name="whm_preflight_csf_entries",
-        description="Inspect CSF state for one target.",
+        name="whm_preflight_firewall_entries",
+        description="Inspect firewall state for one target.",
         risk=ToolRisk.READ,
         parameters_schema={
             "type": "object",
@@ -1745,7 +1756,7 @@ async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_be
         execute=preflight_tool,
     )
 
-    change_def = get_tool_definition("whm_csf_allowlist_remove")
+    change_def = get_tool_definition("whm_firewall_allowlist_remove")
     assert change_def is not None
 
     monkeypatch.setattr(
@@ -1778,10 +1789,10 @@ async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_be
             self.turn += 1
             if self.turn == 1:
                 return LLMTurnResponse(
-                    text="Saya akan cek status CSF dulu.",
+                    text="Saya akan cek status firewall dulu.",
                     tool_calls=[
                         LLMToolCall(
-                            name="whm_preflight_csf_entries",
+                            name="whm_preflight_firewall_entries",
                             arguments={
                                 "server_ref": "web2",
                                 "target": "103.103.11.123",
@@ -1791,12 +1802,12 @@ async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_be
                 )
             return LLMTurnResponse(
                 text=(
-                    "Evidence: IP 103.103.11.123 saat ini allowlisted di server web2.\n\n"
-                    "Proposed change: Remove 103.103.11.123 from the CSF allowlist on web2."
+                    "Evidence: IP 103.103.11.123 saat ini allowlisted di firewall server web2.\n\n"
+                    "Proposed change: Remove 103.103.11.123 from the firewall allowlist on web2."
                 ),
                 tool_calls=[
                     LLMToolCall(
-                        name="whm_csf_allowlist_remove",
+                        name="whm_firewall_allowlist_remove",
                         arguments={
                             "server_ref": "web2",
                             "targets": ["103.103.11.123"],
@@ -1829,7 +1840,7 @@ async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_be
         requested_by_user_id=uuid4(),
     )
 
-    # Raw CSF output should be appended to the follow-up narration before approval tool UI.
+    # Raw firewall preflight output should be appended to the follow-up narration before approval tool UI.
     narration_index = next(
         index
         for index, message in enumerate(result.messages)
@@ -1838,7 +1849,7 @@ async def test_agent_runner_appends_csf_preflight_raw_output_to_followup_text_be
             isinstance(part, dict)
             and part.get("type") == "text"
             and isinstance(part.get("text"), str)
-            and "Raw preflight output for 103.103.11.123" in part["text"]
+            and "Raw preflight output for 103.103.11.123 (CSF)" in part["text"]
             for part in message.parts
         )
     )
@@ -2433,7 +2444,7 @@ async def test_agent_runner_rejects_account_change_when_preflight_result_user_di
     }
 
 
-async def test_agent_runner_rejects_csf_change_when_preflight_is_missing_for_some_targets(
+async def test_agent_runner_rejects_firewall_change_when_preflight_is_missing_for_some_targets(
     monkeypatch,
 ) -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
@@ -2446,7 +2457,7 @@ async def test_agent_runner_rejects_csf_change_when_preflight_is_missing_for_som
         )
 
     tool = ToolDefinition(
-        name="whm_csf_unblock",
+        name="whm_firewall_unblock",
         description="Requires target-by-target preflight.",
         risk=ToolRisk.CHANGE,
         parameters_schema={
@@ -2514,7 +2525,7 @@ async def test_agent_runner_rejects_csf_change_when_preflight_is_missing_for_som
                 "parts": [
                     {
                         "type": "tool-call",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-1",
                         "args": {"server_ref": "web1", "target": "1.2.3.4"},
                     }
@@ -2525,13 +2536,14 @@ async def test_agent_runner_rejects_csf_change_when_preflight_is_missing_for_som
                 "parts": [
                     {
                         "type": "tool-result",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-1",
                         "result": {
                             "ok": True,
                             "target": "1.2.3.4",
-                            "verdict": "blocked",
+                            "combined_verdict": "blocked",
                             "matches": ["/etc/csf/csf.deny"],
+                            "available_tools": {"csf": True, "imunify": False},
                         },
                         "isError": False,
                     }
@@ -2550,15 +2562,15 @@ async def test_agent_runner_rejects_csf_change_when_preflight_is_missing_for_som
     part = tool_message.parts[0]
     assert isinstance(part, dict)
     assert part["result"] == {
-        "error": "Required WHM preflight evidence does not match this change request",
+        "error": "Required firewall preflight evidence does not match this change request",
         "error_code": "preflight_mismatch",
         "details": [
-            "Missing successful whm_preflight_csf_entries results for target(s): '5.6.7.8'"
+            "Missing successful whm_preflight_firewall_entries results for target(s): '5.6.7.8'"
         ],
     }
 
 
-async def test_agent_runner_rejects_csf_change_when_preflight_result_target_differs(
+async def test_agent_runner_rejects_firewall_change_when_preflight_result_target_differs(
     monkeypatch,
 ) -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
@@ -2571,7 +2583,7 @@ async def test_agent_runner_rejects_csf_change_when_preflight_result_target_diff
         )
 
     tool = ToolDefinition(
-        name="whm_csf_unblock",
+        name="whm_firewall_unblock",
         description="Requires target-by-target preflight.",
         risk=ToolRisk.CHANGE,
         parameters_schema={
@@ -2639,7 +2651,7 @@ async def test_agent_runner_rejects_csf_change_when_preflight_result_target_diff
                 "parts": [
                     {
                         "type": "tool-call",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-1",
                         "args": {"server_ref": "web1", "target": "1.2.3.4"},
                     }
@@ -2650,13 +2662,14 @@ async def test_agent_runner_rejects_csf_change_when_preflight_result_target_diff
                 "parts": [
                     {
                         "type": "tool-result",
-                        "toolName": "whm_preflight_csf_entries",
+                        "toolName": "whm_preflight_firewall_entries",
                         "toolCallId": "preflight-csf-1",
                         "result": {
                             "ok": True,
                             "target": "9.9.9.9",
-                            "verdict": "blocked",
+                            "combined_verdict": "blocked",
                             "matches": ["/etc/csf/csf.deny"],
+                            "available_tools": {"csf": True, "imunify": False},
                         },
                         "isError": False,
                     }
@@ -2675,10 +2688,10 @@ async def test_agent_runner_rejects_csf_change_when_preflight_result_target_diff
     part = tool_message.parts[0]
     assert isinstance(part, dict)
     assert part["result"] == {
-        "error": "Required WHM preflight evidence does not match this change request",
+        "error": "Required firewall preflight evidence does not match this change request",
         "error_code": "preflight_mismatch",
         "details": [
-            "Missing successful whm_preflight_csf_entries results for target(s): '1.2.3.4'"
+            "Missing successful whm_preflight_firewall_entries results for target(s): '1.2.3.4'"
         ],
     }
 
@@ -3133,7 +3146,7 @@ async def test_build_approval_context_uses_correct_change_arguments_in_activity(
         working_messages=[],
     )
     unblock_context = _build_approval_context(
-        tool_name="whm_csf_unblock",
+        tool_name="whm_firewall_unblock",
         args={"targets": ["1.2.3.4", "5.6.7.8"]},
         working_messages=[],
     )
@@ -3142,12 +3155,12 @@ async def test_build_approval_context_uses_correct_change_arguments_in_activity(
         change_email_context["activity"]
         == "Change contact email for 'alice' to 'alice@example.com'"
     )
-    assert unblock_context["activity"] == "Remove CSF block for '1.2.3.4, 5.6.7.8'"
+    assert unblock_context["activity"] == "Unblock '1.2.3.4, 5.6.7.8'"
     change_reply = cast(dict[str, object], change_email_context["replyTemplate"])
     unblock_reply = cast(dict[str, object], unblock_context["replyTemplate"])
     assert change_reply["title"] == "Contact email approval requested"
     assert change_reply["outcome"] == "info"
-    assert unblock_reply["title"] == "CSF change approval requested"
+    assert unblock_reply["title"] == "Firewall change approval requested"
     assert unblock_reply["outcome"] == "info"
 
 

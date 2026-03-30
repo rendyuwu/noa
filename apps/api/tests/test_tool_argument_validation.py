@@ -43,8 +43,8 @@ def test_validate_tool_arguments_accepts_trimmed_email_strings() -> None:
     )
 
 
-def test_validate_tool_arguments_rejects_duplicate_csf_targets() -> None:
-    tool = get_tool_definition("whm_csf_unblock")
+def test_validate_tool_arguments_rejects_duplicate_firewall_targets() -> None:
+    tool = get_tool_definition("whm_firewall_unblock")
 
     assert tool is not None
 
@@ -105,8 +105,8 @@ def test_validate_tool_arguments_rejects_invalid_whm_username() -> None:
     }
 
 
-def test_validate_tool_arguments_rejects_invalid_csf_target() -> None:
-    tool = get_tool_definition("whm_csf_unblock")
+def test_validate_tool_arguments_rejects_invalid_firewall_target() -> None:
+    tool = get_tool_definition("whm_firewall_unblock")
 
     assert tool is not None
 
