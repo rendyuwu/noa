@@ -105,6 +105,28 @@ function ComposerControlsRow() {
   );
 }
 
+function ClaudeLiveDot({ className = "" }: { className?: string }) {
+  return (
+    <span className={["relative inline-flex h-2.5 w-2.5 shrink-0", className].join(" ")}>
+      <span className="absolute inset-0 animate-ping rounded-full bg-accent/45" />
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
+    </span>
+  );
+}
+
+function ClaudeRunIndicator() {
+  return (
+    <div
+      role="status"
+      aria-label="Claude is responding"
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-surface/85 px-3 py-1.5 font-ui text-xs text-muted shadow-sm backdrop-blur-sm"
+    >
+      <ClaudeLiveDot />
+      <span>Responding...</span>
+    </div>
+  );
+}
+
 function EmptyLanding() {
   const api = useAssistantApi();
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -206,6 +228,7 @@ export const ClaudeThread: FC<{
   forceHydrationSkeleton?: boolean;
 }> = ({ onOpenSidebar, forceHydrationSkeleton = false }) => {
   const { isHydrating } = useThreadHydration();
+  const threadIsRunning = useAssistantState(({ thread }: any) => Boolean(thread?.isRunning));
   const threadStatus = useAssistantState(
     ({ threads }: any) => getActiveThreadListItem(threads)?.status ?? "new",
   );
@@ -245,6 +268,12 @@ export const ClaudeThread: FC<{
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
         <div className="mx-auto w-full max-w-3xl shrink-0" data-testid="composer-dock-stack">
+          {threadIsRunning ? (
+            <div className="mb-3 flex items-center justify-start">
+              <ClaudeRunIndicator />
+            </div>
+          ) : null}
+
           <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
             <div className="m-3.5 flex flex-col gap-3.5">
               <div className="relative">
@@ -290,7 +319,23 @@ function ClaudeThinkingIndicator() {
   );
 }
 
+function ClaudeStreamingIndicator() {
+  return (
+    <div
+      role="status"
+      aria-label="Claude is still responding"
+      className="mt-2 inline-flex items-center gap-2 font-ui text-xs text-muted"
+    >
+      <ClaudeLiveDot className="h-2 w-2" />
+      <span>Responding...</span>
+    </div>
+  );
+}
+
 const ChatMessage: FC = () => {
+  const assistantIsRunning = useAssistantState(({ message }: any) => {
+    return message?.role === "assistant" && message?.status?.type === "running";
+  });
   const assistantMessageContent = useAssistantState(({ message }: any) => {
     if (message?.role !== "assistant") return null;
     return message.content;
@@ -298,16 +343,6 @@ const ChatMessage: FC = () => {
   const assistantParts = useMemo(() => {
     return Array.isArray(assistantMessageContent) ? assistantMessageContent : [];
   }, [assistantMessageContent]);
-  const showLoading = useAssistantState(({ message }: any) => {
-    if (message?.role !== "assistant") return false;
-    if (message?.status?.type !== "running") return false;
-    const content = Array.isArray(message.content) ? message.content : [];
-    return content.every((part: any) => {
-      if (part?.type !== "text") return true;
-      return typeof part.text === "string" ? part.text.trim() === "" : true;
-    });
-  });
-
   const assistantHasNonEmptyText = useMemo(() => {
     return assistantParts.some((part: any) => {
       if (part?.type !== "text") return false;
@@ -318,6 +353,16 @@ const ChatMessage: FC = () => {
   const assistantHasToolParts = useMemo(() => {
     return assistantParts.some((part: any) => part?.type === "tool-call");
   }, [assistantParts]);
+
+  const showLoading = useMemo(() => {
+    if (!assistantIsRunning) return false;
+    if (assistantHasToolParts) return false;
+
+    return assistantParts.every((part: any) => {
+      if (part?.type !== "text") return true;
+      return typeof part.text === "string" ? part.text.trim() === "" : true;
+    });
+  }, [assistantHasToolParts, assistantIsRunning, assistantParts]);
 
   const assistantHasVisibleToolParts = useMemo(() => {
     const isTerminalTodoList = (value: unknown): boolean => {
@@ -331,6 +376,20 @@ const ChatMessage: FC = () => {
     return assistantParts.some((part: any) => {
       if (part?.type !== "tool-call") return false;
       if (part?.isError === true) return true;
+
+      const toolStatus = typeof part?.status?.type === "string" ? part.status.type : undefined;
+      if (
+        toolStatus === "running" ||
+        toolStatus === "requires-action" ||
+        toolStatus === "incomplete"
+      ) {
+        return true;
+      }
+
+      if (toolStatus === undefined && part?.result === undefined) {
+        return true;
+      }
+
       const toolName = typeof part.toolName === "string" ? part.toolName : "";
       if (toolName === "request_approval") return true;
       if (toolName !== "update_workflow_todo") return false;
@@ -341,8 +400,10 @@ const ChatMessage: FC = () => {
     });
   }, [assistantParts]);
 
+  const showStreamingIndicator = assistantIsRunning && assistantHasNonEmptyText;
+
   const assistantSpacingClassName =
-    showLoading || assistantHasNonEmptyText
+    showLoading || assistantHasNonEmptyText || showStreamingIndicator
       ? "mb-12"
       : assistantHasVisibleToolParts
         ? "mb-4"
@@ -382,6 +443,7 @@ const ChatMessage: FC = () => {
                     tools: { Fallback: ClaudeToolFallback },
                   }}
                 />
+                {showStreamingIndicator ? <ClaudeStreamingIndicator /> : null}
               </div>
             </div>
           </div>

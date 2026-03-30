@@ -238,7 +238,7 @@ const TOOL_COPY: Record<string, { label: string; doing: string; done: string }> 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   running: {
     label: "running",
-    className: "bg-surface-2 text-muted",
+    className: "bg-accent/10 text-accent",
   },
   complete: {
     label: "complete",
@@ -256,6 +256,24 @@ const STATUS_BADGE: Record<string, { label: string; className: string }> = {
 
 function humanizeToolName(toolName: string): string {
   return prettifyToolName(toolName);
+}
+
+function ToolLiveDot({ statusType }: { statusType: string }) {
+  const dotClassName =
+    statusType === "incomplete"
+      ? "bg-rose-500"
+      : statusType === "requires-action"
+        ? "bg-amber-500"
+        : "bg-accent";
+
+  return (
+    <span className="relative inline-flex h-2.5 w-2.5 shrink-0">
+      {statusType === "running" ? (
+        <span className="absolute inset-0 animate-ping rounded-full bg-accent/40" aria-hidden="true" />
+      ) : null}
+      <span className={["relative inline-flex h-2.5 w-2.5 rounded-full", dotClassName].join(" ")} aria-hidden="true" />
+    </span>
+  );
 }
 
 function isHiddenChangeToolValidationError(toolName: string, result: unknown): boolean {
@@ -309,7 +327,7 @@ export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
           ? `Waiting for approval before continuing ${copy.label.toLowerCase()}`
           : copy.doing;
 
-  if (statusType !== "incomplete") {
+  if (statusType === "complete") {
     return null;
   }
 
@@ -318,8 +336,13 @@ export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
   }
 
   return (
-    <div className="flex items-center justify-between gap-2 rounded-md bg-surface/35 px-2 py-1.5 text-xs">
-      <div className="min-w-0 truncate text-muted">
+    <div
+      role="status"
+      aria-label={`${copy.label} ${badge.label}`}
+      className="flex items-center justify-between gap-2 rounded-md bg-surface/35 px-2 py-1.5 text-xs"
+    >
+      <div className="flex min-w-0 items-center gap-2 truncate text-muted">
+        <ToolLiveDot statusType={statusType} />
         <span className="font-medium text-text">{copy.label}</span>
         <span className="mx-1.5 text-muted">-</span>
         <span>{activityText}</span>

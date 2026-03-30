@@ -99,7 +99,7 @@ describe("ClaudeToolFallback", () => {
     expect(screen.queryByText(/^Current time$/i)).not.toBeInTheDocument();
   });
 
-  it("hides running tools", () => {
+  it("shows running tools as compact live rows", () => {
     render(
       <ClaudeToolFallback
         toolName="get_current_time"
@@ -109,10 +109,12 @@ describe("ClaudeToolFallback", () => {
       />,
     );
 
-    expect(screen.queryByText(/^Current time$/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Current time$/i)).toBeVisible();
+    expect(screen.getByText(/^running$/i)).toBeInTheDocument();
+    expect(screen.getByText(/checking the current time/i)).toBeVisible();
   });
 
-  it("hides requires-action tools", () => {
+  it("shows requires-action tools as waiting states", () => {
     render(
       <ClaudeToolFallback
         toolName="set_demo_flag"
@@ -122,7 +124,9 @@ describe("ClaudeToolFallback", () => {
       />,
     );
 
-    expect(screen.queryByText(/requires-action/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Set Demo Flag$/i)).toBeVisible();
+    expect(screen.getByText(/requires-action/i)).toBeInTheDocument();
+    expect(screen.getByText(/waiting for approval before continuing set demo flag/i)).toBeVisible();
   });
 
   it("renders a compact row for failed tools", () => {
