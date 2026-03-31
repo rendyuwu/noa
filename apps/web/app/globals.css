@@ -97,11 +97,6 @@
     word-break: break-word;
   }
 
-  /* Radix ScrollArea wraps the viewport contents in an extra div. */
-  .thread-viewport > div {
-    @apply flex flex-1 flex-col items-center self-stretch bg-inherit;
-  }
-
   .page-shell {
     @apply min-h-dvh p-4;
   }

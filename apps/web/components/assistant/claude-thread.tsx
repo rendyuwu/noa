@@ -19,7 +19,6 @@ import {
   PlusIcon,
   ReloadIcon,
 } from "@radix-ui/react-icons";
-import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import {
@@ -29,7 +28,7 @@ import {
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/assistant/request-approval-tool-ui";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { getAuthUser } from "@/components/lib/auth-store";
-import { ScrollArea, ScrollBar } from "@/components/lib/scroll-area";
+import { ScrollArea } from "@/components/lib/scroll-area";
 import { useThreadHydration } from "@/components/lib/thread-hydration";
 
 function DisabledIconButton({
@@ -262,26 +261,21 @@ export const ClaudeThread: FC<{
         </div>
       ) : null}
 
-      <ScrollAreaPrimitive.Root className="min-h-0 flex grow flex-col">
-        <ScrollAreaPrimitive.Viewport className="thread-viewport" asChild>
-          <ThreadPrimitive.Viewport
-            autoScroll
-            scrollToBottomOnRunStart
-            scrollToBottomOnInitialize
-            scrollToBottomOnThreadSwitch
-            data-testid="thread-viewport"
-            data-auto-scroll="true"
-            className="thread-viewport min-h-0 flex grow flex-col"
-          >
-            <ThreadPrimitive.Empty>
-              {showHydrationSkeleton ? <ThreadHydrationSkeleton /> : <EmptyLanding />}
-            </ThreadPrimitive.Empty>
-            <ThreadPrimitive.Messages components={{ Message: ChatMessage }} />
-            <div aria-hidden="true" className="h-2" />
-          </ThreadPrimitive.Viewport>
-        </ScrollAreaPrimitive.Viewport>
-        <ScrollBar />
-      </ScrollAreaPrimitive.Root>
+      <ThreadPrimitive.Viewport
+        autoScroll
+        scrollToBottomOnRunStart
+        scrollToBottomOnInitialize
+        scrollToBottomOnThreadSwitch
+        data-testid="thread-viewport"
+        data-auto-scroll="true"
+        className="thread-viewport min-h-0 flex grow flex-col overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable_both-edges]"
+      >
+        <ThreadPrimitive.Empty>
+          {showHydrationSkeleton ? <ThreadHydrationSkeleton /> : <EmptyLanding />}
+        </ThreadPrimitive.Empty>
+        <ThreadPrimitive.Messages components={{ Message: ChatMessage }} />
+        <div aria-hidden="true" className="h-2" />
+      </ThreadPrimitive.Viewport>
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
         <div className="mx-auto w-full max-w-3xl shrink-0" data-testid="composer-dock-stack">

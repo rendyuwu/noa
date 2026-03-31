@@ -35,7 +35,6 @@ import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { useResetAssistantRuntime } from "@/components/lib/runtime-provider";
-import { ScrollArea } from "@/components/lib/scroll-area";
 
 const sleep = (durationMs: number) => new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 
@@ -216,7 +215,7 @@ const ThreadListItem: FC<{
         }}
         trigger={({ open, disabled }) => (
           <ThreadListItemPrimitive.Delete
-            className="flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-2/60 hover:text-text group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-muted opacity-0 transition hover:bg-surface-2/60 hover:text-text group-hover:opacity-100 group-focus-within:opacity-100 group-data-[active]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
             aria-label="Delete thread"
             disabled={disabled}
             onClick={(event) => {
@@ -566,7 +565,7 @@ export function ClaudeThreadList({
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col font-ui">
         <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Recents</p>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="h-full pb-3">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-2 [scrollbar-gutter:stable]">
           {uniqueThreadItems.map((item) => (
             <ThreadListItemByIdProvider key={`${item.remoteId}:${item.id}`} id={item.id}>
               <ThreadListItem
@@ -577,7 +576,7 @@ export function ClaudeThreadList({
               />
             </ThreadListItemByIdProvider>
           ))}
-        </ScrollArea>
+        </div>
       </div>
 
       <div className="border-border border-t px-4 py-3 font-ui">
