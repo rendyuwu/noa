@@ -9,6 +9,7 @@ import { Button } from "@/components/lib/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
+import { ScrollArea } from "@/components/lib/scroll-area";
 
 type AdminUser = {
   id: string;
@@ -429,7 +430,7 @@ export function UsersAdminPage() {
                 </Dialog.Close>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 font-ui">
+              <ScrollArea className="flex-1 min-h-0 font-ui" viewportClassName="h-full p-4">
                 <div className="rounded-xl border border-border bg-surface px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -493,7 +494,7 @@ export function UsersAdminPage() {
                   />
 
                   <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
-                    <div className="max-h-[62vh] overflow-auto p-2">
+                    <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-[62vh] p-2">
                       {filteredRoleNames.length === 0 ? (
                         <div className="px-2 py-3 text-sm text-muted">No matching roles.</div>
                       ) : (
@@ -523,13 +524,13 @@ export function UsersAdminPage() {
                           })}
                         </ul>
                       )}
-                    </div>
+                    </ScrollArea>
                   </div>
 
                   <div className="mt-4 rounded-xl border border-border bg-surface px-3 py-3">
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted">Effective tools</div>
                     <div className="mt-2 overflow-hidden rounded-lg border border-border bg-bg/25">
-                      <div className="max-h-48 overflow-auto p-2">
+                      <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-48 p-2">
                         {coerceStringArray(selectedUser?.tools).length === 0 ? (
                           <div className="px-2 py-2 text-sm text-muted">No tools granted.</div>
                         ) : (
@@ -541,7 +542,7 @@ export function UsersAdminPage() {
                             ))}
                           </ul>
                         )}
-                      </div>
+                      </ScrollArea>
                     </div>
                   </div>
 
@@ -556,7 +557,7 @@ export function UsersAdminPage() {
                       </p>
 
                       <div className="mt-2 overflow-hidden rounded-lg border border-border bg-bg/25">
-                        <div className="max-h-48 overflow-auto p-2">
+                        <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-48 p-2">
                           <ul className="space-y-1">
                             {coerceStringArray(selectedUser?.direct_tools).map((toolName) => (
                               <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-text">
@@ -564,7 +565,7 @@ export function UsersAdminPage() {
                               </li>
                             ))}
                           </ul>
-                        </div>
+                        </ScrollArea>
                       </div>
                     </div>
                   ) : null}
@@ -616,7 +617,7 @@ export function UsersAdminPage() {
                     />
                   </div>
                 </div>
-              </div>
+              </ScrollArea>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

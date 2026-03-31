@@ -10,6 +10,7 @@ import { Button } from "@/components/lib/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
+import { ScrollArea } from "@/components/lib/scroll-area";
 
 type WhmServer = {
   id: string;
@@ -905,7 +906,9 @@ export function WhmServersAdminPage() {
                 </Dialog.Close>
               </div>
 
-              <div className="overflow-y-auto px-5 py-4 font-ui">
+
+
+              <ScrollArea className="min-h-0 flex-1" viewportClassName="h-full px-5 py-4 font-ui">
                 <WhmServerFormFields form={createForm} setForm={setCreateForm} disabled={creating} mode="create" />
 
                 {createError ? (
@@ -917,7 +920,7 @@ export function WhmServersAdminPage() {
                     {createError}
                   </p>
                 ) : null}
-              </div>
+              </ScrollArea>
 
               <div className="mt-auto flex items-center justify-end gap-2 border-t border-border px-5 py-4">
                 <Dialog.Close asChild>
@@ -952,7 +955,8 @@ export function WhmServersAdminPage() {
               </Dialog.Close>
             </div>
 
-            <div className="overflow-y-auto px-5 py-4 font-ui">
+
+            <ScrollArea className="min-h-0 flex-1" viewportClassName="h-full px-5 py-4 font-ui">
               <WhmServerFormFields
                 form={editForm}
                 setForm={setEditForm}
@@ -970,7 +974,8 @@ export function WhmServersAdminPage() {
                   {editError}
                 </p>
               ) : null}
-            </div>
+
+            </ScrollArea>
 
             <div className="mt-auto flex items-center justify-end gap-2 border-t border-border px-5 py-4">
               <Dialog.Close asChild>
@@ -1027,7 +1032,12 @@ export function WhmServersAdminPage() {
                 </Dialog.Close>
               </div>
 
-              <div className="flex-1 overflow-auto p-4 font-ui">
+
+              <ScrollArea
+                className="flex-1 min-h-0 font-ui"
+                horizontalScrollbar
+                viewportClassName="h-full p-4"
+              >
                 <div className="rounded-xl border border-border bg-surface px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -1186,7 +1196,7 @@ export function WhmServersAdminPage() {
                     )}
                   />
                 </div>
-              </div>
+              </ScrollArea>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

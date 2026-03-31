@@ -63,12 +63,43 @@
   textarea {
     font: inherit;
   }
+
+  /* Native scrollbar fallback (non-Radix scroll containers). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border) / 0.75) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border) / 0.75);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--border));
+  }
 }
 
 @layer components {
   .wrap-break-word {
     overflow-wrap: break-word;
     word-break: break-word;
+  }
+
+  /* Radix ScrollArea wraps the viewport contents in an extra div. */
+  .thread-viewport > div {
+    @apply flex flex-1 flex-col items-center self-stretch bg-inherit;
   }
 
   .page-shell {

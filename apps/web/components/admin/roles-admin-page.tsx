@@ -9,6 +9,7 @@ import { Button } from "@/components/lib/button";
 import { ConfirmAction, ConfirmDialog } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
+import { ScrollArea } from "@/components/lib/scroll-area";
 
 type AdminRole = {
   name: string;
@@ -605,7 +606,8 @@ export function RolesAdminPage() {
                 </Dialog.Close>
               </div>
 
-              <div className="flex-1 min-h-0 overflow-y-auto p-4 font-ui">
+
+              <ScrollArea className="flex-1 min-h-0 font-ui" viewportClassName="h-full p-4">
                 {roleToolsError ? (
                   <p
                     role="alert"
@@ -648,8 +650,9 @@ export function RolesAdminPage() {
                   onChange={(e) => setToolFilter(e.target.value)}
                 />
 
+
                 <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
-                  <div className="max-h-[62vh] overflow-auto p-2">
+                  <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-[62vh] p-2">
                     {roleToolsLoading ? (
                       <div className="px-2 py-3 text-sm text-muted">Loading role tools...</div>
                     ) : filteredToolNames.length === 0 ? (
@@ -681,7 +684,7 @@ export function RolesAdminPage() {
                         })}
                       </ul>
                     )}
-                  </div>
+                  </ScrollArea>
                 </div>
 
                 <div className="mt-4 border-t border-border pt-4">
@@ -694,6 +697,7 @@ export function RolesAdminPage() {
                     {saving ? "Saving..." : "Save"}
                   </Button>
                 </div>
+
 
                 <div className="danger-zone mt-6">
                   <div className="danger-zone-label text-xs font-semibold uppercase tracking-wide">Danger zone</div>
@@ -725,8 +729,9 @@ export function RolesAdminPage() {
                       </Button>
                     )}
                   />
+
                 </div>
-              </div>
+              </ScrollArea>
             </div>
           </Dialog.Content>
         </Dialog.Portal>

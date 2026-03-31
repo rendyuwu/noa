@@ -245,7 +245,7 @@ describe("ClaudeThread", () => {
 
     const viewport = screen.getByTestId("thread-viewport");
     expect(viewport).toHaveClass("min-h-0");
-    expect(viewport).toHaveClass("overflow-y-auto");
+    expect(viewport).toHaveClass("thread-viewport");
     expect(viewport).toHaveAttribute("data-auto-scroll", "true");
   });
 

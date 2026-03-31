@@ -33,6 +33,6 @@ describe("MarkdownText", () => {
 
     const scroll = container.querySelector("[data-testid='md-table-scroll']");
     expect(scroll).toBeInTheDocument();
-    expect(scroll).toHaveClass("overflow-x-auto");
+    expect(scroll).toHaveAttribute("data-slot", "scroll-area");
   });
 });

@@ -5,6 +5,8 @@ import remarkGfm from "remark-gfm";
 
 import "@assistant-ui/react-markdown/styles/dot.css";
 
+import { ScrollArea } from "@/components/lib/scroll-area";
+
 // Used as a MessagePrimitive.Parts Text renderer.
 export const MarkdownText = (_props: any) => {
   return (
@@ -12,9 +14,11 @@ export const MarkdownText = (_props: any) => {
       remarkPlugins={[remarkGfm]}
       components={{
         table: ({ className, node: _node, ...props }: any) => (
-          <div
+          <ScrollArea
             data-testid="md-table-scroll"
-            className="my-2 w-full overflow-x-auto overflow-y-hidden rounded-xl border border-border bg-surface/60 shadow-sm backdrop-blur-sm"
+            className="my-2 w-full rounded-xl border border-border bg-surface/60 shadow-sm backdrop-blur-sm"
+            verticalScrollbar={false}
+            horizontalScrollbar
           >
             <table
               {...props}
@@ -27,7 +31,7 @@ export const MarkdownText = (_props: any) => {
                 className ?? "",
               ].join(" ")}
             />
-          </div>
+          </ScrollArea>
         ),
       }}
       className={[

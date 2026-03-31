@@ -10,6 +10,7 @@ import {
   isWorkflowTodoBlocked,
 } from "@/components/assistant/workflow-todo-tool-ui";
 import { useWorkflowDockState } from "@/components/assistant/workflow-dock-state";
+import { ScrollArea } from "@/components/lib/scroll-area";
 
 function getActiveTodoIndex(todos: WorkflowTodoItem[]): number {
   const inProgressIndex = todos.findIndex((todo) => todo.status === "in_progress");
@@ -134,46 +135,48 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
       </button>
 
       <div className={collapsed ? "hidden" : "border-t border-border px-3 pb-3"}>
-        <ul className="max-h-44 space-y-1.5 overflow-y-auto pt-3">
-          {todos.map((todo, index) => {
-            const style = getWorkflowTodoStatusStyle(todo.status);
-            const isActive = index === activeTodoIndex;
-            const isTodoBlocked = isWorkflowTodoBlocked(todo.status);
-            return (
-              <li
-                key={`${todo.content}-${index}`}
-                className={[
-                  "flex items-start justify-between gap-3 rounded-xl px-3 py-2 transition-colors",
-                  isActive
-                    ? isTodoBlocked
-                      ? "bg-amber-50/80 ring-1 ring-amber-200"
-                      : "bg-accent/6 ring-1 ring-accent/15"
-                    : "bg-bg/40",
-                ].join(" ")}
-                data-testid={isActive ? "workflow-active-step" : undefined}
-              >
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-[11px] text-muted">
-                    <DotFilledIcon width={14} height={14} />
-                    <span className="font-ui">
-                      {isActive ? (isTodoBlocked ? "Waiting" : "Current") : `Step ${index + 1}`}
-                    </span>
-                  </div>
-                  <div className="mt-1 pr-2 text-sm text-text">{todo.content}</div>
-                </div>
-                <div
+        <ScrollArea className="w-full" viewportClassName="max-h-44">
+          <ul className="space-y-1.5 pt-3">
+            {todos.map((todo, index) => {
+              const style = getWorkflowTodoStatusStyle(todo.status);
+              const isActive = index === activeTodoIndex;
+              const isTodoBlocked = isWorkflowTodoBlocked(todo.status);
+              return (
+                <li
+                  key={`${todo.content}-${index}`}
                   className={[
-                    "shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
-                    style.className,
+                    "flex items-start justify-between gap-3 rounded-xl px-3 py-2 transition-colors",
+                    isActive
+                      ? isTodoBlocked
+                        ? "bg-amber-50/80 ring-1 ring-amber-200"
+                        : "bg-accent/6 ring-1 ring-accent/15"
+                      : "bg-bg/40",
                   ].join(" ")}
+                  data-testid={isActive ? "workflow-active-step" : undefined}
                 >
-                  <style.Icon width={12} height={12} />
-                  <span className="leading-none">{style.label}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted">
+                      <DotFilledIcon width={14} height={14} />
+                      <span className="font-ui">
+                        {isActive ? (isTodoBlocked ? "Waiting" : "Current") : `Step ${index + 1}`}
+                      </span>
+                    </div>
+                    <div className="mt-1 pr-2 text-sm text-text">{todo.content}</div>
+                  </div>
+                  <div
+                    className={[
+                      "shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
+                      style.className,
+                    ].join(" ")}
+                  >
+                    <style.Icon width={12} height={12} />
+                    <span className="leading-none">{style.label}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </ScrollArea>
       </div>
     </div>
   );

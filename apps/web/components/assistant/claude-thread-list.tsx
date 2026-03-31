@@ -35,6 +35,7 @@ import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { useResetAssistantRuntime } from "@/components/lib/runtime-provider";
+import { ScrollArea } from "@/components/lib/scroll-area";
 
 const sleep = (durationMs: number) => new Promise<void>((resolve) => window.setTimeout(resolve, durationMs));
 
@@ -565,7 +566,7 @@ export function ClaudeThreadList({
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col font-ui">
         <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted">Recents</p>
-        <div className="min-h-0 flex-1 overflow-y-auto pb-3">
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="h-full pb-3">
           {uniqueThreadItems.map((item) => (
             <ThreadListItemByIdProvider key={`${item.remoteId}:${item.id}`} id={item.id}>
               <ThreadListItem
@@ -576,7 +577,7 @@ export function ClaudeThreadList({
               />
             </ThreadListItemByIdProvider>
           ))}
-        </div>
+        </ScrollArea>
       </div>
 
       <div className="border-border border-t px-4 py-3 font-ui">

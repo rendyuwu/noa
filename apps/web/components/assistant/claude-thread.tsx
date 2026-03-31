@@ -19,6 +19,7 @@ import {
   PlusIcon,
   ReloadIcon,
 } from "@radix-ui/react-icons";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 import { MarkdownText } from "@/components/assistant-ui/markdown-text";
 import {
@@ -28,6 +29,7 @@ import {
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/assistant/request-approval-tool-ui";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { getAuthUser } from "@/components/lib/auth-store";
+import { ScrollArea, ScrollBar } from "@/components/lib/scroll-area";
 import { useThreadHydration } from "@/components/lib/thread-hydration";
 
 function DisabledIconButton({
@@ -156,22 +158,32 @@ function EmptyLanding() {
       <div className="claude-landing-anim-2 mt-8 w-full max-w-2xl">
         <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-md">
           <div className="m-4 flex flex-col gap-3.5">
-            <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
+            <ScrollArea
+              className="w-full"
+              verticalScrollbar
+              horizontalScrollbar={false}
+              viewportClassName="wrap-break-word max-h-96"
+            >
               <ComposerPrimitive.Input
                 ref={inputRef}
                 placeholder="How can I help you today?"
                 aria-label="Message input"
                 className="block min-h-10 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
               />
-            </div>
+            </ScrollArea>
 
             <ComposerControlsRow />
           </div>
         </ComposerPrimitive.Root>
       </div>
 
-      <div className="claude-landing-anim-3 mt-4 w-full max-w-2xl overflow-x-auto">
-        <div className="flex w-max items-center gap-2 px-1 pb-1">
+      <ScrollArea
+        className="claude-landing-anim-3 mt-4 w-full max-w-2xl"
+        verticalScrollbar={false}
+        horizontalScrollbar
+        viewportClassName="pb-1"
+      >
+        <div className="flex w-max items-center gap-2 px-1">
           {LANDING_PROMPTS.map((chip) => (
             <button
               key={chip.label}
@@ -189,7 +201,7 @@ function EmptyLanding() {
             </button>
           ))}
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 }
@@ -250,21 +262,26 @@ export const ClaudeThread: FC<{
         </div>
       ) : null}
 
-      <ThreadPrimitive.Viewport
-        autoScroll
-        scrollToBottomOnRunStart
-        scrollToBottomOnInitialize
-        scrollToBottomOnThreadSwitch
-        data-testid="thread-viewport"
-        data-auto-scroll="true"
-        className="min-h-0 flex grow flex-col overflow-y-auto"
-      >
-        <ThreadPrimitive.Empty>
-          {showHydrationSkeleton ? <ThreadHydrationSkeleton /> : <EmptyLanding />}
-        </ThreadPrimitive.Empty>
-        <ThreadPrimitive.Messages components={{ Message: ChatMessage }} />
-        <div aria-hidden="true" className="h-2" />
-      </ThreadPrimitive.Viewport>
+      <ScrollAreaPrimitive.Root className="min-h-0 flex grow flex-col">
+        <ScrollAreaPrimitive.Viewport className="thread-viewport" asChild>
+          <ThreadPrimitive.Viewport
+            autoScroll
+            scrollToBottomOnRunStart
+            scrollToBottomOnInitialize
+            scrollToBottomOnThreadSwitch
+            data-testid="thread-viewport"
+            data-auto-scroll="true"
+            className="thread-viewport min-h-0 flex grow flex-col"
+          >
+            <ThreadPrimitive.Empty>
+              {showHydrationSkeleton ? <ThreadHydrationSkeleton /> : <EmptyLanding />}
+            </ThreadPrimitive.Empty>
+            <ThreadPrimitive.Messages components={{ Message: ChatMessage }} />
+            <div aria-hidden="true" className="h-2" />
+          </ThreadPrimitive.Viewport>
+        </ScrollAreaPrimitive.Viewport>
+        <ScrollBar />
+      </ScrollAreaPrimitive.Root>
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
         <div className="mx-auto w-full max-w-3xl shrink-0" data-testid="composer-dock-stack">
@@ -274,16 +291,17 @@ export const ClaudeThread: FC<{
             </div>
           ) : null}
 
+
           <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
             <div className="m-3.5 flex flex-col gap-3.5">
               <div className="relative">
-                <div className="wrap-break-word max-h-96 w-full overflow-y-auto">
+                <ScrollArea className="w-full" viewportClassName="wrap-break-word max-h-96">
                   <ComposerPrimitive.Input
                     placeholder="How can I help you today?"
                     aria-label="Message input"
                     className="block min-h-6 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
                   />
-                </div>
+                </ScrollArea>
               </div>
 
               <ComposerControlsRow />

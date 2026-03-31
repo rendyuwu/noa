@@ -8,6 +8,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import { HamburgerMenuIcon } from "@radix-ui/react-icons";
 
 import { ClaudeThreadList } from "@/components/assistant/claude-thread-list";
+import { ScrollArea } from "@/components/lib/scroll-area";
 
 type DesktopSidebarMode = "expanded" | "collapsed";
 
@@ -108,7 +109,9 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
           </button>
         </div>
 
-        <div className="h-full min-h-0 overflow-auto">{children}</div>
+        <ScrollArea className="h-full min-h-0" horizontalScrollbar viewportClassName="h-full">
+          {children}
+        </ScrollArea>
       </div>
 
       <Dialog.Root open={open} onOpenChange={setOpen}>

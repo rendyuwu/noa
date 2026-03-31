@@ -11,8 +11,10 @@ import {
   makeAssistantToolUI,
   useAssistantTransportSendCommand,
 } from "@assistant-ui/react";
+import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
 import { Button } from "@/components/lib/button";
+import { ScrollBar } from "@/components/lib/scroll-area";
 
 function ApprovalActions({ args }: { args: Record<string, unknown> }) {
   const sendCommand = useAssistantTransportSendCommand();
@@ -96,12 +98,17 @@ const AssistantMessage = () => {
 function ThreadPanel() {
   return (
     <ThreadPrimitive.Root className="panel" style={{ display: "flex", flexDirection: "column", minHeight: 0 }}>
-      <ThreadPrimitive.Viewport style={{ flex: 1, overflow: "auto", padding: 12 }}>
-        <ThreadPrimitive.Empty>
-          <p className="muted">Start a new conversation.</p>
-        </ThreadPrimitive.Empty>
-        <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
-      </ThreadPrimitive.Viewport>
+      <ScrollAreaPrimitive.Root style={{ flex: 1, minHeight: 0 }}>
+        <ScrollAreaPrimitive.Viewport asChild>
+          <ThreadPrimitive.Viewport style={{ flex: 1, padding: 12 }}>
+            <ThreadPrimitive.Empty>
+              <p className="muted">Start a new conversation.</p>
+            </ThreadPrimitive.Empty>
+            <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
+          </ThreadPrimitive.Viewport>
+        </ScrollAreaPrimitive.Viewport>
+        <ScrollBar />
+      </ScrollAreaPrimitive.Root>
 
       <ComposerPrimitive.Root
         className="row"
