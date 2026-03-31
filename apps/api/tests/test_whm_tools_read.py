@@ -214,6 +214,307 @@ async def test_whm_check_binary_exists_reports_resolved_path(monkeypatch) -> Non
 
 
 @pytest.mark.asyncio
+async def test_whm_mail_log_failed_auth_suspects_parses_and_aggregates(
+    monkeypatch,
+) -> None:
+    from noa_api.core.remote_exec.types import CommandResult
+    from noa_api.whm.tools import read_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        ssh_password="SSH_PASSWORD",
+        ssh_host_key_fingerprint="SHA256:known",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(read_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    captured: dict[str, object] = {}
+
+    async def _fake_ssh_exec(config, *, command: str, timeout_seconds: float = 20.0):
+        _ = config
+        captured["command"] = command
+        captured["timeout_seconds"] = timeout_seconds
+        return CommandResult(
+            command=command,
+            exit_code=0,
+            stdout="     11 acct@example.com\n     10 general@example.com\n",
+            stderr="",
+            duration_ms=1234,
+        )
+
+    monkeypatch.setattr(read_tools, "ssh_exec", _fake_ssh_exec)
+
+    log_line = "lfd[12345]: (pop3d) Failed POP3 login from 203.0.113.22 (XX/Test/host-x): 30 in the last 3600 secs - Tue Mar 31 12:23:11 2026"
+    result = await read_tools.whm_mail_log_failed_auth_suspects(
+        session=_Session(),
+        server_ref="web1",
+        lfd_log_line=log_line,
+        top_n=50,
+    )
+
+    assert captured["timeout_seconds"] == 120.0
+    assert "zgrep" in str(captured["command"])
+    assert result["ok"] is True
+    assert result["service"] == "pop3d"
+    assert result["month"] == "Mar"
+    assert result["day"] == 31
+    assert result["ip"] == "203.0.113.22"
+    assert result["suspects"] == [
+        {"email": "acct@example.com", "count": 11},
+        {"email": "general@example.com", "count": 10},
+    ]
+
+
+@pytest.mark.asyncio
+async def test_whm_mail_log_failed_auth_suspects_smtpauth_includes_exim_logs(
+    monkeypatch,
+) -> None:
+    from noa_api.core.remote_exec.types import CommandResult
+    from noa_api.whm.tools import read_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        ssh_password="SSH_PASSWORD",
+        ssh_host_key_fingerprint="SHA256:known",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(read_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    captured: dict[str, object] = {}
+
+    async def _fake_ssh_exec(config, *, command: str, timeout_seconds: float = 20.0):
+        _ = config
+        captured["command"] = command
+        captured["timeout_seconds"] = timeout_seconds
+        return CommandResult(
+            command=command,
+            exit_code=0,
+            stdout="     3 acct@example.com\n",
+            stderr="",
+            duration_ms=10,
+        )
+
+    monkeypatch.setattr(read_tools, "ssh_exec", _fake_ssh_exec)
+
+    log_line = "lfd: (smtpauth) Failed SMTP AUTH login from 198.51.100.10 (XX/Test/-): 30 in the last 3600 secs - Thu Mar 19 08:18:38 2026"
+    result = await read_tools.whm_mail_log_failed_auth_suspects(
+        session=_Session(),
+        server_ref="web1",
+        lfd_log_line=log_line,
+    )
+
+    assert captured["timeout_seconds"] == 120.0
+    assert "/var/log/exim_mainlog*" in str(captured["command"])
+    assert result["ok"] is True
+    assert result["service"] == "smtpauth"
+    assert result["month"] == "Mar"
+    assert result["day"] == 19
+    assert result["ip"] == "198.51.100.10"
+
+
+@pytest.mark.asyncio
+async def test_whm_mail_log_failed_auth_suspects_exit_code_1_is_empty_success(
+    monkeypatch,
+) -> None:
+    from noa_api.core.remote_exec.types import CommandResult
+    from noa_api.whm.tools import read_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        ssh_password="SSH_PASSWORD",
+        ssh_host_key_fingerprint="SHA256:known",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(read_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    async def _fake_ssh_exec(config, *, command: str, timeout_seconds: float = 20.0):
+        _ = (config, command, timeout_seconds)
+        return CommandResult(
+            command=command,
+            exit_code=1,
+            stdout="",
+            stderr="",
+            duration_ms=5,
+        )
+
+    monkeypatch.setattr(read_tools, "ssh_exec", _fake_ssh_exec)
+
+    log_line = "lfd: (imapd) Failed IMAP login from 203.0.113.10 (XX/Test/-): 30 in the last 3600 secs - Thu Mar 19 08:18:38 2026"
+    result = await read_tools.whm_mail_log_failed_auth_suspects(
+        session=_Session(),
+        server_ref="web1",
+        lfd_log_line=log_line,
+    )
+
+    assert result == {
+        "ok": True,
+        "service": "imapd",
+        "month": "Mar",
+        "day": 19,
+        "ip": "203.0.113.10",
+        "top_n": 50,
+        "suspects": [],
+        "raw_output": "",
+        "stderr": "",
+        "duration_ms": 5,
+    }
+
+
+@pytest.mark.asyncio
+async def test_whm_mail_log_failed_auth_suspects_raw_output_is_opt_in(
+    monkeypatch,
+) -> None:
+    from noa_api.core.remote_exec.types import CommandResult
+    from noa_api.whm.tools import read_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        ssh_password="SSH_PASSWORD",
+        ssh_host_key_fingerprint="SHA256:known",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(read_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    async def _fake_ssh_exec(config, *, command: str, timeout_seconds: float = 20.0):
+        _ = (config, command, timeout_seconds)
+        return CommandResult(
+            command=command,
+            exit_code=0,
+            stdout="     2 acct@example.com\n",
+            stderr="",
+            duration_ms=1,
+        )
+
+    monkeypatch.setattr(read_tools, "ssh_exec", _fake_ssh_exec)
+
+    log_line = "lfd: (imapd) Failed IMAP login from 203.0.113.10 (XX/Test/-): 30 in the last 3600 secs - Thu Mar 19 08:18:38 2026"
+
+    default_result = await read_tools.whm_mail_log_failed_auth_suspects(
+        session=_Session(),
+        server_ref="web1",
+        lfd_log_line=log_line,
+    )
+    assert default_result["raw_output"] == ""
+
+    included_result = await read_tools.whm_mail_log_failed_auth_suspects(
+        session=_Session(),
+        server_ref="web1",
+        lfd_log_line=log_line,
+        include_raw_output=True,
+    )
+    assert included_result["raw_output"].strip() == "2 acct@example.com"
+
+
+@pytest.mark.asyncio
+async def test_whm_mail_log_failed_auth_suspects_nonzero_exit_code_is_error(
+    monkeypatch,
+) -> None:
+    from noa_api.core.remote_exec.types import CommandResult
+    from noa_api.whm.tools import read_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        ssh_password="SSH_PASSWORD",
+        ssh_host_key_fingerprint="SHA256:known",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(read_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    async def _fake_ssh_exec(config, *, command: str, timeout_seconds: float = 20.0):
+        _ = (config, command, timeout_seconds)
+        return CommandResult(
+            command=command,
+            exit_code=2,
+            stdout="",
+            stderr="zgrep: /var/log/maillog*: No such file or directory\n",
+            duration_ms=5,
+        )
+
+    monkeypatch.setattr(read_tools, "ssh_exec", _fake_ssh_exec)
+
+    log_line = "lfd: (imapd) Failed IMAP login from 203.0.113.10 (XX/Test/-): 30 in the last 3600 secs - Thu Mar 19 08:18:38 2026"
+    result = await read_tools.whm_mail_log_failed_auth_suspects(
+        session=_Session(),
+        server_ref="web1",
+        lfd_log_line=log_line,
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "remote_command_failed"
+
+
+@pytest.mark.asyncio
+async def test_whm_mail_log_failed_auth_suspects_rejects_unsupported_service(
+    monkeypatch,
+) -> None:
+    from noa_api.whm.tools import read_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(read_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    log_line = "lfd[1]: (sshd) Failed login from 1.2.3.4 - Tue Mar 31 12:23:11 2026"
+    result = await read_tools.whm_mail_log_failed_auth_suspects(
+        session=_Session(),
+        server_ref="web1",
+        lfd_log_line=log_line,
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "unsupported_service"
+
+
+@pytest.mark.asyncio
 async def test_whm_search_accounts_filters_results(monkeypatch) -> None:
     from noa_api.whm.tools import read_tools
 

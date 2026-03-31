@@ -441,6 +441,7 @@ async def test_authorization_service_lists_canonical_tools() -> None:
         "whm_list_servers",
         "whm_validate_server",
         "whm_check_binary_exists",
+        "whm_mail_log_failed_auth_suspects",
         "whm_list_accounts",
         "whm_search_accounts",
         "whm_preflight_account",
