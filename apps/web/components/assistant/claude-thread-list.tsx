@@ -551,6 +551,11 @@ export function ClaudeThreadList({
                       label="WHM Servers"
                       href="/admin/whm/servers"
                     />
+                    <NavLinkItem
+                      icon={<DesktopIcon width={16} height={16} />}
+                      label="Proxmox Servers"
+                      href="/admin/proxmox/servers"
+                    />
                   </div>
                 ) : (
                   <div id="backend-nav" className="hidden" />
