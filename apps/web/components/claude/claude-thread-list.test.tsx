@@ -205,7 +205,7 @@ describe("ClaudeThreadList", () => {
     }
   });
 
-  it("renders a Backend nav group with a WHM Servers link for admin users", () => {
+  it("renders a Backend nav group with backend server links for admin users", () => {
     render(<ClaudeThreadList />);
 
     const newChatButton = screen.getByRole("button", { name: "New chat" });
@@ -216,10 +216,15 @@ describe("ClaudeThreadList", () => {
     expect(backendToggle).toBeInTheDocument();
 
     expect(navSection.queryByRole("link", { name: "WHM Servers" })).not.toBeInTheDocument();
+    expect(navSection.queryByRole("link", { name: "Proxmox Servers" })).not.toBeInTheDocument();
     fireEvent.click(backendToggle);
     expect(navSection.getByRole("link", { name: "WHM Servers" })).toHaveAttribute(
       "href",
       "/admin/whm/servers",
+    );
+    expect(navSection.getByRole("link", { name: "Proxmox Servers" })).toHaveAttribute(
+      "href",
+      "/admin/proxmox/servers",
     );
   });
 
@@ -380,6 +385,7 @@ describe("ClaudeThreadList", () => {
 
     expect(screen.queryByRole("button", { name: "Backend" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "WHM Servers" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Proxmox Servers" })).not.toBeInTheDocument();
   });
 
   it("hides the Users nav link when roles are empty or missing", () => {
