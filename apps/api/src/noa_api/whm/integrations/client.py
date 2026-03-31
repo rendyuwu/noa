@@ -28,6 +28,43 @@ def _coerce_query_params(params: Mapping[str, object]) -> dict[str, QueryValue]:
     return normalized
 
 
+def _normalize_optional_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
+
+
+def _normalize_optional_domain(value: object) -> str | None:
+    normalized = _normalize_optional_string(value)
+    if normalized is None:
+        return None
+    return normalized.rstrip(".").lower()
+
+
+def _normalize_string_list(value: object) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[str] = []
+    for item in value:
+        text = _normalize_optional_domain(item)
+        if text is not None:
+            normalized.append(text)
+    return normalized
+
+
+def _uapi_error_message(payload: Mapping[str, object]) -> str:
+    for key in ("errors", "messages", "warnings"):
+        value = payload.get(key)
+        if not isinstance(value, list):
+            continue
+        for item in value:
+            text = _normalize_optional_string(item)
+            if text is not None:
+                return text
+    return "WHM UAPI error"
+
+
 class WHMClient:
     def __init__(
         self,
@@ -226,6 +263,107 @@ class WHMClient:
         if result.get("ok") is not True:
             return result
         return {"ok": True, "message": "ok"}
+
+    async def change_primary_domain(
+        self, *, username: str, domain: str
+    ) -> dict[str, object]:
+        result = await self._get_json_api(
+            "modifyacct",
+            params={"user": username, "domain": domain},
+        )
+        if result.get("ok") is not True:
+            return result
+        return {"ok": True, "message": "ok"}
+
+    async def get_domain_owner(self, *, domain: str) -> dict[str, object]:
+        result = await self._get_json_api("getdomainowner", params={"domain": domain})
+        if result.get("ok") is not True:
+            return result
+
+        data = result.get("data")
+        owner = (
+            _normalize_optional_string(data.get("user"))
+            if isinstance(data, dict)
+            else None
+        )
+        return {"ok": True, "message": "ok", "owner": owner}
+
+    async def list_domains_for_account(self, *, username: str) -> dict[str, object]:
+        result = await self._get_json_api(
+            "uapi_cpanel",
+            params={
+                "cpanel.user": username,
+                "cpanel.module": "DomainInfo",
+                "cpanel.function": "list_domains",
+            },
+        )
+        if result.get("ok") is not True:
+            return result
+
+        data = result.get("data")
+        if not isinstance(data, dict):
+            return {
+                "ok": False,
+                "error_code": "invalid_response",
+                "message": "WHM returned an unexpected UAPI response shape",
+            }
+
+        uapi = data.get("uapi")
+        if not isinstance(uapi, dict):
+            return {
+                "ok": False,
+                "error_code": "invalid_response",
+                "message": "WHM response missing UAPI payload",
+            }
+
+        if uapi.get("status") != 1:
+            return {
+                "ok": False,
+                "error_code": "uapi_error",
+                "message": _uapi_error_message(uapi),
+            }
+
+        uapi_data = uapi.get("data")
+        if not isinstance(uapi_data, dict):
+            return {
+                "ok": False,
+                "error_code": "invalid_response",
+                "message": "WHM UAPI returned an unexpected domain payload",
+            }
+
+        domains = {
+            "main_domain": _normalize_optional_domain(uapi_data.get("main_domain")),
+            "addon_domains": _normalize_string_list(uapi_data.get("addon_domains")),
+            "parked_domains": _normalize_string_list(uapi_data.get("parked_domains")),
+            "sub_domains": _normalize_string_list(uapi_data.get("sub_domains")),
+        }
+        return {"ok": True, "message": "ok", "domains": domains}
+
+    async def list_zones(self) -> dict[str, object]:
+        result = await self._get_json_api("listzones")
+        if result.get("ok") is not True:
+            return result
+
+        data = result.get("data")
+        zones: list[dict[str, object]] = []
+        if isinstance(data, dict):
+            raw_zones = data.get("zone")
+            if isinstance(raw_zones, list):
+                for item in raw_zones:
+                    if not isinstance(item, dict):
+                        continue
+                    domain = _normalize_optional_domain(item.get("domain"))
+                    if domain is None:
+                        continue
+                    zones.append(
+                        {
+                            "domain": domain,
+                            "zonefile": _normalize_optional_string(
+                                item.get("zonefile")
+                            ),
+                        }
+                    )
+        return {"ok": True, "message": "ok", "zones": zones}
 
     async def csf_grep(self, *, target: str) -> dict[str, object]:
         return await self._get_text(

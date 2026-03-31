@@ -8,6 +8,7 @@ from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
 from noa_api.whm.integrations.client import WHMClient
 from noa_api.whm.server_ref import resolve_whm_server_ref
+from noa_api.whm.tools.preflight_tools import collect_primary_domain_change_state
 
 
 def _resolution_error(result: Any) -> dict[str, object]:
@@ -38,6 +39,14 @@ def _account_email(account: dict[str, object]) -> str | None:
     if isinstance(contact, str) and contact.strip():
         return contact.strip()
     return None
+
+
+def _account_domain(account: dict[str, object]) -> str | None:
+    value = account.get("domain")
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().rstrip(".").lower()
+    return normalized or None
 
 
 def _client_for_server(server: Any) -> WHMClient:
@@ -274,4 +283,119 @@ async def whm_change_contact_email(
         "ok": True,
         "status": "changed",
         "message": "Contact email updated",
+    }
+
+
+async def whm_change_primary_domain(
+    *,
+    session: AsyncSession,
+    server_ref: str,
+    username: str,
+    new_domain: str,
+    reason: str,
+) -> dict[str, object]:
+    if not reason.strip():
+        return {
+            "ok": False,
+            "error_code": "reason_required",
+            "message": "Reason is required",
+        }
+
+    normalized_domain = new_domain.strip().rstrip(".").lower()
+    if not normalized_domain:
+        return {
+            "ok": False,
+            "error_code": "domain_required",
+            "message": "New domain is required",
+        }
+
+    preflight = await collect_primary_domain_change_state(
+        session=session,
+        server_ref=server_ref,
+        username=username,
+        new_domain=normalized_domain,
+        check_dns_zone=False,
+    )
+    if preflight.get("ok") is not True:
+        return preflight
+
+    account = preflight.get("account")
+    if not isinstance(account, dict):
+        return {
+            "ok": False,
+            "error_code": "invalid_response",
+            "message": "WHM returned an unexpected account payload",
+        }
+
+    current_domain = _account_domain(account)
+    if current_domain == normalized_domain:
+        return {
+            "ok": True,
+            "status": "no-op",
+            "message": "Primary domain already matches",
+        }
+
+    repo = SQLWHMServerRepository(session)
+    resolution = await resolve_whm_server_ref(server_ref, repo=repo)
+    if not resolution.ok:
+        return _resolution_error(resolution)
+
+    server = resolution.server
+    assert server is not None
+    client = _client_for_server(server)
+
+    mutation = await client.change_primary_domain(
+        username=username.strip(),
+        domain=normalized_domain,
+    )
+    if mutation.get("ok") is not True:
+        return {
+            "ok": False,
+            "error_code": str(mutation.get("error_code") or "unknown"),
+            "message": str(
+                mutation.get("message") or "WHM change primary domain failed"
+            ),
+        }
+
+    postflight = await collect_primary_domain_change_state(
+        session=session,
+        server_ref=server_ref,
+        username=username,
+        new_domain=normalized_domain,
+        check_dns_zone=True,
+    )
+    if postflight.get("ok") is not True:
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Unable to verify primary domain after change",
+        }
+
+    post_account = postflight.get("account")
+    if not isinstance(post_account, dict):
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Unable to verify primary domain after change",
+        }
+
+    post_domain = _account_domain(post_account)
+    dns_zone_exists = postflight.get("dns_zone_exists") is True
+    if post_domain != normalized_domain:
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Primary domain did not update",
+        }
+    if not dns_zone_exists:
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": f"DNS zone for '{normalized_domain}' was not found after the change",
+        }
+
+    return {
+        "ok": True,
+        "status": "changed",
+        "message": "Primary domain updated",
     }

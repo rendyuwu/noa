@@ -6,8 +6,6 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from noa_api.core.remote_exec.types import CommandResult
-
 
 @dataclass
 class _Server:
@@ -327,6 +325,77 @@ async def test_whm_preflight_account_finds_account(monkeypatch) -> None:
     assert result["account"]["user"] == "alice"
 
 
+@pytest.mark.asyncio
+async def test_whm_preflight_primary_domain_change_detects_addon_conflict(
+    monkeypatch,
+) -> None:
+    from noa_api.whm.tools import preflight_tools
+
+    now = datetime.now(UTC)
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    repo = _Repo([server])
+    monkeypatch.setattr(preflight_tools, "SQLWHMServerRepository", lambda session: repo)
+
+    class _Client:
+        def __init__(self, **kwargs) -> None:
+            _ = kwargs
+
+        async def list_accounts(self) -> dict[str, object]:
+            return {
+                "ok": True,
+                "message": "ok",
+                "accounts": [
+                    {
+                        "user": "alice",
+                        "domain": "old.example.com",
+                        "suspended": 0,
+                        "email": "alice@example.com",
+                    },
+                ],
+            }
+
+        async def get_domain_owner(self, *, domain: str) -> dict[str, object]:
+            _ = domain
+            return {"ok": True, "message": "ok", "owner": "alice"}
+
+        async def list_domains_for_account(self, *, username: str) -> dict[str, object]:
+            _ = username
+            return {
+                "ok": True,
+                "message": "ok",
+                "domains": {
+                    "main_domain": "old.example.com",
+                    "addon_domains": ["new.example.com"],
+                    "parked_domains": [],
+                    "sub_domains": [],
+                },
+            }
+
+    monkeypatch.setattr(preflight_tools, "WHMClient", _Client)
+
+    result = await preflight_tools.whm_preflight_primary_domain_change(
+        session=_Session(),
+        server_ref="web1",
+        username="alice",
+        new_domain="new.example.com",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "domain_is_addon",
+        "message": "Domain 'new.example.com' already exists as an addon domain on WHM account 'alice'",
+    }
+
+
 async def test_whm_read_and_preflight_tools_are_registered() -> None:
     from noa_api.core.tools.registry import get_tool_definition
 
@@ -335,4 +404,5 @@ async def test_whm_read_and_preflight_tools_are_registered() -> None:
     assert get_tool_definition("whm_list_accounts") is not None
     assert get_tool_definition("whm_search_accounts") is not None
     assert get_tool_definition("whm_preflight_account") is not None
+    assert get_tool_definition("whm_preflight_primary_domain_change") is not None
     assert get_tool_definition("whm_preflight_firewall_entries") is not None

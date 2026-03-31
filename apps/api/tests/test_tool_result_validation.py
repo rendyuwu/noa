@@ -172,3 +172,32 @@ def test_validate_tool_result_rejects_unexpected_account_fields() -> None:
         )
 
     assert exc_info.value.details == ("Unexpected field 'account.owner'",)
+
+
+def test_validate_tool_result_rejects_primary_domain_preflight_without_requested_domain() -> (
+    None
+):
+    tool = get_tool_definition("whm_preflight_primary_domain_change")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "server_id": "srv-1",
+                "account": {"user": "alice"},
+                "domain_owner": None,
+                "requested_domain_location": "absent",
+                "safe_to_change": True,
+                "domain_inventory": {
+                    "main_domain": "old.example.com",
+                    "addon_domains": [],
+                    "parked_domains": [],
+                    "sub_domains": [],
+                },
+            },
+        )
+
+    assert exc_info.value.details == ("Missing required field 'requested_domain'",)

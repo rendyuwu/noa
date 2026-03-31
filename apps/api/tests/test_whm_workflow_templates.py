@@ -174,6 +174,162 @@ def test_whm_account_contact_email_completed_reply_template_summarizes_change() 
     assert "Tool result: Contact email updated." in reply.evidence_summary
 
 
+def test_whm_primary_domain_waiting_on_approval_builds_five_step_todos() -> None:
+    todos = build_workflow_todos(
+        tool_name="whm_change_primary_domain",
+        workflow_family="whm-account-primary-domain",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_domain": "new.example.com",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_primary_domain_change",
+                "args": {
+                    "server_ref": "web1",
+                    "username": "alice",
+                    "new_domain": "new.example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "requested_domain": "new.example.com",
+                    "requested_domain_location": "absent",
+                    "domain_owner": None,
+                    "domain_inventory": {
+                        "main_domain": "old.example.com",
+                        "addon_domains": [],
+                        "parked_domains": [],
+                        "sub_domains": [],
+                    },
+                    "account": {
+                        "user": "alice",
+                        "domain": "old.example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert todos is not None
+    assert len(todos) == 5
+    assert [todo["status"] for todo in todos] == [
+        "completed",
+        "completed",
+        "waiting_on_approval",
+        "pending",
+        "pending",
+    ]
+    assert "requested domain: new.example.com" in todos[0]["content"]
+    assert "Request approval" in todos[2]["content"]
+
+
+def test_whm_primary_domain_completed_reply_template_requires_dns_zone() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_change_primary_domain",
+        workflow_family="whm-account-primary-domain",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_domain": "new.example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_primary_domain_change",
+                "args": {
+                    "server_ref": "web1",
+                    "username": "alice",
+                    "new_domain": "new.example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "requested_domain": "new.example.com",
+                    "requested_domain_location": "absent",
+                    "domain_owner": None,
+                    "domain_inventory": {
+                        "main_domain": "old.example.com",
+                        "addon_domains": [],
+                        "parked_domains": [],
+                        "sub_domains": [],
+                    },
+                    "account": {
+                        "user": "alice",
+                        "domain": "old.example.com",
+                    },
+                },
+            }
+        ],
+        result={"ok": True, "status": "changed", "message": "Primary domain updated"},
+        postflight_result={
+            "ok": True,
+            "account": {"user": "alice", "domain": "new.example.com"},
+            "dns_zone_exists": True,
+        },
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert reply.title == "Primary domain change completed"
+    assert "moved from 'old.example.com' to 'new.example.com'" in reply.summary
+    assert "DNS zone found for 'new.example.com'." in reply.evidence_summary
+
+
+def test_whm_primary_domain_waiting_on_approval_evidence_includes_preflight_results() -> (
+    None
+):
+    evidence = build_workflow_evidence_template(
+        tool_name="whm_change_primary_domain",
+        workflow_family="whm-account-primary-domain",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_domain": "new.example.com",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_primary_domain_change",
+                "args": {
+                    "server_ref": "web1",
+                    "username": "alice",
+                    "new_domain": "new.example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "requested_domain": "new.example.com",
+                    "requested_domain_location": "absent",
+                    "domain_owner": None,
+                    "domain_inventory": {
+                        "main_domain": "old.example.com",
+                        "addon_domains": ["addon.example.com"],
+                        "parked_domains": [],
+                        "sub_domains": [],
+                    },
+                    "account": {
+                        "user": "alice",
+                        "domain": "old.example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence is not None
+    assert [section.key for section in evidence.sections] == [
+        "before_state",
+        "requested_change",
+        "preflight_results",
+        "after_state",
+        "verification",
+    ]
+    assert evidence.sections[2].items[0].value == "absent"
+
+
 def test_whm_account_lifecycle_denied_reply_template_preserves_no_change_language() -> (
     None
 ):

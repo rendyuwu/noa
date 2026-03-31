@@ -21,7 +21,10 @@ from noa_api.core.workflows.types import (
     normalized_text,
 )
 from noa_api.storage.postgres.workflow_todos import WorkflowTodoItem
-from noa_api.whm.tools.preflight_tools import whm_preflight_account
+from noa_api.whm.tools.preflight_tools import (
+    collect_primary_domain_change_state,
+    whm_preflight_account,
+)
 from noa_api.whm.tools.firewall_tools import whm_preflight_firewall_entries
 
 
@@ -69,6 +72,12 @@ def _build_contact_email_reply_template(
     context: WorkflowTemplateContext,
 ) -> WorkflowReplyTemplate | None:
     return _build_contact_email_reply_template_impl(context)
+
+
+def _build_primary_domain_reply_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    return _build_primary_domain_reply_template_impl(context)
 
 
 class _WHMAccountTemplate(_WHMTemplate):
@@ -357,6 +366,160 @@ class WHMAccountContactEmailTemplate(_WHMAccountTemplate):
         )
 
 
+class WHMAccountPrimaryDomainTemplate(_WHMTemplate):
+    def build_todos(self, context: WorkflowTemplateContext) -> list[WorkflowTodoItem]:
+        subject = _account_subject(context.args)
+        before_preflight = _matching_primary_domain_preflight(
+            preflight_evidence=context.preflight_evidence,
+            args=context.args,
+        )
+        after_account = _postflight_account(context.postflight_result)
+        reason = normalized_text(context.args.get("reason"))
+        requested_domain = normalized_text(context.args.get("new_domain"))
+        statuses = _default_step_statuses(reason=reason, phase=context.phase)
+
+        return [
+            {
+                "content": _primary_domain_preflight_step_content(
+                    subject=subject,
+                    requested_domain=requested_domain,
+                    preflight_result=before_preflight,
+                ),
+                "status": "completed"
+                if before_preflight is not None
+                else "in_progress",
+                "priority": "high",
+            },
+            {
+                "content": _reason_step_content(
+                    action_label="changing the primary domain", reason=reason
+                ),
+                "status": cast(Any, statuses["reason"]),
+                "priority": "high",
+            },
+            {
+                "content": f"Request approval to change the primary domain for {subject} to '{requested_domain or 'the requested value'}'.",
+                "status": cast(Any, statuses["approval"]),
+                "priority": "high",
+            },
+            {
+                "content": f"Execute the primary domain change for {subject}.",
+                "status": cast(Any, statuses["execute"]),
+                "priority": "high",
+            },
+            {
+                "content": _primary_domain_postflight_step_content(
+                    subject=subject,
+                    requested_domain=requested_domain,
+                    after_account=after_account,
+                    postflight_result=context.postflight_result,
+                ),
+                "status": cast(Any, statuses["postflight"]),
+                "priority": "high",
+            },
+        ]
+
+    def build_reply_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowReplyTemplate | None:
+        return _build_primary_domain_reply_template(context)
+
+    def build_evidence_template(
+        self,
+        context: WorkflowTemplateContext,
+    ) -> WorkflowEvidenceTemplate | None:
+        return _build_primary_domain_evidence_template(context)
+
+    def describe_activity(
+        self, *, tool_name: str, args: dict[str, object]
+    ) -> str | None:
+        _ = tool_name
+        return (
+            f"Change primary domain for '{args.get('username', 'unknown')}' "
+            f"to '{args.get('new_domain', 'unknown')}'"
+        )
+
+    def require_preflight(
+        self,
+        *,
+        tool_name: str,
+        args: dict[str, object],
+        working_messages: list[dict[str, object]],
+        requested_server_id: str | None,
+    ) -> SanitizedToolError | None:
+        _ = tool_name
+        return _require_primary_domain_preflight(
+            args=args,
+            working_messages=working_messages,
+            requested_server_id=requested_server_id,
+        )
+
+    async def fetch_postflight_result(
+        self,
+        *,
+        tool_name: str,
+        args: dict[str, object],
+        session: AsyncSession,
+    ) -> dict[str, object] | None:
+        _ = tool_name
+        server_ref = normalized_text(args.get("server_ref"))
+        username = normalized_text(args.get("username"))
+        new_domain = normalized_text(args.get("new_domain"))
+        if server_ref is None or username is None or new_domain is None:
+            return None
+        result = await collect_primary_domain_change_state(
+            session=session,
+            server_ref=server_ref,
+            username=username,
+            new_domain=new_domain,
+            check_dns_zone=True,
+        )
+        return result if isinstance(result, dict) else None
+
+    def infer_waiting_on_user_workflow(
+        self,
+        *,
+        assistant_text: str,
+        working_messages: list[dict[str, object]],
+    ) -> WorkflowInference | None:
+        _ = assistant_text
+        last_user_text = _latest_user_text(working_messages)
+        if last_user_text is None or "domain" not in last_user_text.lower():
+            return None
+
+        new_domain = _extract_domain(last_user_text)
+        if new_domain is None:
+            return None
+
+        candidates = _primary_domain_preflight_candidates(working_messages)
+        if not candidates:
+            return None
+
+        match = _select_primary_domain_preflight_candidate(
+            candidates=candidates,
+            user_text=last_user_text,
+            new_domain=new_domain,
+        )
+        if match is None:
+            return None
+
+        args = cast(dict[str, object], match.get("args"))
+        server_ref = normalized_text(args.get("server_ref"))
+        username = normalized_text(args.get("username"))
+        if server_ref is None or username is None:
+            return None
+
+        return WorkflowInference(
+            tool_name="whm_change_primary_domain",
+            args={
+                "server_ref": server_ref,
+                "username": username,
+                "new_domain": new_domain,
+            },
+        )
+
+
 class WHMFirewallBatchTemplate(_WHMTemplate):
     """
     Workflow template for unified firewall operations (CSF + Imunify).
@@ -475,6 +638,7 @@ class WHMFirewallBatchTemplate(_WHMTemplate):
 WORKFLOW_TEMPLATES: dict[str, WorkflowTemplate] = {
     "whm-account-lifecycle": WHMAccountLifecycleTemplate(),
     "whm-account-contact-email": WHMAccountContactEmailTemplate(),
+    "whm-account-primary-domain": WHMAccountPrimaryDomainTemplate(),
     "whm-firewall-batch-change": WHMFirewallBatchTemplate(),
 }
 
@@ -533,6 +697,68 @@ def _require_account_preflight(
     )
 
 
+def _require_primary_domain_preflight(
+    *,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    requested_server_id: str | None,
+) -> SanitizedToolError | None:
+    requested_server_ref = normalized_text(args.get("server_ref"))
+    requested_username = normalized_text(args.get("username"))
+    requested_domain = normalized_text(args.get("new_domain"))
+    if (
+        requested_server_ref is None
+        or requested_username is None
+        or requested_domain is None
+    ):
+        return None
+
+    evidence = [
+        item
+        for item in collect_recent_preflight_evidence(working_messages)
+        if item.get("toolName") == "whm_preflight_primary_domain_change"
+        and isinstance(item.get("result"), dict)
+        and cast(dict[str, object], item["result"]).get("ok") is True
+    ]
+    if not evidence:
+        return SanitizedToolError(
+            error="Required WHM preflight evidence is missing",
+            error_code="preflight_required",
+            details=(
+                "Run whm_preflight_primary_domain_change with the same server_ref, username, and new_domain before requesting this change.",
+            ),
+        )
+
+    for item in evidence:
+        item_args = item.get("args")
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
+            continue
+        if not _server_identity_matches(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
+            continue
+        account = result.get("account")
+        if not isinstance(account, dict):
+            continue
+        if normalized_text(account.get("user")) != requested_username:
+            continue
+        if normalized_text(result.get("requested_domain")) != requested_domain:
+            continue
+        return None
+
+    return SanitizedToolError(
+        error="Required WHM preflight evidence does not match this change request",
+        error_code="preflight_mismatch",
+        details=(
+            f"No successful whm_preflight_primary_domain_change was found for server_ref '{requested_server_ref}', username '{requested_username}', and new_domain '{requested_domain}' in the current turn.",
+        ),
+    )
+
+
 def _server_identity_matches(
     *,
     item_args: dict[str, object],
@@ -553,6 +779,17 @@ def _account_preflight_candidates(
         item
         for item in collect_recent_preflight_evidence(working_messages)
         if item.get("toolName") == "whm_preflight_account"
+        and isinstance(item.get("args"), dict)
+    ]
+
+
+def _primary_domain_preflight_candidates(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    return [
+        item
+        for item in collect_recent_preflight_evidence(working_messages)
+        if item.get("toolName") == "whm_preflight_primary_domain_change"
         and isinstance(item.get("args"), dict)
     ]
 
@@ -603,9 +840,58 @@ def _select_account_preflight_candidate(
     return None
 
 
+def _select_primary_domain_preflight_candidate(
+    *, candidates: list[dict[str, object]], user_text: str, new_domain: str
+) -> dict[str, object] | None:
+    lowered = user_text.lower()
+    normalized_domain = new_domain.lower()
+
+    for candidate in reversed(candidates):
+        args = candidate.get("args")
+        result = candidate.get("result")
+        if not isinstance(args, dict) or not isinstance(result, dict):
+            continue
+        server_ref = normalized_text(args.get("server_ref"))
+        username = normalized_text(args.get("username"))
+        requested_domain = normalized_text(result.get("requested_domain"))
+        if (
+            server_ref is None
+            or username is None
+            or requested_domain is None
+            or requested_domain.lower() != normalized_domain
+        ):
+            continue
+        if server_ref.lower() in lowered and username.lower() in lowered:
+            return candidate
+
+    for candidate in reversed(candidates):
+        result = candidate.get("result")
+        if not isinstance(result, dict):
+            continue
+        requested_domain = normalized_text(result.get("requested_domain"))
+        if (
+            requested_domain is not None
+            and requested_domain.lower() == normalized_domain
+        ):
+            return candidate
+
+    return None
+
+
 def _extract_email(text: str) -> str | None:
     match = re.search(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", text)
     return match.group(0) if match is not None else None
+
+
+def _extract_domain(text: str) -> str | None:
+    for match in re.finditer(
+        r"\b(?!(?:[A-Za-z0-9._%+-]+@))([A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+)\b",
+        text,
+    ):
+        domain = normalized_text(match.group(1))
+        if domain is not None:
+            return domain.rstrip(".").lower()
+    return None
 
 
 def _format_argument_value(value: object) -> str:
@@ -924,6 +1210,148 @@ def _build_contact_email_reply_template_impl(
     )
 
 
+def _build_primary_domain_reply_template_impl(
+    context: WorkflowTemplateContext,
+) -> WorkflowReplyTemplate | None:
+    subject = _account_subject(context.args)
+    requested_domain = (
+        normalized_text(context.args.get("new_domain")) or "the requested domain"
+    )
+    before_preflight = _matching_primary_domain_preflight(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    before_account = (
+        before_preflight.get("account") if isinstance(before_preflight, dict) else None
+    )
+    after_account = _postflight_account(context.postflight_result)
+    reason = normalized_text(context.args.get("reason"))
+    before_domain = _account_domain(before_account) or "unknown"
+    after_domain = _account_domain(after_account) or before_domain
+    requested_location = _requested_domain_location(before_preflight) or "unknown"
+    owner = _domain_owner(before_preflight)
+    result_ok = _result_ok(context.result)
+    result_status = _result_status(context.result)
+    result_message = _result_message(context.result)
+    dns_zone_exists = _dns_zone_exists(context.postflight_result)
+
+    if context.phase == "waiting_on_approval":
+        evidence = [
+            f"Preflight found the current primary domain as '{before_domain}'.",
+            f"Requested domain location on the account: {requested_location}.",
+            (
+                f"Server ownership check: '{requested_domain}' is currently owned by '{owner}'."
+                if owner is not None
+                else f"Server ownership check: '{requested_domain}' is not owned by another account."
+            ),
+            f"Success condition: the primary domain changes to '{requested_domain}' and the DNS zone exists.",
+        ]
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="Primary domain approval requested",
+            outcome="info",
+            summary=f"This will change the primary domain for {subject} to '{requested_domain}' after approval.",
+            evidence_summary=evidence,
+            next_step="Approve the request to apply the primary-domain change, or deny it to keep the current domain.",
+        )
+
+    if context.phase == "denied":
+        evidence = [f"Last confirmed primary domain: '{before_domain}'."]
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="Primary domain change denied",
+            outcome="denied",
+            summary=f"The request to change the primary domain for {subject} was denied. No change was applied.",
+            evidence_summary=evidence,
+            next_step="Submit a new approval request if you still need to change this primary domain.",
+        )
+
+    if context.phase == "failed":
+        evidence = [f"Last confirmed primary domain: '{before_domain}'."]
+        if context.error_code is not None:
+            evidence.append(f"Error code: {context.error_code}.")
+        if reason is not None:
+            evidence.append(f"Recorded reason: {reason}.")
+        return WorkflowReplyTemplate(
+            title="Primary domain change failed",
+            outcome="failed",
+            summary=f"NOA could not complete the primary domain change for {subject}.",
+            evidence_summary=evidence,
+            next_step="Run the primary-domain preflight again to confirm the current state before retrying.",
+        )
+
+    if context.phase != "completed":
+        return None
+
+    evidence = [f"Before primary domain: '{before_domain}'."]
+    if result_message is not None:
+        evidence.append(f"Tool result: {result_message}.")
+    if after_account is not None:
+        evidence.append(f"Postflight primary domain: '{after_domain}'.")
+    if dns_zone_exists is True:
+        evidence.append(f"DNS zone found for '{requested_domain}'.")
+    elif dns_zone_exists is False:
+        evidence.append(f"DNS zone was not found for '{requested_domain}'.")
+    if reason is not None:
+        evidence.append(f"Recorded reason: {reason}.")
+
+    if result_ok is False:
+        error_code = (
+            _result_error_code(context.result) or context.error_code or "unknown"
+        )
+        evidence.append(f"Error code: {error_code}.")
+        return WorkflowReplyTemplate(
+            title="Primary domain change failed",
+            outcome="failed",
+            summary=f"NOA did not confirm the primary domain change for {subject}.",
+            evidence_summary=evidence,
+            next_step="Review the error and rerun the primary-domain preflight before retrying.",
+        )
+
+    if result_status == "no-op":
+        return WorkflowReplyTemplate(
+            title="Primary domain change no-op",
+            outcome="no_op",
+            summary=f"No primary domain change was needed for {subject}.",
+            evidence_summary=evidence,
+            next_step="No further action is required unless you expected a different primary domain.",
+        )
+
+    if (
+        after_account is None
+        or after_domain.lower() != requested_domain.lower()
+        or dns_zone_exists is not True
+    ):
+        if after_account is None:
+            evidence.append(
+                "Postflight verification did not confirm the final primary domain."
+            )
+        elif after_domain.lower() != requested_domain.lower():
+            evidence.append(f"Expected final primary domain: '{requested_domain}'.")
+        if dns_zone_exists is not True:
+            evidence.append(
+                f"Expected to find a DNS zone for '{requested_domain}' after the change."
+            )
+        return WorkflowReplyTemplate(
+            title="Primary domain change partially verified",
+            outcome="partial",
+            summary=f"The primary domain change finished for {subject}, but NOA could not fully verify the final domain state.",
+            evidence_summary=evidence,
+            next_step="Run the primary-domain preflight again before making another change.",
+        )
+
+    return WorkflowReplyTemplate(
+        title="Primary domain change completed",
+        outcome="changed",
+        summary=(
+            f"The primary domain for {subject} moved from '{before_domain}' to '{after_domain}'."
+        ),
+        evidence_summary=evidence,
+    )
+
+
 def _build_account_lifecycle_evidence_template(
     context: WorkflowTemplateContext,
 ) -> WorkflowEvidenceTemplate | None:
@@ -1164,6 +1592,192 @@ def _build_contact_email_evidence_template(
     return WorkflowEvidenceTemplate(sections=sections)
 
 
+def _build_primary_domain_evidence_template(
+    context: WorkflowTemplateContext,
+) -> WorkflowEvidenceTemplate | None:
+    subject = _account_subject(context.args)
+    requested_domain = normalized_text(context.args.get("new_domain")) or "unknown"
+    before_preflight = _matching_primary_domain_preflight(
+        preflight_evidence=context.preflight_evidence,
+        args=context.args,
+    )
+    before_account = (
+        before_preflight.get("account") if isinstance(before_preflight, dict) else None
+    )
+    after_account = _postflight_account(context.postflight_result)
+    inventory = _domain_inventory(before_preflight)
+    reason = normalized_text(context.args.get("reason"))
+    before_domain = _account_domain(before_account) or "unknown"
+    after_domain = _account_domain(after_account) or before_domain
+    requested_location = _requested_domain_location(before_preflight) or "unknown"
+    owner = _domain_owner(before_preflight) or "none"
+    dns_zone_exists = _dns_zone_exists(context.postflight_result)
+    result_status = _result_status(context.result)
+    result_ok = _result_ok(context.result)
+
+    sections: list[WorkflowEvidenceSection] = [
+        WorkflowEvidenceSection(
+            key="before_state",
+            title="Before state",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(label="Subject", value=subject),
+                    WorkflowEvidenceItem(label="Primary domain", value=before_domain),
+                ]
+            ),
+        ),
+        WorkflowEvidenceSection(
+            key="requested_change",
+            title="Requested change",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(label="Action", value="change primary domain"),
+                    WorkflowEvidenceItem(
+                        label="Requested domain", value=requested_domain
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Reason", value=reason or "none provided"
+                    ),
+                ]
+            ),
+        ),
+        WorkflowEvidenceSection(
+            key="preflight_results",
+            title="Preflight results",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(
+                        label="Requested domain location", value=requested_location
+                    ),
+                    WorkflowEvidenceItem(label="Server owner", value=owner),
+                    WorkflowEvidenceItem(
+                        label="Account main domain",
+                        value=(
+                            normalized_text(inventory.get("main_domain")) or "unknown"
+                            if isinstance(inventory, dict)
+                            else "unknown"
+                        ),
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Addon domains",
+                        value=_render_domain_list(
+                            inventory.get("addon_domains")
+                            if isinstance(inventory, dict)
+                            else None
+                        ),
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Parked domains",
+                        value=_render_domain_list(
+                            inventory.get("parked_domains")
+                            if isinstance(inventory, dict)
+                            else None
+                        ),
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Subdomains",
+                        value=_render_domain_list(
+                            inventory.get("sub_domains")
+                            if isinstance(inventory, dict)
+                            else None
+                        ),
+                    ),
+                ]
+            ),
+        ),
+    ]
+
+    if context.phase == "denied":
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=[
+                    WorkflowEvidenceItem(label="Status", value="denied"),
+                    WorkflowEvidenceItem(
+                        label="Result", value="Approval denied; no change executed."
+                    ),
+                ],
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    if context.phase == "failed" or result_ok is False:
+        sections.append(
+            WorkflowEvidenceSection(
+                key="failure",
+                title="Failure",
+                items=_clean_items(
+                    [
+                        WorkflowEvidenceItem(label="Status", value="failed"),
+                        WorkflowEvidenceItem(
+                            label="Error code",
+                            value=(
+                                _result_error_code(context.result)
+                                or context.error_code
+                                or "unknown"
+                            ),
+                        ),
+                    ]
+                ),
+            )
+        )
+        return WorkflowEvidenceTemplate(sections=sections)
+
+    sections.append(
+        WorkflowEvidenceSection(
+            key="after_state",
+            title="After state",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(
+                        label="Observed primary domain", value=after_domain
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Expected primary domain", value=requested_domain
+                    ),
+                ]
+            ),
+        )
+    )
+    sections.append(
+        WorkflowEvidenceSection(
+            key="verification",
+            title="Verification",
+            items=_clean_items(
+                [
+                    WorkflowEvidenceItem(
+                        label="Result status", value=result_status or "unknown"
+                    ),
+                    WorkflowEvidenceItem(
+                        label="DNS zone exists",
+                        value=(
+                            "yes"
+                            if dns_zone_exists is True
+                            else "no"
+                            if dns_zone_exists is False
+                            else "unknown"
+                        ),
+                    ),
+                    WorkflowEvidenceItem(
+                        label="Verified",
+                        value=(
+                            "yes"
+                            if after_account is not None
+                            and after_domain.lower() == requested_domain.lower()
+                            and dns_zone_exists is True
+                            else "partial"
+                            if after_account is not None or dns_zone_exists is not None
+                            else "no"
+                        ),
+                    ),
+                ]
+            ),
+        )
+    )
+    return WorkflowEvidenceTemplate(sections=sections)
+
+
 def _clean_items(items: list[WorkflowEvidenceItem]) -> list[WorkflowEvidenceItem]:
     return [item for item in items if item.label.strip() and item.value.strip()]
 
@@ -1294,6 +1908,70 @@ def _reason_step_content(*, action_label: str, reason: str | None) -> str:
     if reason is None:
         return f"Ask for reason if missing before {action_label}ing the account."
     return f"Reason captured for the {action_label}: {reason}."
+
+
+def _render_domain_list(value: object) -> str:
+    domains = normalized_string_list(value)
+    return ", ".join(domains) if domains else "none"
+
+
+def _primary_domain_preflight_step_content(
+    *,
+    subject: str,
+    requested_domain: str | None,
+    preflight_result: dict[str, object] | None,
+) -> str:
+    if not isinstance(preflight_result, dict):
+        return f"Primary-domain lookup / preflight for {subject}."
+
+    account = preflight_result.get("account")
+    before_domain = _account_domain(account if isinstance(account, dict) else None)
+    location = _requested_domain_location(preflight_result) or "unknown"
+    owner = _domain_owner(preflight_result) or "none"
+    inventory = _domain_inventory(preflight_result)
+    details = [
+        f"current primary domain: {before_domain or 'unknown'}",
+        f"requested domain: {requested_domain or 'unknown'}",
+        f"requested domain location: {location}",
+        f"server owner: {owner}",
+    ]
+    if isinstance(inventory, dict):
+        details.append(
+            "addon domains: " + _render_domain_list(inventory.get("addon_domains"))
+        )
+    return f"Primary-domain lookup / preflight for {subject}: {'; '.join(details)}."
+
+
+def _primary_domain_postflight_step_content(
+    *,
+    subject: str,
+    requested_domain: str | None,
+    after_account: dict[str, object] | None,
+    postflight_result: dict[str, object] | None,
+) -> str:
+    if after_account is None:
+        if (
+            isinstance(postflight_result, dict)
+            and postflight_result.get("ok") is not True
+        ):
+            error_code = (
+                normalized_text(postflight_result.get("error_code")) or "unknown"
+            )
+            return f"Postflight verification for {subject} could not confirm the primary domain ({error_code})."
+        return f"Postflight verification for {subject}."
+
+    observed_domain = _account_domain(after_account) or "unknown"
+    zone_text = (
+        "dns zone found"
+        if _dns_zone_exists(postflight_result) is True
+        else "dns zone missing"
+        if _dns_zone_exists(postflight_result) is False
+        else "dns zone unknown"
+    )
+    return (
+        f"Postflight verification for {subject}: expected primary domain '{requested_domain or 'unknown'}', "
+        f"observed '{observed_domain}', {zone_text}."
+    )
 
 
 def _contact_email_postflight_step_content(
@@ -1435,6 +2113,34 @@ def _matching_account_preflight(
     return None
 
 
+def _matching_primary_domain_preflight(
+    *, preflight_evidence: list[dict[str, object]], args: dict[str, object]
+) -> dict[str, object] | None:
+    requested_server_ref = normalized_text(args.get("server_ref"))
+    requested_username = normalized_text(args.get("username"))
+    requested_domain = normalized_text(args.get("new_domain"))
+    for item in preflight_evidence:
+        if item.get("toolName") != "whm_preflight_primary_domain_change":
+            continue
+        item_args = item.get("args")
+        result = item.get("result")
+        if not isinstance(item_args, dict) or not isinstance(result, dict):
+            continue
+        if result.get("ok") is not True:
+            continue
+        if normalized_text(item_args.get("server_ref")) != requested_server_ref:
+            continue
+        account = result.get("account")
+        if not isinstance(account, dict):
+            continue
+        if normalized_text(account.get("user")) != requested_username:
+            continue
+        if normalized_text(result.get("requested_domain")) != requested_domain:
+            continue
+        return result
+    return None
+
+
 def _postflight_account(
     postflight_result: dict[str, object] | None,
 ) -> dict[str, object] | None:
@@ -1473,6 +2179,47 @@ def _account_email(account: dict[str, object] | None) -> str | None:
     if contact is not None:
         return contact
     return normalized_text(account.get("email"))
+
+
+def _account_domain(account: dict[str, object] | None) -> str | None:
+    if not isinstance(account, dict):
+        return None
+    domain = normalized_text(account.get("domain"))
+    if domain is None:
+        return None
+    return domain.rstrip(".").lower()
+
+
+def _domain_inventory(
+    preflight_result: dict[str, object] | None,
+) -> dict[str, object] | None:
+    if not isinstance(preflight_result, dict):
+        return None
+    inventory = preflight_result.get("domain_inventory")
+    if isinstance(inventory, dict):
+        return inventory
+    return None
+
+
+def _requested_domain_location(
+    preflight_result: dict[str, object] | None,
+) -> str | None:
+    if not isinstance(preflight_result, dict):
+        return None
+    return normalized_text(preflight_result.get("requested_domain_location"))
+
+
+def _domain_owner(preflight_result: dict[str, object] | None) -> str | None:
+    if not isinstance(preflight_result, dict):
+        return None
+    return normalized_text(preflight_result.get("domain_owner"))
+
+
+def _dns_zone_exists(postflight_result: dict[str, object] | None) -> bool | None:
+    if not isinstance(postflight_result, dict):
+        return None
+    value = postflight_result.get("dns_zone_exists")
+    return value if isinstance(value, bool) else None
 
 
 def _result_items(result: dict[str, object] | None) -> list[dict[str, object]]:

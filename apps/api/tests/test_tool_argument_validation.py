@@ -43,6 +43,22 @@ def test_validate_tool_arguments_accepts_trimmed_email_strings() -> None:
     )
 
 
+def test_validate_tool_arguments_accepts_trimmed_primary_domain_strings() -> None:
+    tool = get_tool_definition("whm_change_primary_domain")
+
+    assert tool is not None
+
+    validate_tool_arguments(
+        tool=tool,
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_domain": " new.example.com ",
+            "reason": "customer request",
+        },
+    )
+
+
 def test_validate_tool_arguments_rejects_duplicate_firewall_targets() -> None:
     tool = get_tool_definition("whm_firewall_unblock")
 

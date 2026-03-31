@@ -61,6 +61,9 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     change_email_schema = by_name["whm_change_contact_email"].parameters_schema
     assert change_email_schema["properties"]["new_email"]["format"] == "email"
 
+    primary_domain_schema = by_name["whm_change_primary_domain"].parameters_schema
+    assert "pattern" in primary_domain_schema["properties"]["new_domain"]
+
     search_schema = by_name["whm_search_accounts"].parameters_schema
     assert search_schema["properties"]["limit"]["default"] == 20
     assert search_schema["properties"]["limit"]["minimum"] == 1
@@ -105,6 +108,10 @@ async def test_whm_change_tools_expose_workflow_families() -> None:
     assert (
         by_name["whm_change_contact_email"].workflow_family
         == "whm-account-contact-email"
+    )
+    assert (
+        by_name["whm_change_primary_domain"].workflow_family
+        == "whm-account-primary-domain"
     )
     assert (
         by_name["whm_firewall_unblock"].workflow_family == "whm-firewall-batch-change"

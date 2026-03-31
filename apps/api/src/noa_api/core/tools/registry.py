@@ -11,6 +11,7 @@ from noa_api.core.tools.demo_tools import (
 from noa_api.core.tools.workflow_todo import update_workflow_todo
 from noa_api.storage.postgres.lifecycle import ToolRisk
 from noa_api.whm.tools.account_change_tools import (
+    whm_change_primary_domain,
     whm_change_contact_email,
     whm_suspend_account,
     whm_unsuspend_account,
@@ -22,7 +23,10 @@ from noa_api.whm.tools.firewall_tools import (
     whm_firewall_unblock,
     whm_preflight_firewall_entries,
 )
-from noa_api.whm.tools.preflight_tools import whm_preflight_account
+from noa_api.whm.tools.preflight_tools import (
+    whm_preflight_account,
+    whm_preflight_primary_domain_change,
+)
 from noa_api.whm.tools.read_tools import (
     whm_check_binary_exists,
     whm_list_accounts,
@@ -178,6 +182,11 @@ _SERVER_REF_PARAM = _string_param(
 _USERNAME_PARAM = _string_param(
     "Exact WHM username. Trim whitespace and prefer identifiers confirmed by whm_search_accounts or whm_preflight_account.",
     format_name="whm-username",
+)
+
+_DOMAIN_PARAM = _string_param(
+    "Fully-qualified domain name to use as the cPanel account primary domain.",
+    pattern=r"^(?=.{1,253}$)(?!-)(?:[A-Za-z0-9-]{1,63}\.)+[A-Za-z]{2,63}\.?$",
 )
 
 _BINARY_NAME_PARAM = _string_param(
@@ -382,6 +391,44 @@ _PREFLIGHT_ACCOUNT_RESULT_SCHEMA = _result_any_of(
             "account": _ACCOUNT_RESULT_SCHEMA,
         },
         required=["ok", "server_id", "account"],
+    ),
+    _WHM_RESULT_ERROR_SCHEMA,
+)
+
+_DOMAIN_INVENTORY_RESULT_SCHEMA = _result_object_schema(
+    properties={
+        "main_domain": {"type": ["string", "null"]},
+        "addon_domains": _result_array_schema(items=_result_string_schema()),
+        "parked_domains": _result_array_schema(items=_result_string_schema()),
+        "sub_domains": _result_array_schema(items=_result_string_schema()),
+    },
+    required=["main_domain", "addon_domains", "parked_domains", "sub_domains"],
+)
+
+_PRIMARY_DOMAIN_PREFLIGHT_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "server_id": _result_string_schema(),
+            "account": _ACCOUNT_RESULT_SCHEMA,
+            "requested_domain": _result_string_schema(),
+            "domain_owner": {"type": ["string", "null"]},
+            "requested_domain_location": _result_string_schema(
+                enum=["absent", "primary"]
+            ),
+            "safe_to_change": _result_boolean_schema(value=True),
+            "domain_inventory": _DOMAIN_INVENTORY_RESULT_SCHEMA,
+        },
+        required=[
+            "ok",
+            "server_id",
+            "account",
+            "requested_domain",
+            "domain_owner",
+            "requested_domain_location",
+            "safe_to_change",
+            "domain_inventory",
+        ],
     ),
     _WHM_RESULT_ERROR_SCHEMA,
 )
@@ -631,6 +678,25 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         result_schema=_PREFLIGHT_ACCOUNT_RESULT_SCHEMA,
     ),
     ToolDefinition(
+        name="whm_preflight_primary_domain_change",
+        description="Fetch the current WHM account state and verify that a requested primary domain is safe to use before changing it.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "username": _USERNAME_PARAM,
+                "new_domain": _DOMAIN_PARAM,
+            },
+            required=["server_ref", "username", "new_domain"],
+        ),
+        execute=whm_preflight_primary_domain_change,
+        prompt_hints=(
+            "Run this before `whm_change_primary_domain` and summarize the current primary domain plus any existing addon-domain conflicts.",
+            "Successful results return `account`, `requested_domain`, `requested_domain_location`, `domain_owner`, and `domain_inventory`.",
+        ),
+        result_schema=_PRIMARY_DOMAIN_PREFLIGHT_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
         name="whm_suspend_account",
         description="Suspend one WHM account after the exact account has been preflighted.",
         risk=ToolRisk.CHANGE,
@@ -696,6 +762,28 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
         workflow_family="whm-account-contact-email",
+    ),
+    ToolDefinition(
+        name="whm_change_primary_domain",
+        description="Change the WHM primary domain for one exact account after a domain-specific preflight.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "username": _USERNAME_PARAM,
+                "new_domain": _DOMAIN_PARAM,
+                "reason": _REASON_PARAM,
+            },
+            required=["server_ref", "username", "new_domain", "reason"],
+        ),
+        execute=whm_change_primary_domain,
+        prompt_hints=(
+            "Run `whm_preflight_primary_domain_change` first and summarize the current primary domain plus any addon-domain conflicts before proposing this tool.",
+            "Idempotent result contract: returns `status` `no-op` if the primary domain already matches, or `status` `changed` only after postflight verifies the new primary domain and DNS zone.",
+            "Failures return `ok: false` with `error_code` and `message`.",
+        ),
+        result_schema=_ACCOUNT_CHANGE_RESULT_SCHEMA,
+        workflow_family="whm-account-primary-domain",
     ),
     # -------------------------------------------------------------------------
     # Unified Firewall Tools (CSF + Imunify)
