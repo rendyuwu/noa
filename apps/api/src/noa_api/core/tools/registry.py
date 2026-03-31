@@ -28,6 +28,7 @@ from noa_api.whm.tools.preflight_tools import (
     whm_preflight_primary_domain_change,
 )
 from noa_api.whm.tools.read_tools import (
+    whm_mail_log_failed_auth_suspects,
     whm_check_binary_exists,
     whm_list_accounts,
     whm_list_servers,
@@ -383,6 +384,61 @@ _CHECK_BINARY_RESULT_SCHEMA = _result_any_of(
     _WHM_RESULT_ERROR_SCHEMA,
 )
 
+
+_MAIL_AUTH_SUSPECT_ITEM_SCHEMA = _result_object_schema(
+    properties={
+        "email": _result_string_schema(),
+        "count": {"type": "integer"},
+    },
+    required=["email", "count"],
+)
+
+
+_MAIL_AUTH_SUSPECTS_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "service": _result_string_schema(enum=["smtpauth", "imapd", "pop3d"]),
+            "month": _result_string_schema(
+                enum=[
+                    "Jan",
+                    "Feb",
+                    "Mar",
+                    "Apr",
+                    "May",
+                    "Jun",
+                    "Jul",
+                    "Aug",
+                    "Sep",
+                    "Oct",
+                    "Nov",
+                    "Dec",
+                ]
+            ),
+            "day": {"type": "integer"},
+            "ip": _result_string_schema(),
+            "top_n": {"type": "integer"},
+            "suspects": _result_array_schema(items=_MAIL_AUTH_SUSPECT_ITEM_SCHEMA),
+            "raw_output": _result_string_schema(),
+            "stderr": _result_string_schema(),
+            "duration_ms": {"type": "integer"},
+        },
+        required=[
+            "ok",
+            "service",
+            "month",
+            "day",
+            "ip",
+            "top_n",
+            "suspects",
+            "raw_output",
+            "stderr",
+            "duration_ms",
+        ],
+    ),
+    _WHM_RESULT_ERROR_SCHEMA,
+)
+
 _PREFLIGHT_ACCOUNT_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
@@ -619,6 +675,42 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         result_schema=_CHECK_BINARY_RESULT_SCHEMA,
     ),
     ToolDefinition(
+        name="whm_mail_log_failed_auth_suspects",
+        description=(
+            "Parse an LFD auth-block log line (smtpauth/imapd/pop3d) and search mail logs (typically /var/log/maillog*; also /var/log/exim_mainlog* for smtpauth) for failed authentication attempts from the parsed IP on that date, returning the top suspect mailbox usernames."
+        ),
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _SERVER_REF_PARAM,
+                "lfd_log_line": _string_param(
+                    "Exact LFD/CSF log line (source of truth), e.g. `lfd: (pop3d) Failed POP3 login from 1.2.3.4 ... - Tue Mar 31 12:23:11 2026`. The tool hard-guards to smtpauth, imapd, and pop3d."
+                ),
+                "top_n": _integer_param(
+                    "Maximum number of suspect usernames to return.",
+                    minimum=1,
+                    maximum=200,
+                    default=50,
+                ),
+                "include_raw_output": {
+                    "type": "boolean",
+                    "description": "Include the copy/paste-ready aggregated output lines in `raw_output`. Defaults to false to reduce stored sensitive output.",
+                    "default": False,
+                },
+            },
+            required=["server_ref", "lfd_log_line"],
+        ),
+        execute=whm_mail_log_failed_auth_suspects,
+        prompt_hints=(
+            "Use only for follow-up on firewall blocks caused by failed SMTP AUTH (smtpauth), IMAP (imapd), or POP3 (pop3d) logins.",
+            "Provide the exact LFD log line so the tool can parse month/day/IP reliably.",
+            "This tool may take up to ~2 minutes on large mail logs; wait for the result.",
+            "The output includes mailbox identifiers and should be treated as sensitive operational data.",
+            "Return `raw_output` to the user in a copy/paste-friendly code block.",
+        ),
+        result_schema=_MAIL_AUTH_SUSPECTS_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
         name="whm_list_accounts",
         description="List WHM accounts for one resolved server.",
         risk=ToolRisk.READ,
@@ -825,6 +917,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Run `whm_preflight_firewall_entries` once per target before proposing this tool.",
             "Automatically operates on all available firewall tools (CSF, Imunify, or both).",
             "Batch result contract: returns `results` per target with `status` `changed`, `no-op`, or `error`.",
+            "If CSF indicates the block reason is an LFD auth failure (smtpauth/imapd/pop3d), the tool will also return `failed_auth_suspects` for that target.",
         ),
         result_schema=_FIREWALL_BATCH_RESULT_SCHEMA,
         workflow_family="whm-firewall-batch-change",

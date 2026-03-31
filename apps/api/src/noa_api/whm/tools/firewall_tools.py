@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from typing import Any
 
@@ -26,6 +27,33 @@ from noa_api.whm.integrations.imunify_cli import (
     run_imunify_command,
 )
 from noa_api.whm.server_ref import resolve_whm_server_ref
+from noa_api.whm.tools.read_tools import whm_mail_log_failed_auth_suspects
+
+
+_LFD_AUTH_LINE_RE = re.compile(
+    r"\blfd(?:\[\d+\])?:\s*\((smtpauth|imapd|pop3d)\)",
+    re.IGNORECASE,
+)
+
+
+def _extract_lfd_auth_line(csf_preflight: object) -> str | None:
+    if not isinstance(csf_preflight, dict):
+        return None
+    if csf_preflight.get("ok") is not True:
+        return None
+
+    matches = csf_preflight.get("matches")
+    if isinstance(matches, list):
+        for item in matches:
+            if isinstance(item, str) and _LFD_AUTH_LINE_RE.search(item):
+                return item
+
+    raw_output = csf_preflight.get("raw_output")
+    if isinstance(raw_output, str):
+        for line in raw_output.splitlines():
+            if _LFD_AUTH_LINE_RE.search(line):
+                return line.strip()
+    return None
 
 
 def _resolution_error(result: Any) -> dict[str, object]:
@@ -478,28 +506,57 @@ async def whm_firewall_unblock(
                 overall_ok = False
                 status = "error"
 
-        results.append(
-            {
-                "target": target,
-                "ok": target_ok,
-                "status": status,
-                "available_tools": available,
-                "csf": {
-                    "preflight": preflight.get("csf"),
-                    "change": changes.get("csf"),
-                    "postflight": postflight.get("csf"),
-                }
-                if available["csf"]
-                else None,
-                "imunify": {
-                    "preflight": preflight.get("imunify"),
-                    "change": changes.get("imunify"),
-                    "postflight": postflight.get("imunify"),
-                }
-                if available["imunify"]
-                else None,
+        entry: dict[str, object] = {
+            "target": target,
+            "ok": target_ok,
+            "status": status,
+            "available_tools": available,
+            "csf": {
+                "preflight": preflight.get("csf"),
+                "change": changes.get("csf"),
+                "postflight": postflight.get("csf"),
             }
-        )
+            if available["csf"]
+            else None,
+            "imunify": {
+                "preflight": preflight.get("imunify"),
+                "change": changes.get("imunify"),
+                "postflight": postflight.get("imunify"),
+            }
+            if available["imunify"]
+            else None,
+        }
+
+        # If the CSF reason indicates an LFD auth block (smtpauth/imapd/pop3d),
+        # automatically identify the most likely suspect mailbox usernames.
+        lfd_line = _extract_lfd_auth_line(preflight.get("csf"))
+        if (
+            status == "changed"
+            and target_ok
+            and lfd_line is not None
+            and not csf_still_blocked
+            and not imunify_still_blocked
+        ):
+            suspects_result = await whm_mail_log_failed_auth_suspects(
+                session=session,
+                server_ref=server_ref,
+                lfd_log_line=lfd_line,
+                include_raw_output=False,
+            )
+            if suspects_result.get("ok") is True:
+                entry["failed_auth_suspects"] = suspects_result.get("suspects", [])
+                entry["failed_auth_service"] = suspects_result.get("service")
+                entry["failed_auth_ip"] = suspects_result.get("ip")
+                entry["failed_auth_month"] = suspects_result.get("month")
+                entry["failed_auth_day"] = suspects_result.get("day")
+            else:
+                entry["failed_auth_suspects_error"] = {
+                    "error_code": suspects_result.get("error_code") or "unknown",
+                    "message": suspects_result.get("message")
+                    or "Failed to identify suspect mailbox usernames",
+                }
+
+        results.append(entry)
 
     return {"ok": overall_ok, "available_tools": available, "results": results}
 
