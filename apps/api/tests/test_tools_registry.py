@@ -68,10 +68,22 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     assert search_schema["properties"]["limit"]["default"] == 20
     assert search_schema["properties"]["limit"]["minimum"] == 1
 
+    proxmox_disable_schema = by_name["proxmox_disable_vm_nic"].parameters_schema
+    assert proxmox_disable_schema["required"] == [
+        "server_ref",
+        "node",
+        "vmid",
+        "net",
+        "digest",
+    ]
+    assert proxmox_disable_schema["properties"]["net"]["pattern"] == r"^net\d+$"
+
     assert by_name["set_demo_flag"].result_schema is not None
     assert by_name["update_workflow_todo"].result_schema is not None
     assert by_name["whm_suspend_account"].result_schema is not None
     assert by_name["whm_firewall_unblock"].result_schema is not None
+    assert by_name["proxmox_preflight_vm_nic_toggle"].result_schema is not None
+    assert by_name["proxmox_disable_vm_nic"].result_schema is not None
 
 
 async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
@@ -127,6 +139,14 @@ async def test_whm_change_tools_expose_workflow_families() -> None:
     assert (
         by_name["whm_firewall_denylist_add_ttl"].workflow_family
         == "whm-firewall-batch-change"
+    )
+    assert (
+        by_name["proxmox_disable_vm_nic"].workflow_family
+        == "proxmox-vm-nic-connectivity"
+    )
+    assert (
+        by_name["proxmox_enable_vm_nic"].workflow_family
+        == "proxmox-vm-nic-connectivity"
     )
 
 

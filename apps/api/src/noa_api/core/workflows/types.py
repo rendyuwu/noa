@@ -148,9 +148,7 @@ def collect_recent_preflight_evidence(
 
             part_type = part.get("type")
             tool_name = part.get("toolName")
-            if not isinstance(tool_name, str) or not tool_name.startswith(
-                "whm_preflight_"
-            ):
+            if not isinstance(tool_name, str) or "_preflight_" not in tool_name:
                 continue
 
             tool_call_id = part.get("toolCallId")

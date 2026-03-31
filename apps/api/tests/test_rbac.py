@@ -455,6 +455,11 @@ async def test_authorization_service_lists_canonical_tools() -> None:
         "whm_firewall_allowlist_add_ttl",
         "whm_firewall_allowlist_remove",
         "whm_firewall_denylist_add_ttl",
+        "proxmox_list_servers",
+        "proxmox_validate_server",
+        "proxmox_preflight_vm_nic_toggle",
+        "proxmox_disable_vm_nic",
+        "proxmox_enable_vm_nic",
     ]
 
 

@@ -201,3 +201,56 @@ def test_validate_tool_result_rejects_primary_domain_preflight_without_requested
         )
 
     assert exc_info.value.details == ("Missing required field 'requested_domain'",)
+
+
+def test_validate_tool_result_rejects_proxmox_preflight_without_net() -> None:
+    tool = get_tool_definition("proxmox_preflight_vm_nic_toggle")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "server_id": "srv-1",
+                "node": "pve1",
+                "vmid": 101,
+                "digest": "abc123",
+                "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                "link_state": "up",
+                "auto_selected_net": True,
+                "nets": [],
+            },
+        )
+
+    assert exc_info.value.details == ("Missing required field 'net'",)
+
+
+def test_validate_tool_result_rejects_proxmox_change_without_verified() -> None:
+    tool = get_tool_definition("proxmox_disable_vm_nic")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "server_id": "srv-1",
+                "node": "pve1",
+                "vmid": 101,
+                "net": "net0",
+                "digest": "abc123",
+                "status": "changed",
+                "message": "NIC disabled",
+                "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                "after_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+                "link_state": "down",
+                "upid": "UPID:pve1:00000001:task",
+                "task_status": "stopped",
+                "task_exit_status": "OK",
+            },
+        )
+
+    assert exc_info.value.details == ("Missing required field 'verified'",)

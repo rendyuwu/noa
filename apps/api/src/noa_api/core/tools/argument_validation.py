@@ -146,6 +146,10 @@ def _validate_string(schema: dict[str, Any], *, value: object, path: str) -> lis
     format_name = schema.get("format")
     if format_name == "server-ref" and not _SERVER_REF_RE.match(normalized):
         problems.append(f"{_format_path(path)} must be a valid WHM server reference")
+    if format_name == "proxmox-server-ref" and not _SERVER_REF_RE.match(normalized):
+        problems.append(
+            f"{_format_path(path)} must be a valid Proxmox server reference"
+        )
     if format_name == "whm-username" and not _WHM_USERNAME_RE.match(normalized):
         problems.append(f"{_format_path(path)} must be a valid WHM username")
     if format_name in {"csf-target", "ipv4"}:

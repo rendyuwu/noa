@@ -9,6 +9,15 @@ from noa_api.core.tools.demo_tools import (
     set_demo_flag,
 )
 from noa_api.core.tools.workflow_todo import update_workflow_todo
+from noa_api.proxmox.tools.nic_tools import (
+    proxmox_disable_vm_nic,
+    proxmox_enable_vm_nic,
+    proxmox_preflight_vm_nic_toggle,
+)
+from noa_api.proxmox.tools.read_tools import (
+    proxmox_list_servers,
+    proxmox_validate_server,
+)
 from noa_api.storage.postgres.lifecycle import ToolRisk
 from noa_api.whm.tools.account_change_tools import (
     whm_change_primary_domain,
@@ -180,6 +189,30 @@ _SERVER_REF_PARAM = _string_param(
     format_name="server-ref",
 )
 
+_PROXMOX_SERVER_REF_PARAM = _string_param(
+    "Server reference that resolves to exactly one configured Proxmox server. Use a server name, UUID, or base URL host and ask the user to choose if the tool returns choices.",
+    format_name="proxmox-server-ref",
+)
+
+_PROXMOX_NODE_PARAM = _string_param(
+    "Exact Proxmox node name that hosts the QEMU VM.",
+    pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+)
+
+_PROXMOX_VMID_PARAM = _integer_param(
+    "Numeric Proxmox QEMU VM ID.",
+    minimum=1,
+)
+
+_PROXMOX_NET_PARAM = _string_param(
+    "Exact Proxmox NIC key such as net0 or net1.",
+    pattern=r"^net\d+$",
+)
+
+_PROXMOX_DIGEST_PARAM = _string_param(
+    "Exact Proxmox config digest returned by proxmox_preflight_vm_nic_toggle.",
+)
+
 _USERNAME_PARAM = _string_param(
     "Exact WHM username. Trim whitespace and prefer identifiers confirmed by whm_search_accounts or whm_preflight_account.",
     format_name="whm-username",
@@ -267,6 +300,51 @@ _WHM_RESULT_ERROR_SCHEMA = _result_object_schema(
     required=["ok", "error_code", "message"],
 )
 
+_PROXMOX_SERVER_CHOICE_SCHEMA = _result_object_schema(
+    properties={
+        "id": _result_string_schema(),
+        "name": _result_string_schema(),
+        "base_url": _result_string_schema(),
+    },
+    required=["id", "name", "base_url"],
+)
+
+_PROXMOX_NET_RESULT_SCHEMA = _result_object_schema(
+    properties={
+        "key": _result_string_schema(),
+        "value": _result_string_schema(),
+        "link_down": _result_boolean_schema(),
+        "link_state": _result_string_schema(enum=["up", "down"]),
+        "model": {"type": ["string", "null"]},
+        "mac_address": {"type": ["string", "null"]},
+        "bridge": {"type": ["string", "null"]},
+    },
+    required=[
+        "key",
+        "value",
+        "link_down",
+        "link_state",
+        "model",
+        "mac_address",
+        "bridge",
+    ],
+)
+
+_PROXMOX_RESULT_ERROR_SCHEMA = _result_object_schema(
+    properties={
+        "ok": _result_boolean_schema(value=False),
+        "error_code": _result_string_schema(),
+        "message": _result_string_schema(),
+        "choices": _result_array_schema(items=_PROXMOX_SERVER_CHOICE_SCHEMA),
+        "nets": _result_array_schema(items=_PROXMOX_NET_RESULT_SCHEMA),
+        "server_id": _result_string_schema(),
+        "node": _result_string_schema(),
+        "vmid": {"type": "integer"},
+        "digest": _result_string_schema(),
+    },
+    required=["ok", "error_code", "message"],
+)
+
 _RESULT_SUCCESS_OK_SCHEMA = {"ok": _result_boolean_schema(value=True)}
 
 _SERVER_SAFE_RESULT_SCHEMA = _result_object_schema(
@@ -289,6 +367,30 @@ _SERVER_SAFE_RESULT_SCHEMA = _result_object_schema(
         "name",
         "base_url",
         "api_username",
+        "verify_ssl",
+        "created_at",
+        "updated_at",
+    ],
+    additional_properties=False,
+)
+
+_PROXMOX_SERVER_SAFE_RESULT_SCHEMA = _result_object_schema(
+    properties={
+        "id": _result_string_schema(),
+        "name": _result_string_schema(),
+        "base_url": _result_string_schema(),
+        "api_token_id": _result_string_schema(),
+        "has_api_token_secret": _result_boolean_schema(),
+        "verify_ssl": _result_boolean_schema(),
+        "created_at": _result_string_schema(),
+        "updated_at": _result_string_schema(),
+    },
+    required=[
+        "id",
+        "name",
+        "base_url",
+        "api_token_id",
+        "has_api_token_secret",
         "verify_ssl",
         "created_at",
         "updated_at",
@@ -369,6 +471,98 @@ _VALIDATE_SERVER_RESULT_SCHEMA = _result_any_of(
         required=["ok", "message"],
     ),
     _WHM_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_SERVERS_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "servers": _result_array_schema(items=_PROXMOX_SERVER_SAFE_RESULT_SCHEMA),
+        },
+        required=["ok", "servers"],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_VALIDATE_SERVER_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "message": _result_string_schema(),
+        },
+        required=["ok", "message"],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_PREFLIGHT_NIC_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "server_id": _result_string_schema(),
+            "node": _result_string_schema(),
+            "vmid": {"type": "integer"},
+            "digest": _result_string_schema(),
+            "net": _result_string_schema(),
+            "before_net": _result_string_schema(),
+            "link_state": _result_string_schema(enum=["up", "down"]),
+            "auto_selected_net": _result_boolean_schema(),
+            "nets": _result_array_schema(items=_PROXMOX_NET_RESULT_SCHEMA),
+        },
+        required=[
+            "ok",
+            "server_id",
+            "node",
+            "vmid",
+            "digest",
+            "net",
+            "before_net",
+            "link_state",
+            "auto_selected_net",
+            "nets",
+        ],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_NIC_CHANGE_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "server_id": _result_string_schema(),
+            "node": _result_string_schema(),
+            "vmid": {"type": "integer"},
+            "net": _result_string_schema(),
+            "digest": _result_string_schema(),
+            "status": _result_string_schema(enum=["changed", "no-op"]),
+            "message": _result_string_schema(),
+            "before_net": _result_string_schema(),
+            "after_net": _result_string_schema(),
+            "link_state": _result_string_schema(enum=["up", "down"]),
+            "verified": _result_boolean_schema(value=True),
+            "upid": {"type": ["string", "null"]},
+            "task_status": {"type": ["string", "null"]},
+            "task_exit_status": {"type": ["string", "null"]},
+        },
+        required=[
+            "ok",
+            "server_id",
+            "node",
+            "vmid",
+            "net",
+            "digest",
+            "status",
+            "message",
+            "before_net",
+            "after_net",
+            "link_state",
+            "verified",
+            "upid",
+            "task_status",
+            "task_exit_status",
+        ],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
 )
 
 _CHECK_BINARY_RESULT_SCHEMA = _result_any_of(
@@ -1004,6 +1198,100 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         result_schema=_FIREWALL_BATCH_RESULT_SCHEMA,
         workflow_family="whm-firewall-batch-change",
+    ),
+    ToolDefinition(
+        name="proxmox_list_servers",
+        description="List configured Proxmox servers using safe fields only.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(properties={}, required=[]),
+        execute=proxmox_list_servers,
+        prompt_hints=(
+            "Use this when the user has not supplied a server_ref or when you need Proxmox server choices for disambiguation.",
+            "Successful results return `servers` and never include the API token secret.",
+        ),
+        result_schema=_PROXMOX_SERVERS_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_validate_server",
+        description="Validate a Proxmox server reference by calling a lightweight API check.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={"server_ref": _PROXMOX_SERVER_REF_PARAM},
+            required=["server_ref"],
+        ),
+        execute=proxmox_validate_server,
+        prompt_hints=(
+            "Use this for Proxmox connectivity or credential validation.",
+            "Success returns `ok: true` and `message: ok`; failures return `error_code`, `message`, and possibly `choices`.",
+        ),
+        result_schema=_PROXMOX_VALIDATE_SERVER_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_preflight_vm_nic_toggle",
+        description="Read the current Proxmox VM NIC state and strict digest before enabling or disabling one QEMU NIC.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+                "net": {
+                    **_PROXMOX_NET_PARAM,
+                    "description": "Optional Proxmox NIC key such as net0. If omitted and the VM has exactly one NIC, the tool auto-selects it.",
+                },
+            },
+            required=["server_ref", "node", "vmid"],
+        ),
+        execute=proxmox_preflight_vm_nic_toggle,
+        prompt_hints=(
+            "Run this before `proxmox_disable_vm_nic` or `proxmox_enable_vm_nic` and summarize the current NIC link state plus digest.",
+            "If multiple NICs exist and `net` is omitted, the tool returns `net_selection_required` and a `nets` list for user choice.",
+        ),
+        result_schema=_PROXMOX_PREFLIGHT_NIC_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_disable_vm_nic",
+        description="Disable one Proxmox QEMU VM NIC by setting link_down after matching preflight evidence and digest.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+                "net": _PROXMOX_NET_PARAM,
+                "digest": _PROXMOX_DIGEST_PARAM,
+            },
+            required=["server_ref", "node", "vmid", "net", "digest"],
+        ),
+        execute=proxmox_disable_vm_nic,
+        prompt_hints=(
+            "Run `proxmox_preflight_vm_nic_toggle` first and use the same server_ref, node, vmid, net, and digest.",
+            "Idempotent result contract: returns `status` `no-op` if the NIC is already disabled, or `status` `changed` after task polling and verification confirm `link_down=1`.",
+        ),
+        result_schema=_PROXMOX_NIC_CHANGE_RESULT_SCHEMA,
+        workflow_family="proxmox-vm-nic-connectivity",
+    ),
+    ToolDefinition(
+        name="proxmox_enable_vm_nic",
+        description="Enable one Proxmox QEMU VM NIC by removing link_down after matching preflight evidence and digest.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+                "net": _PROXMOX_NET_PARAM,
+                "digest": _PROXMOX_DIGEST_PARAM,
+            },
+            required=["server_ref", "node", "vmid", "net", "digest"],
+        ),
+        execute=proxmox_enable_vm_nic,
+        prompt_hints=(
+            "Run `proxmox_preflight_vm_nic_toggle` first and use the same server_ref, node, vmid, net, and digest.",
+            "Idempotent result contract: returns `status` `no-op` if the NIC is already enabled, or `status` `changed` after task polling and verification confirm `link_down` is absent.",
+        ),
+        result_schema=_PROXMOX_NIC_CHANGE_RESULT_SCHEMA,
+        workflow_family="proxmox-vm-nic-connectivity",
     ),
 )
 _MVP_TOOL_INDEX = {tool.name: tool for tool in _MVP_TOOLS}

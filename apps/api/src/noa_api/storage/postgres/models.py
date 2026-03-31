@@ -364,3 +364,43 @@ class WHMServer(Base):
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+
+
+class ProxmoxServer(Base):
+    __tablename__ = "proxmox_servers"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        primary_key=True,
+        server_default=func.gen_random_uuid(),
+    )
+    name: Mapped[str] = mapped_column(
+        String(255), nullable=False, unique=True, index=True
+    )
+    base_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    api_token_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    api_token_secret: Mapped[str] = mapped_column(Text, nullable=False)
+    verify_ssl: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    def to_safe_dict(self) -> dict[str, object]:
+        return {
+            "id": str(self.id),
+            "name": self.name,
+            "base_url": self.base_url,
+            "api_token_id": self.api_token_id,
+            "has_api_token_secret": self.api_token_secret is not None,
+            "verify_ssl": self.verify_ssl,
+            "created_at": self.created_at,
+            "updated_at": self.updated_at,
+        }

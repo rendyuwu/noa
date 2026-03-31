@@ -17,6 +17,9 @@ from noa_api.core.workflows.types import (
     workflow_evidence_template_payload,
     workflow_reply_template_payload,
 )
+from noa_api.core.workflows.proxmox import (
+    WORKFLOW_TEMPLATES as PROXMOX_WORKFLOW_TEMPLATES,
+)
 from noa_api.core.workflows.whm import WORKFLOW_TEMPLATES as WHM_WORKFLOW_TEMPLATES
 from noa_api.storage.postgres.workflow_todos import (
     SQLWorkflowTodoRepository,
@@ -343,4 +346,7 @@ def _summarize_arguments(args: dict[str, object]) -> list[dict[str, str]]:
 
 
 for _family, _template in WHM_WORKFLOW_TEMPLATES.items():
+    register_workflow_template(family=_family, template=_template)
+
+for _family, _template in PROXMOX_WORKFLOW_TEMPLATES.items():
     register_workflow_template(family=_family, template=_template)
