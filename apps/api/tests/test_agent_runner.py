@@ -257,8 +257,11 @@ async def test_agent_runner_sanitizes_tool_result_message_parts(monkeypatch) -> 
     assert isinstance(part, dict)
     tool_result = part.get("result")
     assert isinstance(tool_result, dict)
-    assert tool_result["when"] == "2026-03-13T12:00:00+00:00"
-    assert isinstance(tool_result["id"], str)
+    typed_tool_result = cast(dict[str, object], tool_result)
+    tool_when = typed_tool_result.get("when")
+    assert tool_when == "2026-03-13T12:00:00+00:00"
+    tool_id = typed_tool_result.get("id")
+    assert isinstance(tool_id, str)
 
 
 async def test_agent_runner_redacts_tool_execution_errors(monkeypatch) -> None:
@@ -366,7 +369,9 @@ async def test_agent_runner_emits_clear_message_when_tool_not_allowed() -> None:
                     fn = tool.get("function")
                     if not isinstance(fn, dict):
                         continue
-                    if fn.get("name") == "get_current_time":
+                    typed_fn = cast(dict[str, object], fn)
+                    fn_name = typed_fn.get("name")
+                    if fn_name == "get_current_time":
                         has_time_tool = True
                         break
 
@@ -473,7 +478,8 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
         if not isinstance(parts, list):
             continue
         if any(
-            isinstance(part, dict) and part.get("type") == "tool-result"
+            isinstance(part, dict)
+            and cast(dict[str, object], part).get("type") == "tool-result"
             for part in parts
         ):
             saw_tool_result_in_second_call = True
@@ -536,7 +542,7 @@ async def test_agent_runner_recovers_when_model_calls_request_approval_directly(
     monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
     monkeypatch.setattr(
         "noa_api.core.agent.runner._resolve_requested_server_id",
-        lambda **kwargs: _async_return("server-1"),
+        lambda **_kwargs: _async_return("server-1"),
     )
 
     class _TwoTurnLLM:
@@ -563,17 +569,22 @@ async def test_agent_runner_recovers_when_model_calls_request_approval_directly(
                 parts = message.get("parts")
                 if not isinstance(parts, list):
                     continue
-                if any(
-                    isinstance(part, dict)
-                    and part.get("text")
-                    == (
+                for part in parts:
+                    part_dict = (
+                        cast(dict[str, object], part)
+                        if isinstance(part, dict)
+                        else None
+                    )
+                    if part_dict is None:
+                        continue
+                    if part_dict.get("text") == (
                         "Approval requests are created automatically after you call "
                         "the underlying CHANGE tool. Do not call request_approval "
                         "directly."
-                    )
-                    for part in parts
-                ):
-                    saw_internal_guidance = True
+                    ):
+                        saw_internal_guidance = True
+                        break
+                if saw_internal_guidance:
                     break
             assert saw_internal_guidance is True
             return LLMTurnResponse(
@@ -768,7 +779,9 @@ async def test_agent_runner_creates_action_request_for_change_tools_without_exec
     assert approval_part["toolName"] == "request_approval"
     approval_args = approval_part.get("args")
     assert isinstance(approval_args, dict)
-    assert approval_args.get("actionRequestId") == str(request.id)
+    typed_approval_args = cast(dict[str, object], approval_args)
+    action_request_id = typed_approval_args.get("actionRequestId")
+    assert action_request_id == str(request.id)
 
 
 async def test_agent_runner_fails_read_tool_run_when_args_do_not_match_schema(
@@ -942,7 +955,7 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     captured: dict[str, object] = {}
 
-    async def _record_replace(self, *, thread_id, todos):
+    async def _record_replace(_self, *, thread_id, todos):
         captured["thread_id"] = thread_id
         captured["todos"] = todos
 
@@ -1057,7 +1070,7 @@ async def test_agent_runner_stops_retry_loop_when_reason_is_missing(
 
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
-    async def _record_replace(self, *, thread_id, todos):
+    async def _record_replace(_self, *, thread_id, todos):
         _ = thread_id, todos
 
     monkeypatch.setattr(
@@ -1155,7 +1168,7 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     captured: dict[str, object] = {}
 
-    async def _record_replace(self, *, thread_id, todos):
+    async def _record_replace(_self, *, thread_id, todos):
         captured["thread_id"] = thread_id
         captured["todos"] = todos
 
@@ -1273,7 +1286,7 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_firewall_wai
         ]
     }
 
-    async def _record_replace(self, *, thread_id, todos):
+    async def _record_replace(_self, *, thread_id, todos):
         captured["thread_id"] = thread_id
         captured["todos"] = todos
 
@@ -1411,7 +1424,7 @@ async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reaso
 ) -> None:
     captured: dict[str, object] = {}
 
-    async def _record_replace(self, *, thread_id, todos):
+    async def _record_replace(_self, *, thread_id, todos):
         captured["thread_id"] = thread_id
         captured["todos"] = todos
 
@@ -1571,14 +1584,26 @@ async def test_agent_runner_reprompts_model_after_empty_post_tool_turn(
                 assert any(message.get("role") == "tool" for message in messages)
                 return LLMTurnResponse(text="", tool_calls=[])
 
-            assert any(
-                isinstance(part, dict)
-                and part.get("type") == "text"
-                and isinstance(part.get("text"), str)
-                and "Using the latest tool result you already have" in part["text"]
-                for message in messages
-                for part in cast(list[object], message.get("parts") or [])
-            )
+            saw_followup_guidance = False
+            for message in messages:
+                parts = cast(list[object], message.get("parts") or [])
+                for part in parts:
+                    part_dict = (
+                        cast(dict[str, object], part)
+                        if isinstance(part, dict)
+                        else None
+                    )
+                    if part_dict is None or part_dict.get("type") != "text":
+                        continue
+                    part_text = part_dict.get("text")
+                    if isinstance(part_text, str) and (
+                        "Using the latest tool result you already have" in part_text
+                    ):
+                        saw_followup_guidance = True
+                        break
+                if saw_followup_guidance:
+                    break
+            assert saw_followup_guidance
             return LLMTurnResponse(
                 text="IP 187.150.230.11 terblokir di CSF server web2.",
                 tool_calls=[],
@@ -1619,6 +1644,7 @@ async def test_agent_runner_falls_back_when_model_stays_empty_after_tool_result(
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
     async def preflight_tool(*, server_ref: str, target: str) -> dict[str, object]:
+        _ = server_ref
         return {
             "ok": True,
             "server_id": str(uuid4()),
@@ -1848,8 +1874,8 @@ async def test_agent_runner_appends_firewall_preflight_raw_output_to_followup_te
         and any(
             isinstance(part, dict)
             and part.get("type") == "text"
-            and isinstance(part.get("text"), str)
-            and "Raw preflight output for 103.103.11.123 (CSF)" in part["text"]
+            and isinstance(part_text := part.get("text"), str)
+            and "Raw preflight output for 103.103.11.123 (CSF)" in part_text
             for part in message.parts
         )
     )
@@ -1953,6 +1979,214 @@ async def test_agent_runner_falls_back_for_generic_read_success_when_model_stays
         "Read result: date: 2026-03-28; verdict: ready; count: 2; "
         "path: /var/backups/latest.tar.gz."
     )
+
+
+async def test_agent_runner_stops_duplicate_failed_read_tool_retry_loop(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def validate_tool(*, server_ref: str) -> dict[str, object]:
+        assert server_ref == "telitpro01"
+        return {
+            "ok": False,
+            "error_code": "connect_failed",
+            "message": "Could not complete proxmox validate server",
+        }
+
+    tool = ToolDefinition(
+        name="proxmox_validate_server",
+        description="Validate a Proxmox server reference.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref"],
+            "additionalProperties": False,
+        },
+        execute=validate_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _LoopingLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={"server_ref": "telitpro01"},
+                    )
+                ],
+            )
+
+    llm = _LoopingLLM()
+    runner = AgentRunner(
+        llm_client=llm,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Validate proxmox server telitpro01",
+                    }
+                ],
+            }
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert llm.turn == 2
+    assert not any(
+        isinstance(part, dict)
+        and part.get("text") == "Tool loop exceeded safety limits."
+        for message in result.messages
+        for part in message.parts
+    )
+    final_part = result.messages[-1].parts[0]
+    assert isinstance(final_part, dict)
+    assert final_part["type"] == "text"
+    assert final_part["text"] == (
+        "The tool failed with connect_failed: Could not complete proxmox validate server"
+    )
+
+
+async def test_agent_runner_allows_retry_after_failed_read_with_different_args(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def validate_tool(*, server_ref: str) -> dict[str, object]:
+        return {"ok": True, "message": f"validated {server_ref}"}
+
+    tool = ToolDefinition(
+        name="proxmox_validate_server",
+        description="Validate a Proxmox server reference.",
+        risk=ToolRisk.READ,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref"],
+            "additionalProperties": False,
+        },
+        execute=validate_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={"server_ref": "telitpro02"},
+                        )
+                    ],
+                )
+            return LLMTurnResponse(text="validated telitpro02", tool_calls=[])
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Validate proxmox servers",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": tool.name,
+                        "toolCallId": "prior-call",
+                        "args": {"server_ref": "telitpro01"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": tool.name,
+                        "toolCallId": "prior-call",
+                        "result": {
+                            "ok": False,
+                            "error_code": "connect_failed",
+                            "message": "Could not complete proxmox validate server",
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    tool_call_parts = [
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict) and part.get("type") == "tool-call"
+    ]
+    assert len(tool_call_parts) == 1
+    assert tool_call_parts[0]["args"] == {"server_ref": "telitpro02"}
 
 
 async def test_agent_runner_rejects_whitespace_only_string_arguments(
@@ -2950,7 +3184,7 @@ async def test_agent_runner_allows_change_proposal_when_server_id_matches(
     monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
     monkeypatch.setattr(
         "noa_api.core.agent.runner._resolve_requested_server_id",
-        lambda **kwargs: _async_return("server-1"),
+        lambda **_kwargs: _async_return("server-1"),
     )
 
     runner = AgentRunner(
@@ -3057,7 +3291,7 @@ async def test_agent_runner_rejects_change_proposal_when_server_id_differs(
     monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
     monkeypatch.setattr(
         "noa_api.core.agent.runner._resolve_requested_server_id",
-        lambda **kwargs: _async_return("server-1"),
+        lambda **_kwargs: _async_return("server-1"),
     )
 
     class _TwoTurnLLM:

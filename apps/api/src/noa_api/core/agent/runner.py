@@ -111,6 +111,12 @@ def _workflow_todo_tool_messages(
     ]
 
 
+def _as_object_dict(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    return cast(dict[str, object], value)
+
+
 class RuleBasedLLMClient:
     async def run_turn(
         self,
@@ -148,13 +154,14 @@ class RuleBasedLLMClient:
             if not isinstance(parts, list):
                 continue
             for part in parts:
-                if not isinstance(part, dict) or part.get("type") != "tool-result":
+                part_dict = _as_object_dict(part)
+                if part_dict is None or part_dict.get("type") != "tool-result":
                     continue
-                tool_name = part.get("toolName")
+                tool_name = part_dict.get("toolName")
                 if not isinstance(tool_name, str):
                     continue
                 if tool_name in relevant_tool_results:
-                    latest_relevant_tool_result = part
+                    latest_relevant_tool_result = part_dict
                     break
             if latest_relevant_tool_result is not None:
                 break
@@ -162,8 +169,8 @@ class RuleBasedLLMClient:
         if latest_relevant_tool_result is not None:
             if latest_relevant_tool_result.get("isError") is not True:
                 tool_name = latest_relevant_tool_result.get("toolName")
-                result = latest_relevant_tool_result.get("result")
-                if isinstance(tool_name, str) and isinstance(result, dict):
+                result = _as_object_dict(latest_relevant_tool_result.get("result"))
+                if isinstance(tool_name, str) and result is not None:
                     if tool_name == "set_demo_flag":
                         if result.get("ok") is True:
                             return await _emit_text_turn("The demo flag was updated.")
@@ -183,11 +190,13 @@ class RuleBasedLLMClient:
             if not isinstance(parts, list):
                 continue
             for part in parts:
-                if isinstance(part, dict) and part.get("type") == "text":
-                    text = part.get("text")
-                    if isinstance(text, str):
-                        last_user_text = text
-                        break
+                part_dict = _as_object_dict(part)
+                if part_dict is None or part_dict.get("type") != "text":
+                    continue
+                text = part_dict.get("text")
+                if isinstance(text, str):
+                    last_user_text = text
+                    break
             if last_user_text:
                 break
 
@@ -277,7 +286,7 @@ class OpenAICompatibleLLMClient:
 
             return LLMTurnResponse(text=text, tool_calls=tool_calls)
 
-        request_kwargs = {
+        request_kwargs: dict[str, Any] = {
             "model": self._model,
             "temperature": 0,
             "messages": cast(Any, llm_messages),
@@ -287,7 +296,9 @@ class OpenAICompatibleLLMClient:
             request_kwargs["tools"] = cast(Any, tools)
             request_kwargs["tool_choice"] = "auto"
 
-        stream: Any = await self._client.chat.completions.create(**request_kwargs)
+        stream: Any = await self._client.chat.completions.create(
+            **cast(Any, request_kwargs)
+        )
 
         text_chunks: list[str] = []
         tool_call_acc: dict[int, dict[str, str]] = {}
@@ -381,8 +392,6 @@ class AgentRunner:
         tool_calls_processed = 0
         hit_safety_limit = False
         internal_guidance_counts: dict[str, int] = {}
-        post_tool_followup_prompted = False
-
         while rounds < max_rounds and tool_calls_processed < max_tool_calls:
             rounds += 1
             if on_text_delta is None:
@@ -442,11 +451,10 @@ class AgentRunner:
             if not llm_response.tool_calls:
                 if not text:
                     followup_guidance = _post_tool_followup_guidance(working_messages)
-                    if (
-                        followup_guidance is not None
-                        and not post_tool_followup_prompted
+                    if followup_guidance is not None and not any(
+                        _message_has_text(message, followup_guidance)
+                        for message in working_messages
                     ):
-                        post_tool_followup_prompted = True
                         working_messages.append(
                             {
                                 "role": "assistant",
@@ -492,6 +500,40 @@ class AgentRunner:
             saw_allowed_tool_call = False
             saw_internal_guidance_stop = False
             for tool_call in llm_response.tool_calls:
+                duplicate_failed_result = _latest_matching_failed_tool_result_part(
+                    working_messages=working_messages,
+                    tool_name=tool_call.name,
+                    args=tool_call.arguments,
+                )
+                if duplicate_failed_result is not None:
+                    fallback_text = _assistant_reply_from_tool_result_part(
+                        working_messages=working_messages,
+                        tool_result_part=duplicate_failed_result,
+                    )
+                    if fallback_text is None:
+                        fallback_text = (
+                            f"The tool '{tool_call.name}' already failed with these exact arguments. "
+                            "Please review the existing error before retrying."
+                        )
+                    fallback_parts: list[dict[str, object]] = [
+                        {"type": "text", "text": fallback_text}
+                    ]
+                    output_messages.append(
+                        AgentMessage(role="assistant", parts=fallback_parts)
+                    )
+                    working_messages.append(
+                        {
+                            "role": "assistant",
+                            "parts": fallback_parts,
+                        }
+                    )
+                    text_deltas.extend(_split_text_deltas(fallback_text))
+                    if on_text_delta is not None:
+                        for chunk in _split_text_deltas(fallback_text):
+                            await on_text_delta(chunk)
+                    saw_internal_guidance_stop = True
+                    break
+
                 if tool_calls_processed >= max_tool_calls:
                     hit_safety_limit = True
                     break
@@ -564,7 +606,9 @@ class AgentRunner:
                         pending_firewall_preflight_raw
                     )
                     pending_firewall_preflight_raw.clear()
-                    raw_parts = [{"type": "text", "text": raw_text}]
+                    raw_parts: list[dict[str, object]] = [
+                        {"type": "text", "text": raw_text}
+                    ]
                     output_messages.append(
                         AgentMessage(role="assistant", parts=raw_parts)
                     )
@@ -1005,24 +1049,25 @@ def _to_openai_chat_messages(
         tool_results_out: list[dict[str, Any]] = []
 
         for part in parts:
-            if not isinstance(part, dict):
+            part_dict = _as_object_dict(part)
+            if part_dict is None:
                 continue
-            part_type = part.get("type")
+            part_type = part_dict.get("type")
             if part_type == "text":
-                text = part.get("text")
+                text = part_dict.get("text")
                 if isinstance(text, str) and text.strip():
                     text_parts.append(text)
                 continue
 
             if part_type == "tool-call":
-                tool_name = part.get("toolName")
+                tool_name = part_dict.get("toolName")
                 if not isinstance(tool_name, str) or not tool_name:
                     continue
-                tool_call_id = part.get("toolCallId")
+                tool_call_id = part_dict.get("toolCallId")
                 if not isinstance(tool_call_id, str) or not tool_call_id:
                     continue
-                args = part.get("args")
-                args_obj = args if isinstance(args, dict) else {}
+                args = part_dict.get("args")
+                args_obj = _as_object_dict(args) or {}
                 tool_calls_out.append(
                     {
                         "id": tool_call_id,
@@ -1036,13 +1081,11 @@ def _to_openai_chat_messages(
                 continue
 
             if part_type == "tool-result":
-                tool_call_id = part.get("toolCallId")
+                tool_call_id = part_dict.get("toolCallId")
                 if not isinstance(tool_call_id, str) or not tool_call_id:
                     continue
-                result = part.get("result")
-                rendered_result = (
-                    result if isinstance(result, dict) else {"value": result}
-                )
+                result = part_dict.get("result")
+                rendered_result = _as_object_dict(result) or {"value": result}
                 tool_results_out.append(
                     {
                         "role": "tool",
@@ -1077,8 +1120,9 @@ def _safe_json_object(raw: str | None) -> dict[str, object]:
         parsed = json.loads(raw)
     except json.JSONDecodeError:
         return {}
-    if isinstance(parsed, dict):
-        return parsed
+    parsed_dict = _as_object_dict(parsed)
+    if parsed_dict is not None:
+        return parsed_dict
     return {}
 
 
@@ -1102,6 +1146,19 @@ def _normalized_text(value: object) -> str | None:
         return None
     normalized = value.strip()
     return normalized or None
+
+
+def _message_has_text(message: dict[str, object], expected_text: str) -> bool:
+    parts = message.get("parts")
+    if not isinstance(parts, list):
+        return False
+    for part in parts:
+        part_dict = _as_object_dict(part)
+        if part_dict is None or part_dict.get("type") != "text":
+            continue
+        if part_dict.get("text") == expected_text:
+            return True
+    return False
 
 
 async def _resolve_requested_server_id(
@@ -1233,8 +1290,9 @@ def _latest_tool_result_part(
         if not isinstance(parts, list):
             continue
         for part in reversed(parts):
-            if isinstance(part, dict) and part.get("type") == "tool-result":
-                return part
+            part_dict = _as_object_dict(part)
+            if part_dict is not None and part_dict.get("type") == "tool-result":
+                return part_dict
     return None
 
 
@@ -1246,14 +1304,54 @@ def _tool_call_args_for_id(
         if not isinstance(parts, list):
             continue
         for part in parts:
-            if not isinstance(part, dict) or part.get("type") != "tool-call":
+            part_dict = _as_object_dict(part)
+            if part_dict is None or part_dict.get("type") != "tool-call":
                 continue
-            if part.get("toolCallId") != tool_call_id:
+            if part_dict.get("toolCallId") != tool_call_id:
                 continue
-            args = part.get("args")
-            if isinstance(args, dict):
-                return args
+            args = part_dict.get("args")
+            args_dict = _as_object_dict(args)
+            if args_dict is not None:
+                return args_dict
             return {}
+    return None
+
+
+def _canonical_tool_args(args: dict[str, object]) -> str:
+    return json.dumps(json_safe(args), sort_keys=True, separators=(",", ":"))
+
+
+def _latest_matching_failed_tool_result_part(
+    *,
+    working_messages: list[dict[str, object]],
+    tool_name: str,
+    args: dict[str, object],
+) -> dict[str, object] | None:
+    expected_args = _canonical_tool_args(args)
+    for message in reversed(working_messages):
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in reversed(parts):
+            part_dict = _as_object_dict(part)
+            if part_dict is None or part_dict.get("type") != "tool-result":
+                continue
+            if part_dict.get("toolName") != tool_name:
+                continue
+            result = _as_object_dict(part_dict.get("result"))
+            if result is None:
+                continue
+            if part_dict.get("isError") is not True and result.get("ok") is not False:
+                continue
+            tool_call_id = part_dict.get("toolCallId")
+            if not isinstance(tool_call_id, str) or not tool_call_id:
+                continue
+            call_args = _tool_call_args_for_id(working_messages, tool_call_id)
+            if not isinstance(call_args, dict):
+                continue
+            if _canonical_tool_args(call_args) != expected_args:
+                continue
+            return part_dict
     return None
 
 
@@ -1278,16 +1376,17 @@ def _extract_firewall_preflight_raw_outputs(
     outputs: list[tuple[str, str]] = []
     for message in messages:
         for part in message.parts:
-            if not isinstance(part, dict) or part.get("type") != "tool-result":
+            part_dict = _as_object_dict(part)
+            if part_dict is None or part_dict.get("type") != "tool-result":
                 continue
-            if part.get("toolName") != "whm_preflight_firewall_entries":
+            if part_dict.get("toolName") != "whm_preflight_firewall_entries":
                 continue
-            result = part.get("result")
-            if not isinstance(result, dict) or result.get("ok") is not True:
+            result = _as_object_dict(part_dict.get("result"))
+            if result is None or result.get("ok") is not True:
                 continue
             target = _normalized_text(result.get("target")) or "the target"
-            csf_result = result.get("csf")
-            if not isinstance(csf_result, dict):
+            csf_result = _as_object_dict(result.get("csf"))
+            if csf_result is None:
                 continue
             verdict = _normalized_text(csf_result.get("verdict"))
             if verdict not in {"blocked", "allowlisted"}:
@@ -1329,6 +1428,19 @@ def _fallback_assistant_reply_from_recent_tool_result(
     if latest_tool_result is None:
         return None
 
+    return _assistant_reply_from_tool_result_part(
+        working_messages=working_messages,
+        tool_result_part=latest_tool_result,
+    )
+
+
+def _assistant_reply_from_tool_result_part(
+    *,
+    working_messages: list[dict[str, object]],
+    tool_result_part: dict[str, object],
+) -> str | None:
+    latest_tool_result = tool_result_part
+
     tool_name = latest_tool_result.get("toolName")
     tool_call_id = latest_tool_result.get("toolCallId")
     result = latest_tool_result.get("result")
@@ -1337,17 +1449,17 @@ def _fallback_assistant_reply_from_recent_tool_result(
     if not isinstance(tool_name, str):
         return None
 
-    if tool_name == "whm_preflight_firewall_entries" and isinstance(result, dict):
-        target = _normalized_text(result.get("target")) or "the target"
-        verdict = _normalized_text(result.get("combined_verdict")) or "unknown"
-        csf_result = result.get("csf")
-        raw_output = (
-            csf_result.get("raw_output") if isinstance(csf_result, dict) else None
-        )
+    result_dict = _as_object_dict(result)
+
+    if tool_name == "whm_preflight_firewall_entries" and result_dict is not None:
+        target = _normalized_text(result_dict.get("target")) or "the target"
+        verdict = _normalized_text(result_dict.get("combined_verdict")) or "unknown"
+        csf_result = _as_object_dict(result_dict.get("csf"))
+        raw_output = csf_result.get("raw_output") if csf_result is not None else None
         raw_output_text = (
             raw_output if isinstance(raw_output, str) and raw_output.strip() else None
         )
-        matches = result.get("matches")
+        matches = result_dict.get("matches")
         match_count = (
             len([item for item in matches if isinstance(item, str) and item.strip()])
             if isinstance(matches, list)
@@ -1360,9 +1472,9 @@ def _fallback_assistant_reply_from_recent_tool_result(
         )
         server_ref = _normalized_text(args.get("server_ref")) if args else None
         location = f" on server {server_ref}" if server_ref else ""
-        available_tools = result.get("available_tools")
+        available_tools = _as_object_dict(result_dict.get("available_tools"))
         available_labels: list[str] = []
-        if isinstance(available_tools, dict):
+        if available_tools is not None:
             if available_tools.get("csf") is True:
                 available_labels.append("CSF")
             if available_tools.get("imunify") is True:
@@ -1396,10 +1508,10 @@ def _fallback_assistant_reply_from_recent_tool_result(
             )
         return reply
 
-    if isinstance(result, dict):
-        error_code = _normalized_text(result.get("error_code"))
-        message = _normalized_text(result.get("message"))
-        if is_error or result.get("ok") is False:
+    if result_dict is not None:
+        error_code = _normalized_text(result_dict.get("error_code"))
+        message = _normalized_text(result_dict.get("message"))
+        if is_error or result_dict.get("ok") is False:
             if error_code and message:
                 return f"The tool failed with {error_code}: {message}"
             if message:
@@ -1419,31 +1531,32 @@ def _fallback_assistant_reply_from_recent_tool_result(
 
 
 def _generic_read_success_fallback(result: object) -> str:
-    if not isinstance(result, dict):
+    result_dict = _as_object_dict(result)
+    if result_dict is None:
         return "The check completed successfully."
 
     summary_parts: list[str] = []
 
     for key in ("datetime", "date", "time", "timestamp", "verdict"):
-        value = _normalized_text(result.get(key))
+        value = _normalized_text(result_dict.get(key))
         if value is not None:
             summary_parts.append(f"{key}: {value}")
 
-    found = result.get("found")
+    found = result_dict.get("found")
     if isinstance(found, bool):
         summary_parts.append(f"found: {'yes' if found else 'no'}")
 
-    count = _generic_read_result_count(result)
+    count = _generic_read_result_count(result_dict)
     if count is not None:
         summary_parts.append(f"count: {count}")
 
     for key in ("path", "file", "filepath"):
-        value = _normalized_text(result.get(key))
+        value = _normalized_text(result_dict.get(key))
         if value is not None:
             summary_parts.append(f"{key}: {value}")
             break
 
-    message = _normalized_text(result.get("message"))
+    message = _normalized_text(result_dict.get("message"))
     if message is not None and message != "ok":
         summary_parts.append(f"message: {message}")
 
