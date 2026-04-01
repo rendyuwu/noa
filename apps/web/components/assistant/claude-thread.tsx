@@ -235,9 +235,9 @@ function ThreadHydrationSkeleton() {
 }
 
 export const ClaudeThread: FC<{
-  onOpenSidebar?: () => void;
+  onOpenSidebarAction?: () => void;
   forceHydrationSkeleton?: boolean;
-}> = ({ onOpenSidebar, forceHydrationSkeleton = false }) => {
+}> = ({ onOpenSidebarAction, forceHydrationSkeleton = false }) => {
   const { isHydrating } = useThreadHydration();
   const threadIsRunning = useAssistantState(({ thread }: any) => Boolean(thread?.isRunning));
   const threadStatus = useAssistantState(
@@ -248,11 +248,11 @@ export const ClaudeThread: FC<{
 
   return (
     <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg px-4 pb-4 pt-14 font-serif">
-      {onOpenSidebar ? (
+      {onOpenSidebarAction ? (
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2 md:hidden">
           <button
             type="button"
-            onClick={onOpenSidebar}
+            onClick={onOpenSidebarAction}
             className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface/70 text-muted shadow-sm backdrop-blur-sm transition hover:bg-surface hover:text-text active:scale-[0.98]"
             aria-label="Open sidebar"
           >

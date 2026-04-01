@@ -233,7 +233,6 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
 
   const actionRequestId = coerceString(payload.actionRequestId);
   const toolRunId = coerceString(payload.toolRunId);
-  const receiptId = coerceString(payload.receiptId);
   const toolName = coerceString(payload.toolName);
 
   if (!replyTemplate) {

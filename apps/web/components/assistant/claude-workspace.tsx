@@ -218,7 +218,7 @@ export function ClaudeWorkspace() {
                </div>
              ) : null}
               <ClaudeThread
-                onOpenSidebar={openSidebar}
+                onOpenSidebarAction={openSidebar}
                 forceHydrationSkeleton={forceHydrationSkeleton}
               />
             </div>

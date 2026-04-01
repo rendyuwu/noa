@@ -12,6 +12,7 @@ from noa_api.core.workflows.types import (
     WorkflowReplyTemplate,
     WorkflowTemplate,
     WorkflowTemplateContext,
+    WorkflowTemplatePhase,
     collect_recent_preflight_evidence,
     collect_recent_preflight_results,
     workflow_evidence_template_payload,
@@ -83,7 +84,7 @@ def build_workflow_todos(
     tool_name: str,
     workflow_family: str | None = None,
     args: dict[str, object],
-    phase: str,
+    phase: WorkflowTemplatePhase,
     preflight_evidence: list[dict[str, object]],
     result: dict[str, object] | None = None,
     postflight_result: dict[str, object] | None = None,
@@ -96,7 +97,7 @@ def build_workflow_todos(
     context = WorkflowTemplateContext(
         tool_name=tool_name,
         args=args,
-        phase=phase,  # type: ignore[arg-type]
+        phase=phase,
         preflight_evidence=preflight_evidence,
         result=result,
         postflight_result=postflight_result,
@@ -110,7 +111,7 @@ def build_workflow_reply_template(
     tool_name: str,
     workflow_family: str | None = None,
     args: dict[str, object],
-    phase: str,
+    phase: WorkflowTemplatePhase,
     preflight_evidence: list[dict[str, object]],
     result: dict[str, object] | None = None,
     postflight_result: dict[str, object] | None = None,
@@ -123,7 +124,7 @@ def build_workflow_reply_template(
     context = WorkflowTemplateContext(
         tool_name=tool_name,
         args=args,
-        phase=phase,  # type: ignore[arg-type]
+        phase=phase,
         preflight_evidence=preflight_evidence,
         result=result,
         postflight_result=postflight_result,
@@ -137,7 +138,7 @@ def build_workflow_evidence_template(
     tool_name: str,
     workflow_family: str | None = None,
     args: dict[str, object],
-    phase: str,
+    phase: WorkflowTemplatePhase,
     preflight_evidence: list[dict[str, object]],
     result: dict[str, object] | None = None,
     postflight_result: dict[str, object] | None = None,
@@ -150,7 +151,7 @@ def build_workflow_evidence_template(
     context = WorkflowTemplateContext(
         tool_name=tool_name,
         args=args,
-        phase=phase,  # type: ignore[arg-type]
+        phase=phase,
         preflight_evidence=preflight_evidence,
         result=result,
         postflight_result=postflight_result,
@@ -254,12 +255,15 @@ def build_approval_context(
             for section in evidence_sections:
                 if not isinstance(section, dict):
                     continue
-                if section.get("key") != "before_state":
+                section_key = section.get("key")
+                if section_key != "before_state":
                     continue
-                items = section.get("items")
-                if not isinstance(items, list):
+                section_items = section.get("items")
+                if not isinstance(section_items, list):
                     continue
-                before_state = [item for item in items if isinstance(item, dict)]
+                before_state = [
+                    item for item in section_items if isinstance(item, dict)
+                ]
                 break
     elif template is not None:
         built_before_state = template.build_before_state(
@@ -278,7 +282,7 @@ def build_approval_context(
         preflight_evidence=preflight_evidence,
     )
 
-    context = {
+    context: dict[str, object] = {
         "activity": describe_workflow_activity(
             tool_name=tool_name,
             workflow_family=workflow_family,
