@@ -1,7 +1,7 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { setAuthToken, setAuthUser } from "@/components/lib/auth/auth-storage";
 import { sanitizeReturnTo } from "@/components/lib/auth/return-to";
@@ -24,21 +24,19 @@ function resolveLoginError(payload: ErrorPayload | null, fallback: string) {
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
-  const returnTo = useMemo(
-    () => sanitizeReturnTo(searchParams.get("returnTo")),
-    [searchParams],
-  );
-
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setPending(true);
+
+    const returnTo = sanitizeReturnTo(
+      new URLSearchParams(window.location.search).get("returnTo"),
+    );
 
     try {
       const response = await fetch("/api/auth/login", {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 
 import { getAuthToken } from "./auth-storage";
 import { buildReturnTo } from "./return-to";
@@ -9,7 +9,6 @@ import { buildReturnTo } from "./return-to";
 export function useRequireAuth() {
   const pathname = usePathname();
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -19,13 +18,13 @@ export function useRequireAuth() {
 
     const token = getAuthToken();
     if (!token) {
-      const returnTo = buildReturnTo(pathname, searchParams.toString() ? `?${searchParams.toString()}` : "", window.location.hash);
+      const returnTo = buildReturnTo(pathname, window.location.search, window.location.hash);
       router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
       return;
     }
 
     setReady(true);
-  }, [pathname, router, searchParams]);
+  }, [pathname, router]);
 
   return ready;
 }
