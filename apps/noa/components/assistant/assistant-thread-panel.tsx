@@ -1,7 +1,9 @@
 "use client";
 
 import { ComposerPrimitive, MessagePrimitive, ThreadPrimitive, useAssistantState } from "@assistant-ui/react";
+import { MarkdownTextPrimitive } from "@assistant-ui/react-markdown";
 import { AlertTriangle, Bot, LoaderCircle, MessageSquarePlus, RefreshCw } from "lucide-react";
+import remarkGfm from "remark-gfm";
 
 import { useThreadHydration } from "@/components/lib/runtime/thread-hydration";
 
@@ -17,11 +19,26 @@ function UserMessage() {
   );
 }
 
+function MarkdownText() {
+  return (
+    <MarkdownTextPrimitive
+      remarkPlugins={[remarkGfm]}
+      className="aui-md-root text-text [&_a]:text-accent [&_code]:rounded [&_code]:bg-bg [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-1.5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border [&_pre]:bg-bg [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-1 [&_ul]:list-disc"
+    />
+  );
+}
+
 function AssistantMessage() {
   return (
     <MessagePrimitive.Root className="mb-3">
       <div className="max-w-[92%] rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-text shadow-soft">
-        <MessagePrimitive.Parts components={{ ToolGroup, tools: { Fallback: ToolFallback } }} />
+        <MessagePrimitive.Parts
+          components={{
+            Text: MarkdownText,
+            ToolGroup,
+            tools: { Fallback: ToolFallback },
+          }}
+        />
       </div>
     </MessagePrimitive.Root>
   );
