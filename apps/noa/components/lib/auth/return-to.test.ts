@@ -5,7 +5,7 @@ import { buildReturnTo, sanitizeReturnTo } from "./return-to";
 describe("sanitizeReturnTo", () => {
   it("falls back to /assistant for empty values", () => {
     expect(sanitizeReturnTo(undefined)).toBe("/assistant");
-    expect(sanitizeReturnTo(""))toBe("/assistant");
+    expect(sanitizeReturnTo("")).toBe("/assistant");
   });
 
   it("rejects external-looking targets", () => {
