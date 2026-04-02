@@ -30,6 +30,7 @@ describe("LoginPage", () => {
     mocks.setAuthToken.mockReset();
     mocks.setAuthUser.mockReset();
     mocks.searchParams = new URLSearchParams();
+    window.history.pushState({}, "", "/login");
     vi.stubGlobal("fetch", mocks.fetch);
   });
 
@@ -75,7 +76,7 @@ describe("LoginPage", () => {
   });
 
   it("redirects to sanitized returnTo after successful login", async () => {
-    mocks.searchParams = new URLSearchParams("returnTo=/assistant/thread-123");
+    window.history.pushState({}, "", "/login?returnTo=/assistant/thread-123");
     mocks.fetch.mockResolvedValue(
       new Response(JSON.stringify({ access_token: "token", user: null }), {
         status: 200,

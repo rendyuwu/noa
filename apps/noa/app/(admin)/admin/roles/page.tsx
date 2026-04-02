@@ -1,4 +1,4 @@
-import { AdminPlaceholder } from "@/components/admin/admin-placeholder";
+import { RolesAdminPage } from "@/components/admin/roles-admin-page";
 import { ProtectedScreen } from "@/components/layout/protected-screen";
 
 export default function AdminRolesPage() {
@@ -8,11 +8,7 @@ export default function AdminRolesPage() {
       title="Roles"
       description="Shared shell route for role and allowlist management parity."
     >
-      <AdminPlaceholder
-        eyebrow="Admin"
-        title="Roles management scaffold"
-        description="The new route composition is in place without duplicating shell/runtime logic per page. Feature-level forms and mutations are still pending."
-      />
+      <RolesAdminPage />
     </ProtectedScreen>
   );
 }

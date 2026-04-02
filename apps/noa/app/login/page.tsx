@@ -34,9 +34,7 @@ export default function LoginPage() {
     setError(null);
     setPending(true);
 
-    const returnTo = sanitizeReturnTo(
-      new URLSearchParams(window.location.search).get("returnTo"),
-    );
+    const returnTo = sanitizeReturnTo(new URLSearchParams(window.location.search).get("returnTo"));
 
     try {
       const response = await fetch("/api/auth/login", {
