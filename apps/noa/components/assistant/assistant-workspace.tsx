@@ -38,14 +38,14 @@ function ApprovalActions({ args }: { args: Record<string, unknown> }) {
         <button
           type="button"
           className="rounded-xl bg-accent px-3 py-2 font-ui text-sm font-semibold text-accent-foreground"
-          onClick={() => sendCommand({ type: "approve-action", actionRequestId })}
+          onClick={() => (sendCommand as (command: unknown) => void)({ type: "approve-action", actionRequestId })}
         >
           Approve
         </button>
         <button
           type="button"
           className="rounded-xl border border-border bg-bg px-3 py-2 font-ui text-sm font-medium text-text"
-          onClick={() => sendCommand({ type: "deny-action", actionRequestId })}
+          onClick={() => (sendCommand as (command: unknown) => void)({ type: "deny-action", actionRequestId })}
         >
           Deny
         </button>

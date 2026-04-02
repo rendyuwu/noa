@@ -136,7 +136,11 @@ function useThreadAwareAssistantTransportRuntime() {
     }),
     headers: async () => {
       const token = getAuthToken();
-      return token ? { authorization: `Bearer ${token}` } : {};
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers.authorization = `Bearer ${token}`;
+      }
+      return headers;
     },
     onError: (error) => {
       console.error("Assistant transport error", error);
