@@ -24,6 +24,7 @@
   --destructive: 0 84% 60%;
   --destructive-foreground: 0 0% 100%;
   --ring: var(--accent);
+  --ring-offset-background: hsl(var(--surface));
   --radius: 0.75rem;
   --input: var(--border);
   --card: var(--surface);
