@@ -1,79 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { RefreshCw, ShieldCheck, Trash2, UserCog, UserRoundCheck, UserRoundX } from "lucide-react";
 
+import { coerceRoleNames, coerceStringArray } from "@/components/admin/lib/admin-data";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
 
-type AdminUser = {
-  id: string;
-  email: string;
-  display_name?: string | null;
-  created_at?: string;
-  last_login_at?: string | null;
-  is_active?: boolean;
-  roles?: string[];
-  tools?: string[];
-  direct_tools?: string[];
-};
-
-type AdminUsersResponse = {
-  users: AdminUser[];
-};
-
-type UpdateUserResponse = {
-  user: AdminUser;
-};
-
-type AdminRolesResponse = {
-  roles: Array<{ name: string }> | string[];
-};
-
-function coerceStringArray(value: unknown): string[] {
-  return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
-}
-
-function coerceRoleNames(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  const direct = value.filter((entry): entry is string => typeof entry === "string");
-  if (direct.length > 0) {
-    return direct;
-  }
-
-  return value.flatMap((entry) => {
-    if (entry && typeof entry === "object" && "name" in entry && typeof entry.name === "string") {
-      return [entry.name];
-    }
-
-    return [];
-  });
-}
-
-function formatTimestamp(value: unknown) {
-  if (typeof value !== "string" || !value) {
-    return "—";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "—";
-  }
-
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(date);
-}
-
-function roleBadgeClass(selected: boolean) {
-  return selected
-    ? "border-accent bg-accent text-accent-foreground"
-    : "border-border bg-bg text-text hover:border-accent/40 hover:bg-surface-2";
-}
+import { UsersDetailPanel } from "./users/users-detail-panel";
+import { UsersListPanel } from "./users/users-list-panel";
+import type { AdminRolesResponse, AdminUser, AdminUsersResponse, UpdateUserResponse } from "./users/types";
 
 export function UsersAdminPage() {
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -265,233 +200,30 @@ export function UsersAdminPage() {
 
   return (
     <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-      <section className="rounded-3xl border border-border bg-surface p-5 shadow-soft">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div>
-            <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">Admin / Users</p>
-            <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-text">User management</h2>
-            <p className="mt-2 max-w-2xl font-ui text-sm leading-6 text-muted">
-              Manage activation and role assignments from the shared admin shell without the old per-route wrapper duplication.
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => void loadData()}
-            className="inline-flex items-center gap-2 rounded-2xl border border-border bg-bg px-4 py-2.5 font-ui text-sm font-medium text-text transition hover:bg-surface-2"
-          >
-            <RefreshCw className="size-4" />
-            Refresh
-          </button>
-        </div>
-
-        <div className="mt-5">
-          <label className="font-ui text-sm font-medium text-text" htmlFor="users-search">
-            Search users
-          </label>
-          <input
-            id="users-search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Filter by name, email, role, or direct tool"
-            className="mt-2 w-full rounded-2xl border border-border bg-bg px-4 py-3 text-sm text-text outline-none transition focus:border-accent"
-          />
-        </div>
-
-        {loadError ? (
-          <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-            {loadError}
-          </div>
-        ) : null}
-
-        <div className="mt-5 grid gap-3">
-          {loading ? (
-            <div className="rounded-2xl border border-dashed border-border px-4 py-8 font-ui text-sm text-muted">
-              Loading users…
-            </div>
-          ) : filteredUsers.length > 0 ? (
-            filteredUsers.map((user) => {
-              const isSelected = user.id === selectedUserId;
-              const roles = coerceStringArray(user.roles);
-
-              return (
-                <button
-                  key={user.id}
-                  type="button"
-                  onClick={() => setSelectedUserId(user.id)}
-                  className={[
-                    "rounded-2xl border px-4 py-4 text-left transition",
-                    isSelected
-                      ? "border-accent bg-accent/8 shadow-soft"
-                      : "border-border bg-bg/70 hover:border-accent/35 hover:bg-surface-2",
-                  ].join(" ")}
-                >
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-base font-semibold text-text">
-                          {user.display_name?.trim() || user.email}
-                        </span>
-                        <span
-                          className={[
-                            "rounded-full px-2.5 py-1 font-ui text-xs font-medium",
-                            user.is_active === false
-                              ? "bg-red-100 text-red-700"
-                              : "bg-emerald-100 text-emerald-700",
-                          ].join(" ")}
-                        >
-                          {user.is_active === false ? "Inactive" : "Active"}
-                        </span>
-                      </div>
-                      <p className="mt-1 truncate font-ui text-sm text-muted">{user.email}</p>
-                    </div>
-                    <div className="font-ui text-xs text-muted">Last login: {formatTimestamp(user.last_login_at)}</div>
-                  </div>
-
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    {roles.length > 0 ? (
-                      roles.map((role) => (
-                        <span
-                          key={role}
-                          className="rounded-full border border-border bg-surface px-2.5 py-1 font-ui text-xs text-text"
-                        >
-                          {role}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="font-ui text-xs text-muted">No roles assigned</span>
-                    )}
-                  </div>
-                </button>
-              );
-            })
-          ) : (
-            <div className="rounded-2xl border border-dashed border-border px-4 py-8 font-ui text-sm text-muted">
-              No users match this filter.
-            </div>
-          )}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border border-border bg-surface p-5 shadow-soft">
-        {selectedUser ? (
-          <>
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">Selected user</p>
-                <h2 className="mt-2 truncate text-2xl font-semibold tracking-[-0.02em] text-text">
-                  {selectedUser.display_name?.trim() || selectedUser.email}
-                </h2>
-                <p className="mt-1 truncate font-ui text-sm text-muted">{selectedUser.email}</p>
-              </div>
-              <UserCog className="mt-1 size-5 shrink-0 text-accent" />
-            </div>
-
-            <dl className="mt-5 grid gap-3 rounded-2xl border border-border bg-bg/70 p-4 font-ui text-sm text-text">
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-muted">Created</dt>
-                <dd>{formatTimestamp(selectedUser.created_at)}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-muted">Last login</dt>
-                <dd>{formatTimestamp(selectedUser.last_login_at)}</dd>
-              </div>
-              <div className="flex items-center justify-between gap-3">
-                <dt className="text-muted">Direct tools</dt>
-                <dd>{coerceStringArray(selectedUser.direct_tools).length}</dd>
-              </div>
-            </dl>
-
-            {actionError ? (
-              <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-                {actionError}
-              </div>
-            ) : null}
-
-            {actionMessage ? (
-              <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-ui text-sm text-emerald-700">
-                {actionMessage}
-              </div>
-            ) : null}
-
-            <div className="mt-5">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="size-4 text-accent" />
-                <h3 className="text-base font-semibold text-text">Role assignments</h3>
-              </div>
-              <p className="mt-2 font-ui text-sm text-muted">
-                Assign backend-defined admin roles. Changes save through the same-origin proxy and shared HTTP layer.
-              </p>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                {allRoleNames.length > 0 ? (
-                  allRoleNames.map((roleName) => {
-                    const selected = roleAssignments.includes(roleName);
-                    return (
-                      <button
-                        key={roleName}
-                        type="button"
-                        onClick={() => toggleRole(roleName)}
-                        className={[
-                          "rounded-full border px-3 py-2 font-ui text-sm transition",
-                          roleBadgeClass(selected),
-                        ].join(" ")}
-                      >
-                        {roleName}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <div className="rounded-2xl border border-dashed border-border px-4 py-4 font-ui text-sm text-muted">
-                    No roles are available yet.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={() => void saveRoles()}
-                disabled={savingRoles}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 font-ui text-sm font-semibold text-accent-foreground disabled:opacity-70"
-              >
-                <ShieldCheck className="size-4" />
-                {savingRoles ? "Saving roles…" : "Save roles"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void toggleUserStatus()}
-                disabled={updatingStatus}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-bg px-4 py-3 font-ui text-sm font-medium text-text transition hover:bg-surface-2 disabled:opacity-70"
-              >
-                {selectedUser.is_active === false ? (
-                  <UserRoundCheck className="size-4" />
-                ) : (
-                  <UserRoundX className="size-4" />
-                )}
-                {updatingStatus
-                  ? "Updating status…"
-                  : selectedUser.is_active === false
-                    ? "Activate user"
-                    : "Deactivate user"}
-              </button>
-              <button
-                type="button"
-                onClick={() => void deleteUser()}
-                disabled={deleting}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-              >
-                <Trash2 className="size-4" />
-                {deleting ? "Deleting…" : "Delete user"}
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="flex min-h-[24rem] items-center justify-center rounded-2xl border border-dashed border-border px-4 py-8 text-center font-ui text-sm text-muted">
-            Select a user to inspect role assignments and account status.
-          </div>
-        )}
-      </section>
+      <UsersListPanel
+        filteredUsers={filteredUsers}
+        loadError={loadError}
+        loading={loading}
+        onRefresh={() => void loadData()}
+        onSearchChange={setSearch}
+        onSelectUser={setSelectedUserId}
+        search={search}
+        selectedUserId={selectedUserId}
+      />
+      <UsersDetailPanel
+        actionError={actionError}
+        actionMessage={actionMessage}
+        allRoleNames={allRoleNames}
+        deleting={deleting}
+        onDeleteUser={() => void deleteUser()}
+        onSaveRoles={() => void saveRoles()}
+        onToggleRole={toggleRole}
+        onToggleUserStatus={() => void toggleUserStatus()}
+        roleAssignments={roleAssignments}
+        savingRoles={savingRoles}
+        selectedUser={selectedUser}
+        updatingStatus={updatingStatus}
+      />
     </div>
   );
 }

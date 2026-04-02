@@ -9,7 +9,7 @@ import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { clearAuth } from "@/components/lib/auth/auth-storage";
 import type { AuthUser } from "@/components/lib/auth/types";
 
-import { navItems } from "./nav-items";
+import { getNavItems } from "./nav-items";
 
 const COLLAPSED_KEY = "noa.shell.collapsed";
 
@@ -39,10 +39,7 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
     setMobileOpen(false);
   }, [pathname]);
 
-  const items = useMemo(
-    () => navItems.filter((item) => (item.adminOnly ? isAdmin : true)),
-    [isAdmin],
-  );
+  const items = useMemo(() => getNavItems({ isAdmin }), [isAdmin]);
 
   const Sidebar = (
     <aside className="flex h-full flex-col gap-5 border-r border-border/80 bg-surface px-3 py-4 text-sm shadow-soft">

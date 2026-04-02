@@ -53,6 +53,7 @@ export async function fetchWithAuth(path: string, init: RequestInit = {}) {
   if (token) {
     headers.set("authorization", `Bearer ${token}`);
   }
+  const method = init.method ?? "GET";
 
   let response: Response;
 
@@ -63,7 +64,11 @@ export async function fetchWithAuth(path: string, init: RequestInit = {}) {
     });
   } catch (error) {
     try {
-      reportClientError(error);
+      reportClientError(error, {
+        method,
+        path: url,
+        source: "fetchWithAuth",
+      });
     } catch {
       // Preserve the original fetch error.
     }
@@ -97,6 +102,7 @@ export async function jsonOrThrow<T>(response: Response): Promise<T> {
       reportClientError(error, {
         errorCode,
         requestId,
+        source: "jsonOrThrow",
         status: response.status,
       });
     }

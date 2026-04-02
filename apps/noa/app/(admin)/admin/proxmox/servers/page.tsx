@@ -1,18 +1,12 @@
-import { AdminPlaceholder } from "@/components/admin/admin-placeholder";
-import { ProtectedScreen } from "@/components/layout/protected-screen";
+import { PlaceholderAdminRoute } from "@/components/admin/placeholder-admin-route";
 
 export default function AdminProxmoxServersPage() {
   return (
-    <ProtectedScreen
-      requireAdmin
+    <PlaceholderAdminRoute
+      eyebrow="Infrastructure"
       title="Proxmox servers"
       description="Shared shell route for Proxmox server CRUD and validation parity."
-    >
-      <AdminPlaceholder
-        eyebrow="Infrastructure"
-        title="Proxmox server scaffold"
-        description="Route composition is established; contract-aware forms, tables, and validation flows still need to be added."
-      />
-    </ProtectedScreen>
+      placeholderDescription="Route composition is established; contract-aware forms, tables, and validation flows still need to be added."
+    />
   );
 }

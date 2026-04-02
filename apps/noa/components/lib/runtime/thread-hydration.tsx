@@ -4,17 +4,29 @@ import type { PropsWithChildren } from "react";
 import { createContext, useContext } from "react";
 
 type ThreadHydrationState = {
+  errorMessage: string | null;
   isHydrating: boolean;
+  retry: () => void;
 };
 
-const ThreadHydrationContext = createContext<ThreadHydrationState>({ isHydrating: false });
+const ThreadHydrationContext = createContext<ThreadHydrationState>({
+  errorMessage: null,
+  isHydrating: false,
+  retry: () => {},
+});
 
 export function ThreadHydrationProvider({
+  errorMessage,
   isHydrating,
+  retry,
   children,
-}: PropsWithChildren<{ isHydrating: boolean }>) {
+}: PropsWithChildren<{
+  errorMessage: string | null;
+  isHydrating: boolean;
+  retry: () => void;
+}>) {
   return (
-    <ThreadHydrationContext.Provider value={{ isHydrating }}>
+    <ThreadHydrationContext.Provider value={{ errorMessage, isHydrating, retry }}>
       {children}
     </ThreadHydrationContext.Provider>
   );

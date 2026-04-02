@@ -95,6 +95,7 @@ describe("jsonOrThrow", () => {
     expect(reportClientError).toHaveBeenCalledWith(expect.any(ApiError), {
       errorCode: "internal_server_error",
       requestId: "req-500",
+      source: "jsonOrThrow",
       status: 503,
     });
   });

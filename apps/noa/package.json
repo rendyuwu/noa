@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
+    "test:smoke": "vitest run app/login/page.test.tsx components/assistant/assistant-route-thread-sync.test.tsx components/admin/users-admin-page.smoke.test.tsx components/admin/roles-admin-page.smoke.test.tsx components/layout/protected-screen.test.tsx components/lib/runtime/thread-list-adapter.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
