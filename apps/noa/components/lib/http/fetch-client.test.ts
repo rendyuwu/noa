@@ -70,7 +70,7 @@ describe("jsonOrThrow", () => {
       },
     );
 
-    await expect(jsonOrThrow(response)).rejects.toMatchObject<ApiError>({
+    await expect(jsonOrThrow(response)).rejects.toMatchObject({
       status: 403,
       detail: "Forbidden",
       errorCode: "forbidden",

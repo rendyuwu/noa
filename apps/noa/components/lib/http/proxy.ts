@@ -10,7 +10,7 @@ const HOP_BY_HOP_HEADERS = new Set([
   "upgrade",
 ]);
 
-type ProxyEnv = Partial<Record<"NOA_API_URL" | "NEXT_PUBLIC_API_URL", string | undefined>>;
+type ProxyEnv = Record<string, string | undefined>;
 
 type ProxyContext = {
   path: string[];
