@@ -4,6 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 type WhmServer = {
   id: string;
@@ -435,6 +446,7 @@ export function WhmServersAdminPage() {
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [createForm, setCreateForm] = useState<WhmServerFormState>(EMPTY_FORM_STATE);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -576,11 +588,7 @@ export function WhmServersAdminPage() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${selectedServer.name}?`);
-    if (!confirmed) {
-      return;
-    }
-
+    setConfirmDeleteOpen(false);
     try {
       const response = await fetchWithAuth(`/admin/whm/servers/${selectedServer.id}`, { method: "DELETE" });
       await jsonOrThrow<{ ok: boolean }>(response);
@@ -743,13 +751,28 @@ export function WhmServersAdminPage() {
               >
                 Edit server
               </button>
-              <button
-                type="button"
-                className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
-                onClick={() => void deleteServer()}
-              >
-                Delete server
-              </button>
+              <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+                <AlertDialogTrigger asChild>
+                  <button
+                    type="button"
+                    className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
+                  >
+                    Delete server
+                  </button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete server</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Delete {selectedServer.name}? This cannot be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => void deleteServer()}>Delete</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
             </div>
           </div>
 

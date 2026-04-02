@@ -1,5 +1,17 @@
 import { Shield, Sparkles, Trash2, Wand2 } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+
 function toolBadgeClass(selected: boolean) {
   return selected
     ? "border-accent bg-accent text-accent-foreground"
@@ -10,8 +22,11 @@ type RoleToolsPanelProps = {
   actionError: string | null;
   actionMessage: string | null;
   availableTools: string[];
+  confirmDeleteOpen: boolean;
   deleting: boolean;
   migrating: boolean;
+  onConfirmDeleteClose: () => void;
+  onConfirmDeleteOpen: () => void;
   onDeleteRole: () => void;
   onMigrateDirectGrants: () => void;
   onSaveRoleTools: () => void;
@@ -27,8 +42,11 @@ export function RoleToolsPanel({
   actionError,
   actionMessage,
   availableTools,
+  confirmDeleteOpen,
   deleting,
   migrating,
+  onConfirmDeleteClose,
+  onConfirmDeleteOpen,
   onDeleteRole,
   onMigrateDirectGrants,
   onSaveRoleTools,
@@ -127,15 +145,30 @@ export function RoleToolsPanel({
               <Sparkles className="size-4" />
               {migrating ? "Migrating…" : "Migrate legacy direct grants"}
             </button>
-            <button
-              type="button"
-              onClick={onDeleteRole}
-              disabled={deleting}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-            >
-              <Trash2 className="size-4" />
-              {deleting ? "Deleting…" : "Delete role"}
-            </button>
+            <AlertDialog open={confirmDeleteOpen} onOpenChange={(open) => open ? onConfirmDeleteOpen() : onConfirmDeleteClose()}>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                >
+                  <Trash2 className="size-4" />
+                  {deleting ? "Deleting…" : "Delete role"}
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete role</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Delete role {selectedRoleName}? This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={onDeleteRole}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </>
       ) : (

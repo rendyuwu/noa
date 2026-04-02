@@ -1,6 +1,17 @@
 import { ShieldCheck, Trash2, UserCog, UserRoundCheck, UserRoundX } from "lucide-react";
 
 import { coerceStringArray, formatTimestamp } from "@/components/admin/lib/admin-data";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 import type { AdminUser } from "./types";
 
@@ -8,7 +19,10 @@ type UsersDetailPanelProps = {
   actionError: string | null;
   actionMessage: string | null;
   allRoleNames: string[];
+  confirmDeleteOpen: boolean;
   deleting: boolean;
+  onConfirmDeleteClose: () => void;
+  onConfirmDeleteOpen: () => void;
   onDeleteUser: () => void;
   onSaveRoles: () => void;
   onToggleRole: (roleName: string) => void;
@@ -29,7 +43,10 @@ export function UsersDetailPanel({
   actionError,
   actionMessage,
   allRoleNames,
+  confirmDeleteOpen,
   deleting,
+  onConfirmDeleteClose,
+  onConfirmDeleteOpen,
   onDeleteUser,
   onSaveRoles,
   onToggleRole,
@@ -143,15 +160,30 @@ export function UsersDetailPanel({
                   ? "Activate user"
                   : "Deactivate user"}
             </button>
-            <button
-              type="button"
-              onClick={onDeleteUser}
-              disabled={deleting}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-70"
-            >
-              <Trash2 className="size-4" />
-              {deleting ? "Deleting…" : "Delete user"}
-            </button>
+            <AlertDialog open={confirmDeleteOpen} onOpenChange={(open) => open ? onConfirmDeleteOpen() : onConfirmDeleteClose()}>
+              <AlertDialogTrigger asChild>
+                <button
+                  type="button"
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                >
+                  <Trash2 className="size-4" />
+                  {deleting ? "Deleting…" : "Delete user"}
+                </button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete user</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Delete {selectedUser?.email}? This cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={onDeleteUser}>Delete</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </div>
         </>
       ) : (

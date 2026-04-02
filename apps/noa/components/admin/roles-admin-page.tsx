@@ -27,6 +27,7 @@ export function RolesAdminPage() {
   const [roleToolsError, setRoleToolsError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [migrating, setMigrating] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -187,11 +188,7 @@ export function RolesAdminPage() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete role "${selectedRoleName}"?`);
-    if (!confirmed) {
-      return;
-    }
-
+    setConfirmDeleteOpen(false);
     setDeleting(true);
     setActionError(null);
     setActionMessage(null);
@@ -254,8 +251,11 @@ export function RolesAdminPage() {
         actionError={actionError}
         actionMessage={actionMessage}
         availableTools={availableTools}
+        confirmDeleteOpen={confirmDeleteOpen}
         deleting={deleting}
         migrating={migrating}
+        onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
+        onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
         onDeleteRole={() => void deleteRole()}
         onMigrateDirectGrants={() => void migrateDirectGrants()}
         onSaveRoleTools={() => void saveRoleTools()}

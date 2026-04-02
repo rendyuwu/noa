@@ -21,6 +21,7 @@ export function UsersAdminPage() {
   const [savingRoles, setSavingRoles] = useState(false);
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -173,11 +174,7 @@ export function UsersAdminPage() {
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${selectedUser.email}? This cannot be undone.`);
-    if (!confirmed) {
-      return;
-    }
-
+    setConfirmDeleteOpen(false);
     setDeleting(true);
     setActionError(null);
     setActionMessage(null);
@@ -214,7 +211,10 @@ export function UsersAdminPage() {
         actionError={actionError}
         actionMessage={actionMessage}
         allRoleNames={allRoleNames}
+        confirmDeleteOpen={confirmDeleteOpen}
         deleting={deleting}
+        onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
+        onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
         onDeleteUser={() => void deleteUser()}
         onSaveRoles={() => void saveRoles()}
         onToggleRole={toggleRole}
