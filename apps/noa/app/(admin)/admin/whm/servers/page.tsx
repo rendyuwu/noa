@@ -1,12 +1,14 @@
-import { PlaceholderAdminRoute } from "@/components/admin/placeholder-admin-route";
+import { WhmServersAdminPage } from "@/components/admin/whm-servers-admin-page";
+import { ProtectedScreen } from "@/components/layout/protected-screen";
 
 export default function AdminWhmServersPage() {
   return (
-    <PlaceholderAdminRoute
-      eyebrow="Infrastructure"
+    <ProtectedScreen
+      requireAdmin
       title="WHM servers"
-      description="Shared shell route for WHM server CRUD and validation parity."
-      placeholderDescription="Backend contract wiring and good/bad validation fixtures remain to be implemented in the next lane."
-    />
+      description="Create, update, validate, and remove WHM server connection profiles."
+    >
+      <WhmServersAdminPage />
+    </ProtectedScreen>
   );
 }

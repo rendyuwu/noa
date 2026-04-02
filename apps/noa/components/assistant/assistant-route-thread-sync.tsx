@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { ShieldAlert } from "lucide-react";
 import { useAssistantApi, useAssistantState } from "@assistant-ui/react";
 
@@ -9,36 +10,47 @@ import { getActiveThreadListItem } from "@/components/lib/runtime/assistant-thre
 
 export function RouteThreadSync({ routeThreadId }: { routeThreadId?: string | null }) {
   const api = useAssistantApi();
+  const router = useRouter();
   const activeRemoteId = useAssistantState(({ threads }) => getActiveThreadListItem(threads)?.remoteId ?? null);
   const [routeError, setRouteError] = useState<string | null>(null);
+  const lastRouteKey = useRef<string | null>(null);
 
   useEffect(() => {
+    const normalizedRouteThreadId = typeof routeThreadId === "string" && routeThreadId.trim() ? routeThreadId : null;
+    const routeKey = normalizedRouteThreadId ? `thread:${normalizedRouteThreadId}` : "new";
+
+    if (lastRouteKey.current === routeKey) {
+      return;
+    }
+
+    lastRouteKey.current = routeKey;
     let cancelled = false;
 
     void (async () => {
       try {
-        if (!routeThreadId) {
+        if (!normalizedRouteThreadId) {
           setRouteError(null);
           return;
         }
 
-        if (activeRemoteId === routeThreadId) {
+        if (activeRemoteId === normalizedRouteThreadId) {
           setRouteError(null);
           return;
         }
 
-        await api.threads().switchToThread(routeThreadId);
+        await api.threads().switchToThread(normalizedRouteThreadId);
         if (!cancelled) {
           setRouteError(null);
         }
       } catch (error) {
         reportClientError(error, {
-          routeThreadId,
+          routeThreadId: normalizedRouteThreadId,
           source: "assistant.route-thread-sync",
         });
         if (!cancelled) {
           setRouteError("This chat link is invalid or no longer available.");
         }
+        router.replace("/assistant", { scroll: false });
         try {
           await api.threads().switchToNewThread();
         } catch {
@@ -50,7 +62,7 @@ export function RouteThreadSync({ routeThreadId }: { routeThreadId?: string | nu
     return () => {
       cancelled = true;
     };
-  }, [activeRemoteId, api, routeThreadId]);
+  }, [activeRemoteId, api, routeThreadId, router]);
 
   if (!routeError) {
     return null;

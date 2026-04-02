@@ -23,9 +23,9 @@ export const navItems: NavItem[] = [
   { href: "/assistant", label: "Assistant", icon: Bot },
   { href: "/admin/users", label: "Users", icon: Users, adminOnly: true },
   { href: "/admin/roles", label: "Roles", icon: Shield, adminOnly: true },
-  { href: "/admin/audit", label: "Audit", icon: ClipboardList, adminOnly: true, surface: "preview" },
-  { href: "/admin/whm/servers", label: "WHM", icon: HardDrive, adminOnly: true, surface: "preview" },
-  { href: "/admin/proxmox/servers", label: "Proxmox", icon: Database, adminOnly: true, surface: "preview" },
+  { href: "/admin/audit", label: "Audit", icon: ClipboardList, adminOnly: true },
+  { href: "/admin/whm/servers", label: "WHM", icon: HardDrive, adminOnly: true },
+  { href: "/admin/proxmox/servers", label: "Proxmox", icon: Database, adminOnly: true },
   { href: "/login", label: "Sign out", icon: KeyRound },
 ];
 

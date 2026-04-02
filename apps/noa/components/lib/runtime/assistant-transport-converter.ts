@@ -3,6 +3,7 @@ import type { ThreadMessage } from "@assistant-ui/react";
 export type AssistantState = {
   messages: Array<{ id?: string; role: string; parts: Array<Record<string, unknown>> }>;
   workflow?: unknown[];
+  evidenceSections?: unknown[];
   pendingApprovals?: unknown[];
   actionRequests?: unknown[];
   isRunning: boolean;
@@ -30,7 +31,7 @@ const isEmptyAssistantMessage = (message: ThreadMessage): boolean => {
 
 const attachCanonicalMetadata = (
   messages: ThreadMessage[],
-  state: Pick<AssistantState, "workflow" | "pendingApprovals" | "actionRequests">,
+  state: Pick<AssistantState, "workflow" | "evidenceSections" | "pendingApprovals" | "actionRequests">,
 ) => {
   if (!messages.length) {
     return messages;
@@ -51,6 +52,7 @@ const attachCanonicalMetadata = (
       custom: {
         ...custom,
         workflow: Array.isArray(state.workflow) ? state.workflow : [],
+        evidenceSections: Array.isArray(state.evidenceSections) ? state.evidenceSections : [],
         pendingApprovals: Array.isArray(state.pendingApprovals) ? state.pendingApprovals : [],
         actionRequests: Array.isArray(state.actionRequests) ? state.actionRequests : [],
       },
@@ -89,8 +91,12 @@ const partsToContent = (
     if (type === "tool-call") {
       const toolName = coerceString(part.toolName) ?? "unknown";
       const toolCallId = coerceString(part.toolCallId) ?? `toolcall-${messageId}-${partIndex}`;
+      if (toolCallId.startsWith("proposal-")) {
+        continue;
+      }
       const args = coerceRecord(part.args) ?? {};
-      const argsText = coerceString(part.argsText) ?? JSON.stringify(args);
+      const rawArgsText = coerceString(part.argsText);
+      const argsText = rawArgsText && rawArgsText.trim() ? rawArgsText : JSON.stringify(args);
       const toolResultData = toolResultsByCallId.get(toolCallId);
       content.push({
         type: "tool-call",

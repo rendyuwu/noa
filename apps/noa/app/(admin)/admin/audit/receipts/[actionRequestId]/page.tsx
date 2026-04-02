@@ -1,4 +1,5 @@
-import { PlaceholderAdminRoute } from "@/components/admin/placeholder-admin-route";
+import { AuditReceiptPage } from "@/components/admin/audit-receipt-page";
+import { ProtectedScreen } from "@/components/layout/protected-screen";
 
 export default async function AdminAuditReceiptPage({
   params,
@@ -8,11 +9,12 @@ export default async function AdminAuditReceiptPage({
   const { actionRequestId } = await params;
 
   return (
-    <PlaceholderAdminRoute
-      eyebrow="Receipt"
-      title={`Receipt ${actionRequestId}`}
-      description="Receipt detail route scaffolded inside the shared admin shell."
-      placeholderDescription="Receipt fetching/rendering parity is still pending, but the dedicated route contract now exists in apps/noa."
-    />
+    <ProtectedScreen
+      requireAdmin
+      title="Audit receipt"
+      description="Inspect detailed evidence for an audited workflow action."
+    >
+      <AuditReceiptPage actionRequestId={actionRequestId} />
+    </ProtectedScreen>
   );
 }

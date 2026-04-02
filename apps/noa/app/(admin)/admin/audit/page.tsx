@@ -1,12 +1,14 @@
-import { PlaceholderAdminRoute } from "@/components/admin/placeholder-admin-route";
+import { AuditAdminPage } from "@/components/admin/audit-admin-page";
+import { ProtectedScreen } from "@/components/layout/protected-screen";
 
 export default function AdminAuditPage() {
   return (
-    <PlaceholderAdminRoute
-      eyebrow="Admin"
+    <ProtectedScreen
+      requireAdmin
       title="Audit"
-      description="Shared shell route for audit list, filters, and receipt navigation."
-      placeholderDescription="The receipt route and list page now have dedicated destinations inside the shared admin shell, ready for cursor/filter parity work."
-    />
+      description="Review action request history, filter events, and open receipt details."
+    >
+      <AuditAdminPage />
+    </ProtectedScreen>
   );
 }

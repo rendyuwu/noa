@@ -3,9 +3,16 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   activeRemoteId: null as string | null,
+  replaceRoute: vi.fn(),
   reportClientError: vi.fn(),
   switchToNewThread: vi.fn(),
   switchToThread: vi.fn(),
+}));
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({
+    replace: (...args: unknown[]) => mocks.replaceRoute(...args),
+  }),
 }));
 
 vi.mock("@assistant-ui/react", () => ({
@@ -27,6 +34,7 @@ import { RouteThreadSync } from "./assistant-route-thread-sync";
 describe("RouteThreadSync", () => {
   beforeEach(() => {
     mocks.activeRemoteId = null;
+    mocks.replaceRoute.mockReset();
     mocks.reportClientError.mockReset();
     mocks.switchToNewThread.mockReset();
     mocks.switchToThread.mockReset();
@@ -64,6 +72,25 @@ describe("RouteThreadSync", () => {
       routeThreadId: "missing-thread",
       source: "assistant.route-thread-sync",
     });
+    expect(mocks.replaceRoute).toHaveBeenCalledWith("/assistant", { scroll: false });
     expect(screen.getByText("This chat link is invalid or no longer available.")).toBeInTheDocument();
+  });
+
+  it("does not re-open the previous route thread after switching away to a draft thread", async () => {
+    mocks.activeRemoteId = "thread-1";
+    mocks.switchToThread.mockResolvedValue(undefined);
+
+    const { rerender } = render(<RouteThreadSync routeThreadId="thread-1" />);
+
+    await waitFor(() => {
+      expect(mocks.switchToThread).toHaveBeenCalledTimes(0);
+    });
+
+    mocks.activeRemoteId = null;
+    rerender(<RouteThreadSync routeThreadId="thread-1" />);
+
+    await waitFor(() => {
+      expect(mocks.switchToThread).toHaveBeenCalledTimes(0);
+    });
   });
 });
