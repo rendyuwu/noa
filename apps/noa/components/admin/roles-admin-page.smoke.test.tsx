@@ -36,7 +36,7 @@ describe("RolesAdminPage smoke", () => {
   it("loads role allowlists and saves updated tools", async () => {
     render(<RolesAdminPage />);
 
-    await screen.findByRole("button", { name: "Save allowlist" });
+    await screen.findByRole("button", { name: "threads:write" });
     fireEvent.click(screen.getByRole("button", { name: "threads:write" }));
     fireEvent.click(screen.getByRole("button", { name: "Save allowlist" }));
 
