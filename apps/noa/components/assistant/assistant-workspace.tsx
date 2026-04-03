@@ -18,7 +18,7 @@ import {
 import { WorkflowReceiptToolUI } from "./workflow-receipt-tool-ui";
 
 function AssistantLiveDocks() {
-  const threadMessages = useAssistantState((state) => state.thread?.messages) as unknown[] | undefined;
+  const threadMessages = useAssistantState((state) => state.thread?.messages);
   const isRunning = useAssistantState((state) => Boolean(state.thread?.isRunning));
 
   const actionRequests = useMemo(

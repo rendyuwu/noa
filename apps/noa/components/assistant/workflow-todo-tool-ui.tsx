@@ -200,7 +200,7 @@ function WorkflowTodoInline({ todos }: { todos: WorkflowTodoItem[] }) {
 export const WorkflowTodoToolUI = makeAssistantToolUI({
   toolName: "update_workflow_todo",
   render: ({ args, result }: { args: Record<string, unknown>; result?: unknown }) => {
-    const threadMessages = useAssistantState((state) => state.thread?.messages) as unknown[] | undefined;
+    const threadMessages = useAssistantState((state) => state.thread?.messages);
 
     const canonicalTodos = extractLatestCanonicalWorkflowTodos(threadMessages);
     const argsTodos = coerceTodos(args.todos);

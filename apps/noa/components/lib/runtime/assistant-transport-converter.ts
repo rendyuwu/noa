@@ -145,17 +145,17 @@ const toThreadMessage = (
       id,
       createdAt,
       role: "user" as const,
-      content: content as never,
+      content,
       attachments: [],
       metadata: { custom: {} },
-    } as ThreadMessage;
+    } as unknown as ThreadMessage;
   }
 
   return {
     id,
     createdAt,
     role: "assistant" as const,
-    content: content as never,
+    content,
     status: { type: "complete", reason: "stop" },
     metadata: {
       unstable_state: null,
@@ -164,7 +164,7 @@ const toThreadMessage = (
       steps: [],
       custom: {},
     },
-  } as ThreadMessage;
+  } as unknown as ThreadMessage;
 };
 
 export function convertAssistantState(
