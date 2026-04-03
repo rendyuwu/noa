@@ -95,10 +95,13 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
       ].join(" ")}
       data-testid="workflow-todo-dock"
       data-workflow-phase={phase}
+      aria-live="polite"
+      aria-label="Workflow progress"
     >
       <button
         type="button"
         onClick={() => setCollapsed((value) => !value)}
+        aria-expanded={!collapsed}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2/70"
       >
         <div className="flex min-w-0 flex-1 items-start gap-3">

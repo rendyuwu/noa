@@ -139,10 +139,11 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-soft">
+    <div className="overflow-hidden rounded-2xl border border-border bg-surface shadow-soft" aria-live="polite" aria-label="Approval requests">
       <button
         type="button"
         onClick={() => setCollapsed((value) => !value)}
+        aria-expanded={!collapsed}
         className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2/70"
       >
         <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
