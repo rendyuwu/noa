@@ -2,16 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Check, ChevronDown, Clock3, X } from "lucide-react";
-import { useAssistantTransportSendCommand } from "@assistant-ui/react";
 
 import type { AssistantActionLifecycleStatus, AssistantActionRequest } from "./approval-state";
+import { useApprovalSendCommand } from "./assistant-types";
 
 type DecisionState = "approving" | "denying";
-
-type ApprovalCommand = {
-  actionRequestId: string;
-  type: "approve-action" | "deny-action";
-};
 
 function prettifyToolName(value: string): string {
   return value
@@ -110,7 +105,7 @@ function getHeaderCopy(requests: AssistantActionRequest[]) {
 }
 
 export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] }) {
-  const sendCommand = useAssistantTransportSendCommand() as unknown as (command: ApprovalCommand) => void;
+  const sendCommand = useApprovalSendCommand();
   const [collapsed, setCollapsed] = useState(true);
   const [pendingDecisions, setPendingDecisions] = useState<Record<string, DecisionState>>({});
 

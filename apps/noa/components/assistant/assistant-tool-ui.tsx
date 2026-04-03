@@ -1,23 +1,12 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { makeAssistantToolUI, useAssistantTransportSendCommand } from "@assistant-ui/react";
+import { makeAssistantToolUI } from "@assistant-ui/react";
 
-type ApprovalCommand = {
-  actionRequestId: string;
-  type: "approve-action" | "deny-action";
-};
-
-function sendApprovalCommand(
-  sendCommand: (command: ApprovalCommand) => void,
-  type: ApprovalCommand["type"],
-  actionRequestId: string,
-) {
-  sendCommand({ type, actionRequestId });
-}
+import { useApprovalSendCommand } from "./assistant-types";
 
 function ApprovalActions({ args }: { args: Record<string, unknown> }) {
-  const sendCommand = useAssistantTransportSendCommand() as unknown as (command: ApprovalCommand) => void;
+  const sendCommand = useApprovalSendCommand();
   const actionRequestId = typeof args.actionRequestId === "string" ? args.actionRequestId : "";
   const toolName = typeof args.toolName === "string" ? args.toolName : "unknown";
 
@@ -35,14 +24,14 @@ function ApprovalActions({ args }: { args: Record<string, unknown> }) {
         <button
           type="button"
           className="rounded-xl bg-accent px-3 py-2 font-ui text-sm font-semibold text-accent-foreground"
-          onClick={() => sendApprovalCommand(sendCommand, "approve-action", actionRequestId)}
+          onClick={() => sendCommand({ type: "approve-action", actionRequestId })}
         >
           Approve
         </button>
         <button
           type="button"
           className="rounded-xl border border-border bg-bg px-3 py-2 font-ui text-sm font-medium text-text"
-          onClick={() => sendApprovalCommand(sendCommand, "deny-action", actionRequestId)}
+          onClick={() => sendCommand({ type: "deny-action", actionRequestId })}
         >
           Deny
         </button>
