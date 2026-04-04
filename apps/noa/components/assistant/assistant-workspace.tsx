@@ -8,7 +8,6 @@ import { ApprovalDock } from "./approval-dock";
 import { RequestApprovalToolUI } from "./assistant-tool-ui";
 import { RouteThreadSync } from "./assistant-route-thread-sync";
 import { ThreadPanel } from "./assistant-thread-panel";
-import { ThreadSidebar } from "./assistant-thread-sidebar";
 import { WorkflowDock } from "./workflow-dock";
 import {
   extractLatestCanonicalWorkflowTodos,
@@ -39,7 +38,7 @@ function AssistantLiveDocks() {
   }
 
   return (
-    <div className="space-y-3">
+    <div className="mx-auto w-full max-w-3xl space-y-3 px-4">
       <ApprovalDock requests={actionRequests} />
       <WorkflowDock todos={workflowTodos} isRunning={isRunning} />
     </div>
@@ -48,16 +47,13 @@ function AssistantLiveDocks() {
 
 export function AssistantWorkspace({ threadId }: { threadId?: string | null }) {
   return (
-    <section className="space-y-4">
+    <div className="flex flex-1 flex-col">
       <RequestApprovalToolUI />
       <WorkflowTodoToolUI />
       <WorkflowReceiptToolUI />
       <RouteThreadSync routeThreadId={threadId} />
       <AssistantLiveDocks />
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,280px)_minmax(0,1fr)]">
-        <ThreadSidebar />
-        <ThreadPanel />
-      </div>
-    </section>
+      <ThreadPanel />
+    </div>
   );
 }
