@@ -11,16 +11,10 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-
-function toolBadgeClass(selected: boolean) {
-  return selected
-    ? "border-accent bg-accent text-accent-foreground"
-    : "border-border bg-bg text-text hover:border-accent/40 hover:bg-surface-2";
-}
+import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type RoleToolsPanelProps = {
-  actionError: string | null;
-  actionMessage: string | null;
   availableTools: string[];
   confirmDeleteOpen: boolean;
   deleting: boolean;
@@ -39,8 +33,6 @@ type RoleToolsPanelProps = {
 };
 
 export function RoleToolsPanel({
-  actionError,
-  actionMessage,
   availableTools,
   confirmDeleteOpen,
   deleting,
@@ -72,18 +64,6 @@ export function RoleToolsPanel({
             <Wand2 className="mt-1 size-5 shrink-0 text-accent" />
           </div>
 
-          {actionError ? (
-            <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-              {actionError}
-            </div>
-          ) : null}
-
-          {actionMessage ? (
-            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-ui text-sm text-emerald-700">
-              {actionMessage}
-            </div>
-          ) : null}
-
           <div className="mt-5">
             <div className="flex items-center gap-2">
               <Shield className="size-4 text-accent" />
@@ -102,21 +82,23 @@ export function RoleToolsPanel({
 
           <div className="mt-5 flex flex-wrap gap-2">
             {roleToolsLoading ? (
-              <div className="rounded-2xl border border-dashed border-border px-4 py-6 font-ui text-sm text-muted">
-                Loading role tools…
-              </div>
+              ["one", "two", "three", "four", "five", "six"].map((placeholder) => (
+                <Skeleton key={placeholder} className="h-9 w-28 rounded-full" />
+              ))
             ) : availableTools.length > 0 ? (
               availableTools.map((toolName) => {
                 const selected = toolAllowlist.includes(toolName);
                 return (
-                  <button
+                  <Button
                     key={toolName}
                     type="button"
                     onClick={() => onToggleTool(toolName)}
-                    className={["rounded-full border px-3 py-2 font-ui text-sm transition", toolBadgeClass(selected)].join(" ")}
+                    variant={selected ? "default" : "outline"}
+                    size="sm"
+                    className="rounded-full"
                   >
                     {toolName}
-                  </button>
+                  </Button>
                 );
               })
             ) : (
@@ -127,34 +109,36 @@ export function RoleToolsPanel({
           </div>
 
           <div className="mt-6 flex flex-col gap-3">
-            <button
+            <Button
               type="button"
               onClick={onSaveRoleTools}
               disabled={saving || roleToolsLoading}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 font-ui text-sm font-semibold text-accent-foreground disabled:opacity-70"
+              className="rounded-2xl"
             >
               <Shield className="size-4" />
               {saving ? "Saving allowlist…" : "Save allowlist"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={onMigrateDirectGrants}
               disabled={migrating}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-bg px-4 py-3 font-ui text-sm font-medium text-text transition hover:bg-surface-2 disabled:opacity-70"
+              variant="outline"
+              className="rounded-2xl"
             >
               <Sparkles className="size-4" />
               {migrating ? "Migrating…" : "Migrate legacy direct grants"}
-            </button>
+            </Button>
             <AlertDialog open={confirmDeleteOpen} onOpenChange={(open) => open ? onConfirmDeleteOpen() : onConfirmDeleteClose()}>
               <AlertDialogTrigger asChild>
-                <button
+                <Button
                   type="button"
                   disabled={deleting}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                  variant="destructive"
+                  className="rounded-2xl"
                 >
                   <Trash2 className="size-4" />
                   {deleting ? "Deleting…" : "Delete role"}
-                </button>
+                </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>

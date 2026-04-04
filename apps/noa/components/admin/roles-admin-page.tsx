@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Toaster, toast } from "sonner";
 
 import { coerceRoleNames, coerceStringArray } from "@/components/admin/lib/admin-data";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -29,11 +30,10 @@ export function RolesAdminPage() {
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [migrating, setMigrating] = useState(false);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
   const [newRoleName, setNewRoleName] = useState("");
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
+  const showTestToaster = process.env.NODE_ENV === "test";
 
   const filteredRoles = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -108,8 +108,6 @@ export function RolesAdminPage() {
       return;
     }
 
-    setActionError(null);
-    setActionMessage(null);
     void loadRoleTools(selectedRoleName);
   }, [loadRoleTools, selectedRoleName]);
 
@@ -126,14 +124,11 @@ export function RolesAdminPage() {
   async function createRole() {
     const name = newRoleName.trim();
     if (!name) {
-      setActionError("Role name is required");
-      setActionMessage(null);
+      toast.error("Role name is required");
       return;
     }
 
     setCreating(true);
-    setActionError(null);
-    setActionMessage(null);
 
     try {
       const response = await fetchWithAuth("/admin/roles", {
@@ -148,9 +143,9 @@ export function RolesAdminPage() {
       setRoles((current) => Array.from(new Set([...current, payload.name])).sort((a, b) => a.localeCompare(b)));
       setSelectedRoleName(payload.name);
       setNewRoleName("");
-      setActionMessage(`Role "${payload.name}" created.`);
+      toast.success(`Role "${payload.name}" created.`);
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to create role"));
+      toast.error(toErrorMessage(error, "Unable to create role"));
     } finally {
       setCreating(false);
     }
@@ -162,8 +157,6 @@ export function RolesAdminPage() {
     }
 
     setSaving(true);
-    setActionError(null);
-    setActionMessage(null);
 
     try {
       const response = await fetchWithAuth(`/admin/roles/${encodeURIComponent(selectedRoleName)}/tools`, {
@@ -175,9 +168,9 @@ export function RolesAdminPage() {
       });
       const payload = await jsonOrThrow<AdminRoleToolsResponse>(response);
       setToolAllowlist(coerceStringArray(payload.tools).slice().sort((a, b) => a.localeCompare(b)));
-      setActionMessage("Tool allowlist updated.");
+      toast.success("Tool allowlist updated.");
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to update role tools"));
+      toast.error(toErrorMessage(error, "Unable to update role tools"));
     } finally {
       setSaving(false);
     }
@@ -190,8 +183,6 @@ export function RolesAdminPage() {
 
     setConfirmDeleteOpen(false);
     setDeleting(true);
-    setActionError(null);
-    setActionMessage(null);
 
     try {
       const response = await fetchWithAuth(`/admin/roles/${encodeURIComponent(selectedRoleName)}`, {
@@ -203,9 +194,9 @@ export function RolesAdminPage() {
       setRoles((current) => current.filter((role) => role !== deletedRole));
       setSelectedRoleName(null);
       setToolAllowlist([]);
-      setActionMessage(`Role "${deletedRole}" deleted.`);
+      toast.success(`Role "${deletedRole}" deleted.`);
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to delete role"));
+      toast.error(toErrorMessage(error, "Unable to delete role"));
     } finally {
       setDeleting(false);
     }
@@ -213,59 +204,58 @@ export function RolesAdminPage() {
 
   async function migrateDirectGrants() {
     setMigrating(true);
-    setActionError(null);
-    setActionMessage(null);
 
     try {
       const response = await fetchWithAuth("/admin/migrations/direct-grants", {
         method: "POST",
       });
       const payload = await jsonOrThrow<DirectGrantsMigrationResponse>(response);
-      setActionMessage(formatMigrationSummary(payload));
+      toast.success(formatMigrationSummary(payload));
       await loadData();
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to migrate direct grants"));
+      toast.error(toErrorMessage(error, "Unable to migrate direct grants"));
     } finally {
       setMigrating(false);
     }
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-      <RolesListPanel
-        availableToolsCount={availableTools.length}
-        creating={creating}
-        filteredRoles={filteredRoles}
-        loadError={loadError}
-        loading={loading}
-        newRoleName={newRoleName}
-        onCreateRole={() => void createRole()}
-        onNewRoleNameChange={setNewRoleName}
-        onRefresh={() => void loadData()}
-        onSearchChange={setSearch}
-        onSelectRole={setSelectedRoleName}
-        search={search}
-        selectedRoleName={selectedRoleName}
-      />
-      <RoleToolsPanel
-        actionError={actionError}
-        actionMessage={actionMessage}
-        availableTools={availableTools}
-        confirmDeleteOpen={confirmDeleteOpen}
-        deleting={deleting}
-        migrating={migrating}
-        onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
-        onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
-        onDeleteRole={() => void deleteRole()}
-        onMigrateDirectGrants={() => void migrateDirectGrants()}
-        onSaveRoleTools={() => void saveRoleTools()}
-        onToggleTool={toggleTool}
-        roleToolsError={roleToolsError}
-        roleToolsLoading={roleToolsLoading}
-        saving={saving}
-        selectedRoleName={selectedRoleName}
-        toolAllowlist={toolAllowlist}
-      />
-    </div>
+    <>
+      {showTestToaster ? <Toaster position="bottom-right" richColors closeButton /> : null}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+        <RolesListPanel
+          availableToolsCount={availableTools.length}
+          creating={creating}
+          filteredRoles={filteredRoles}
+          loadError={loadError}
+          loading={loading}
+          newRoleName={newRoleName}
+          onCreateRole={() => void createRole()}
+          onNewRoleNameChange={setNewRoleName}
+          onRefresh={() => void loadData()}
+          onSearchChange={setSearch}
+          onSelectRole={setSelectedRoleName}
+          search={search}
+          selectedRoleName={selectedRoleName}
+        />
+        <RoleToolsPanel
+          availableTools={availableTools}
+          confirmDeleteOpen={confirmDeleteOpen}
+          deleting={deleting}
+          migrating={migrating}
+          onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
+          onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
+          onDeleteRole={() => void deleteRole()}
+          onMigrateDirectGrants={() => void migrateDirectGrants()}
+          onSaveRoleTools={() => void saveRoleTools()}
+          onToggleTool={toggleTool}
+          roleToolsError={roleToolsError}
+          roleToolsLoading={roleToolsLoading}
+          saving={saving}
+          selectedRoleName={selectedRoleName}
+          toolAllowlist={toolAllowlist}
+        />
+      </div>
+    </>
   );
 }

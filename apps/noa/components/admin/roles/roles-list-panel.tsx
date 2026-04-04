@@ -1,5 +1,10 @@
 import { RefreshCw, Shield, Sparkles } from "lucide-react";
 
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { TableSkeleton } from "@/components/ui/table-skeleton";
+
 type RolesListPanelProps = {
   availableToolsCount: number;
   creating: boolean;
@@ -41,14 +46,15 @@ export function RolesListPanel({
             Manage role definitions and per-role tool access.
           </p>
         </div>
-        <button
+        <Button
           type="button"
           onClick={onRefresh}
-          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-bg px-4 py-2.5 font-ui text-sm font-medium text-text transition hover:bg-surface-2"
+          variant="outline"
+          className="rounded-2xl"
         >
           <RefreshCw className="size-4" />
           Refresh
-        </button>
+        </Button>
       </div>
 
       <div className="mt-5 grid gap-3 rounded-2xl border border-border bg-bg/70 p-4">
@@ -56,22 +62,22 @@ export function RolesListPanel({
           Create role
         </label>
         <div className="flex flex-col gap-3 sm:flex-row">
-          <input
+          <Input
             id="new-role-name"
             value={newRoleName}
             onChange={(event) => onNewRoleNameChange(event.target.value)}
             placeholder="billing-ops"
-            className="min-w-0 flex-1 rounded-2xl border border-border bg-surface px-4 py-3 text-sm text-text outline-none transition focus:border-accent"
+            className="min-w-0 flex-1 rounded-2xl border-border bg-surface px-4 py-3 text-sm"
           />
-          <button
+          <Button
             type="button"
             onClick={onCreateRole}
             disabled={creating}
-            className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 font-ui text-sm font-semibold text-accent-foreground disabled:opacity-70"
+            className="rounded-2xl"
           >
             <Sparkles className="size-4" />
             {creating ? "Creating…" : "Create role"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -79,12 +85,12 @@ export function RolesListPanel({
         <label className="font-ui text-sm font-medium text-text" htmlFor="roles-search">
           Search roles
         </label>
-        <input
+        <Input
           id="roles-search"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Filter roles"
-          className="mt-2 w-full rounded-2xl border border-border bg-bg px-4 py-3 text-sm text-text outline-none transition focus:border-accent"
+          className="mt-2 w-full rounded-2xl border-border bg-bg px-4 py-3 text-sm"
         />
       </div>
 
@@ -96,9 +102,7 @@ export function RolesListPanel({
 
       <div className="mt-5 grid gap-3">
         {loading ? (
-          <div className="rounded-2xl border border-dashed border-border px-4 py-8 font-ui text-sm text-muted">
-            Loading roles…
-          </div>
+          <TableSkeleton columns={2} rows={5} />
         ) : filteredRoles.length > 0 ? (
           filteredRoles.map((role) => (
             <button
@@ -115,11 +119,13 @@ export function RolesListPanel({
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="truncate text-base font-semibold text-text">{role}</div>
-                  <div className="mt-1 font-ui text-sm text-muted">
-                    {availableToolsCount} available tool{availableToolsCount === 1 ? "" : "s"}
-                  </div>
                 </div>
-                <Shield className="size-4 shrink-0 text-accent" />
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="rounded-full px-3 py-1 font-ui text-xs font-medium text-muted">
+                    {availableToolsCount} available tool{availableToolsCount === 1 ? "" : "s"}
+                  </Badge>
+                  <Shield className="size-4 shrink-0 text-accent" />
+                </div>
               </div>
             </button>
           ))
