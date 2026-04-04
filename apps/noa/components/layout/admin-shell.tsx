@@ -43,7 +43,7 @@ export function AdminShell({ children, title, description, user }: AdminShellPro
   const NavLink = ({ href, label, icon: Icon, active }: { href: string; label: string; icon: React.ComponentType<{ className?: string }>; active: boolean }) => {
     const className = [
       "flex items-center gap-3 rounded-xl px-3 py-2.5 font-ui text-sm transition",
-      active ? "bg-accent text-accent-foreground" : "text-muted hover:bg-surface-2 hover:text-text",
+      active ? "bg-surface-2 text-text border-l-2 border-accent" : "text-muted hover:bg-surface-2 hover:text-text",
     ].join(" ");
 
     const content = (

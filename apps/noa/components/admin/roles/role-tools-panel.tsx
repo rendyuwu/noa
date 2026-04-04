@@ -134,7 +134,7 @@ export function RoleToolsPanel({
                 <Button
                   type="button"
                   disabled={deleting}
-                  variant="destructive"
+                  variant="destructive-outline"
                   className="rounded-2xl"
                 >
                   <Trash2 className="size-4" />

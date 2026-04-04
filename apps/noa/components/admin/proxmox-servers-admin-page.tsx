@@ -467,7 +467,7 @@ export function ProxmoxServersAdminPage() {
               sortedServers.map((server) => (
                 <tr
                   key={server.id}
-                  className={selectedServerId === server.id ? "bg-accent/5" : undefined}
+                  className={`transition-colors hover:bg-surface-2/50${selectedServerId === server.id ? " bg-accent/5" : ""}`}
                   onClick={() => setSelectedServerId(server.id)}
                 >
                   <td className="px-3 py-3 font-medium text-text">{server.name}</td>
@@ -506,7 +506,7 @@ export function ProxmoxServersAdminPage() {
               </Button>
               <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
                 <AlertDialogTrigger asChild>
-                  <Button type="button" variant="destructive" size="sm">
+                  <Button type="button" variant="destructive-outline" size="sm">
                     Delete server
                   </Button>
                 </AlertDialogTrigger>

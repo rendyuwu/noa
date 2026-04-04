@@ -347,7 +347,7 @@ export function AuditAdminPage() {
               </tr>
             ) : (
               items.map((item) => (
-                <tr key={item.actionRequestId}>
+                <tr key={item.actionRequestId} className="transition-colors hover:bg-surface-2/50">
                   <td className="px-3 py-3 font-mono text-xs text-muted">{item.actionRequestId}</td>
                   <td className="px-3 py-3 text-text">{item.toolName}</td>
                   <td className="px-3 py-3 text-text">{item.terminalPhase ?? item.status}</td>

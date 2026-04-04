@@ -144,7 +144,7 @@ export function UsersDetailPanel({
                 <Button
                   type="button"
                   disabled={deleting}
-                  variant="destructive"
+                  variant="destructive-outline"
                   className="w-full rounded-2xl font-ui text-sm font-medium"
                 >
                   <Trash2 className="size-4" />
