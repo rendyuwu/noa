@@ -1,5 +1,5 @@
 import { AuditReceiptPage } from "@/components/admin/audit-receipt-page";
-import { ProtectedScreen } from "@/components/layout/protected-screen";
+import { AdminProtectedScreen } from "@/components/layout/admin-protected-screen";
 
 export default async function AdminAuditReceiptPage({
   params,
@@ -9,12 +9,8 @@ export default async function AdminAuditReceiptPage({
   const { actionRequestId } = await params;
 
   return (
-    <ProtectedScreen
-      requireAdmin
-      title="Audit receipt"
-      description="Inspect detailed evidence for an audited workflow action."
-    >
+    <AdminProtectedScreen title="Audit receipt" description="Inspect detailed evidence for an audited workflow action.">
       <AuditReceiptPage actionRequestId={actionRequestId} />
-    </ProtectedScreen>
+    </AdminProtectedScreen>
   );
 }

@@ -1,14 +1,10 @@
 import { AuditAdminPage } from "@/components/admin/audit-admin-page";
-import { ProtectedScreen } from "@/components/layout/protected-screen";
+import { AdminProtectedScreen } from "@/components/layout/admin-protected-screen";
 
 export default function AdminAuditPage() {
   return (
-    <ProtectedScreen
-      requireAdmin
-      title="Audit"
-      description="Review action request history, filter events, and open receipt details."
-    >
+    <AdminProtectedScreen title="Audit" description="Review action request history, filter events, and open receipt details.">
       <AuditAdminPage />
-    </ProtectedScreen>
+    </AdminProtectedScreen>
   );
 }

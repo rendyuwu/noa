@@ -1,14 +1,10 @@
 import { UsersAdminPage } from "@/components/admin/users-admin-page";
-import { ProtectedScreen } from "@/components/layout/protected-screen";
+import { AdminProtectedScreen } from "@/components/layout/admin-protected-screen";
 
-export default function AdminUsersPage() {
+export default function UsersPage() {
   return (
-    <ProtectedScreen
-      requireAdmin
-      title="Users"
-      description="Unified admin shell target for user management parity."
-    >
+    <AdminProtectedScreen title="Users" description="Unified admin shell target for user management parity.">
       <UsersAdminPage />
-    </ProtectedScreen>
+    </AdminProtectedScreen>
   );
 }

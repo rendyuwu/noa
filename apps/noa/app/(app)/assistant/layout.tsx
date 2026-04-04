@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { ProtectedScreen } from "@/components/layout/protected-screen";
+import { ChatProtectedScreen } from "@/components/layout/chat-protected-screen";
 import { requireServerUser } from "@/components/lib/auth/server-session";
 import { NoaAssistantRuntimeProvider } from "@/components/lib/runtime/runtime-provider";
 
@@ -8,11 +8,8 @@ export default async function AssistantLayout({ children }: { children: ReactNod
   await requireServerUser("/assistant");
 
   return (
-    <ProtectedScreen
-      title="Assistant"
-      description="NOA Assistant — AI-powered workspace with persisted conversations"
-    >
-      <NoaAssistantRuntimeProvider>{children}</NoaAssistantRuntimeProvider>
-    </ProtectedScreen>
+    <NoaAssistantRuntimeProvider>
+      <ChatProtectedScreen>{children}</ChatProtectedScreen>
+    </NoaAssistantRuntimeProvider>
   );
 }
