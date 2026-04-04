@@ -148,7 +148,9 @@ class _FakeRouteAuthService:
     def __init__(self, *, mode: str) -> None:
         self.mode = mode
 
-    async def authenticate(self, *, email: str, password: str) -> AuthResult:
+    async def authenticate(
+        self, *, email: str, password: str, source_ip: str | None = None
+    ) -> AuthResult:
         if self.mode == "invalid":
             raise AuthInvalidCredentialsError("Invalid credentials")
         if self.mode == "pending":
@@ -182,6 +184,39 @@ class _FakeRouteAuthService:
             is_active=True,
             roles=["admin"],
         )
+
+
+class _NoopLoginRateLimiter:
+    async def assert_allowed(
+        self, *, email: str, ip_address: str | None, now=None
+    ) -> None:
+        return None
+
+    async def record_failure(
+        self, *, email: str, ip_address: str | None, now=None
+    ) -> None:
+        return None
+
+    async def record_success(self, *, email: str, ip_address: str | None) -> None:
+        return None
+
+
+class _RecordingLoginRateLimiter:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str | None]] = []
+
+    async def assert_allowed(
+        self, *, email: str, ip_address: str | None, now=None
+    ) -> None:
+        self.calls.append(("assert_allowed", email, ip_address))
+
+    async def record_failure(
+        self, *, email: str, ip_address: str | None, now=None
+    ) -> None:
+        self.calls.append(("record_failure", email, ip_address))
+
+    async def record_success(self, *, email: str, ip_address: str | None) -> None:
+        self.calls.append(("record_success", email, ip_address))
 
 
 def _create_auth_app() -> FastAPI:
@@ -229,6 +264,7 @@ async def test_auth_service_auto_provisions_pending_user() -> None:
         ldap_service=cast(Any, _FakeLDAPService()),
         jwt_service=cast(Any, _FakeJWTService()),
         bootstrap_admin_emails=set(),
+        login_rate_limiter=cast(Any, _NoopLoginRateLimiter()),
     )
 
     try:
@@ -247,6 +283,7 @@ async def test_auth_service_bootstrap_admin_auto_active_and_issues_jwt() -> None
         ldap_service=cast(Any, _FakeLDAPService()),
         jwt_service=cast(Any, _FakeJWTService()),
         bootstrap_admin_emails={"admin@example.com"},
+        login_rate_limiter=cast(Any, _NoopLoginRateLimiter()),
     )
 
     result = await service.authenticate(email="admin@example.com", password="secret")
@@ -271,6 +308,7 @@ async def test_auth_service_smoke_bootstrap_user_uses_dev_ldap_bypass() -> None:
         ldap_service=LDAPService(cfg),
         jwt_service=cast(Any, _FakeJWTService()),
         bootstrap_admin_emails={"smoke@example.com"},
+        login_rate_limiter=cast(Any, _NoopLoginRateLimiter()),
     )
 
     result = await service.authenticate(email="smoke@example.com", password="secret")
@@ -300,6 +338,7 @@ async def test_auth_service_updates_last_login_at_for_existing_active_user() -> 
         ldap_service=cast(Any, _FakeLDAPService()),
         jwt_service=cast(Any, _FakeJWTService()),
         bootstrap_admin_emails={"admin@example.com"},
+        login_rate_limiter=cast(Any, _NoopLoginRateLimiter()),
     )
 
     await service.authenticate(email="active.user@example.com", password="secret")
@@ -308,6 +347,58 @@ async def test_auth_service_updates_last_login_at_for_existing_active_user() -> 
     assert updated_user.last_login_at is not None
     assert updated_user.last_login_at > datetime(2024, 1, 1, tzinfo=UTC)
     assert updated_user.last_login_at.tzinfo is not None
+
+
+async def test_login_route_maps_rate_limit_errors_to_429() -> None:
+    app = _create_auth_app()
+
+    class _RateLimitedAuthService(_FakeRouteAuthService):
+        async def authenticate(
+            self, *, email: str, password: str, source_ip: str | None = None
+        ):
+            from noa_api.core.auth.errors import AuthRateLimitedError
+
+            raise AuthRateLimitedError(retry_after_seconds=120)
+
+    app.dependency_overrides[get_auth_service] = lambda: _RateLimitedAuthService(
+        mode="ok"
+    )
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "bad"}
+        )
+
+    assert response.status_code == 429
+    assert response.json()["error_code"] == "login_rate_limited"
+    assert response.headers["retry-after"] == "120"
+
+
+async def test_auth_service_records_successful_logins_as_rate_limit_resets() -> None:
+    repo = _InMemoryAuthRepository()
+    await repo.create_user(
+        email="user@example.com",
+        ldap_dn="CN=user@example.com",
+        display_name="Example User",
+        is_active=True,
+    )
+    limiter = _RecordingLoginRateLimiter()
+    service = AuthService(
+        auth_repository=repo,
+        ldap_service=cast(Any, _FakeLDAPService()),
+        jwt_service=cast(Any, _FakeJWTService()),
+        bootstrap_admin_emails=set(),
+        login_rate_limiter=cast(Any, limiter),
+    )
+
+    await service.authenticate(
+        email="user@example.com", password="secret", source_ip="127.0.0.1"
+    )
+
+    assert limiter.calls == [
+        ("assert_allowed", "user@example.com", "127.0.0.1"),
+        ("record_success", "user@example.com", "127.0.0.1"),
+    ]
 
 
 async def test_login_route_maps_auth_errors_and_success() -> None:

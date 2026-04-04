@@ -7,6 +7,7 @@ from noa_api.api.auth_dependencies import get_active_current_auth_user
 from noa_api.api.error_codes import (
     AUTHENTICATION_SERVICE_UNAVAILABLE,
     INVALID_CREDENTIALS,
+    LOGIN_RATE_LIMITED,
     USER_PENDING_APPROVAL,
 )
 from noa_api.api.error_handling import ApiHTTPException
@@ -17,6 +18,7 @@ from noa_api.core.auth.errors import (
     AuthError,
     AuthInvalidCredentialsError,
     AuthPendingApprovalError,
+    AuthRateLimitedError,
 )
 from noa_api.core.logging_context import log_context
 from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
@@ -232,8 +234,30 @@ async def login(
 ) -> LoginResponse:
     try:
         result = await auth_service.authenticate(
-            email=payload.email, password=payload.password
+            email=payload.email,
+            password=payload.password,
+            source_ip=request.client.host if request.client else None,
         )
+    except AuthRateLimitedError as exc:
+        _log_login_rejected(
+            user_email=payload.email,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            error_code=LOGIN_RATE_LIMITED,
+            failure_stage="rate_limited",
+        )
+        _record_login_rejected_telemetry(
+            request,
+            user_email=payload.email,
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            error_code=LOGIN_RATE_LIMITED,
+            failure_stage="rate_limited",
+        )
+        raise ApiHTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts",
+            error_code=LOGIN_RATE_LIMITED,
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
     except AuthInvalidCredentialsError as exc:
         _log_login_rejected(
             user_email=payload.email,

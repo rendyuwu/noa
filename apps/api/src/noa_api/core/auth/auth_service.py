@@ -9,11 +9,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.auth.errors import (
+    AuthError,
     AuthInvalidCredentialsError,
     AuthPendingApprovalError,
+    AuthRateLimitedError,
 )
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.auth.ldap_service import LDAPService
+from noa_api.core.auth.login_rate_limiter import LoginRateLimiter
 from noa_api.storage.postgres.models import Role, User, UserRole
 
 
@@ -159,6 +162,7 @@ class AuthService:
         ldap_service: LDAPService,
         jwt_service: JWTService,
         bootstrap_admin_emails: set[str],
+        login_rate_limiter: LoginRateLimiter,
     ) -> None:
         self._auth_repository = auth_repository
         self._ldap_service = ldap_service
@@ -166,13 +170,32 @@ class AuthService:
         self._bootstrap_admin_emails = {
             email.lower() for email in bootstrap_admin_emails
         }
+        self._login_rate_limiter = login_rate_limiter
 
-    async def authenticate(self, *, email: str, password: str) -> AuthResult:
+    async def authenticate(
+        self, *, email: str, password: str, source_ip: str | None = None
+    ) -> AuthResult:
         normalized_email = email.strip().lower()
         if not normalized_email or not password:
             raise AuthInvalidCredentialsError("Invalid credentials")
 
-        ldap_user = await self._ldap_service.authenticate(normalized_email, password)
+        ip_address = source_ip or "unknown"
+        try:
+            await self._login_rate_limiter.assert_allowed(
+                email=normalized_email, ip_address=ip_address
+            )
+        except AuthRateLimitedError:
+            raise
+
+        try:
+            ldap_user = await self._ldap_service.authenticate(
+                normalized_email, password
+            )
+        except AuthError:
+            await self._login_rate_limiter.record_failure(
+                email=normalized_email, ip_address=ip_address
+            )
+            raise
         user = await self._auth_repository.get_user_by_email(normalized_email)
         is_bootstrap_admin = normalized_email in self._bootstrap_admin_emails
 
@@ -202,6 +225,10 @@ class AuthService:
         user = await self._auth_repository.update_user(
             user,
             last_login_at=datetime.now(UTC),
+        )
+
+        await self._login_rate_limiter.record_success(
+            email=normalized_email, ip_address=ip_address
         )
 
         role_names = await self._auth_repository.get_role_names(user.id)
