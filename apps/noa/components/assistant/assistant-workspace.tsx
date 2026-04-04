@@ -7,6 +7,7 @@ import { extractLatestCanonicalActionRequests } from "./approval-state";
 import { ApprovalDock } from "./approval-dock";
 import { RequestApprovalToolUI } from "./assistant-tool-ui";
 import { RouteThreadSync } from "./assistant-route-thread-sync";
+import { ThreadHeader } from "./thread-header";
 import { ThreadPanel } from "./assistant-thread-panel";
 import { WorkflowDock } from "./workflow-dock";
 import {
@@ -52,6 +53,7 @@ export function AssistantWorkspace({ threadId }: { threadId?: string | null }) {
       <WorkflowTodoToolUI />
       <WorkflowReceiptToolUI />
       <RouteThreadSync routeThreadId={threadId} />
+      <ThreadHeader />
       <AssistantLiveDocks />
       <ThreadPanel />
     </div>
