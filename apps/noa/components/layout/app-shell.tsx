@@ -1,13 +1,15 @@
 "use client";
 
-import type { ReactNode } from "react";
+import React, { type ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import { clearAuth } from "@/components/lib/auth/auth-storage";
 import type { AuthUser } from "@/components/lib/auth/types";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { getNavItems } from "./nav-items";
 
@@ -36,7 +38,9 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
   }, [collapsed]);
 
   useEffect(() => {
-    setMobileOpen(false);
+    if (pathname) {
+      setMobileOpen(false);
+    }
   }, [pathname]);
 
   const items = useMemo(() => getNavItems({ isAdmin }), [isAdmin]);
@@ -48,22 +52,24 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
           <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">NOA</p>
           <p className="truncate text-lg font-semibold text-text">NOA</p>
         </div>
-        <button
-          type="button"
-          className="hidden rounded-lg border border-border bg-bg/70 p-2 text-muted transition hover:bg-surface-2 md:inline-flex"
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden rounded-lg border border-border bg-bg/70 text-muted hover:bg-surface-2 md:inline-flex"
           onClick={() => setCollapsed((value) => !value)}
           aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
         >
           {collapsed ? <PanelLeftOpen className="size-4" /> : <PanelLeftClose className="size-4" />}
-        </button>
-        <button
-          type="button"
-          className="rounded-lg border border-border bg-bg/70 p-2 text-muted transition hover:bg-surface-2 md:hidden"
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="rounded-lg border border-border bg-bg/70 text-muted hover:bg-surface-2 md:hidden"
           onClick={() => setMobileOpen(false)}
           aria-label="Close navigation"
         >
           <X className="size-4" />
-        </button>
+        </Button>
       </div>
 
       <nav className="flex flex-1 flex-col gap-1">
@@ -86,22 +92,40 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
           ].join(" ");
 
           if (isLogout) {
-            return (
-              <button
+            const logoutButton = (
+              <Button
                 key={item.href}
-                type="button"
+                variant="ghost"
                 className={className}
                 onClick={() => clearAuth({ returnTo: "/assistant", redirect: true })}
               >
                 {content}
-              </button>
+              </Button>
+            );
+
+            return collapsed ? (
+              <Tooltip key={item.href}>
+                <TooltipTrigger asChild>{logoutButton}</TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            ) : (
+              logoutButton
             );
           }
 
-          return (
+          const navLink = (
             <Link key={item.href} href={item.href} className={className}>
               {content}
             </Link>
+          );
+
+          return collapsed ? (
+            <Tooltip key={item.href}>
+              <TooltipTrigger asChild>{navLink}</TooltipTrigger>
+              <TooltipContent side="right">{item.label}</TooltipContent>
+            </Tooltip>
+          ) : (
+            navLink
           );
         })}
       </nav>
@@ -116,42 +140,45 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
   );
 
   return (
-    <div className="min-h-dvh bg-bg text-text">
-      <div className="flex min-h-dvh">
-        <div className={`${collapsed ? "hidden md:block md:w-[88px]" : "hidden md:block md:w-[288px]"}`}>{Sidebar}</div>
+    <TooltipProvider delayDuration={200}>
+      <div className="min-h-dvh bg-bg text-text">
+        <div className="flex min-h-dvh">
+          <div className={`${collapsed ? "hidden md:block md:w-[88px]" : "hidden md:block md:w-[288px]"}`}>{Sidebar}</div>
 
-        {mobileOpen ? (
-          <div className="fixed inset-0 z-40 flex md:hidden">
-            <div className="w-[290px] max-w-[85vw]">{Sidebar}</div>
-            <button
-              type="button"
-              className="flex-1 bg-black/30"
-              aria-label="Dismiss navigation overlay"
-              onClick={() => setMobileOpen(false)}
-            />
-          </div>
-        ) : null}
-
-        <div className="flex min-h-dvh flex-1 flex-col">
-          <header className="sticky top-0 z-20 border-b border-border/70 bg-bg/90 px-4 py-3 backdrop-blur sm:px-6">
-            <div className="flex items-start gap-3">
+          {mobileOpen ? (
+            <div className="fixed inset-0 z-40 flex md:hidden">
+              <div className="w-[290px] max-w-[85vw]">{Sidebar}</div>
               <button
                 type="button"
-                className="inline-flex rounded-lg border border-border bg-surface p-2 text-muted transition hover:bg-surface-2 md:hidden"
-                onClick={() => setMobileOpen(true)}
-                aria-label="Open navigation"
-              >
-                <Menu className="size-4" />
-              </button>
-              <div className="min-w-0 flex-1">
-                <h1 className="text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{title}</h1>
-                <p className="mt-1 max-w-3xl font-ui text-sm text-muted">{description}</p>
-              </div>
+                className="flex-1 bg-black/30"
+                aria-label="Dismiss navigation overlay"
+                onClick={() => setMobileOpen(false)}
+              />
             </div>
-          </header>
-          <main className="flex-1 px-4 py-4 sm:px-6 sm:py-6">{children}</main>
+          ) : null}
+
+          <div className="flex min-h-dvh flex-1 flex-col">
+            <header className="sticky top-0 z-20 border-b border-border/70 bg-bg/90 px-4 py-3 backdrop-blur sm:px-6">
+              <div className="flex items-start gap-3">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="rounded-lg border border-border bg-surface text-muted hover:bg-surface-2 md:hidden"
+                  onClick={() => setMobileOpen(true)}
+                  aria-label="Open navigation"
+                >
+                  <Menu className="size-4" />
+                </Button>
+                <div className="min-w-0 flex-1">
+                  <h1 className="text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{title}</h1>
+                  <p className="mt-1 max-w-3xl font-ui text-sm text-muted">{description}</p>
+                </div>
+              </div>
+            </header>
+            <main className="flex-1 px-4 py-4 sm:px-6 sm:py-6">{children}</main>
+          </div>
         </div>
       </div>
-    </div>
+    </TooltipProvider>
   );
 }
