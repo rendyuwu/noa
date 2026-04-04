@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { clearAuth } from "@/components/lib/auth/auth-storage";
 import { useRequireAuth } from "@/components/lib/auth/use-require-auth";
+import { Button } from "@/components/ui/button";
 
 import { AppShell } from "./app-shell";
 
@@ -41,20 +42,16 @@ export function ProtectedScreen({
           <h1 className="text-lg font-semibold text-text">Session validation failed</h1>
           <p className="mt-2 font-ui text-sm text-muted">{error}</p>
           <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-xl bg-accent px-4 py-2.5 font-ui text-sm font-semibold text-accent-foreground"
-              onClick={() => void refresh()}
-            >
+            <Button className="rounded-xl font-ui text-sm font-semibold" onClick={() => void refresh()}>
               Retry validation
-            </button>
-            <button
-              type="button"
-              className="inline-flex items-center justify-center rounded-xl border border-border bg-bg px-4 py-2.5 font-ui text-sm font-medium text-text"
+            </Button>
+            <Button
+              variant="outline"
+              className="rounded-xl font-ui text-sm font-medium"
               onClick={() => clearAuth({ returnTo: "/assistant", redirect: true })}
             >
               Sign out
-            </button>
+            </Button>
           </div>
         </div>
       </main>

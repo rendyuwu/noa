@@ -1,5 +1,7 @@
 import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
+
 export default function NotFound() {
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-10">
@@ -9,12 +11,9 @@ export default function NotFound() {
         <p className="mt-2 font-ui text-sm text-muted">
           This page doesn't exist, or the link may be outdated.
         </p>
-        <Link
-          href="/assistant"
-          className="mt-6 inline-flex rounded-xl border border-border bg-bg px-4 py-2.5 font-ui text-sm font-medium text-text"
-        >
-          Return to assistant
-        </Link>
+        <Button variant="outline" className="mt-6 rounded-xl font-ui text-sm font-medium" asChild>
+          <Link href="/assistant">Return to assistant</Link>
+        </Button>
       </section>
     </main>
   );

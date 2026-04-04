@@ -6,6 +6,8 @@ import { useRouter } from "next/navigation";
 import { setAuthToken, setAuthUser } from "@/components/lib/auth/auth-storage";
 import { sanitizeReturnTo } from "@/components/lib/auth/return-to";
 import type { LoginResponse } from "@/components/lib/auth/types";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 type ErrorPayload = {
   detail?: string;
@@ -74,25 +76,25 @@ export default function LoginPage() {
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>
           <label className="block font-ui text-sm font-medium text-text" htmlFor="email">
             Email
-            <input
+            <Input
               id="email"
               type="email"
               required
               value={email}
               onChange={(event) => setEmail(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-border bg-bg px-4 py-3 text-text outline-none transition focus:border-accent"
+              className="mt-2 rounded-2xl"
             />
           </label>
 
           <label className="block font-ui text-sm font-medium text-text" htmlFor="password">
             Password
-            <input
+            <Input
               id="password"
               type="password"
               required
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              className="mt-2 w-full rounded-2xl border border-border bg-bg px-4 py-3 text-text outline-none transition focus:border-accent"
+              className="mt-2 rounded-2xl"
             />
           </label>
 
@@ -102,13 +104,13 @@ export default function LoginPage() {
             </div>
           ) : null}
 
-          <button
+          <Button
             type="submit"
             disabled={pending}
-            className="inline-flex w-full items-center justify-center rounded-2xl bg-accent px-4 py-3 font-ui text-sm font-semibold text-accent-foreground disabled:opacity-70"
+            className="w-full rounded-2xl py-3 font-ui text-sm font-semibold"
           >
             {pending ? "Signing in…" : "Sign in"}
-          </button>
+          </Button>
         </form>
       </section>
     </main>
