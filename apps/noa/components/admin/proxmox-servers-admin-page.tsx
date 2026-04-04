@@ -1,9 +1,14 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -60,9 +65,6 @@ const EMPTY_FORM_STATE: ProxmoxServerFormState = {
   apiTokenSecret: "",
   verifySsl: false,
 };
-
-const inputClass =
-  "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted";
 
 function formatTimestamp(value: unknown): string {
   if (typeof value !== "string" || !value) {
@@ -149,38 +151,42 @@ function ProxmoxFormFields({
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
-      <label className="text-sm text-text">
+      <label className="text-sm text-text" htmlFor="proxmox-server-name">
         Name
-        <input
-          className={inputClass}
+        <Input
+          id="proxmox-server-name"
+          className="mt-1"
           value={form.name}
           onChange={(event) => updateField("name", event.target.value)}
           disabled={disabled}
         />
       </label>
-      <label className="text-sm text-text">
+      <label className="text-sm text-text" htmlFor="proxmox-server-base-url">
         Base URL
-        <input
-          className={inputClass}
+        <Input
+          id="proxmox-server-base-url"
+          className="mt-1"
           value={form.baseUrl}
           onChange={(event) => updateField("baseUrl", event.target.value)}
           disabled={disabled}
         />
       </label>
-      <label className="text-sm text-text">
+      <label className="text-sm text-text" htmlFor="proxmox-server-api-token-id">
         API token ID
-        <input
-          className={inputClass}
+        <Input
+          id="proxmox-server-api-token-id"
+          className="mt-1"
           value={form.apiTokenId}
           onChange={(event) => updateField("apiTokenId", event.target.value)}
           disabled={disabled}
         />
       </label>
-      <label className="text-sm text-text">
+      <label className="text-sm text-text" htmlFor="proxmox-server-api-token-secret">
         API token secret
-        <input
+        <Input
+          id="proxmox-server-api-token-secret"
           type="password"
-          className={inputClass}
+          className="mt-1"
           value={form.apiTokenSecret}
           onChange={(event) => updateField("apiTokenSecret", event.target.value)}
           placeholder={mode === "update" ? "Leave blank to keep current" : "Proxmox token secret"}
@@ -190,6 +196,7 @@ function ProxmoxFormFields({
       <label className="inline-flex items-center gap-2 text-sm text-text md:col-span-2">
         <input
           type="checkbox"
+          className="h-4 w-4 rounded border border-input bg-background"
           checked={form.verifySsl}
           onChange={(event) => updateField("verifySsl", event.target.checked)}
           disabled={disabled}
@@ -204,8 +211,6 @@ export function ProxmoxServersAdminPage() {
   const [servers, setServers] = useState<ProxmoxServer[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [actionStatus, setActionStatus] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
 
@@ -265,6 +270,11 @@ export function ProxmoxServersAdminPage() {
     [servers],
   );
 
+  const openCreate = () => {
+    setCreateError(null);
+    setCreateOpen(true);
+  };
+
   const openEdit = () => {
     if (!selectedServer) {
       return;
@@ -306,10 +316,11 @@ export function ProxmoxServersAdminPage() {
 
       setServers((current) => [payload.server, ...current]);
       setSelectedServerId(payload.server.id);
-      setActionStatus(`Created ${payload.server.name}.`);
+      toast.success(`Created ${payload.server.name}.`);
       closeCreate();
     } catch (error) {
-      setCreateError(toErrorMessage(error, "Unable to create Proxmox server"));
+      setCreateError(null);
+      toast.error(toErrorMessage(error, "Unable to create Proxmox server"));
     } finally {
       setCreating(false);
     }
@@ -338,10 +349,11 @@ export function ProxmoxServersAdminPage() {
       const payload = await jsonOrThrow<UpdateProxmoxServerResponse>(response);
 
       setServers((current) => current.map((server) => (server.id === payload.server.id ? payload.server : server)));
-      setActionStatus(`Saved changes for ${payload.server.name}.`);
+      toast.success(`Saved changes for ${payload.server.name}.`);
       closeEdit();
     } catch (error) {
-      setEditError(toErrorMessage(error, "Unable to update Proxmox server"));
+      setEditError(null);
+      toast.error(toErrorMessage(error, "Unable to update Proxmox server"));
     } finally {
       setSavingEdit(false);
     }
@@ -354,19 +366,19 @@ export function ProxmoxServersAdminPage() {
 
     setConfirmDeleteOpen(false);
     try {
+      const deletedServer = selectedServer;
       const response = await fetchWithAuth(`/admin/proxmox/servers/${selectedServer.id}`, { method: "DELETE" });
       await jsonOrThrow<{ ok: boolean }>(response);
       setServers((current) => current.filter((server) => server.id !== selectedServer.id));
-      setActionStatus(`Deleted ${selectedServer.name}.`);
+      toast.success(`Deleted ${deletedServer?.name ?? "Proxmox server"}.`);
       setSelectedServerId(null);
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to delete Proxmox server"));
+      toast.error(toErrorMessage(error, "Unable to delete Proxmox server"));
     }
   };
 
   const validateServer = async (serverId: string) => {
     setValidateBusyId(serverId);
-    setActionError(null);
 
     try {
       const response = await fetchWithAuth(`/admin/proxmox/servers/${serverId}/validate`, { method: "POST" });
@@ -374,7 +386,7 @@ export function ProxmoxServersAdminPage() {
       setValidateResultById((current) => ({ ...current, [serverId]: payload }));
       await loadServers();
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to validate Proxmox server"));
+      toast.error(toErrorMessage(error, "Unable to validate Proxmox server"));
     } finally {
       setValidateBusyId(null);
     }
@@ -387,13 +399,9 @@ export function ProxmoxServersAdminPage() {
           <h2 className="text-lg font-semibold text-text">Proxmox servers</h2>
           <p className="text-sm text-muted">Manage Proxmox API connection profiles.</p>
         </div>
-        <button
-          type="button"
-          className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground"
-          onClick={() => setCreateOpen((value) => !value)}
-        >
-          {createOpen ? "Close" : "Add server"}
-        </button>
+        <Button type="button" size="sm" onClick={openCreate}>
+          Add server
+        </Button>
       </div>
 
       {loadError ? (
@@ -401,44 +409,34 @@ export function ProxmoxServersAdminPage() {
           {loadError}
         </div>
       ) : null}
-      {actionError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900" role="alert">
-          {actionError}
-        </div>
-      ) : null}
-      {actionStatus ? (
-        <div className="rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text" role="status">
-          {actionStatus}
-        </div>
-      ) : null}
 
-      {createOpen ? (
-        <div className="rounded-2xl border border-border bg-surface p-4">
-          <h3 className="text-base font-semibold text-text">Create server</h3>
-          <div className="mt-3">
-            <ProxmoxFormFields form={createForm} setForm={setCreateForm} disabled={creating} mode="create" />
-          </div>
-          {createError ? <p className="mt-3 text-sm text-red-700">{createError}</p> : null}
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground"
-              onClick={() => void createServer()}
-              disabled={creating}
-            >
-              {creating ? "Saving…" : "Save"}
-            </button>
-            <button
-              type="button"
-              className="rounded-xl border border-border bg-bg px-3 py-2 text-sm font-medium text-text"
-              onClick={closeCreate}
-              disabled={creating}
-            >
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          if (open) {
+            setCreateOpen(true);
+            return;
+          }
+
+          closeCreate();
+        }}
+      >
+        <DialogContent className="max-w-3xl" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Add Proxmox Server</DialogTitle>
+          </DialogHeader>
+          <ProxmoxFormFields form={createForm} setForm={setCreateForm} disabled={creating} mode="create" />
+          {createError ? <p className="text-sm text-red-700">{createError}</p> : null}
+          <DialogFooter>
+            <Button variant="outline" onClick={closeCreate} disabled={creating}>
               Cancel
-            </button>
-          </div>
-        </div>
-      ) : null}
+            </Button>
+            <Button onClick={() => void createServer()} disabled={creating}>
+              {creating ? "Saving…" : "Save"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
         <table className="min-w-full divide-y divide-border text-sm">
@@ -454,11 +452,16 @@ export function ProxmoxServersAdminPage() {
           </thead>
           <tbody className="divide-y divide-border">
             {loading ? (
-              <tr>
-                <td className="px-3 py-3 text-muted" colSpan={6}>
-                  Loading servers…
-                </td>
-              </tr>
+              ["loading-row-1", "loading-row-2", "loading-row-3"].map((rowKey) => (
+                <tr key={rowKey}>
+                  <td className="px-3 py-3"><Skeleton className="h-4 w-32" /></td>
+                  <td className="px-3 py-3"><Skeleton className="h-4 w-48" /></td>
+                  <td className="px-3 py-3"><Skeleton className="h-4 w-24" /></td>
+                  <td className="px-3 py-3"><Skeleton className="h-4 w-10" /></td>
+                  <td className="px-3 py-3"><Skeleton className="h-4 w-36" /></td>
+                  <td className="px-3 py-3"><Skeleton className="h-8 w-24" /></td>
+                </tr>
+              ))
             ) : sortedServers.length === 0 ? (
               <tr>
                 <td className="px-3 py-3 text-muted" colSpan={6}>
@@ -478,13 +481,9 @@ export function ProxmoxServersAdminPage() {
                   <td className="px-3 py-3 text-text">{server.verify_ssl ? "on" : "off"}</td>
                   <td className="px-3 py-3 text-muted">{formatTimestamp(server.updated_at)}</td>
                   <td className="px-3 py-3">
-                    <button
-                      type="button"
-                      className="text-accent underline underline-offset-2"
-                      onClick={() => setSelectedServerId(server.id)}
-                    >
+                    <Button type="button" variant="link" size="sm" onClick={() => setSelectedServerId(server.id)}>
                       Manage {server.name}
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))
@@ -498,29 +497,23 @@ export function ProxmoxServersAdminPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-base font-semibold text-text">Server details</h3>
             <div className="flex items-center gap-2">
-              <button
+              <Button
                 type="button"
-                className="rounded-xl border border-border bg-bg px-3 py-2 text-sm text-text"
+                variant="outline"
+                size="sm"
                 onClick={() => void validateServer(selectedServer.id)}
                 disabled={validateBusyId === selectedServer.id}
               >
                 {validateBusyId === selectedServer.id ? "Validating…" : "Validate"}
-              </button>
-              <button
-                type="button"
-                className="rounded-xl border border-border bg-bg px-3 py-2 text-sm text-text"
-                onClick={openEdit}
-              >
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={openEdit}>
                 Edit server
-              </button>
+              </Button>
               <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
                 <AlertDialogTrigger asChild>
-                  <button
-                    type="button"
-                    className="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800"
-                  >
+                  <Button type="button" variant="destructive" size="sm">
                     Delete server
-                  </button>
+                  </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogHeader>
@@ -552,33 +545,37 @@ export function ProxmoxServersAdminPage() {
         </div>
       ) : null}
 
-      {editOpen && selectedServer ? (
-        <div className="rounded-2xl border border-border bg-surface p-4">
-          <h3 className="text-base font-semibold text-text">Edit server</h3>
-          <div className="mt-3">
-            <ProxmoxFormFields form={editForm} setForm={setEditForm} disabled={savingEdit} mode="update" />
-          </div>
-          {editError ? <p className="mt-3 text-sm text-red-700">{editError}</p> : null}
-          <div className="mt-4 flex items-center gap-2">
-            <button
-              type="button"
-              className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground"
-              onClick={() => void saveEdit()}
-              disabled={savingEdit}
-            >
-              {savingEdit ? "Saving…" : "Save changes"}
-            </button>
-            <button
-              type="button"
-              className="rounded-xl border border-border bg-bg px-3 py-2 text-sm font-medium text-text"
-              onClick={closeEdit}
-              disabled={savingEdit}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      ) : null}
+      <Dialog
+        open={editOpen && Boolean(selectedServer)}
+        onOpenChange={(open) => {
+          if (open) {
+            setEditOpen(true);
+            return;
+          }
+
+          closeEdit();
+        }}
+      >
+        <DialogContent className="max-w-3xl" aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>Edit Proxmox Server</DialogTitle>
+          </DialogHeader>
+          {selectedServer ? (
+            <>
+              <ProxmoxFormFields form={editForm} setForm={setEditForm} disabled={savingEdit} mode="update" />
+              {editError ? <p className="text-sm text-red-700">{editError}</p> : null}
+              <DialogFooter>
+                <Button variant="outline" onClick={closeEdit} disabled={savingEdit}>
+                  Cancel
+                </Button>
+                <Button onClick={() => void saveEdit()} disabled={savingEdit}>
+                  {savingEdit ? "Saving…" : "Save changes"}
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }
