@@ -1,7 +1,6 @@
 import { ShieldCheck, Trash2, UserCog, UserRoundCheck, UserRoundX } from "lucide-react";
 
 import { coerceStringArray, formatTimestamp } from "@/components/admin/lib/admin-data";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
