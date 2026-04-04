@@ -18,4 +18,6 @@
 - No direct browser calls to backend absolute URLs; browser code stays on same-origin `/api/...`.
 
 ## Current phase outcome
-This slice establishes the scaffold, auth/http boundaries, shared shell contract, and route map placeholders so later assistant/admin parity work can land without recreating the old route-level duplication.
+- `apps/noa` now uses a cookie-backed same-origin BFF auth boundary.
+- Protected and admin routes are enforced server-side before client hydration.
+- Browser token storage and legacy token migration have been removed.

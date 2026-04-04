@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
+import { formatTimestamp } from "@/components/admin/lib/format-timestamp";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -83,19 +84,6 @@ const EMPTY_FORM_STATE: WhmServerFormState = {
   sshPrivateKey: "",
   sshPrivateKeyPassphrase: "",
 };
-
-function formatTimestamp(value: unknown): string {
-  if (typeof value !== "string" || !value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
-}
 
 function parseOptionalPort(value: string): number | null {
   const normalized = value.trim();

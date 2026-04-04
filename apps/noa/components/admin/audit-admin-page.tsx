@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { formatTimestamp } from "@/components/admin/lib/format-timestamp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -62,19 +63,6 @@ const AUDIT_LOADING_COLUMN_KEYS = [
   "audit-loading-column-created",
   "audit-loading-column-receipt",
 ];
-
-function formatTimestamp(value: unknown): string {
-  if (typeof value !== "string" || !value) {
-    return "-";
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "-";
-  }
-
-  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
-}
 
 function normalizeDateRange(filters: Filters): { from?: string; to?: string } {
   const result: { from?: string; to?: string } = {};

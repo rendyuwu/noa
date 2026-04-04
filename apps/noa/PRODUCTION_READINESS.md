@@ -1,7 +1,12 @@
 # apps/noa Production Readiness Decisions
 
 ## Route treatment
-- All admin surfaces (`/admin/users`, `/admin/roles`, `/admin/audit`, `/admin/whm/servers`, `/admin/proxmox/servers`) are stable and visible to admin users.
+- Admin surfaces are protected by server-side route checks and backend RBAC.
+
+## Auth boundary
+- Browser code does not store bearer tokens.
+- Same-origin auth routes set and clear cookies at the Next.js boundary.
+- State-changing requests require CSRF validation.
 
 ## Observability contract
 - Client-side reporting is enabled only when:
@@ -20,3 +25,5 @@
 - `cd apps/noa && npm run typecheck`
 - `cd apps/noa && npm test`
 - `cd apps/noa && npm run test:smoke`
+- `cd apps/noa && npm run verify:design-system`
+- `cd apps/api && uv run pytest -q tests/test_auth_login.py tests/test_auth_login_rate_limiter.py`
