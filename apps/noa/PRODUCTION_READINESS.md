@@ -1,9 +1,7 @@
 # apps/noa Production Readiness Decisions
 
 ## Route treatment
-- Stable admin surfaces are limited to `/admin/users` and `/admin/roles`.
-- Placeholder admin routes (`/admin/audit`, `/admin/whm/servers`, `/admin/proxmox/servers`) are hidden from the default navigation.
-- Placeholder routes are disabled in production unless `NOA_ENABLE_PLACEHOLDER_ADMIN_SURFACES=true`.
+- All admin surfaces (`/admin/users`, `/admin/roles`, `/admin/audit`, `/admin/whm/servers`, `/admin/proxmox/servers`) are stable and visible to admin users.
 
 ## Observability contract
 - Client-side reporting is enabled only when:
