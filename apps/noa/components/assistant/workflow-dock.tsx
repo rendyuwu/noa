@@ -6,6 +6,7 @@ import { ChevronDown, Dot } from "lucide-react";
 import type { WorkflowTodoItem } from "./workflow-todo-tool-ui";
 import { getWorkflowTodoStatusStyle, isWorkflowTodoBlocked } from "./workflow-todo-tool-ui";
 import { useWorkflowDockState } from "./workflow-dock-state";
+import { Badge } from "@/components/ui/badge";
 
 function getActiveTodoIndex(todos: WorkflowTodoItem[]): number {
   const inProgressIndex = todos.findIndex((todo) => todo.status === "in_progress");
@@ -122,9 +123,10 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
           </div>
         </div>
         <div className="inline-flex shrink-0 items-center gap-2">
-          <span
+          <Badge
+            variant="outline"
             className={[
-              "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
+              "text-[10px] uppercase tracking-[0.08em]",
               isBlocked
                 ? "bg-amber-100 text-amber-900"
                 : phase === "close"
@@ -133,7 +135,7 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
             ].join(" ")}
           >
             {copy.badge}
-          </span>
+          </Badge>
           <ChevronDown
             className={[
               "size-4 text-muted transition-transform duration-200",
@@ -172,15 +174,10 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
                     </div>
                     <div className="mt-1 pr-2 text-sm text-text">{todo.content}</div>
                   </div>
-                  <div
-                    className={[
-                      "shrink-0 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
-                      style.className,
-                    ].join(" ")}
-                  >
+                  <Badge variant="outline" className={style.className}>
                     <style.Icon className="size-3" />
                     <span className="leading-none">{style.label}</span>
-                  </div>
+                  </Badge>
                 </li>
               );
             })}

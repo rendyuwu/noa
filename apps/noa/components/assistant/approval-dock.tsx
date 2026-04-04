@@ -5,6 +5,8 @@ import { Check, ChevronDown, Clock3, X } from "lucide-react";
 
 import type { AssistantActionLifecycleStatus, AssistantActionRequest } from "./approval-state";
 import { useApprovalSendCommand } from "./assistant-types";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
 type DecisionState = "approving" | "denying";
 
@@ -149,9 +151,9 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
           </div>
         </div>
         <div className="inline-flex shrink-0 items-center gap-2">
-          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-accent">
+          <Badge variant="outline" className="bg-accent/15 text-[10px] uppercase tracking-[0.08em] text-accent">
             live
-          </span>
+          </Badge>
           <ChevronDown
             className={[
               "size-4 text-muted transition-transform duration-200",
@@ -184,21 +186,16 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
                     <code className="text-[11px] text-muted">{request.actionRequestId}</code>
                   </div>
                 </div>
-                <div
-                  className={[
-                    "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
-                    copy.badgeClassName,
-                  ].join(" ")}
-                >
+                <Badge variant="outline" className={copy.badgeClassName}>
                   <copy.Icon className="size-3" />
                   <span className="leading-none">{copy.badge}</span>
-                </div>
+                </Badge>
               </div>
 
               {request.lifecycleStatus === "requested" ? (
                 <div className="mt-2 flex flex-wrap gap-2">
-                  <button
-                    type="button"
+                  <Button
+                    size="sm"
                     disabled={!canAct}
                     onClick={() => {
                       setPendingDecisions((current) => ({
@@ -207,13 +204,14 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
                       }));
                       sendCommand({ type: "approve-action", actionRequestId: request.actionRequestId });
                     }}
-                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-8 gap-1.5 rounded-lg text-xs"
                   >
                     <Check className="size-3.5" />
                     {pendingDecision === "approving" ? "Approving..." : "Approve"}
-                  </button>
-                  <button
-                    type="button"
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
                     disabled={!canAct}
                     onClick={() => {
                       setPendingDecisions((current) => ({
@@ -222,11 +220,11 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
                       }));
                       sendCommand({ type: "deny-action", actionRequestId: request.actionRequestId });
                     }}
-                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-text transition-all hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-60"
+                    className="h-8 gap-1.5 rounded-lg text-xs"
                   >
                     <X className="size-3.5" />
                     {pendingDecision === "denying" ? "Denying..." : "Deny"}
-                  </button>
+                  </Button>
                 </div>
               ) : null}
             </div>

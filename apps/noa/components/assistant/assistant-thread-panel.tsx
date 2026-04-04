@@ -6,6 +6,7 @@ import { AlertTriangle, Bot, LoaderCircle, MessageSquarePlus, RefreshCw } from "
 import remarkGfm from "remark-gfm";
 
 import { useThreadHydration } from "@/components/lib/runtime/thread-hydration";
+import { Button } from "@/components/ui/button";
 
 import { ToolFallback, ToolGroup } from "./assistant-tool-ui";
 
@@ -69,14 +70,15 @@ export function ThreadPanel() {
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-amber-950">Thread recovery failed</p>
                 <p className="mt-1 leading-6">{errorMessage}</p>
-                <button
-                  type="button"
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 gap-2 rounded-xl border-amber-300 bg-white font-ui text-amber-900 hover:bg-amber-100"
                   onClick={retry}
-                  className="mt-3 inline-flex items-center gap-2 rounded-xl border border-amber-300 bg-white px-3 py-2 font-ui text-sm font-medium text-amber-900 transition hover:bg-amber-100"
                 >
                   <RefreshCw className="size-4" />
                   Retry restore
-                </button>
+                </Button>
               </div>
             </div>
           </div>
@@ -101,17 +103,15 @@ export function ThreadPanel() {
             placeholder="Ask NOA…"
           />
           <div className="mt-2 flex items-center justify-end gap-2">
-            <ComposerPrimitive.Cancel
-              type="button"
-              className="rounded-xl border border-border bg-surface px-3 py-2 font-ui text-sm font-medium text-text"
-            >
-              Stop
+            <ComposerPrimitive.Cancel asChild type="button">
+              <Button variant="outline" size="sm" className="rounded-xl font-ui text-sm font-medium">
+                Stop
+              </Button>
             </ComposerPrimitive.Cancel>
-            <ComposerPrimitive.Send
-              type="submit"
-              className="rounded-xl bg-accent px-3 py-2 font-ui text-sm font-semibold text-accent-foreground"
-            >
-              Send
+            <ComposerPrimitive.Send asChild type="submit">
+              <Button size="sm" className="rounded-xl font-ui text-sm font-semibold">
+                Send
+              </Button>
             </ComposerPrimitive.Send>
           </div>
         </div>

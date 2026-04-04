@@ -4,6 +4,8 @@ import { ThreadListItemPrimitive, ThreadListPrimitive, useAssistantState } from 
 import { MessageSquarePlus } from "lucide-react";
 
 import { getActiveThreadListItem } from "@/components/lib/runtime/assistant-thread-state";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function ThreadSidebar() {
   const activeRemoteId = useAssistantState(({ threads }) => getActiveThreadListItem(threads)?.remoteId ?? null);
@@ -46,10 +48,10 @@ export function ThreadSidebar() {
       <p className="mt-2 font-ui text-sm leading-6 text-muted">
         Your saved conversations. Select a thread to continue, or start a new one.
       </p>
-      <ThreadListPrimitive.New className="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-accent px-4 py-3 font-ui text-sm font-semibold text-accent-foreground">
-        New thread
+      <ThreadListPrimitive.New asChild>
+        <Button className="mt-4 w-full rounded-2xl font-ui text-sm font-semibold">New thread</Button>
       </ThreadListPrimitive.New>
-      <div className="mt-4 max-h-[55vh] overflow-y-auto pr-1">
+      <ScrollArea className="mt-4 max-h-[60vh]">
         {threadIds.length > 0 ? (
           <ThreadListPrimitive.Items components={{ ThreadListItem }} />
         ) : (
@@ -57,7 +59,7 @@ export function ThreadSidebar() {
             No threads yet. Start the first conversation.
           </div>
         )}
-      </div>
+      </ScrollArea>
     </ThreadListPrimitive.Root>
   );
 }

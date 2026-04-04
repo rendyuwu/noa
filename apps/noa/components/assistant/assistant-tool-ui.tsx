@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { makeAssistantToolUI } from "@assistant-ui/react";
 
 import { useApprovalSendCommand } from "./assistant-types";
+import { Button } from "@/components/ui/button";
 
 function ApprovalActions({ args }: { args: Record<string, unknown> }) {
   const sendCommand = useApprovalSendCommand();
@@ -21,20 +22,21 @@ function ApprovalActions({ args }: { args: Record<string, unknown> }) {
         Tool: <code>{toolName}</code>
       </p>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="rounded-xl bg-accent px-3 py-2 font-ui text-sm font-semibold text-accent-foreground"
+        <Button
+          size="sm"
+          className="rounded-xl font-ui text-sm font-semibold"
           onClick={() => sendCommand({ type: "approve-action", actionRequestId })}
         >
           Approve
-        </button>
-        <button
-          type="button"
-          className="rounded-xl border border-border bg-bg px-3 py-2 font-ui text-sm font-medium text-text"
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="rounded-xl font-ui text-sm font-medium"
           onClick={() => sendCommand({ type: "deny-action", actionRequestId })}
         >
           Deny
-        </button>
+        </Button>
       </div>
     </div>
   );
