@@ -60,12 +60,7 @@ export function UsersDetailPanel({
               </h2>
               <p className="mt-1 truncate font-ui text-sm text-muted">{selectedUser.email}</p>
             </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={selectedUser.is_active === false ? "destructive" : "success"}>
-                {selectedUser.is_active === false ? "Inactive" : "Active"}
-              </Badge>
-              <UserCog className="mt-1 size-5 shrink-0 text-accent" />
-            </div>
+            <UserCog className="mt-1 size-5 shrink-0 text-accent" />
           </div>
 
           <dl className="mt-5 grid gap-3 rounded-2xl border border-border bg-bg/70 p-4 font-ui text-sm text-text">

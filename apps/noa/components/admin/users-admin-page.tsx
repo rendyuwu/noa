@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 
 import { coerceRoleNames, coerceStringArray } from "@/components/admin/lib/admin-data";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -54,8 +54,6 @@ export function UsersAdminPage() {
       a.localeCompare(b),
     );
   }, [availableRoles, selectedUser?.roles]);
-
-  const isTestEnvironment = process.env.NODE_ENV === "test";
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -189,35 +187,32 @@ export function UsersAdminPage() {
   }
 
   return (
-    <>
-      {isTestEnvironment ? <Toaster /> : null}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-        <UsersListPanel
-          filteredUsers={filteredUsers}
-          loadError={loadError}
-          loading={loading}
-          onRefresh={() => void loadData()}
-          onSearchChange={setSearch}
-          onSelectUser={setSelectedUserId}
-          search={search}
-          selectedUserId={selectedUserId}
-        />
-        <UsersDetailPanel
-          allRoleNames={allRoleNames}
-          confirmDeleteOpen={confirmDeleteOpen}
-          deleting={deleting}
-          onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
-          onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
-          onDeleteUser={() => void deleteUser()}
-          onSaveRoles={() => void saveRoles()}
-          onToggleRole={toggleRole}
-          onToggleUserStatus={() => void toggleUserStatus()}
-          roleAssignments={roleAssignments}
-          savingRoles={savingRoles}
-          selectedUser={selectedUser}
-          updatingStatus={updatingStatus}
-        />
-      </div>
-    </>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+      <UsersListPanel
+        filteredUsers={filteredUsers}
+        loadError={loadError}
+        loading={loading}
+        onRefresh={() => void loadData()}
+        onSearchChange={setSearch}
+        onSelectUser={setSelectedUserId}
+        search={search}
+        selectedUserId={selectedUserId}
+      />
+      <UsersDetailPanel
+        allRoleNames={allRoleNames}
+        confirmDeleteOpen={confirmDeleteOpen}
+        deleting={deleting}
+        onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
+        onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
+        onDeleteUser={() => void deleteUser()}
+        onSaveRoles={() => void saveRoles()}
+        onToggleRole={toggleRole}
+        onToggleUserStatus={() => void toggleUserStatus()}
+        roleAssignments={roleAssignments}
+        savingRoles={savingRoles}
+        selectedUser={selectedUser}
+        updatingStatus={updatingStatus}
+      />
+    </div>
   );
 }
