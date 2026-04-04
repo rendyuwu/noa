@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -459,7 +459,6 @@ export function WhmServersAdminPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
-  const actionStatusRef = useRef<HTMLDivElement>(null);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -482,12 +481,6 @@ export function WhmServersAdminPage() {
 
     return servers.find((server) => server.id === selectedServerId) ?? null;
   }, [selectedServerId, servers]);
-
-  const announceStatus = useCallback((message: string) => {
-    if (actionStatusRef.current) {
-      actionStatusRef.current.textContent = message;
-    }
-  }, []);
 
   const loadServers = useCallback(async () => {
     setLoading(true);
@@ -565,7 +558,6 @@ export function WhmServersAdminPage() {
       setServers((current) => [payload.server, ...current]);
       setSelectedServerId(payload.server.id);
       toast.success(`Created ${payload.server.name}.`);
-      announceStatus(`Created ${payload.server.name}.`);
       closeCreate();
     } catch (error) {
       setCreateError(null);
@@ -599,7 +591,6 @@ export function WhmServersAdminPage() {
 
       setServers((current) => current.map((server) => (server.id === payload.server.id ? payload.server : server)));
       toast.success(`Saved changes for ${payload.server.name}.`);
-      announceStatus(`Saved changes for ${payload.server.name}.`);
       closeEdit();
     } catch (error) {
       setEditError(null);
@@ -621,7 +612,6 @@ export function WhmServersAdminPage() {
       await jsonOrThrow<{ ok: boolean }>(response);
       setServers((current) => current.filter((server) => server.id !== selectedServer.id));
       toast.success(`Deleted ${deletedServer?.name ?? "WHM server"}.`);
-      announceStatus(`Deleted ${deletedServer?.name ?? "WHM server"}.`);
       setSelectedServerId(null);
     } catch (error) {
       toast.error(toErrorMessage(error, "Unable to delete WHM server"));
@@ -637,12 +627,6 @@ export function WhmServersAdminPage() {
       });
       const payload = await jsonOrThrow<ValidateWhmServerResponse>(response);
       setValidateResultById((current) => ({ ...current, [serverId]: payload }));
-      if (payload.ok) {
-        toast.success(payload.message);
-        announceStatus(payload.message);
-      } else {
-        toast.error(payload.message);
-      }
       await loadServers();
     } catch (error) {
       toast.error(toErrorMessage(error, "Unable to validate WHM server"));
@@ -668,7 +652,6 @@ export function WhmServersAdminPage() {
           {loadError}
         </div>
       ) : null}
-      <div ref={actionStatusRef} role="status" aria-live="polite" className="sr-only" />
 
       <Dialog
         open={createOpen}
