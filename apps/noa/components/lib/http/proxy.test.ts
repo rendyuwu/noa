@@ -63,4 +63,35 @@ describe("proxyRequest", () => {
     expect(response.headers.get("content-type")).toBe("text/event-stream");
     expect(await response.text()).toContain("first-token");
   });
+
+  it("uses the auth cookie as upstream bearer auth", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+
+    await proxyRequest(
+      new Request("http://localhost:3000/api/threads", {
+        headers: { cookie: "noa_session=cookie-token" },
+      }),
+      { path: ["threads"] },
+      { NOA_API_URL: "http://backend:8000" },
+      fetchMock,
+    );
+
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    expect((init.headers as Headers).get("authorization")).toBe("Bearer cookie-token");
+  });
+
+  it("rejects state-changing requests with a missing csrf token", async () => {
+    const response = await proxyRequest(
+      new Request("http://localhost:3000/api/admin/users", {
+        method: "POST",
+        headers: { cookie: "noa_session=cookie-token; noa_csrf=cookie-csrf" },
+        body: JSON.stringify({ email: "user@example.com" }),
+      }),
+      { path: ["admin", "users"] },
+      { NOA_API_URL: "http://backend:8000" },
+      vi.fn(),
+    );
+
+    expect(response.status).toBe(403);
+  });
 });
