@@ -1,6 +1,6 @@
 "use client";
 
-import React, { type ReactNode } from "react";
+import { type ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -90,7 +90,20 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
           ].join(" ");
 
           if (isLogout) {
-            const logoutButton = (
+            return collapsed ? (
+              <Tooltip key={item.href}>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className={className}
+                    onClick={() => clearAuth({ returnTo: "/assistant", redirect: true })}
+                  >
+                    {content}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="right">{item.label}</TooltipContent>
+              </Tooltip>
+            ) : (
               <Button
                 key={item.href}
                 variant="ghost"
@@ -100,30 +113,21 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
                 {content}
               </Button>
             );
-
-            return collapsed ? (
-              <Tooltip key={item.href}>
-                <TooltipTrigger asChild>{logoutButton}</TooltipTrigger>
-                <TooltipContent side="right">{item.label}</TooltipContent>
-              </Tooltip>
-            ) : (
-              logoutButton
-            );
           }
-
-          const navLink = (
-            <Link key={item.href} href={item.href} className={className}>
-              {content}
-            </Link>
-          );
 
           return collapsed ? (
             <Tooltip key={item.href}>
-              <TooltipTrigger asChild>{navLink}</TooltipTrigger>
+              <TooltipTrigger asChild>
+                <Link href={item.href} className={className}>
+                  {content}
+                </Link>
+              </TooltipTrigger>
               <TooltipContent side="right">{item.label}</TooltipContent>
             </Tooltip>
           ) : (
-            navLink
+            <Link key={item.href} href={item.href} className={className}>
+              {content}
+            </Link>
           );
         })}
       </nav>
