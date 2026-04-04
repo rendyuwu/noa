@@ -1,6 +1,6 @@
 import { RefreshCw } from "lucide-react";
 
-import { coerceStringArray, formatTimestamp } from "@/components/admin/lib/admin-data";
+import { coerceStringArray, formatTimestampLocalized } from "@/components/admin/lib/admin-data";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -97,7 +97,9 @@ export function UsersListPanel({
                     </div>
                     <p className="mt-1 truncate font-ui text-sm text-muted">{user.email}</p>
                   </div>
-                  <div className="font-ui text-xs text-muted">Last login: {formatTimestamp(user.last_login_at)}</div>
+                  <div className="font-ui text-xs text-muted">
+                    Last login: {formatTimestampLocalized(user.last_login_at)}
+                  </div>
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
