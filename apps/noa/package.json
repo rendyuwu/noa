@@ -10,7 +10,10 @@
     "test": "vitest run",
     "test:smoke": "vitest run app/login/page.test.tsx components/assistant/assistant-route-thread-sync.test.tsx components/admin/users-admin-page.smoke.test.tsx components/admin/roles-admin-page.smoke.test.tsx components/layout/protected-screen.test.tsx components/lib/runtime/thread-list-adapter.test.ts",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "verify:design-system:tokens": "node --input-type=module -e \"const { scanTokenViolations } = await import('./scripts/check-design-token-usage.mjs'); const allowedUtilities = new Set(['text-current', 'border-transparent', 'bg-transparent']); const isRelevantFile = (filePath) => filePath.startsWith('app/') || filePath.startsWith('components/'); const violations = (await scanTokenViolations('.')).filter((violation) => isRelevantFile(violation.filePath) && !allowedUtilities.has(violation.utility)); if (violations.length > 0) { for (const violation of violations) { console.error(violation.filePath + ':' + violation.line + ' ' + violation.utility); } process.exitCode = 1; } else { console.log('Design token usage check passed.'); }\"",
+    "verify:design-system:theme-parity": "node scripts/check-theme-token-parity.mjs",
+    "verify:design-system": "npm run verify:design-system:tokens && npm run verify:design-system:theme-parity"
   },
   "dependencies": {
     "@assistant-ui/react": "^0.11.58",
@@ -26,6 +29,7 @@
     "clsx": "^2.1.1",
     "lucide-react": "^0.542.0",
     "next": "^16.1.6",
+    "next-themes": "^0.4.6",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "remark-gfm": "^4.0.1",

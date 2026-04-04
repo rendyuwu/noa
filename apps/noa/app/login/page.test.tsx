@@ -54,6 +54,8 @@ describe("LoginPage", () => {
 
     render(<LoginPage />);
 
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "pending@example.com" } });
     fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
     fireEvent.click(screen.getByRole("button", { name: "Sign in" }));

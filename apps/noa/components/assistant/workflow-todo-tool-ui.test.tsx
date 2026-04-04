@@ -69,7 +69,14 @@ describe("workflow todo helpers", () => {
     expect(isWorkflowTodoBlocked("waiting_on_approval")).toBe(true);
     expect(isWorkflowTodoBlocked("completed")).toBe(false);
 
-    expect(getWorkflowTodoStatusStyle("waiting_on_approval").label).toBe("waiting on approval");
-    expect(getWorkflowTodoStatusStyle("completed").label).toBe("done");
+    expect(getWorkflowTodoStatusStyle("waiting_on_approval")).toMatchObject({
+      label: "waiting on approval",
+      variant: "warning",
+    });
+    expect(getWorkflowTodoStatusStyle("completed")).toMatchObject({
+      label: "done",
+      variant: "success",
+    });
+    expect(getWorkflowTodoStatusStyle("cancelled")).toMatchObject({ variant: "destructive" });
   });
 });

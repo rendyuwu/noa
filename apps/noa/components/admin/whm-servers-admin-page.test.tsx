@@ -250,4 +250,56 @@ describe("WhmServersAdminPage", () => {
     expect(await screen.findByText("SSH authentication failed")).toBeInTheDocument();
     expect(listCalls).toBeGreaterThanOrEqual(2);
   });
+
+  it("renders validation failures in an alert", async () => {
+    const serverId = "server-1";
+    const listPayload = {
+      servers: [
+        {
+          id: serverId,
+          name: "web1",
+          base_url: "https://whm.example.com:2087",
+          api_username: "root",
+          ssh_username: null,
+          ssh_port: null,
+          ssh_host_key_fingerprint: null,
+          has_ssh_password: false,
+          has_ssh_private_key: false,
+          verify_ssl: true,
+          updated_at: "2026-01-02T03:04:05.000Z",
+        },
+      ],
+    };
+    const validatePayload = { ok: false, message: "SSH key fingerprint mismatch" };
+
+    const listResponse = new Response(null, { status: 200 });
+    const validateResponse = new Response(null, { status: 200 });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/admin/whm/servers" && !init) {
+        return listResponse;
+      }
+      if (path === `/admin/whm/servers/${serverId}/validate` && init?.method === "POST") {
+        return validateResponse;
+      }
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === listResponse) {
+        return listPayload;
+      }
+      if (response === validateResponse) {
+        return validatePayload;
+      }
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<WhmServersAdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Manage web1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("SSH key fingerprint mismatch");
+  });
 });

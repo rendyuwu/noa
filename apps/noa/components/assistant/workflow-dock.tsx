@@ -1,11 +1,12 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { ChevronDown, Dot } from "lucide-react";
+import { ChevronDown, Clock3, Dot } from "lucide-react";
 
 import type { WorkflowTodoItem } from "./workflow-todo-tool-ui";
 import { getWorkflowTodoStatusStyle, isWorkflowTodoBlocked } from "./workflow-todo-tool-ui";
 import { useWorkflowDockState } from "./workflow-dock-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 
 function getActiveTodoIndex(todos: WorkflowTodoItem[]): number {
@@ -38,6 +39,7 @@ function getDockCopy(phase: ReturnType<typeof useWorkflowDockState>["phase"]) {
     return {
       title: "Workflow paused",
       badge: "blocked",
+      badgeVariant: "warning" as const,
     };
   }
 
@@ -45,12 +47,14 @@ function getDockCopy(phase: ReturnType<typeof useWorkflowDockState>["phase"]) {
     return {
       title: "Workflow complete",
       badge: "done",
+      badgeVariant: "muted" as const,
     };
   }
 
   return {
     title: "Workflow",
     badge: "live",
+    badgeVariant: "info" as const,
   };
 }
 
@@ -109,31 +113,21 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
           <div
             className={[
               "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
-              phase === "close" ? "bg-surface-2" : isBlocked ? "bg-amber-500" : "bg-accent",
+              phase === "close" ? "bg-surface-2" : isBlocked ? "bg-warning" : "bg-accent",
             ].join(" ")}
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 text-sm text-text">
               <span className="font-semibold">{copy.title}</span>
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 font-ui text-[11px] text-muted">
+              <Badge variant="muted" className="px-2 py-0.5 font-ui text-[11px]">
                 {getProgressLabel(todos)}
-              </span>
+              </Badge>
             </div>
             <div className="mt-1 truncate font-ui text-sm text-muted">{preview}</div>
           </div>
         </div>
         <div className="inline-flex shrink-0 items-center gap-2">
-          <Badge
-            variant="outline"
-            className={[
-              "text-[10px] uppercase tracking-[0.08em]",
-              isBlocked
-                ? "bg-amber-100 text-amber-900"
-                : phase === "close"
-                  ? "bg-surface-2 text-muted"
-                  : "bg-accent/15 text-accent",
-            ].join(" ")}
-          >
+          <Badge variant={copy.badgeVariant} className="text-[10px] uppercase tracking-[0.08em]">
             {copy.badge}
           </Badge>
           <ChevronDown
@@ -146,6 +140,15 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
       </button>
 
       <div className={collapsed ? "hidden" : "border-t border-border px-3 pb-3"}>
+        {isBlocked ? (
+          <Alert tone="warning" className="mt-3">
+            <Clock3 />
+            <div>
+              <AlertTitle>Workflow paused</AlertTitle>
+              <AlertDescription>Waiting on approval or user input before continuing.</AlertDescription>
+            </div>
+          </Alert>
+        ) : null}
         <div className="max-h-44 overflow-y-auto pt-3">
           <ul className="space-y-1.5">
             {todos.map((todo, index) => {
@@ -159,7 +162,7 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
                     "flex items-start justify-between gap-3 rounded-xl px-3 py-2 transition-colors",
                     isActive
                       ? isTodoBlocked
-                        ? "bg-amber-50/80 ring-1 ring-amber-200"
+                        ? "bg-warning/10 ring-1 ring-warning/30"
                         : "bg-accent/6 ring-1 ring-accent/15"
                       : "bg-bg/40",
                   ].join(" ")}
@@ -167,14 +170,14 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 text-[11px] text-muted">
-                      <Dot className="size-3.5" />
+                      <Dot className={isTodoBlocked ? "size-3.5 text-warning" : "size-3.5 text-muted"} />
                       <span className="font-ui">
                         {isActive ? (isTodoBlocked ? "Waiting" : "Current") : `Step ${index + 1}`}
                       </span>
                     </div>
                     <div className="mt-1 pr-2 text-sm text-text">{todo.content}</div>
                   </div>
-                  <Badge variant="outline" className={style.className}>
+                  <Badge variant={style.variant} className="gap-1.5 text-[10px] uppercase tracking-[0.08em]">
                     <style.Icon className="size-3" />
                     <span className="leading-none">{style.label}</span>
                   </Badge>

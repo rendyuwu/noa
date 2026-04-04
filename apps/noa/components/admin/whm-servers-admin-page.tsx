@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -635,6 +636,8 @@ export function WhmServersAdminPage() {
     }
   };
 
+  const selectedValidationResult = selectedServer ? validateResultById[selectedServer.id] ?? null : null;
+
   return (
     <section className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -648,9 +651,9 @@ export function WhmServersAdminPage() {
       </div>
 
       {loadError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900" role="alert">
-          {loadError}
-        </div>
+        <Alert tone="destructive">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
       ) : null}
 
       <Dialog
@@ -669,7 +672,11 @@ export function WhmServersAdminPage() {
             <DialogTitle>Add WHM Server</DialogTitle>
           </DialogHeader>
           <WhmServerFormFields form={createForm} setForm={setCreateForm} disabled={creating} mode="create" />
-          {createError ? <p className="text-sm text-red-700">{createError}</p> : null}
+          {createError ? (
+            <Alert tone="destructive">
+              <AlertDescription>{createError}</AlertDescription>
+            </Alert>
+          ) : null}
           <DialogFooter>
             <Button variant="outline" onClick={closeCreate} disabled={creating}>
               Cancel
@@ -774,16 +781,10 @@ export function WhmServersAdminPage() {
             </div>
           </div>
 
-          {validateResultById[selectedServer.id] ? (
-            <div
-              className={`mt-3 rounded-xl border px-3 py-2 text-sm ${
-                validateResultById[selectedServer.id]?.ok
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
-                  : "border-amber-200 bg-amber-50 text-amber-900"
-              }`}
-            >
-              {validateResultById[selectedServer.id]?.message}
-            </div>
+          {selectedValidationResult ? (
+            <Alert tone={selectedValidationResult.ok ? "success" : "warning"} className="mt-3">
+              <AlertDescription>{selectedValidationResult.message}</AlertDescription>
+            </Alert>
           ) : null}
         </div>
       ) : null}
@@ -806,7 +807,11 @@ export function WhmServersAdminPage() {
           {selectedServer ? (
             <>
               <WhmServerFormFields form={editForm} setForm={setEditForm} disabled={savingEdit} mode="update" />
-              {editError ? <p className="text-sm text-red-700">{editError}</p> : null}
+              {editError ? (
+                <Alert tone="destructive">
+                  <AlertDescription>{editError}</AlertDescription>
+                </Alert>
+              ) : null}
               <DialogFooter>
                 <Button variant="outline" onClick={closeEdit} disabled={savingEdit}>
                   Cancel

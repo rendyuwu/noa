@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { WorkflowDock } from "./workflow-dock";
@@ -30,9 +30,15 @@ describe("WorkflowDock", () => {
       />,
     );
 
-    expect(screen.getByText("Workflow paused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Workflow paused/ })).toBeInTheDocument();
     expect(screen.getByTestId("workflow-active-step")).toHaveTextContent("Request approval");
-    expect(screen.getByText(/waiting on approval/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/waiting on approval/i)[0]).toBeInTheDocument();
+    expect(screen.getByText("blocked").closest("div")).toHaveClass("bg-warning");
+
+    fireEvent.click(screen.getByRole("button", { name: /Workflow paused/ }));
+
+    expect(screen.getByText("Waiting on approval or user input before continuing.")).toBeInTheDocument();
+    expect(screen.getByText("waiting on approval").closest("div")).toHaveClass("bg-warning");
   });
 
   it("surfaces missing-input waits as blocked workflow state", () => {
@@ -46,7 +52,7 @@ describe("WorkflowDock", () => {
       />,
     );
 
-    expect(screen.getByText("Workflow paused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Workflow paused/ })).toBeInTheDocument();
     expect(screen.getByTestId("workflow-active-step")).toHaveTextContent("Ask for change reason");
     expect(screen.getByText(/waiting on user/i)).toBeInTheDocument();
   });

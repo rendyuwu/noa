@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { ErrorReportingProvider } from "@/components/lib/observability/error-reporting-provider";
+import { ThemeProvider } from "@/components/lib/theme/theme-provider";
 import { Toaster } from "sonner";
 
 import "./globals.css";
@@ -12,9 +13,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <body className="min-h-dvh bg-bg text-text font-body antialiased">
-        <ErrorReportingProvider>{children}</ErrorReportingProvider>
+        <ThemeProvider>
+          <ErrorReportingProvider>{children}</ErrorReportingProvider>
+        </ThemeProvider>
         <Toaster position="bottom-right" richColors closeButton />
       </body>
     </html>

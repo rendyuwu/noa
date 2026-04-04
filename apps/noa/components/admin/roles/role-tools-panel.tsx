@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -75,9 +76,9 @@ export function RoleToolsPanel({
           </div>
 
           {roleToolsError ? (
-            <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-              {roleToolsError}
-            </div>
+            <Alert tone="destructive" className="mt-5">
+              <AlertDescription>{roleToolsError}</AlertDescription>
+            </Alert>
           ) : null}
 
           <div className="mt-5 flex flex-wrap gap-2">

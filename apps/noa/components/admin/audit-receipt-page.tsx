@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { WorkflowReceiptSurface } from "@/components/assistant/workflow-receipt-renderer";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -62,25 +63,21 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
       </div>
 
       {loadError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900" role="alert">
-          {loadError}
-        </div>
-      ) : null}
-
-      {payload ? (
+        <Alert tone="destructive">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
+      ) : payload ? (
         <WorkflowReceiptSurface payload={payload} captureId={`audit-${actionRequestId}`} className="max-w-4xl" />
+      ) : loading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-6 w-48" />
+          <Skeleton className="h-32 w-full rounded-xl" />
+          <Skeleton className="h-20 w-full rounded-xl" />
+        </div>
       ) : (
-        loading ? (
-          <div className="space-y-3">
-            <Skeleton className="h-6 w-48" />
-            <Skeleton className="h-32 w-full rounded-xl" />
-            <Skeleton className="h-20 w-full rounded-xl" />
-          </div>
-        ) : (
-          <div className="rounded-xl border border-border bg-surface/70 px-4 py-4 font-ui text-sm text-muted">
-            Receipt unavailable.
-          </div>
-        )
+        <Alert tone="warning">
+          <AlertDescription>Receipt unavailable.</AlertDescription>
+        </Alert>
       )}
     </section>
   );

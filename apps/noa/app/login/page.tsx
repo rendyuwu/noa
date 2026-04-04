@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { setAuthToken, setAuthUser } from "@/components/lib/auth/auth-storage";
 import { sanitizeReturnTo } from "@/components/lib/auth/return-to";
 import type { LoginResponse } from "@/components/lib/auth/types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -99,9 +100,9 @@ export default function LoginPage() {
           </label>
 
           {error ? (
-            <div role="alert" className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-              {error}
-            </div>
+            <Alert tone="destructive">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           ) : null}
 
           <Button

@@ -1,12 +1,15 @@
 "use client";
 
 import { useMemo } from "react";
+import { Badge } from "@/components/ui/badge";
+
+type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "info" | "muted" | "outline";
 
 type ReceiptOutcome = "changed" | "partial" | "no_op" | "failed" | "denied" | "info";
 
 export type ReceiptBadge = {
   label: "SUCCESS" | "PARTIAL" | "NO-OP" | "FAILED" | "DENIED";
-  className: string;
+  variant: BadgeVariant;
 };
 
 type ReceiptReplyTemplate = {
@@ -125,28 +128,28 @@ export function getReceiptBadge(outcome: ReceiptOutcome): ReceiptBadge {
     case "changed":
       return {
         label: "SUCCESS",
-        className: "bg-emerald-100 text-emerald-900",
+        variant: "success",
       };
     case "partial":
       return {
         label: "PARTIAL",
-        className: "bg-amber-100 text-amber-900",
+        variant: "warning",
       };
     case "no_op":
     case "info":
       return {
         label: "NO-OP",
-        className: "bg-surface-2 text-muted",
+        variant: "muted",
       };
     case "failed":
       return {
         label: "FAILED",
-        className: "bg-red-100 text-red-900",
+        variant: "destructive",
       };
     case "denied":
       return {
         label: "DENIED",
-        className: "bg-surface-2 text-muted",
+        variant: "muted",
       };
   }
 }
@@ -192,14 +195,9 @@ export function WorkflowReceiptContent({ payload }: { payload: Record<string, un
           <div className="truncate text-base font-semibold text-text">{parsed.replyTemplate.title}</div>
           <div className="mt-1 text-sm text-muted">{parsed.replyTemplate.summary}</div>
         </div>
-        <div
-          className={[
-            "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
-            parsed.badge.className,
-          ].join(" ")}
-        >
+        <Badge variant={parsed.badge.variant} className="gap-1.5 text-[10px] uppercase tracking-[0.08em]">
           {parsed.badge.label}
-        </div>
+        </Badge>
       </div>
 
       {parsed.evidenceSections.map((section) => (

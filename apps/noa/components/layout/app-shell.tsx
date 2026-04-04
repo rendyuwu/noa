@@ -9,6 +9,7 @@ import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { clearAuth } from "@/components/lib/auth/auth-storage";
 import type { AuthUser } from "@/components/lib/auth/types";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 import { getNavItems } from "./nav-items";
@@ -152,7 +153,7 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
               <div className="w-[290px] max-w-[85vw]">{Sidebar}</div>
               <button
                 type="button"
-                className="flex-1 bg-black/30"
+                className="flex-1 bg-overlay/40"
                 aria-label="Dismiss navigation overlay"
                 onClick={() => setMobileOpen(false)}
               />
@@ -175,6 +176,7 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
                   <h1 className="text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{title}</h1>
                   <p className="mt-1 max-w-3xl font-ui text-sm text-muted">{description}</p>
                 </div>
+                <ThemeToggle className="shrink-0" />
               </div>
             </header>
             <main className="flex-1 px-4 py-4 sm:px-6 sm:py-6">{children}</main>

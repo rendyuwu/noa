@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 type DecisionState = "approving" | "denying";
+type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "info" | "muted" | "outline";
 
 function prettifyToolName(value: string): string {
   return value
@@ -23,7 +24,7 @@ function describeLifecycle(status: AssistantActionLifecycleStatus, pendingDecisi
     return {
       title: "Sending approval",
       badge: "pending",
-      badgeClassName: "bg-accent/15 text-accent",
+      badgeVariant: "info" as BadgeVariant,
       Icon: Clock3,
     };
   }
@@ -32,7 +33,7 @@ function describeLifecycle(status: AssistantActionLifecycleStatus, pendingDecisi
     return {
       title: "Sending denial",
       badge: "pending",
-      badgeClassName: "bg-amber-100 text-amber-900",
+      badgeVariant: "warning" as BadgeVariant,
       Icon: Clock3,
     };
   }
@@ -42,42 +43,42 @@ function describeLifecycle(status: AssistantActionLifecycleStatus, pendingDecisi
       return {
         title: "Needs approval",
         badge: "requested",
-        badgeClassName: "bg-accent/15 text-accent",
+        badgeVariant: "info" as BadgeVariant,
         Icon: Clock3,
       };
     case "approved":
       return {
         title: "Approved",
         badge: "approved",
-        badgeClassName: "bg-emerald-100 text-emerald-900",
+        badgeVariant: "success" as BadgeVariant,
         Icon: Check,
       };
     case "executing":
       return {
         title: "Executing",
         badge: "running",
-        badgeClassName: "bg-sky-100 text-sky-900",
+        badgeVariant: "info" as BadgeVariant,
         Icon: Clock3,
       };
     case "finished":
       return {
         title: "Finished",
         badge: "done",
-        badgeClassName: "bg-surface-2 text-muted",
+        badgeVariant: "muted" as BadgeVariant,
         Icon: Check,
       };
     case "failed":
       return {
         title: "Failed",
         badge: "failed",
-        badgeClassName: "bg-red-100 text-red-900",
+        badgeVariant: "destructive" as BadgeVariant,
         Icon: X,
       };
     case "denied":
       return {
         title: "Denied",
         badge: "denied",
-        badgeClassName: "bg-surface-2 text-muted",
+        badgeVariant: "muted" as BadgeVariant,
         Icon: X,
       };
   }
@@ -151,7 +152,7 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
           </div>
         </div>
         <div className="inline-flex shrink-0 items-center gap-2">
-          <Badge variant="outline" className="bg-accent/15 text-[10px] uppercase tracking-[0.08em] text-accent">
+          <Badge variant="info" className="text-[10px] uppercase tracking-[0.08em]">
             live
           </Badge>
           <ChevronDown
@@ -186,7 +187,7 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
                     <code className="text-[11px] text-muted">{request.actionRequestId}</code>
                   </div>
                 </div>
-                <Badge variant="outline" className={copy.badgeClassName}>
+                <Badge variant={copy.badgeVariant} className="gap-1.5 text-[10px] uppercase tracking-[0.08em]">
                   <copy.Icon className="size-3" />
                   <span className="leading-none">{copy.badge}</span>
                 </Badge>

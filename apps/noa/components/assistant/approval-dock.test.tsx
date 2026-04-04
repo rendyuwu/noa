@@ -26,9 +26,14 @@ describe("ApprovalDock", () => {
       />,
     );
 
+    expect(screen.getByText("live").closest("div")).toHaveClass("bg-info");
+
+    fireEvent.click(screen.getAllByRole("button")[0]);
+
     fireEvent.click(screen.getByRole("button", { name: "Deny" }));
 
     expect(screen.getByText("Sending denial")).toBeInTheDocument();
+    expect(screen.getByText("pending").closest("div")).toHaveClass("bg-warning");
     expect(sendCommand).toHaveBeenCalledWith({ type: "deny-action", actionRequestId: "approval-1" });
 
     rerender(
@@ -66,9 +71,12 @@ describe("ApprovalDock", () => {
       />,
     );
 
+    fireEvent.click(screen.getAllByRole("button")[0]);
+
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
     expect(screen.getByText("Sending approval")).toBeInTheDocument();
+    expect(screen.getByText("pending").closest("div")).toHaveClass("bg-info");
     expect(sendCommand).toHaveBeenCalledWith({ type: "approve-action", actionRequestId: "approval-2" });
 
     rerender(

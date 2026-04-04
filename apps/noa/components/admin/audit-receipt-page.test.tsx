@@ -52,6 +52,10 @@ describe("AuditReceiptPage", () => {
 
     render(<AuditReceiptPage actionRequestId="ar-2" />);
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Network down");
+    const alerts = await screen.findAllByRole("alert");
+
+    expect(alerts).toHaveLength(1);
+    expect(alerts[0]).toHaveTextContent("Network down");
+    expect(screen.queryByText("Receipt unavailable.")).not.toBeInTheDocument();
   });
 });

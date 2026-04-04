@@ -3,6 +3,8 @@
 import { Check, Circle, Clock3, PauseCircle, XCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 
 export type WorkflowTodoStatus =
   | "pending"
@@ -22,41 +24,43 @@ export type WorkflowTodoItem = {
 
 export const BLOCKED_WORKFLOW_TODO_STATUSES = ["waiting_on_user", "waiting_on_approval"] as const;
 
+type BadgeVariant = "default" | "secondary" | "destructive" | "success" | "warning" | "info" | "muted" | "outline";
+
 type StatusStyle = {
   label: string;
-  className: string;
+  variant: BadgeVariant;
   Icon: LucideIcon;
 };
 
 const STATUS_STYLES: Record<WorkflowTodoStatus, StatusStyle> = {
   pending: {
     label: "pending",
-    className: "bg-surface-2 text-muted",
+    variant: "muted",
     Icon: Circle,
   },
   in_progress: {
     label: "in progress",
-    className: "bg-accent/15 text-accent",
+    variant: "info",
     Icon: Clock3,
   },
   waiting_on_user: {
     label: "waiting on user",
-    className: "bg-amber-100 text-amber-900",
+    variant: "warning",
     Icon: PauseCircle,
   },
   waiting_on_approval: {
     label: "waiting on approval",
-    className: "bg-sky-100 text-sky-900",
+    variant: "warning",
     Icon: PauseCircle,
   },
   completed: {
     label: "done",
-    className: "bg-surface-2 text-muted",
+    variant: "success",
     Icon: Check,
   },
   cancelled: {
     label: "cancelled",
-    className: "bg-red-100 text-red-900",
+    variant: "destructive",
     Icon: XCircle,
   },
 };
@@ -167,9 +171,9 @@ function WorkflowTodoInline({ todos }: { todos: WorkflowTodoItem[] }) {
     <div className="mt-3 rounded-xl border border-border bg-bg/20 px-3 py-3">
       <div className="flex items-center justify-between gap-2">
         <div className="text-sm font-medium text-text">Workflow progress</div>
-        <div className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted">
+        <Badge variant="muted" className="px-2 py-0.5 text-[11px]">
           {completedCount}/{todos.length}
-        </div>
+        </Badge>
       </div>
       <ul className="mt-3 space-y-2">
         {todos.map((todo, index) => {
@@ -180,15 +184,10 @@ function WorkflowTodoInline({ todos }: { todos: WorkflowTodoItem[] }) {
                 <div className="text-sm text-text">{todo.content}</div>
                 <div className="mt-0.5 text-[11px] uppercase tracking-[0.08em] text-muted">{todo.priority}</div>
               </div>
-              <span
-                className={[
-                  "inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px]",
-                  style.className,
-                ].join(" ")}
-              >
+              <Badge variant={style.variant} className="gap-1.5 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]">
                 <style.Icon className="size-3" />
                 <span>{style.label}</span>
-              </span>
+              </Badge>
             </li>
           );
         })}
@@ -220,9 +219,12 @@ export const WorkflowTodoToolUI = makeAssistantToolUI({
     return (
       <div data-testid="workflow-todo-tool-ui">
         {hasBlocked ? (
-          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            Workflow is waiting on external input.
-          </div>
+          <Alert tone="warning" className="mt-3">
+            <div>
+              <AlertTitle>Workflow paused</AlertTitle>
+              <AlertDescription>Workflow is waiting on external input.</AlertDescription>
+            </div>
+          </Alert>
         ) : null}
         <WorkflowTodoInline todos={todos} />
       </div>

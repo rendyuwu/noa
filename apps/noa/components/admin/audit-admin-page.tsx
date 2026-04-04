@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type AuditActionRequestListItem = {
@@ -322,9 +323,9 @@ export function AuditAdminPage() {
       </div>
 
       {loadError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900" role="alert">
-          {loadError}
-        </div>
+        <Alert tone="destructive">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="overflow-x-auto rounded-2xl border border-border bg-surface">

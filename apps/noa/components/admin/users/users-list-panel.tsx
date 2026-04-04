@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 
 import { coerceStringArray, formatTimestamp } from "@/components/admin/lib/admin-data";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -59,9 +60,9 @@ export function UsersListPanel({
       </div>
 
       {loadError ? (
-        <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-          {loadError}
-        </div>
+        <Alert tone="destructive" className="mt-5">
+          <AlertDescription>{loadError}</AlertDescription>
+        </Alert>
       ) : null}
 
       <div className="mt-5 grid gap-3">

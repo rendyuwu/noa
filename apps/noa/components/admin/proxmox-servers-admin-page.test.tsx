@@ -249,4 +249,52 @@ describe("ProxmoxServersAdminPage", () => {
 
     expect(listCalls).toBeGreaterThanOrEqual(2);
   });
+
+  it("shows validation failures in an alert", async () => {
+    const serverId = "server-1";
+    const listPayload = {
+      servers: [
+        {
+          id: serverId,
+          name: "pve1",
+          base_url: "https://pve1.example.com:8006",
+          api_token_id: "root@pam!noa",
+          has_api_token_secret: true,
+          verify_ssl: false,
+          updated_at: "2026-01-02T03:04:05.000Z",
+        },
+      ],
+    };
+    const validatePayload = { ok: false, message: "Authentication failed" };
+
+    const listResponse = new Response(null, { status: 200 });
+    const validateResponse = new Response(null, { status: 200 });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/admin/proxmox/servers" && !init) {
+        return listResponse;
+      }
+      if (path === `/admin/proxmox/servers/${serverId}/validate` && init?.method === "POST") {
+        return validateResponse;
+      }
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === listResponse) {
+        return listPayload;
+      }
+      if (response === validateResponse) {
+        return validatePayload;
+      }
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<ProxmoxServersAdminPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Authentication failed");
+  });
 });

@@ -7,6 +7,7 @@ import { useAssistantApi, useAssistantState } from "@assistant-ui/react";
 
 import { reportClientError } from "@/components/lib/observability/error-reporting";
 import { getActiveThreadListItem } from "@/components/lib/runtime/assistant-thread-state";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 export function RouteThreadSync({ routeThreadId }: { routeThreadId?: string | null }) {
   const api = useAssistantApi();
@@ -69,11 +70,12 @@ export function RouteThreadSync({ routeThreadId }: { routeThreadId?: string | nu
   }
 
   return (
-    <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 font-ui text-sm text-amber-800">
-      <div className="flex items-center gap-2">
-        <ShieldAlert className="size-4" />
-        {routeError}
+    <Alert tone="warning" className="mb-4">
+      <ShieldAlert />
+      <div>
+        <AlertTitle>Chat link unavailable</AlertTitle>
+        <AlertDescription>{routeError}</AlertDescription>
       </div>
-    </div>
+    </Alert>
   );
 }
