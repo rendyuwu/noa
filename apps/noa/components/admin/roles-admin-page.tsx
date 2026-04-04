@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Toaster, toast } from "sonner";
+import { toast } from "sonner";
 
 import { coerceRoleNames, coerceStringArray } from "@/components/admin/lib/admin-data";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -33,7 +33,6 @@ export function RolesAdminPage() {
   const [newRoleName, setNewRoleName] = useState("");
   const [creating, setCreating] = useState(false);
   const [search, setSearch] = useState("");
-  const showTestToaster = process.env.NODE_ENV === "test";
 
   const filteredRoles = useMemo(() => {
     const needle = search.trim().toLowerCase();
@@ -220,42 +219,39 @@ export function RolesAdminPage() {
   }
 
   return (
-    <>
-      {showTestToaster ? <Toaster position="bottom-right" richColors closeButton /> : null}
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
-        <RolesListPanel
-          availableToolsCount={availableTools.length}
-          creating={creating}
-          filteredRoles={filteredRoles}
-          loadError={loadError}
-          loading={loading}
-          newRoleName={newRoleName}
-          onCreateRole={() => void createRole()}
-          onNewRoleNameChange={setNewRoleName}
-          onRefresh={() => void loadData()}
-          onSearchChange={setSearch}
-          onSelectRole={setSelectedRoleName}
-          search={search}
-          selectedRoleName={selectedRoleName}
-        />
-        <RoleToolsPanel
-          availableTools={availableTools}
-          confirmDeleteOpen={confirmDeleteOpen}
-          deleting={deleting}
-          migrating={migrating}
-          onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
-          onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
-          onDeleteRole={() => void deleteRole()}
-          onMigrateDirectGrants={() => void migrateDirectGrants()}
-          onSaveRoleTools={() => void saveRoleTools()}
-          onToggleTool={toggleTool}
-          roleToolsError={roleToolsError}
-          roleToolsLoading={roleToolsLoading}
-          saving={saving}
-          selectedRoleName={selectedRoleName}
-          toolAllowlist={toolAllowlist}
-        />
-      </div>
-    </>
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(340px,0.95fr)]">
+      <RolesListPanel
+        availableToolsCount={availableTools.length}
+        creating={creating}
+        filteredRoles={filteredRoles}
+        loadError={loadError}
+        loading={loading}
+        newRoleName={newRoleName}
+        onCreateRole={() => void createRole()}
+        onNewRoleNameChange={setNewRoleName}
+        onRefresh={() => void loadData()}
+        onSearchChange={setSearch}
+        onSelectRole={setSelectedRoleName}
+        search={search}
+        selectedRoleName={selectedRoleName}
+      />
+      <RoleToolsPanel
+        availableTools={availableTools}
+        confirmDeleteOpen={confirmDeleteOpen}
+        deleting={deleting}
+        migrating={migrating}
+        onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
+        onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
+        onDeleteRole={() => void deleteRole()}
+        onMigrateDirectGrants={() => void migrateDirectGrants()}
+        onSaveRoleTools={() => void saveRoleTools()}
+        onToggleTool={toggleTool}
+        roleToolsError={roleToolsError}
+        roleToolsLoading={roleToolsLoading}
+        saving={saving}
+        selectedRoleName={selectedRoleName}
+        toolAllowlist={toolAllowlist}
+      />
+    </div>
   );
 }
