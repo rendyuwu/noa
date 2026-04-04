@@ -1,6 +1,6 @@
 "use client";
 
-import { clearAuth, getAuthToken } from "@/components/lib/auth/auth-storage";
+import { clearAuth } from "@/components/lib/auth/auth-storage";
 import { reportClientError } from "@/components/lib/observability/error-reporting";
 
 type ErrorPayload = {
@@ -38,6 +38,24 @@ export function getApiUrl() {
   return "/api";
 }
 
+export function getCsrfToken() {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const cookie = document.cookie
+    .split(";")
+    .map((part) => part.trim())
+    .find((part) => part.startsWith("noa_csrf="));
+
+  if (!cookie) {
+    return null;
+  }
+
+  const token = cookie.slice("noa_csrf=".length);
+  return token.length > 0 ? decodeURIComponent(token) : null;
+}
+
 export async function fetchWithAuth(path: string, init: RequestInit = {}) {
   const rawPath = path.trim();
   const isAbsolute = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(rawPath) || rawPath.startsWith("//");
@@ -49,17 +67,18 @@ export async function fetchWithAuth(path: string, init: RequestInit = {}) {
   const url = normalizedPath === "/api" || normalizedPath.startsWith("/api/") ? normalizedPath : `${getApiUrl()}${normalizedPath}`;
 
   const headers = new Headers(init.headers ?? {});
-  const token = getAuthToken();
-  if (token) {
-    headers.set("authorization", `Bearer ${token}`);
+  const method = (init.method ?? "GET").toUpperCase();
+  const csrfToken = getCsrfToken();
+  if (csrfToken && ["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+    headers.set("x-csrf-token", csrfToken);
   }
-  const method = init.method ?? "GET";
 
   let response: Response;
 
   try {
     response = await fetch(url, {
       ...init,
+      credentials: "same-origin",
       headers,
     });
   } catch (error) {

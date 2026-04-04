@@ -7,6 +7,6 @@ export type AuthUser = {
 };
 
 export type LoginResponse = {
-  access_token: string;
+  expiresIn?: number;
   user: AuthUser | null;
 };

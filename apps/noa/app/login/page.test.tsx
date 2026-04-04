@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   push: vi.fn(),
-  setAuthToken: vi.fn(),
   setAuthUser: vi.fn(),
   searchParams: new URLSearchParams(),
 }));
@@ -17,7 +16,6 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/lib/auth/auth-storage", () => ({
-  setAuthToken: (...args: unknown[]) => mocks.setAuthToken(...args),
   setAuthUser: (...args: unknown[]) => mocks.setAuthUser(...args),
 }));
 
@@ -27,7 +25,6 @@ describe("LoginPage", () => {
   beforeEach(() => {
     mocks.fetch.mockReset();
     mocks.push.mockReset();
-    mocks.setAuthToken.mockReset();
     mocks.setAuthUser.mockReset();
     mocks.searchParams = new URLSearchParams();
     window.history.pushState({}, "", "/login");
@@ -80,7 +77,7 @@ describe("LoginPage", () => {
   it("redirects to sanitized returnTo after successful login", async () => {
     window.history.pushState({}, "", "/login?returnTo=/assistant/thread-123");
     mocks.fetch.mockResolvedValue(
-      new Response(JSON.stringify({ access_token: "token", user: null }), {
+      new Response(JSON.stringify({ user: null }), {
         status: 200,
         headers: { "content-type": "application/json" },
       }),
@@ -95,5 +92,22 @@ describe("LoginPage", () => {
     await waitFor(() => {
       expect(mocks.push).toHaveBeenCalledWith("/assistant/thread-123");
     });
+  });
+
+  it("stores only the returned user after successful login", async () => {
+    mocks.fetch.mockResolvedValue(
+      new Response(JSON.stringify({ user: { id: "1", email: "user@example.com", roles: ["admin"] } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      }),
+    );
+
+    render(<LoginPage />);
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "user@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => expect(mocks.push).toHaveBeenCalledWith("/assistant"));
+    expect(mocks.setAuthUser).toHaveBeenCalledWith({ id: "1", email: "user@example.com", roles: ["admin"] });
   });
 });

@@ -1,12 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const clearAuth = vi.fn();
-const getAuthToken = vi.fn();
 const reportClientError = vi.fn();
 
 vi.mock("@/components/lib/auth/auth-storage", () => ({
   clearAuth: (...args: unknown[]) => clearAuth(...args),
-  getAuthToken: () => getAuthToken(),
 }));
 
 vi.mock("@/components/lib/observability/error-reporting", () => ({
@@ -18,25 +16,30 @@ import { ApiError, fetchWithAuth, jsonOrThrow } from "./fetch-client";
 describe("fetchWithAuth", () => {
   beforeEach(() => {
     clearAuth.mockReset();
-    getAuthToken.mockReset();
     reportClientError.mockReset();
     vi.restoreAllMocks();
   });
 
-  it("injects bearer auth on same-origin requests", async () => {
-    getAuthToken.mockReturnValue("token-123");
+  it("sends same-origin credentials and csrf headers instead of bearer auth", async () => {
+    Object.defineProperty(document, "cookie", {
+      configurable: true,
+      get: () => "noa_csrf=test-csrf-token",
+    });
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 204 }));
 
-    await fetchWithAuth("/threads");
+    await fetchWithAuth("/admin/users", { method: "POST", body: JSON.stringify({ ok: true }) });
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      "/api/threads",
+      "/api/admin/users",
       expect.objectContaining({
+        credentials: "same-origin",
         headers: expect.any(Headers),
       }),
     );
-    expect((fetchSpy.mock.calls[0]?.[1] as RequestInit).headers).toBeInstanceOf(Headers);
-    expect(((fetchSpy.mock.calls[0]?.[1] as RequestInit).headers as Headers).get("authorization")).toBe("Bearer token-123");
+    expect(((fetchSpy.mock.calls[0]?.[1] as RequestInit).headers as Headers).get("authorization")).toBeNull();
+    expect(((fetchSpy.mock.calls[0]?.[1] as RequestInit).headers as Headers).get("x-csrf-token")).toBe(
+      "test-csrf-token",
+    );
   });
 
   it("clears auth on 401 responses", async () => {

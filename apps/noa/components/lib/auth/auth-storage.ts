@@ -3,40 +3,10 @@
 import type { AuthUser } from "./types";
 import { sanitizeReturnTo } from "./return-to";
 
-const TOKEN_KEY = "noa.jwt";
 const USER_KEY = "noa.user";
 
 function isBrowser() {
   return typeof window !== "undefined";
-}
-
-export function getAuthToken(): string | null {
-  if (!isBrowser()) {
-    return null;
-  }
-
-  const sessionToken = window.sessionStorage.getItem(TOKEN_KEY);
-  if (sessionToken) {
-    return sessionToken;
-  }
-
-  const legacyToken = window.localStorage.getItem(TOKEN_KEY);
-  if (!legacyToken) {
-    return null;
-  }
-
-  window.sessionStorage.setItem(TOKEN_KEY, legacyToken);
-  window.localStorage.removeItem(TOKEN_KEY);
-  return legacyToken;
-}
-
-export function setAuthToken(token: string) {
-  if (!isBrowser()) {
-    return;
-  }
-
-  window.sessionStorage.setItem(TOKEN_KEY, token);
-  window.localStorage.removeItem(TOKEN_KEY);
 }
 
 export function getAuthUser(): AuthUser | null {
@@ -74,9 +44,12 @@ export function clearAuth(options: { returnTo?: string; redirect?: boolean } = {
     return;
   }
 
-  window.sessionStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
+  void fetch("/api/auth/logout", {
+    credentials: "same-origin",
+    keepalive: true,
+    method: "POST",
+  }).catch(() => {});
 
   if (options.redirect === false) {
     return;

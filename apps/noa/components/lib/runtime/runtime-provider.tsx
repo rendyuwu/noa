@@ -11,8 +11,7 @@ import {
   useAssistantTransportRuntime,
 } from "@assistant-ui/react";
 
-import { getAuthToken } from "@/components/lib/auth/auth-storage";
-import { fetchWithAuth, getApiUrl, jsonOrThrow } from "@/components/lib/http/fetch-client";
+import { fetchWithAuth, getApiUrl, getCsrfToken, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { reportClientError } from "@/components/lib/observability/error-reporting";
 
 import { convertAssistantState, type AssistantState } from "./assistant-transport-converter";
@@ -258,12 +257,12 @@ function useThreadAwareAssistantTransportRuntime() {
       threadId: await ensureThreadId(),
     }),
     headers: async () => {
-      const token = getAuthToken();
-      if (!token) {
+      const csrfToken = getCsrfToken();
+      if (!csrfToken) {
         return new Headers();
       }
 
-      return new Headers({ authorization: `Bearer ${token}` });
+      return new Headers({ "x-csrf-token": csrfToken });
     },
     onError: (error, { commands }) => {
       reportClientError(error, {

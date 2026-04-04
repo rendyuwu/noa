@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 
 import { ApiError, fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { reportClientError } from "@/components/lib/observability/error-reporting";
 
-import { clearAuth, getAuthToken, getAuthUser, setAuthUser } from "./auth-storage";
+import { clearAuth, getAuthUser, setAuthUser } from "./auth-storage";
 import { buildReturnTo } from "./return-to";
 import type { AuthUser } from "./types";
 
@@ -36,28 +36,12 @@ function isAuthorizationFailure(error: unknown) {
 
 export function useAuthSession(): AuthSessionState {
   const pathname = usePathname();
-  const router = useRouter();
   const [user, setUser] = useState<AuthUser | null>(() => getAuthUser());
   const [validating, setValidating] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
 
-  const redirectToLogin = useCallback(() => {
-    const returnTo = getCurrentReturnTo(pathname);
-    router.replace(`/login?returnTo=${encodeURIComponent(returnTo)}`);
-  }, [pathname, router]);
-
   const refresh = useCallback(async () => {
-    const token = getAuthToken();
-    if (!token) {
-      setAuthUser(null);
-      setUser(null);
-      setError(null);
-      setValidating(false);
-      redirectToLogin();
-      return null;
-    }
-
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
     setValidating(true);
@@ -68,7 +52,7 @@ export function useAuthSession(): AuthSessionState {
         cache: "no-store",
       });
       const payload = await jsonOrThrow<AuthMeResponse>(response);
-      if (requestIdRef.current != requestId) {
+      if (requestIdRef.current !== requestId) {
         return payload.user;
       }
 
@@ -77,7 +61,7 @@ export function useAuthSession(): AuthSessionState {
       setValidating(false);
       return payload.user;
     } catch (caughtError) {
-      if (requestIdRef.current != requestId) {
+      if (requestIdRef.current !== requestId) {
         return null;
       }
 
@@ -99,7 +83,7 @@ export function useAuthSession(): AuthSessionState {
       setValidating(false);
       return null;
     }
-  }, [pathname, redirectToLogin]);
+  }, [pathname]);
 
   useEffect(() => {
     void refresh();

@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   clearAuth: vi.fn(),
-  getAuthToken: vi.fn(),
   getAuthUser: vi.fn(),
   jsonOrThrow: vi.fn(),
   fetchWithAuth: vi.fn(),
@@ -21,7 +20,6 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("./auth-storage", () => ({
   clearAuth: (...args: unknown[]) => mocks.clearAuth(...args),
-  getAuthToken: () => mocks.getAuthToken(),
   getAuthUser: () => mocks.getAuthUser(),
   setAuthUser: (...args: unknown[]) => mocks.setAuthUser(...args),
 }));
@@ -68,7 +66,6 @@ function SessionProbe() {
 describe("useAuthSession", () => {
   beforeEach(() => {
     mocks.clearAuth.mockReset();
-    mocks.getAuthToken.mockReset();
     mocks.getAuthUser.mockReset();
     mocks.jsonOrThrow.mockReset();
     mocks.fetchWithAuth.mockReset();
@@ -78,19 +75,18 @@ describe("useAuthSession", () => {
     window.history.replaceState({}, "", "/admin/users");
   });
 
-  it("validates the stored session through /auth/me before trusting cached role data", async () => {
-    mocks.getAuthToken.mockReturnValue("token-123");
+  it("validates the session even when no browser token exists", async () => {
     mocks.getAuthUser.mockReturnValue({
       id: "1",
-      email: "stale-admin@example.com",
+      email: "cached@example.com",
       roles: ["admin"],
     });
     mocks.fetchWithAuth.mockResolvedValue(new Response(null, { status: 200 }));
     mocks.jsonOrThrow.mockResolvedValue({
       user: {
         id: "1",
-        email: "member@example.com",
-        roles: ["member"],
+        email: "fresh@example.com",
+        roles: ["admin"],
       },
     });
 
@@ -100,17 +96,16 @@ describe("useAuthSession", () => {
       expect(screen.getByTestId("ready")).toHaveTextContent("true");
     });
 
-    expect(screen.getByTestId("user")).toHaveTextContent("member@example.com");
+    expect(screen.getByTestId("user")).toHaveTextContent("fresh@example.com");
     expect(mocks.setAuthUser).toHaveBeenCalledWith({
       id: "1",
-      email: "member@example.com",
-      roles: ["member"],
+      email: "fresh@example.com",
+      roles: ["admin"],
     });
   });
 
   it("clears auth when validation returns an authorization failure", async () => {
     const { ApiError } = await import("@/components/lib/http/fetch-client");
-    mocks.getAuthToken.mockReturnValue("token-123");
     mocks.getAuthUser.mockReturnValue({
       id: "1",
       email: "admin@example.com",
@@ -129,7 +124,6 @@ describe("useAuthSession", () => {
   });
 
   it("surfaces transient validation failures with a retry-safe error state", async () => {
-    mocks.getAuthToken.mockReturnValue("token-123");
     mocks.getAuthUser.mockReturnValue({
       id: "1",
       email: "admin@example.com",

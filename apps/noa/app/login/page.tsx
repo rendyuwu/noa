@@ -3,7 +3,7 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import { setAuthToken, setAuthUser } from "@/components/lib/auth/auth-storage";
+import { setAuthUser } from "@/components/lib/auth/auth-storage";
 import { sanitizeReturnTo } from "@/components/lib/auth/return-to";
 import type { LoginResponse } from "@/components/lib/auth/types";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -55,7 +55,6 @@ export default function LoginPage() {
       }
 
       const payload = (await response.json()) as LoginResponse;
-      setAuthToken(payload.access_token);
       setAuthUser(payload.user);
       router.push(returnTo);
     } catch {
