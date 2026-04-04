@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { filterRequestHeaders, joinPaths, proxyRequest } from "./proxy";
+import { filterRequestHeaders, getBackendBaseUrl, joinPaths, proxyRequest } from "./proxy";
 
 describe("filterRequestHeaders", () => {
   it("drops hop-by-hop and connection-scoped headers", () => {
@@ -26,6 +26,12 @@ describe("filterRequestHeaders", () => {
 describe("joinPaths", () => {
   it("joins path segments without duplicate slashes", () => {
     expect(joinPaths("/api/", "/threads/123")).toBe("/api/threads/123");
+  });
+});
+
+describe("getBackendBaseUrl", () => {
+  it("rejects a missing NOA_API_URL without using a public fallback", () => {
+    expect(() => getBackendBaseUrl({})).toThrow(/Missing NOA_API_URL/);
   });
 });
 

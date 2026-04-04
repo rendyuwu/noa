@@ -45,9 +45,7 @@ describe("BFF auth routes", () => {
   });
 
   it("clears auth cookies on logout", async () => {
-    const response = await logoutRoute(
-      new Request("http://localhost:3000/api/auth/logout", { method: "POST" }),
-    );
+    const response = await logoutRoute();
     expect(response.status).toBe(200);
     expect(response.headers.get("set-cookie")).toContain("Max-Age=0");
   });

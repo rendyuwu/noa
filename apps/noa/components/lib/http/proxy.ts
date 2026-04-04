@@ -66,13 +66,18 @@ export function joinPaths(a: string, b: string) {
 }
 
 export function getBackendBaseUrl(env: ProxyEnv = process.env) {
-  const url = env.NOA_API_URL ?? env.NEXT_PUBLIC_API_URL;
+  const url = env.NOA_API_URL?.trim();
   if (!url) {
-    throw new Error(
-      "Missing NOA_API_URL. Set NOA_API_URL to your backend base URL (NEXT_PUBLIC_API_URL is a legacy fallback).",
-    );
+    throw new Error("Missing NOA_API_URL. Set NOA_API_URL to your backend base URL.");
   }
-  return url;
+
+  const parsed = new URL(url);
+  if (!['http:', 'https:'].includes(parsed.protocol)) {
+    throw new Error(`Invalid NOA_API_URL protocol: ${parsed.protocol}`);
+  }
+
+  parsed.pathname = parsed.pathname.replace(/\/$/, "");
+  return parsed.toString();
 }
 
 export function filterRequestHeaders(src: Headers) {
