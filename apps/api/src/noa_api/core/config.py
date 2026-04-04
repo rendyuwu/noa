@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     auth_jwt_secret: SecretStr | None = None
     auth_jwt_algorithm: str = "HS256"
     auth_jwt_access_token_ttl_seconds: int = 3600
+    auth_login_rate_limit_window_seconds: int = 60
+    auth_login_rate_limit_max_attempts: int = 5
+    auth_login_rate_limit_block_seconds: int = 600
     auth_bootstrap_admin_emails: set[str] = Field(default_factory=set)
     auth_dev_bypass_ldap: bool = False
     api_cors_allowed_origins: list[str] = Field(

@@ -10,5 +10,11 @@ class AuthPendingApprovalError(AuthError):
     pass
 
 
+class AuthRateLimitedError(AuthError):
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("Too many login attempts")
+        self.retry_after_seconds = retry_after_seconds
+
+
 class AuthConfigurationError(AuthError):
     pass
