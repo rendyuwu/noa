@@ -4,11 +4,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   fetchWithAuth: vi.fn(),
   jsonOrThrow: vi.fn(),
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 vi.mock("@/components/lib/http/fetch-client", () => ({
   fetchWithAuth: (...args: unknown[]) => mocks.fetchWithAuth(...args),
   jsonOrThrow: (...args: unknown[]) => mocks.jsonOrThrow(...args),
+}));
+
+vi.mock("sonner", () => ({
+  toast: mocks.toast,
 }));
 
 import { RolesAdminPage } from "./roles-admin-page";
@@ -47,6 +55,8 @@ describe("RolesAdminPage smoke", () => {
       );
     });
 
-    await screen.findByText("Tool allowlist updated.");
+    await waitFor(() => {
+      expect(mocks.toast.success).toHaveBeenCalledWith("Tool allowlist updated.");
+    });
   });
 });

@@ -4,12 +4,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   fetchWithAuth: vi.fn(),
   jsonOrThrow: vi.fn(),
+  toast: {
+    success: vi.fn(),
+    error: vi.fn(),
+  },
 }));
 
 vi.mock("@/components/lib/http/fetch-client", () => ({
   ApiError: class ApiError extends Error {},
   fetchWithAuth: (...args: unknown[]) => mocks.fetchWithAuth(...args),
   jsonOrThrow: (...args: unknown[]) => mocks.jsonOrThrow(...args),
+}));
+
+vi.mock("sonner", () => ({
+  toast: mocks.toast,
 }));
 
 import { WhmServersAdminPage } from "./whm-servers-admin-page";
@@ -176,7 +184,9 @@ describe("WhmServersAdminPage", () => {
       clear_ssh_configuration: true,
     });
 
-    expect(await screen.findByRole("status")).toHaveTextContent("Saved changes for web1.");
+    await waitFor(() => {
+      expect(mocks.toast.success).toHaveBeenCalledWith("Saved changes for web1.");
+    });
   });
 
   it("shows validation failure messages to the user", async () => {
