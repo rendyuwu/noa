@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { formatTimestamp } from "@/components/admin/lib/format-timestamp";
+import { formatTimestampUTC } from "@/components/admin/lib/format-timestamp";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -474,7 +474,7 @@ export function ProxmoxServersAdminPage() {
                   <td className="px-3 py-3 text-muted">{server.base_url}</td>
                   <td className="px-3 py-3 text-text">{server.api_token_id}</td>
                   <td className="px-3 py-3 text-text">{server.verify_ssl ? "on" : "off"}</td>
-                  <td className="px-3 py-3 text-muted">{formatTimestamp(server.updated_at)}</td>
+                  <td className="px-3 py-3 text-muted">{formatTimestampUTC(server.updated_at)}</td>
                   <td className="px-3 py-3">
                     <Button type="button" variant="link" size="sm" onClick={() => setSelectedServerId(server.id)}>
                       Manage {server.name}

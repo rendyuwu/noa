@@ -1,4 +1,4 @@
-export function formatTimestamp(value: unknown): string {
+export function formatTimestampUTC(value: unknown): string {
   if (typeof value !== "string" || !value) {
     return "-";
   }

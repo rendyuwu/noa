@@ -21,7 +21,7 @@ export function coerceRoleNames(value: unknown): string[] {
   });
 }
 
-export function formatTimestamp(value: unknown) {
+export function formatTimestampLocalized(value: unknown) {
   if (typeof value !== "string" || !value) {
     return "—";
   }

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { formatTimestamp } from "@/components/admin/lib/format-timestamp";
+import { formatTimestampUTC } from "@/components/admin/lib/format-timestamp";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -352,7 +352,7 @@ export function AuditAdminPage() {
                   <td className="px-3 py-3 text-text">{item.toolName}</td>
                   <td className="px-3 py-3 text-text">{item.terminalPhase ?? item.status}</td>
                   <td className="px-3 py-3 text-text">{item.risk}</td>
-                  <td className="px-3 py-3 text-muted">{formatTimestamp(item.createdAt)}</td>
+                  <td className="px-3 py-3 text-muted">{formatTimestampUTC(item.createdAt)}</td>
                   <td className="px-3 py-3">
                     {item.hasReceipt ? (
                       <Link

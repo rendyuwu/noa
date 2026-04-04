@@ -1,6 +1,6 @@
 import { ShieldCheck, Trash2, UserCog, UserRoundCheck, UserRoundX } from "lucide-react";
 
-import { coerceStringArray, formatTimestamp } from "@/components/admin/lib/admin-data";
+import { coerceStringArray, formatTimestampLocalized } from "@/components/admin/lib/admin-data";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -65,11 +65,11 @@ export function UsersDetailPanel({
           <dl className="mt-5 grid gap-3 rounded-2xl border border-border bg-bg/70 p-4 font-ui text-sm text-text">
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted">Created</dt>
-              <dd>{formatTimestamp(selectedUser.created_at)}</dd>
+              <dd>{formatTimestampLocalized(selectedUser.created_at)}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted">Last login</dt>
-              <dd>{formatTimestamp(selectedUser.last_login_at)}</dd>
+              <dd>{formatTimestampLocalized(selectedUser.last_login_at)}</dd>
             </div>
             <div className="flex items-center justify-between gap-3">
               <dt className="text-muted">Direct tools</dt>
