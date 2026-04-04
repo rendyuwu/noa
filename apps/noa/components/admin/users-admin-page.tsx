@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Toaster, toast } from "sonner";
 
 import { coerceRoleNames, coerceStringArray } from "@/components/admin/lib/admin-data";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -22,8 +23,6 @@ export function UsersAdminPage() {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
-  const [actionMessage, setActionMessage] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
 
   const selectedUser = useMemo(
     () => users.find((user) => user.id === selectedUserId) ?? null,
@@ -55,6 +54,8 @@ export function UsersAdminPage() {
       a.localeCompare(b),
     );
   }, [availableRoles, selectedUser?.roles]);
+
+  const isTestEnvironment = process.env.NODE_ENV === "test";
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -98,8 +99,6 @@ export function UsersAdminPage() {
 
   useEffect(() => {
     setRoleAssignments(coerceStringArray(selectedUser?.roles).slice().sort((a, b) => a.localeCompare(b)));
-    setActionError(null);
-    setActionMessage(null);
   }, [selectedUser]);
 
   function toggleRole(roleName: string) {
@@ -118,8 +117,6 @@ export function UsersAdminPage() {
     }
 
     setSavingRoles(true);
-    setActionError(null);
-    setActionMessage(null);
 
     try {
       const response = await fetchWithAuth(`/admin/users/${selectedUser.id}/roles`, {
@@ -132,9 +129,9 @@ export function UsersAdminPage() {
       const payload = await jsonOrThrow<UpdateUserResponse>(response);
 
       setUsers((current) => current.map((user) => (user.id === selectedUser.id ? payload.user : user)));
-      setActionMessage("Roles updated.");
+      toast.success("Roles updated.");
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to update user roles"));
+      toast.error(toErrorMessage(error, "Unable to update user roles"));
     } finally {
       setSavingRoles(false);
     }
@@ -146,8 +143,6 @@ export function UsersAdminPage() {
     }
 
     setUpdatingStatus(true);
-    setActionError(null);
-    setActionMessage(null);
 
     const nextIsActive = selectedUser.is_active === false;
 
@@ -161,9 +156,9 @@ export function UsersAdminPage() {
       });
       const payload = await jsonOrThrow<UpdateUserResponse>(response);
       setUsers((current) => current.map((user) => (user.id === selectedUser.id ? payload.user : user)));
-      setActionMessage(nextIsActive ? "User activated." : "User deactivated.");
+      toast.success(nextIsActive ? "User activated." : "User deactivated.");
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to update user status"));
+      toast.error(toErrorMessage(error, "Unable to update user status"));
     } finally {
       setUpdatingStatus(false);
     }
@@ -176,8 +171,6 @@ export function UsersAdminPage() {
 
     setConfirmDeleteOpen(false);
     setDeleting(true);
-    setActionError(null);
-    setActionMessage(null);
 
     try {
       const response = await fetchWithAuth(`/admin/users/${selectedUser.id}`, {
@@ -187,43 +180,44 @@ export function UsersAdminPage() {
 
       setUsers((current) => current.filter((user) => user.id !== selectedUser.id));
       setSelectedUserId((current) => (current === selectedUser.id ? null : current));
-      setActionMessage("User deleted.");
+      toast.success("User deleted.");
     } catch (error) {
-      setActionError(toErrorMessage(error, "Unable to delete user"));
+      toast.error(toErrorMessage(error, "Unable to delete user"));
     } finally {
       setDeleting(false);
     }
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
-      <UsersListPanel
-        filteredUsers={filteredUsers}
-        loadError={loadError}
-        loading={loading}
-        onRefresh={() => void loadData()}
-        onSearchChange={setSearch}
-        onSelectUser={setSelectedUserId}
-        search={search}
-        selectedUserId={selectedUserId}
-      />
-      <UsersDetailPanel
-        actionError={actionError}
-        actionMessage={actionMessage}
-        allRoleNames={allRoleNames}
-        confirmDeleteOpen={confirmDeleteOpen}
-        deleting={deleting}
-        onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
-        onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
-        onDeleteUser={() => void deleteUser()}
-        onSaveRoles={() => void saveRoles()}
-        onToggleRole={toggleRole}
-        onToggleUserStatus={() => void toggleUserStatus()}
-        roleAssignments={roleAssignments}
-        savingRoles={savingRoles}
-        selectedUser={selectedUser}
-        updatingStatus={updatingStatus}
-      />
-    </div>
+    <>
+      {isTestEnvironment ? <Toaster /> : null}
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.85fr)]">
+        <UsersListPanel
+          filteredUsers={filteredUsers}
+          loadError={loadError}
+          loading={loading}
+          onRefresh={() => void loadData()}
+          onSearchChange={setSearch}
+          onSelectUser={setSelectedUserId}
+          search={search}
+          selectedUserId={selectedUserId}
+        />
+        <UsersDetailPanel
+          allRoleNames={allRoleNames}
+          confirmDeleteOpen={confirmDeleteOpen}
+          deleting={deleting}
+          onConfirmDeleteClose={() => setConfirmDeleteOpen(false)}
+          onConfirmDeleteOpen={() => setConfirmDeleteOpen(true)}
+          onDeleteUser={() => void deleteUser()}
+          onSaveRoles={() => void saveRoles()}
+          onToggleRole={toggleRole}
+          onToggleUserStatus={() => void toggleUserStatus()}
+          roleAssignments={roleAssignments}
+          savingRoles={savingRoles}
+          selectedUser={selectedUser}
+          updatingStatus={updatingStatus}
+        />
+      </div>
+    </>
   );
 }

@@ -1,6 +1,10 @@
 import { RefreshCw } from "lucide-react";
 
 import { coerceStringArray, formatTimestamp } from "@/components/admin/lib/admin-data";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { TableSkeleton } from "@/components/ui/table-skeleton";
 
 import type { AdminUser } from "./types";
 
@@ -35,26 +39,22 @@ export function UsersListPanel({
             Manage user activation, roles, and permissions.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onRefresh}
-          className="inline-flex items-center gap-2 rounded-2xl border border-border bg-bg px-4 py-2.5 font-ui text-sm font-medium text-text transition hover:bg-surface-2"
-        >
+        <Button type="button" variant="outline" onClick={onRefresh} className="rounded-2xl font-ui text-sm font-medium">
           <RefreshCw className="size-4" />
           Refresh
-        </button>
+        </Button>
       </div>
 
       <div className="mt-5">
         <label className="font-ui text-sm font-medium text-text" htmlFor="users-search">
           Search users
         </label>
-        <input
+        <Input
           id="users-search"
           value={search}
           onChange={(event) => onSearchChange(event.target.value)}
           placeholder="Filter by name, email, role, or direct tool"
-          className="mt-2 w-full rounded-2xl border border-border bg-bg px-4 py-3 text-sm text-text outline-none transition focus:border-accent"
+          className="mt-2 w-full rounded-2xl px-4 py-3 text-sm"
         />
       </div>
 
@@ -66,9 +66,7 @@ export function UsersListPanel({
 
       <div className="mt-5 grid gap-3">
         {loading ? (
-          <div className="rounded-2xl border border-dashed border-border px-4 py-8 font-ui text-sm text-muted">
-            Loading users…
-          </div>
+          <TableSkeleton columns={3} rows={5} />
         ) : filteredUsers.length > 0 ? (
           filteredUsers.map((user) => {
             const isSelected = user.id === selectedUserId;
@@ -92,14 +90,9 @@ export function UsersListPanel({
                       <span className="text-base font-semibold text-text">
                         {user.display_name?.trim() || user.email}
                       </span>
-                      <span
-                        className={[
-                          "rounded-full px-2.5 py-1 font-ui text-xs font-medium",
-                          user.is_active === false ? "bg-red-100 text-red-700" : "bg-emerald-100 text-emerald-700",
-                        ].join(" ")}
-                      >
+                      <Badge variant={user.is_active === false ? "destructive" : "success"}>
                         {user.is_active === false ? "Inactive" : "Active"}
-                      </span>
+                      </Badge>
                     </div>
                     <p className="mt-1 truncate font-ui text-sm text-muted">{user.email}</p>
                   </div>
@@ -109,12 +102,13 @@ export function UsersListPanel({
                 <div className="mt-3 flex flex-wrap gap-2">
                   {roles.length > 0 ? (
                     roles.map((role) => (
-                      <span
+                      <Badge
                         key={role}
-                        className="rounded-full border border-border bg-surface px-2.5 py-1 font-ui text-xs text-text"
+                        variant="outline"
+                        className="rounded-full border-border bg-surface px-2.5 py-1 font-ui text-xs text-text"
                       >
                         {role}
-                      </span>
+                      </Badge>
                     ))
                   ) : (
                     <span className="font-ui text-xs text-muted">No roles assigned</span>

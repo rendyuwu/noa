@@ -1,6 +1,8 @@
 import { ShieldCheck, Trash2, UserCog, UserRoundCheck, UserRoundX } from "lucide-react";
 
 import { coerceStringArray, formatTimestamp } from "@/components/admin/lib/admin-data";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -16,8 +18,6 @@ import {
 import type { AdminUser } from "./types";
 
 type UsersDetailPanelProps = {
-  actionError: string | null;
-  actionMessage: string | null;
   allRoleNames: string[];
   confirmDeleteOpen: boolean;
   deleting: boolean;
@@ -33,15 +33,7 @@ type UsersDetailPanelProps = {
   updatingStatus: boolean;
 };
 
-function roleBadgeClass(selected: boolean) {
-  return selected
-    ? "border-accent bg-accent text-accent-foreground"
-    : "border-border bg-bg text-text hover:border-accent/40 hover:bg-surface-2";
-}
-
 export function UsersDetailPanel({
-  actionError,
-  actionMessage,
   allRoleNames,
   confirmDeleteOpen,
   deleting,
@@ -68,7 +60,12 @@ export function UsersDetailPanel({
               </h2>
               <p className="mt-1 truncate font-ui text-sm text-muted">{selectedUser.email}</p>
             </div>
-            <UserCog className="mt-1 size-5 shrink-0 text-accent" />
+            <div className="flex items-center gap-2">
+              <Badge variant={selectedUser.is_active === false ? "destructive" : "success"}>
+                {selectedUser.is_active === false ? "Inactive" : "Active"}
+              </Badge>
+              <UserCog className="mt-1 size-5 shrink-0 text-accent" />
+            </div>
           </div>
 
           <dl className="mt-5 grid gap-3 rounded-2xl border border-border bg-bg/70 p-4 font-ui text-sm text-text">
@@ -86,18 +83,6 @@ export function UsersDetailPanel({
             </div>
           </dl>
 
-          {actionError ? (
-            <div role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm text-red-700">
-              {actionError}
-            </div>
-          ) : null}
-
-          {actionMessage ? (
-            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 font-ui text-sm text-emerald-700">
-              {actionMessage}
-            </div>
-          ) : null}
-
           <div className="mt-5">
             <div className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-accent" />
@@ -112,17 +97,16 @@ export function UsersDetailPanel({
                 allRoleNames.map((roleName) => {
                   const selected = roleAssignments.includes(roleName);
                   return (
-                    <button
+                    <Button
                       key={roleName}
                       type="button"
                       onClick={() => onToggleRole(roleName)}
-                      className={[
-                        "rounded-full border px-3 py-2 font-ui text-sm transition",
-                        roleBadgeClass(selected),
-                      ].join(" ")}
+                      variant={selected ? "default" : "outline"}
+                      size="sm"
+                      className="rounded-full font-ui text-sm"
                     >
                       {roleName}
-                    </button>
+                    </Button>
                   );
                 })
               ) : (
@@ -134,20 +118,21 @@ export function UsersDetailPanel({
           </div>
 
           <div className="mt-6 flex flex-col gap-3">
-            <button
+            <Button
               type="button"
               onClick={onSaveRoles}
               disabled={savingRoles}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl bg-accent px-4 py-3 font-ui text-sm font-semibold text-accent-foreground disabled:opacity-70"
+              className="w-full rounded-2xl font-ui text-sm font-semibold"
             >
               <ShieldCheck className="size-4" />
               {savingRoles ? "Saving roles…" : "Save roles"}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               onClick={onToggleUserStatus}
               disabled={updatingStatus}
-              className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border bg-bg px-4 py-3 font-ui text-sm font-medium text-text transition hover:bg-surface-2 disabled:opacity-70"
+              variant="outline"
+              className="w-full rounded-2xl font-ui text-sm font-medium"
             >
               {selectedUser.is_active === false ? (
                 <UserRoundCheck className="size-4" />
@@ -159,17 +144,18 @@ export function UsersDetailPanel({
                 : selectedUser.is_active === false
                   ? "Activate user"
                   : "Deactivate user"}
-            </button>
+            </Button>
             <AlertDialog open={confirmDeleteOpen} onOpenChange={(open) => open ? onConfirmDeleteOpen() : onConfirmDeleteClose()}>
               <AlertDialogTrigger asChild>
-                <button
+                <Button
                   type="button"
                   disabled={deleting}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 font-ui text-sm font-medium text-red-700 transition hover:bg-red-100 disabled:opacity-70"
+                  variant="destructive"
+                  className="w-full rounded-2xl font-ui text-sm font-medium"
                 >
                   <Trash2 className="size-4" />
                   {deleting ? "Deleting…" : "Delete user"}
-                </button>
+                </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
