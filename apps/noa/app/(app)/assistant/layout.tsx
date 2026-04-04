@@ -7,7 +7,7 @@ export default function AssistantLayout({ children }: { children: ReactNode }) {
   return (
     <ProtectedScreen
       title="Assistant"
-      description="Shared browser shell, auth contract, and same-origin transport scaffold for the NOA rewrite."
+      description="NOA Assistant — AI-powered workspace with persisted conversations"
     >
       <NoaAssistantRuntimeProvider>{children}</NoaAssistantRuntimeProvider>
     </ProtectedScreen>

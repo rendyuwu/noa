@@ -90,7 +90,7 @@ export function RoleToolsPanel({
               <h3 className="text-base font-semibold text-text">Tool allowlist</h3>
             </div>
             <p className="mt-2 font-ui text-sm text-muted">
-              Toggle the tools this role can use. The list is backed by `/admin/tools` and saved through `/admin/roles/:name/tools`.
+              Toggle the tools this role can access. Changes are saved immediately.
             </p>
           </div>
 

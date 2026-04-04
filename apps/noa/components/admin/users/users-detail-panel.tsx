@@ -103,9 +103,9 @@ export function UsersDetailPanel({
               <ShieldCheck className="size-4 text-accent" />
               <h3 className="text-base font-semibold text-text">Role assignments</h3>
             </div>
-            <p className="mt-2 font-ui text-sm text-muted">
-              Assign backend-defined admin roles. Changes save through the same-origin proxy and shared HTTP layer.
-            </p>
+              <p className="mt-2 font-ui text-sm text-muted">
+                Assign roles to control this user's access and permissions.
+              </p>
 
             <div className="mt-4 flex flex-wrap gap-2">
               {allRoleNames.length > 0 ? (

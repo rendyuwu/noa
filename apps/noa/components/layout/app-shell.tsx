@@ -46,7 +46,7 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
       <div className="flex items-center justify-between gap-3 px-2">
         <div className={collapsed ? "sr-only" : "min-w-0"}>
           <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">NOA</p>
-          <p className="truncate text-lg font-semibold text-text">Browser rewrite</p>
+          <p className="truncate text-lg font-semibold text-text">NOA</p>
         </div>
         <button
           type="button"

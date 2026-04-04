@@ -32,7 +32,7 @@ export function UsersListPanel({
           <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">Admin / Users</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-text">User management</h2>
           <p className="mt-2 max-w-2xl font-ui text-sm leading-6 text-muted">
-            Manage activation and role assignments from the shared admin shell without the old per-route wrapper duplication.
+            Manage user activation, roles, and permissions.
           </p>
         </div>
         <button

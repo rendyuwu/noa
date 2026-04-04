@@ -7,7 +7,7 @@ export default function NotFound() {
         <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">404</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-[-0.02em] text-text">Page not found</h1>
         <p className="mt-2 font-ui text-sm text-muted">
-          The browser-first rewrite has not mapped this route yet, or the link is invalid.
+          This page doesn't exist, or the link may be outdated.
         </p>
         <Link
           href="/assistant"

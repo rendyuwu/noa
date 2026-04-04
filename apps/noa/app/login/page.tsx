@@ -68,7 +68,7 @@ export default function LoginPage() {
         <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">NOA</p>
         <h1 className="mt-3 text-3xl font-semibold tracking-[-0.03em] text-text">Sign in to continue</h1>
         <p className="mt-2 font-ui text-sm leading-6 text-muted">
-          This rewrite keeps browser auth on same-origin API routes and redirects back to your intended workspace.
+          Sign in to access your assistant workspace and admin tools.
         </p>
 
         <form className="mt-8 space-y-4" onSubmit={onSubmit}>

@@ -87,8 +87,7 @@ export function ThreadPanel() {
             <MessageSquarePlus className="mx-auto size-10 text-accent" />
             <h2 className="mt-4 text-2xl font-semibold tracking-[-0.02em] text-text">Start a new conversation</h2>
             <p className="mt-3 font-ui text-sm leading-6 text-muted">
-              The NOA rewrite now includes a live assistant runtime with persisted threads, hydration, URL sync, and
-              streaming transport over the same-origin API boundary.
+              Start a conversation with your AI assistant. Your threads are saved and synced automatically.
             </p>
           </div>
         </ThreadPrimitive.Empty>

@@ -38,7 +38,7 @@ export function RolesListPanel({
           <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">Admin / Roles</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-text">Roles and tool access</h2>
           <p className="mt-2 max-w-2xl font-ui text-sm leading-6 text-muted">
-            Manage role definitions and per-role tool allowlists from the shared shell using the normalized API client.
+            Manage role definitions and per-role tool access.
           </p>
         </div>
         <button

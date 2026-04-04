@@ -44,7 +44,7 @@ export function ThreadSidebar() {
         <div className="text-sm font-medium text-text">Threads</div>
       </div>
       <p className="mt-2 font-ui text-sm leading-6 text-muted">
-        Persisted thread list backed by the browser-safe `/api/threads` contract.
+        Your saved conversations. Select a thread to continue, or start a new one.
       </p>
       <ThreadListPrimitive.New className="mt-4 inline-flex w-full items-center justify-center rounded-2xl bg-accent px-4 py-3 font-ui text-sm font-semibold text-accent-foreground">
         New thread
