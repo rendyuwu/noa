@@ -9,14 +9,11 @@ import {
   Users,
 } from "lucide-react";
 
-import { isPlaceholderAdminRouteEnabled } from "@/components/admin/lib/placeholder-route-access";
-
 export type NavItem = {
   href: string;
   label: string;
   icon: LucideIcon;
   adminOnly?: boolean;
-  surface?: "stable" | "preview";
 };
 
 export const navItems: NavItem[] = [
@@ -31,19 +28,9 @@ export const navItems: NavItem[] = [
 
 export function isNavItemVisible(
   item: NavItem,
-  options: {
-    isAdmin: boolean;
-    previewAdminRoutesEnabled?: boolean;
-  },
+  options: { isAdmin: boolean },
 ) {
   if (item.adminOnly && !options.isAdmin) {
-    return false;
-  }
-
-  if (
-    item.surface === "preview" &&
-    !(options.previewAdminRoutesEnabled ?? isPlaceholderAdminRouteEnabled())
-  ) {
     return false;
   }
 
@@ -52,10 +39,8 @@ export function isNavItemVisible(
 
 export function getNavItems({
   isAdmin = false,
-  previewAdminRoutesEnabled,
 }: {
   isAdmin?: boolean;
-  previewAdminRoutesEnabled?: boolean;
 } = {}) {
-  return navItems.filter((item) => isNavItemVisible(item, { isAdmin, previewAdminRoutesEnabled }));
+  return navItems.filter((item) => isNavItemVisible(item, { isAdmin }));
 }
