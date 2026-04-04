@@ -3,8 +3,11 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type AuditActionRequestListItem = {
   actionRequestId: string;
@@ -48,6 +51,16 @@ const DEFAULT_FILTERS: Filters = {
   requestedByEmail: "",
   limit: 50,
 };
+
+const AUDIT_LOADING_ROW_KEYS = ["audit-loading-row-1", "audit-loading-row-2", "audit-loading-row-3", "audit-loading-row-4", "audit-loading-row-5"];
+const AUDIT_LOADING_COLUMN_KEYS = [
+  "audit-loading-column-action",
+  "audit-loading-column-tool",
+  "audit-loading-column-status",
+  "audit-loading-column-risk",
+  "audit-loading-column-created",
+  "audit-loading-column-receipt",
+];
 
 function formatTimestamp(value: unknown): string {
   if (typeof value !== "string" || !value) {
@@ -157,11 +170,9 @@ export function AuditAdminPage() {
       setItems([]);
       setNextCursor(null);
     } finally {
-      if (seq !== loadSeqRef.current) {
-        return;
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
       }
-
-      setLoading(false);
     }
   }, [queryParams]);
 
@@ -212,71 +223,79 @@ export function AuditAdminPage() {
         <p className="mt-1 text-sm text-muted">Filter and review action requests and receipts.</p>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <label className="text-sm text-text">
-            Tool
-            <input
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+          <div className="text-sm text-text">
+            <label htmlFor="audit-tool-name">Tool</label>
+            <Input
+              id="audit-tool-name"
+              className="mt-1 rounded-xl"
               value={draft.toolName}
               onChange={(event) => setDraft((current) => ({ ...current, toolName: event.target.value }))}
             />
-          </label>
-          <label className="text-sm text-text">
-            Status
-            <input
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+          </div>
+          <div className="text-sm text-text">
+            <label htmlFor="audit-status">Status</label>
+            <Input
+              id="audit-status"
+              className="mt-1 rounded-xl"
               value={draft.status}
               onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
             />
-          </label>
-          <label className="text-sm text-text">
-            Terminal phase
-            <input
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+          </div>
+          <div className="text-sm text-text">
+            <label htmlFor="audit-terminal-phase">Terminal phase</label>
+            <Input
+              id="audit-terminal-phase"
+              className="mt-1 rounded-xl"
               value={draft.terminalPhase}
               onChange={(event) => setDraft((current) => ({ ...current, terminalPhase: event.target.value }))}
             />
-          </label>
-          <label className="text-sm text-text">
-            Requested by
-            <input
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+          </div>
+          <div className="text-sm text-text">
+            <label htmlFor="audit-requested-by">Requested by</label>
+            <Input
+              id="audit-requested-by"
+              className="mt-1 rounded-xl"
               value={draft.requestedByEmail}
               onChange={(event) => setDraft((current) => ({ ...current, requestedByEmail: event.target.value }))}
             />
-          </label>
-          <label className="text-sm text-text">
-            From
-            <input
+          </div>
+          <div className="text-sm text-text">
+            <label htmlFor="audit-from-date">From</label>
+            <Input
+              id="audit-from-date"
               type="date"
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+              className="mt-1 rounded-xl"
               value={draft.fromDate}
               onChange={(event) => setDraft((current) => ({ ...current, fromDate: event.target.value }))}
             />
-          </label>
-          <label className="text-sm text-text">
-            To
-            <input
+          </div>
+          <div className="text-sm text-text">
+            <label htmlFor="audit-to-date">To</label>
+            <Input
+              id="audit-to-date"
               type="date"
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+              className="mt-1 rounded-xl"
               value={draft.toDate}
               onChange={(event) => setDraft((current) => ({ ...current, toDate: event.target.value }))}
             />
-          </label>
-          <label className="text-sm text-text">
-            Thread ID
-            <input
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+          </div>
+          <div className="text-sm text-text">
+            <label htmlFor="audit-thread-id">Thread ID</label>
+            <Input
+              id="audit-thread-id"
+              className="mt-1 rounded-xl"
               value={draft.threadId}
               onChange={(event) => setDraft((current) => ({ ...current, threadId: event.target.value }))}
             />
-          </label>
-          <label className="text-sm text-text">
-            Limit
-            <input
+          </div>
+          <div className="text-sm text-text">
+            <label htmlFor="audit-limit">Limit</label>
+            <Input
+              id="audit-limit"
               type="number"
               min={1}
               max={200}
-              className="mt-1 w-full rounded-xl border border-border bg-bg px-3 py-2 text-sm"
+              className="mt-1 rounded-xl"
               value={draft.limit}
               onChange={(event) => {
                 const nextLimit = Number(event.target.value);
@@ -286,31 +305,19 @@ export function AuditAdminPage() {
                 }));
               }}
             />
-          </label>
+          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            className="rounded-xl bg-accent px-3 py-2 text-sm font-medium text-accent-foreground"
-            onClick={applyFilters}
-          >
+          <Button type="button" size="sm" className="rounded-xl" onClick={applyFilters}>
             Apply filters
-          </button>
-          <button
-            type="button"
-            className="rounded-xl border border-border bg-bg px-3 py-2 text-sm font-medium text-text"
-            onClick={clearFilters}
-          >
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={clearFilters}>
             Clear filters
-          </button>
-          <button
-            type="button"
-            className="rounded-xl border border-border bg-bg px-3 py-2 text-sm font-medium text-text"
-            onClick={() => void loadData()}
-          >
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => void loadData()}>
             Refresh
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -334,11 +341,15 @@ export function AuditAdminPage() {
           </thead>
           <tbody className="divide-y divide-border">
             {loading ? (
-              <tr>
-                <td className="px-3 py-3 text-muted" colSpan={6}>
-                  Loading audit events…
-                </td>
-              </tr>
+              AUDIT_LOADING_ROW_KEYS.map((rowKey) => (
+                <tr key={rowKey}>
+                  {AUDIT_LOADING_COLUMN_KEYS.map((columnKey) => (
+                    <td key={columnKey} className="px-3 py-3">
+                      <Skeleton className="h-4 w-20" />
+                    </td>
+                  ))}
+                </tr>
+              ))
             ) : items.length === 0 ? (
               <tr>
                 <td className="px-3 py-3 text-muted" colSpan={6}>
@@ -375,22 +386,26 @@ export function AuditAdminPage() {
       <div className="flex items-center justify-between">
         <div className="text-sm text-muted">Page {cursorStack.length + 1}</div>
         <div className="flex items-center gap-2">
-          <button
+          <Button
             type="button"
-            className="rounded-xl border border-border bg-bg px-3 py-2 text-sm text-text disabled:opacity-50"
+            variant="outline"
+            size="sm"
+            className="rounded-xl"
             disabled={cursorStack.length === 0}
             onClick={goPrev}
           >
             Previous
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="rounded-xl border border-border bg-bg px-3 py-2 text-sm text-text disabled:opacity-50"
+            variant="outline"
+            size="sm"
+            className="rounded-xl"
             disabled={!nextCursor}
             onClick={goNext}
           >
             Next
-          </button>
+          </Button>
         </div>
       </div>
     </section>

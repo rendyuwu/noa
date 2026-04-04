@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from "react";
 import { WorkflowReceiptSurface } from "@/components/assistant/workflow-receipt-renderer";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
 import { toErrorMessage } from "@/components/lib/http/error-message";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string }) {
   const [payload, setPayload] = useState<Record<string, unknown> | null>(null);
@@ -37,11 +38,9 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
 
         setLoadError(toErrorMessage(error, "Unable to load receipt"));
       } finally {
-        if (seq !== loadSeqRef.current) {
-          return;
+        if (seq === loadSeqRef.current) {
+          setLoading(false);
         }
-
-        setLoading(false);
       }
     })();
 
@@ -71,9 +70,17 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
       {payload ? (
         <WorkflowReceiptSurface payload={payload} captureId={`audit-${actionRequestId}`} className="max-w-4xl" />
       ) : (
-        <div className="rounded-xl border border-border bg-surface/70 px-4 py-4 font-ui text-sm text-muted">
-          {loading ? "Loading receipt…" : "Receipt unavailable."}
-        </div>
+        loading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-32 w-full rounded-xl" />
+            <Skeleton className="h-20 w-full rounded-xl" />
+          </div>
+        ) : (
+          <div className="rounded-xl border border-border bg-surface/70 px-4 py-4 font-ui text-sm text-muted">
+            Receipt unavailable.
+          </div>
+        )
       )}
     </section>
   );
