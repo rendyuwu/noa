@@ -53,7 +53,7 @@ describe("ProtectedScreen", () => {
 
   it("renders the shell with the validated user", () => {
     render(
-      <ProtectedScreen title="Users" description="Manage users" requireAdmin>
+      <ProtectedScreen title="Assistant" description="Manage your workspace">
         <div>child</div>
       </ProtectedScreen>,
     );

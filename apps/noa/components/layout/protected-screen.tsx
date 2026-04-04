@@ -26,14 +26,15 @@ export function ProtectedScreen({
   const router = useRouter();
   const { error, ready, refresh, user, validating } = useRequireAuth();
   const isAdmin = user?.roles?.includes("admin") ?? false;
+  const needsAdminFallbackRedirect = requireAdmin && !isAdmin;
 
   useEffect(() => {
-    if (!ready || !requireAdmin || isAdmin) {
+    if (!ready || !needsAdminFallbackRedirect) {
       return;
     }
 
     router.replace("/assistant");
-  }, [isAdmin, ready, requireAdmin, router]);
+  }, [needsAdminFallbackRedirect, ready, router]);
 
   if (error) {
     return (
@@ -58,7 +59,7 @@ export function ProtectedScreen({
     );
   }
 
-  if (!ready || validating || (requireAdmin && !isAdmin)) {
+  if (!ready || validating || needsAdminFallbackRedirect) {
     return (
       <main className="flex min-h-dvh items-center justify-center px-6 py-10">
         <div className="rounded-2xl border border-border bg-surface px-5 py-4 text-sm text-muted shadow-soft">
