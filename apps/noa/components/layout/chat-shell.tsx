@@ -3,7 +3,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { Menu, PanelLeftClose, PanelLeftOpen, SquarePen, X } from "lucide-react";
-import { ThreadListPrimitive } from "@assistant-ui/react";
+import { ThreadListPrimitive, useAssistantState } from "@assistant-ui/react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -16,6 +16,27 @@ import { ChatThreadItem } from "./chat-thread-item";
 import { ChatUserProfile } from "./chat-user-profile";
 
 const COLLAPSED_KEY = "noa.chat-shell.collapsed";
+
+function ThreadListSkeleton() {
+  const hasThreads = useAssistantState(({ threads }) => {
+    const items = threads?.threadItems;
+    return Array.isArray(items) && items.length > 0;
+  });
+
+  if (hasThreads) return null;
+
+  return (
+    <div className="space-y-2 px-1 py-1">
+      {Array.from({ length: 5 }, (_, i) => `skeleton-${i}`).map((id, i) => (
+        <div
+          key={id}
+          className="h-8 animate-pulse rounded-lg bg-surface-2/60"
+          style={{ width: `${75 - i * 8}%` }}
+        />
+      ))}
+    </div>
+  );
+}
 
 type ChatShellProps = {
   children: ReactNode;
@@ -99,6 +120,7 @@ export function ChatShell({ children, user }: ChatShellProps) {
           </p>
           <ScrollArea className="flex-1 px-2">
             <ThreadListPrimitive.Root>
+              <ThreadListSkeleton />
               <ThreadListPrimitive.Items components={{ ThreadListItem: ChatThreadItem }} />
             </ThreadListPrimitive.Root>
           </ScrollArea>
