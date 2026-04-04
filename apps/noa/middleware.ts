@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 
-import { AUTH_COOKIE_NAME } from "@/components/lib/auth/server-auth";
+import { AUTH_COOKIE_NAME } from "@/components/lib/auth/auth-constants";
 import { buildLoginRedirect, isProtectedPath } from "@/components/lib/auth/route-guard";
 
 export function middleware(request: NextRequest) {

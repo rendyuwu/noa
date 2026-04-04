@@ -1,8 +1,8 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 
-export const AUTH_COOKIE_NAME = "noa_session";
-export const CSRF_COOKIE_NAME = "noa_csrf";
-export const AUTH_COOKIE_MAX_AGE_SECONDS = 60 * 60;
+import { AUTH_COOKIE_MAX_AGE_SECONDS } from "./auth-constants";
+
+export { AUTH_COOKIE_MAX_AGE_SECONDS, AUTH_COOKIE_NAME, CSRF_COOKIE_NAME } from "./auth-constants";
 
 export function createCsrfToken() {
   return randomBytes(24).toString("base64url");
