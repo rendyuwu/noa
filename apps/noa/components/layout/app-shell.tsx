@@ -38,9 +38,7 @@ export function AppShell({ children, title, description, user }: AppShellProps) 
   }, [collapsed]);
 
   useEffect(() => {
-    if (pathname) {
-      setMobileOpen(false);
-    }
+    setMobileOpen(false);
   }, [pathname]);
 
   const items = useMemo(() => getNavItems({ isAdmin }), [isAdmin]);
