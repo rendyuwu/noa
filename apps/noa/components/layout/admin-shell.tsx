@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { LogOut, Menu, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,8 +13,6 @@ import { clearAuth } from "@/components/lib/auth/auth-storage";
 import type { AuthUser } from "@/components/lib/auth/types";
 
 import { adminNavItems, backToChatAction } from "./admin-nav-items";
-
-const COLLAPSED_KEY = "noa.admin-shell.collapsed";
 
 type AdminShellProps = {
   children: ReactNode;
@@ -28,17 +27,12 @@ export function AdminShell({ children, title, description, user }: AdminShellPro
   const [collapsed, setCollapsed] = useState(false);
 
   useEffect(() => {
-    const saved = window.localStorage.getItem(COLLAPSED_KEY);
-    setCollapsed(saved === "true");
-  }, []);
-
-  useEffect(() => {
-    window.localStorage.setItem(COLLAPSED_KEY, String(collapsed));
-  }, [collapsed]);
-
-  useEffect(() => {
-    setMobileOpen(false);
+    if (pathname) {
+      setMobileOpen(false);
+    }
   }, [pathname]);
+
+  const showExpanded = mobileOpen || !collapsed;
 
   const NavLink = ({ href, label, icon: Icon, active }: { href: string; label: string; icon: React.ComponentType<{ className?: string }>; active: boolean }) => {
     const className = [
@@ -49,26 +43,42 @@ export function AdminShell({ children, title, description, user }: AdminShellPro
     const content = (
       <>
         <Icon className="size-4 shrink-0" />
-        {!collapsed && <span className="truncate">{label}</span>}
+        {showExpanded && <span className="truncate">{label}</span>}
       </>
     );
 
-    return collapsed ? (
+    return showExpanded ? (
+      <Link href={href} className={className} aria-current={active ? "page" : undefined}>
+        {content}
+      </Link>
+    ) : (
       <Tooltip>
         <TooltipTrigger asChild>
-          <Link href={href} className={className}>{content}</Link>
+          <Link href={href} className={className} aria-label={label} aria-current={active ? "page" : undefined}>
+            {content}
+          </Link>
         </TooltipTrigger>
         <TooltipContent side="right">{label}</TooltipContent>
       </Tooltip>
-    ) : (
-      <Link href={href} className={className}>{content}</Link>
     );
   };
 
+  const signOutAction = (
+    <button
+      type="button"
+      onClick={() => clearAuth({ returnTo: "/assistant", redirect: true })}
+      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-ui text-sm text-muted transition hover:bg-surface-2 hover:text-text"
+      aria-label={showExpanded ? undefined : "Sign out"}
+    >
+      <LogOut className="size-4 shrink-0" />
+      {showExpanded && <span>Sign out</span>}
+    </button>
+  );
+
   const Sidebar = (
-    <aside className="flex h-full flex-col gap-5 border-r border-border/80 bg-surface px-3 py-4 text-sm shadow-soft">
+    <aside className="flex h-full min-h-0 flex-col gap-5 overflow-hidden border-r border-border/80 bg-surface px-3 py-4 text-sm shadow-soft">
       <div className="flex items-center justify-between gap-3 px-2">
-        {!collapsed && (
+        {showExpanded && (
           <div className="min-w-0">
             <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">NOA</p>
             <p className="truncate text-lg font-semibold text-text">Admin</p>
@@ -94,7 +104,7 @@ export function AdminShell({ children, title, description, user }: AdminShellPro
         </Button>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1">
+      <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto">
         <NavLink
           href={backToChatAction.href}
           label={backToChatAction.label}
@@ -114,15 +124,15 @@ export function AdminShell({ children, title, description, user }: AdminShellPro
       </nav>
 
       <div className="space-y-1">
-        <button
-          type="button"
-          onClick={() => clearAuth({ returnTo: "/assistant", redirect: true })}
-          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-ui text-sm text-muted transition hover:bg-surface-2 hover:text-text"
-        >
-          <LogOut className="size-4 shrink-0" />
-          {!collapsed && <span>Sign out</span>}
-        </button>
-        {!collapsed && user && (
+        {showExpanded ? (
+          signOutAction
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>{signOutAction}</TooltipTrigger>
+            <TooltipContent side="right">Sign out</TooltipContent>
+          </Tooltip>
+        )}
+        {showExpanded && user && (
           <div className="rounded-xl border border-border/70 bg-bg/70 px-3 py-3 font-ui text-xs text-muted">
             <p className="font-medium text-text">Signed in as</p>
             <p className="mt-1 truncate">{user.display_name || user.email || "Unknown user"}</p>
@@ -134,45 +144,44 @@ export function AdminShell({ children, title, description, user }: AdminShellPro
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="min-h-dvh bg-bg text-text">
-        <div className="flex min-h-dvh">
-          <div className={collapsed ? "hidden md:block md:w-[88px]" : "hidden md:block md:w-[288px]"}>
-            {Sidebar}
-          </div>
+      <div className="flex h-dvh overflow-hidden bg-bg text-text">
+        <div className={collapsed ? "hidden h-full min-h-0 overflow-hidden md:block md:w-[88px]" : "hidden h-full min-h-0 overflow-hidden md:block md:w-[288px]"}>
+          {Sidebar}
+        </div>
 
-          {mobileOpen && (
-            <div className="fixed inset-0 z-40 flex md:hidden">
-              <div className="w-[290px] max-w-[85vw]">{Sidebar}</div>
-              <button
-                type="button"
-                className="flex-1 bg-overlay/40"
-                aria-label="Dismiss navigation overlay"
-                onClick={() => setMobileOpen(false)}
-              />
-            </div>
-          )}
+        <DialogPrimitive.Root open={mobileOpen} onOpenChange={setMobileOpen}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-overlay/40 md:hidden" />
+            <DialogPrimitive.Content
+              className="fixed inset-y-0 left-0 z-50 w-[290px] max-w-[85vw] border-r border-border/80 bg-surface shadow-soft outline-none md:hidden"
+              aria-describedby={undefined}
+            >
+              <DialogPrimitive.Title className="sr-only">Admin navigation</DialogPrimitive.Title>
+              {Sidebar}
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
 
-          <div className="flex min-h-dvh flex-1 flex-col">
-            <header className="sticky top-0 z-20 border-b border-border/70 bg-bg/90 px-4 py-3 backdrop-blur sm:px-6">
-              <div className="flex items-start gap-3">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="rounded-lg border border-border bg-surface text-muted hover:bg-surface-2 md:hidden"
-                  onClick={() => setMobileOpen(true)}
-                  aria-label="Open navigation"
-                >
-                  <Menu className="size-4" />
-                </Button>
-                <div className="min-w-0 flex-1">
-                  <h1 className="text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{title}</h1>
-                  <p className="mt-1 max-w-3xl font-ui text-sm text-muted">{description}</p>
-                </div>
-                <ThemeToggle className="shrink-0" />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="shrink-0 border-b border-border/70 bg-bg/90 px-4 py-3 backdrop-blur sm:px-6">
+            <div className="flex items-start gap-3">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-lg border border-border bg-surface text-muted hover:bg-surface-2 md:hidden"
+                onClick={() => setMobileOpen(true)}
+                aria-label="Open navigation"
+              >
+                <Menu className="size-4" />
+              </Button>
+              <div className="min-w-0 flex-1">
+                <h1 className="text-xl font-semibold tracking-[-0.02em] sm:text-2xl">{title}</h1>
+                <p className="mt-1 max-w-3xl font-ui text-sm text-muted">{description}</p>
               </div>
-            </header>
-            <main className="flex-1 px-4 py-4 sm:px-6 sm:py-6">{children}</main>
-          </div>
+              <ThemeToggle className="shrink-0" />
+            </div>
+          </header>
+          <main className="min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-6">{children}</main>
         </div>
       </div>
     </TooltipProvider>

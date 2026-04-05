@@ -42,9 +42,10 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    expect(await screen.findByText("pve1")).toBeInTheDocument();
-    expect(screen.getByText("root@pam!noa")).toBeInTheDocument();
-    expect(screen.getByText("off")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Manage pve1" })).toBeInTheDocument();
+    expect(screen.getAllByText("pve1")).toHaveLength(2);
+    expect(screen.getAllByText("root@pam!noa")).toHaveLength(2);
+    expect(screen.getAllByText("off")).toHaveLength(2);
   });
 
   it("creates a server with the expected POST body", async () => {
@@ -162,6 +163,8 @@ describe("ProxmoxServersAdminPage", () => {
     render(<ProxmoxServersAdminPage />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
+    expect(await screen.findByRole("button", { name: "Manage pve1" })).toBeInTheDocument();
+    expect(screen.getAllByText("pve1")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Edit server" }));
 
     fireEvent.change(screen.getByLabelText("API token ID"), {
@@ -296,5 +299,64 @@ describe("ProxmoxServersAdminPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Authentication failed");
+  });
+
+  it("keeps a remaining server selected after deleting the current selection", async () => {
+    const firstServer = {
+      id: "server-1",
+      name: "pve1",
+      base_url: "https://pve1.example.com:8006",
+      api_token_id: "root@pam!first",
+      has_api_token_secret: true,
+      verify_ssl: false,
+      updated_at: "2026-01-02T03:04:05.000Z",
+    };
+    const secondServer = {
+      ...firstServer,
+      id: "server-2",
+      name: "pve2",
+      base_url: "https://pve2.example.com:8006",
+      api_token_id: "root@pam!second",
+    };
+
+    const listResponse = new Response(null, { status: 200 });
+    const deleteResponse = new Response(null, { status: 200 });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/admin/proxmox/servers" && !init) {
+        return listResponse;
+      }
+      if (path === "/admin/proxmox/servers/server-1" && init?.method === "DELETE") {
+        return deleteResponse;
+      }
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === listResponse) {
+        return { servers: [firstServer, secondServer] };
+      }
+      if (response === deleteResponse) {
+        return { ok: true };
+      }
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<ProxmoxServersAdminPage />);
+
+    expect(await screen.findByRole("button", { name: "Manage pve1" })).toBeInTheDocument();
+    expect(screen.getAllByText("pve1")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete server" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(mocks.fetchWithAuth).toHaveBeenCalledWith("/admin/proxmox/servers/server-1", { method: "DELETE" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("pve2")).toHaveLength(2);
+    });
+    expect(screen.queryByText("No server selected")).not.toBeInTheDocument();
   });
 });

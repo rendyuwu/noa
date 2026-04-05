@@ -3,7 +3,10 @@ import { AdminProtectedScreen } from "@/components/layout/admin-protected-screen
 
 export default function AdminWhmServersPage() {
   return (
-    <AdminProtectedScreen title="WHM servers" description="Create, update, validate, and remove WHM server connection profiles.">
+    <AdminProtectedScreen
+      title="WHM servers"
+      description="Manage WHM connection profiles and validate access before use."
+    >
       <WhmServersAdminPage />
     </AdminProtectedScreen>
   );

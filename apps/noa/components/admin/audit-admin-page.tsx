@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentProps } from "react";
 
 import { formatTimestampUTC } from "@/components/admin/lib/format-timestamp";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/http/fetch-client";
@@ -86,9 +88,44 @@ function normalizeDateRange(filters: Filters): { from?: string; to?: string } {
   return result;
 }
 
+type BadgeVariant = NonNullable<ComponentProps<typeof Badge>["variant"]>;
+
+function getStatusBadgeVariant(status: string): BadgeVariant {
+  const normalized = status.trim().toLowerCase();
+
+  if (["approved", "completed", "success"].includes(normalized)) {
+    return "success";
+  }
+
+  if (["denied", "rejected", "failed", "error"].includes(normalized)) {
+    return "destructive";
+  }
+
+  if (["pending", "reviewing", "in_review"].includes(normalized)) {
+    return "warning";
+  }
+
+  return "muted";
+}
+
+function getRiskBadgeVariant(risk: string): BadgeVariant {
+  const normalized = risk.trim().toLowerCase();
+
+  if (normalized === "change") {
+    return "warning";
+  }
+
+  if (normalized === "read") {
+    return "info";
+  }
+
+  return "muted";
+}
+
 export function AuditAdminPage() {
   const [draft, setDraft] = useState<Filters>(DEFAULT_FILTERS);
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
+  const [showAdvancedFilters, setShowAdvancedFilters] = useState(false);
 
   const [items, setItems] = useState<AuditActionRequestListItem[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -206,12 +243,15 @@ export function AuditAdminPage() {
   };
 
   return (
-    <section className="space-y-4">
-      <div className="rounded-2xl border border-border bg-surface p-4">
-        <h2 className="text-lg font-semibold text-text">Audit history</h2>
-        <p className="mt-1 text-sm text-muted">Filter and review action requests and receipts.</p>
+    <section className="space-y-5">
+      <div className="rounded-2xl border border-border bg-surface p-4 shadow-sm">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted">Audit admin console</p>
+          <h2 className="text-lg font-semibold text-text">Audit history</h2>
+          <p className="text-sm text-muted">Filter and review action requests and receipts.</p>
+        </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-4 grid gap-3 lg:grid-cols-4">
           <div className="text-sm text-text">
             <label htmlFor="audit-tool-name">Tool</label>
             <Input
@@ -228,24 +268,6 @@ export function AuditAdminPage() {
               className="mt-1 rounded-xl"
               value={draft.status}
               onChange={(event) => setDraft((current) => ({ ...current, status: event.target.value }))}
-            />
-          </div>
-          <div className="text-sm text-text">
-            <label htmlFor="audit-terminal-phase">Terminal phase</label>
-            <Input
-              id="audit-terminal-phase"
-              className="mt-1 rounded-xl"
-              value={draft.terminalPhase}
-              onChange={(event) => setDraft((current) => ({ ...current, terminalPhase: event.target.value }))}
-            />
-          </div>
-          <div className="text-sm text-text">
-            <label htmlFor="audit-requested-by">Requested by</label>
-            <Input
-              id="audit-requested-by"
-              className="mt-1 rounded-xl"
-              value={draft.requestedByEmail}
-              onChange={(event) => setDraft((current) => ({ ...current, requestedByEmail: event.target.value }))}
             />
           </div>
           <div className="text-sm text-text">
@@ -268,33 +290,6 @@ export function AuditAdminPage() {
               onChange={(event) => setDraft((current) => ({ ...current, toDate: event.target.value }))}
             />
           </div>
-          <div className="text-sm text-text">
-            <label htmlFor="audit-thread-id">Thread ID</label>
-            <Input
-              id="audit-thread-id"
-              className="mt-1 rounded-xl"
-              value={draft.threadId}
-              onChange={(event) => setDraft((current) => ({ ...current, threadId: event.target.value }))}
-            />
-          </div>
-          <div className="text-sm text-text">
-            <label htmlFor="audit-limit">Limit</label>
-            <Input
-              id="audit-limit"
-              type="number"
-              min={1}
-              max={200}
-              className="mt-1 rounded-xl"
-              value={draft.limit}
-              onChange={(event) => {
-                const nextLimit = Number(event.target.value);
-                setDraft((current) => ({
-                  ...current,
-                  limit: Number.isFinite(nextLimit) ? Math.max(1, Math.min(200, nextLimit)) : current.limit,
-                }));
-              }}
-            />
-          </div>
         </div>
 
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -307,7 +302,68 @@ export function AuditAdminPage() {
           <Button type="button" variant="outline" size="sm" className="rounded-xl" onClick={() => void loadData()}>
             Refresh
           </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="rounded-xl"
+            aria-expanded={showAdvancedFilters}
+            aria-controls="audit-advanced-filters"
+            onClick={() => setShowAdvancedFilters((current) => !current)}
+          >
+            {showAdvancedFilters ? "Hide advanced filters" : "Show advanced filters"}
+          </Button>
         </div>
+
+        {showAdvancedFilters ? (
+          <div id="audit-advanced-filters" className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="text-sm text-text">
+              <label htmlFor="audit-limit">Limit</label>
+              <Input
+                id="audit-limit"
+                type="number"
+                min={1}
+                max={200}
+                className="mt-1 rounded-xl"
+                value={draft.limit}
+                onChange={(event) => {
+                  const nextLimit = Number(event.target.value);
+                  setDraft((current) => ({
+                    ...current,
+                    limit: Number.isFinite(nextLimit) ? Math.max(1, Math.min(200, nextLimit)) : current.limit,
+                  }));
+                }}
+              />
+            </div>
+            <div className="text-sm text-text">
+              <label htmlFor="audit-terminal-phase">Terminal phase</label>
+              <Input
+                id="audit-terminal-phase"
+                className="mt-1 rounded-xl"
+                value={draft.terminalPhase}
+                onChange={(event) => setDraft((current) => ({ ...current, terminalPhase: event.target.value }))}
+              />
+            </div>
+            <div className="text-sm text-text">
+              <label htmlFor="audit-requested-by">Requested by</label>
+              <Input
+                id="audit-requested-by"
+                className="mt-1 rounded-xl"
+                value={draft.requestedByEmail}
+                onChange={(event) => setDraft((current) => ({ ...current, requestedByEmail: event.target.value }))}
+              />
+            </div>
+            <div className="text-sm text-text md:col-span-2 xl:col-span-4">
+              <label htmlFor="audit-thread-id">Thread ID</label>
+              <Input
+                id="audit-thread-id"
+                className="mt-1 rounded-xl"
+                value={draft.threadId}
+                onChange={(event) => setDraft((current) => ({ ...current, threadId: event.target.value }))}
+              />
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {loadError ? (
@@ -348,11 +404,38 @@ export function AuditAdminPage() {
             ) : (
               items.map((item) => (
                 <tr key={item.actionRequestId} className="transition-colors hover:bg-surface-2/50">
-                  <td className="px-3 py-3 font-mono text-xs text-muted">{item.actionRequestId}</td>
-                  <td className="px-3 py-3 text-text">{item.toolName}</td>
-                  <td className="px-3 py-3 text-text">{item.terminalPhase ?? item.status}</td>
-                  <td className="px-3 py-3 text-text">{item.risk}</td>
-                  <td className="px-3 py-3 text-muted">{formatTimestampUTC(item.createdAt)}</td>
+                  <td className="px-3 py-3 align-top">
+                    <div className="space-y-1">
+                      <div className="font-mono text-xs font-medium text-text">{item.actionRequestId}</div>
+                      <div className="text-xs text-muted">Thread {item.threadId}</div>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <div className="space-y-1">
+                      <div className="font-medium text-text">{item.toolName}</div>
+                      {item.requestedByEmail ? <div className="text-xs text-muted">{item.requestedByEmail}</div> : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <div className="space-y-1">
+                      <Badge
+                        variant={getStatusBadgeVariant(item.terminalPhase ?? item.status)}
+                        className="rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                      >
+                        {item.terminalPhase ?? item.status}
+                      </Badge>
+                      {item.terminalPhase ? <div className="text-xs text-muted">Status {item.status}</div> : null}
+                    </div>
+                  </td>
+                  <td className="px-3 py-3 align-top">
+                    <Badge
+                      variant={getRiskBadgeVariant(item.risk)}
+                      className="rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.08em]"
+                    >
+                      {item.risk}
+                    </Badge>
+                  </td>
+                  <td className="px-3 py-3 align-top text-muted">{formatTimestampUTC(item.createdAt)}</td>
                   <td className="px-3 py-3">
                     {item.hasReceipt ? (
                       <Link

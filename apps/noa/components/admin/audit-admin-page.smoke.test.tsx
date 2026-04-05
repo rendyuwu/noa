@@ -43,6 +43,18 @@ describe("AuditAdminPage smoke", () => {
 
     render(<AuditAdminPage />);
 
+    expect(screen.getByRole("button", { name: "Show advanced filters" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply filters" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Tool")).toBeInTheDocument();
+    expect(screen.getByLabelText("Status")).toBeInTheDocument();
+    expect(screen.getByLabelText("From")).toBeInTheDocument();
+    expect(screen.getByLabelText("To")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Limit")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show advanced filters" }));
+    expect(screen.getByRole("button", { name: "Hide advanced filters" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Limit")).toBeInTheDocument();
+
     expect(await screen.findByText("whm_suspend_account")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View receipt" })).toHaveAttribute(
       "href",

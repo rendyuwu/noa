@@ -99,6 +99,21 @@ export function UsersAdminPage() {
     setRoleAssignments(coerceStringArray(selectedUser?.roles).slice().sort((a, b) => a.localeCompare(b)));
   }, [selectedUser]);
 
+  useEffect(() => {
+    if (filteredUsers.length === 0) {
+      if (selectedUserId !== null) {
+        setSelectedUserId(null);
+      }
+      return;
+    }
+
+    if (selectedUserId && filteredUsers.some((user) => user.id === selectedUserId)) {
+      return;
+    }
+
+    setSelectedUserId(filteredUsers[0]?.id ?? null);
+  }, [filteredUsers, selectedUserId]);
+
   function toggleRole(roleName: string) {
     setRoleAssignments((current) => {
       if (current.includes(roleName)) {

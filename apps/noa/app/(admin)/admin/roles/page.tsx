@@ -3,7 +3,7 @@ import { AdminProtectedScreen } from "@/components/layout/admin-protected-screen
 
 export default function AdminRolesPage() {
   return (
-    <AdminProtectedScreen title="Roles" description="Shared shell route for role and allowlist management parity.">
+    <AdminProtectedScreen title="Roles" description="Define roles and control per-role tool access.">
       <RolesAdminPage />
     </AdminProtectedScreen>
   );

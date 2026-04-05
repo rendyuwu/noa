@@ -110,6 +110,21 @@ export function RolesAdminPage() {
     void loadRoleTools(selectedRoleName);
   }, [loadRoleTools, selectedRoleName]);
 
+  useEffect(() => {
+    if (filteredRoles.length === 0) {
+      if (selectedRoleName !== null) {
+        setSelectedRoleName(null);
+      }
+      return;
+    }
+
+    if (selectedRoleName && filteredRoles.includes(selectedRoleName)) {
+      return;
+    }
+
+    setSelectedRoleName(filteredRoles[0] ?? null);
+  }, [filteredRoles, selectedRoleName]);
+
   function toggleTool(toolName: string) {
     setToolAllowlist((current) => {
       if (current.includes(toolName)) {

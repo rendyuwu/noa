@@ -42,9 +42,9 @@ export function RolesListPanel({
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">Admin / Roles</p>
-          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-text">Roles and tool access</h2>
+          <h2 className="mt-2 text-2xl font-semibold tracking-[-0.02em] text-text">Role catalog</h2>
           <p className="mt-2 max-w-2xl font-ui text-sm leading-6 text-muted">
-            Manage role definitions and per-role tool access.
+            Manage role definitions and scan the available catalog quickly.
           </p>
         </div>
         <Button

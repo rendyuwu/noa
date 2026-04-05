@@ -56,7 +56,7 @@ export function RoleToolsPanel({
         <>
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">Selected role</p>
+              <p className="font-ui text-xs uppercase tracking-[0.18em] text-muted">Selected role details</p>
               <h2 className="mt-2 truncate text-2xl font-semibold tracking-[-0.02em] text-text">{selectedRoleName}</h2>
               <p className="mt-1 font-ui text-sm text-muted">
                 Update the allowlist for backend tool access granted through this role.
@@ -65,13 +65,13 @@ export function RoleToolsPanel({
             <Wand2 className="mt-1 size-5 shrink-0 text-accent" />
           </div>
 
-          <div className="mt-5">
+          <div className="mt-5 rounded-2xl border border-border bg-bg/70 p-4">
             <div className="flex items-center gap-2">
               <Shield className="size-4 text-accent" />
-              <h3 className="text-base font-semibold text-text">Tool allowlist</h3>
+              <h3 className="text-base font-semibold text-text">Access policy</h3>
             </div>
             <p className="mt-2 font-ui text-sm text-muted">
-              Toggle the tools this role can access. Changes are saved immediately.
+              Toggle the tools this role can access. Save the allowlist to apply changes.
             </p>
           </div>
 

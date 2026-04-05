@@ -161,6 +161,8 @@ describe("WhmServersAdminPage", () => {
     render(<WhmServersAdminPage />);
 
     fireEvent.click(await screen.findByRole("button", { name: "Manage web1" }));
+    expect(await screen.findByRole("button", { name: "Manage web1" })).toBeInTheDocument();
+    expect(screen.getAllByText("web1")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Edit server" }));
 
     fireEvent.click(screen.getByLabelText("Enable SSH"));
@@ -301,5 +303,67 @@ describe("WhmServersAdminPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "Validate" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("SSH key fingerprint mismatch");
+  });
+
+  it("keeps a remaining server selected after deleting the current selection", async () => {
+    const firstServer = {
+      id: "server-1",
+      name: "web1",
+      base_url: "https://whm-1.example.com:2087",
+      api_username: "root",
+      ssh_username: null,
+      ssh_port: null,
+      ssh_host_key_fingerprint: null,
+      has_ssh_password: false,
+      has_ssh_private_key: false,
+      verify_ssl: true,
+      updated_at: "2026-01-02T03:04:05.000Z",
+    };
+    const secondServer = {
+      ...firstServer,
+      id: "server-2",
+      name: "web2",
+      base_url: "https://whm-2.example.com:2087",
+    };
+
+    const listResponse = new Response(null, { status: 200 });
+    const deleteResponse = new Response(null, { status: 200 });
+
+    mocks.fetchWithAuth.mockImplementation(async (path: string, init?: RequestInit) => {
+      if (path === "/admin/whm/servers" && !init) {
+        return listResponse;
+      }
+      if (path === "/admin/whm/servers/server-1" && init?.method === "DELETE") {
+        return deleteResponse;
+      }
+      throw new Error(`Unexpected fetchWithAuth path: ${path}`);
+    });
+
+    mocks.jsonOrThrow.mockImplementation(async (response: Response) => {
+      if (response === listResponse) {
+        return { servers: [firstServer, secondServer] };
+      }
+      if (response === deleteResponse) {
+        return { ok: true };
+      }
+      throw new Error("Unexpected jsonOrThrow response");
+    });
+
+    render(<WhmServersAdminPage />);
+
+    expect(await screen.findByRole("button", { name: "Manage web1" })).toBeInTheDocument();
+    expect(screen.getAllByText("web1")).toHaveLength(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete server" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => {
+      expect(mocks.fetchWithAuth).toHaveBeenCalledWith("/admin/whm/servers/server-1", { method: "DELETE" });
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByText("web2")).toHaveLength(2);
+    });
+    expect(screen.queryByText("No server selected")).not.toBeInTheDocument();
   });
 });

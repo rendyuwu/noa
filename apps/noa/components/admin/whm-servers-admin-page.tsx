@@ -597,11 +597,16 @@ export function WhmServersAdminPage() {
     setConfirmDeleteOpen(false);
     try {
       const deletedServer = selectedServer;
+      const deletedIndex = sortedServers.findIndex((server) => server.id === selectedServer.id);
+      const remainingServers = sortedServers.filter((server) => server.id !== selectedServer.id);
+      const nextSelectedServerId = remainingServers.length
+        ? remainingServers[Math.min(deletedIndex, remainingServers.length - 1)]?.id ?? null
+        : null;
       const response = await fetchWithAuth(`/admin/whm/servers/${selectedServer.id}`, { method: "DELETE" });
       await jsonOrThrow<{ ok: boolean }>(response);
       setServers((current) => current.filter((server) => server.id !== selectedServer.id));
+      setSelectedServerId(nextSelectedServerId);
       toast.success(`Deleted ${deletedServer?.name ?? "WHM server"}.`);
-      setSelectedServerId(null);
     } catch (error) {
       toast.error(toErrorMessage(error, "Unable to delete WHM server"));
     }
@@ -676,106 +681,146 @@ export function WhmServersAdminPage() {
         </DialogContent>
       </Dialog>
 
-      <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
-        <table className="min-w-full divide-y divide-border text-sm">
-          <thead>
-            <tr className="bg-bg/60 text-left text-xs uppercase tracking-[0.08em] text-muted">
-              <th className="px-3 py-2">Name</th>
-              <th className="px-3 py-2">Base URL</th>
-              <th className="px-3 py-2">API user</th>
-              <th className="px-3 py-2">SSL</th>
-              <th className="px-3 py-2">Updated</th>
-              <th className="px-3 py-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border">
-            {loading ? (
-              ["loading-row-1", "loading-row-2", "loading-row-3"].map((rowKey) => (
-                <tr key={rowKey}>
-                  <td className="px-3 py-3"><Skeleton className="h-4 w-32" /></td>
-                  <td className="px-3 py-3"><Skeleton className="h-4 w-48" /></td>
-                  <td className="px-3 py-3"><Skeleton className="h-4 w-24" /></td>
-                  <td className="px-3 py-3"><Skeleton className="h-4 w-10" /></td>
-                  <td className="px-3 py-3"><Skeleton className="h-4 w-36" /></td>
-                  <td className="px-3 py-3"><Skeleton className="h-8 w-24" /></td>
-                </tr>
-              ))
-            ) : sortedServers.length === 0 ? (
-              <tr>
-                <td className="px-3 py-3 text-muted" colSpan={6}>
-                  No WHM servers configured.
-                </td>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(20rem,1fr)]">
+        <div className="overflow-x-auto rounded-2xl border border-border bg-surface">
+          <table className="min-w-full divide-y divide-border text-sm">
+            <thead>
+              <tr className="bg-bg/60 text-left text-xs uppercase tracking-[0.08em] text-muted">
+                <th className="px-3 py-2">Name</th>
+                <th className="px-3 py-2">Base URL</th>
+                <th className="px-3 py-2">API user</th>
+                <th className="px-3 py-2">SSL</th>
+                <th className="px-3 py-2">Updated</th>
+                <th className="px-3 py-2">Actions</th>
               </tr>
-            ) : (
-              sortedServers.map((server) => (
-                <tr
-                  key={server.id}
-                  className={`transition-colors hover:bg-surface-2/50${selectedServerId === server.id ? " bg-accent/5" : ""}`}
-                  onClick={() => setSelectedServerId(server.id)}
-                >
-                  <td className="px-3 py-3 font-medium text-text">{server.name}</td>
-                  <td className="px-3 py-3 text-muted">{server.base_url}</td>
-                  <td className="px-3 py-3 text-text">{server.api_username}</td>
-                  <td className="px-3 py-3 text-text">{server.verify_ssl ? "on" : "off"}</td>
-                  <td className="px-3 py-3 text-muted">{formatTimestampUTC(server.updated_at)}</td>
-                  <td className="px-3 py-3">
-                    <Button type="button" variant="link" size="sm" onClick={() => setSelectedServerId(server.id)}>
-                      Manage {server.name}
-                    </Button>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {loading ? (
+                ["loading-row-1", "loading-row-2", "loading-row-3"].map((rowKey) => (
+                  <tr key={rowKey}>
+                    <td className="px-3 py-3"><Skeleton className="h-4 w-32" /></td>
+                    <td className="px-3 py-3"><Skeleton className="h-4 w-48" /></td>
+                    <td className="px-3 py-3"><Skeleton className="h-4 w-24" /></td>
+                    <td className="px-3 py-3"><Skeleton className="h-4 w-10" /></td>
+                    <td className="px-3 py-3"><Skeleton className="h-4 w-36" /></td>
+                    <td className="px-3 py-3"><Skeleton className="h-8 w-24" /></td>
+                  </tr>
+                ))
+              ) : sortedServers.length === 0 ? (
+                <tr>
+                  <td className="px-3 py-3 text-muted" colSpan={6}>
+                    No WHM servers configured.
                   </td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-
-      {selectedServer ? (
-        <div className="rounded-2xl border border-border bg-surface p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h3 className="text-base font-semibold text-text">Server details</h3>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => void validateServer(selectedServer.id)}
-                disabled={validateBusyId === selectedServer.id}
-              >
-                {validateBusyId === selectedServer.id ? "Validating…" : "Validate"}
-              </Button>
-              <Button type="button" variant="outline" size="sm" onClick={openEdit}>
-                Edit server
-              </Button>
-              <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
-                <AlertDialogTrigger asChild>
-                  <Button type="button" variant="destructive-outline" size="sm">
-                    Delete server
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete server</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Delete {selectedServer.name}? This cannot be undone.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => void deleteServer()}>Delete</AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            </div>
-          </div>
-
-          {selectedValidationResult ? (
-            <Alert tone={selectedValidationResult.ok ? "success" : "warning"} className="mt-3">
-              <AlertDescription>{selectedValidationResult.message}</AlertDescription>
-            </Alert>
-          ) : null}
+              ) : (
+                sortedServers.map((server) => (
+                  <tr
+                    key={server.id}
+                    className={`transition-colors hover:bg-surface-2/50${selectedServerId === server.id ? " bg-accent/5" : ""}`}
+                    onClick={() => setSelectedServerId(server.id)}
+                  >
+                    <td className="px-3 py-3 font-medium text-text">{server.name}</td>
+                    <td className="px-3 py-3 text-muted">{server.base_url}</td>
+                    <td className="px-3 py-3 text-text">{server.api_username}</td>
+                    <td className="px-3 py-3 text-text">{server.verify_ssl ? "on" : "off"}</td>
+                    <td className="px-3 py-3 text-muted">{formatTimestampUTC(server.updated_at)}</td>
+                    <td className="px-3 py-3">
+                      <Button type="button" variant="link" size="sm" onClick={() => setSelectedServerId(server.id)}>
+                        Manage {server.name}
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      ) : null}
+
+        <aside className="rounded-2xl border border-border bg-surface p-4">
+          {selectedServer ? (
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted">Selected server</p>
+                <h3 className="mt-1 text-base font-semibold text-text">{selectedServer.name}</h3>
+              </div>
+
+              <dl className="grid gap-3 text-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <dt className="text-muted">Base URL</dt>
+                  <dd className="text-right text-text">{selectedServer.base_url}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <dt className="text-muted">API user</dt>
+                  <dd className="text-right text-text">{selectedServer.api_username}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <dt className="text-muted">SSL</dt>
+                  <dd className="text-right text-text">{selectedServer.verify_ssl ? "on" : "off"}</dd>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <dt className="text-muted">SSH</dt>
+                  <dd className="text-right text-text">
+                    {selectedServer.has_ssh_password || selectedServer.has_ssh_private_key ? "configured" : "not configured"}
+                  </dd>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <dt className="text-muted">Updated</dt>
+                  <dd className="text-right text-text">{formatTimestampUTC(selectedServer.updated_at)}</dd>
+                </div>
+              </dl>
+
+              {selectedValidationResult ? (
+                <Alert tone={selectedValidationResult.ok ? "success" : "warning"}>
+                  <AlertDescription>{selectedValidationResult.message}</AlertDescription>
+                </Alert>
+              ) : null}
+
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-muted">Management actions</p>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void validateServer(selectedServer.id)}
+                    disabled={validateBusyId === selectedServer.id}
+                  >
+                    {validateBusyId === selectedServer.id ? "Validating…" : "Validate"}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={openEdit}>
+                    Edit server
+                  </Button>
+                  <AlertDialog open={confirmDeleteOpen} onOpenChange={setConfirmDeleteOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button type="button" variant="destructive-outline" size="sm">
+                        Delete server
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete server</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Delete {selectedServer.name}? This cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction onClick={() => void deleteServer()}>Delete</AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              <p className="text-xs uppercase tracking-[0.08em] text-muted">Selected server</p>
+              <h3 className="text-base font-semibold text-text">No server selected</h3>
+              <p className="text-sm text-muted">Choose a row to inspect and manage its connection profile.</p>
+            </div>
+          )}
+        </aside>
+      </div>
 
       <Dialog
         open={editOpen && Boolean(selectedServer)}
