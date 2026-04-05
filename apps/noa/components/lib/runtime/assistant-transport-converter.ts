@@ -80,6 +80,11 @@ const partsToContent = (
       continue;
     }
 
+    if (type === "reasoning") {
+      content.push({ type: "reasoning", text: coerceString(part.text) ?? "" });
+      continue;
+    }
+
     if (type === "image") {
       const image = coerceString(part.image);
       if (image) {

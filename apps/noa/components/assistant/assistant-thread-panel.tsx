@@ -11,9 +11,9 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
+import { AssistantChainOfThought } from "./assistant-chain-of-thought";
 import { EmptyState } from "./empty-state";
 import { MessageActions } from "./message-actions";
-import { ToolFallback, ToolGroup } from "./assistant-tool-ui";
 
 function UserMessage() {
   return (
@@ -22,15 +22,6 @@ function UserMessage() {
         <MessagePrimitive.Parts />
       </div>
     </MessagePrimitive.Root>
-  );
-}
-
-function MarkdownText() {
-  return (
-    <MarkdownTextPrimitive
-      remarkPlugins={[remarkGfm]}
-      className="aui-md-root font-ui text-text [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-1.5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-1 [&_ul]:list-disc"
-    />
   );
 }
 
@@ -46,13 +37,10 @@ function AssistantMessageWithActions() {
   return (
     <MessagePrimitive.Root className="group/msg mb-4">
       <div className="max-w-[92%] font-ui text-sm text-text">
-        <MessagePrimitive.Parts
-          components={{
-            Text: MarkdownText,
-            ToolGroup,
-            tools: { Fallback: ToolFallback },
-          }}
-        />
+        <MessagePrimitive.Parts>
+          {({ part }) => (part.type === "text" ? <MarkdownTextPrimitive remarkPlugins={[remarkGfm]} className="aui-md-root font-ui text-text [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-1.5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-1 [&_ul]:list-disc" /> : null)}
+        </MessagePrimitive.Parts>
+        <AssistantChainOfThought />
         <div className="mt-1">
           <MessageActions content={textContent} />
         </div>

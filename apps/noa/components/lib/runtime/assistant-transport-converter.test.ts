@@ -42,6 +42,39 @@ describe("convertAssistantState", () => {
     expect(toolPart?.argsText).toBe("{}");
   });
 
+  it("preserves reasoning parts for chain-of-thought rendering", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [
+              {
+                type: "reasoning",
+                text: "Validating the target server before making changes.",
+              },
+              {
+                type: "text",
+                text: "I’ll check the target first.",
+              },
+            ],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    const message = converted.messages[0];
+    const reasoningPart = (message as any)?.content?.find?.((part: any) => part?.type === "reasoning");
+
+    expect(reasoningPart).toEqual({
+      type: "reasoning",
+      text: "Validating the target server before making changes.",
+    });
+  });
+
   it("uses deterministic fallback toolCallId when missing", () => {
     const converted = convertAssistantState(
       {
