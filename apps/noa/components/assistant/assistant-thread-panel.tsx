@@ -6,6 +6,7 @@ import { AlertTriangle, ArrowUp, LoaderCircle, Paperclip, RefreshCw, Square } fr
 import remarkGfm from "remark-gfm";
 
 import { useThreadHydration } from "@/components/lib/runtime/thread-hydration";
+import { shouldShowThreadEmptyState } from "@/components/lib/runtime/thread-runtime-state";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -63,6 +64,11 @@ function AssistantMessageWithActions() {
 export function ThreadPanel() {
   const { errorMessage, isHydrating, retry } = useThreadHydration();
   const isRunning = useAssistantState(({ thread }) => Boolean(thread?.isRunning));
+  const messageCount = useAssistantState(({ thread }) => thread?.messages.length ?? 0);
+  const showEmptyState = shouldShowThreadEmptyState({
+    isHydrating,
+    hasMessages: messageCount > 0,
+  });
 
   return (
     <ThreadPrimitive.Root className="flex flex-1 flex-col">
@@ -90,9 +96,11 @@ export function ThreadPanel() {
             </Alert>
           ) : null}
 
-          <ThreadPrimitive.Empty>
-            <EmptyState />
-          </ThreadPrimitive.Empty>
+          {showEmptyState ? (
+            <ThreadPrimitive.Empty>
+              <EmptyState />
+            </ThreadPrimitive.Empty>
+          ) : null}
 
           <ThreadPrimitive.Messages
             components={{ UserMessage, AssistantMessage: AssistantMessageWithActions }}
