@@ -31,12 +31,12 @@ export function ChatThreadItem() {
   const isUntitled = !title || !title.trim();
 
   return (
-    <ThreadListItemPrimitive.Root className="group/thread relative mb-0.5">
+    <ThreadListItemPrimitive.Root className="group/thread relative mb-1">
       <ThreadListItemPrimitive.Trigger
         className={[
-          "block w-full truncate rounded-lg px-3 py-2 pr-8 text-left font-ui text-sm transition",
+          "block w-full truncate rounded-xl border border-transparent px-3 py-2.5 pr-10 text-left font-ui text-sm transition",
           isActive
-            ? "bg-surface-2 font-medium text-text"
+            ? "border-border bg-surface-2 font-medium text-text shadow-soft"
             : "text-muted hover:bg-surface-2/60 hover:text-text",
           isUntitled ? "italic" : "",
         ].join(" ")}
@@ -48,7 +48,8 @@ export function ChatThreadItem() {
       <div
         className={[
           "absolute right-1 top-1/2 -translate-y-1/2",
-          menuOpen ? "opacity-100" : "opacity-0 group-hover/thread:opacity-100",
+          "opacity-100 transition-opacity md:opacity-0 md:group-hover/thread:opacity-100 md:group-focus-within/thread:opacity-100",
+          menuOpen ? "opacity-100" : "",
           "transition-opacity",
         ].join(" ")}
       >

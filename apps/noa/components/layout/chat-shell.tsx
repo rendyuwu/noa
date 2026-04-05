@@ -59,11 +59,13 @@ export function ChatShell({ children, user }: ChatShellProps) {
   }, [collapsed]);
 
   useEffect(() => {
-    setMobileOpen(false);
+    if (pathname) {
+      setMobileOpen(false);
+    }
   }, [pathname]);
 
   const Sidebar = (
-    <aside className="flex h-full flex-col bg-surface text-sm">
+    <aside className="flex h-full min-h-0 flex-col bg-surface text-sm">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-3">
         {!collapsed && (
@@ -114,31 +116,36 @@ export function ChatShell({ children, user }: ChatShellProps) {
 
       {/* Thread list with heading */}
       {!collapsed && (
-        <div className="flex flex-1 flex-col overflow-hidden">
-          <p className="px-4 pb-1 pt-3 font-ui text-xs font-medium uppercase tracking-wider text-muted/70">
+        <section className="flex min-h-0 flex-1 flex-col overflow-hidden" aria-labelledby="chat-recents-heading">
+          <p
+            id="chat-recents-heading"
+            className="px-4 pb-1 pt-3 font-ui text-xs font-medium uppercase tracking-wider text-muted/70"
+          >
             Recents
           </p>
-          <ScrollArea className="flex-1 px-2">
+          <ScrollArea className="h-full px-2">
             <ThreadListPrimitive.Root>
               <ThreadListSkeleton />
               <ThreadListPrimitive.Items components={{ ThreadListItem: ChatThreadItem }} />
             </ThreadListPrimitive.Root>
           </ScrollArea>
-        </div>
+        </section>
       )}
 
       {/* User profile footer */}
-      <ChatUserProfile user={user} collapsed={collapsed} isAdmin={isAdmin} />
+      <div className="mt-auto border-t border-border/60">
+        <ChatUserProfile user={user} collapsed={collapsed} isAdmin={isAdmin} />
+      </div>
     </aside>
   );
 
   return (
     <TooltipProvider delayDuration={200}>
-      <div className="flex min-h-dvh bg-bg text-text">
+      <div className="flex h-dvh overflow-hidden bg-bg text-text">
         {/* Desktop sidebar */}
         <div
           className={[
-            "hidden transition-[width] duration-200 ease-in-out md:block",
+            "hidden h-full shrink-0 overflow-hidden transition-[width] duration-200 ease-in-out md:block",
             collapsed ? "md:w-[68px]" : "md:w-[260px]",
           ].join(" ")}
         >
@@ -159,7 +166,7 @@ export function ChatShell({ children, user }: ChatShellProps) {
         )}
 
         {/* Main canvas */}
-        <div className="flex min-h-dvh flex-1 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
           {/* Mobile header */}
           <div className="flex items-center gap-2 px-3 py-2 md:hidden">
             <Button
@@ -176,7 +183,7 @@ export function ChatShell({ children, user }: ChatShellProps) {
           </div>
 
           {/* Content */}
-          <main className="flex flex-1 flex-col">{children}</main>
+          <main className="flex min-h-0 flex-1 flex-col overflow-hidden">{children}</main>
         </div>
       </div>
     </TooltipProvider>
