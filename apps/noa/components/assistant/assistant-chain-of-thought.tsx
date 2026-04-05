@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ChainOfThoughtPrimitive, useAuiState } from "@assistant-ui/react";
+import { ChainOfThoughtPrimitive, useAui, useAuiState } from "@assistant-ui/react";
 import { ChevronDown } from "lucide-react";
 
 import { ToolFallback } from "./assistant-tool-ui";
@@ -15,7 +15,13 @@ function Layout({ children }: { children?: ReactNode }) {
 }
 
 export function AssistantChainOfThought() {
-  const isCollapsed = useAuiState((state) => state.chainOfThought.collapsed);
+  const aui = useAui();
+  const hasChainOfThought = Boolean(aui.chainOfThought.source);
+  const isCollapsed = useAuiState((state) => (hasChainOfThought ? state.chainOfThought.collapsed : true));
+
+  if (!hasChainOfThought) {
+    return null;
+  }
 
   return (
     <ChainOfThoughtPrimitive.Root className="mt-3 overflow-hidden rounded-2xl border border-border bg-surface">
