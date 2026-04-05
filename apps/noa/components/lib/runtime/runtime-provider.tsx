@@ -16,6 +16,7 @@ import { reportClientError } from "@/components/lib/observability/error-reportin
 
 import { convertAssistantState, type AssistantState } from "./assistant-transport-converter";
 import { getActiveThreadListItem } from "./assistant-thread-state";
+import { getThreadRuntimeState } from "./thread-runtime-state";
 import { ThreadHydrationProvider } from "./thread-hydration";
 import { threadListAdapter } from "./thread-list-adapter";
 
@@ -52,12 +53,20 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
     retryVersion: -1,
   });
   const generatedTitles = useRef<Set<string>>(new Set());
-
-  const canAttemptHydration = Boolean(remoteId) && messageCount === 0 && hydratedRemoteId !== remoteId;
-  const shouldHydrate = Boolean(remoteId) && canAttemptHydration && hydrationInFlightRemoteId !== remoteId && (
-    attemptedHydration.current.remoteId !== remoteId || attemptedHydration.current.retryVersion !== retryVersion
-  );
-  const isHydrating = Boolean(remoteId) && (hydrationInFlightRemoteId === remoteId || shouldHydrate);
+  const runtimeState = getThreadRuntimeState({
+    remoteId,
+    messageCount,
+    hydratedRemoteId,
+    hydrationInFlightRemoteId,
+    attemptedRemoteId: attemptedHydration.current.remoteId,
+    attemptedRetryVersion: attemptedHydration.current.retryVersion,
+    retryVersion,
+    pathname: "",
+    lastRoutedRemoteId: null,
+    hasRenderedMessage: messageCount > 0,
+  });
+  const shouldHydrate = runtimeState.shouldHydrate;
+  const isHydrating = runtimeState.isHydrating;
 
   const retryHydration = useCallback(() => {
     if (!remoteId) {
@@ -182,27 +191,30 @@ function ThreadUrlSync() {
   const router = useRouter();
   const pathname = usePathname();
   const remoteId = useAssistantState(({ threads }) => getActiveThreadListItem(threads)?.remoteId ?? null);
+  const messageCount = useAssistantState(({ thread }) => thread.messages.length);
   const lastRoutedRemoteId = useRef<string | null>(null);
 
   useEffect(() => {
-    const isAssistantRoute = pathname === "/assistant" || pathname.startsWith("/assistant/");
-    if (!isAssistantRoute || !remoteId) {
-      return;
-    }
+    const runtimeState = getThreadRuntimeState({
+      remoteId,
+      messageCount,
+      hydratedRemoteId: remoteId,
+      hydrationInFlightRemoteId: null,
+      attemptedRemoteId: null,
+      attemptedRetryVersion: -1,
+      retryVersion: 0,
+      pathname,
+      lastRoutedRemoteId: lastRoutedRemoteId.current,
+      hasRenderedMessage: messageCount > 0,
+    });
 
-    const desired = `/assistant/${remoteId}`;
-    if (pathname === desired) {
-      lastRoutedRemoteId.current = remoteId;
-      return;
-    }
-
-    if (lastRoutedRemoteId.current === remoteId) {
+    if (!runtimeState.shouldReplaceRoute || !runtimeState.desiredPath) {
       return;
     }
 
     lastRoutedRemoteId.current = remoteId;
-    router.replace(desired, { scroll: false });
-  }, [pathname, remoteId, router]);
+    router.replace(runtimeState.desiredPath, { scroll: false });
+  }, [messageCount, pathname, remoteId, router]);
 
   return null;
 }
