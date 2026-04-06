@@ -9,6 +9,7 @@ export type ThreadRuntimeStateInput = {
   pathname: string;
   lastRoutedRemoteId: string | null;
   hasRenderedMessage: boolean;
+  isRunning: boolean;
 };
 
 export function getThreadRuntimeState(input: ThreadRuntimeStateInput) {
@@ -31,11 +32,12 @@ export function getThreadRuntimeState(input: ThreadRuntimeStateInput) {
   const desiredPath = input.remoteId ? `/assistant/${input.remoteId}` : null;
 
   const shouldReplaceRoute = Boolean(
-    desiredPath
-      && isAssistantRoute
-      && input.pathname !== desiredPath
-      && input.lastRoutedRemoteId !== input.remoteId
-      && input.hasRenderedMessage,
+      desiredPath
+        && isAssistantRoute
+        && input.pathname !== desiredPath
+        && input.lastRoutedRemoteId !== input.remoteId
+        && input.hasRenderedMessage
+        && !input.isRunning,
   );
 
   return {

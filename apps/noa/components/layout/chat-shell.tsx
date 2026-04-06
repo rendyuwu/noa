@@ -1,9 +1,9 @@
 "use client";
 
 import { type ReactNode, useEffect, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { Menu, PanelLeftClose, PanelLeftOpen, SquarePen, X } from "lucide-react";
-import { ThreadListPrimitive, useAssistantState } from "@assistant-ui/react";
+import { ThreadListPrimitive, useAssistantApi, useAssistantState } from "@assistant-ui/react";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -45,6 +45,8 @@ type ChatShellProps = {
 
 export function ChatShell({ children, user }: ChatShellProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const api = useAssistantApi();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
   const isAdmin = user?.roles?.includes("admin") ?? false;
@@ -64,6 +66,11 @@ export function ChatShell({ children, user }: ChatShellProps) {
     }
   }, [pathname]);
 
+  const handleNewChat = async () => {
+    await api.threads().switchToNewThread();
+    router.replace("/assistant", { scroll: false });
+  };
+
   const Sidebar = (
     <aside className="flex h-full min-h-0 flex-col bg-surface text-sm">
       {/* Header */}
@@ -72,21 +79,20 @@ export function ChatShell({ children, user }: ChatShellProps) {
           <span className="font-ui text-base font-semibold tracking-tight text-text">NOA</span>
         )}
         <div className="flex items-center gap-1">
-          <ThreadListPrimitive.New asChild>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 rounded-lg text-muted hover:bg-surface-2 hover:text-text"
-                  aria-label="New chat"
-                >
-                  <SquarePen className="size-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side={collapsed ? "right" : "bottom"}>New chat</TooltipContent>
-            </Tooltip>
-          </ThreadListPrimitive.New>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-8 rounded-lg text-muted hover:bg-surface-2 hover:text-text"
+                aria-label="New chat"
+                onClick={() => void handleNewChat()}
+              >
+                <SquarePen className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side={collapsed ? "right" : "bottom"}>New chat</TooltipContent>
+          </Tooltip>
           <Button
             variant="ghost"
             size="icon"
@@ -123,7 +129,7 @@ export function ChatShell({ children, user }: ChatShellProps) {
           >
             Recents
           </p>
-          <ScrollArea className="h-full px-2">
+          <ScrollArea className="h-full px-2 [&_[data-radix-scroll-area-viewport]]:overflow-x-hidden">
             <ThreadListPrimitive.Root>
               <ThreadListSkeleton />
               <ThreadListPrimitive.Items components={{ ThreadListItem: ChatThreadItem }} />

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { createContext, useContext } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -9,27 +10,66 @@ const mocks = vi.hoisted(() => ({
   retry: vi.fn(),
 }));
 
+const ChainOfThoughtScopeContext = createContext(false);
+
 vi.mock("@assistant-ui/react", () => ({
   makeAssistantToolUI: () => () => null,
+  ChainOfThoughtPrimitive: {
+    Root: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    AccordionTrigger: ({ children, ...props }: any) => {
+      if (!useContext(ChainOfThoughtScopeContext)) {
+        throw new Error('The current scope does not have a "chainOfThought" property.');
+      }
+
+      return <button type="button" {...props}>{children}</button>;
+    },
+    Parts: ({ components }: any) => (
+      <div>
+        <components.Reasoning text="Tracing the WHM validation request." />
+        <components.tools.Fallback toolName="whm_validate_server" status={{ type: "running" }} />
+      </div>
+    ),
+  },
   ComposerPrimitive: {
     Root: ({ children }: any) => <div>{children}</div>,
     Input: (props: any) => <textarea aria-label="Ask NOA…" {...props} />,
-    Send: ({ children }: any) => <div>{children}</div>,
-    Cancel: ({ children }: any) => <div>{children}</div>,
+    Send: ({ children, ...props }: any) => <button type="button" {...props}>{children}</button>,
+    Cancel: ({ children, ...props }: any) => <button type="button" {...props}>{children}</button>,
   },
   MessagePrimitive: {
     Root: ({ children }: any) => <div>{children}</div>,
-    Parts: () => null,
+    Parts: ({ components }: any) => (
+      <div>
+        {components?.Text ? <components.Text /> : null}
+        {components?.ChainOfThought ? (
+          <ChainOfThoughtScopeContext.Provider value={true}>
+            <components.ChainOfThought />
+          </ChainOfThoughtScopeContext.Provider>
+        ) : null}
+      </div>
+    ),
   },
   ThreadPrimitive: {
     Root: ({ children }: any) => <div>{children}</div>,
     Viewport: ({ children }: any) => <div>{children}</div>,
     Empty: ({ children }: any) => <div>{children}</div>,
-    Messages: () => <div data-testid="thread-messages" />,
+    Messages: ({ components }: any) => (
+      <div data-testid="thread-messages">
+        {components?.AssistantMessage ? <components.AssistantMessage /> : null}
+      </div>
+    ),
   },
   useAssistantState: (selector: any) =>
     selector({ thread: { messages: Array.from({ length: mocks.messageCount }), isRunning: mocks.isRunning } }),
-  useMessage: () => ({ content: [] }),
+  useMessage: () => ({ content: [{ type: "text", text: "Hello" }] }),
+}));
+
+vi.mock("@assistant-ui/react-markdown", () => ({
+  MarkdownTextPrimitive: ({ children }: any) => <div>{children}</div>,
+}));
+
+vi.mock("@/components/ui/button", () => ({
+  Button: ({ children, ...props }: any) => <button {...props}>{children}</button>,
 }));
 
 vi.mock("@/components/lib/runtime/thread-hydration", () => ({
@@ -68,5 +108,21 @@ describe("ThreadPanel", () => {
 
     expect(screen.getByText("Restoring conversation…")).toBeInTheDocument();
     expect(screen.queryByText("EMPTY STATE")).not.toBeInTheDocument();
+  });
+
+  it("renders chain-of-thought from the scoped message parts path", () => {
+    mocks.messageCount = 1;
+
+    render(<ThreadPanel />);
+
+    expect(screen.getByRole("button", { name: /Thinking/ })).toBeInTheDocument();
+  });
+
+  it("uses a non-submit send button to avoid double-submit on Enter", () => {
+    mocks.messageCount = 1;
+
+    render(<ThreadPanel />);
+
+    expect(screen.getByRole("button", { name: "Send" })).toHaveAttribute("type", "button");
   });
 });

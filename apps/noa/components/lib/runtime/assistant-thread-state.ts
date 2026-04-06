@@ -2,7 +2,13 @@ export function getActiveThreadListItem(
   threads:
     | {
         mainThreadId?: string | null;
-        threadItems?: ReadonlyArray<{ id?: string | null; remoteId?: string | null; status?: string | null; title?: string | null }>;
+        threadItems?: ReadonlyArray<{
+          id?: string | null;
+          remoteId?: string | null;
+          externalId?: string | null;
+          status?: string | null;
+          title?: string | null;
+        }>;
       }
     | null
     | undefined,
@@ -14,5 +20,9 @@ export function getActiveThreadListItem(
     return null;
   }
 
-  return threadItems.find((item) => item?.id === mainThreadId) ?? null;
+  return (
+    threadItems.find((item) => item?.id === mainThreadId) ??
+    threadItems.find((item) => item?.remoteId === mainThreadId || item?.externalId === mainThreadId) ??
+    null
+  );
 }

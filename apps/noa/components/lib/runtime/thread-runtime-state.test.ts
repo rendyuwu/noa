@@ -16,6 +16,7 @@ describe("thread runtime state", () => {
         pathname: "/assistant/thread-1",
         lastRoutedRemoteId: null,
         hasRenderedMessage: false,
+        isRunning: false,
       }),
     ).toMatchObject({
       shouldHydrate: true,
@@ -38,6 +39,7 @@ describe("thread runtime state", () => {
         pathname: "/assistant",
         lastRoutedRemoteId: null,
         hasRenderedMessage: false,
+        isRunning: false,
       }).shouldReplaceRoute,
     ).toBe(false);
   });
@@ -55,8 +57,48 @@ describe("thread runtime state", () => {
         pathname: "/assistant",
         lastRoutedRemoteId: null,
         hasRenderedMessage: true,
+        isRunning: false,
       }).shouldReplaceRoute,
     ).toBe(true);
+  });
+
+  it("defers route replacement while the thread is still running", () => {
+    expect(
+      getThreadRuntimeState({
+        remoteId: "thread-2",
+        messageCount: 1,
+        hydratedRemoteId: null,
+        hydrationInFlightRemoteId: null,
+        attemptedRemoteId: null,
+        attemptedRetryVersion: -1,
+        retryVersion: 0,
+        pathname: "/assistant",
+        lastRoutedRemoteId: null,
+        hasRenderedMessage: true,
+        isRunning: true,
+      }).shouldReplaceRoute,
+    ).toBe(false);
+  });
+
+  it("stops hydrating once the remote thread has been restored", () => {
+    expect(
+      getThreadRuntimeState({
+        remoteId: "thread-2",
+        messageCount: 0,
+        hydratedRemoteId: "thread-2",
+        hydrationInFlightRemoteId: null,
+        attemptedRemoteId: "thread-2",
+        attemptedRetryVersion: 0,
+        retryVersion: 0,
+        pathname: "/assistant/thread-2",
+        lastRoutedRemoteId: null,
+        hasRenderedMessage: false,
+        isRunning: false,
+      }),
+    ).toMatchObject({
+      shouldHydrate: false,
+      isHydrating: false,
+    });
   });
 
   it("hides the empty state while a persisted thread is hydrating", () => {

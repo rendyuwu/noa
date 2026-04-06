@@ -13,6 +13,7 @@ export function RouteThreadSync({ routeThreadId }: { routeThreadId?: string | nu
   const api = useAssistantApi();
   const router = useRouter();
   const activeRemoteId = useAssistantState(({ threads }) => getActiveThreadListItem(threads)?.remoteId ?? null);
+  const messageCount = useAssistantState(({ thread }) => thread.messages.length);
   const [routeError, setRouteError] = useState<string | null>(null);
   const lastRouteKey = useRef<string | null>(null);
 
@@ -35,6 +36,11 @@ export function RouteThreadSync({ routeThreadId }: { routeThreadId?: string | nu
         }
 
         if (activeRemoteId === normalizedRouteThreadId) {
+          setRouteError(null);
+          return;
+        }
+
+        if (!activeRemoteId && messageCount > 0) {
           setRouteError(null);
           return;
         }
@@ -63,7 +69,7 @@ export function RouteThreadSync({ routeThreadId }: { routeThreadId?: string | nu
     return () => {
       cancelled = true;
     };
-  }, [activeRemoteId, api, routeThreadId, router]);
+  }, [activeRemoteId, api, messageCount, routeThreadId, router]);
 
   if (!routeError) {
     return null;

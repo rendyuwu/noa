@@ -2,9 +2,7 @@
 
 import { Check, Circle, Clock3, PauseCircle, XCircle } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { makeAssistantToolUI, useAssistantState } from "@assistant-ui/react";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Badge } from "@/components/ui/badge";
+import { makeAssistantToolUI } from "@assistant-ui/react";
 
 export type WorkflowTodoStatus =
   | "pending"
@@ -164,70 +162,7 @@ export function extractLatestWorkflowTodos(messages: unknown): WorkflowTodoItem[
   return [];
 }
 
-function WorkflowTodoInline({ todos }: { todos: WorkflowTodoItem[] }) {
-  const completedCount = todos.filter((todo) => todo.status === "completed").length;
-
-  return (
-    <div className="mt-3 rounded-xl border border-border bg-bg/20 px-3 py-3">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-sm font-medium text-text">Workflow progress</div>
-        <Badge variant="muted" className="px-2 py-0.5 text-[11px]">
-          {completedCount}/{todos.length}
-        </Badge>
-      </div>
-      <ul className="mt-3 space-y-2">
-        {todos.map((todo, index) => {
-          const style = getWorkflowTodoStatusStyle(todo.status);
-          return (
-            <li key={`${todo.content}-${index}`} className="flex items-start justify-between gap-2">
-              <div className="min-w-0">
-                <div className="text-sm text-text">{todo.content}</div>
-                <div className="mt-0.5 text-[11px] uppercase tracking-[0.08em] text-muted">{todo.priority}</div>
-              </div>
-              <Badge variant={style.variant} className="gap-1.5 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.08em]">
-                <style.Icon className="size-3" />
-                <span>{style.label}</span>
-              </Badge>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
-  );
-}
-
 export const WorkflowTodoToolUI = makeAssistantToolUI({
   toolName: "update_workflow_todo",
-  render: ({ args, result }: { args: Record<string, unknown>; result?: unknown }) => {
-    const threadMessages = useAssistantState((state) => state.thread?.messages);
-
-    const canonicalTodos = extractLatestCanonicalWorkflowTodos(threadMessages);
-    const argsTodos = coerceTodos(args.todos);
-    const resultTodos =
-      result && typeof result === "object"
-        ? coerceTodos((result as Record<string, unknown>).todos)
-        : undefined;
-
-    const todos = canonicalTodos ?? argsTodos ?? resultTodos ?? [];
-
-    const hasBlocked = todos.some((todo) => isWorkflowTodoBlocked(todo.status));
-
-    if (!todos.length) {
-      return null;
-    }
-
-    return (
-      <div data-testid="workflow-todo-tool-ui">
-        {hasBlocked ? (
-          <Alert tone="warning" className="mt-3">
-            <div>
-              <AlertTitle>Workflow paused</AlertTitle>
-              <AlertDescription>Workflow is waiting on external input.</AlertDescription>
-            </div>
-          </Alert>
-        ) : null}
-        <WorkflowTodoInline todos={todos} />
-      </div>
-    );
-  },
+  render: () => null,
 });

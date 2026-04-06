@@ -37,10 +37,17 @@ function AssistantMessageWithActions() {
   return (
     <MessagePrimitive.Root className="group/msg mb-4">
       <div className="max-w-[92%] font-ui text-sm text-text">
-        <MessagePrimitive.Parts>
-          {({ part }) => (part.type === "text" ? <MarkdownTextPrimitive remarkPlugins={[remarkGfm]} className="aui-md-root font-ui text-text [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-1.5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-1 [&_ul]:list-disc" /> : null)}
-        </MessagePrimitive.Parts>
-        <AssistantChainOfThought />
+        <MessagePrimitive.Parts
+          components={{
+            Text: () => (
+              <MarkdownTextPrimitive
+                remarkPlugins={[remarkGfm]}
+                className="aui-md-root font-ui text-text [&_a]:text-accent [&_a]:underline [&_a]:underline-offset-2 [&_code]:rounded [&_code]:bg-surface-2 [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-sm [&_h1]:mb-2 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-1.5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1 [&_h3]:text-sm [&_h3]:font-semibold [&_li]:ml-4 [&_ol]:my-1 [&_ol]:list-decimal [&_p]:my-1 [&_pre]:overflow-x-auto [&_pre]:rounded-xl [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-2 [&_pre]:p-3 [&_pre_code]:bg-transparent [&_pre_code]:p-0 [&_ul]:my-1 [&_ul]:list-disc"
+              />
+            ),
+            ChainOfThought: AssistantChainOfThought,
+          }}
+        />
         <div className="mt-1">
           <MessageActions content={textContent} />
         </div>
@@ -133,25 +140,20 @@ export function ThreadPanel() {
               placeholder="Ask NOA…"
             />
             {isRunning ? (
-              <ComposerPrimitive.Cancel asChild type="button">
-                <Button
-                  size="icon"
-                  variant="outline"
-                  className="size-9 shrink-0 rounded-xl"
-                  aria-label="Stop"
-                >
-                  <Square className="size-4" />
-                </Button>
+              <ComposerPrimitive.Cancel
+                type="button"
+                aria-label="Stop"
+                className="size-9 shrink-0 rounded-xl border border-border bg-surface text-text hover:bg-surface-2"
+              >
+                <Square className="size-4" />
               </ComposerPrimitive.Cancel>
             ) : (
-              <ComposerPrimitive.Send asChild type="submit">
-                <Button
-                  size="icon"
-                  className="size-9 shrink-0 rounded-xl"
-                  aria-label="Send"
-                >
-                  <ArrowUp className="size-4" />
-                </Button>
+              <ComposerPrimitive.Send
+                type="button"
+                aria-label="Send"
+                className="size-9 shrink-0 rounded-xl bg-accent text-accent-foreground"
+              >
+                <ArrowUp className="size-4" />
               </ComposerPrimitive.Send>
             )}
           </div>

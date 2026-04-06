@@ -4,6 +4,7 @@
 !.agents/skills/**
 skills-lock.json
 .worktrees/
+.playwright-cli
 
 # Node / Next.js
 node_modules/

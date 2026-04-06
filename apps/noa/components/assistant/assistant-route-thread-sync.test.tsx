@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   activeRemoteId: null as string | null,
+  messageCount: 0,
   replaceRoute: vi.fn(),
   reportClientError: vi.fn(),
   switchToNewThread: vi.fn(),
@@ -22,7 +23,19 @@ vi.mock("@assistant-ui/react", () => ({
       switchToThread: (...args: unknown[]) => mocks.switchToThread(...args),
     }),
   }),
-  useAssistantState: () => mocks.activeRemoteId,
+  useAssistantState: (selector: any) =>
+    selector({
+      threads: {
+        mainThreadId: "main-thread",
+        threadItems: mocks.activeRemoteId
+          ? [{ id: "main-thread", remoteId: mocks.activeRemoteId, status: "regular", title: "Thread" }]
+          : [],
+      },
+      thread: {
+        messages: Array.from({ length: mocks.messageCount }),
+        isRunning: false,
+      },
+    }),
 }));
 
 vi.mock("@/components/lib/observability/error-reporting", () => ({
@@ -34,6 +47,7 @@ import { RouteThreadSync } from "./assistant-route-thread-sync";
 describe("RouteThreadSync", () => {
   beforeEach(() => {
     mocks.activeRemoteId = null;
+    mocks.messageCount = 0;
     mocks.replaceRoute.mockReset();
     mocks.reportClientError.mockReset();
     mocks.switchToNewThread.mockReset();
@@ -88,6 +102,20 @@ describe("RouteThreadSync", () => {
 
     mocks.activeRemoteId = null;
     rerender(<RouteThreadSync routeThreadId="thread-1" />);
+
+    await waitFor(() => {
+      expect(mocks.switchToThread).toHaveBeenCalledTimes(0);
+    });
+  });
+
+  it("does not re-switch a freshly routed thread when the current thread already has messages", async () => {
+    mocks.activeRemoteId = null;
+    mocks.messageCount = 1;
+    mocks.switchToThread.mockResolvedValue(undefined);
+
+    const { rerender } = render(<RouteThreadSync routeThreadId={null} />);
+
+    rerender(<RouteThreadSync routeThreadId="thread-2" />);
 
     await waitFor(() => {
       expect(mocks.switchToThread).toHaveBeenCalledTimes(0);
