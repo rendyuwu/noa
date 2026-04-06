@@ -20,7 +20,6 @@ import {
   ColumnsIcon,
   CodeIcon,
   DesktopIcon,
-  ExitIcon,
   GearIcon,
   MagnifyingGlassIcon,
   PersonIcon,
@@ -30,6 +29,7 @@ import {
 } from "@radix-ui/react-icons";
 
 import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting";
+import { AccountMenu } from "@/components/noa/account-menu";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
@@ -446,35 +446,25 @@ export function ClaudeThreadList({
           <DisabledRailButton label="Code" icon={<CodeIcon width={14} height={14} />} />
 
           <div className="mt-auto flex flex-col items-center gap-2 pt-3">
-            <RailItem label={`${name} • ${secondary}`}>
-              <div
-                aria-hidden="true"
-                className="flex h-9 w-9 items-center justify-center rounded-full bg-foreground font-sans text-sm font-semibold text-background"
-              >
-                {initial}
-              </div>
-            </RailItem>
-
-            <ConfirmAction
-              title="Log out?"
-              description="This ends your NOA session on this device."
-              confirmLabel="Log out"
-              confirmVariant="primary"
-              onConfirm={clearAuth}
-              trigger={({ open, disabled }) => (
-                <RailItem label="Logout">
+            <RailItem label="Account">
+              <AccountMenu
+                onLogout={clearAuth}
+                trigger={
                   <button
                     type="button"
-                    disabled={disabled}
-                    onClick={open}
-                    aria-label="Logout"
+                    aria-label="Account menu"
                     className={railButtonClassName}
                   >
-                    <ExitIcon width={14} height={14} />
+                    <span
+                      aria-hidden="true"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground font-sans text-sm font-semibold text-background"
+                    >
+                      {initial}
+                    </span>
                   </button>
-                </RailItem>
-              )}
-            />
+                }
+              />
+            </RailItem>
           </div>
         </div>
       </ThreadListPrimitive.Root>
@@ -597,36 +587,25 @@ export function ClaudeThreadList({
       </div>
 
       <div className="border-border border-t px-4 py-3 font-sans">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
-            {initial}
-          </div>
+        <AccountMenu
+          onLogout={clearAuth}
+          trigger={
+            <button
+              type="button"
+              aria-label="Account menu"
+              className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-primary/60 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+                {initial}
+              </div>
 
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-foreground">{name}</p>
-            <p className="truncate text-xs text-muted-foreground">{secondary}</p>
-          </div>
-        </div>
-
-        <div className="mt-2 flex items-center justify-end gap-3">
-          <ConfirmAction
-            title="Log out?"
-            description="This ends your NOA session on this device."
-            confirmLabel="Log out"
-            confirmVariant="primary"
-            onConfirm={clearAuth}
-            trigger={({ open, disabled }) => (
-              <button
-                type="button"
-                disabled={disabled}
-                onClick={open}
-                className="text-sm text-muted-foreground underline decoration-border/60 underline-offset-4 hover:text-foreground hover:decoration-border disabled:opacity-55"
-              >
-                Logout
-              </button>
-            )}
-          />
-        </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-semibold text-foreground">{name}</p>
+                <p className="truncate text-xs text-muted-foreground">{secondary}</p>
+              </div>
+            </button>
+          }
+        />
       </div>
     </ThreadListPrimitive.Root>
   );
