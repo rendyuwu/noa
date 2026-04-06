@@ -427,7 +427,7 @@ export function UsersAdminPage() {
                     {selectedUser?.display_name ?? selectedUser?.email ?? "User"}
                   </div>
                   {selectedUser?.email ? (
-                    <div className="mt-0.5 text-xs text-muted">{selectedUser.email}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{selectedUser.email}</div>
                   ) : null}
                 </div>
                 <Dialog.Close asChild>
