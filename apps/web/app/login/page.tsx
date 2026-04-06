@@ -41,6 +41,32 @@ export default function LoginPage() {
     return Object.keys(nextErrors).length === 0;
   };
 
+  const validateField = (field: "email" | "password") => {
+    setFieldErrors((current) => {
+      const next = { ...current };
+
+      if (field === "email") {
+        if (!email.trim()) {
+          next.email = "Email is required.";
+        } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+          next.email = "Enter a valid email address.";
+        } else {
+          delete next.email;
+        }
+      }
+
+      if (field === "password") {
+        if (!password.trim()) {
+          next.password = "Password is required.";
+        } else {
+          delete next.password;
+        }
+      }
+
+      return next;
+    });
+  };
+
   const getSafeReturnTo = () => {
     if (typeof window === "undefined") return null;
     const url = new URL(window.location.href);
@@ -122,7 +148,7 @@ export default function LoginPage() {
                     .filter(Boolean)
                     .join(" ") || undefined
                 }
-                onBlur={validate}
+                onBlur={() => validateField("email")}
                 onChange={(e) => {
                   setEmail(e.target.value);
                   setFieldErrors((prev) => (prev.email ? { ...prev, email: undefined } : prev));
@@ -153,7 +179,7 @@ export default function LoginPage() {
                     .filter(Boolean)
                     .join(" ") || undefined
                 }
-                onBlur={validate}
+                onBlur={() => validateField("password")}
                 onChange={(e) => {
                   setPassword(e.target.value);
                   setFieldErrors((prev) => (prev.password ? { ...prev, password: undefined } : prev));
@@ -173,7 +199,7 @@ export default function LoginPage() {
             </Button>
 
             {error ? (
-              <InlineAlert id="login-error" variant="destructive" className="mt-4" role="alert" aria-live="assertive">
+              <InlineAlert id="login-error" variant="destructive" className="mt-4">
                 {error}
               </InlineAlert>
             ) : null}
