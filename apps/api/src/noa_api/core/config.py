@@ -1,13 +1,40 @@
 import json
 import secrets
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+def resolve_env_file(*, start: Path, cwd: Path) -> Path | None:
+    start_dir = start if start.is_dir() else start.parent
+
+    for current in (start_dir, *start_dir.parents):
+        repo_marker = current / "AGENTS.md"
+        if not repo_marker.exists():
+            continue
+
+        repo_env_file = current / ".env"
+        if repo_env_file.exists():
+            return repo_env_file
+        break
+
+    cwd_env_file = cwd / ".env"
+    if cwd_env_file.exists():
+        return cwd_env_file
+
+    return None
+
+
+_resolved_env_file = resolve_env_file(start=Path(__file__).resolve(), cwd=Path.cwd())
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(_resolved_env_file) if _resolved_env_file else None,
+        extra="ignore",
+    )
 
     environment: str = "development"
     postgres_url: PostgresDsn = (
