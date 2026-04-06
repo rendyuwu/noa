@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cross2Icon } from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
 
+import { AdminTableEmptyState, AdminTableLoadingRows } from "@/components/admin/admin-table-empty-state";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
@@ -322,7 +323,7 @@ export function UsersAdminPage() {
 
         <div className="panel mt-6 overflow-hidden">
           <table className="w-full font-sans text-sm">
-            <thead className="bg-accent text-muted">
+            <thead className="bg-accent text-accent-foreground">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Email</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
@@ -335,15 +336,21 @@ export function UsersAdminPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {users.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-4 text-sm text-muted" colSpan={7}>
-                    {loading
-                      ? "Loading users..."
-                      : loadError
-                          ? "Unable to load users."
-                          : "No users found."}
-                  </td>
-                </tr>
+                loading ? (
+                  <AdminTableLoadingRows columns={7} />
+                ) : loadError ? (
+                  <tr>
+                    <td className="px-4 py-4 text-sm text-muted-foreground" colSpan={7}>
+                      Unable to load users.
+                    </td>
+                  </tr>
+                ) : (
+                  <AdminTableEmptyState
+                    columns={7}
+                    title="No users yet"
+                    description="Users will appear here after they sign in or are provisioned."
+                  />
+                )
               ) : (
                 users.map((user) => {
                   const roles = coerceStringArray(user.roles);
@@ -376,15 +383,15 @@ export function UsersAdminPage() {
                       <td className="px-4 py-3">
                         <div className="font-medium text-foreground">{user.email}</div>
                         {user.display_name ? (
-                          <div className="mt-0.5 text-xs text-muted">{user.display_name}</div>
+                          <div className="mt-0.5 text-xs text-muted-foreground">{user.display_name}</div>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3 text-muted">{createdLabel}</td>
-                      <td className="px-4 py-3 text-muted">{lastLoginLabel}</td>
-                      <td className="px-4 py-3 text-muted">{statusLabel}</td>
-                      <td className="px-4 py-3 text-muted">{roles.length ? roles.join(", ") : "-"}</td>
-                      <td className="px-4 py-3 text-muted">{tools.length}</td>
-                      <td className="px-4 py-3 text-muted">Manage</td>
+                      <td className="px-4 py-3 text-muted-foreground">{createdLabel}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{lastLoginLabel}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{statusLabel}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{roles.length ? roles.join(", ") : "-"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{tools.length}</td>
+                      <td className="px-4 py-3 text-primary font-medium">Manage</td>
                     </tr>
                   );
                 })

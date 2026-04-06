@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
+import { AdminTableEmptyState, AdminTableLoadingRows } from "@/components/admin/admin-table-empty-state";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction, ConfirmDialog } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
@@ -449,7 +450,7 @@ export function RolesAdminPage() {
 
           <div className="panel mt-6 overflow-hidden">
             <table className="w-full font-sans text-sm">
-              <thead className="bg-accent text-muted">
+              <thead className="bg-accent text-accent-foreground">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Role</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Tools</th>
@@ -458,15 +459,21 @@ export function RolesAdminPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {roles.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-4 text-sm text-muted" colSpan={3}>
-                      {loading
-                        ? "Loading roles..."
-                        : loadError
-                          ? "Unable to load roles."
-                          : "No roles found."}
-                    </td>
-                  </tr>
+                  loading ? (
+                    <AdminTableLoadingRows columns={3} />
+                  ) : loadError ? (
+                    <tr>
+                      <td className="px-4 py-4 text-sm text-muted-foreground" colSpan={3}>
+                        Unable to load roles.
+                      </td>
+                    </tr>
+                  ) : (
+                    <AdminTableEmptyState
+                      columns={3}
+                      title="No roles yet"
+                      description="Create a role to define shared access and tool grants."
+                    />
+                  )
                 ) : (
                   roles.map((roleName) => {
                     const cachedCount = roleToolsByName[roleName]?.length;
@@ -489,8 +496,10 @@ export function RolesAdminPage() {
                         <td className="px-4 py-3 text-foreground">
                           <div className="font-medium text-foreground">{roleName}</div>
                         </td>
-                        <td className="px-4 py-3 text-muted">{typeof cachedCount === "number" ? cachedCount : "-"}</td>
-                        <td className="px-4 py-3 text-muted">Manage</td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {typeof cachedCount === "number" ? cachedCount : "-"}
+                        </td>
+                        <td className="px-4 py-3 text-primary font-medium">Manage</td>
                       </tr>
                     );
                   })

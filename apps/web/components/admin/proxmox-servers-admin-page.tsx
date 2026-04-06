@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
+import { AdminTableEmptyState, AdminTableLoadingRows } from "@/components/admin/admin-table-empty-state";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
@@ -543,7 +544,7 @@ export function ProxmoxServersAdminPage() {
 
           <div className="panel mt-6 overflow-hidden">
             <table className="w-full font-sans text-sm">
-              <thead className="bg-accent text-muted">
+              <thead className="bg-accent text-accent-foreground">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">
                     Name
@@ -567,11 +568,7 @@ export function ProxmoxServersAdminPage() {
               </thead>
               <tbody className="divide-y divide-border">
                 {loading ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-muted">
-                      Loading...
-                    </td>
-                  </tr>
+                  <AdminTableLoadingRows columns={6} />
                 ) : sortedServers.length ? (
                   sortedServers.map((server) => {
                     const validateResult = validateResultById[server.id];
@@ -611,20 +608,26 @@ export function ProxmoxServersAdminPage() {
                             ) : null}
                           </div>
                         </td>
-                        <td className="px-4 py-3 text-muted">{server.base_url}</td>
-                        <td className="px-4 py-3 text-muted">{server.api_token_id}</td>
-                        <td className="px-4 py-3 text-muted">{server.verify_ssl ? "on" : "off"}</td>
-                        <td className="px-4 py-3 text-muted">{formatTimestamp(server.updated_at)}</td>
-                        <td className="px-4 py-3 text-muted">Manage</td>
+                        <td className="px-4 py-3 text-muted-foreground">{server.base_url}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{server.api_token_id}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{server.verify_ssl ? "on" : "off"}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{formatTimestamp(server.updated_at)}</td>
+                        <td className="px-4 py-3 text-primary font-medium">Manage</td>
                       </tr>
                     );
                   })
-                ) : (
+                ) : loadError ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-muted">
-                      No Proxmox servers configured.
+                    <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
+                      Unable to load Proxmox servers.
                     </td>
                   </tr>
+                ) : (
+                  <AdminTableEmptyState
+                    columns={6}
+                    title="No Proxmox servers"
+                    description="Add a Proxmox server to manage virtualization infrastructure."
+                  />
                 )}
               </tbody>
             </table>

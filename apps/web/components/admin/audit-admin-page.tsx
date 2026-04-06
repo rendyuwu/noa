@@ -12,6 +12,7 @@ import {
   MinusCircledIcon,
 } from "@radix-ui/react-icons";
 
+import { AdminTableEmptyState, AdminTableLoadingRows } from "@/components/admin/admin-table-empty-state";
 import { DisclosureSection } from "@/components/assistant/inline-disclosure";
 import { Button } from "@/components/ui/button";
 import { toUserMessage } from "@/components/lib/error-message";
@@ -161,8 +162,8 @@ function IdRow({ label, value }: { label: string; value?: string | null }) {
   if (!normalized) {
     return (
       <div className="grid items-start gap-2 sm:grid-cols-[7rem_minmax(0,1fr)]">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">{label}</div>
-        <div className="font-mono text-[11px] text-muted">-</div>
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
+        <div className="font-mono text-[11px] text-muted-foreground">-</div>
       </div>
     );
   }
@@ -171,7 +172,7 @@ function IdRow({ label, value }: { label: string; value?: string | null }) {
 
   return (
     <div className="grid items-start gap-2 sm:grid-cols-[7rem_minmax(0,1fr)]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">{label}</div>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">{label}</div>
       <button
         type="button"
         title={normalized}
@@ -484,7 +485,7 @@ export function AuditAdminPage() {
 
         <div className="panel mt-6 overflow-hidden">
           <table className="w-full font-sans text-sm">
-            <thead className="bg-accent text-muted">
+            <thead className="bg-accent text-accent-foreground">
               <tr>
                 <th className="w-[13rem] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Event</th>
@@ -494,24 +495,32 @@ export function AuditAdminPage() {
             </thead>
             <tbody className="divide-y divide-border">
               {items.length === 0 ? (
-                <tr>
-                  <td className="px-4 py-6 text-sm text-muted" colSpan={4}>
-                    {loading ? (
-                      "Loading audit history..."
-                    ) : loadError ? (
-                      "Unable to load audit history."
-                    ) : activeFilterCount ? (
+                loading ? (
+                  <AdminTableLoadingRows columns={4} />
+                ) : loadError ? (
+                  <tr>
+                    <td className="px-4 py-6 text-sm text-muted-foreground" colSpan={4}>
+                      Unable to load audit history.
+                    </td>
+                  </tr>
+                ) : activeFilterCount ? (
+                  <tr>
+                    <td className="px-4 py-6 text-sm text-muted-foreground" colSpan={4}>
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">No results match your filters.</div>
                         <Button size="sm" variant="outline" onClick={clearFilters}>
                           Clear filters
                         </Button>
                       </div>
-                    ) : (
-                      "No audit events yet."
-                    )}
-                  </td>
-                </tr>
+                    </td>
+                  </tr>
+                ) : (
+                  <AdminTableEmptyState
+                    columns={4}
+                    title="No audit events"
+                    description="Approval receipts and audit activity will appear here."
+                  />
+                )
               ) : (
                 items.map((item) => {
                   const created = formatCreated(item.createdAt);
@@ -524,23 +533,23 @@ export function AuditAdminPage() {
                   const statusChipClass = statusBadgeClass(label.tone);
                   const riskChipClass = riskBadgeClass(item.risk);
                   const actionChipClass =
-                    "inline-flex items-center gap-1 rounded-full border border-border bg-background/20 px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-accent hover:text-foreground";
+                    "inline-flex items-center gap-1 rounded-full border border-border bg-background/20 px-2.5 py-1 text-xs font-medium text-primary transition hover:bg-accent hover:text-foreground";
                   const noReceiptClass =
-                    "inline-flex items-center gap-1 rounded-full border border-border/60 border-dashed bg-transparent px-2.5 py-1 text-xs font-medium text-muted opacity-70";
+                    "inline-flex items-center gap-1 rounded-full border border-border/60 border-dashed bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground opacity-70";
 
                   return (
                     <Fragment key={item.actionRequestId}>
                       <tr className="transition-colors hover:bg-accent/40">
-                        <td className="px-4 py-3 text-muted whitespace-nowrap" title={created.title}>
+                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground" title={created.title}>
                           <div className="text-sm text-foreground/90">{created.primary}</div>
-                          <div className="mt-0.5 font-sans text-xs text-muted">{created.secondary}</div>
+                          <div className="mt-0.5 font-sans text-xs text-muted-foreground">{created.secondary}</div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="min-w-0">
                             <div className="truncate font-medium text-foreground" title={item.toolName}>
                               {displayName}
                             </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-sans text-xs text-muted">
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-sans text-xs text-muted-foreground">
                               <span>
                                 by <span className="font-medium text-foreground/90">{requestedBy}</span>
                               </span>
@@ -590,7 +599,7 @@ export function AuditAdminPage() {
                               id={`audit-ids-${item.actionRequestId}`}
                               className="rounded-xl border border-border bg-background/25 px-4 py-3"
                             >
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
+                              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                                 Identifiers
                               </div>
                               <div className="mt-3 grid gap-3">
@@ -613,7 +622,7 @@ export function AuditAdminPage() {
           {!loading && !loadError && (items.length > 0 || cursorStack.length > 0 || Boolean(nextCursor)) ? (
             <div className="border-t border-border bg-card/30 px-4 py-3 font-sans">
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                <div className="text-sm text-muted">
+                <div className="text-sm text-muted-foreground">
                   Showing {items.length} result{items.length === 1 ? "" : "s"} on this page.
                 </div>
                 <div className="flex items-center justify-center gap-2">
@@ -627,7 +636,7 @@ export function AuditAdminPage() {
                     <ArrowLeftIcon width={16} height={16} />
                     Prev
                   </Button>
-                  <div className="font-sans text-xs text-muted">Page {pageIndex}</div>
+                  <div className="font-sans text-xs text-muted-foreground">Page {pageIndex}</div>
                   <Button
                     size="sm"
                     variant="outline"
@@ -639,7 +648,7 @@ export function AuditAdminPage() {
                     <ArrowRightIcon width={16} height={16} />
                   </Button>
                 </div>
-                <div className="text-sm text-muted sm:text-right">
+                <div className="text-sm text-muted-foreground sm:text-right">
                   {nextCursor ? "More results available." : "End of results."}
                 </div>
               </div>
