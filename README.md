@@ -37,11 +37,11 @@ docker compose up -d postgres
 
 ### 2) Configure + run API
 
-Create `apps/api/.env` from `apps/api/.env.example` (do not commit `.env`; it is gitignored).
+Create `./.env` from the repo-root `.env.example` (do not commit `.env`; it is gitignored).
 
 ```bash
-cd apps/api
 cp .env.example .env
+cd apps/api
 uv sync
 uv run alembic upgrade head
 uv run uvicorn noa_api.main:app --reload --port 8000
@@ -54,15 +54,15 @@ Notes:
 
 ### 3) Configure + run web
 
-Create `apps/web/.env.local` from `apps/web/.env.example`.
+Create `./.env` from the repo-root `.env.example`.
 
 Notes:
 - The browser never calls the FastAPI backend directly. The web app calls same-origin `/api/...`, and a Next route handler proxies those requests server-side.
 - Configure the proxy with `NOA_API_URL=http://localhost:8000` (server-side; used by Next). `NEXT_PUBLIC_API_URL` is a legacy fallback; prefer `NOA_API_URL`.
 
 ```bash
-cd ../web
-cp .env.example .env.local
+cp .env.example .env
+cd apps/web
 npm install
 npm run dev
 ```

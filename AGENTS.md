@@ -19,8 +19,8 @@ Prereqs: Python 3.11+ and `uv`.
 Setup deps:
 
 ```bash
-cd apps/api
 cp .env.example .env
+cd apps/api
 uv sync
 ```
 
@@ -63,8 +63,8 @@ Prereqs: Node.js 20+ and npm.
 Setup + dev server:
 
 ```bash
+cp .env.example .env
 cd apps/web
-cp .env.example .env.local
 npm install
 npm run dev
 ```
