@@ -1,0 +1,248 @@
+@config "../tailwind.config.ts";
+@import "tailwindcss";
+
+:root {
+  /* Claude-style warm neutrals + orange accent */
+  --bg: 30 3.3% 11.8%;
+  --surface: 30 3% 14.5%;
+  --surface-2: 30 3% 18%;
+  --surface-3: 30 4% 21%;
+  --border: 30 3% 26%;
+  --text: 30 9% 92%;
+  --muted: 30 5% 70%;
+  --accent: 22 90% 54%;
+  --accent-ink: 22 96% 20%;
+  --danger-surface: 14 18% 20%;
+  --danger-surface-hover: 14 20% 24%;
+  --danger-border: 12 24% 34%;
+  --danger-text: 12 55% 91%;
+  --danger-muted: 12 26% 72%;
+  --success-surface: 145 14% 21%;
+  --success-border: 145 14% 33%;
+  --success-text: 120 24% 88%;
+
+  /* Compatibility: older styles referenced --line */
+  --line: var(--border);
+
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.55);
+
+  /* Serif-forward base typography */
+  --font-body: ui-serif, Georgia, "Iowan Old Style", "Palatino Linotype", Palatino, "Times New Roman", Times, serif;
+  --font-ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, "Apple Color Emoji",
+    "Segoe UI Emoji";
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: hsl(var(--text));
+    background-color: hsl(var(--bg));
+    font-family: var(--font-body);
+    text-rendering: optimizeLegibility;
+  }
+
+  a {
+    color: inherit;
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+
+  /* Native scrollbar fallback (non-Radix scroll containers). */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border) / 0.75) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background-color: hsl(var(--border) / 0.75);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+  }
+
+  *::-webkit-scrollbar-thumb:hover {
+    background-color: hsl(var(--border));
+  }
+}
+
+@layer components {
+  .wrap-break-word {
+    overflow-wrap: break-word;
+    word-break: break-word;
+  }
+
+  .page-shell {
+    @apply min-h-dvh p-4;
+  }
+
+  .panel {
+    @apply rounded-xl border border-border bg-surface shadow-sm;
+  }
+
+  .row {
+    @apply flex gap-3;
+  }
+
+  .button {
+    @apply inline-flex items-center justify-center rounded-xl border border-border bg-transparent font-medium text-text shadow-sm transition-[background-color,border-color,color,box-shadow,transform] duration-150 ease-out hover:border-transparent hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-0 disabled:cursor-not-allowed disabled:opacity-55 disabled:hover:border-border disabled:hover:bg-transparent;
+  }
+
+  .button-secondary {
+    @apply border-border text-text;
+  }
+
+  .button-primary {
+    background-color: transparent;
+    color: hsl(var(--accent));
+    border-color: hsl(var(--accent) / 0.45);
+  }
+
+  .button-primary:hover {
+    color: white;
+    border-color: transparent;
+    background-color: hsl(var(--accent));
+  }
+
+  .button-danger {
+    border-color: hsl(var(--danger-border));
+    color: hsl(var(--danger-text));
+  }
+
+  .button-danger:hover {
+    border-color: transparent;
+    background-color: hsl(var(--danger-surface-hover));
+  }
+
+  .button-danger:focus-visible {
+    --tw-ring-color: hsl(var(--danger-border) / 0.45);
+  }
+
+  .danger-zone {
+    @apply rounded-xl border px-3 py-3;
+    border-color: hsl(var(--danger-border) / 0.55);
+    background: linear-gradient(180deg, hsl(var(--danger-surface) / 0.34), hsl(var(--danger-surface) / 0.24));
+  }
+
+  .danger-zone-label {
+    color: hsl(var(--danger-text));
+  }
+
+  .danger-zone-copy {
+    color: hsl(var(--danger-muted));
+  }
+
+  .status-badge {
+    @apply rounded-full border px-2.5 py-1 text-xs font-medium tracking-[0.01em];
+  }
+
+  .status-badge-success {
+    border-color: hsl(var(--success-border) / 0.75);
+    background-color: hsl(var(--success-surface));
+    color: hsl(var(--success-text));
+  }
+
+  .status-badge-accent {
+    border-color: hsl(var(--accent) / 0.55);
+    background-color: hsl(var(--accent) / 0.12);
+    color: hsl(var(--accent));
+  }
+
+  .status-badge-muted {
+    border-color: hsl(var(--border) / 0.6);
+    background-color: hsl(var(--bg) / 0.35);
+    color: hsl(var(--muted));
+  }
+
+  .status-badge-outline {
+    border-color: hsl(var(--border) / 0.65);
+    background-color: transparent;
+    color: hsl(var(--muted));
+  }
+
+  .status-badge-danger {
+    border-color: hsl(var(--danger-border) / 0.75);
+    background-color: hsl(var(--danger-surface));
+    color: hsl(var(--danger-text));
+  }
+
+  .input {
+    @apply w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text shadow-sm outline-none placeholder:text-muted focus:border-accent/50 focus:ring-2 focus:ring-accent/30;
+  }
+
+  .muted {
+    @apply text-sm text-muted;
+  }
+
+  .error {
+    @apply text-sm text-red-700;
+  }
+
+  @keyframes claude-fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .claude-landing-anim-1,
+  .claude-landing-anim-2,
+  .claude-landing-anim-3 {
+    opacity: 0;
+    animation: claude-fade-up 420ms cubic-bezier(0.165, 0.85, 0.45, 1) forwards;
+  }
+
+  .claude-landing-anim-2 {
+    animation-delay: 90ms;
+  }
+
+  .claude-landing-anim-3 {
+    animation-delay: 170ms;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .claude-landing-anim-1,
+    .claude-landing-anim-2,
+    .claude-landing-anim-3 {
+      opacity: 1;
+      transform: none;
+      animation: none;
+    }
+  }
+}
+
+@media (max-width: 900px) {
+  .assistant-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
