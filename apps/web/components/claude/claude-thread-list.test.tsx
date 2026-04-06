@@ -239,6 +239,15 @@ describe("ClaudeThreadList", () => {
     expect(navSection.getByRole("link", { name: "Roles" })).toHaveAttribute("href", "/admin/roles");
   });
 
+  it("marks the active admin route link with aria-current", () => {
+    mocks.pathname = "/admin/users";
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "Roles" })).not.toHaveAttribute("aria-current");
+  });
+
   it("switches to a fresh draft without explicit navigation from a thread route (ThreadUrlSync handles route)", async () => {
     render(<ClaudeThreadList />);
 

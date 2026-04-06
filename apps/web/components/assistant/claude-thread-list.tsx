@@ -49,7 +49,7 @@ function DisabledNavItem({ icon, label }: { icon: ReactNode; label: string }) {
       aria-disabled="true"
       title="Coming soon"
       onClick={(event) => event.preventDefault()}
-      className="flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-sans text-sm text-muted-foreground opacity-70 transition-colors hover:bg-primary/60 hover:text-foreground"
+      className="flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-sans text-sm text-muted-foreground opacity-70 transition-colors hover:bg-accent hover:text-foreground"
     >
       <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">
         {icon}
@@ -68,10 +68,17 @@ function NavLinkItem({
   label: string;
   href: string;
 }) {
+  const pathname = usePathname();
+  const isActive = pathname === href || pathname.startsWith(`${href}/`);
+
   return (
     <Link
       href={href}
-      className="flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-sans text-sm text-muted-foreground transition-colors hover:bg-primary/60 hover:text-foreground active:scale-[0.99]"
+      aria-current={isActive ? "page" : undefined}
+      className={[
+        "flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-sans text-sm transition-colors active:scale-[0.99]",
+        isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+      ].join(" ")}
     >
       <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">
         {icon}
@@ -120,7 +127,7 @@ const ThreadListItem: FC<{
         }}
         className="min-w-0 flex-1 rounded-md text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <span className="block truncate">
+        <span className="block truncate" title={remoteId}>
           <ThreadListItemPrimitive.Title fallback="Untitled" />
         </span>
       </ThreadListItemPrimitive.Trigger>

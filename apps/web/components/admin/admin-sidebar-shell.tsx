@@ -17,7 +17,7 @@ const DESKTOP_SIDEBAR_MODE_STORAGE_KEY = "noa.sidebar.mode.v1";
 export function AdminSidebarShell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [desktopSidebarMode, setDesktopSidebarMode] = useState<DesktopSidebarMode>("collapsed");
+  const [desktopSidebarMode, setDesktopSidebarMode] = useState<DesktopSidebarMode>("expanded");
 
   useEffect(() => {
     if (typeof window === "undefined") return;

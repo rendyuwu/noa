@@ -117,14 +117,14 @@ describe("AdminSidebarShell", () => {
     vi.unstubAllGlobals();
   });
 
-  it("starts desktop collapsed and shows the thread list", () => {
+  it("starts desktop expanded and shows the thread list", () => {
     const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
     expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
   });
 
@@ -135,21 +135,23 @@ describe("AdminSidebarShell", () => {
       </AdminSidebarShell>,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
-
-    fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
     expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
   });
 
-  it("keeps desktop sidebar collapsed across viewport changes", () => {
+  it("keeps the manual desktop sidebar mode across viewport changes", () => {
     const { container } = render(
       <AdminSidebarShell>
         <div>Admin content</div>
       </AdminSidebarShell>,
     );
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
 
     expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
 
@@ -227,13 +229,13 @@ describe("AdminSidebarShell", () => {
       </AdminSidebarShell>,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
 
     act(() => {
       mediaController.setDesktopMatch(true);
     });
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
     expect(screen.getByTestId("sidebar-thread-list")).toBeInTheDocument();
   });
 });
