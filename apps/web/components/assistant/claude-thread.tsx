@@ -92,7 +92,7 @@ function ComposerControlsRow() {
         label="Model selector"
         className="flex h-8 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 pr-2 pl-2.5 text-foreground text-xs transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-accent active:scale-[0.985] disabled:pointer-events-none disabled:opacity-70"
       >
-        <span className="font-serif text-[14px]">Sonnet 4.5</span>
+        <span className="font-serif text-[14px]">{process.env.LLM_MODEL || "Sonnet 4.5"}</span>
         <ChevronDownIcon width={20} height={20} className="opacity-75" />
       </DisabledIconButton>
 
