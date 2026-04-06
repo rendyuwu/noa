@@ -18,9 +18,22 @@ describe("globals.css", () => {
     );
   });
 
-  it("defines global --bg token for #1F1E1D", () => {
+  it("defines NOA color tokens for both light and dark mode", () => {
     const css = readFileSync(path.join(dirname, "globals.css"), "utf8");
 
-    expect(css).toMatch(/:root\s*\{[^}]*--bg:\s*30\s+3\.3%\s+11\.8%\s*;/);
+    expect(css).toMatch(/:root\s*\{[^}]*--background:/);
+    expect(css).toMatch(/:root\s*\{[^}]*--primary:/);
+    expect(css).toMatch(/:root\s*\{[^}]*--destructive:/);
+    expect(css).toMatch(/:root\s*\{[^}]*--success:/);
+    expect(css).toMatch(/:root\s*\{[^}]*--warning:/);
+    expect(css).toMatch(/\.dark\s*\{[^}]*--background:/);
+    expect(css).toMatch(/\.dark\s*\{[^}]*--primary:/);
+  });
+
+  it("uses oklch color format", () => {
+    const css = readFileSync(path.join(dirname, "globals.css"), "utf8");
+
+    expect(css).toMatch(/--primary:\s*oklch\(/);
+    expect(css).toMatch(/--background:\s*oklch\(/);
   });
 });
