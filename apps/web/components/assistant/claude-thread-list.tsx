@@ -375,7 +375,7 @@ export function ClaudeThreadList({
     };
 
     return (
-      <ThreadListPrimitive.Root className="flex h-full flex-col bg-background py-3">
+      <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar py-3">
         <div className="flex flex-1 flex-col items-center gap-1">
           {onExpandSidebar ? (
             <RailItem label="Expand sidebar">
@@ -475,7 +475,7 @@ export function ClaudeThreadList({
   const closeActionLabel = onCollapseSidebar ? "Collapse sidebar" : "Close sidebar";
 
   return (
-    <ThreadListPrimitive.Root className="flex h-full flex-col bg-background">
+    <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar">
       <div className="pt-3 font-sans">
         <div className="flex items-center justify-between px-4">
           <div className="font-serif text-lg font-semibold tracking-[-0.01em] text-foreground">
@@ -586,7 +586,7 @@ export function ClaudeThreadList({
         </div>
       </div>
 
-      <div className="border-border border-t px-4 py-3 font-sans">
+      <div className="border-sidebar-border border-t px-4 py-3 font-sans">
         <AccountMenu
           onLogout={clearAuth}
           trigger={

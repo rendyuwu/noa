@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import userEvent from "@testing-library/user-event";
+import { createContext, useContext, useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
@@ -55,6 +56,96 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+vi.mock("@/components/ui/dropdown-menu", () => {
+  const React = require("react") as typeof import("react");
+
+  const DropdownMenuContext = createContext<{
+    open: boolean;
+    setOpen: (open: boolean) => void;
+  } | null>(null);
+
+  function DropdownMenu({ children }: { children?: ReactNode }) {
+    const [open, setOpen] = useState(false);
+
+    return <DropdownMenuContext.Provider value={{ open, setOpen }}>{children}</DropdownMenuContext.Provider>;
+  }
+
+  function DropdownMenuTrigger({ children, asChild, ...props }: { children?: ReactNode; asChild?: boolean }) {
+    const context = useContext(DropdownMenuContext);
+
+    const handleClick = (event: React.MouseEvent) => {
+      context?.setOpen(true);
+      props.onClick?.(event as never);
+    };
+
+    if (asChild && React.isValidElement(children)) {
+      return React.cloneElement(children as React.ReactElement, {
+        ...props,
+        onClick: handleClick,
+      });
+    }
+
+    return (
+      <button type="button" {...props} onClick={handleClick}>
+        {children}
+      </button>
+    );
+  }
+
+  function DropdownMenuContent({ children }: { children?: ReactNode }) {
+    const context = useContext(DropdownMenuContext);
+
+    if (!context?.open) {
+      return null;
+    }
+
+    return <div role="menu">{children}</div>;
+  }
+
+  function DropdownMenuItem({ children, onSelect, ...props }: { children?: ReactNode; onSelect?: () => void }) {
+    return (
+      <button
+        type="button"
+        role="menuitem"
+        {...props}
+        onClick={(event) => {
+          props.onClick?.(event as never);
+          onSelect?.();
+        }}
+      >
+        {children}
+      </button>
+    );
+  }
+
+  function DropdownMenuLabel({ children }: { children?: ReactNode }) {
+    return <div>{children}</div>;
+  }
+
+  function DropdownMenuRadioGroup({ children }: { children?: ReactNode }) {
+    return <div>{children}</div>;
+  }
+
+  function DropdownMenuRadioItem({ children }: { children?: ReactNode }) {
+    return <button type="button">{children}</button>;
+  }
+
+  function DropdownMenuSeparator() {
+    return <hr />;
+  }
+
+  return {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  };
+});
+
 vi.mock("@assistant-ui/react", () => ({
   useAssistantApi: () => ({
     threads: () => ({
@@ -100,7 +191,9 @@ vi.mock("@assistant-ui/react", () => ({
   }),
   ThreadListItemByIdProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
   ThreadListPrimitive: {
-    Root: ({ children }: { children?: ReactNode }) => <div>{children}</div>,
+    Root: ({ children, className }: { children?: ReactNode; className?: string }) => (
+      <div className={className}>{children}</div>
+    ),
   },
   ThreadListItemPrimitive: {
     Root: ({ children, ...props }: React.ComponentPropsWithoutRef<"div">) => (
@@ -184,7 +277,7 @@ describe("ClaudeThreadList", () => {
     expect(newChatButton).toHaveClass("px-4");
 
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Logout" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
   });
 
   it("renders disabled Claude-style nav items under the new chat button", () => {
@@ -312,7 +405,7 @@ describe("ClaudeThreadList", () => {
     expect(screen.getAllByRole("button", { name: "Untitled" })).toHaveLength(2);
   });
 
-  it("renders a user footer with avatar initial, name, email, and logout action", () => {
+  it("renders a user footer with avatar initial, name, email, and logout action", async () => {
     render(<ClaudeThreadList />);
 
     expect(screen.getByText("C")).toBeInTheDocument();
@@ -320,12 +413,29 @@ describe("ClaudeThreadList", () => {
     expect(screen.getByText("casey@example.com")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    await userEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    const logoutItem = await screen.findByRole("menuitem", { name: "Log out" });
+    logoutItem.focus();
+    await userEvent.keyboard("{Enter}");
+
+    const confirmDialog = await screen.findByRole("dialog");
+    expect(within(confirmDialog).getByText("Log out?")).toBeInTheDocument();
     expect(mocks.clearAuth).toHaveBeenCalledTimes(0);
 
-    const confirmDialog = screen.getByRole("dialog", { name: "Log out?" });
-    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Log out" }));
+    await userEvent.click(within(confirmDialog).getByRole("button", { name: "Log out" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses sidebar semantic background tokens for the sidebar root (expanded)", () => {
+    const { container } = render(<ClaudeThreadList />);
+
+    expect(container.firstElementChild).toHaveClass("bg-sidebar");
+  });
+
+  it("uses sidebar semantic background tokens for the sidebar root (collapsed)", () => {
+    const { container } = render(<ClaudeThreadList variant="collapsed" onExpandSidebar={() => {}} />);
+
+    expect(container.firstElementChild).toHaveClass("bg-sidebar");
   });
 
   it("deletes the active thread after switching away (ThreadUrlSync handles route)", async () => {
