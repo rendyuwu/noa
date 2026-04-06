@@ -90,6 +90,32 @@ describe("LoginPage", () => {
     expect(alert).not.toHaveTextContent("socket hang up");
   });
 
+  it("shows inline field validation errors and does not submit when fields are empty", async () => {
+    render(<LoginPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText("Email is required.")).toBeInTheDocument();
+    expect(await screen.findByText("Password is required.")).toBeInTheDocument();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("shows inline email format validation error and does not submit", async () => {
+    render(<LoginPage />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "not-an-email" },
+    });
+    fireEvent.change(screen.getByLabelText("Password"), {
+      target: { value: "password123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    expect(await screen.findByText("Enter a valid email address.")).toBeInTheDocument();
+    expect(screen.queryByText("Password is required.")).not.toBeInTheDocument();
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
   it("redirects to returnTo after successful login", async () => {
     window.history.replaceState(
       {},

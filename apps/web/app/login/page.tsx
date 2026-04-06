@@ -20,8 +20,26 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  const validate = () => {
+    const nextErrors: { email?: string; password?: string } = {};
+
+    if (!email.trim()) {
+      nextErrors.email = "Email is required.";
+    } else if (!/^\S+@\S+\.\S+$/.test(email.trim())) {
+      nextErrors.email = "Enter a valid email address.";
+    }
+
+    if (!password.trim()) {
+      nextErrors.password = "Password is required.";
+    }
+
+    setFieldErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
 
   const getSafeReturnTo = () => {
     if (typeof window === "undefined") return null;
@@ -35,8 +53,11 @@ export default function LoginPage() {
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setSubmitting(true);
     setError(null);
+
+    if (!validate()) return;
+
+    setSubmitting(true);
 
     try {
       const response = await fetch(`${getApiUrl()}/auth/login`, {
@@ -61,10 +82,21 @@ export default function LoginPage() {
     <main className="flex min-h-dvh items-center justify-center px-4 py-10">
       <form
         onSubmit={onSubmit}
+        noValidate
         aria-busy={submitting}
         className="w-full max-w-[420px] overflow-hidden rounded-2xl border border-border bg-card/70 shadow-lg backdrop-blur-sm"
       >
         <div className="p-6 sm:p-7">
+          <div className="mb-5 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/20">
+              <span className="text-sm font-semibold tracking-wide">NOA</span>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-foreground">NOA</p>
+              <p className="text-xs text-muted-foreground">Assistant and admin console</p>
+            </div>
+          </div>
+
           <h1 className="text-3xl font-semibold leading-tight tracking-[-0.02em] text-foreground">
             Login
           </h1>
@@ -81,13 +113,26 @@ export default function LoginPage() {
                 autoComplete="username"
                 inputMode="email"
                 className="mt-1"
-                required
                 type="email"
                 value={email}
                 disabled={submitting}
-                aria-describedby={error ? "login-error" : undefined}
-                onChange={(e) => setEmail(e.target.value)}
+                aria-invalid={!!fieldErrors.email}
+                aria-describedby={
+                  [fieldErrors.email ? "login-email-error" : null, error ? "login-error" : null]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
+                onBlur={validate}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  setFieldErrors((prev) => (prev.email ? { ...prev, email: undefined } : prev));
+                }}
               />
+              {fieldErrors.email ? (
+                <p id="login-email-error" className="mt-1 text-sm text-destructive">
+                  {fieldErrors.email}
+                </p>
+              ) : null}
             </div>
 
             <div>
@@ -99,13 +144,26 @@ export default function LoginPage() {
                 name="password"
                 autoComplete="current-password"
                 className="mt-1"
-                required
                 type="password"
                 value={password}
                 disabled={submitting}
-                aria-describedby={error ? "login-error" : undefined}
-                onChange={(e) => setPassword(e.target.value)}
+                aria-invalid={!!fieldErrors.password}
+                aria-describedby={
+                  [fieldErrors.password ? "login-password-error" : null, error ? "login-error" : null]
+                    .filter(Boolean)
+                    .join(" ") || undefined
+                }
+                onBlur={validate}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setFieldErrors((prev) => (prev.password ? { ...prev, password: undefined } : prev));
+                }}
               />
+              {fieldErrors.password ? (
+                <p id="login-password-error" className="mt-1 text-sm text-destructive">
+                  {fieldErrors.password}
+                </p>
+              ) : null}
             </div>
           </div>
 
