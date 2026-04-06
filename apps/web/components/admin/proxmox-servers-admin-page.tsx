@@ -52,8 +52,8 @@ type ProxmoxServerFormState = {
 
 const labelClass = "block text-sm font-medium text-foreground";
 const inputClass =
-  "mt-1 w-full rounded-xl border border-border bg-card/80 px-3 py-2.5 text-sm text-foreground shadow-sm outline-none placeholder:text-muted focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70";
-const helperClass = "mt-1 font-sans text-xs text-muted";
+  "mt-1 w-full rounded-xl border border-border bg-card/80 px-3 py-2.5 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70";
+const helperClass = "mt-1 font-sans text-xs text-muted-foreground";
 
 const EMPTY_FORM_STATE: ProxmoxServerFormState = {
   name: "",
@@ -136,7 +136,7 @@ function ProxmoxServerFormFields({ form, setForm, disabled, mode }: FormFieldsPr
   return (
     <div className="grid gap-4">
       <div className="rounded-xl border border-border bg-card/50 px-4 py-4">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted">Proxmox API</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Proxmox API</div>
         <div className="mt-3 grid gap-4">
           <div>
             <label className={labelClass} htmlFor={`${mode}-proxmox-name`}>
@@ -490,7 +490,7 @@ export function ProxmoxServersAdminPage() {
           <div className="flex items-end justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">Proxmox Servers</h1>
-              <p className="mt-1 font-sans text-sm text-muted">
+              <p className="mt-1 font-sans text-sm text-muted-foreground">
                 Store Proxmox API credentials in NOA. Secrets are never shown after save.
               </p>
             </div>
@@ -642,12 +642,12 @@ export function ProxmoxServersAdminPage() {
                   <Dialog.Title className="text-lg font-semibold text-foreground">
                     Add Proxmox server
                   </Dialog.Title>
-                  <Dialog.Description className="mt-1 font-sans text-sm text-muted">
+                  <Dialog.Description className="mt-1 font-sans text-sm text-muted-foreground">
                     Proxmox API token secret is stored securely and never displayed again.
                   </Dialog.Description>
                 </div>
                 <Dialog.Close asChild>
-                  <Button aria-label="Close" className="text-muted hover:text-foreground" size="icon">
+                  <Button aria-label="Close" className="text-muted-foreground hover:text-foreground" size="icon">
                     <Cross2Icon width={18} height={18} />
                   </Button>
                 </Dialog.Close>
@@ -704,12 +704,12 @@ export function ProxmoxServersAdminPage() {
                 <Dialog.Title className="text-lg font-semibold text-foreground">
                   Edit Proxmox server
                 </Dialog.Title>
-                <Dialog.Description className="mt-1 font-sans text-sm text-muted">
+                <Dialog.Description className="mt-1 font-sans text-sm text-muted-foreground">
                   Stored secrets can be replaced, but they are never shown again.
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <Button aria-label="Close" className="text-muted hover:text-foreground" size="icon">
+                <Button aria-label="Close" className="text-muted-foreground hover:text-foreground" size="icon">
                   <Cross2Icon width={18} height={18} />
                 </Button>
               </Dialog.Close>
@@ -790,7 +790,7 @@ export function ProxmoxServersAdminPage() {
                     {selectedServer?.name ?? "Proxmox server"}
                   </div>
                   {selectedServer?.base_url ? (
-                    <div className="mt-0.5 text-xs text-muted">{selectedServer.base_url}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{selectedServer.base_url}</div>
                   ) : null}
                 </div>
                 <Dialog.Close asChild>
@@ -808,7 +808,7 @@ export function ProxmoxServersAdminPage() {
                 <div className="rounded-xl border border-border bg-card px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Server details
                       </div>
                     </div>
@@ -822,26 +822,26 @@ export function ProxmoxServersAdminPage() {
                   </div>
                   <dl className="mt-3 grid gap-3 text-sm">
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Name
                       </dt>
                       <dd className="mt-1 text-foreground">{selectedServer?.name ?? "-"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Base URL
                       </dt>
                       <dd className="mt-1 break-all text-foreground">{selectedServer?.base_url ?? "-"}</dd>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           API token ID
                         </dt>
                         <dd className="mt-1 text-foreground">{selectedServer?.api_token_id ?? "-"}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           SSL
                         </dt>
                         <dd className="mt-1 text-foreground">
@@ -850,7 +850,7 @@ export function ProxmoxServersAdminPage() {
                       </div>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         API secret
                       </dt>
                       <dd className="mt-1 flex items-center gap-2">
@@ -862,7 +862,7 @@ export function ProxmoxServersAdminPage() {
                       </dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Updated
                       </dt>
                       <dd className="mt-1 text-foreground">{formatTimestamp(selectedServer?.updated_at)}</dd>
@@ -873,7 +873,7 @@ export function ProxmoxServersAdminPage() {
                 <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Latest validation
                       </div>
                       <div className="mt-2 flex items-center gap-2">
@@ -892,7 +892,7 @@ export function ProxmoxServersAdminPage() {
                           <span className="status-badge">Not run</span>
                         )}
                       </div>
-                      <p className="mt-2 text-sm text-muted">
+                      <p className="mt-2 text-sm text-muted-foreground">
                         {selectedServer && validateResultById[selectedServer.id]
                           ? validateResultById[selectedServer.id]?.message
                           : "Validate checks the Proxmox API connection."}

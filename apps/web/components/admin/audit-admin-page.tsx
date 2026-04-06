@@ -350,11 +350,11 @@ export function AuditAdminPage() {
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold">Audit</h1>
-            <p className="mt-1 font-sans text-sm text-muted">
+            <p className="mt-1 font-sans text-sm text-muted-foreground">
               Review approvals, executions, and receipts across all threads.
             </p>
           </div>
-          {loading ? <div className="font-sans text-sm text-muted">Loading...</div> : null}
+          {loading ? <div className="font-sans text-sm text-muted-foreground">Loading...</div> : null}
         </div>
 
         <div className="mt-3">
@@ -365,7 +365,7 @@ export function AuditAdminPage() {
             defaultOpen={activeFilterCount > 0}
           >
             <div className="grid gap-3 font-sans md:grid-cols-2 lg:grid-cols-4">
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               From
               <input
                 type="date"
@@ -374,7 +374,7 @@ export function AuditAdminPage() {
                 className="input mt-1"
               />
             </label>
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               To
               <input
                 type="date"
@@ -383,7 +383,7 @@ export function AuditAdminPage() {
                 className="input mt-1"
               />
             </label>
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               Tool
               <input
                 value={draft.toolName}
@@ -392,7 +392,7 @@ export function AuditAdminPage() {
                 className="input mt-1"
               />
             </label>
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               Requested By
               <input
                 value={draft.requestedByEmail}
@@ -401,7 +401,7 @@ export function AuditAdminPage() {
                 className="input mt-1"
               />
             </label>
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               Status
               <select
                 value={draft.status}
@@ -414,7 +414,7 @@ export function AuditAdminPage() {
                 <option value="DENIED">DENIED</option>
               </select>
             </label>
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               Terminal Phase
               <select
                 value={draft.terminalPhase}
@@ -427,7 +427,7 @@ export function AuditAdminPage() {
                 <option value="denied">denied</option>
               </select>
             </label>
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               Thread ID
               <input
                 value={draft.threadId}
@@ -436,7 +436,7 @@ export function AuditAdminPage() {
                 className="input mt-1 font-mono text-[12px]"
               />
             </label>
-            <label className="text-xs text-muted">
+            <label className="text-xs text-muted-foreground">
               Page Size
               <select
                 value={String(draft.limit)}

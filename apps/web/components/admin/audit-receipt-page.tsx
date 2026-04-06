@@ -103,12 +103,12 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Receipt</h1>
-          <p className="mt-1 font-sans text-sm text-muted">Standalone, export-friendly receipt view.</p>
+          <p className="mt-1 font-sans text-sm text-muted-foreground">Standalone, export-friendly receipt view.</p>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href="/admin/audit"
-            className="font-sans text-sm text-muted underline decoration-border/60 underline-offset-4 hover:text-foreground hover:decoration-border"
+            className="font-sans text-sm text-muted-foreground underline decoration-border/60 underline-offset-4 hover:text-foreground hover:decoration-border"
           >
             Back to Audit
           </Link>
@@ -165,7 +165,7 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
             />
           </div>
         ) : (
-          <div className="panel mx-auto w-full max-w-[52rem] p-6 font-sans text-sm text-muted">
+          <div className="panel mx-auto w-full max-w-[52rem] p-6 font-sans text-sm text-muted-foreground">
             {loading ? "Loading receipt..." : "Receipt unavailable."}
           </div>
         )}

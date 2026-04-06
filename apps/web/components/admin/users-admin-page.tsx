@@ -441,7 +441,7 @@ export function UsersAdminPage() {
                 <div className="rounded-xl border border-border bg-card px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Status</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</div>
                       <div className="mt-1 text-sm text-foreground">
                         {selectedUser?.is_active === false ? "Inactive" : "Active"}
                       </div>
@@ -489,7 +489,7 @@ export function UsersAdminPage() {
                     </p>
                   ) : null}
 
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="role-filter">
+                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="role-filter">
                     Role assignment
                   </label>
                   <input
@@ -503,7 +503,7 @@ export function UsersAdminPage() {
                   <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
                     <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-[62vh] p-2">
                       {filteredRoleNames.length === 0 ? (
-                        <div className="px-2 py-3 text-sm text-muted">No matching roles.</div>
+                        <div className="px-2 py-3 text-sm text-muted-foreground">No matching roles.</div>
                       ) : (
                         <ul className="space-y-1">
                           {filteredRoleNames.map((roleName) => {
@@ -535,11 +535,11 @@ export function UsersAdminPage() {
                   </div>
 
                   <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted">Effective tools</div>
+                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Effective tools</div>
                     <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
                       <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-48 p-2">
                         {coerceStringArray(selectedUser?.tools).length === 0 ? (
-                          <div className="px-2 py-2 text-sm text-muted">No tools granted.</div>
+                          <div className="px-2 py-2 text-sm text-muted-foreground">No tools granted.</div>
                         ) : (
                           <ul className="space-y-1">
                             {coerceStringArray(selectedUser?.tools).map((toolName) => (
@@ -555,10 +555,10 @@ export function UsersAdminPage() {
 
                   {coerceStringArray(selectedUser?.direct_tools).length ? (
                     <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                         Legacy direct grants
                       </div>
-                      <p className="mt-1 text-sm text-muted">
+                      <p className="mt-1 text-sm text-muted-foreground">
                         These tools were granted directly to the user (legacy behavior). Direct grants are no longer
                         editable here.
                       </p>

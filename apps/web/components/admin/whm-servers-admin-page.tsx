@@ -65,8 +65,8 @@ type WhmServerFormState = {
 
 const labelClass = "block text-sm font-medium text-foreground";
 const inputClass =
-  "mt-1 w-full rounded-xl border border-border bg-card/80 px-3 py-2.5 text-sm text-foreground shadow-sm outline-none placeholder:text-muted focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70";
-const helperClass = "mt-1 font-sans text-xs text-muted";
+  "mt-1 w-full rounded-xl border border-border bg-card/80 px-3 py-2.5 text-sm text-foreground shadow-sm outline-none placeholder:text-muted-foreground focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70";
+const helperClass = "mt-1 font-sans text-xs text-muted-foreground";
 
 const EMPTY_FORM_STATE: WhmServerFormState = {
   name: "",
@@ -285,7 +285,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
   return (
     <div className="grid gap-4">
       <div className="rounded-xl border border-border bg-card/50 px-4 py-4">
-        <div className="text-xs font-semibold uppercase tracking-wide text-muted">WHM API</div>
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">WHM API</div>
         <div className="mt-3 grid gap-4">
           <div>
             <label className={labelClass} htmlFor={`${mode}-whm-name`}>
@@ -370,7 +370,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
       <div className="rounded-xl border border-border bg-card/50 px-4 py-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-muted">SSH access</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH access</div>
             <p className={helperClass}>Used for CSF, firewall, and other SSH-backed server tools.</p>
           </div>
           <label className="flex items-center gap-2 text-sm text-foreground">
@@ -501,7 +501,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
             )}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-muted">Not configured. CSF, firewall, and other SSH-backed tools will be unavailable until you add SSH credentials and run Validate.</p>
+          <p className="mt-3 text-sm text-muted-foreground">Not configured. CSF, firewall, and other SSH-backed tools will be unavailable until you add SSH credentials and run Validate.</p>
         )}
       </div>
     </div>
@@ -768,7 +768,7 @@ export function WhmServersAdminPage() {
           <div className="flex items-end justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">WHM Servers</h1>
-              <p className="mt-1 font-sans text-sm text-muted">
+              <p className="mt-1 font-sans text-sm text-muted-foreground">
                 Store WHM API and SSH credentials in NOA. CSF and firewall tools run over SSH, and secrets are never shown after save.
               </p>
             </div>
@@ -898,12 +898,12 @@ export function WhmServersAdminPage() {
               <div className="flex items-start justify-between gap-3 border-b border-border bg-card/50 px-5 py-4">
                 <div className="min-w-0">
                   <Dialog.Title className="text-lg font-semibold text-foreground">Add WHM server</Dialog.Title>
-                  <Dialog.Description className="mt-1 font-sans text-sm text-muted">
+                  <Dialog.Description className="mt-1 font-sans text-sm text-muted-foreground">
                     WHM API token and SSH credentials are stored securely and never displayed again. CSF and firewall tools use the SSH path.
                   </Dialog.Description>
                 </div>
                 <Dialog.Close asChild>
-                  <Button aria-label="Close" className="text-muted hover:text-foreground" size="icon">
+                  <Button aria-label="Close" className="text-muted-foreground hover:text-foreground" size="icon">
                     <Cross2Icon width={18} height={18} />
                   </Button>
                 </Dialog.Close>
@@ -947,12 +947,12 @@ export function WhmServersAdminPage() {
             <div className="flex items-start justify-between gap-3 border-b border-border bg-card/50 px-5 py-4">
               <div className="min-w-0">
                 <Dialog.Title className="text-lg font-semibold text-foreground">Edit WHM server</Dialog.Title>
-                <Dialog.Description className="mt-1 font-sans text-sm text-muted">
+                <Dialog.Description className="mt-1 font-sans text-sm text-muted-foreground">
                   Stored secrets can be replaced, but they are never shown again.
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <Button aria-label="Close" className="text-muted hover:text-foreground" size="icon">
+                <Button aria-label="Close" className="text-muted-foreground hover:text-foreground" size="icon">
                   <Cross2Icon width={18} height={18} />
                 </Button>
               </Dialog.Close>
@@ -1025,7 +1025,7 @@ export function WhmServersAdminPage() {
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-foreground">{selectedServer?.name ?? "WHM server"}</div>
                   {selectedServer?.base_url ? (
-                    <div className="mt-0.5 text-xs text-muted">{selectedServer.base_url}</div>
+                    <div className="mt-0.5 text-xs text-muted-foreground">{selectedServer.base_url}</div>
                   ) : null}
                 </div>
                 <Dialog.Close asChild>
@@ -1044,7 +1044,7 @@ export function WhmServersAdminPage() {
                 <div className="rounded-xl border border-border bg-card px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Server details</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server details</div>
                     </div>
                     <Button disabled={!selectedServer || deleteBusyId === selectedServer.id} onClick={openEdit} size="sm">
                       Edit server
@@ -1052,25 +1052,25 @@ export function WhmServersAdminPage() {
                   </div>
                   <dl className="mt-3 grid gap-3 text-sm">
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Name</dt>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</dt>
                       <dd className="mt-1 text-foreground">{selectedServer?.name ?? "-"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Base URL</dt>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Base URL</dt>
                       <dd className="mt-1 break-all text-foreground">{selectedServer?.base_url ?? "-"}</dd>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">API user</dt>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">API user</dt>
                         <dd className="mt-1 text-foreground">{selectedServer?.api_username ?? "-"}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">SSL</dt>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSL</dt>
                         <dd className="mt-1 text-foreground">{selectedServer?.verify_ssl ? "Verify enabled" : "Verification off"}</dd>
                       </div>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Updated</dt>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Updated</dt>
                       <dd className="mt-1 text-foreground">{formatTimestamp(selectedServer?.updated_at)}</dd>
                     </div>
                   </dl>
@@ -1079,7 +1079,7 @@ export function WhmServersAdminPage() {
                 <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">SSH access</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH access</div>
                       <div className="mt-2 flex items-center gap-2">
                         <span className={["status-badge", sshStatus.className].join(" ")}>{sshStatus.label}</span>
                         {selectedServer?.ssh_host_key_fingerprint ? (
@@ -1093,20 +1093,20 @@ export function WhmServersAdminPage() {
                   <dl className="mt-3 grid gap-3 text-sm">
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">SSH user</dt>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH user</dt>
                         <dd className="mt-1 text-foreground">{selectedServer?.ssh_username || "root (default)"}</dd>
                       </div>
                       <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted">SSH port</dt>
+                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH port</dt>
                         <dd className="mt-1 text-foreground">{selectedServer?.ssh_port ?? 22}</dd>
                       </div>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Authentication</dt>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Authentication</dt>
                       <dd className="mt-1 text-foreground">{getSshAuthLabel(selectedServer)}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted">Host key fingerprint</dt>
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Host key fingerprint</dt>
                       <dd className="mt-1 break-all font-mono text-xs text-foreground">
                         {selectedServer?.ssh_host_key_fingerprint ?? "Not validated yet"}
                       </dd>
@@ -1117,7 +1117,7 @@ export function WhmServersAdminPage() {
                 <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted">Latest validation</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest validation</div>
                       <div className="mt-2 flex items-center gap-2">
                         {selectedServer && validateResultById[selectedServer.id] ? (
                           <span
@@ -1134,7 +1134,7 @@ export function WhmServersAdminPage() {
                           <span className="status-badge">Not run</span>
                         )}
                       </div>
-                        <p className="mt-2 text-sm text-muted">
+                        <p className="mt-2 text-sm text-muted-foreground">
                           {selectedServer && validateResultById[selectedServer.id]
                             ? validateResultById[selectedServer.id]?.message
                             : "Validate checks the WHM API token path, then SSH (if configured) for CSF and other SSH-backed tools, and refreshes the pinned SSH host key fingerprint."}

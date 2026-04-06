@@ -398,7 +398,7 @@ export function RolesAdminPage() {
           <div className="flex items-end justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">Roles</h1>
-              <p className="mt-1 font-sans text-sm text-muted">Manage tool sets and assign them to users.</p>
+              <p className="mt-1 font-sans text-sm text-muted-foreground">Manage tool sets and assign them to users.</p>
             </div>
 
             <div className="flex items-center gap-2">
@@ -514,12 +514,12 @@ export function RolesAdminPage() {
               <div className="flex items-start justify-between gap-3 border-b border-border bg-card/50 px-5 py-4">
                 <div className="min-w-0">
                   <Dialog.Title className="text-lg font-semibold text-foreground">Add role</Dialog.Title>
-                  <Dialog.Description className="mt-1 font-sans text-sm text-muted">
+                  <Dialog.Description className="mt-1 font-sans text-sm text-muted-foreground">
                     Create a new role name to assign tools and grant access.
                   </Dialog.Description>
                 </div>
                 <Dialog.Close asChild>
-                  <Button aria-label="Close" className="text-muted hover:text-foreground" size="icon">
+                  <Button aria-label="Close" className="text-muted-foreground hover:text-foreground" size="icon">
                     <Cross2Icon width={18} height={18} />
                   </Button>
                 </Dialog.Close>
@@ -606,7 +606,7 @@ export function RolesAdminPage() {
               <div className="flex items-start justify-between gap-3 border-b border-border bg-card px-4 py-4">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-foreground">{selectedRoleName ?? "Role"}</div>
-                  <div className="mt-0.5 text-xs text-muted">Manage tool assignments</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">Manage tool assignments</div>
                 </div>
                 <Dialog.Close asChild>
                   <Button aria-label="Close" size="icon">
@@ -647,7 +647,7 @@ export function RolesAdminPage() {
                   </p>
                 ) : null}
 
-                <label className="text-xs font-semibold uppercase tracking-wide text-muted" htmlFor="role-tool-filter">
+                <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="role-tool-filter">
                   Tools
                 </label>
                 <input
@@ -663,9 +663,9 @@ export function RolesAdminPage() {
                 <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
                   <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-[62vh] p-2">
                     {roleToolsLoading ? (
-                      <div className="px-2 py-3 text-sm text-muted">Loading role tools...</div>
+                      <div className="px-2 py-3 text-sm text-muted-foreground">Loading role tools...</div>
                     ) : filteredToolNames.length === 0 ? (
-                      <div className="px-2 py-3 text-sm text-muted">No matching tools.</div>
+                      <div className="px-2 py-3 text-sm text-muted-foreground">No matching tools.</div>
                     ) : (
                       <ul className="space-y-1">
                         {filteredToolNames.map((toolName) => {
