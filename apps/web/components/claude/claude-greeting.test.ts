@@ -16,14 +16,24 @@ describe("formatClaudeGreetingName", () => {
     ).toBe("Casey");
   });
 
-  it("falls back to the email prefix", () => {
+  it("falls back to a humanized email local part", () => {
     expect(
       formatClaudeGreetingName({
         id: "1",
         email: "person@example.com",
         display_name: "   ",
       }),
-    ).toBe("person");
+    ).toBe("Person");
+  });
+
+  it("splits dotted email local parts into words", () => {
+    expect(
+      formatClaudeGreetingName({
+        id: "1",
+        email: "smoke.example@noa.test",
+        display_name: "   ",
+      }),
+    ).toBe("Smoke Example");
   });
 
   it("falls back to a generic greeting when user data is missing", () => {

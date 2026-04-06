@@ -93,17 +93,20 @@ const ThreadListItem: FC<{
   activeRemoteId?: string | null;
   itemId: string;
   remoteId: string;
+  threadTitle?: string | null;
 }> = ({
   onSelect,
   activeRemoteId,
   itemId,
   remoteId,
+  threadTitle,
 }) => {
   const runtime = useAssistantRuntime();
   const resetRuntime = useResetAssistantRuntime();
   const router = useRouter();
   const pathname = usePathname();
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const titleTooltip = threadTitle?.trim();
 
   return (
     <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-lg px-4 py-2 transition-colors hover:bg-primary/60 data-[active]:bg-primary/60">
@@ -127,7 +130,7 @@ const ThreadListItem: FC<{
         }}
         className="min-w-0 flex-1 rounded-md text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <span className="block truncate" title={remoteId}>
+        <span className="block line-clamp-2 text-sm leading-5" title={titleTooltip || remoteId}>
           <ThreadListItemPrimitive.Title fallback="Untitled" />
         </span>
       </ThreadListItemPrimitive.Trigger>
@@ -275,12 +278,13 @@ export function ClaudeThreadList({
     }
 
     const seenRemoteIds = new Set<string>();
-    const result: Array<{ id: string; remoteId: string }> = [];
+    const result: Array<{ id: string; remoteId: string; title?: string }> = [];
 
     for (const id of threadIds) {
       if (typeof id !== "string") continue;
       const item = idToItem.get(id);
       const remoteId = item?.remoteId;
+      const title = typeof item?.title === "string" ? item.title.trim() : "";
 
       if (typeof remoteId !== "string" || !remoteId) {
         continue;
@@ -291,7 +295,7 @@ export function ClaudeThreadList({
       }
 
       seenRemoteIds.add(remoteId);
-      result.push({ id, remoteId });
+      result.push({ id, remoteId, title: title || undefined });
     }
 
     return result;
@@ -585,6 +589,7 @@ export function ClaudeThreadList({
                 activeRemoteId={activeRemoteId}
                 itemId={item.id}
                 remoteId={item.remoteId}
+                threadTitle={item.title}
               />
             </ThreadListItemByIdProvider>
           ))}
