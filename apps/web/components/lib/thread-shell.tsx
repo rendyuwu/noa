@@ -13,7 +13,7 @@ import {
 } from "@assistant-ui/react";
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
-import { Button } from "@/components/lib/button";
+import { Button } from "@/components/ui/button";
 import { ScrollBar } from "@/components/lib/scroll-area";
 
 function ApprovalActions({ args }: { args: Record<string, unknown> }) {
@@ -32,10 +32,10 @@ function ApprovalActions({ args }: { args: Record<string, unknown> }) {
         Tool: <code>{toolName}</code>
       </p>
       <div className="row">
-        <Button onClick={() => sendCommand({ type: "approve-action", actionRequestId })} variant="primary">
+        <Button onClick={() => sendCommand({ type: "approve-action", actionRequestId })} variant="default">
           Approve
         </Button>
-        <Button onClick={() => sendCommand({ type: "deny-action", actionRequestId })} variant="danger">
+        <Button onClick={() => sendCommand({ type: "deny-action", actionRequestId })} variant="destructive">
           Deny
         </Button>
       </div>
@@ -78,7 +78,7 @@ const ToolFallback = ({ toolName, status, argsText, result }: any) => {
 const UserMessage = () => {
   return (
     <MessagePrimitive.Root className="row" style={{ justifyContent: "flex-end", marginBottom: 10 }}>
-      <div className="panel bg-surface-2" style={{ padding: "8px 10px", maxWidth: "80%" }}>
+      <div className="panel bg-accent" style={{ padding: "8px 10px", maxWidth: "80%" }}>
         <MessagePrimitive.Parts />
       </div>
     </MessagePrimitive.Root>

@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 
-import * as Dialog from "@radix-ui/react-dialog";
-
 import { useAssistantApi, useAssistantState } from "@assistant-ui/react";
 
 import { ClaudeThread } from "@/components/assistant/claude-thread";
@@ -12,6 +10,7 @@ import { ClaudeThreadList } from "@/components/assistant/claude-thread-list";
 import { RequestApprovalToolUI } from "@/components/assistant/request-approval-tool-ui";
 import { WorkflowReceiptToolUI } from "@/components/assistant/workflow-receipt-tool-ui";
 import { WorkflowTodoToolUI } from "@/components/assistant/workflow-todo-tool-ui";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { ApiError } from "@/components/lib/fetch-helper";
@@ -178,8 +177,8 @@ export function ClaudeWorkspace() {
   ]);
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
-      <section className="relative h-dvh w-full overflow-hidden bg-bg">
+    <Sheet open={open} onOpenChange={setOpen}>
+      <section className="relative h-dvh w-full overflow-hidden bg-background">
         <RequestApprovalToolUI />
         <WorkflowTodoToolUI />
         <WorkflowReceiptToolUI />
@@ -203,13 +202,13 @@ export function ClaudeWorkspace() {
            <div className="h-full min-h-0 min-w-0">
              {routeThreadError ? (
                <div className="mx-auto max-w-[56rem] px-4 pt-4">
-                 <div className="rounded-2xl border border-border bg-surface/70 px-4 py-3 font-ui text-sm text-text shadow-sm">
+                  <div className="rounded-2xl border border-border bg-card/70 px-4 py-3 font-sans text-sm text-foreground shadow-sm">
                    <div className="flex flex-wrap items-center justify-between gap-3">
                      <p>{routeThreadError}</p>
                       <button
                         type="button"
                         onClick={() => router.push("/assistant", { scroll: false })}
-                        className="inline-flex items-center justify-center rounded-xl bg-accent px-3 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 active:scale-[0.99]"
+                        className="inline-flex items-center justify-center rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.99]"
                       >
                        New chat
                      </button>
@@ -224,29 +223,16 @@ export function ClaudeWorkspace() {
             </div>
           </div>
 
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0 md:hidden" />
-
-          <Dialog.Content
-            className={[
-              "fixed inset-y-0 left-0 z-50 w-[18rem] max-w-[86vw]",
-              "bg-bg shadow-[0_1rem_3rem_rgba(0,0,0,0.22)]",
-              "transition-transform duration-200 ease-out",
-              "data-[state=open]:translate-x-0 data-[state=closed]:-translate-x-full",
-              "outline-none",
-              "md:hidden",
-            ].join(" ")}
-          >
-            <Dialog.Title className="sr-only">Chats</Dialog.Title>
-            <Dialog.Description className="sr-only">
-              Browse recent conversations and start a new chat.
-            </Dialog.Description>
-            <div className="h-full">
-              <ClaudeThreadList onSelectThread={closeSidebar} onCloseSidebar={closeSidebar} />
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
+        <SheetContent side="left" className="w-[18rem] max-w-[86vw] p-0 md:hidden">
+          <SheetTitle className="sr-only">Chats</SheetTitle>
+          <SheetDescription className="sr-only">
+            Browse recent conversations and start a new chat.
+          </SheetDescription>
+          <div className="h-full">
+            <ClaudeThreadList onSelectThread={closeSidebar} onCloseSidebar={closeSidebar} />
+          </div>
+        </SheetContent>
       </section>
-    </Dialog.Root>
+    </Sheet>
   );
 }

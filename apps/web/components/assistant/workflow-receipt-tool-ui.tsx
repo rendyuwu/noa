@@ -114,28 +114,28 @@ function getBadge(outcome: ReceiptOutcome): ReceiptBadge {
     case "changed":
       return {
         label: "SUCCESS",
-        className: "bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/25",
+        className: "bg-success/10 text-success ring-1 ring-success/25",
       };
     case "partial":
       return {
         label: "PARTIAL",
-        className: "bg-amber-500/10 text-amber-200 ring-1 ring-amber-500/25",
+        className: "bg-warning/10 text-warning-foreground ring-1 ring-warning/25",
       };
     case "no_op":
     case "info":
       return {
         label: "NO-OP",
-        className: "bg-surface-2 text-muted ring-1 ring-border/40",
+        className: "bg-accent text-muted-foreground ring-1 ring-border/40",
       };
     case "failed":
       return {
         label: "FAILED",
-        className: "bg-rose-500/10 text-rose-200 ring-1 ring-rose-500/25",
+        className: "bg-destructive/10 text-destructive ring-1 ring-destructive/25",
       };
     case "denied":
       return {
         label: "DENIED",
-        className: "bg-slate-500/10 text-slate-200 ring-1 ring-slate-500/25",
+        className: "bg-muted text-muted-foreground ring-1 ring-border",
       };
   }
 }
@@ -235,20 +235,12 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
   const toolRunId = coerceString(payload.toolRunId);
   const toolName = coerceString(payload.toolName);
 
-  if (!replyTemplate) {
-    return (
-      <div className="mt-3 rounded-xl border border-border bg-surface/70 p-3 text-sm text-muted">
-        Workflow receipt unavailable.
-      </div>
-    );
-  }
-
-  const badge = getBadge(replyTemplate.outcome);
+  const badge = replyTemplate ? getBadge(replyTemplate.outcome) : null;
   const sectionsForDetail = [
     {
       title: "Overview",
       items: [
-        { label: "Status", value: badge.label },
+        { label: "Status", value: badge?.label ?? "" },
         { label: "Tool", value: toolName ?? "workflow_receipt" },
         { label: "Action ID", value: actionRequestId ?? "" },
         { label: "Tool run ID", value: toolRunId ?? "" },
@@ -283,6 +275,14 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
       },
     ];
   }, [rawJson, sectionsForDetail]);
+
+  if (!replyTemplate || !badge) {
+    return (
+      <div className="mt-3 rounded-xl border border-border bg-card/70 p-3 text-sm text-muted-foreground">
+        Workflow receipt unavailable.
+      </div>
+    );
+  }
 
   const canCopyImage = canWriteClipboardPng();
 
@@ -332,15 +332,15 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
   ) => {
     if (items.length === 0) return null;
     return (
-      <div className="rounded-lg border border-border/60 bg-bg/25 px-3 py-2">
-        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted">
+      <div className="rounded-lg border border-border/60 bg-background/25 px-3 py-2">
+        <div className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           {title}
         </div>
         <div className="mt-2 space-y-1.5">
           {items.map((item) => (
-            <div key={`${title}-${item.label}-${item.value}`} className="min-w-0 text-xs text-muted">
-              <span className="font-medium text-text">{item.label}</span>
-              <span className="text-muted">: </span>
+            <div key={`${title}-${item.label}-${item.value}`} className="min-w-0 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{item.label}</span>
+              <span className="text-muted-foreground">: </span>
               <span className="break-words" style={clampStyle(1)}>
                 {item.value}
               </span>
@@ -352,10 +352,10 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
   };
 
   return (
-    <div className="mt-3 rounded-2xl border border-border/60 bg-bg/10 px-3 py-3">
+      <div className="mt-3 rounded-2xl border border-border/60 bg-background/10 px-3 py-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-text">{replyTemplate.title}</div>
+          <div className="truncate text-sm font-semibold text-foreground">{replyTemplate.title}</div>
         </div>
         <div
           className={[
@@ -367,7 +367,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         </div>
       </div>
 
-      <div className="mt-1 text-xs text-muted" style={clampStyle(2)}>
+      <div className="mt-1 text-xs text-muted-foreground" style={clampStyle(2)}>
         {replyTemplate.summary}
       </div>
 
@@ -375,7 +375,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         {renderPreviewBlock("Change", changeItems)}
         {renderPreviewBlock("Verification", verifyItems)}
         {moreCount > 0 ? (
-          <div className="px-1 text-[11px] text-muted">+{moreCount} more</div>
+           <div className="px-1 text-[11px] text-muted-foreground">+{moreCount} more</div>
         ) : null}
       </div>
 
@@ -386,7 +386,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
           aria-expanded={detailsOpen}
           aria-controls={panelId}
           onClick={() => setDetailsOpen((value) => !value)}
-          className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text"
+           className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
         >
           {detailsOpen ? "Hide details" : "Details"}
           <ChevronRightIcon
@@ -409,7 +409,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
                 ? undefined
                 : "Copy image requires HTTPS (or localhost) and browser support for ClipboardItem."
             }
-            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {copyImageState === "copied"
               ? "Copied"
@@ -421,7 +421,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
             type="button"
             onClick={downloadPng}
             disabled={imageBusy}
-            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {downloadState === "done"
               ? "Downloaded"
@@ -432,19 +432,18 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         </div>
       </div>
 
-      <div
+      <section
         id={panelId}
-        role="region"
         aria-labelledby={toggleId}
         hidden={!detailsOpen}
         className="mt-3"
       >
         {detailsOpen ? (
-          <div className="rounded-xl border border-border bg-bg/15 px-3 py-3">
+          <div className="rounded-xl border border-border bg-background/15 px-3 py-3">
             <DetailSections sections={sectionsForInline} variant="inline" showEmptyState />
           </div>
         ) : null}
-      </div>
+      </section>
     </div>
   );
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { WorkflowReceiptSurface } from "@/components/assistant/workflow-receipt-renderer";
-import { Button } from "@/components/lib/button";
+import { Button } from "@/components/ui/button";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 import {
@@ -99,16 +99,16 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
   }, [actionRequestId, capturePngBlob, payload]);
 
   return (
-    <main className="min-h-dvh bg-bg p-6">
+    <main className="min-h-dvh bg-background p-6">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-semibold">Receipt</h1>
-          <p className="mt-1 font-ui text-sm text-muted">Standalone, export-friendly receipt view.</p>
+          <p className="mt-1 font-sans text-sm text-muted">Standalone, export-friendly receipt view.</p>
         </div>
         <div className="flex items-center gap-2">
           <Link
             href="/admin/audit"
-            className="font-ui text-sm text-muted underline decoration-border/60 underline-offset-4 hover:text-text hover:decoration-border"
+            className="font-sans text-sm text-muted underline decoration-border/60 underline-offset-4 hover:text-foreground hover:decoration-border"
           >
             Back to Audit
           </Link>
@@ -119,7 +119,7 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
         <div
           role="alert"
           aria-live="assertive"
-          className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+          className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
         >
           <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">{loadError}</div>
@@ -148,7 +148,7 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
                 ? "Failed"
                 : "Copy image"}
           </Button>
-          <Button size="sm" variant="secondary" onClick={downloadPng} disabled={!payload || loading}>
+          <Button size="sm" variant="outline" onClick={downloadPng} disabled={!payload || loading}>
             {downloadState === "done" ? "Downloaded" : downloadState === "failed" ? "Download failed" : "Download PNG"}
           </Button>
         </div>
@@ -165,7 +165,7 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
             />
           </div>
         ) : (
-          <div className="panel mx-auto w-full max-w-[52rem] p-6 font-ui text-sm text-muted">
+          <div className="panel mx-auto w-full max-w-[52rem] p-6 font-sans text-sm text-muted">
             {loading ? "Loading receipt..." : "Receipt unavailable."}
           </div>
         )}

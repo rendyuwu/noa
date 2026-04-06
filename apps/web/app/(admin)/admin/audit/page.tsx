@@ -25,7 +25,7 @@ export default function AdminAuditPage() {
   }
 
   return (
-    <div className="min-h-dvh bg-bg p-0">
+    <div className="min-h-dvh bg-background p-0">
       <NoaAssistantRuntimeProvider>
         <AdminSidebarShell>
           <AuditAdminPage />

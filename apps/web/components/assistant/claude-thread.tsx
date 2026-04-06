@@ -68,21 +68,21 @@ function ComposerControlsRow() {
       <div className="relative flex min-w-0 flex-1 shrink items-center gap-2">
         <DisabledIconButton
           label="Add attachment"
-          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted transition-all hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <PlusIcon width={16} height={16} />
         </DisabledIconButton>
 
         <DisabledIconButton
           label="Open tools menu"
-          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted transition-all hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <MixerHorizontalIcon width={16} height={16} />
         </DisabledIconButton>
 
         <DisabledIconButton
           label="Extended thinking"
-          className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted transition-all hover:bg-surface-2 hover:text-text active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <ReloadIcon width={16} height={16} />
         </DisabledIconButton>
@@ -90,7 +90,7 @@ function ComposerControlsRow() {
 
       <DisabledIconButton
         label="Model selector"
-        className="flex h-8 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 pr-2 pl-2.5 text-text text-xs transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-surface-2 active:scale-[0.985] disabled:pointer-events-none disabled:opacity-70"
+        className="flex h-8 min-w-16 items-center justify-center gap-1 whitespace-nowrap rounded-md px-2 pr-2 pl-2.5 text-foreground text-xs transition duration-300 ease-[cubic-bezier(0.165,0.85,0.45,1)] hover:bg-accent active:scale-[0.985] disabled:pointer-events-none disabled:opacity-70"
       >
         <span className="font-serif text-[14px]">Sonnet 4.5</span>
         <ChevronDownIcon width={20} height={20} className="opacity-75" />
@@ -98,9 +98,9 @@ function ComposerControlsRow() {
 
       <ComposerPrimitive.Send
         aria-label="Send message"
-        className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent transition-colors hover:bg-accent/90 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
+        className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary transition-colors hover:bg-primary/90 active:scale-95 disabled:pointer-events-none disabled:opacity-50"
       >
-        <ArrowUpIcon width={16} height={16} className="text-white" />
+        <ArrowUpIcon width={16} height={16} className="text-primary-foreground" />
       </ComposerPrimitive.Send>
     </div>
   );
@@ -109,8 +109,8 @@ function ComposerControlsRow() {
 function ClaudeLiveDot({ className = "" }: { className?: string }) {
   return (
     <span className={["relative inline-flex h-2.5 w-2.5 shrink-0", className].join(" ")}>
-      <span className="absolute inset-0 animate-ping rounded-full bg-accent/45" />
-      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-accent" />
+      <span className="absolute inset-0 animate-ping rounded-full bg-primary/45" />
+      <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
     </span>
   );
 }
@@ -120,7 +120,7 @@ function ClaudeRunIndicator() {
     <div
       role="status"
       aria-label="Claude is responding"
-      className="inline-flex items-center gap-2 rounded-full border border-border bg-surface/85 px-3 py-1.5 font-ui text-xs text-muted shadow-sm backdrop-blur-sm"
+      className="inline-flex items-center gap-2 rounded-full border border-border bg-card/85 px-3 py-1.5 font-sans text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
     >
       <ClaudeLiveDot />
       <span>Responding...</span>
@@ -145,8 +145,8 @@ function EmptyLanding() {
 
   return (
     <div className="flex min-h-full w-full flex-1 flex-col items-center justify-center px-3 py-10">
-      <div className="claude-landing-anim-1 flex items-center gap-3 text-text">
-        <span aria-hidden="true" className="text-2xl leading-none text-accent">
+      <div className="noa-landing-anim-1 flex items-center gap-3 text-foreground">
+        <span aria-hidden="true" className="text-2xl leading-none text-primary">
           *
         </span>
         <h1 className="text-center text-4xl font-medium tracking-[-0.02em] sm:text-5xl">
@@ -154,8 +154,8 @@ function EmptyLanding() {
         </h1>
       </div>
 
-      <div className="claude-landing-anim-2 mt-8 w-full max-w-2xl">
-        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-md">
+      <div className="noa-landing-anim-2 mt-8 w-full max-w-2xl">
+        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-2xl border border-border bg-card p-0.5 shadow-md">
           <div className="m-4 flex flex-col gap-3.5">
             <ScrollArea
               className="w-full"
@@ -167,7 +167,7 @@ function EmptyLanding() {
                 ref={inputRef}
                 placeholder="How can I help you today?"
                 aria-label="Message input"
-                className="block min-h-10 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
+                className="block min-h-10 w-full resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
               />
             </ScrollArea>
 
@@ -177,7 +177,7 @@ function EmptyLanding() {
       </div>
 
       <ScrollArea
-        className="claude-landing-anim-3 mt-4 w-full max-w-2xl"
+        className="noa-landing-anim-3 mt-4 w-full max-w-2xl"
         verticalScrollbar={false}
         horizontalScrollbar
         viewportClassName="pb-1"
@@ -190,9 +190,9 @@ function EmptyLanding() {
               onClick={() => setPrompt(chip.label, chip.text)}
               aria-pressed={activeChip === chip.label}
               className={[
-                "inline-flex items-center gap-2 rounded-full border border-border bg-surface/70 px-3 py-1.5 font-ui text-sm text-text shadow-sm transition",
-                "hover:bg-surface active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/35 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
-                activeChip === chip.label ? "border-accent/40" : "",
+                "inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1.5 font-sans text-sm text-foreground shadow-sm transition",
+                "hover:bg-card active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                activeChip === chip.label ? "border-primary/40" : "",
               ].join(" ")}
               title="Prefill prompt"
             >
@@ -214,21 +214,21 @@ function ThreadHydrationSkeleton() {
     >
       <div className="mx-auto w-full max-w-3xl">
         <div className="flex justify-end">
-          <div className="h-10 w-40 animate-pulse rounded-2xl bg-surface-2" />
+          <div className="h-10 w-40 animate-pulse rounded-2xl bg-accent" />
         </div>
 
         <div className="mt-12 space-y-3">
-          <div className="h-5 w-5/6 animate-pulse rounded-lg bg-surface-2" />
-          <div className="h-5 w-full animate-pulse rounded-lg bg-surface-2" />
-          <div className="h-5 w-11/12 animate-pulse rounded-lg bg-surface-2" />
-          <div className="h-5 w-4/6 animate-pulse rounded-lg bg-surface-2" />
-          <div className="h-5 w-10/12 animate-pulse rounded-lg bg-surface-2" />
-          <div className="h-5 w-3/6 animate-pulse rounded-lg bg-surface-2" />
+          <div className="h-5 w-5/6 animate-pulse rounded-lg bg-accent" />
+          <div className="h-5 w-full animate-pulse rounded-lg bg-accent" />
+          <div className="h-5 w-11/12 animate-pulse rounded-lg bg-accent" />
+          <div className="h-5 w-4/6 animate-pulse rounded-lg bg-accent" />
+          <div className="h-5 w-10/12 animate-pulse rounded-lg bg-accent" />
+          <div className="h-5 w-3/6 animate-pulse rounded-lg bg-accent" />
         </div>
       </div>
 
       <div className="mt-auto w-full">
-        <div className="mx-auto h-16 w-full max-w-3xl animate-pulse rounded-2xl bg-surface-2" />
+        <div className="mx-auto h-16 w-full max-w-3xl animate-pulse rounded-2xl bg-accent" />
       </div>
     </div>
   );
@@ -247,13 +247,13 @@ export const ClaudeThread: FC<{
     threadStatus !== "new" && (forceHydrationSkeleton || isHydrating);
 
   return (
-    <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-bg px-4 pb-4 pt-14 font-serif">
+    <ThreadPrimitive.Root className="relative flex h-full min-h-0 flex-col items-stretch bg-background px-4 pb-4 pt-14 font-serif">
       {onOpenSidebarAction ? (
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2 md:hidden">
           <button
             type="button"
             onClick={onOpenSidebarAction}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-surface/70 text-muted shadow-sm backdrop-blur-sm transition hover:bg-surface hover:text-text active:scale-[0.98]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card/70 text-muted-foreground shadow-sm backdrop-blur-sm transition hover:bg-card hover:text-foreground active:scale-[0.98]"
             aria-label="Open sidebar"
           >
             <HamburgerMenuIcon width={18} height={18} />
@@ -286,14 +286,14 @@ export const ClaudeThread: FC<{
           ) : null}
 
 
-          <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-surface p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
+          <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-card p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
             <div className="m-3.5 flex flex-col gap-3.5">
               <div className="relative">
                 <ScrollArea className="w-full" viewportClassName="wrap-break-word max-h-96">
                   <ComposerPrimitive.Input
                     placeholder="How can I help you today?"
                     aria-label="Message input"
-                    className="block min-h-6 w-full resize-none bg-transparent text-text outline-none placeholder:text-muted"
+                    className="block min-h-6 w-full resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
                   />
                 </ScrollArea>
               </div>
@@ -312,7 +312,7 @@ function ClaudeThinkingIndicator() {
     <div
       role="status"
       aria-label="Claude is thinking"
-      className="inline-flex items-center gap-2 text-muted text-sm"
+      className="inline-flex items-center gap-2 text-muted-foreground text-sm"
     >
       <span
         aria-hidden="true"
@@ -326,7 +326,7 @@ function ClaudeThinkingIndicator() {
         aria-hidden="true"
         className="h-2 w-2 animate-pulse rounded-full bg-current opacity-25 [animation-delay:300ms]"
       />
-      <span className="font-ui">Thinking...</span>
+      <span className="font-sans">Thinking...</span>
     </div>
   );
 }
@@ -336,7 +336,7 @@ function ClaudeStreamingIndicator() {
     <div
       role="status"
       aria-label="Claude is still responding"
-      className="mt-2 inline-flex items-center gap-2 font-ui text-xs text-muted"
+      className="mt-2 inline-flex items-center gap-2 font-sans text-xs text-muted-foreground"
     >
       <ClaudeLiveDot className="h-2 w-2" />
       <span>Responding...</span>
@@ -433,7 +433,7 @@ const ChatMessage: FC = () => {
         <div className="flex w-full justify-end">
           <div
             data-testid="user-message"
-            className="ml-auto max-w-[75ch] rounded-2xl bg-surface-2 px-4 py-3 text-text shadow-sm ring-1 ring-border/40"
+            className="ml-auto max-w-[75ch] rounded-2xl bg-accent px-4 py-3 text-foreground shadow-sm ring-1 ring-border/40"
           >
             <div className="wrap-break-word">
               <MessagePrimitive.Parts components={{ Text: UserText }} />
@@ -446,7 +446,7 @@ const ChatMessage: FC = () => {
         <div className={["relative font-serif", assistantSpacingClassName].join(" ")}>
           <div className="relative leading-[1.65rem]">
             <div className="grid grid-cols-1 gap-2.5">
-              <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-text">
+              <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-foreground">
                 {showLoading ? <ClaudeThinkingIndicator /> : null}
                 <MessagePrimitive.Parts
                   components={{

@@ -44,8 +44,8 @@ function InlineEvidenceItem({
 }) {
   return (
     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-3">
-      <dt className="text-muted">{item.label}</dt>
-      <dd className="min-w-0 break-words text-text">
+      <dt className="text-muted-foreground">{item.label}</dt>
+      <dd className="min-w-0 break-words text-foreground">
         <TruncatedText text={item.value} initialLines={12} mono={mono} />
       </dd>
     </div>
@@ -75,9 +75,9 @@ function InlineEvidenceSectionBody({ section }: { section: AssistantDetailEviden
           type="button"
           onClick={() => setShowAllItems((value) => !value)}
           className={[
-            "inline-flex items-center text-[11px] font-medium text-muted",
-            "transition-colors hover:text-text",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+            "inline-flex items-center text-[11px] font-medium text-muted-foreground",
+            "transition-colors hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           ].join(" ")}
         >
           {showAllItems ? "Show less" : `Show ${hiddenCount} more`}
@@ -101,7 +101,7 @@ export function DetailSections({
   if (sections.length === 0) {
     if (!showEmptyState) return null;
     return (
-      <div className="rounded-xl border border-dashed border-border bg-bg/20 px-4 py-3 text-sm text-muted">
+      <div className="rounded-xl border border-dashed border-border bg-background/20 px-4 py-3 text-sm text-muted-foreground">
         No structured evidence is available for this request.
       </div>
     );
@@ -133,9 +133,9 @@ export function DetailSections({
   return sections.map((section) => (
     <section
       key={section.title}
-      className="rounded-xl border border-border bg-bg/35 px-4 py-3"
+      className="rounded-xl border border-border bg-background/35 px-4 py-3"
     >
-      <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+      <h3 className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
         {section.title}
       </h3>
       <dl className="mt-3 space-y-2 text-sm">
@@ -144,8 +144,8 @@ export function DetailSections({
             key={`${section.title}-${item.label}-${index}`}
             className="grid grid-cols-[8rem_minmax(0,1fr)] gap-3"
           >
-            <dt className="text-muted">{item.label}</dt>
-            <dd className="min-w-0 break-words text-text">{item.value}</dd>
+            <dt className="text-muted-foreground">{item.label}</dt>
+            <dd className="min-w-0 break-words text-foreground">{item.value}</dd>
           </div>
         ))}
       </dl>

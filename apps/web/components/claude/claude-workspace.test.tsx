@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("next/navigation", () => ({
@@ -13,24 +14,15 @@ vi.mock("next/navigation", () => ({
   useParams: () => ({}),
 }));
 
-vi.mock("@radix-ui/react-dialog", async () => {
-  const React = await import("react");
-
-  type WrapperProps = { children?: React.ReactNode };
-
-  return {
-    Root: ({ children }: WrapperProps) => <div>{children}</div>,
-    Portal: ({ children }: WrapperProps) => <div>{children}</div>,
-    Overlay: (props: React.ComponentPropsWithoutRef<"div">) => <div {...props} />,
-    Content: (props: React.ComponentPropsWithoutRef<"div">) => <div {...props} />,
-    Title: (props: React.ComponentPropsWithoutRef<"h2">) => <h2 {...props} />,
-    Description: (props: React.ComponentPropsWithoutRef<"p">) => <p {...props} />,
-    Close: ({ children }: WrapperProps) => <>{children}</>,
-  };
-});
-
 vi.mock("@/components/assistant/claude-thread", () => ({
-  ClaudeThread: () => <div data-testid="claude-thread" />,
+  ClaudeThread: ({ onOpenSidebarAction }: { onOpenSidebarAction?: () => void }) => (
+    <div>
+      <button type="button" aria-label="Open sidebar" onClick={onOpenSidebarAction}>
+        Open sidebar
+      </button>
+      <div data-testid="claude-thread" />
+    </div>
+  ),
 }));
 
 vi.mock("@/components/assistant/claude-thread-list", () => ({
@@ -55,9 +47,8 @@ vi.mock("@/components/lib/auth-store", () => ({
 }));
 
 vi.mock("@/components/lib/runtime-provider", async () => {
-  const React = await import("react");
   return {
-    NoaAssistantRuntimeProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+    NoaAssistantRuntimeProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
   };
 });
 
@@ -115,7 +106,7 @@ describe("/assistant full-bleed shell", () => {
     const main = screen.getByRole("main");
     expect(main).not.toHaveClass("page-shell");
     expect(main).toHaveClass("min-h-dvh");
-    expect(main).toHaveClass("bg-bg");
+    expect(main).toHaveClass("bg-background");
   });
 
   it("renders ClaudeWorkspace without the framed card shell", () => {
@@ -134,7 +125,7 @@ describe("/assistant full-bleed shell", () => {
     render(<ClaudeWorkspace />);
 
     const thread = screen.getByTestId("claude-thread");
-    const host = thread.parentElement;
+    const host = thread.parentElement?.parentElement;
     expect(host).not.toBeNull();
     expect(host!).toHaveClass("min-h-0");
     expect(host!).toHaveClass("min-w-0");
@@ -148,7 +139,7 @@ describe("/assistant full-bleed shell", () => {
     render(<ClaudeWorkspace />);
 
     const thread = screen.getByTestId("claude-thread");
-    const grid = thread.parentElement?.parentElement;
+    const grid = thread.parentElement?.parentElement?.parentElement;
     expect(grid).not.toBeNull();
     expect(grid!).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
   });
@@ -156,9 +147,12 @@ describe("/assistant full-bleed shell", () => {
   it("sets the mobile drawer width to 18rem (capped to 86vw)", () => {
     render(<ClaudeWorkspace />);
 
-    const drawer = screen.getByText("Chats").parentElement;
+    fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
+
+    const drawer = screen.getByRole("dialog", { name: "Chats" });
     expect(drawer).not.toBeNull();
     expect(drawer!).toHaveClass("w-[18rem]");
     expect(drawer!).toHaveClass("max-w-[86vw]");
+    expect(drawer!).toHaveAttribute("data-state", "open");
   });
 });

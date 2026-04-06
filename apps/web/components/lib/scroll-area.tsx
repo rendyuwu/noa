@@ -5,9 +5,7 @@ import type { ComponentPropsWithoutRef, ElementRef } from "react";
 
 import * as ScrollAreaPrimitive from "@radix-ui/react-scroll-area";
 
-function joinClasses(...values: Array<string | false | null | undefined>) {
-  return values.filter(Boolean).join(" ");
-}
+import { cn } from "@/lib/utils";
 
 export type ScrollAreaProps = ComponentPropsWithoutRef<typeof ScrollAreaPrimitive.Root> & {
   viewportClassName?: string;
@@ -31,12 +29,12 @@ export const ScrollArea = forwardRef<ElementRef<typeof ScrollAreaPrimitive.Root>
       <ScrollAreaPrimitive.Root
         ref={ref}
         data-slot="scroll-area"
-        className={joinClasses("relative overflow-hidden", className)}
+        className={cn("relative overflow-hidden", className)}
         {...props}
       >
         <ScrollAreaPrimitive.Viewport
           data-slot="scroll-area-viewport"
-          className={joinClasses("w-full", viewportClassName)}
+          className={cn("size-full rounded-[inherit]", viewportClassName)}
         >
           {children}
         </ScrollAreaPrimitive.Viewport>
@@ -57,7 +55,7 @@ export const ScrollBar = forwardRef<ElementRef<typeof ScrollAreaPrimitive.Scroll
         ref={ref}
         data-slot="scroll-area-scrollbar"
         orientation={orientation}
-        className={joinClasses(
+        className={cn(
           "flex touch-none select-none p-px transition-colors",
           orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent",
           orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent",

@@ -106,7 +106,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
 
   if (!actionRequestId) {
     return (
-      <div className="mt-2 rounded-lg border border-border bg-surface/70 p-3 text-sm text-muted">
+      <div className="mt-2 rounded-lg border border-border bg-card/70 p-3 text-sm text-muted-foreground">
         Missing action request id.
       </div>
     );
@@ -127,11 +127,11 @@ function Actions({ args }: { args: Record<string, unknown> }) {
 
   if (lifecycleStatus === "requested") {
     return (
-      <div className="mt-3 rounded-xl border border-accent/20 bg-accent/5 px-3 py-3">
+      <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-sm font-medium text-text">{activity}</div>
-            <div className="mt-1 text-xs text-muted">
+            <div className="text-sm font-medium text-foreground">{activity}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
               {summaryText ?? copy.detail}
             </div>
           </div>
@@ -154,7 +154,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
               setPendingDecision("approving");
               sendCommand({ type: "approve-action", actionRequestId });
             }}
-            className="inline-flex h-8 items-center justify-center rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pendingDecision === "approving" ? "Approving..." : "Approve"}
           </button>
@@ -165,7 +165,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
               setPendingDecision("denying");
               sendCommand({ type: "deny-action", actionRequestId });
             }}
-            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-text transition-all hover:bg-surface-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-foreground transition-all hover:bg-accent active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pendingDecision === "denying" ? "Denying..." : "Deny"}
           </button>
@@ -175,7 +175,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
             aria-expanded={detailsOpen}
             aria-controls={panelId}
             onClick={() => setDetailsOpen((value) => !value)}
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text"
+            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           >
             {detailsOpen ? "Hide details" : "Details"}
             <ChevronRightIcon
@@ -198,7 +198,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           className="mt-3"
         >
           {detailsOpen ? (
-            <div className="rounded-xl border border-border bg-bg/15 px-3 py-3">
+            <div className="rounded-xl border border-border bg-background/15 px-3 py-3">
               <DetailSections sections={sectionsForInline} variant="inline" showEmptyState />
             </div>
           ) : null}
@@ -238,19 +238,19 @@ const TOOL_COPY: Record<string, { label: string; doing: string; done: string }> 
 const STATUS_BADGE: Record<string, { label: string; className: string }> = {
   running: {
     label: "running",
-    className: "bg-accent/10 text-accent",
+    className: "bg-primary/10 text-primary",
   },
   complete: {
     label: "complete",
-    className: "bg-surface-2/60 text-muted",
+    className: "bg-primary/60 text-muted-foreground",
   },
   incomplete: {
     label: "failed",
-    className: "bg-rose-50 text-rose-700",
+    className: "bg-destructive/10 text-destructive",
   },
   "requires-action": {
     label: "requires-action",
-    className: "bg-accent/15 text-accent",
+    className: "bg-primary/15 text-primary",
   },
 };
 
@@ -261,15 +261,15 @@ function humanizeToolName(toolName: string): string {
 function ToolLiveDot({ statusType }: { statusType: string }) {
   const dotClassName =
     statusType === "incomplete"
-      ? "bg-rose-500"
+      ? "bg-destructive"
       : statusType === "requires-action"
-        ? "bg-amber-500"
-        : "bg-accent";
+        ? "bg-warning"
+        : "bg-primary";
 
   return (
     <span className="relative inline-flex h-2.5 w-2.5 shrink-0">
       {statusType === "running" ? (
-        <span className="absolute inset-0 animate-ping rounded-full bg-accent/40" aria-hidden="true" />
+        <span className="absolute inset-0 animate-ping rounded-full bg-primary/40" aria-hidden="true" />
       ) : null}
       <span className={["relative inline-flex h-2.5 w-2.5 rounded-full", dotClassName].join(" ")} aria-hidden="true" />
     </span>
@@ -339,12 +339,12 @@ export function ClaudeToolFallback({ toolName, status, result, isError }: any) {
     <div
       role="status"
       aria-label={`${copy.label} ${badge.label}`}
-      className="flex items-center justify-between gap-2 rounded-md bg-surface/35 px-2 py-1.5 text-xs"
+      className="flex items-center justify-between gap-2 rounded-md bg-card/35 px-2 py-1.5 text-xs"
     >
-      <div className="flex min-w-0 items-center gap-2 truncate text-muted">
+      <div className="flex min-w-0 items-center gap-2 truncate text-muted-foreground">
         <ToolLiveDot statusType={statusType} />
-        <span className="font-medium text-text">{copy.label}</span>
-        <span className="mx-1.5 text-muted">-</span>
+        <span className="font-medium text-foreground">{copy.label}</span>
+        <span className="mx-1.5 text-muted-foreground">-</span>
         <span>{activityText}</span>
       </div>
       <div className={["shrink-0 rounded px-1.5 py-0.5 text-[10px]", badge.className].join(" ")}>

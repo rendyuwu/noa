@@ -43,32 +43,32 @@ type StatusStyle = {
 const STATUS_STYLES: Record<WorkflowTodoStatus, StatusStyle> = {
   pending: {
     label: "pending",
-    className: "bg-surface-2 text-muted",
+    className: "bg-accent text-muted-foreground",
     Icon: DotFilledIcon,
   },
   in_progress: {
     label: "in progress",
-    className: "bg-accent/15 text-accent",
+    className: "bg-primary/15 text-primary",
     Icon: DotFilledIcon,
   },
   waiting_on_user: {
     label: "waiting on user",
-    className: "bg-amber-100 text-amber-900",
+    className: "bg-warning/15 text-warning-foreground",
     Icon: DotFilledIcon,
   },
   waiting_on_approval: {
     label: "waiting on approval",
-    className: "bg-sky-100 text-sky-900",
+    className: "bg-info/15 text-info",
     Icon: DotFilledIcon,
   },
   completed: {
     label: "done",
-    className: "bg-surface-2 text-muted",
+    className: "bg-accent text-muted-foreground",
     Icon: CheckIcon,
   },
   cancelled: {
     label: "cancelled",
-    className: "bg-red-50 text-red-800",
+    className: "bg-destructive/10 text-destructive",
     Icon: Cross2Icon,
   },
 };
@@ -197,15 +197,15 @@ export function WorkflowTodoCard({
   ].filter(Boolean);
   const title = "Run summary";
   const badge = cancelledCount > 0 ? "ended" : "done";
-  const badgeClassName = "bg-surface-2 text-muted";
+  const badgeClassName = "bg-accent text-muted-foreground";
   const sections = evidenceSections ?? [];
 
   return (
-    <div className="mt-3 rounded-lg border border-border/60 bg-bg/10 px-3 py-2">
+    <div className="mt-3 rounded-lg border border-border/60 bg-background/10 px-3 py-2">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm text-text">{title}</div>
-          <div className="mt-1 text-xs text-muted">{summaryParts.join(" · ")}</div>
+          <div className="text-sm text-foreground">{title}</div>
+          <div className="mt-1 text-xs text-muted-foreground">{summaryParts.join(" · ")}</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           <div className={["rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]", badgeClassName].join(" ")}>
@@ -217,7 +217,7 @@ export function WorkflowTodoCard({
             aria-expanded={detailsOpen}
             aria-controls={panelId}
             onClick={() => setDetailsOpen((value) => !value)}
-            className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-text"
+            className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground transition hover:text-foreground"
           >
             {detailsOpen ? "Hide details" : "Details"}
             <ChevronRightIcon
@@ -241,7 +241,7 @@ export function WorkflowTodoCard({
         className="mt-3"
       >
         {detailsOpen ? (
-          <div className="rounded-xl border border-border bg-bg/15 px-3 py-3">
+          <div className="rounded-xl border border-border bg-background/15 px-3 py-3">
             <WorkflowRunDetailsBody todos={todos} sections={sections} variant="inline" />
           </div>
         ) : null}
@@ -255,25 +255,25 @@ type WorkflowRunDetailsVariant = "sheet" | "inline";
 function WorkflowTodoStatsGrid({ todos }: { todos: WorkflowTodoItem[] }) {
   return (
     <div className="grid grid-cols-3 gap-2 pb-1">
-      <div className="rounded-xl border border-border bg-bg/35 px-3 py-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+      <div className="rounded-xl border border-border bg-background/35 px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Completed
         </div>
-        <div className="mt-1 text-sm font-medium text-text">
+        <div className="mt-1 text-sm font-medium text-foreground">
           {todos.filter((todo) => todo.status === "completed").length}
         </div>
       </div>
-      <div className="rounded-xl border border-border bg-bg/35 px-3 py-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">Blocked</div>
-        <div className="mt-1 text-sm font-medium text-text">
+      <div className="rounded-xl border border-border bg-background/35 px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">Blocked</div>
+        <div className="mt-1 text-sm font-medium text-foreground">
           {todos.filter((todo) => isWorkflowTodoBlocked(todo.status)).length}
         </div>
       </div>
-      <div className="rounded-xl border border-border bg-bg/35 px-3 py-2">
-        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted">
+      <div className="rounded-xl border border-border bg-background/35 px-3 py-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
           Cancelled
         </div>
-        <div className="mt-1 text-sm font-medium text-text">
+        <div className="mt-1 text-sm font-medium text-foreground">
           {todos.filter((todo) => todo.status === "cancelled").length}
         </div>
       </div>
@@ -293,20 +293,20 @@ function WorkflowTodoRow({ todo, index }: { todo: WorkflowTodoItem; index: numbe
       className={[
         "flex items-start justify-between gap-3 rounded-xl px-3 py-3",
         isBlocked
-          ? "bg-amber-50/80 ring-1 ring-amber-200"
+          ? "bg-warning/10 ring-1 ring-warning/25"
           : todo.status === "in_progress"
-            ? "bg-accent/6 ring-1 ring-accent/15"
-            : "bg-bg/35",
+            ? "bg-primary/6 ring-1 ring-primary/15"
+            : "bg-background/35",
       ].join(" ")}
     >
       <div className="min-w-0">
-        <div className="flex items-center gap-2 text-[11px] text-muted">
-          <span className="font-ui">Step {index + 1}</span>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="font-sans">Step {index + 1}</span>
           {isDone ? <CheckIcon width={12} height={12} /> : null}
         </div>
         <div
           className={[
-            "mt-1 text-sm text-text",
+            "mt-1 text-sm text-foreground",
             isDone || isCancelled ? "opacity-70" : "opacity-100",
           ].join(" ")}
         >

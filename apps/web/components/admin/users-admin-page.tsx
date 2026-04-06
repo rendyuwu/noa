@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Cross2Icon } from "@radix-ui/react-icons";
 import * as Dialog from "@radix-ui/react-dialog";
 
-import { Button } from "@/components/lib/button";
+import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
@@ -299,17 +299,17 @@ export function UsersAdminPage() {
         if (!open) closePanel();
       }}
     >
-      <main className="min-h-dvh bg-bg p-6">
+      <main className="min-h-dvh bg-background p-6">
         <div className="flex items-end justify-between gap-3">
           <h1 className="text-2xl font-semibold">Users</h1>
-          {loading ? <div className="muted font-ui">Loading...</div> : null}
+          {loading ? <div className="muted font-sans">Loading...</div> : null}
         </div>
 
         {loadError ? (
           <div
             role="alert"
             aria-live="assertive"
-            className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+            className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
           >
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">{loadError}</div>
@@ -321,8 +321,8 @@ export function UsersAdminPage() {
         ) : null}
 
         <div className="panel mt-6 overflow-hidden">
-          <table className="w-full font-ui text-sm">
-            <thead className="bg-surface-2 text-muted">
+          <table className="w-full font-sans text-sm">
+            <thead className="bg-accent text-muted">
               <tr>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Email</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
@@ -364,7 +364,7 @@ export function UsersAdminPage() {
                       tabIndex={0}
                       aria-haspopup="dialog"
                       aria-label={`Manage roles for ${user.email}`}
-                      className="cursor-pointer transition-colors hover:bg-surface-2/60 focus-visible:bg-surface-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
+                      className="cursor-pointer transition-colors hover:bg-primary/60 focus-visible:bg-primary/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
                       onClick={(event) => openPanelForUser(user, event.currentTarget)}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
@@ -374,7 +374,7 @@ export function UsersAdminPage() {
                       }}
                     >
                       <td className="px-4 py-3">
-                        <div className="font-medium text-text">{user.email}</div>
+                        <div className="font-medium text-foreground">{user.email}</div>
                         {user.display_name ? (
                           <div className="mt-0.5 text-xs text-muted">{user.display_name}</div>
                         ) : null}
@@ -398,7 +398,7 @@ export function UsersAdminPage() {
           <Dialog.Content
             className={[
               "fixed inset-y-0 right-0 z-50 w-[30rem] max-w-[92vw]",
-              "border-border border-l bg-bg shadow-md",
+              "border-border border-l bg-background shadow-md",
               "transition-transform duration-200 ease-out",
               "data-[state=open]:translate-x-0 data-[state=closed]:translate-x-full",
               "outline-none",
@@ -414,9 +414,9 @@ export function UsersAdminPage() {
             </Dialog.Description>
 
             <div className="flex h-full flex-col">
-              <div className="flex items-start justify-between gap-3 border-b border-border bg-surface px-4 py-4">
+              <div className="flex items-start justify-between gap-3 border-b border-border bg-card px-4 py-4">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-text">
+                  <div className="text-sm font-semibold text-foreground">
                     {selectedUser?.display_name ?? selectedUser?.email ?? "User"}
                   </div>
                   {selectedUser?.email ? (
@@ -430,19 +430,19 @@ export function UsersAdminPage() {
                 </Dialog.Close>
               </div>
 
-              <ScrollArea className="flex-1 min-h-0 font-ui" viewportClassName="h-full p-4">
-                <div className="rounded-xl border border-border bg-surface px-3 py-3">
+              <ScrollArea className="flex-1 min-h-0 font-sans" viewportClassName="h-full p-4">
+                <div className="rounded-xl border border-border bg-card px-3 py-3">
                   <div className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-muted">Status</div>
-                      <div className="mt-1 text-sm text-text">
+                      <div className="mt-1 text-sm text-foreground">
                         {selectedUser?.is_active === false ? "Inactive" : "Active"}
                       </div>
                     </div>
                     <Button
                       className="shrink-0"
                       disabled={!selectedUser || statusSaving}
-                      variant={selectedUser?.is_active === false ? "primary" : "danger"}
+                      variant={selectedUser?.is_active === false ? "default" : "destructive"}
                       onClick={() => void toggleUserStatus()}
                       size="sm"
                     >
@@ -455,7 +455,7 @@ export function UsersAdminPage() {
                   <p
                     role="alert"
                     aria-live="assertive"
-                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                    className="mt-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                   >
                     {statusError}
                   </p>
@@ -465,7 +465,7 @@ export function UsersAdminPage() {
                   <p
                     role="alert"
                     aria-live="assertive"
-                    className="mt-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                    className="mt-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                   >
                     {deleteError}
                   </p>
@@ -476,7 +476,7 @@ export function UsersAdminPage() {
                     <p
                       role="alert"
                       aria-live="assertive"
-                      className="mb-3 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                      className="mb-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                     >
                       {saveError}
                     </p>
@@ -493,7 +493,7 @@ export function UsersAdminPage() {
                     onChange={(e) => setRoleFilter(e.target.value)}
                   />
 
-                  <div className="mt-3 overflow-hidden rounded-xl border border-border bg-surface">
+                  <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
                     <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-[62vh] p-2">
                       {filteredRoleNames.length === 0 ? (
                         <div className="px-2 py-3 text-sm text-muted">No matching roles.</div>
@@ -508,7 +508,7 @@ export function UsersAdminPage() {
                             return (
                               <li key={roleName}>
                                 <label
-                                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-surface-2"
+                                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent"
                                   htmlFor={inputId}
                                 >
                                   <input
@@ -517,7 +517,7 @@ export function UsersAdminPage() {
                                     checked={checked}
                                     onChange={() => toggleRole(roleName)}
                                   />
-                                  <span className="text-sm text-text">{roleName}</span>
+                                  <span className="text-sm text-foreground">{roleName}</span>
                                 </label>
                               </li>
                             );
@@ -527,16 +527,16 @@ export function UsersAdminPage() {
                     </ScrollArea>
                   </div>
 
-                  <div className="mt-4 rounded-xl border border-border bg-surface px-3 py-3">
+                  <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
                     <div className="text-xs font-semibold uppercase tracking-wide text-muted">Effective tools</div>
-                    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-bg/25">
+                    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
                       <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-48 p-2">
                         {coerceStringArray(selectedUser?.tools).length === 0 ? (
                           <div className="px-2 py-2 text-sm text-muted">No tools granted.</div>
                         ) : (
                           <ul className="space-y-1">
                             {coerceStringArray(selectedUser?.tools).map((toolName) => (
-                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-text">
+                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-foreground">
                                 {toolName}
                               </li>
                             ))}
@@ -547,7 +547,7 @@ export function UsersAdminPage() {
                   </div>
 
                   {coerceStringArray(selectedUser?.direct_tools).length ? (
-                    <div className="mt-4 rounded-xl border border-border bg-surface px-3 py-3">
+                    <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
                       <div className="text-xs font-semibold uppercase tracking-wide text-muted">
                         Legacy direct grants
                       </div>
@@ -556,11 +556,11 @@ export function UsersAdminPage() {
                         editable here.
                       </p>
 
-                      <div className="mt-2 overflow-hidden rounded-lg border border-border bg-bg/25">
+                      <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
                         <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-48 p-2">
                           <ul className="space-y-1">
                             {coerceStringArray(selectedUser?.direct_tools).map((toolName) => (
-                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-text">
+                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-foreground">
                                 {toolName}
                               </li>
                             ))}
@@ -575,7 +575,7 @@ export function UsersAdminPage() {
                       className="w-full"
                       disabled={!selectedUser || saving}
                       onClick={() => void saveRoles()}
-                      variant="primary"
+                      variant="default"
                     >
                       {saving ? "Saving..." : "Save"}
                     </Button>
@@ -609,7 +609,7 @@ export function UsersAdminPage() {
                             setDeleteError(null);
                             open();
                           }}
-                          variant="danger"
+                          variant="destructive"
                         >
                           Delete user
                         </Button>

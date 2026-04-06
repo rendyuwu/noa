@@ -3,6 +3,10 @@
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 
+import { InlineAlert } from "@/components/noa/inline-alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { toUserMessage } from "@/components/lib/error-message";
 import { getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { setAuthToken, setAuthUser } from "@/components/lib/auth-store";
@@ -28,10 +32,6 @@ export default function LoginPage() {
     if (raw.startsWith("//")) return null;
     return raw;
   };
-
-  const labelClass = "block text-sm font-medium text-text";
-  const inputClass =
-    "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70";
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -62,25 +62,25 @@ export default function LoginPage() {
       <form
         onSubmit={onSubmit}
         aria-busy={submitting}
-        className="w-full max-w-[420px] overflow-hidden rounded-2xl border border-border bg-surface/70 shadow-[0_0.5rem_2rem_rgba(0,0,0,0.06)] backdrop-blur-sm"
+        className="w-full max-w-[420px] overflow-hidden rounded-2xl border border-border bg-card/70 shadow-lg backdrop-blur-sm"
       >
         <div className="p-6 sm:p-7">
-          <h1 className="text-3xl font-semibold leading-tight tracking-[-0.02em] text-text">
+          <h1 className="text-3xl font-semibold leading-tight tracking-[-0.02em] text-foreground">
             Login
           </h1>
-          <p className="mt-2 font-ui text-sm text-muted">Sign in with your LDAP credentials.</p>
+          <p className="mt-2 font-sans text-sm text-muted-foreground">Sign in with your LDAP credentials.</p>
 
-          <div className="mt-6 space-y-4 font-ui">
+          <div className="mt-6 space-y-4 font-sans">
             <div>
-              <label htmlFor="login-email" className={labelClass}>
+              <Label htmlFor="login-email">
                 Email
-              </label>
-              <input
+              </Label>
+              <Input
                 id="login-email"
                 name="email"
                 autoComplete="username"
                 inputMode="email"
-                className={inputClass}
+                className="mt-1"
                 required
                 type="email"
                 value={email}
@@ -91,14 +91,14 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label htmlFor="login-password" className={labelClass}>
+              <Label htmlFor="login-password">
                 Password
-              </label>
-              <input
+              </Label>
+              <Input
                 id="login-password"
                 name="password"
                 autoComplete="current-password"
-                className={inputClass}
+                className="mt-1"
                 required
                 type="password"
                 value={password}
@@ -110,23 +110,14 @@ export default function LoginPage() {
           </div>
 
           <div className="mt-6 border-t border-border pt-5">
-            <button
-              className="inline-flex w-full items-center justify-center rounded-xl bg-accent px-4 py-2.5 font-ui text-sm font-semibold text-white shadow-sm transition hover:bg-accent/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.99]"
-              disabled={submitting}
-              type="submit"
-            >
+            <Button className="w-full" disabled={submitting} type="submit">
               {submitting ? "Signing in..." : "Sign in"}
-            </button>
+            </Button>
 
             {error ? (
-              <p
-                id="login-error"
-                role="alert"
-                aria-live="assertive"
-                className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
-              >
+              <InlineAlert id="login-error" variant="destructive" className="mt-4" role="alert" aria-live="assertive">
                 {error}
-              </p>
+              </InlineAlert>
             ) : null}
           </div>
         </div>

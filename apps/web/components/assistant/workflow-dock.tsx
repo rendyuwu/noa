@@ -78,7 +78,7 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
   return (
     <div
       className={[
-        "overflow-hidden rounded-2xl border border-border bg-surface/96 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)] transition-all duration-200",
+        "overflow-hidden rounded-2xl border border-border bg-card/96 shadow-md transition-all duration-200",
         phase === "close" ? "opacity-75" : "opacity-100",
       ].join(" ")}
       data-testid="workflow-todo-dock"
@@ -87,23 +87,23 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
       <button
         type="button"
         onClick={() => setCollapsed((value) => !value)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2/70"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/70"
       >
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <div
             className={[
               "mt-1 h-2.5 w-2.5 shrink-0 rounded-full",
-              phase === "close" ? "bg-surface-2" : isBlocked ? "bg-amber-500" : "bg-accent",
+              phase === "close" ? "bg-accent" : isBlocked ? "bg-warning" : "bg-primary",
             ].join(" ")}
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 text-sm text-text">
+            <div className="flex items-center gap-2 text-sm text-foreground">
               <span className="font-semibold">{copy.title}</span>
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 font-ui text-[11px] text-muted">
+              <span className="rounded-full bg-accent px-2 py-0.5 font-sans text-[11px] text-muted-foreground">
                 {getProgressLabel(todos)}
               </span>
             </div>
-            <div className="mt-1 truncate font-ui text-sm text-muted">{preview}</div>
+            <div className="mt-1 truncate font-sans text-sm text-muted-foreground">{preview}</div>
           </div>
         </div>
         <div
@@ -115,10 +115,10 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
             className={[
               "rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
               isBlocked
-                ? "bg-amber-100 text-amber-900"
+                ? "bg-warning/15 text-warning-foreground"
                 : phase === "close"
-                  ? "bg-surface-2 text-muted"
-                  : "bg-accent/15 text-accent",
+                  ? "bg-accent text-muted-foreground"
+                  : "bg-primary/15 text-primary",
             ].join(" ")}
           >
             {copy.badge}
@@ -127,7 +127,7 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
             width={16}
             height={16}
             className={[
-              "text-muted transition-transform duration-200",
+              "text-muted-foreground transition-transform duration-200",
               collapsed ? "rotate-0" : "rotate-180",
             ].join(" ")}
           />
@@ -148,20 +148,20 @@ export function WorkflowDock({ todos, isRunning }: { todos: WorkflowTodoItem[]; 
                     "flex items-start justify-between gap-3 rounded-xl px-3 py-2 transition-colors",
                     isActive
                       ? isTodoBlocked
-                        ? "bg-amber-50/80 ring-1 ring-amber-200"
-                        : "bg-accent/6 ring-1 ring-accent/15"
-                      : "bg-bg/40",
+                        ? "bg-warning/10 ring-1 ring-warning/25"
+                        : "bg-primary/6 ring-1 ring-primary/15"
+                      : "bg-background/40",
                   ].join(" ")}
                   data-testid={isActive ? "workflow-active-step" : undefined}
                 >
                   <div className="min-w-0">
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted">
+                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                       <DotFilledIcon width={14} height={14} />
-                      <span className="font-ui">
+                      <span className="font-sans">
                         {isActive ? (isTodoBlocked ? "Waiting" : "Current") : `Step ${index + 1}`}
                       </span>
                     </div>
-                    <div className="mt-1 pr-2 text-sm text-text">{todo.content}</div>
+                    <div className="mt-1 pr-2 text-sm text-foreground">{todo.content}</div>
                   </div>
                   <div
                     className={[

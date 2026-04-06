@@ -5,7 +5,7 @@ import remarkGfm from "remark-gfm";
 
 import "@assistant-ui/react-markdown/styles/dot.css";
 
-import { ScrollArea } from "@/components/lib/scroll-area";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 // Used as a MessagePrimitive.Parts Text renderer.
 export const MarkdownText = (_props: any) => {
@@ -16,9 +16,7 @@ export const MarkdownText = (_props: any) => {
         table: ({ className, node: _node, ...props }: any) => (
           <ScrollArea
             data-testid="md-table-scroll"
-            className="my-2 w-full rounded-xl border border-border bg-surface/60 shadow-sm backdrop-blur-sm"
-            verticalScrollbar={false}
-            horizontalScrollbar
+            className="my-2 w-full rounded-xl border border-border bg-card/60 shadow-sm backdrop-blur-sm"
           >
             <table
               {...props}
@@ -36,9 +34,9 @@ export const MarkdownText = (_props: any) => {
       }}
       className={[
         "[&_:is(p,ul,ol,pre,blockquote,table)]:my-2",
-        "[&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border [&_pre]:bg-surface-2 [&_pre]:p-2",
-        "[&_code:not(pre_code)]:rounded-md [&_code:not(pre_code)]:bg-surface-2/70 [&_code:not(pre_code)]:px-1 [&_code:not(pre_code)]:py-0.5",
-        "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted",
+        "[&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border [&_pre]:bg-accent [&_pre]:p-2",
+        "[&_code:not(pre_code)]:rounded-md [&_code:not(pre_code)]:bg-accent/70 [&_code:not(pre_code)]:px-1 [&_code:not(pre_code)]:py-0.5",
+        "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",
       ].join(" ")}
     />
   );

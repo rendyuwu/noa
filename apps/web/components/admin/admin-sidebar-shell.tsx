@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-import * as Dialog from "@radix-ui/react-dialog";
 import { HamburgerMenuIcon } from "@radix-ui/react-icons";
 
 import { ClaudeThreadList } from "@/components/assistant/claude-thread-list";
 import { ScrollArea } from "@/components/lib/scroll-area";
+import { Sheet, SheetContent, SheetDescription, SheetTitle } from "@/components/ui/sheet";
 
 type DesktopSidebarMode = "expanded" | "collapsed";
 
@@ -82,7 +82,7 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
   return (
     <div
       className={[
-        "grid h-dvh min-h-0 w-full grid-cols-1 overflow-hidden bg-bg transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none",
+        "grid h-dvh min-h-0 w-full grid-cols-1 overflow-hidden bg-background transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none",
         desktopSidebarMode === "expanded"
           ? "md:grid-cols-[18rem_minmax(0,1fr)]"
           : "md:grid-cols-[3rem_minmax(0,1fr)]",
@@ -102,7 +102,7 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={openSidebar}
-            className="flex h-9 items-center gap-2 rounded-lg border border-border bg-surface/70 px-3 font-ui text-sm text-muted shadow-sm backdrop-blur-sm transition hover:bg-surface hover:text-text active:scale-[0.98]"
+            className="flex h-9 items-center gap-2 rounded-lg border border-border bg-card/70 px-3 font-sans text-sm text-muted-foreground shadow-sm backdrop-blur-sm transition hover:bg-card hover:text-foreground active:scale-[0.98]"
           >
             <HamburgerMenuIcon width={16} height={16} />
             Open sidebar
@@ -114,30 +114,17 @@ export function AdminSidebarShell({ children }: { children: ReactNode }) {
         </ScrollArea>
       </div>
 
-      <Dialog.Root open={open} onOpenChange={setOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0 md:hidden" />
-
-          <Dialog.Content
-            className={[
-              "fixed inset-y-0 left-0 z-50 w-[18rem] max-w-[86vw]",
-              "bg-bg shadow-[0_1rem_3rem_rgba(0,0,0,0.22)]",
-              "transition-transform duration-200 ease-out",
-              "data-[state=open]:translate-x-0 data-[state=closed]:-translate-x-full",
-              "outline-none",
-              "md:hidden",
-            ].join(" ")}
-          >
-            <Dialog.Title className="sr-only">Chats</Dialog.Title>
-            <Dialog.Description className="sr-only">
-              Browse recent conversations and start a new chat.
-            </Dialog.Description>
-            <div className="h-full">
-              <ClaudeThreadList onSelectThread={selectThread} onCloseSidebar={closeSidebar} />
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent side="left" className="w-[18rem] max-w-[86vw] p-0 md:hidden">
+          <SheetTitle className="sr-only">Chats</SheetTitle>
+          <SheetDescription className="sr-only">
+            Browse recent conversations and start a new chat.
+          </SheetDescription>
+          <div className="h-full">
+            <ClaudeThreadList onSelectThread={selectThread} onCloseSidebar={closeSidebar} />
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

@@ -24,7 +24,7 @@ function describeLifecycle(status: AssistantActionLifecycleStatus, pendingDecisi
       title: "Sending approval",
       detail: "Buttons are locked while the approval command is in flight.",
       badge: "pending",
-      badgeClassName: "bg-accent/15 text-accent",
+        badgeClassName: "bg-primary/15 text-primary",
       Icon: ClockIcon,
     };
   }
@@ -34,7 +34,7 @@ function describeLifecycle(status: AssistantActionLifecycleStatus, pendingDecisi
       title: "Sending denial",
       detail: "Buttons are locked while the denial command is in flight.",
       badge: "pending",
-      badgeClassName: "bg-amber-100 text-amber-900",
+        badgeClassName: "bg-warning/15 text-warning-foreground",
       Icon: ClockIcon,
     };
   }
@@ -96,28 +96,28 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
   }
 
   return (
-    <div className="overflow-hidden rounded-2xl border border-border bg-surface/96 shadow-[0_0.25rem_1.25rem_rgba(0,0,0,0.035),0_0_0_0.5px_rgba(0,0,0,0.08)]">
+    <div className="overflow-hidden rounded-2xl border border-border bg-card/96 shadow-md">
       <button
         type="button"
         onClick={() => setCollapsed((value) => !value)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-surface-2/70"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-accent/70"
       >
-        <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-accent" />
+        <div className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full bg-primary" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold text-text">{getHeaderCopy(visibleRequests)}</div>
-          <div className="mt-1 truncate font-ui text-sm text-muted">
+          <div className="text-sm font-semibold text-foreground">{getHeaderCopy(visibleRequests)}</div>
+          <div className="mt-1 truncate font-sans text-sm text-muted-foreground">
             {previewRequest ? prettifyToolName(previewRequest.toolName) : "Waiting for a decision."}
           </div>
         </div>
         <div className="inline-flex shrink-0 items-center gap-2">
-          <span className="rounded-full bg-accent/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-accent">
+          <span className="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em] text-primary">
             live
           </span>
           <ChevronDownIcon
             width={16}
             height={16}
             className={[
-              "text-muted transition-transform duration-200",
+              "text-muted-foreground transition-transform duration-200",
               collapsed ? "rotate-0" : "rotate-180",
             ].join(" ")}
           />
@@ -136,15 +136,15 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
           return (
             <div
               key={request.actionRequestId}
-              className="rounded-xl bg-bg/40 px-3 py-2.5"
+               className="rounded-xl bg-background/40 px-3 py-2.5"
               data-testid="approval-dock-card"
             >
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="text-sm font-medium text-text">{prettifyToolName(request.toolName)}</div>
-                  <div className="mt-1 text-xs text-muted">
+                  <div className="text-sm font-medium text-foreground">{prettifyToolName(request.toolName)}</div>
+                  <div className="mt-1 text-xs text-muted-foreground">
                     {copy.title} <span aria-hidden="true">·</span>{" "}
-                    <code className="text-[11px] text-muted">{request.actionRequestId}</code>
+                     <code className="text-[11px] text-muted-foreground">{request.actionRequestId}</code>
                   </div>
                 </div>
                 <div
@@ -170,7 +170,7 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
                       }));
                       sendCommand({ type: "approve-action", actionRequestId: request.actionRequestId });
                     }}
-                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-accent px-3 text-xs font-medium text-white transition-colors hover:bg-accent/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                     className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <CheckIcon width={16} height={16} />
                     {pendingDecision === "approving" ? "Approving..." : "Approve"}
@@ -185,7 +185,7 @@ export function ApprovalDock({ requests }: { requests: AssistantActionRequest[] 
                       }));
                       sendCommand({ type: "deny-action", actionRequestId: request.actionRequestId });
                     }}
-                    className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-text transition-all hover:bg-surface-2 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+                     className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-foreground transition-all hover:bg-accent active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <Cross2Icon width={16} height={16} />
                     {pendingDecision === "denying" ? "Denying..." : "Deny"}

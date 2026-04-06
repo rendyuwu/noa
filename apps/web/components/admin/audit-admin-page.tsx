@@ -13,7 +13,7 @@ import {
 } from "@radix-ui/react-icons";
 
 import { DisclosureSection } from "@/components/assistant/inline-disclosure";
-import { Button } from "@/components/lib/button";
+import { Button } from "@/components/ui/button";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
 
@@ -177,7 +177,7 @@ function IdRow({ label, value }: { label: string; value?: string | null }) {
         title={normalized}
         aria-label={`${expanded ? "Hide" : "Show"} full ${label}`}
         onClick={() => setExpanded((prev) => !prev)}
-        className="min-w-0 text-left font-mono text-[11px] text-text transition-colors hover:text-text/90"
+        className="min-w-0 text-left font-mono text-[11px] text-foreground transition-colors hover:text-foreground/90"
       >
         <span className="break-all">{shown}</span>
       </button>
@@ -344,16 +344,16 @@ export function AuditAdminPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-bg p-6">
+    <main className="min-h-dvh bg-background p-6">
       <div className="mx-auto w-full max-w-[78rem]">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-semibold">Audit</h1>
-            <p className="mt-1 font-ui text-sm text-muted">
+            <p className="mt-1 font-sans text-sm text-muted">
               Review approvals, executions, and receipts across all threads.
             </p>
           </div>
-          {loading ? <div className="font-ui text-sm text-muted">Loading...</div> : null}
+          {loading ? <div className="font-sans text-sm text-muted">Loading...</div> : null}
         </div>
 
         <div className="mt-3">
@@ -363,7 +363,7 @@ export function AuditAdminPage() {
             meta={`${activeFilterCount} active`}
             defaultOpen={activeFilterCount > 0}
           >
-            <div className="grid gap-3 font-ui md:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-3 font-sans md:grid-cols-2 lg:grid-cols-4">
             <label className="text-xs text-muted">
               From
               <input
@@ -459,7 +459,7 @@ export function AuditAdminPage() {
             <Button size="sm" onClick={applyFilters} disabled={loading}>
               Apply
             </Button>
-            <Button size="sm" variant="secondary" onClick={clearFilters} disabled={loading}>
+            <Button size="sm" variant="outline" onClick={clearFilters} disabled={loading}>
               Clear
             </Button>
           </div>
@@ -467,7 +467,7 @@ export function AuditAdminPage() {
         </div>
 
         {loadError ? (
-          <div role="alert" aria-live="assertive" className="danger-zone mt-4 font-ui">
+          <div role="alert" aria-live="assertive" className="danger-zone mt-4 font-sans">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="danger-zone-label text-xs font-semibold uppercase tracking-[0.12em]">
@@ -483,8 +483,8 @@ export function AuditAdminPage() {
         ) : null}
 
         <div className="panel mt-6 overflow-hidden">
-          <table className="w-full font-ui text-sm">
-            <thead className="bg-surface-2 text-muted">
+          <table className="w-full font-sans text-sm">
+            <thead className="bg-accent text-muted">
               <tr>
                 <th className="w-[13rem] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Event</th>
@@ -503,7 +503,7 @@ export function AuditAdminPage() {
                     ) : activeFilterCount ? (
                       <div className="flex items-center justify-between gap-3">
                         <div className="min-w-0">No results match your filters.</div>
-                        <Button size="sm" variant="secondary" onClick={clearFilters}>
+                        <Button size="sm" variant="outline" onClick={clearFilters}>
                           Clear filters
                         </Button>
                       </div>
@@ -524,25 +524,25 @@ export function AuditAdminPage() {
                   const statusChipClass = statusBadgeClass(label.tone);
                   const riskChipClass = riskBadgeClass(item.risk);
                   const actionChipClass =
-                    "inline-flex items-center gap-1 rounded-full border border-border bg-bg/20 px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-surface-2 hover:text-text";
+                    "inline-flex items-center gap-1 rounded-full border border-border bg-background/20 px-2.5 py-1 text-xs font-medium text-muted transition hover:bg-accent hover:text-foreground";
                   const noReceiptClass =
                     "inline-flex items-center gap-1 rounded-full border border-border/60 border-dashed bg-transparent px-2.5 py-1 text-xs font-medium text-muted opacity-70";
 
                   return (
                     <Fragment key={item.actionRequestId}>
-                      <tr className="transition-colors hover:bg-surface-2/40">
+                      <tr className="transition-colors hover:bg-accent/40">
                         <td className="px-4 py-3 text-muted whitespace-nowrap" title={created.title}>
-                          <div className="text-sm text-text/90">{created.primary}</div>
-                          <div className="mt-0.5 font-ui text-xs text-muted">{created.secondary}</div>
+                          <div className="text-sm text-foreground/90">{created.primary}</div>
+                          <div className="mt-0.5 font-sans text-xs text-muted">{created.secondary}</div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="min-w-0">
-                            <div className="truncate font-medium text-text" title={item.toolName}>
+                            <div className="truncate font-medium text-foreground" title={item.toolName}>
                               {displayName}
                             </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-ui text-xs text-muted">
+                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-sans text-xs text-muted">
                               <span>
-                                by <span className="font-medium text-text/90">{requestedBy}</span>
+                                by <span className="font-medium text-foreground/90">{requestedBy}</span>
                               </span>
                               <span className="text-border/70">•</span>
                               <span className={riskChipClass} title={risk.title}>
@@ -584,11 +584,11 @@ export function AuditAdminPage() {
                         </td>
                       </tr>
                       {idsOpen ? (
-                        <tr className="bg-bg/10">
+                        <tr className="bg-background/10">
                           <td colSpan={4} className="px-4 py-3">
                             <div
                               id={`audit-ids-${item.actionRequestId}`}
-                              className="rounded-xl border border-border bg-bg/25 px-4 py-3"
+                              className="rounded-xl border border-border bg-background/25 px-4 py-3"
                             >
                               <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted">
                                 Identifiers
@@ -611,7 +611,7 @@ export function AuditAdminPage() {
           </table>
 
           {!loading && !loadError && (items.length > 0 || cursorStack.length > 0 || Boolean(nextCursor)) ? (
-            <div className="border-t border-border bg-surface/30 px-4 py-3 font-ui">
+            <div className="border-t border-border bg-card/30 px-4 py-3 font-sans">
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div className="text-sm text-muted">
                   Showing {items.length} result{items.length === 1 ? "" : "s"} on this page.
@@ -619,7 +619,7 @@ export function AuditAdminPage() {
                 <div className="flex items-center justify-center gap-2">
                   <Button
                     size="sm"
-                    variant="secondary"
+                    variant="outline"
                     className="gap-1"
                     onClick={goPrev}
                     disabled={cursorStack.length === 0}
@@ -627,10 +627,10 @@ export function AuditAdminPage() {
                     <ArrowLeftIcon width={16} height={16} />
                     Prev
                   </Button>
-                  <div className="font-ui text-xs text-muted">Page {pageIndex}</div>
+                  <div className="font-sans text-xs text-muted">Page {pageIndex}</div>
                   <Button
                     size="sm"
-                    variant="secondary"
+                    variant="outline"
                     className="gap-1"
                     onClick={goNext}
                     disabled={!nextCursor}

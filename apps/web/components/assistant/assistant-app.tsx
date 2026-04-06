@@ -13,7 +13,7 @@ export function AssistantApp({ children }: PropsWithChildren) {
   }
 
   return (
-    <main className="min-h-dvh bg-bg p-0">
+    <main className="min-h-dvh bg-background p-0">
       <NoaAssistantRuntimeProvider>
         {children}
       </NoaAssistantRuntimeProvider>

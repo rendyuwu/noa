@@ -272,7 +272,7 @@ describe("ClaudeThreadList", () => {
     const row = trigger.closest("[data-active]");
 
     expect(row).not.toBeNull();
-    expect(row!).toHaveClass("data-[active]:bg-surface-2/60");
+    expect(row!).toHaveClass("data-[active]:bg-primary/60");
   });
 
   it("dedupes recents by remoteId", () => {

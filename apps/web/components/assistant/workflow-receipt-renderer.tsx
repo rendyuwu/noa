@@ -116,28 +116,28 @@ export function getReceiptBadge(outcome: ReceiptOutcome): ReceiptBadge {
     case "changed":
       return {
         label: "SUCCESS",
-        className: "bg-emerald-500/10 text-emerald-200 ring-1 ring-emerald-500/25",
+        className: "bg-success/10 text-success ring-1 ring-success/25",
       };
     case "partial":
       return {
         label: "PARTIAL",
-        className: "bg-amber-500/10 text-amber-200 ring-1 ring-amber-500/25",
+        className: "bg-warning/10 text-warning-foreground ring-1 ring-warning/25",
       };
     case "no_op":
     case "info":
       return {
         label: "NO-OP",
-        className: "bg-surface-2 text-muted ring-1 ring-border/40",
+        className: "bg-accent text-muted-foreground ring-1 ring-border/40",
       };
     case "failed":
       return {
         label: "FAILED",
-        className: "bg-rose-500/10 text-rose-200 ring-1 ring-rose-500/25",
+        className: "bg-destructive/10 text-destructive ring-1 ring-destructive/25",
       };
     case "denied":
       return {
         label: "DENIED",
-        className: "bg-slate-500/10 text-slate-200 ring-1 ring-slate-500/25",
+        className: "bg-muted text-muted-foreground ring-1 ring-border",
       };
   }
 }
@@ -242,7 +242,7 @@ export function WorkflowReceiptContent({
 
   if (!parsed) {
     return (
-      <div className="rounded-xl border border-border bg-surface/60 px-4 py-3 font-ui text-sm text-muted">
+        <div className="rounded-xl border border-border bg-card/60 px-4 py-3 font-sans text-sm text-muted-foreground">
         Workflow receipt unavailable.
       </div>
     );
@@ -254,7 +254,7 @@ export function WorkflowReceiptContent({
     <div className="space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-base font-semibold text-text">{parsed.replyTemplate.title}</div>
+          <div className="truncate text-base font-semibold text-foreground">{parsed.replyTemplate.title}</div>
         </div>
         <div
           className={[
@@ -265,7 +265,7 @@ export function WorkflowReceiptContent({
           {parsed.badge.label}
         </div>
       </div>
-      <div className="text-sm text-muted">{parsed.replyTemplate.summary}</div>
+      <div className="text-sm text-muted-foreground">{parsed.replyTemplate.summary}</div>
 
       <DetailSections sections={sections} variant="inline" showEmptyState openMode={openMode} />
     </div>
@@ -288,7 +288,7 @@ export function WorkflowReceiptSurface({
       data-receipt-capture={captureId ?? "workflow"}
       className={[
         "panel",
-        "bg-surface",
+        "bg-card",
         "p-6",
         "[contain:layout_paint_style]",
         className,

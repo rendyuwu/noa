@@ -35,7 +35,7 @@ export function DisclosureSection({
   const panelId = `${baseId}-panel`;
 
   return (
-    <section className="rounded-xl border border-border bg-bg/35 px-4 py-3">
+    <section className="rounded-xl border border-border bg-background/35 px-4 py-3">
       <button
         type="button"
         id={toggleId}
@@ -44,23 +44,23 @@ export function DisclosureSection({
         onClick={() => setOpen((value) => !value)}
         className={[
           "flex w-full items-center justify-between gap-3 text-left",
-          "text-[11px] font-semibold uppercase tracking-[0.08em] text-muted",
-          "transition-colors hover:text-text",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+          "text-[11px] font-semibold uppercase tracking-[0.08em] text-muted-foreground",
+          "transition-colors hover:text-foreground",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         ].join(" ")}
       >
         <span className="flex min-w-0 items-center gap-2">
-          {icon ? <span className="text-muted">{icon}</span> : null}
+          {icon ? <span className="text-muted-foreground">{icon}</span> : null}
           <span className="min-w-0 truncate">{title}</span>
         </span>
         <span className="flex shrink-0 items-center gap-2">
           {meta ? (
-            <span className="rounded-full bg-bg/40 px-2 py-0.5 font-ui text-[11px] text-muted">
+            <span className="rounded-full bg-background/40 px-2 py-0.5 font-sans text-[11px] text-muted-foreground">
               {meta}
             </span>
           ) : null}
           {typeof count === "number" ? (
-            <span className="rounded-full bg-bg/40 px-2 py-0.5 font-ui text-[11px] text-muted">
+            <span className="rounded-full bg-background/40 px-2 py-0.5 font-sans text-[11px] text-muted-foreground">
               {count}
             </span>
           ) : null}
@@ -68,7 +68,7 @@ export function DisclosureSection({
             width={16}
             height={16}
             className={[
-              "text-muted transition-transform duration-200 motion-reduce:transition-none",
+              "text-muted-foreground transition-transform duration-200 motion-reduce:transition-none",
               open ? "rotate-90" : "rotate-0",
             ].join(" ")}
             aria-hidden="true"
@@ -136,9 +136,9 @@ export function TruncatedText({
         type="button"
         onClick={() => setExpanded((value) => !value)}
         className={[
-          "inline-flex items-center text-[11px] font-medium text-muted",
-          "transition-colors hover:text-text",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+          "inline-flex items-center text-[11px] font-medium text-muted-foreground",
+          "transition-colors hover:text-foreground",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         ].join(" ")}
       >
         {expanded ? "Show less" : "Show full"}
@@ -176,9 +176,9 @@ export function TruncatedItemList<T>({
           type="button"
           onClick={() => setExpanded((value) => !value)}
           className={[
-            "inline-flex items-center text-[11px] font-medium text-muted",
-            "transition-colors hover:text-text",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/30 focus-visible:ring-offset-2 focus-visible:ring-offset-bg",
+            "inline-flex items-center text-[11px] font-medium text-muted-foreground",
+            "transition-colors hover:text-foreground",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           ].join(" ")}
         >
           {expanded ? "Show less" : `Show ${hiddenCount} more`}

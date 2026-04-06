@@ -11,39 +11,6 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-vi.mock("@radix-ui/react-dialog", async () => {
-  const React = await import("react");
-
-  type DialogState = {
-    open: boolean;
-    onOpenChange?: (open: boolean) => void;
-  };
-  type WrapperProps = { children?: React.ReactNode };
-  type RootProps = WrapperProps & DialogState;
-
-  const DialogContext = React.createContext<DialogState>({
-    open: false,
-  });
-
-  return {
-    Root: ({ children, open, onOpenChange }: RootProps) => (
-      <DialogContext.Provider value={{ open, onOpenChange }}>{children}</DialogContext.Provider>
-    ),
-    Portal: ({ children }: WrapperProps) => {
-      const dialog = React.useContext(DialogContext);
-      if (!dialog.open) return null;
-      return <div>{children}</div>;
-    },
-    Overlay: (props: React.ComponentPropsWithoutRef<"div">) => <div {...props} />,
-    Content: (props: React.ComponentPropsWithoutRef<"div">) => (
-      <div data-testid="dialog-content" {...props} />
-    ),
-    Title: (props: React.ComponentPropsWithoutRef<"h2">) => <h2 {...props} />,
-    Description: (props: React.ComponentPropsWithoutRef<"p">) => <p {...props} />,
-    Close: ({ children }: WrapperProps) => <>{children}</>,
-  };
-});
-
 vi.mock("@/components/assistant/claude-thread-list", () => ({
   ClaudeThreadList: ({
     variant,
@@ -125,7 +92,9 @@ function createMatchMediaController(initialDesktopMatch = true) {
       matches,
       media: DESKTOP_QUERY,
     } as MediaQueryListEvent;
-    listeners.forEach((listener) => listener(event));
+    listeners.forEach((listener) => {
+      listener(event);
+    });
   };
 
   return {
@@ -220,14 +189,15 @@ describe("AdminSidebarShell", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
 
-    const dialog = screen.getByTestId("dialog-content");
+    const dialog = screen.getByRole("dialog", { name: "Chats" });
+    expect(dialog).toHaveAttribute("data-state", "open");
     fireEvent.click(within(dialog).getByRole("button", { name: "Close sidebar" }));
 
     const reopenButton = screen.getByRole("button", { name: "Open sidebar" });
     expect(reopenButton).toBeInTheDocument();
 
     fireEvent.click(reopenButton);
-    expect(screen.getByTestId("dialog-content")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Chats" })).toHaveAttribute("data-state", "open");
   });
 
   it("shows the open trigger after transitioning from desktop to mobile", () => {
@@ -245,7 +215,7 @@ describe("AdminSidebarShell", () => {
     expect(openButton).toBeInTheDocument();
 
     fireEvent.click(openButton);
-    expect(screen.getByTestId("dialog-content")).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Chats" })).toHaveAttribute("data-state", "open");
   });
 
   it("opens the desktop sidebar when transitioning from mobile to desktop", () => {

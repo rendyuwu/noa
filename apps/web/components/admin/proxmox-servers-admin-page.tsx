@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
 import { Cross2Icon } from "@radix-ui/react-icons";
 
-import { Button } from "@/components/lib/button";
+import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
@@ -49,10 +49,10 @@ type ProxmoxServerFormState = {
   verifySsl: boolean;
 };
 
-const labelClass = "block text-sm font-medium text-text";
+const labelClass = "block text-sm font-medium text-foreground";
 const inputClass =
-  "mt-1 w-full rounded-xl border border-border bg-surface/80 px-3 py-2.5 text-sm text-text shadow-sm outline-none placeholder:text-muted focus-visible:border-accent/60 focus-visible:ring-2 focus-visible:ring-accent/25 focus-visible:ring-offset-2 focus-visible:ring-offset-bg disabled:cursor-not-allowed disabled:opacity-70";
-const helperClass = "mt-1 font-ui text-xs text-muted";
+  "mt-1 w-full rounded-xl border border-border bg-card/80 px-3 py-2.5 text-sm text-foreground shadow-sm outline-none placeholder:text-muted focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/25 focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-70";
+const helperClass = "mt-1 font-sans text-xs text-muted";
 
 const EMPTY_FORM_STATE: ProxmoxServerFormState = {
   name: "",
@@ -134,7 +134,7 @@ function ProxmoxServerFormFields({ form, setForm, disabled, mode }: FormFieldsPr
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-xl border border-border bg-surface/50 px-4 py-4">
+      <div className="rounded-xl border border-border bg-card/50 px-4 py-4">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted">Proxmox API</div>
         <div className="mt-3 grid gap-4">
           <div>
@@ -215,7 +215,7 @@ function ProxmoxServerFormFields({ form, setForm, disabled, mode }: FormFieldsPr
               onChange={(event) => updateForm("verifySsl", event.target.checked)}
               disabled={disabled}
             />
-            <label htmlFor={`${mode}-proxmox-verify-ssl`} className="text-sm text-text">
+            <label htmlFor={`${mode}-proxmox-verify-ssl`} className="text-sm text-foreground">
               Verify SSL
             </label>
           </div>
@@ -485,11 +485,11 @@ export function ProxmoxServersAdminPage() {
   return (
     <>
       <Dialog.Root open={createOpen} onOpenChange={setCreateOpen}>
-        <main className="min-h-dvh bg-bg p-6">
+        <main className="min-h-dvh bg-background p-6">
           <div className="flex items-end justify-between gap-3">
             <div>
               <h1 className="text-2xl font-semibold">Proxmox Servers</h1>
-              <p className="mt-1 font-ui text-sm text-muted">
+              <p className="mt-1 font-sans text-sm text-muted">
                 Store Proxmox API credentials in NOA. Secrets are never shown after save.
               </p>
             </div>
@@ -499,7 +499,7 @@ export function ProxmoxServersAdminPage() {
                 Refresh
               </Button>
               <Dialog.Trigger asChild>
-                <Button onClick={openCreate} variant="primary" size="sm">
+                <Button onClick={openCreate} variant="default" size="sm">
                   Add server
                 </Button>
               </Dialog.Trigger>
@@ -510,7 +510,7 @@ export function ProxmoxServersAdminPage() {
             <div
               role="alert"
               aria-live="assertive"
-              className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+              className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">{loadError}</div>
@@ -525,7 +525,7 @@ export function ProxmoxServersAdminPage() {
             <div
               role="alert"
               aria-live="assertive"
-              className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 font-ui text-sm text-red-800"
+              className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
             >
               {actionError}
             </div>
@@ -535,15 +535,15 @@ export function ProxmoxServersAdminPage() {
             <div
               role="status"
               aria-live="polite"
-              className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 font-ui text-sm text-emerald-800"
+              className="mt-4 rounded-xl border border-success/25 bg-success/10 px-3 py-2 font-sans text-sm text-success"
             >
               {actionStatus}
             </div>
           ) : null}
 
           <div className="panel mt-6 overflow-hidden">
-            <table className="w-full font-ui text-sm">
-              <thead className="bg-surface-2 text-muted">
+            <table className="w-full font-sans text-sm">
+              <thead className="bg-accent text-muted">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">
                     Name
@@ -588,7 +588,7 @@ export function ProxmoxServersAdminPage() {
                         tabIndex={0}
                         aria-haspopup="dialog"
                         aria-label={`Manage ${server.name}`}
-                        className="cursor-pointer transition-colors hover:bg-surface-2/60 focus-visible:bg-surface-2/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
+                        className="cursor-pointer transition-colors hover:bg-primary/60 focus-visible:bg-primary/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
                         onClick={(event) => openPanelForServer(server, event.currentTarget)}
                         onKeyDown={(event) => {
                           if (
@@ -601,8 +601,8 @@ export function ProxmoxServersAdminPage() {
                           }
                         }}
                       >
-                        <td className="px-4 py-3 text-text">
-                          <div className="font-medium text-text">{server.name}</div>
+                        <td className="px-4 py-3 text-foreground">
+                          <div className="font-medium text-foreground">{server.name}</div>
                           <div className="mt-1 flex flex-wrap items-center gap-2">
                             {badge ? (
                               <span className={["status-badge", badge.className].join(" ")}>
@@ -633,18 +633,18 @@ export function ProxmoxServersAdminPage() {
           <Dialog.Portal>
             <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
 
-            <Dialog.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-bg shadow-[0_1.25rem_3rem_rgba(0,0,0,0.22)] outline-none">
-              <div className="flex items-start justify-between gap-3 border-b border-border bg-surface/50 px-5 py-4">
+            <Dialog.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl outline-none">
+              <div className="flex items-start justify-between gap-3 border-b border-border bg-card/50 px-5 py-4">
                 <div className="min-w-0">
-                  <Dialog.Title className="text-lg font-semibold text-text">
+                  <Dialog.Title className="text-lg font-semibold text-foreground">
                     Add Proxmox server
                   </Dialog.Title>
-                  <Dialog.Description className="mt-1 font-ui text-sm text-muted">
+                  <Dialog.Description className="mt-1 font-sans text-sm text-muted">
                     Proxmox API token secret is stored securely and never displayed again.
                   </Dialog.Description>
                 </div>
                 <Dialog.Close asChild>
-                  <Button aria-label="Close" className="text-muted hover:text-text" size="icon">
+                  <Button aria-label="Close" className="text-muted hover:text-foreground" size="icon">
                     <Cross2Icon width={18} height={18} />
                   </Button>
                 </Dialog.Close>
@@ -652,7 +652,7 @@ export function ProxmoxServersAdminPage() {
 
               <ScrollArea
                 className="min-h-0 flex-1"
-                viewportClassName="h-full px-5 py-4 font-ui"
+                viewportClassName="h-full px-5 py-4 font-sans"
               >
                 <ProxmoxServerFormFields
                   form={createForm}
@@ -665,7 +665,7 @@ export function ProxmoxServersAdminPage() {
                   <p
                     role="alert"
                     aria-live="assertive"
-                    className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                    className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                   >
                     {createError}
                   </p>
@@ -682,7 +682,7 @@ export function ProxmoxServersAdminPage() {
                   disabled={creating}
                   onClick={() => void createServer()}
                   size="sm"
-                  variant="primary"
+                  variant="default"
                 >
                   {creating ? "Saving..." : "Save"}
                 </Button>
@@ -695,18 +695,18 @@ export function ProxmoxServersAdminPage() {
       <Dialog.Root open={editOpen} onOpenChange={setEditOpen}>
         <Dialog.Portal>
           <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 z-[60] flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-bg shadow-[0_1.25rem_3rem_rgba(0,0,0,0.22)] outline-none">
-            <div className="flex items-start justify-between gap-3 border-b border-border bg-surface/50 px-5 py-4">
+          <Dialog.Content className="fixed top-1/2 left-1/2 z-[60] flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl outline-none">
+            <div className="flex items-start justify-between gap-3 border-b border-border bg-card/50 px-5 py-4">
               <div className="min-w-0">
-                <Dialog.Title className="text-lg font-semibold text-text">
+                <Dialog.Title className="text-lg font-semibold text-foreground">
                   Edit Proxmox server
                 </Dialog.Title>
-                <Dialog.Description className="mt-1 font-ui text-sm text-muted">
+                <Dialog.Description className="mt-1 font-sans text-sm text-muted">
                   Stored secrets can be replaced, but they are never shown again.
                 </Dialog.Description>
               </div>
               <Dialog.Close asChild>
-                <Button aria-label="Close" className="text-muted hover:text-text" size="icon">
+                <Button aria-label="Close" className="text-muted hover:text-foreground" size="icon">
                   <Cross2Icon width={18} height={18} />
                 </Button>
               </Dialog.Close>
@@ -714,7 +714,7 @@ export function ProxmoxServersAdminPage() {
 
             <ScrollArea
               className="min-h-0 flex-1"
-              viewportClassName="h-full px-5 py-4 font-ui"
+              viewportClassName="h-full px-5 py-4 font-sans"
             >
               <ProxmoxServerFormFields
                 form={editForm}
@@ -727,7 +727,7 @@ export function ProxmoxServersAdminPage() {
                 <p
                   role="alert"
                   aria-live="assertive"
-                  className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                  className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                 >
                   {editError}
                 </p>
@@ -744,7 +744,7 @@ export function ProxmoxServersAdminPage() {
                 disabled={savingEdit}
                 onClick={() => void updateServer()}
                 size="sm"
-                variant="primary"
+                variant="default"
               >
                 {savingEdit ? "Saving..." : "Save changes"}
               </Button>
@@ -764,7 +764,7 @@ export function ProxmoxServersAdminPage() {
           <Dialog.Content
             className={[
               "fixed inset-y-0 right-0 z-50 w-[30rem] max-w-[92vw]",
-              "border-l border-border bg-bg shadow-md",
+              "border-l border-border bg-background shadow-md",
               "transition-transform duration-200 ease-out",
               "data-[state=open]:translate-x-0 data-[state=closed]:translate-x-full",
               "outline-none",
@@ -781,9 +781,9 @@ export function ProxmoxServersAdminPage() {
             </Dialog.Description>
 
             <div className="flex h-full flex-col">
-              <div className="flex items-start justify-between gap-3 border-b border-border bg-surface px-4 py-4">
+              <div className="flex items-start justify-between gap-3 border-b border-border bg-card px-4 py-4">
                 <div className="min-w-0">
-                  <div className="text-sm font-semibold text-text">
+                  <div className="text-sm font-semibold text-foreground">
                     {selectedServer?.name ?? "Proxmox server"}
                   </div>
                   {selectedServer?.base_url ? (
@@ -798,11 +798,11 @@ export function ProxmoxServersAdminPage() {
               </div>
 
               <ScrollArea
-                className="flex-1 min-h-0 font-ui"
+                className="flex-1 min-h-0 font-sans"
                 horizontalScrollbar
                 viewportClassName="h-full p-4"
               >
-                <div className="rounded-xl border border-border bg-surface px-4 py-4">
+                <div className="rounded-xl border border-border bg-card px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -822,26 +822,26 @@ export function ProxmoxServersAdminPage() {
                       <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
                         Name
                       </dt>
-                      <dd className="mt-1 text-text">{selectedServer?.name ?? "-"}</dd>
+                      <dd className="mt-1 text-foreground">{selectedServer?.name ?? "-"}</dd>
                     </div>
                     <div>
                       <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
                         Base URL
                       </dt>
-                      <dd className="mt-1 break-all text-text">{selectedServer?.base_url ?? "-"}</dd>
+                      <dd className="mt-1 break-all text-foreground">{selectedServer?.base_url ?? "-"}</dd>
                     </div>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <div>
                         <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
                           API token ID
                         </dt>
-                        <dd className="mt-1 text-text">{selectedServer?.api_token_id ?? "-"}</dd>
+                        <dd className="mt-1 text-foreground">{selectedServer?.api_token_id ?? "-"}</dd>
                       </div>
                       <div>
                         <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
                           SSL
                         </dt>
-                        <dd className="mt-1 text-text">
+                        <dd className="mt-1 text-foreground">
                           {selectedServer?.verify_ssl ? "Verify enabled" : "Verification off"}
                         </dd>
                       </div>
@@ -862,12 +862,12 @@ export function ProxmoxServersAdminPage() {
                       <dt className="text-xs font-semibold uppercase tracking-wide text-muted">
                         Updated
                       </dt>
-                      <dd className="mt-1 text-text">{formatTimestamp(selectedServer?.updated_at)}</dd>
+                      <dd className="mt-1 text-foreground">{formatTimestamp(selectedServer?.updated_at)}</dd>
                     </div>
                   </dl>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-border bg-surface px-4 py-4">
+                <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -904,7 +904,7 @@ export function ProxmoxServersAdminPage() {
                       }
                       onClick={() => selectedServer && void validateServer(selectedServer.id)}
                       size="sm"
-                      variant="primary"
+                      variant="default"
                     >
                       {selectedServer && validateBusyId === selectedServer.id
                         ? "Validating..."
@@ -917,7 +917,7 @@ export function ProxmoxServersAdminPage() {
                   <p
                     role="alert"
                     aria-live="assertive"
-                    className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800"
+                    className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
                   >
                     {actionError}
                   </p>
@@ -956,7 +956,7 @@ export function ProxmoxServersAdminPage() {
                           setActionError(null);
                           open();
                         }}
-                        variant="danger"
+                        variant="destructive"
                       >
                         Delete server
                       </Button>
