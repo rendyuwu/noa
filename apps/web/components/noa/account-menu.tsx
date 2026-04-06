@@ -24,7 +24,7 @@ export function AccountMenu({ trigger, onLogout }: { trigger: ReactNode; onLogou
       <DropdownMenuTrigger asChild>{trigger}</DropdownMenuTrigger>
       <DropdownMenuContent align="end" forceMount>
         <DropdownMenuLabel>Appearance</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme ?? "system"} onValueChange={setTheme}>
+        <DropdownMenuRadioGroup aria-label="Theme" value={theme ?? "system"} onValueChange={setTheme}>
           <DropdownMenuRadioItem value="system">System</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="light">Light</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="dark">Dark</DropdownMenuRadioItem>
