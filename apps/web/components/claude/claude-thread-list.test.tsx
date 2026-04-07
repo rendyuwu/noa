@@ -189,7 +189,7 @@ vi.mock("@assistant-ui/react", () => ({
       threadItems: mocks.threadItems,
     },
   }),
-  ThreadListItemByIdProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
+  ThreadListItemByIndexProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
   ThreadListPrimitive: {
     Root: ({ children, className }: { children?: ReactNode; className?: string }) => (
       <div className={className}>{children}</div>

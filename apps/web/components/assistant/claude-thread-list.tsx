@@ -6,7 +6,7 @@ import { useMemo, useState } from "react";
 import type { FC, ReactNode } from "react";
 
 import {
-  ThreadListItemByIdProvider,
+  ThreadListItemByIndexProvider,
   ThreadListItemPrimitive,
   ThreadListPrimitive,
   useAssistantApi,
@@ -278,7 +278,7 @@ export function ClaudeThreadList({
     }
 
     const seenRemoteIds = new Set<string>();
-    const result: Array<{ id: string; remoteId: string; title?: string }> = [];
+    const result: Array<{ id: string; remoteId: string; title?: string; status: "regular" | "archived" }> = [];
 
     for (const id of threadIds) {
       if (typeof id !== "string") continue;
@@ -295,7 +295,7 @@ export function ClaudeThreadList({
       }
 
       seenRemoteIds.add(remoteId);
-      result.push({ id, remoteId, title: title || undefined });
+      result.push({ id, remoteId, title: title || undefined, status: item?.status === "archived" ? "archived" : "regular" });
     }
 
     return result;
@@ -572,8 +572,12 @@ export function ClaudeThreadList({
       <div className="mt-4 flex min-h-0 flex-1 flex-col font-sans">
         <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Recents</p>
         <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-2 [scrollbar-gutter:stable]">
-          {uniqueThreadItems.map((item) => (
-            <ThreadListItemByIdProvider key={`${item.remoteId}:${item.id}`} id={item.id}>
+          {uniqueThreadItems.map((item, index) => (
+            <ThreadListItemByIndexProvider
+              key={`${item.remoteId}:${item.id}`}
+              index={index}
+              archived={item.status === "archived"}
+            >
               <ThreadListItem
                 onSelect={onSelectThread}
                 activeRemoteId={activeRemoteId}
@@ -581,7 +585,7 @@ export function ClaudeThreadList({
                 remoteId={item.remoteId}
                 threadTitle={item.title}
               />
-            </ThreadListItemByIdProvider>
+            </ThreadListItemByIndexProvider>
           ))}
         </div>
       </div>

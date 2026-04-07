@@ -5,7 +5,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { usePathname, useRouter } from "next/navigation";
 import {
   AssistantRuntimeProvider,
-  unstable_useRemoteThreadListRuntime as useRemoteThreadListRuntime,
+  useRemoteThreadListRuntime,
   useAssistantRuntime,
   useAssistantState,
   useAssistantTransportRuntime,

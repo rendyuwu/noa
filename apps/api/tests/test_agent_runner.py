@@ -7,10 +7,12 @@ from uuid import UUID, uuid4
 
 from noa_api.core.agent.runner import (
     _build_approval_context,
+    _to_openai_chat_messages,
     AgentRunner,
     AgentRunnerResult,
     LLMToolCall,
     LLMTurnResponse,
+    OpenAICompatibleLLMClient,
     RuleBasedLLMClient,
 )
 from noa_api.core.tools.registry import ToolDefinition
@@ -188,6 +190,118 @@ async def test_agent_runner_executes_read_tools_and_appends_result_messages() ->
     assert "time" in run.result
 
 
+async def test_agent_runner_preserves_reasoning_summary_before_visible_text() -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="Visible answer.",
+                tool_calls=[],
+                reasoning="Brief internal summary.",
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "Hi"}]}],
+        available_tool_names=set(),
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert result.text_deltas == ["Visible answer."]
+    assert len(result.messages) == 1
+    parts = result.messages[0].parts
+    assert parts[0]["type"] == "reasoning"
+    assert parts[0]["summary"] == "Brief internal summary."
+    assert parts[1]["type"] == "text"
+    assert parts[1]["text"] == "Visible answer."
+
+
+async def test_agent_runner_aggregates_reasoning_once_across_rounds() -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    class _TwoRoundLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="I'll check the server time.",
+                    tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
+                    reasoning="First internal note.",
+                )
+
+            assistant_messages = [
+                message
+                for message in messages
+                if message.get("role") == "assistant"
+                and isinstance(message.get("parts"), list)
+                and any(
+                    isinstance(part, dict)
+                    and part.get("type") == "text"
+                    and part.get("text") == "I'll check the server time."
+                    for part in message["parts"]
+                )
+            ]
+            assert assistant_messages == [
+                {
+                    "role": "assistant",
+                    "parts": [{"type": "text", "text": "I'll check the server time."}],
+                }
+            ]
+
+            return LLMTurnResponse(
+                text="The current time is available.",
+                tool_calls=[],
+                reasoning="Final internal note.",
+            )
+
+    runner = AgentRunner(
+        llm_client=_TwoRoundLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "What time is it?"}]}
+        ],
+        available_tool_names={"get_current_time"},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(result.messages) == 4
+    assert result.messages[0].parts == [
+        {"type": "text", "text": "I'll check the server time."}
+    ]
+    final_parts = result.messages[3].parts
+    assert final_parts[0]["type"] == "reasoning"
+    assert final_parts[0]["summary"] == "First internal note.\n\nFinal internal note."
+    assert final_parts[1]["type"] == "text"
+    assert final_parts[1]["text"] == "The current time is available."
+
+
 async def test_agent_runner_sanitizes_tool_result_message_parts(monkeypatch) -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
@@ -262,6 +376,82 @@ async def test_agent_runner_sanitizes_tool_result_message_parts(monkeypatch) -> 
     assert tool_when == "2026-03-13T12:00:00+00:00"
     tool_id = typed_tool_result.get("id")
     assert isinstance(tool_id, str)
+
+
+async def test_to_openai_chat_messages_ignores_stored_reasoning_parts() -> None:
+    messages = _to_openai_chat_messages(
+        messages=[
+            {
+                "role": "assistant",
+                "parts": [
+                    {"type": "reasoning", "summary": "Hidden summary."},
+                    {"type": "text", "text": "Visible answer."},
+                ],
+            }
+        ],
+        system_prompt="",
+    )
+
+    assert messages == [
+        {
+            "role": "assistant",
+            "content": "Visible answer.",
+        }
+    ]
+
+
+async def test_openai_compatible_llm_client_extracts_reasoning_summary_from_response() -> (
+    None
+):
+    class _FakeCompletions:
+        async def create(self, **kwargs: object):
+            _ = kwargs
+
+            class _Reasoning:
+                summary = "Brief summary."
+
+            class _Msg:
+                content = "Visible answer."
+                tool_calls: list[object] = []
+                reasoning = _Reasoning()
+
+            class _Choice:
+                message = _Msg()
+
+            class _Resp:
+                choices = [_Choice()]
+
+            return _Resp()
+
+    class _FakeChat:
+        def __init__(self) -> None:
+            self.completions = _FakeCompletions()
+
+    class _FakeOpenAI:
+        def __init__(self) -> None:
+            self.chat = _FakeChat()
+
+    client = OpenAICompatibleLLMClient(
+        model="gpt-4o-mini",
+        api_key="test",
+        base_url=None,
+        system_prompt="",
+    )
+    client._client = _FakeOpenAI()  # type: ignore[attr-defined]
+
+    result = await client.run_turn(
+        messages=[
+            {
+                "role": "user",
+                "parts": [{"type": "text", "text": "Hi"}],
+            }
+        ],
+        tools=[],
+        on_text_delta=None,
+    )
+
+    assert result.text == "Visible answer."
+    assert result.reasoning == "Brief summary."
 
 
 async def test_agent_runner_redacts_tool_execution_errors(monkeypatch) -> None:
@@ -736,6 +926,60 @@ async def test_agent_runner_stops_after_repeated_direct_request_approval_calls(
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
     assert "Do not call request_approval directly" in cast(str, final_part["text"])
+
+
+async def test_agent_runner_allows_five_rounds_before_safety_limit() -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    class _FiveRoundLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn <= 4:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
+                )
+            return LLMTurnResponse(text="Done checking.", tool_calls=[])
+
+    llm = _FiveRoundLLM()
+    runner = AgentRunner(
+        llm_client=llm,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Check time"}]}
+        ],
+        available_tool_names={"get_current_time"},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert llm.turn == 5
+    assert not any(
+        isinstance(part, dict)
+        and part.get("text") == "Tool loop exceeded safety limits."
+        for message in result.messages
+        for part in message.parts
+    )
+    assert any(
+        isinstance(part, dict)
+        and part.get("type") == "text"
+        and part.get("text") == "Done checking."
+        for message in result.messages
+        for part in message.parts
+    )
 
 
 async def test_agent_runner_creates_action_request_for_change_tools_without_execution() -> (

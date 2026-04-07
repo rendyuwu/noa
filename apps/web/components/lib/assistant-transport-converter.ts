@@ -93,6 +93,19 @@ const partsToContent = (
       continue;
     }
 
+    if (type === "reasoning") {
+      const text = coerceString(part.summary) ?? coerceString(part.text) ?? "";
+      if (!text) continue;
+
+      const parentId = coerceString(part.parentId);
+      content.push({
+        type: "reasoning",
+        text,
+        ...(parentId ? { parentId } : {}),
+      });
+      continue;
+    }
+
     if (type === "image") {
       const image = coerceString(part.image);
       if (image) content.push({ type: "image", image });

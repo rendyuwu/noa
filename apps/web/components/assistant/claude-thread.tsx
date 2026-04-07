@@ -25,6 +25,8 @@ import {
   formatClaudeGreetingName,
   getClaudeTimeGreeting,
 } from "@/components/assistant/claude-greeting";
+import { TruncatedText } from "@/components/assistant/inline-disclosure";
+import { ThinkingBlock } from "@/components/assistant/thinking-block";
 import { ClaudeToolFallback, ClaudeToolGroup } from "@/components/assistant/request-approval-tool-ui";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { getAuthUser } from "@/components/lib/auth-store";
@@ -344,6 +346,24 @@ function ClaudeStreamingIndicator() {
   );
 }
 
+function ClaudeReasoningPart({ text }: { text: string }) {
+  return (
+    <div className="whitespace-pre-wrap break-words text-sm text-muted-foreground">
+      <TruncatedText text={text} initialLines={4} />
+    </div>
+  );
+}
+
+function ClaudeReasoningGroup({
+  children,
+}: {
+  children?: ReactNode;
+  startIndex?: number;
+  endIndex?: number;
+}) {
+  return <ThinkingBlock>{children}</ThinkingBlock>;
+}
+
 const ChatMessage: FC = () => {
   const assistantIsRunning = useAssistantState(({ message }: any) => {
     return message?.role === "assistant" && message?.status?.type === "running";
@@ -451,6 +471,8 @@ const ChatMessage: FC = () => {
                 <MessagePrimitive.Parts
                   components={{
                     Text: MarkdownText,
+                    Reasoning: ClaudeReasoningPart,
+                    ReasoningGroup: ClaudeReasoningGroup,
                     ToolGroup: ClaudeToolGroup,
                     tools: { Fallback: ClaudeToolFallback },
                   }}

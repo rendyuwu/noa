@@ -50,6 +50,7 @@ class LLMToolCall:
 class LLMTurnResponse:
     text: str
     tool_calls: list[LLMToolCall]
+    reasoning: str = ""
 
 
 class LLMClientProtocol(Protocol):
@@ -115,6 +116,80 @@ def _as_object_dict(value: object) -> dict[str, object] | None:
     if not isinstance(value, dict):
         return None
     return cast(dict[str, object], value)
+
+
+def _assistant_message_parts(*, reasoning: str, text: str) -> list[dict[str, object]]:
+    parts: list[dict[str, object]] = []
+    reasoning_text = _normalized_text(reasoning)
+    if reasoning_text is not None:
+        parts.append({"type": "reasoning", "summary": reasoning_text})
+
+    visible_text = text.strip()
+    if visible_text:
+        parts.append({"type": "text", "text": visible_text})
+
+    return parts
+
+
+def _message_visible_text(parts: list[dict[str, object]]) -> str | None:
+    visible_parts: list[str] = []
+    for part in parts:
+        part_dict = _as_object_dict(part)
+        if part_dict is None or part_dict.get("type") != "text":
+            continue
+        text = part_dict.get("text")
+        if isinstance(text, str) and text:
+            visible_parts.append(text)
+
+    if not visible_parts:
+        return None
+    return "".join(visible_parts)
+
+
+def _finalize_turn_messages(
+    *,
+    messages: list[AgentMessage],
+    reasoning: str,
+) -> list[AgentMessage]:
+    reasoning_text = _normalized_text(reasoning)
+    if reasoning_text is None:
+        return messages
+
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if message.role != "assistant":
+            continue
+        visible_text = _message_visible_text(message.parts)
+        if visible_text is None:
+            continue
+        updated_message = AgentMessage(
+            role="assistant",
+            parts=_assistant_message_parts(
+                reasoning=reasoning_text,
+                text=visible_text,
+            ),
+        )
+        return [*messages[:index], updated_message, *messages[index + 1 :]]
+
+    return [
+        *messages,
+        AgentMessage(
+            role="assistant",
+            parts=[{"type": "reasoning", "summary": reasoning_text}],
+        ),
+    ]
+
+
+def _prompt_replay_parts(parts: list[dict[str, object]]) -> list[dict[str, object]]:
+    replay_parts: list[dict[str, object]] = []
+    for part in parts:
+        part_dict = _as_object_dict(part)
+        if part_dict is None:
+            continue
+        if part_dict.get("type") == "reasoning":
+            continue
+        replay_parts.append(part_dict)
+    return replay_parts
 
 
 class RuleBasedLLMClient:
@@ -270,6 +345,7 @@ class OpenAICompatibleLLMClient:
 
             choice: Any = response.choices[0].message
             text = getattr(choice, "content", "") or ""
+            reasoning = _extract_reasoning_summary(getattr(choice, "reasoning", None))
             tool_calls: list[LLMToolCall] = []
             for call in getattr(choice, "tool_calls", None) or []:
                 function = getattr(call, "function", None)
@@ -284,7 +360,9 @@ class OpenAICompatibleLLMClient:
                 )
                 tool_calls.append(LLMToolCall(name=name, arguments=args))
 
-            return LLMTurnResponse(text=text, tool_calls=tool_calls)
+            return LLMTurnResponse(
+                text=text, tool_calls=tool_calls, reasoning=reasoning
+            )
 
         request_kwargs: dict[str, Any] = {
             "model": self._model,
@@ -301,6 +379,7 @@ class OpenAICompatibleLLMClient:
         )
 
         text_chunks: list[str] = []
+        reasoning_chunks: list[str] = []
         tool_call_acc: dict[int, dict[str, str]] = {}
 
         async for chunk in stream:
@@ -316,6 +395,13 @@ class OpenAICompatibleLLMClient:
             if isinstance(content, str) and content:
                 text_chunks.append(content)
                 await on_text_delta(content)
+
+            reasoning = _extract_reasoning_summary(
+                getattr(delta, "reasoning", None),
+                preserve_whitespace=True,
+            )
+            if reasoning:
+                reasoning_chunks.append(reasoning)
 
             delta_tool_calls = getattr(delta, "tool_calls", None)
             if not isinstance(delta_tool_calls, list) or not delta_tool_calls:
@@ -343,6 +429,7 @@ class OpenAICompatibleLLMClient:
                     acc["arguments"] += arguments
 
         text = "".join(text_chunks)
+        reasoning = "".join(reasoning_chunks).strip()
         tool_calls: list[LLMToolCall] = []
         for _, value in sorted(tool_call_acc.items()):
             name = value.get("name")
@@ -351,7 +438,7 @@ class OpenAICompatibleLLMClient:
             args = _safe_json_object(value.get("arguments"))
             tool_calls.append(LLMToolCall(name=name, arguments=args))
 
-        return LLMTurnResponse(text=text, tool_calls=tool_calls)
+        return LLMTurnResponse(text=text, tool_calls=tool_calls, reasoning=reasoning)
 
 
 class AgentRunner:
@@ -381,7 +468,7 @@ class AgentRunner:
         # Execution is still gated by `available_tool_names` below; denied calls
         # emit an explicit user-facing message.
         llm_tools = [_to_openai_tool_schema(tool) for tool in get_tool_registry()]
-        max_rounds = 4
+        max_rounds = 6
         max_tool_calls = 8
 
         working_messages = list(thread_messages)
@@ -392,6 +479,7 @@ class AgentRunner:
         tool_calls_processed = 0
         hit_safety_limit = False
         internal_guidance_counts: dict[str, int] = {}
+        reasoning_chunks: list[str] = []
         while rounds < max_rounds and tool_calls_processed < max_tool_calls:
             rounds += 1
             if on_text_delta is None:
@@ -407,29 +495,33 @@ class AgentRunner:
                 )
 
             text = llm_response.text.strip()
-            if text:
-                if pending_firewall_preflight_raw:
-                    text = _append_firewall_preflight_raw_output(
-                        text, pending_firewall_preflight_raw
-                    )
-                    pending_firewall_preflight_raw.clear()
-                assistant_text_part: dict[str, object] = {
-                    "type": "text",
-                    "text": text,
-                }
-                assistant_parts: list[dict[str, object]] = [assistant_text_part]
+            reasoning = _normalized_text(llm_response.reasoning)
+            if reasoning:
+                reasoning_chunks.append(reasoning)
+            if text and pending_firewall_preflight_raw:
+                text = _append_firewall_preflight_raw_output(
+                    text, pending_firewall_preflight_raw
+                )
+                pending_firewall_preflight_raw.clear()
+
+            assistant_parts = _assistant_message_parts(reasoning="", text=text)
+            if assistant_parts:
                 output_messages.append(
                     AgentMessage(
                         role="assistant",
                         parts=assistant_parts,
                     )
                 )
-                working_messages.append(
-                    {
-                        "role": "assistant",
-                        "parts": assistant_parts,
-                    }
-                )
+                working_parts = _prompt_replay_parts(assistant_parts)
+                if working_parts:
+                    working_messages.append(
+                        {
+                            "role": "assistant",
+                            "parts": working_parts,
+                        }
+                    )
+
+            if text:
                 text_deltas.extend(_split_text_deltas(text))
                 workflow_messages = (
                     await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
@@ -450,6 +542,15 @@ class AgentRunner:
 
             if not llm_response.tool_calls:
                 if not text:
+                    aggregated_reasoning = "\n\n".join(reasoning_chunks).strip()
+                    if aggregated_reasoning:
+                        return AgentRunnerResult(
+                            messages=_finalize_turn_messages(
+                                messages=output_messages,
+                                reasoning=aggregated_reasoning,
+                            ),
+                            text_deltas=text_deltas,
+                        )
                     followup_guidance = _post_tool_followup_guidance(working_messages)
                     if followup_guidance is not None and not any(
                         _message_has_text(message, followup_guidance)
@@ -472,19 +573,19 @@ class AgentRunner:
                         working_messages
                     )
                     if fallback_text:
-                        assistant_parts = [
+                        fallback_parts: list[dict[str, object]] = [
                             {
                                 "type": "text",
                                 "text": fallback_text,
                             }
                         ]
                         output_messages.append(
-                            AgentMessage(role="assistant", parts=assistant_parts)
+                            AgentMessage(role="assistant", parts=fallback_parts)
                         )
                         working_messages.append(
                             {
                                 "role": "assistant",
-                                "parts": assistant_parts,
+                                "parts": fallback_parts,
                             }
                         )
                         text_deltas.extend(_split_text_deltas(fallback_text))
@@ -493,7 +594,11 @@ class AgentRunner:
                                 await on_text_delta(chunk)
 
                 return AgentRunnerResult(
-                    messages=output_messages, text_deltas=text_deltas
+                    messages=_finalize_turn_messages(
+                        messages=output_messages,
+                        reasoning="\n\n".join(reasoning_chunks),
+                    ),
+                    text_deltas=text_deltas,
                 )
 
             saw_denied_tool_call = False
@@ -646,12 +751,20 @@ class AgentRunner:
 
                 if processed.should_stop:
                     return AgentRunnerResult(
-                        messages=output_messages, text_deltas=text_deltas
+                        messages=_finalize_turn_messages(
+                            messages=output_messages,
+                            reasoning="\n\n".join(reasoning_chunks),
+                        ),
+                        text_deltas=text_deltas,
                     )
 
             if saw_internal_guidance_stop:
                 return AgentRunnerResult(
-                    messages=output_messages, text_deltas=text_deltas
+                    messages=_finalize_turn_messages(
+                        messages=output_messages,
+                        reasoning="\n\n".join(reasoning_chunks),
+                    ),
+                    text_deltas=text_deltas,
                 )
 
             # If the LLM proposed only tools the user cannot access, stop the turn
@@ -662,7 +775,11 @@ class AgentRunner:
                 and not hit_safety_limit
             ):
                 return AgentRunnerResult(
-                    messages=output_messages, text_deltas=text_deltas
+                    messages=_finalize_turn_messages(
+                        messages=output_messages,
+                        reasoning="\n\n".join(reasoning_chunks),
+                    ),
+                    text_deltas=text_deltas,
                 )
 
         if not hit_safety_limit and (
@@ -677,14 +794,24 @@ class AgentRunner:
                     "text": "Tool loop exceeded safety limits.",
                 }
             ]
-            output_messages.append(
+        final_messages = _finalize_turn_messages(
+            messages=output_messages,
+            reasoning="\n\n".join(reasoning_chunks),
+        )
+
+        if hit_safety_limit:
+            final_messages = [
+                *final_messages,
                 AgentMessage(
                     role="assistant",
                     parts=safety_parts,
-                )
-            )
+                ),
+            ]
 
-        return AgentRunnerResult(messages=output_messages, text_deltas=text_deltas)
+        return AgentRunnerResult(
+            messages=final_messages,
+            text_deltas=text_deltas,
+        )
 
     async def _process_tool_call(
         self,
@@ -1059,6 +1186,9 @@ def _to_openai_chat_messages(
                     text_parts.append(text)
                 continue
 
+            if part_type == "reasoning":
+                continue
+
             if part_type == "tool-call":
                 tool_name = part_dict.get("toolName")
                 if not isinstance(tool_name, str) or not tool_name:
@@ -1124,6 +1254,45 @@ def _safe_json_object(raw: str | None) -> dict[str, object]:
     if parsed_dict is not None:
         return parsed_dict
     return {}
+
+
+def _extract_reasoning_summary(
+    value: object, *, preserve_whitespace: bool = False
+) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value if preserve_whitespace else value.strip()
+    if isinstance(value, (list, tuple)):
+        summary_parts = [
+            _extract_reasoning_summary(
+                item,
+                preserve_whitespace=preserve_whitespace,
+            )
+            for item in value
+        ]
+        if preserve_whitespace:
+            return "".join(part for part in summary_parts if part)
+        return " ".join(part for part in summary_parts if part).strip()
+
+    value_dict = _as_object_dict(value)
+    if value_dict is not None:
+        summary_value = value_dict.get("summary")
+        if summary_value is None:
+            return ""
+        return _extract_reasoning_summary(
+            summary_value,
+            preserve_whitespace=preserve_whitespace,
+        )
+
+    summary_value = getattr(value, "summary", None)
+
+    if summary_value is None:
+        return ""
+    return _extract_reasoning_summary(
+        summary_value,
+        preserve_whitespace=preserve_whitespace,
+    )
 
 
 def _require_matching_preflight(

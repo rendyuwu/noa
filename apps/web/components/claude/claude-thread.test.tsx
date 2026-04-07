@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { forwardRef } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +30,10 @@ vi.mock("@/components/lib/auth-store", () => ({
     email: "casey@example.com",
     display_name: "Casey",
   })),
+}));
+
+vi.mock("@/components/assistant-ui/markdown-text", () => ({
+  MarkdownText: ({ text }: { text?: string }) => <span>{text}</span>,
 }));
 
 vi.mock("@/components/assistant/request-approval-tool-ui", () => ({
@@ -101,7 +105,51 @@ vi.mock("@assistant-ui/react", async () => {
     },
     MessagePrimitive: {
       Root: passthrough,
-      Parts: () => null,
+      Parts: ({
+        components,
+      }: {
+        components: {
+          Reasoning?: ComponentType<any>;
+          ReasoningGroup?: ComponentType<any>;
+          Text?: ComponentType<any>;
+        };
+      }) => {
+        const Reasoning = components.Reasoning ?? (({ text }: { text?: string }) => <span>{text}</span>);
+        const ReasoningGroup = components.ReasoningGroup ?? (({ children }: { children?: ReactNode }) => <>{children}</>);
+        const Text = components.Text ?? (({ text }: { text?: string }) => <span>{text}</span>);
+
+        const nodes: ReactNode[] = [];
+
+        for (let index = 0; index < mockAssistantMessage.content.length; index += 1) {
+          const part = mockAssistantMessage.content[index];
+
+          if (part.type === "reasoning") {
+            const reasoningParts: any[] = [];
+            let cursor = index;
+            while (cursor < mockAssistantMessage.content.length && mockAssistantMessage.content[cursor].type === "reasoning") {
+              reasoningParts.push(mockAssistantMessage.content[cursor]);
+              cursor += 1;
+            }
+
+            nodes.push(
+              <ReasoningGroup key={`reasoning-group-${index}`}>
+                {reasoningParts.map((reasoningPart) => (
+                  <Reasoning key={`reasoning-${reasoningPart.text ?? "part"}`} {...reasoningPart} />
+                ))}
+              </ReasoningGroup>,
+            );
+
+            index = cursor - 1;
+            continue;
+          }
+
+          if (part.type === "text") {
+            nodes.push(<Text key={`text-${part.text ?? "part"}`} {...part} />);
+          }
+        }
+
+        return <>{nodes}</>;
+      },
     },
     ThreadPrimitive: {
       Root: passthrough,
@@ -226,6 +274,42 @@ describe("ClaudeThread", () => {
 
     expect(screen.queryByLabelText("Claude is thinking")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Claude is still responding")).toBeInTheDocument();
+  });
+
+  it("renders thinking above the answer and keeps it collapsed until opened", () => {
+    mockThreadIsEmpty = false;
+    mockAssistantMessage = {
+      role: "assistant",
+      isLast: true,
+      status: { type: "complete", reason: "stop" },
+      content: [
+        {
+          type: "reasoning",
+          text: Array.from({ length: 20 }, (_, index) => `Line ${index + 1}`).join("\n"),
+        },
+        {
+          type: "text",
+          text: "Final answer",
+        },
+      ],
+    };
+
+    render(<ClaudeThread />);
+
+    const thinking = screen.getByRole("button", { name: "Thinking" });
+    const answer = screen.getByText("Final answer");
+
+    expect(thinking.compareDocumentPosition(answer) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(4);
+    expect(thinking).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: "Show full" })).not.toBeInTheDocument();
+
+    fireEvent.click(thinking);
+
+    expect(screen.getByRole("button", { name: "Thinking" })).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "Show full" })).toBeVisible();
   });
 
   it("returns to the standard bottom composer once the thread has messages", () => {

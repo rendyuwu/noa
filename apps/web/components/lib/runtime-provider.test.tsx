@@ -10,9 +10,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 const useAssistantTransportRuntime = vi.fn(() => ({}));
-const unstable_useRemoteThreadListRuntime = vi.fn(
-  ({ runtimeHook }: { runtimeHook: () => unknown }) => runtimeHook(),
-);
+const useRemoteThreadListRuntime = vi.fn(({ runtimeHook }: { runtimeHook: () => unknown }) => runtimeHook());
 const unstable_loadExternalState = vi.fn();
 const generateTitle = vi.fn();
 const missingLookupItemIds = new Set<string>();
@@ -65,8 +63,7 @@ vi.mock("@assistant-ui/react", async () => {
 
   return {
     AssistantRuntimeProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
-    unstable_useRemoteThreadListRuntime: (...args: any[]) =>
-      unstable_useRemoteThreadListRuntime(...args),
+    useRemoteThreadListRuntime: (...args: any[]) => useRemoteThreadListRuntime(...args),
     useAssistantRuntime: () => runtime,
     useAssistantState: (selector: any) => selector(assistantState),
     useAssistantTransportRuntime: (...args: any[]) => useAssistantTransportRuntime(...args),
@@ -92,7 +89,7 @@ import { NoaAssistantRuntimeProvider } from "./runtime-provider";
 describe("NoaAssistantRuntimeProvider", () => {
   beforeEach(() => {
     useAssistantTransportRuntime.mockClear();
-    unstable_useRemoteThreadListRuntime.mockClear();
+    useRemoteThreadListRuntime.mockClear();
     unstable_loadExternalState.mockClear();
     generateTitle.mockClear();
     threadsItem.mockClear();

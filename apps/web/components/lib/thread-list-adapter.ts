@@ -1,6 +1,6 @@
 "use client";
 
-import type { unstable_RemoteThreadListAdapter as RemoteThreadListAdapter } from "@assistant-ui/react";
+import type { RemoteThreadListAdapter } from "@assistant-ui/react";
 import { createAssistantStream } from "assistant-stream";
 
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";

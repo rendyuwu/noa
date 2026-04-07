@@ -42,6 +42,42 @@ describe("convertAssistantState", () => {
     expect(toolPart?.argsText).toBe("{}");
   });
 
+  it("preserves reasoning parts before text", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [
+              {
+                type: "reasoning",
+                summary: "Curated reasoning summary",
+              },
+              {
+                type: "text",
+                text: "Final answer",
+              },
+            ],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    expect((converted.messages[0] as any)?.content).toEqual([
+      {
+        type: "reasoning",
+        text: "Curated reasoning summary",
+      },
+      {
+        type: "text",
+        text: "Final answer",
+      },
+    ]);
+  });
+
   it("uses deterministic fallback toolCallId when missing", () => {
     const converted = convertAssistantState(
       {
