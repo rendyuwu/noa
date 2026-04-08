@@ -1,51 +1,79 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createContext, useContext, useState, type ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  clearAuth: vi.fn(),
-  cancelRun: vi.fn(),
-  detachThreadItem: vi.fn(),
-  deleteThreadItem: vi.fn(),
-  deleteThreadRemote: vi.fn(),
-  itemApiById: new Map<string, { delete: ReturnType<typeof vi.fn> }>(),
-  push: vi.fn(),
-  replace: vi.fn(),
-  switchToNewThread: vi.fn(),
-  switchToThreadItem: vi.fn(),
-  mainThreadId: "thread-a",
-  pathname: "/assistant/11111111-1111-1111-1111-111111111111",
-  remoteId: "11111111-1111-1111-1111-111111111111",
-  threadIds: ["thread-a", "thread-b"],
-  threadItems: [
-    {
-      id: "thread-a",
-      remoteId: "11111111-1111-1111-1111-111111111111",
-      title: "Hello",
-      status: "regular",
+const mocks = vi.hoisted(() => {
+  const pathnameListeners = new Set<() => void>();
+  let pathnameState = "/assistant/11111111-1111-1111-1111-111111111111";
+
+  return {
+    clearAuth: vi.fn(),
+    cancelRun: vi.fn(),
+    detachThreadItem: vi.fn(),
+    deleteThreadItem: vi.fn(),
+    deleteThreadRemote: vi.fn(),
+    fetchWithAuth: vi.fn(),
+    itemApiById: new Map<string, { delete: ReturnType<typeof vi.fn> }>(),
+    pathnameListeners,
+    get pathname() {
+      return pathnameState;
     },
-    {
-      id: "thread-b",
-      remoteId: "22222222-2222-2222-2222-222222222222",
-      title: "Howdy",
-      status: "regular",
+    set pathname(value: string) {
+      pathnameState = value;
+      for (const listener of pathnameListeners) {
+        listener();
+      }
     },
-  ],
-  user: {
-    id: "1",
-    email: "casey@example.com",
-    display_name: "Casey Rivers",
-    roles: ["admin"],
-  },
-}));
+    push: vi.fn(),
+    replace: vi.fn(),
+    resetRuntime: vi.fn(),
+    jsonOrThrow: vi.fn(),
+    switchToNewThread: vi.fn(),
+    switchToThreadItem: vi.fn(),
+    mainThreadId: "thread-a",
+    remoteId: "11111111-1111-1111-1111-111111111111",
+    threadIds: ["thread-a", "thread-b"],
+    threadItems: [
+      {
+        id: "thread-a",
+        remoteId: "11111111-1111-1111-1111-111111111111",
+        title: "Hello",
+        status: "regular",
+      },
+      {
+        id: "thread-b",
+        remoteId: "22222222-2222-2222-2222-222222222222",
+        title: "Howdy",
+        status: "regular",
+      },
+    ],
+    user: {
+      id: "1",
+      email: "casey@example.com",
+      display_name: "Casey Rivers",
+      roles: ["admin"],
+    },
+  };
+});
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: mocks.push,
     replace: mocks.replace,
   }),
-  usePathname: () => mocks.pathname,
+  usePathname: () => {
+    const React = require("react") as typeof import("react");
+
+    return React.useSyncExternalStore(
+      (onStoreChange: () => void) => {
+        mocks.pathnameListeners.add(onStoreChange);
+        return () => mocks.pathnameListeners.delete(onStoreChange);
+      },
+      () => mocks.pathname,
+      () => mocks.pathname,
+    );
+  },
 }));
 
 vi.mock("next/link", () => ({
@@ -54,6 +82,15 @@ vi.mock("next/link", () => ({
       {children}
     </a>
   ),
+}));
+
+vi.mock("@/components/lib/fetch-helper", () => ({
+  fetchWithAuth: (...args: unknown[]) => mocks.fetchWithAuth(...args),
+  jsonOrThrow: (...args: unknown[]) => mocks.jsonOrThrow(...args),
+}));
+
+vi.mock("@/components/lib/runtime-provider", () => ({
+  useResetAssistantRuntime: () => mocks.resetRuntime,
 }));
 
 vi.mock("@/components/ui/dropdown-menu", () => {
@@ -221,8 +258,13 @@ describe("ClaudeThreadList", () => {
     mocks.detachThreadItem.mockReset();
     mocks.deleteThreadItem.mockReset();
     mocks.deleteThreadRemote.mockReset();
+    mocks.fetchWithAuth.mockReset();
+    mocks.fetchWithAuth.mockResolvedValue(new Response(null, { status: 204 }));
+    mocks.jsonOrThrow.mockReset();
     mocks.push.mockReset();
     mocks.replace.mockReset();
+    mocks.resetRuntime.mockReset();
+    mocks.pathnameListeners.clear();
     mocks.mainThreadId = "thread-a";
     mocks.switchToNewThread.mockReset();
     mocks.switchToNewThread.mockImplementation(async () => {
@@ -438,7 +480,11 @@ describe("ClaudeThreadList", () => {
     expect(container.firstElementChild).toHaveClass("bg-sidebar");
   });
 
-  it("deletes the active thread after switching away (ThreadUrlSync handles route)", async () => {
+  it("deletes the active thread and explicitly routes away from the deleted thread", async () => {
+    mocks.replace.mockImplementation(() => {
+      mocks.pathname = "/assistant";
+    });
+
     render(<ClaudeThreadList />);
 
     fireEvent.click(screen.getAllByRole("button", { name: "Delete thread" })[0]);
@@ -447,13 +493,81 @@ describe("ClaudeThreadList", () => {
     fireEvent.click(within(confirmDialog).getByRole("button", { name: "Delete thread" }));
 
     await waitFor(() => {
-      expect(mocks.deleteThreadItem).toHaveBeenCalledTimes(1);
+      expect(mocks.fetchWithAuth).toHaveBeenCalledWith("/threads/11111111-1111-1111-1111-111111111111", {
+        method: "DELETE",
+      });
+      expect(mocks.resetRuntime).toHaveBeenCalledTimes(1);
+      expect(mocks.replace).toHaveBeenCalledWith("/assistant", { scroll: false });
     });
 
     expect(mocks.cancelRun).not.toHaveBeenCalled();
     expect(mocks.switchToNewThread).toHaveBeenCalledTimes(1);
-    // Note: router.replace is no longer called; ThreadUrlSync updates the URL
-    // once the new thread initializes with a remoteId.
+    expect(mocks.deleteThreadItem).not.toHaveBeenCalled();
+  });
+
+  it("waits for the route to leave the deleted active thread before sending DELETE", async () => {
+    vi.useFakeTimers();
+
+    try {
+      mocks.replace.mockImplementation(() => {
+        window.setTimeout(() => {
+          mocks.pathname = "/assistant";
+        }, 50);
+      });
+      mocks.fetchWithAuth.mockImplementationOnce(async () => {
+        expect(mocks.pathname).toBe("/assistant");
+        return new Response(null, { status: 204 });
+      });
+
+      render(<ClaudeThreadList />);
+
+      fireEvent.click(screen.getAllByRole("button", { name: "Delete thread" })[0]);
+
+      const confirmDialog = screen.getByRole("dialog", { name: "Delete thread?" });
+      fireEvent.click(within(confirmDialog).getByRole("button", { name: "Delete thread" }));
+
+      await Promise.resolve();
+
+      expect(mocks.replace).toHaveBeenCalledWith("/assistant", { scroll: false });
+      expect(mocks.fetchWithAuth).not.toHaveBeenCalled();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(49);
+      });
+
+      expect(mocks.fetchWithAuth).not.toHaveBeenCalled();
+      expect(mocks.pathname).toBe("/assistant/11111111-1111-1111-1111-111111111111");
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+
+      expect(mocks.pathname).toBe("/assistant");
+      expect(mocks.fetchWithAuth).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("deletes a sidebar thread by remoteId through the API and resets assistant runtime", async () => {
+    mocks.fetchWithAuth.mockResolvedValue(new Response(null, { status: 204 }));
+
+    render(<ClaudeThreadList />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete thread" })[1]);
+
+    const confirmDialog = screen.getByRole("dialog", { name: "Delete thread?" });
+    fireEvent.click(within(confirmDialog).getByRole("button", { name: "Delete thread" }));
+
+    await waitFor(() => {
+      expect(mocks.fetchWithAuth).toHaveBeenCalledWith("/threads/22222222-2222-2222-2222-222222222222", {
+        method: "DELETE",
+      });
+      expect(mocks.resetRuntime).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mocks.detachThreadItem).not.toHaveBeenCalled();
+    expect(mocks.deleteThreadItem).not.toHaveBeenCalled();
   });
 
   it("treats a missing active thread item lookup during delete as already deleted", async () => {

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { FC, ReactNode } from "react";
 
 import {
@@ -105,6 +105,8 @@ const ThreadListItem: FC<{
   const resetRuntime = useResetAssistantRuntime();
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
+  pathnameRef.current = pathname;
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const titleTooltip = threadTitle?.trim();
 
@@ -147,10 +149,11 @@ const ThreadListItem: FC<{
 
           const deletingThreadId = itemId;
           const deletingRemoteId = remoteId;
+          const deletingRoute = `/assistant/${deletingRemoteId}`;
           const isActiveThread =
             activeRemoteId === deletingRemoteId ||
             runtime.threads.getState().mainThreadId === deletingThreadId;
-          const isActiveRoute = pathname === `/assistant/${deletingRemoteId}`;
+          const isActiveRoute = pathnameRef.current === deletingRoute;
 
           try {
             if (isActiveThread && runtime.thread.getState().isRunning) {
@@ -166,16 +169,22 @@ const ThreadListItem: FC<{
             }
 
             if (isActiveThread || isActiveRoute) {
+              if (isActiveRoute) {
+                router.replace("/assistant", { scroll: false });
+              }
+
               await runtime.threads.switchToNewThread();
 
               const start = Date.now();
               let switchedAway = false;
+              let leftDeletingRoute = false;
 
               while (Date.now() - start < 2000) {
                 const mainThreadId = runtime.threads.getState().mainThreadId;
                 const leftDeletingThread = mainThreadId !== deletingThreadId;
+                leftDeletingRoute = pathnameRef.current !== deletingRoute;
 
-                if (leftDeletingThread) {
+                if (leftDeletingThread && leftDeletingRoute) {
                   switchedAway = true;
                   break;
                 }
@@ -185,34 +194,23 @@ const ThreadListItem: FC<{
 
               if (!switchedAway) {
                 console.warn(
-                  "Failed to switch away from deleting thread within timeout; resetting assistant runtime",
+                  "Failed to switch away from deleting thread or leave its route within timeout; continuing with API delete",
                   {
                     deletingThreadId,
                     deletingRemoteId,
                     mainThreadId: runtime.threads.getState().mainThreadId,
+                    pathname: pathnameRef.current,
                   },
                 );
-
-                try {
-                  runtime.threads.getItemById(deletingThreadId).detach();
-                } catch {}
-
-                resetRuntime();
-                await sleep(0);
-
-                const response = await fetchWithAuth(`/threads/${deletingRemoteId}`, { method: "DELETE" });
-                if (response.status !== 204 && response.status !== 404 && !response.ok) {
-                  await jsonOrThrow(response);
-                }
-
-                return true;
               }
             }
 
-            const deletingItem = runtime.threads.getItemById(deletingThreadId);
-            deletingItem.detach();
-            await sleep(0);
-            await deletingItem.delete();
+            const response = await fetchWithAuth(`/threads/${deletingRemoteId}`, { method: "DELETE" });
+            if (response.status !== 204 && response.status !== 404 && !response.ok) {
+              await jsonOrThrow(response);
+            }
+
+            resetRuntime();
             return true;
           } catch (error) {
             if (isMissingThreadItemLookupError(error)) {
@@ -224,7 +222,8 @@ const ThreadListItem: FC<{
           }
         }}
         trigger={({ open, disabled }) => (
-          <ThreadListItemPrimitive.Delete
+          <button
+            type="button"
             className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-primary/60 hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 group-data-[active]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label="Delete thread"
             disabled={disabled}
@@ -235,7 +234,7 @@ const ThreadListItem: FC<{
             }}
           >
             <TrashIcon width={16} height={16} />
-          </ThreadListItemPrimitive.Delete>
+          </button>
         )}
       />
     </ThreadListItemPrimitive.Root>
