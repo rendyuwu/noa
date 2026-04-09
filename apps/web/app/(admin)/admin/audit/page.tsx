@@ -3,10 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { AdminSidebarShell } from "@/components/admin/admin-sidebar-shell";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { AuditAdminPage } from "@/components/admin/audit-admin-page";
 import { getAuthUser, useRequireAuth } from "@/components/lib/auth-store";
-import { NoaAssistantRuntimeProvider } from "@/components/lib/runtime-provider";
 
 export default function AdminAuditPage() {
   const router = useRouter();
@@ -26,11 +25,9 @@ export default function AdminAuditPage() {
 
   return (
     <div className="min-h-dvh bg-background p-0">
-      <NoaAssistantRuntimeProvider>
-        <AdminSidebarShell>
+      <AdminShell>
           <AuditAdminPage />
-        </AdminSidebarShell>
-      </NoaAssistantRuntimeProvider>
+        </AdminShell>
     </div>
   );
 }

@@ -3,10 +3,9 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 
-import { AdminSidebarShell } from "@/components/admin/admin-sidebar-shell";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { AuditReceiptPage } from "@/components/admin/audit-receipt-page";
 import { getAuthUser, useRequireAuth } from "@/components/lib/auth-store";
-import { NoaAssistantRuntimeProvider } from "@/components/lib/runtime-provider";
 
 export function AdminAuditReceiptRouteClient({
   actionRequestId,
@@ -30,11 +29,9 @@ export function AdminAuditReceiptRouteClient({
 
   return (
     <div className="min-h-dvh bg-background p-0">
-      <NoaAssistantRuntimeProvider>
-        <AdminSidebarShell>
+      <AdminShell>
           <AuditReceiptPage actionRequestId={actionRequestId} />
-        </AdminSidebarShell>
-      </NoaAssistantRuntimeProvider>
+        </AdminShell>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import type { FC, ReactNode } from "react";
@@ -14,23 +13,15 @@ import {
   useAssistantState,
 } from "@assistant-ui/react";
 import {
-  ArchiveIcon,
-  ActivityLogIcon,
-  ChevronDownIcon,
   ColumnsIcon,
-  CodeIcon,
-  DesktopIcon,
-  GearIcon,
   MagnifyingGlassIcon,
-  PersonIcon,
   PlusIcon,
   TrashIcon,
-  IdCardIcon,
 } from "@radix-ui/react-icons";
 
 import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting";
 import { AccountMenu } from "@/components/noa/account-menu";
-import { NavLinkItem, DisabledNavItem } from "@/components/noa/nav-link-item";
+import { DisabledNavItem } from "@/components/noa/nav-link-item";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
@@ -219,8 +210,6 @@ export function ClaudeThreadList({
   const activeStatus = useAssistantState(
     ({ threads }: any) => getActiveThreadListItem(threads)?.status ?? "new",
   );
-  const [backendOpen, setBackendOpen] = useState(false);
-
   const threadIds = useAssistantState(({ threads }: any) => threads?.threadIds ?? []);
   const threadItems = useAssistantState(({ threads }: any) => threads?.threadItems ?? []);
 
@@ -285,7 +274,6 @@ export function ClaudeThreadList({
   const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
   const secondary = user?.email?.trim() || user?.roles?.join(", ") || "Signed in";
-  const isAdmin = user?.roles?.includes("admin") ?? false;
 
   if (variant === "collapsed") {
     const railButtonClassName =
@@ -361,45 +349,6 @@ export function ClaudeThreadList({
             icon={<MagnifyingGlassIcon width={14} height={14} />}
           />
 
-          {isAdmin ? (
-            <RailItem label="Users">
-              <Link href="/admin/users" aria-label="Users" className={railButtonClassName}>
-                <PersonIcon width={14} height={14} />
-              </Link>
-            </RailItem>
-          ) : null}
-
-          {isAdmin ? (
-            <RailItem label="Roles">
-              <Link href="/admin/roles" aria-label="Roles" className={railButtonClassName}>
-                <IdCardIcon width={14} height={14} />
-              </Link>
-            </RailItem>
-          ) : null}
-
-          {isAdmin ? (
-            <RailItem label="Audit">
-              <Link href="/admin/audit" aria-label="Audit" className={railButtonClassName}>
-                <ActivityLogIcon width={14} height={14} />
-              </Link>
-            </RailItem>
-          ) : null}
-
-          {isAdmin ? (
-            <RailItem label="WHM Servers">
-              <Link
-                href="/admin/whm/servers"
-                aria-label="WHM Servers"
-                className={railButtonClassName}
-              >
-                <DesktopIcon width={14} height={14} />
-              </Link>
-            </RailItem>
-          ) : null}
-
-          <DisabledRailButton label="Artifacts" icon={<ArchiveIcon width={14} height={14} />} />
-          <DisabledRailButton label="Code" icon={<CodeIcon width={14} height={14} />} />
-
           <div className="mt-auto flex flex-col items-center gap-2 pt-3">
             <RailItem label="Account">
               <AccountMenu
@@ -468,58 +417,6 @@ export function ClaudeThreadList({
 
           <div className="mt-2">
             <DisabledNavItem icon={<MagnifyingGlassIcon width={16} height={16} />} label="Search" />
-            {isAdmin ? (
-              <NavLinkItem icon={<PersonIcon width={16} height={16} />} label="Users" href="/admin/users" />
-            ) : null}
-            {isAdmin ? (
-              <NavLinkItem icon={<IdCardIcon width={16} height={16} />} label="Roles" href="/admin/roles" />
-            ) : null}
-            {isAdmin ? (
-              <NavLinkItem icon={<ActivityLogIcon width={16} height={16} />} label="Audit" href="/admin/audit" />
-            ) : null}
-            {isAdmin ? (
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setBackendOpen((prev) => !prev)}
-                  aria-expanded={backendOpen}
-                  aria-controls="backend-nav"
-                  className="flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-sans text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-[0.99]"
-                >
-                  <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">
-                    <GearIcon width={16} height={16} />
-                  </span>
-                  <span className="flex-1 text-left">Backend</span>
-                  <span
-                    aria-hidden="true"
-                    className={[
-                      "flex h-4 w-4 items-center justify-center text-muted-foreground transition-transform",
-                      backendOpen ? "rotate-180" : "rotate-0",
-                    ].join(" ")}
-                  >
-                    <ChevronDownIcon width={16} height={16} />
-                  </span>
-                </button>
-                {backendOpen ? (
-                  <div id="backend-nav" className="mt-1 pl-4">
-                    <NavLinkItem
-                      icon={<DesktopIcon width={16} height={16} />}
-                      label="WHM Servers"
-                      href="/admin/whm/servers"
-                    />
-                    <NavLinkItem
-                      icon={<DesktopIcon width={16} height={16} />}
-                      label="Proxmox Servers"
-                      href="/admin/proxmox/servers"
-                    />
-                  </div>
-                ) : (
-                  <div id="backend-nav" className="hidden" />
-                )}
-              </div>
-            ) : null}
-            <DisabledNavItem icon={<ArchiveIcon width={16} height={16} />} label="Artifacts" />
-            <DisabledNavItem icon={<CodeIcon width={16} height={16} />} label="Code" />
           </div>
         </div>
       </div>
