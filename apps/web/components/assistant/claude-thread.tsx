@@ -57,11 +57,11 @@ function DisabledIconButton({
 }
 
 const LANDING_PROMPTS = [
-  { label: "Code", text: "Help me write code for..." },
-  { label: "Write", text: "Help me write..." },
-  { label: "Learn", text: "Teach me about..." },
-  { label: "Life stuff", text: "I want advice about..." },
-  { label: "Claude's choice", text: "What would you suggest I do next?" },
+  { label: "Server status", text: "Show me the current status of my servers." },
+  { label: "Check an account", text: "Look up the WHM account for..." },
+  { label: "Suspend account", text: "Suspend the cPanel account..." },
+  { label: "Firewall rule", text: "Add a CSF firewall rule to..." },
+  { label: "Help", text: "What can you help me with?" },
 ];
 
 function ComposerControlsRow() {
@@ -147,10 +147,7 @@ function EmptyLanding() {
 
   return (
     <div className="flex min-h-full w-full flex-1 flex-col items-center justify-center px-3 py-10">
-      <div className="noa-landing-anim-1 flex items-center gap-3 text-foreground">
-        <span aria-hidden="true" className="text-2xl leading-none text-primary">
-          *
-        </span>
+      <div className="noa-landing-anim-1 text-foreground">
         <h1 className="text-center text-4xl font-medium tracking-[-0.02em] sm:text-5xl">
           {timeGreeting}, {name}
         </h1>
