@@ -5,6 +5,7 @@
 skills-lock.json
 .worktrees/
 .playwright-cli
+docs/superpowers
 
 # Node / Next.js
 node_modules/
