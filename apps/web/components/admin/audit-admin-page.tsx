@@ -361,7 +361,7 @@ export function AuditAdminPage() {
           <DisclosureSection
             title="Filters"
             icon={<MixerHorizontalIcon width={16} height={16} />}
-            meta={`${activeFilterCount} active`}
+            meta={activeFilterCount > 0 ? `${activeFilterCount} active` : undefined}
             defaultOpen={activeFilterCount > 0}
           >
             <div className="grid gap-3 font-sans md:grid-cols-2 lg:grid-cols-4">
