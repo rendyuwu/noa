@@ -3,15 +3,20 @@
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import * as Dialog from "@radix-ui/react-dialog";
-import { Cross2Icon } from "@radix-ui/react-icons";
-
-import { AdminTableEmptyState, AdminTableLoadingRows } from "@/components/admin/admin-table-empty-state";
+import { AdminDetailModal } from "@/components/admin/admin-detail-modal";
+import { AdminListCard } from "@/components/admin/admin-list-card";
+import { AdminListLayout } from "@/components/admin/admin-list-layout";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
-import { ScrollArea } from "@/components/lib/scroll-area";
 
 type WhmServer = {
   id: string;
@@ -83,11 +88,22 @@ const EMPTY_FORM_STATE: WhmServerFormState = {
   sshPrivateKeyPassphrase: "",
 };
 
-function formatTimestamp(value: unknown): string {
+function formatRelativeTime(value: unknown): string {
   if (typeof value !== "string" || !value) return "-";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "-";
-  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  if (diffMs < 0) return "Just now";
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return "Just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
 function getSshStatus(server: WhmServer | null): { label: string; className: string } {
@@ -515,7 +531,6 @@ export function WhmServersAdminPage() {
   const [actionStatus, setActionStatus] = useState<string | null>(null);
 
   const panelSeqRef = useRef(0);
-  const openerRef = useRef<HTMLElement | null>(null);
   const selectedServerIdRef = useRef<string | null>(null);
 
   const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
@@ -584,15 +599,13 @@ export function WhmServersAdminPage() {
   const closePanel = () => {
     panelSeqRef.current += 1;
     selectedServerIdRef.current = null;
-    openerRef.current = null;
     setSelectedServerId(null);
     setEditOpen(false);
     setEditError(null);
   };
 
-  const openPanelForServer = (server: WhmServer, opener: HTMLElement | null) => {
+  const openPanelForServer = (server: WhmServer) => {
     panelSeqRef.current += 1;
-    openerRef.current = opener;
     selectedServerIdRef.current = server.id;
     setSelectedServerId(server.id);
     setActionError(null);
@@ -763,447 +776,332 @@ export function WhmServersAdminPage() {
 
   return (
     <>
-      <Dialog.Root open={createOpen} onOpenChange={setCreateOpen}>
-        <main className="min-h-dvh bg-background p-6">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-semibold">WHM Servers</h1>
-              <p className="mt-1 font-sans text-sm text-muted-foreground">
-                Store WHM API and SSH credentials in NOA. CSF and firewall tools run over SSH, and secrets are never shown after save.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button disabled={loading} onClick={() => void loadServers()} size="sm">
-                Refresh
-              </Button>
-              <Dialog.Trigger asChild>
-                <Button onClick={openCreate} variant="default" size="sm">
-                  Add server
-                </Button>
-              </Dialog.Trigger>
-            </div>
-          </div>
-
-          {loadError ? (
-            <div
-              role="alert"
-              aria-live="assertive"
-              className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div className="min-w-0">{loadError}</div>
-                <Button className="shrink-0" onClick={() => void loadServers()} size="sm">
-                  Retry
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {actionError ? (
-            <div
-              role="alert"
-              aria-live="assertive"
-              className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
-            >
-              {actionError}
-            </div>
-          ) : null}
-
-          {actionStatus ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className="mt-4 rounded-xl border border-success/25 bg-success/10 px-3 py-2 font-sans text-sm text-success"
-            >
-              {actionStatus}
-            </div>
-          ) : null}
-
-          <div className="panel mt-6 overflow-hidden">
-            <table className="w-full font-sans text-sm">
-              <thead className="bg-accent text-accent-foreground">
-                <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Base URL</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">API user</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">SSL</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Updated</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Manage</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {loading ? (
-                  <AdminTableLoadingRows columns={6} />
-                ) : sortedServers.length ? (
-                  sortedServers.map((server) => {
-                    const validateResult = validateResultById[server.id];
-                    const badge =
-                      validateResult === undefined
-                        ? null
-                        : validateResult.ok
-                          ? { label: "Validated", className: "status-badge-success" }
-                          : { label: "Failed", className: "status-badge-danger" };
-
-                    return (
-                      <tr
-                        key={server.id}
-                        tabIndex={0}
-                        aria-haspopup="dialog"
-                        aria-label={`Manage ${server.name}`}
-                        className="cursor-pointer transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
-                        onClick={(event) => openPanelForServer(server, event.currentTarget)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
-                            event.preventDefault();
-                            openPanelForServer(server, event.currentTarget);
-                          }
-                        }}
-                      >
-                        <td className="px-4 py-3 text-foreground">
-                          <div className="font-medium text-foreground">{server.name}</div>
-                          <div className="mt-1 flex flex-wrap items-center gap-2">
-                            {badge ? <span className={["status-badge", badge.className].join(" ")}>{badge.label}</span> : null}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-muted-foreground">{server.base_url}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{server.api_username}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{server.verify_ssl ? "on" : "off"}</td>
-                        <td className="px-4 py-3 text-muted-foreground">{formatTimestamp(server.updated_at)}</td>
-                        <td className="px-4 py-3 text-primary font-medium">Manage</td>
-                      </tr>
-                    );
-                  })
-                ) : loadError ? (
-                  <tr>
-                    <td colSpan={6} className="px-4 py-6 text-center text-muted-foreground">
-                      Unable to load WHM servers.
-                    </td>
-                  </tr>
-                ) : (
-                  <AdminTableEmptyState
-                    columns={6}
-                    title="No WHM servers"
-                    description="Add a WHM server to manage hosting infrastructure."
-                  />
-                )}
-              </tbody>
-            </table>
-          </div>
-
-          <Dialog.Portal>
-            <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
-
-            <Dialog.Content className="fixed top-1/2 left-1/2 z-50 flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl outline-none">
-              <div className="flex items-start justify-between gap-3 border-b border-border bg-card/50 px-5 py-4">
-                <div className="min-w-0">
-                  <Dialog.Title className="text-lg font-semibold text-foreground">Add WHM server</Dialog.Title>
-                  <Dialog.Description className="mt-1 font-sans text-sm text-muted-foreground">
-                    WHM API token and SSH credentials are stored securely and never displayed again. CSF and firewall tools use the SSH path.
-                  </Dialog.Description>
-                </div>
-                <Dialog.Close asChild>
-                  <Button aria-label="Close" className="text-muted-foreground hover:text-foreground" size="icon">
-                    <Cross2Icon width={18} height={18} />
-                  </Button>
-                </Dialog.Close>
-              </div>
-
-
-
-              <ScrollArea className="min-h-0 flex-1" viewportClassName="h-full px-5 py-4 font-sans">
-                <WhmServerFormFields form={createForm} setForm={setCreateForm} disabled={creating} mode="create" />
-
-                {createError ? (
-                  <p
-                    role="alert"
-                    aria-live="assertive"
-                    className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                  >
-                    {createError}
-                  </p>
-                ) : null}
-              </ScrollArea>
-
-              <div className="mt-auto flex items-center justify-end gap-2 border-t border-border px-5 py-4">
-                <Dialog.Close asChild>
-                  <Button disabled={creating} size="sm">
-                    Cancel
-                  </Button>
-                </Dialog.Close>
-                <Button disabled={creating} onClick={() => void createServer()} size="sm" variant="default">
-                  {creating ? "Saving..." : "Save"}
-                </Button>
-              </div>
-            </Dialog.Content>
-          </Dialog.Portal>
-        </main>
-      </Dialog.Root>
-
-      <Dialog.Root open={editOpen} onOpenChange={setEditOpen}>
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
-          <Dialog.Content className="fixed top-1/2 left-1/2 z-[60] flex max-h-[90vh] w-[min(92vw,760px)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-background shadow-xl outline-none">
-            <div className="flex items-start justify-between gap-3 border-b border-border bg-card/50 px-5 py-4">
-              <div className="min-w-0">
-                <Dialog.Title className="text-lg font-semibold text-foreground">Edit WHM server</Dialog.Title>
-                <Dialog.Description className="mt-1 font-sans text-sm text-muted-foreground">
-                  Stored secrets can be replaced, but they are never shown again.
-                </Dialog.Description>
-              </div>
-              <Dialog.Close asChild>
-                <Button aria-label="Close" className="text-muted-foreground hover:text-foreground" size="icon">
-                  <Cross2Icon width={18} height={18} />
-                </Button>
-              </Dialog.Close>
-            </div>
-
-
-            <ScrollArea className="min-h-0 flex-1" viewportClassName="h-full px-5 py-4 font-sans">
-              <WhmServerFormFields
-                form={editForm}
-                setForm={setEditForm}
-                disabled={savingEdit}
-                mode="update"
-                existingServer={selectedServer}
-              />
-
-              {editError ? (
-                <p
-                  role="alert"
-                  aria-live="assertive"
-                  className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                >
-                  {editError}
-                </p>
-              ) : null}
-
-            </ScrollArea>
-
-            <div className="mt-auto flex items-center justify-end gap-2 border-t border-border px-5 py-4">
-              <Dialog.Close asChild>
-                <Button disabled={savingEdit} size="sm">
-                  Cancel
-                </Button>
-              </Dialog.Close>
-              <Button disabled={savingEdit} onClick={() => void updateServer()} size="sm" variant="default">
-                {savingEdit ? "Saving..." : "Save changes"}
-              </Button>
-            </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
-
-      <Dialog.Root
-        open={selectedServerId !== null}
-        onOpenChange={(open) => {
-          if (!open) closePanel();
-        }}
+      <AdminListLayout
+        title="WHM Servers"
+        description="Store WHM API and SSH credentials in NOA. CSF and firewall tools run over SSH, and secrets are never shown after save."
+        loading={loading}
+        error={loadError}
+        onRetry={() => void loadServers()}
+        empty={!loading && !loadError && servers.length === 0}
+        emptyTitle="No WHM servers"
+        emptyDescription="Add a WHM server to manage hosting infrastructure."
+        actions={
+          <>
+            <Button disabled={loading} onClick={() => void loadServers()} size="sm" variant="outline">
+              Refresh
+            </Button>
+            <Button onClick={openCreate} variant="default" size="sm">
+              Add server
+            </Button>
+          </>
+        }
       >
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
-          <Dialog.Content
-            className={[
-              "fixed inset-y-0 right-0 z-50 w-[30rem] max-w-[92vw]",
-              "border-l border-border bg-background shadow-md",
-              "transition-transform duration-200 ease-out",
-              "data-[state=open]:translate-x-0 data-[state=closed]:translate-x-full",
-              "outline-none",
-            ].join(" ")}
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              openerRef.current?.focus();
-            }}
+        {actionStatus ? (
+          <div
+            role="status"
+            aria-live="polite"
+            className="rounded-xl border border-success/25 bg-success/10 px-3 py-2 font-sans text-sm text-success"
           >
-            <Dialog.Title className="sr-only">Manage WHM server</Dialog.Title>
-            <Dialog.Description className="sr-only">
-              Review server details, edit stored credentials, validate the connection, or delete the server.
-            </Dialog.Description>
+            {actionStatus}
+          </div>
+        ) : null}
 
-            <div className="flex h-full flex-col">
-              <div className="flex items-start justify-between gap-3 border-b border-border bg-card px-4 py-4">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-foreground">{selectedServer?.name ?? "WHM server"}</div>
-                  {selectedServer?.base_url ? (
-                    <div className="mt-0.5 text-xs text-muted-foreground">{selectedServer.base_url}</div>
+        {actionError && !selectedServerId ? (
+          <div
+            role="alert"
+            aria-live="assertive"
+            className="rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+          >
+            {actionError}
+          </div>
+        ) : null}
+
+        {sortedServers.map((server) => {
+          const validateResult = validateResultById[server.id];
+          const validationBadge =
+            validateResult === undefined
+              ? null
+              : validateResult.ok
+                ? { label: "Validated", style: "bg-success/15 text-success" }
+                : { label: "Failed", style: "bg-destructive/15 text-destructive" };
+
+          return (
+            <AdminListCard
+              key={server.id}
+              title={server.name}
+              subtitle={server.base_url}
+              selected={selectedServerId === server.id}
+              onClick={() => openPanelForServer(server)}
+              badges={
+                <span className="flex items-center gap-1.5">
+                  {validationBadge ? (
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${validationBadge.style}`}>
+                      {validationBadge.label}
+                    </span>
                   ) : null}
-                </div>
-                <Dialog.Close asChild>
-                  <Button aria-label="Close" size="icon">
-                    <Cross2Icon width={16} height={16} />
-                  </Button>
-                </Dialog.Close>
-              </div>
+                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
+                    SSL {server.verify_ssl ? "on" : "off"}
+                  </span>
+                </span>
+              }
+              metadata={
+                <span className="text-xs text-muted-foreground">
+                  {formatRelativeTime(server.updated_at)}
+                </span>
+              }
+            />
+          );
+        })}
+      </AdminListLayout>
 
-
-              <ScrollArea
-                className="flex-1 min-h-0 font-sans"
-                horizontalScrollbar
-                viewportClassName="h-full p-4"
-              >
-                <div className="rounded-xl border border-border bg-card px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server details</div>
-                    </div>
-                    <Button disabled={!selectedServer || deleteBusyId === selectedServer.id} onClick={openEdit} size="sm">
-                      Edit server
-                    </Button>
-                  </div>
-                  <dl className="mt-3 grid gap-3 text-sm">
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</dt>
-                      <dd className="mt-1 text-foreground">{selectedServer?.name ?? "-"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Base URL</dt>
-                      <dd className="mt-1 break-all text-foreground">{selectedServer?.base_url ?? "-"}</dd>
-                    </div>
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">API user</dt>
-                        <dd className="mt-1 text-foreground">{selectedServer?.api_username ?? "-"}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSL</dt>
-                        <dd className="mt-1 text-foreground">{selectedServer?.verify_ssl ? "Verify enabled" : "Verification off"}</dd>
-                      </div>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Updated</dt>
-                      <dd className="mt-1 text-foreground">{formatTimestamp(selectedServer?.updated_at)}</dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH access</div>
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className={["status-badge", sshStatus.className].join(" ")}>{sshStatus.label}</span>
-                        {selectedServer?.ssh_host_key_fingerprint ? (
-                          <span className="status-badge status-badge-success">Host key pinned</span>
-                        ) : (
-                          <span className="status-badge">Fingerprint missing</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                  <dl className="mt-3 grid gap-3 text-sm">
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH user</dt>
-                        <dd className="mt-1 text-foreground">{selectedServer?.ssh_username || "root (default)"}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH port</dt>
-                        <dd className="mt-1 text-foreground">{selectedServer?.ssh_port ?? 22}</dd>
-                      </div>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Authentication</dt>
-                      <dd className="mt-1 text-foreground">{getSshAuthLabel(selectedServer)}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Host key fingerprint</dt>
-                      <dd className="mt-1 break-all font-mono text-xs text-foreground">
-                        {selectedServer?.ssh_host_key_fingerprint ?? "Not validated yet"}
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest validation</div>
-                      <div className="mt-2 flex items-center gap-2">
-                        {selectedServer && validateResultById[selectedServer.id] ? (
-                          <span
-                            className={[
-                              "status-badge",
-                              validateResultById[selectedServer.id]?.ok
-                                ? "status-badge-success"
-                                : "status-badge-danger",
-                            ].join(" ")}
-                          >
-                            {validateResultById[selectedServer.id]?.ok ? "Validated" : "Failed"}
-                          </span>
-                        ) : (
-                          <span className="status-badge">Not run</span>
-                        )}
-                      </div>
-                        <p className="mt-2 text-sm text-muted-foreground">
-                          {selectedServer && validateResultById[selectedServer.id]
-                            ? validateResultById[selectedServer.id]?.message
-                            : "Validate checks the WHM API token path, then SSH (if configured) for CSF and other SSH-backed tools, and refreshes the pinned SSH host key fingerprint."}
-                        </p>
-                    </div>
-                    <Button
-                      className="shrink-0"
-                      disabled={!selectedServer || validateBusyId === selectedServer.id || deleteBusyId === selectedServer.id}
-                      onClick={() => selectedServer && void validateServer(selectedServer.id)}
-                      size="sm"
-                      variant="default"
-                    >
-                      {selectedServer && validateBusyId === selectedServer.id ? "Validating..." : "Validate"}
-                    </Button>
-                  </div>
-                </div>
-
-                {actionError ? (
-                  <p
-                    role="alert"
-                    aria-live="assertive"
-                    className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                  >
-                    {actionError}
-                  </p>
-                ) : null}
-
-                <div className="danger-zone mt-6">
-                  <div className="danger-zone-label text-xs font-semibold uppercase tracking-wide">Danger zone</div>
-                  <p className="danger-zone-copy mt-1 text-sm">
-                    Delete this server configuration from NOA. Stored validation state for this session is removed too.
-                  </p>
-                  <ConfirmAction
-                    title="Delete server?"
-                    description={
-                      selectedServer
-                        ? `This permanently deletes the ${selectedServer.name} server configuration from NOA.`
-                        : "This permanently deletes this server configuration from NOA."
-                    }
-                    confirmLabel="Delete server"
-                    confirmBusyLabel="Deleting..."
-                    confirmVariant="danger"
-                    busy={Boolean(selectedServer && deleteBusyId === selectedServer.id)}
-                    error={actionError}
-                    onConfirm={() => selectedServer && void deleteServer(selectedServer.id)}
-                    trigger={({ open, disabled }) => (
-                      <Button
-                        className="mt-3 w-full"
-                        disabled={
-                          !selectedServer ||
-                          disabled ||
-                          (selectedServer && validateBusyId === selectedServer.id)
-                        }
-                        onClick={() => {
-                          setActionError(null);
-                          open();
-                        }}
-                        variant="destructive"
-                      >
-                        Delete server
-                      </Button>
-                    )}
-                  />
-                </div>
-              </ScrollArea>
+      {/* Detail modal */}
+      <AdminDetailModal
+        open={selectedServerId !== null}
+        onOpenChange={(open) => { if (!open) closePanel(); }}
+        title={selectedServer?.name ?? "WHM server"}
+        subtitle={selectedServer?.base_url}
+        size="lg"
+      >
+        {/* Server details card */}
+        <div className="rounded-xl border border-border bg-card px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server details</div>
             </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </Dialog.Root>
+            <Button disabled={!selectedServer || deleteBusyId === selectedServer.id} onClick={openEdit} size="sm">
+              Edit server
+            </Button>
+          </div>
+          <dl className="mt-3 grid gap-3 text-sm">
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</dt>
+              <dd className="mt-1 text-foreground">{selectedServer?.name ?? "-"}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Base URL</dt>
+              <dd className="mt-1 break-all text-foreground">{selectedServer?.base_url ?? "-"}</dd>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">API user</dt>
+                <dd className="mt-1 text-foreground">{selectedServer?.api_username ?? "-"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSL</dt>
+                <dd className="mt-1 text-foreground">{selectedServer?.verify_ssl ? "Verify enabled" : "Verification off"}</dd>
+              </div>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Updated</dt>
+              <dd className="mt-1 text-foreground">{formatRelativeTime(selectedServer?.updated_at)}</dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* SSH access card */}
+        <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH access</div>
+              <div className="mt-2 flex items-center gap-2">
+                <span className={["status-badge", sshStatus.className].join(" ")}>{sshStatus.label}</span>
+                {selectedServer?.ssh_host_key_fingerprint ? (
+                  <span className="status-badge status-badge-success">Host key pinned</span>
+                ) : (
+                  <span className="status-badge">Fingerprint missing</span>
+                )}
+              </div>
+            </div>
+          </div>
+          <dl className="mt-3 grid gap-3 text-sm">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH user</dt>
+                <dd className="mt-1 text-foreground">{selectedServer?.ssh_username || "root (default)"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH port</dt>
+                <dd className="mt-1 text-foreground">{selectedServer?.ssh_port ?? 22}</dd>
+              </div>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Authentication</dt>
+              <dd className="mt-1 text-foreground">{getSshAuthLabel(selectedServer)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Host key fingerprint</dt>
+              <dd className="mt-1 break-all font-mono text-xs text-foreground">
+                {selectedServer?.ssh_host_key_fingerprint ?? "Not validated yet"}
+              </dd>
+            </div>
+          </dl>
+        </div>
+
+        {/* Validation card */}
+        <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest validation</div>
+              <div className="mt-2 flex items-center gap-2">
+                {selectedServer && validateResultById[selectedServer.id] ? (
+                  <span
+                    className={[
+                      "status-badge",
+                      validateResultById[selectedServer.id]?.ok
+                        ? "status-badge-success"
+                        : "status-badge-danger",
+                    ].join(" ")}
+                  >
+                    {validateResultById[selectedServer.id]?.ok ? "Validated" : "Failed"}
+                  </span>
+                ) : (
+                  <span className="status-badge">Not run</span>
+                )}
+              </div>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  {selectedServer && validateResultById[selectedServer.id]
+                    ? validateResultById[selectedServer.id]?.message
+                    : "Validate checks the WHM API token path, then SSH (if configured) for CSF and other SSH-backed tools, and refreshes the pinned SSH host key fingerprint."}
+                </p>
+            </div>
+            <Button
+              className="shrink-0"
+              disabled={!selectedServer || validateBusyId === selectedServer.id || deleteBusyId === selectedServer.id}
+              onClick={() => selectedServer && void validateServer(selectedServer.id)}
+              size="sm"
+              variant="default"
+            >
+              {selectedServer && validateBusyId === selectedServer.id ? "Validating..." : "Validate"}
+            </Button>
+          </div>
+        </div>
+
+        {/* Action error */}
+        {actionError ? (
+          <p
+            role="alert"
+            aria-live="assertive"
+            className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+          >
+            {actionError}
+          </p>
+        ) : null}
+
+        {/* Danger zone */}
+        <div className="danger-zone mt-6">
+          <div className="danger-zone-label text-xs font-semibold uppercase tracking-wide">Danger zone</div>
+          <p className="danger-zone-copy mt-1 text-sm">
+            Delete this server configuration from NOA. Stored validation state for this session is removed too.
+          </p>
+          <ConfirmAction
+            title="Delete server?"
+            description={
+              selectedServer
+                ? `This permanently deletes the ${selectedServer.name} server configuration from NOA.`
+                : "This permanently deletes this server configuration from NOA."
+            }
+            confirmLabel="Delete server"
+            confirmBusyLabel="Deleting..."
+            confirmVariant="danger"
+            busy={Boolean(selectedServer && deleteBusyId === selectedServer.id)}
+            error={actionError}
+            onConfirm={() => selectedServer && void deleteServer(selectedServer.id)}
+            trigger={({ open, disabled }) => (
+              <Button
+                className="mt-3 w-full"
+                disabled={
+                  !selectedServer ||
+                  disabled ||
+                  (selectedServer && validateBusyId === selectedServer.id)
+                }
+                onClick={() => {
+                  setActionError(null);
+                  open();
+                }}
+                variant="destructive"
+              >
+                Delete server
+              </Button>
+            )}
+          />
+        </div>
+      </AdminDetailModal>
+
+      {/* Create server dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+            <DialogTitle>Add WHM server</DialogTitle>
+            <DialogDescription>
+              WHM API token and SSH credentials are stored securely and never displayed again. CSF and firewall tools use the SSH path.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 font-sans">
+            <WhmServerFormFields form={createForm} setForm={setCreateForm} disabled={creating} mode="create" />
+
+            {createError ? (
+              <p
+                role="alert"
+                aria-live="assertive"
+                className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {createError}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="px-6 py-4 border-t border-border shrink-0 flex justify-end gap-2">
+            <Button disabled={creating} onClick={() => setCreateOpen(false)} size="sm" variant="outline">
+              Cancel
+            </Button>
+            <Button disabled={creating} onClick={() => void createServer()} size="sm" variant="default">
+              {creating ? "Saving..." : "Save"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit server dialog */}
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
+          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+            <DialogTitle>Edit WHM server</DialogTitle>
+            <DialogDescription>
+              Stored secrets can be replaced, but they are never shown again.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 font-sans">
+            <WhmServerFormFields
+              form={editForm}
+              setForm={setEditForm}
+              disabled={savingEdit}
+              mode="update"
+              existingServer={selectedServer}
+            />
+
+            {editError ? (
+              <p
+                role="alert"
+                aria-live="assertive"
+                className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              >
+                {editError}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="px-6 py-4 border-t border-border shrink-0 flex justify-end gap-2">
+            <Button disabled={savingEdit} onClick={() => setEditOpen(false)} size="sm" variant="outline">
+              Cancel
+            </Button>
+            <Button disabled={savingEdit} onClick={() => void updateServer()} size="sm" variant="default">
+              {savingEdit ? "Saving..." : "Save changes"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
