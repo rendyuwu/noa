@@ -484,7 +484,7 @@ export function RolesAdminPage() {
                         tabIndex={0}
                         aria-haspopup="dialog"
                         aria-label={`Manage ${roleName}`}
-                        className="cursor-pointer transition-colors hover:bg-primary/60 focus-visible:bg-primary/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
+                        className="cursor-pointer transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
                         onClick={(event) => openPanelForRole(roleName, event.currentTarget)}
                         onKeyDown={(event) => {
                           if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {

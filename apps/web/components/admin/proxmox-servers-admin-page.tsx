@@ -585,7 +585,7 @@ export function ProxmoxServersAdminPage() {
                         tabIndex={0}
                         aria-haspopup="dialog"
                         aria-label={`Manage ${server.name}`}
-                        className="cursor-pointer transition-colors hover:bg-primary/60 focus-visible:bg-primary/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
+                        className="cursor-pointer transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
                         onClick={(event) => openPanelForServer(server, event.currentTarget)}
                         onKeyDown={(event) => {
                           if (
