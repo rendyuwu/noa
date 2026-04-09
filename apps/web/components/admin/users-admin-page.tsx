@@ -2,15 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Cross2Icon } from "@radix-ui/react-icons";
-import * as Dialog from "@radix-ui/react-dialog";
-
-import { AdminTableEmptyState, AdminTableLoadingRows } from "@/components/admin/admin-table-empty-state";
+import { AdminDetailModal } from "@/components/admin/admin-detail-modal";
+import { AdminListCard } from "@/components/admin/admin-list-card";
+import { AdminListLayout } from "@/components/admin/admin-list-layout";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
-import { ScrollArea } from "@/components/lib/scroll-area";
 
 type AdminUser = {
   id: string;
@@ -62,11 +60,51 @@ function sanitizeIdPart(value: string): string {
   return value.replace(/[^A-Za-z0-9_-]/g, "-");
 }
 
-function formatTimestamp(value: unknown): string {
-  if (typeof value !== "string" || !value) return "-";
+function formatRelativeTime(value: unknown): string {
+  if (typeof value !== "string" || !value) return "Never";
   const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "-";
-  return date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, "Z");
+  if (Number.isNaN(date.getTime())) return "Never";
+
+  const now = Date.now();
+  const diffMs = now - date.getTime();
+  if (diffMs < 0) return "Just now";
+
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return "Just now";
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes} minute${minutes === 1 ? "" : "s"} ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+
+  const days = Math.floor(hours / 24);
+  if (days < 7) return `${days} day${days === 1 ? "" : "s"} ago`;
+
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function getUserStatus(user: AdminUser): { label: string; variant: "active" | "disabled" | "pending" } {
+  const isActive = user.is_active !== false;
+  if (isActive) return { label: "Active", variant: "active" };
+  const hasLoggedIn = Boolean(user.last_login_at);
+  if (hasLoggedIn) return { label: "Disabled", variant: "disabled" };
+  return { label: "Pending", variant: "pending" };
+}
+
+const statusStyles = {
+  active: "bg-success/15 text-success",
+  disabled: "bg-destructive/15 text-destructive",
+  pending: "bg-warning/15 text-warning",
+} as const;
+
+function StatusBadge({ user }: { user: AdminUser }) {
+  const { label, variant } = getUserStatus(user);
+  return (
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles[variant]}`}>
+      {label}
+    </span>
+  );
 }
 
 export function UsersAdminPage() {
@@ -77,7 +115,6 @@ export function UsersAdminPage() {
 
   const loadSeqRef = useRef(0);
   const panelSeqRef = useRef(0);
-  const openerRef = useRef<HTMLElement | null>(null);
   const selectedUserIdRef = useRef<string | null>(null);
 
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -90,6 +127,7 @@ export function UsersAdminPage() {
     selectedUserIdRef.current = selectedUserId;
   }, [selectedUserId]);
 
+  const [searchFilter, setSearchFilter] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [roleAssignments, setRoleAssignments] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
@@ -136,6 +174,16 @@ export function UsersAdminPage() {
     };
   }, [loadData]);
 
+  const filteredUsers = useMemo(() => {
+    const needle = searchFilter.trim().toLowerCase();
+    if (!needle) return users;
+    return users.filter(
+      (u) =>
+        u.email.toLowerCase().includes(needle) ||
+        (u.display_name && u.display_name.toLowerCase().includes(needle))
+    );
+  }, [users, searchFilter]);
+
   const allRoleNames = useMemo(() => {
     const merged = new Set<string>([...coerceStringArray(availableRoles), ...coerceStringArray(roleAssignments)]);
     return Array.from(merged).sort((a, b) => a.localeCompare(b));
@@ -161,9 +209,8 @@ export function UsersAdminPage() {
     setDeleteSaving(false);
   };
 
-  const openPanelForUser = (user: AdminUser, opener: HTMLElement | null) => {
+  const openPanelForUser = (user: AdminUser) => {
     panelSeqRef.current += 1;
-    openerRef.current = opener;
     selectedUserIdRef.current = user.id;
     setSelectedUserId(user.id);
     setRoleFilter("");
@@ -294,341 +341,257 @@ export function UsersAdminPage() {
   };
 
   return (
-    <Dialog.Root
-      open={selectedUserId !== null}
-      onOpenChange={(open) => {
-        if (!open) closePanel();
-      }}
-    >
-      <main className="min-h-dvh bg-background p-6">
-        <div className="flex items-end justify-between gap-3">
-          <h1 className="text-2xl font-semibold">Users</h1>
-          {loading ? <div className="muted font-sans">Loading...</div> : null}
+    <>
+      <AdminListLayout
+        title="Users"
+        description="Manage user accounts, roles, and access."
+        loading={loading}
+        error={loadError}
+        onRetry={() => void loadData()}
+        empty={!loading && !loadError && users.length === 0}
+        emptyTitle="No users yet"
+        emptyDescription="Users will appear here after they sign in or are provisioned."
+        filter={
+          <input
+            className="input w-full"
+            placeholder="Search by email or name..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+          />
+        }
+        actions={
+          <Button disabled={loading} onClick={() => void loadData()} size="sm" variant="outline">
+            Refresh
+          </Button>
+        }
+      >
+        {filteredUsers.map((user) => {
+          const roles = coerceStringArray(user.roles);
+          const lastLoginLabel = formatRelativeTime(user.last_login_at);
+          const subtitle =
+            user.display_name && user.display_name !== user.email
+              ? user.display_name
+              : undefined;
+
+          return (
+            <AdminListCard
+              key={user.id}
+              title={user.email}
+              subtitle={subtitle}
+              badges={<StatusBadge user={user} />}
+              metadata={
+                <span className="text-xs">
+                  {roles.length > 0 ? (
+                    <span className="mr-3">{roles.join(", ")}</span>
+                  ) : null}
+                  <span className="text-muted-foreground">{lastLoginLabel}</span>
+                </span>
+              }
+              selected={selectedUserId === user.id}
+              onClick={() => openPanelForUser(user)}
+            />
+          );
+        })}
+      </AdminListLayout>
+
+      <AdminDetailModal
+        open={selectedUserId !== null}
+        onOpenChange={(open) => { if (!open) closePanel(); }}
+        title={selectedUser?.display_name ?? selectedUser?.email ?? "User"}
+        subtitle={selectedUser?.email}
+        size="lg"
+        footer={
+          <Button
+            className="w-full"
+            disabled={!selectedUser || saving}
+            onClick={() => void saveRoles()}
+            variant="default"
+          >
+            {saving ? "Saving..." : "Save"}
+          </Button>
+        }
+      >
+        {/* Status card */}
+        <div className="rounded-xl border border-border bg-card px-3 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</div>
+              <div className="mt-1 text-sm text-foreground">
+                {selectedUser?.is_active === false ? "Inactive" : "Active"}
+              </div>
+            </div>
+            <Button
+              className="shrink-0"
+              disabled={!selectedUser || statusSaving}
+              variant={selectedUser?.is_active === false ? "default" : "destructive"}
+              onClick={() => void toggleUserStatus()}
+              size="sm"
+            >
+              {selectedUser?.is_active === false ? "Enable" : "Disable"}
+            </Button>
+          </div>
         </div>
 
-        {loadError ? (
-          <div
+        {statusError ? (
+          <p
             role="alert"
             aria-live="assertive"
-            className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+            className="mt-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">{loadError}</div>
-              <Button className="shrink-0" disabled={loading} onClick={() => void loadData()} size="sm">
-                Retry
-              </Button>
-            </div>
-          </div>
+            {statusError}
+          </p>
         ) : null}
 
-        <div className="panel mt-6 overflow-hidden">
-          <table className="w-full font-sans text-sm">
-            <thead className="bg-accent text-accent-foreground">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Email</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Last login</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Roles</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Tools</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {users.length === 0 ? (
-                loading ? (
-                  <AdminTableLoadingRows columns={7} />
-                ) : loadError ? (
-                  <tr>
-                    <td className="px-4 py-4 text-sm text-muted-foreground" colSpan={7}>
-                      Unable to load users.
-                    </td>
-                  </tr>
-                ) : (
-                  <AdminTableEmptyState
-                    columns={7}
-                    title="No users yet"
-                    description="Users will appear here after they sign in or are provisioned."
-                  />
-                )
-              ) : (
-                users.map((user) => {
-                  const roles = coerceStringArray(user.roles);
-                  const tools = coerceStringArray(user.tools);
-                  const createdLabel = formatTimestamp(user.created_at);
-                  const lastLoginLabel = user.last_login_at ? formatTimestamp(user.last_login_at) : "Never";
-                  const isActive = user.is_active !== false;
-                  const hasLoggedIn = Boolean(user.last_login_at);
-                  const statusLabel = isActive
-                    ? "Active"
-                    : hasLoggedIn
-                      ? "Disabled"
-                      : "Pending approval";
-
-                  return (
-                    <tr
-                      key={user.id}
-                      tabIndex={0}
-                      aria-haspopup="dialog"
-                      aria-label={`Manage roles for ${user.email}`}
-                      className="cursor-pointer transition-colors hover:bg-accent focus-visible:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/40"
-                      onClick={(event) => openPanelForUser(user, event.currentTarget)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter" || event.key === " " || event.key === "Spacebar") {
-                          event.preventDefault();
-                          openPanelForUser(user, event.currentTarget);
-                        }
-                      }}
-                    >
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-foreground">{user.email}</div>
-                        {user.display_name ? (
-                          <div className="mt-0.5 text-xs text-muted-foreground">{user.display_name}</div>
-                        ) : null}
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{createdLabel}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{lastLoginLabel}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{statusLabel}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{roles.length ? roles.join(", ") : "-"}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{tools.length}</td>
-                      <td className="px-4 py-3 text-primary font-medium">Manage</td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        <Dialog.Portal>
-          <Dialog.Overlay className="fixed inset-0 z-50 bg-black/30 opacity-0 transition-opacity data-[state=open]:opacity-100 data-[state=closed]:opacity-0" />
-          <Dialog.Content
-            className={[
-              "fixed inset-y-0 right-0 z-50 w-[30rem] max-w-[92vw]",
-              "border-border border-l bg-background shadow-md",
-              "transition-transform duration-200 ease-out",
-              "data-[state=open]:translate-x-0 data-[state=closed]:translate-x-full",
-              "outline-none",
-            ].join(" ")}
-            onCloseAutoFocus={(event) => {
-              event.preventDefault();
-              openerRef.current?.focus();
-            }}
+        {deleteError ? (
+          <p
+            role="alert"
+            aria-live="assertive"
+            className="mt-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
           >
-            <Dialog.Title className="sr-only">Manage user roles</Dialog.Title>
-            <Dialog.Description className="sr-only">
-              Edit the selected user's roles and review effective tools.
-            </Dialog.Description>
+            {deleteError}
+          </p>
+        ) : null}
 
-            <div className="flex h-full flex-col">
-              <div className="flex items-start justify-between gap-3 border-b border-border bg-card px-4 py-4">
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold text-foreground">
-                    {selectedUser?.display_name ?? selectedUser?.email ?? "User"}
-                  </div>
-                  {selectedUser?.email ? (
-                    <div className="mt-0.5 text-xs text-muted-foreground">{selectedUser.email}</div>
-                  ) : null}
-                </div>
-                <Dialog.Close asChild>
-                  <Button aria-label="Close" size="icon">
-                    <Cross2Icon width={16} height={16} />
-                  </Button>
-                </Dialog.Close>
-              </div>
+        {/* Role assignment section */}
+        <div className="mt-4">
+          {saveError ? (
+            <p
+              role="alert"
+              aria-live="assertive"
+              className="mb-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+            >
+              {saveError}
+            </p>
+          ) : null}
 
-              <ScrollArea className="flex-1 min-h-0 font-sans" viewportClassName="h-full p-4">
-                <div className="rounded-xl border border-border bg-card px-3 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</div>
-                      <div className="mt-1 text-sm text-foreground">
-                        {selectedUser?.is_active === false ? "Inactive" : "Active"}
-                      </div>
-                    </div>
-                    <Button
-                      className="shrink-0"
-                      disabled={!selectedUser || statusSaving}
-                      variant={selectedUser?.is_active === false ? "default" : "destructive"}
-                      onClick={() => void toggleUserStatus()}
-                      size="sm"
-                    >
-                      {selectedUser?.is_active === false ? "Enable" : "Disable"}
-                    </Button>
-                  </div>
-                </div>
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="role-filter">
+            Role assignment
+          </label>
+          <input
+            id="role-filter"
+            className="input mt-2 w-full"
+            placeholder="Filter roles..."
+            value={roleFilter}
+            onChange={(e) => setRoleFilter(e.target.value)}
+          />
 
-                {statusError ? (
-                  <p
-                    role="alert"
-                    aria-live="assertive"
-                    className="mt-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                  >
-                    {statusError}
-                  </p>
-                ) : null}
+          <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
+            <div className="max-h-[50vh] overflow-y-auto p-2">
+              {filteredRoleNames.length === 0 ? (
+                <div className="px-2 py-3 text-sm text-muted-foreground">No matching roles.</div>
+              ) : (
+                <ul className="space-y-1">
+                  {filteredRoleNames.map((roleName) => {
+                    const checked = roleAssignments.includes(roleName);
+                    const roleIdPart = sanitizeIdPart(roleName);
+                    const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
+                    const inputId = `role-${userIdPart}-${roleIdPart}`;
 
-                {deleteError ? (
-                  <p
-                    role="alert"
-                    aria-live="assertive"
-                    className="mt-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                  >
-                    {deleteError}
-                  </p>
-                ) : null}
-
-                <div className="mt-4">
-                  {saveError ? (
-                    <p
-                      role="alert"
-                      aria-live="assertive"
-                      className="mb-3 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"
-                    >
-                      {saveError}
-                    </p>
-                  ) : null}
-
-                  <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="role-filter">
-                    Role assignment
-                  </label>
-                  <input
-                    id="role-filter"
-                    className="input mt-2"
-                    placeholder="Filter roles..."
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                  />
-
-                  <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
-                    <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-[62vh] p-2">
-                      {filteredRoleNames.length === 0 ? (
-                        <div className="px-2 py-3 text-sm text-muted-foreground">No matching roles.</div>
-                      ) : (
-                        <ul className="space-y-1">
-                          {filteredRoleNames.map((roleName) => {
-                            const checked = roleAssignments.includes(roleName);
-                            const roleIdPart = sanitizeIdPart(roleName);
-                            const userIdPart = sanitizeIdPart(selectedUser?.id ?? "unknown");
-                            const inputId = `role-${userIdPart}-${roleIdPart}`;
-
-                            return (
-                              <li key={roleName}>
-                                <label
-                                  className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent"
-                                  htmlFor={inputId}
-                                >
-                                  <input
-                                    id={inputId}
-                                    type="checkbox"
-                                    checked={checked}
-                                    onChange={() => toggleRole(roleName)}
-                                  />
-                                  <span className="text-sm text-foreground">{roleName}</span>
-                                </label>
-                              </li>
-                            );
-                          })}
-                        </ul>
-                      )}
-                    </ScrollArea>
-                  </div>
-
-                  <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
-                    <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Effective tools</div>
-                    <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
-                      <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-48 p-2">
-                        {coerceStringArray(selectedUser?.tools).length === 0 ? (
-                          <div className="px-2 py-2 text-sm text-muted-foreground">No tools granted.</div>
-                        ) : (
-                          <ul className="space-y-1">
-                            {coerceStringArray(selectedUser?.tools).map((toolName) => (
-                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-foreground">
-                                {toolName}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </ScrollArea>
-                    </div>
-                  </div>
-
-                  {coerceStringArray(selectedUser?.direct_tools).length ? (
-                    <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                        Legacy direct grants
-                      </div>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        These tools were granted directly to the user (legacy behavior). Direct grants are no longer
-                        editable here.
-                      </p>
-
-                      <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
-                        <ScrollArea className="w-full" horizontalScrollbar viewportClassName="max-h-48 p-2">
-                          <ul className="space-y-1">
-                            {coerceStringArray(selectedUser?.direct_tools).map((toolName) => (
-                              <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-foreground">
-                                {toolName}
-                              </li>
-                            ))}
-                          </ul>
-                        </ScrollArea>
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-4 border-t border-border pt-4">
-                    <Button
-                      className="w-full"
-                      disabled={!selectedUser || saving}
-                      onClick={() => void saveRoles()}
-                      variant="default"
-                    >
-                      {saving ? "Saving..." : "Save"}
-                    </Button>
-                  </div>
-
-                  <div className="danger-zone mt-6">
-                    <div className="danger-zone-label text-xs font-semibold uppercase tracking-wide">
-                      Danger zone
-                    </div>
-                    <p className="danger-zone-copy mt-1 text-sm">
-                      Delete this user account and remove its access from NOA.
-                    </p>
-                    <ConfirmAction
-                      title="Delete user?"
-                      description={
-                        selectedUser
-                          ? `This permanently deletes ${selectedUser.email} and removes access from NOA.`
-                          : "This permanently deletes this user and removes access from NOA."
-                      }
-                      confirmLabel="Delete user"
-                      confirmBusyLabel="Deleting..."
-                      confirmVariant="danger"
-                      busy={deleteSaving}
-                      error={deleteError}
-                      onConfirm={() => void deleteUser()}
-                      trigger={({ open, disabled }) => (
-                        <Button
-                          className="mt-3 w-full"
-                          disabled={!selectedUser || disabled}
-                          onClick={() => {
-                            setDeleteError(null);
-                            open();
-                          }}
-                          variant="destructive"
+                    return (
+                      <li key={roleName}>
+                        <label
+                          className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent"
+                          htmlFor={inputId}
                         >
-                          Delete user
-                        </Button>
-                      )}
-                    />
-                  </div>
-                </div>
-              </ScrollArea>
+                          <input
+                            id={inputId}
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleRole(roleName)}
+                          />
+                          <span className="text-sm text-foreground">{roleName}</span>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
             </div>
-          </Dialog.Content>
-        </Dialog.Portal>
-      </main>
-    </Dialog.Root>
+          </div>
+
+          {/* Effective tools */}
+          <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
+            <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Effective tools</div>
+            <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
+              <div className="max-h-48 overflow-y-auto p-2">
+                {coerceStringArray(selectedUser?.tools).length === 0 ? (
+                  <div className="px-2 py-2 text-sm text-muted-foreground">No tools granted.</div>
+                ) : (
+                  <ul className="space-y-1">
+                    {coerceStringArray(selectedUser?.tools).map((toolName) => (
+                      <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-foreground">
+                        {toolName}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Legacy direct grants */}
+          {coerceStringArray(selectedUser?.direct_tools).length ? (
+            <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Legacy direct grants
+              </div>
+              <p className="mt-1 text-sm text-muted-foreground">
+                These tools were granted directly to the user (legacy behavior). Direct grants are no longer
+                editable here.
+              </p>
+
+              <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
+                <div className="max-h-48 overflow-y-auto p-2">
+                  <ul className="space-y-1">
+                    {coerceStringArray(selectedUser?.direct_tools).map((toolName) => (
+                      <li key={toolName} className="rounded-md px-2 py-1 font-mono text-[12px] text-foreground">
+                        {toolName}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+          {/* Danger zone */}
+          <div className="mt-6 border-t border-border pt-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-destructive">
+              Danger zone
+            </div>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Delete this user account and remove its access from NOA.
+            </p>
+            <ConfirmAction
+              title="Delete user?"
+              description={
+                selectedUser
+                  ? `This permanently deletes ${selectedUser.email} and removes access from NOA.`
+                  : "This permanently deletes this user and removes access from NOA."
+              }
+              confirmLabel="Delete user"
+              confirmBusyLabel="Deleting..."
+              confirmVariant="danger"
+              busy={deleteSaving}
+              error={deleteError}
+              onConfirm={() => void deleteUser()}
+              trigger={({ open, disabled }) => (
+                <Button
+                  className="mt-3 w-full"
+                  disabled={!selectedUser || disabled}
+                  onClick={() => {
+                    setDeleteError(null);
+                    open();
+                  }}
+                  variant="destructive"
+                >
+                  Delete user
+                </Button>
+              )}
+            />
+          </div>
+        </div>
+      </AdminDetailModal>
+    </>
   );
 }
