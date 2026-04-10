@@ -304,8 +304,9 @@ export function ProxmoxServersAdminPage() {
       if (seq !== loadSeqRef.current) return;
       setLoadError(toUserMessage(error, "Unable to load Proxmox servers"));
     } finally {
-      if (seq !== loadSeqRef.current) return;
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -568,9 +569,6 @@ export function ProxmoxServersAdminPage() {
                   <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Updated
                   </th>
-                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Actions
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -583,9 +581,19 @@ export function ProxmoxServersAdminPage() {
                       aria-selected={selectedServerId === server.id}
                       className={selectedServerId === server.id ? "bg-accent/40" : "bg-card"}
                     >
-                      <th scope="row" className="px-4 py-3 align-top font-normal">
-                        <div className="text-sm font-medium text-foreground">{server.name}</div>
-                        <div className="mt-1 text-sm text-muted-foreground">{server.base_url}</div>
+                      <th scope="row" className="px-4 py-3 align-top text-left font-normal">
+                        <button
+                          type="button"
+                          className="group block rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                          onClick={() => openPanelForServer(server)}
+                        >
+                          <span className="block text-sm font-medium text-foreground group-hover:underline">
+                            {server.name}
+                          </span>
+                          <span aria-hidden="true" className="mt-1 block text-sm text-muted-foreground">
+                            {server.base_url}
+                          </span>
+                        </button>
                       </th>
                       <td className="px-4 py-3 align-top">
                         <AdminStatusBadge tone={validation.tone}>{validation.label}</AdminStatusBadge>
@@ -600,11 +608,6 @@ export function ProxmoxServersAdminPage() {
                       </td>
                       <td className="px-4 py-3 align-top text-sm text-muted-foreground">
                         {formatRelativeTime(server.updated_at)}
-                      </td>
-                      <td className="px-4 py-3 align-top text-right">
-                        <Button onClick={() => openPanelForServer(server)} size="sm" variant="outline">
-                          {`Manage ${server.name}`}
-                        </Button>
                       </td>
                     </tr>
                   );

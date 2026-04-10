@@ -46,10 +46,11 @@ describe("ProxmoxServersAdminPage", () => {
 
     expect(await screen.findByRole("columnheader", { name: "Server" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Validation" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
     expect(screen.getByText("pve1")).toBeInTheDocument();
     expect(screen.getByText("https://pve1.example.com:8006")).toBeInTheDocument();
     expect(screen.getByText("Verification off")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Manage pve1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "pve1" })).toBeInTheDocument();
   });
 
   it("creates a server with the expected POST body", async () => {
@@ -164,7 +165,7 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "pve1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit server" }));
 
     fireEvent.change(screen.getByLabelText("API token ID"), {
@@ -242,7 +243,7 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "pve1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
 
     await waitFor(() => {
@@ -295,7 +296,7 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "pve1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete server" }));
 
     const confirmDialog = await screen.findByRole("dialog", { name: "Delete server?" });

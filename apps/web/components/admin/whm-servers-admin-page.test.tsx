@@ -100,7 +100,7 @@ describe("WhmServersAdminPage", () => {
     });
   });
 
-  it("opens the server modal from the table action and DELETEs /admin/whm/servers/:id from the danger zone", async () => {
+  it("opens the server modal from the first-column button and DELETEs /admin/whm/servers/:id from the danger zone", async () => {
     const serverId = "server-1";
     const listPayload = {
       servers: [
@@ -147,8 +147,9 @@ describe("WhmServersAdminPage", () => {
 
     expect(await screen.findByRole("columnheader", { name: "Server" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Validation" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "Actions" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Manage web1" }));
+    fireEvent.click(screen.getByRole("button", { name: "web1" }));
 
     expect(await screen.findByText("Server details")).toBeInTheDocument();
 
@@ -215,7 +216,7 @@ describe("WhmServersAdminPage", () => {
 
     render(<WhmServersAdminPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Manage web1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "web1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit server" }));
 
     fireEvent.click(screen.getByLabelText("Enable SSH"));
@@ -295,7 +296,7 @@ describe("WhmServersAdminPage", () => {
 
     render(<WhmServersAdminPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "Manage web1" }));
+    fireEvent.click(await screen.findByRole("button", { name: "web1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("SSH authentication failed");
