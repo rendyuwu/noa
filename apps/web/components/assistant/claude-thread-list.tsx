@@ -58,7 +58,7 @@ const ThreadListItem: FC<{
   const titleTooltip = threadTitle?.trim();
 
   return (
-    <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-lg px-4 py-2 transition-colors hover:bg-accent data-[active]:bg-accent">
+    <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 data-[active]:border-sidebar-border data-[active]:bg-sidebar-accent">
       <ThreadListItemPrimitive.Trigger
         onClick={() => {
           onSelect?.();
@@ -77,7 +77,7 @@ const ThreadListItem: FC<{
             }
           })();
         }}
-        className="min-w-0 flex-1 rounded-md text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="min-w-0 flex-1 rounded-lg px-1 text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <span className="block line-clamp-2 text-sm leading-5" title={titleTooltip || remoteId}>
           <ThreadListItemPrimitive.Title fallback="Untitled" />
@@ -171,7 +171,7 @@ const ThreadListItem: FC<{
         trigger={({ open, disabled }) => (
           <button
             type="button"
-            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 group-data-[active]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-sidebar-accent hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 group-data-[active]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label="Delete thread"
             disabled={disabled}
             onClick={(event) => {
@@ -277,7 +277,7 @@ export function ClaudeThreadList({
 
   if (variant === "collapsed") {
     const railButtonClassName =
-      "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+      "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
     const RailItem: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
       return (
@@ -287,7 +287,7 @@ export function ClaudeThreadList({
             aria-hidden="true"
             className={[
               "pointer-events-none absolute top-1/2 left-full z-20 ml-2 -translate-y-1/2",
-              "whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 font-sans text-xs text-foreground shadow-sm",
+               "whitespace-nowrap rounded-md border border-sidebar-border bg-popover px-2 py-1 font-sans text-xs text-foreground shadow-sm",
               "opacity-0 translate-x-1 transition",
               "group-hover:translate-x-0 group-hover:opacity-100",
               "group-focus-within:translate-x-0 group-focus-within:opacity-100",
@@ -379,7 +379,7 @@ export function ClaudeThreadList({
   const closeActionLabel = onCollapseSidebar ? "Collapse sidebar" : "Close sidebar";
 
   return (
-    <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar">
+    <ThreadListPrimitive.Root className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar">
       <div className="pt-3 font-sans">
         <div className="flex items-center justify-between px-4">
           <div className="font-serif text-lg font-semibold tracking-[-0.01em] text-foreground">
@@ -391,7 +391,7 @@ export function ClaudeThreadList({
               type="button"
               onClick={closeAction}
               aria-label={closeActionLabel}
-              className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-[0.98]"
+                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground active:scale-[0.98]"
             >
               <ColumnsIcon width={18} height={18} />
             </button>
@@ -404,11 +404,11 @@ export function ClaudeThreadList({
           <button
             type="button"
             onClick={handleNewChat}
-            className="flex w-full items-center gap-3 rounded-lg px-4 py-2 font-sans text-sm text-foreground transition-colors hover:bg-accent active:scale-[0.99]"
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-2 font-sans text-sm text-foreground transition-colors hover:bg-sidebar-accent active:scale-[0.99]"
           >
             <span
               aria-hidden="true"
-              className="flex h-6 w-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground"
+               className="flex h-6 w-6 items-center justify-center rounded-full border border-sidebar-border bg-card text-muted-foreground shadow-sm"
             >
               <PlusIcon width={14} height={14} />
             </span>
@@ -442,14 +442,14 @@ export function ClaudeThreadList({
         </div>
       </div>
 
-      <div className="border-sidebar-border border-t px-4 py-3 font-sans">
+      <div className="border-sidebar-border/80 border-t bg-sidebar/70 px-4 py-3 font-sans backdrop-blur-sm">
         <AccountMenu
           onLogout={clearAuth}
           trigger={
             <button
               type="button"
               aria-label="Account menu"
-              className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-accent active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-sidebar-accent active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
                 {initial}

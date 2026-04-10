@@ -44,10 +44,12 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    const table = screen.getByRole("table");
-    expect(await within(table).findByText("pve1")).toBeInTheDocument();
-    expect(within(table).getByText("root@pam!noa")).toBeInTheDocument();
-    expect(within(table).getByText("off")).toBeInTheDocument();
+    expect(await screen.findByRole("columnheader", { name: "Server" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Validation" })).toBeInTheDocument();
+    expect(screen.getByText("pve1")).toBeInTheDocument();
+    expect(screen.getByText("https://pve1.example.com:8006")).toBeInTheDocument();
+    expect(screen.getByText("Verification off")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Manage pve1" })).toBeInTheDocument();
   });
 
   it("creates a server with the expected POST body", async () => {
@@ -162,11 +164,7 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const row = (await within(table).findByRole("row", { name: /manage pve1/i })).closest("tr");
-    if (!row) throw new Error("Missing server row");
-
-    fireEvent.click(row);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit server" }));
 
     fireEvent.change(screen.getByLabelText("API token ID"), {
@@ -244,11 +242,7 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const row = (await within(table).findByRole("row", { name: /manage pve1/i })).closest("tr");
-    if (!row) throw new Error("Missing server row");
-
-    fireEvent.click(row);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
 
     await waitFor(() => {
@@ -301,11 +295,7 @@ describe("ProxmoxServersAdminPage", () => {
 
     render(<ProxmoxServersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const row = (await within(table).findByRole("row", { name: /manage pve1/i })).closest("tr");
-    if (!row) throw new Error("Missing server row");
-
-    fireEvent.click(row);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage pve1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Delete server" }));
 
     const confirmDialog = await screen.findByRole("dialog", { name: "Delete server?" });
@@ -318,7 +308,7 @@ describe("ProxmoxServersAdminPage", () => {
     });
 
     await waitFor(() => {
-      expect(within(table).queryByText("pve1")).not.toBeInTheDocument();
+      expect(screen.queryByText("pve1")).not.toBeInTheDocument();
     });
   });
 });

@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminDetailModal } from "@/components/admin/admin-detail-modal";
-import { AdminListCard } from "@/components/admin/admin-list-card";
 import { AdminListLayout } from "@/components/admin/admin-list-layout";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction, ConfirmDialog } from "@/components/lib/confirm-dialog";
 import {
   Dialog,
+  DialogClose,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -110,6 +110,7 @@ function formatDirectGrantsMigrationSummary(payload: unknown): string {
 export function RolesAdminPage() {
   const [roles, setRoles] = useState<string[]>([]);
   const [availableTools, setAvailableTools] = useState<string[]>([]);
+  const [roleToolCountsByName, setRoleToolCountsByName] = useState<Record<string, number>>({});
   const [roleToolsByName, setRoleToolsByName] = useState<Record<string, string[]>>({});
 
   const [migrationBusy, setMigrationBusy] = useState(false);
@@ -121,6 +122,40 @@ export function RolesAdminPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadSeqRef = useRef(0);
+  const roleToolCountVersionRef = useRef<Record<string, number>>({});
+
+  const bumpRoleToolCountVersion = useCallback((roleName: string) => {
+    roleToolCountVersionRef.current[roleName] = (roleToolCountVersionRef.current[roleName] ?? 0) + 1;
+  }, []);
+
+  const loadRoleToolCounts = useCallback(async (roleNames: string[], seq: number) => {
+    const requestedVersions = Object.fromEntries(
+      roleNames.map((roleName) => [roleName, roleToolCountVersionRef.current[roleName] ?? 0])
+    );
+
+    const roleToolResponses = await Promise.allSettled(
+      roleNames.map(async (roleName) => {
+        const response = await fetchWithAuth(`/admin/roles/${encodeURIComponent(roleName)}/tools`);
+        const payload = await jsonOrThrow<AdminRoleToolsResponse>(response);
+        return [roleName, coerceStringArray(payload.tools).length] as const;
+      })
+    );
+
+    if (seq !== loadSeqRef.current) return;
+
+    setRoleToolCountsByName((prev) => {
+      const next = { ...prev };
+      for (const result of roleToolResponses) {
+        if (result.status === "fulfilled") {
+          const [roleName, toolCount] = result.value;
+          if ((roleToolCountVersionRef.current[roleName] ?? 0) === requestedVersions[roleName]) {
+            next[roleName] = toolCount;
+          }
+        }
+      }
+      return next;
+    });
+  }, []);
 
   const loadData = useCallback(async () => {
     const seq = ++loadSeqRef.current;
@@ -141,16 +176,38 @@ export function RolesAdminPage() {
       if (seq !== loadSeqRef.current) return;
 
       const roleNames = coerceRoleNames(rolesPayload.roles);
-      setRoles(Array.from(new Set(roleNames)).sort((a, b) => a.localeCompare(b)));
+      const uniqueRoleNames = Array.from(new Set(roleNames)).sort((a, b) => a.localeCompare(b));
+      setRoles(uniqueRoleNames);
       setAvailableTools(coerceStringArray(toolsPayload.tools).slice().sort((a, b) => a.localeCompare(b)));
+      setRoleToolCountsByName((prev) => {
+        const next: Record<string, number> = {};
+        for (const roleName of uniqueRoleNames) {
+          if (typeof prev[roleName] === "number") {
+            next[roleName] = prev[roleName];
+          }
+        }
+        return next;
+      });
+      setRoleToolsByName((prev) => {
+        const next: Record<string, string[]> = {};
+        for (const roleName of uniqueRoleNames) {
+          if (prev[roleName]) {
+            next[roleName] = prev[roleName];
+          }
+        }
+        return next;
+      });
+
+      void loadRoleToolCounts(uniqueRoleNames, seq);
     } catch (error) {
       if (seq !== loadSeqRef.current) return;
       setLoadError(toUserMessage(error, "Unable to load roles"));
     } finally {
-      if (seq !== loadSeqRef.current) return;
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
-  }, []);
+  }, [loadRoleToolCounts]);
 
   useEffect(() => {
     void loadData();
@@ -211,6 +268,8 @@ export function RolesAdminPage() {
 
       await jsonOrThrow(response);
       setRoles((prev) => Array.from(new Set([...prev, name])).sort((a, b) => a.localeCompare(b)));
+      setRoleToolCountsByName((prev) => ({ ...prev, [name]: 0 }));
+      setRoleToolsByName((prev) => ({ ...prev, [name]: [] }));
       setCreateOpen(false);
       resetCreate();
     } catch (error) {
@@ -235,9 +294,9 @@ export function RolesAdminPage() {
   const [deleteSaving, setDeleteSaving] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  const panelStillMatches = (seq: number, roleName: string) => {
+  const panelStillMatches = useCallback((seq: number, roleName: string) => {
     return panelSeqRef.current === seq && selectedRoleNameRef.current === roleName;
-  };
+  }, []);
 
   const closePanel = () => {
     panelSeqRef.current += 1;
@@ -265,17 +324,20 @@ export function RolesAdminPage() {
       if (!panelStillMatches(seq, roleName)) return;
 
       const tools = coerceStringArray(payload.tools).slice().sort((a, b) => a.localeCompare(b));
+      bumpRoleToolCountVersion(roleName);
       setToolAllowlist(tools);
+      setRoleToolCountsByName((prev) => ({ ...prev, [roleName]: tools.length }));
       setRoleToolsByName((prev) => ({ ...prev, [roleName]: tools }));
     } catch (error) {
       if (!panelStillMatches(seq, roleName)) return;
       setRoleToolsError(toUserMessage(error, "Unable to load role tools"));
       setToolAllowlist([]);
     } finally {
-      if (!panelStillMatches(seq, roleName)) return;
-      setRoleToolsLoading(false);
+      if (panelStillMatches(seq, roleName)) {
+        setRoleToolsLoading(false);
+      }
     }
-  }, []);
+  }, [bumpRoleToolCountVersion, panelStillMatches]);
 
   const openPanelForRole = (roleName: string, _opener: HTMLElement | null) => {
     panelSeqRef.current += 1;
@@ -333,6 +395,8 @@ export function RolesAdminPage() {
 
       await jsonOrThrow(response);
 
+      bumpRoleToolCountVersion(roleName);
+      setRoleToolCountsByName((prev) => ({ ...prev, [roleName]: requestedTools.length }));
       setRoleToolsByName((prev) => ({ ...prev, [roleName]: requestedTools }));
       if (panelStillMatches(seq, roleName)) {
         closePanel();
@@ -365,6 +429,12 @@ export function RolesAdminPage() {
       await jsonOrThrow(response);
 
       setRoles((prev) => prev.filter((name) => name !== roleName));
+      bumpRoleToolCountVersion(roleName);
+      setRoleToolCountsByName((prev) => {
+        const next = { ...prev };
+        delete next[roleName];
+        return next;
+      });
       setRoleToolsByName((prev) => {
         const next = { ...prev };
         delete next[roleName];
@@ -422,22 +492,54 @@ export function RolesAdminPage() {
           </div>
         ) : null}
 
-        {roles.map((roleName) => {
-          const cachedCount = roleToolsByName[roleName]?.length;
-          return (
-            <AdminListCard
-              key={roleName}
-              title={roleName}
-              metadata={
-                <span className="text-xs">
-                  {typeof cachedCount === "number" ? `${cachedCount} tools` : "\u2014"}
-                </span>
-              }
-              selected={selectedRoleName === roleName}
-              onClick={() => openPanelForRole(roleName, null)}
-            />
-          );
-        })}
+        <div className="panel overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-left">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Role
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Tools
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {roles.map((roleName) => {
+                  const toolCount = roleToolCountsByName[roleName];
+                  const selected = selectedRoleName === roleName;
+                  const toolSummary =
+                    typeof toolCount === "number"
+                      ? `${toolCount} tool${toolCount === 1 ? "" : "s"} assigned`
+                      : "—";
+
+                  return (
+                    <tr
+                      key={roleName}
+                      aria-selected={selected}
+                      className={selected ? "border-b border-border bg-accent/40 last:border-b-0" : "border-b border-border bg-card last:border-b-0"}
+                    >
+                      <th scope="row" className="px-4 py-3 align-top text-left font-normal">
+                        <button
+                          type="button"
+                          className="group block rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                          aria-label={`Manage ${roleName}`}
+                          onClick={() => openPanelForRole(roleName, null)}
+                        >
+                          <span className="block text-sm font-medium text-foreground group-hover:underline">{roleName}</span>
+                        </button>
+                      </th>
+                      <td className="px-4 py-3 align-top">
+                        <span className="text-sm text-foreground">{toolSummary}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </AdminListLayout>
 
       {/* Add role create dialog */}
@@ -490,14 +592,42 @@ export function RolesAdminPage() {
         subtitle="Manage tool assignments"
         size="md"
         footer={
-          <Button
-            className="w-full"
-            disabled={!selectedRoleName || saving || roleToolsLoading}
-            onClick={() => void saveRoleTools()}
-            variant="default"
-          >
-            {saving ? "Saving..." : "Save"}
-          </Button>
+          <div className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+            <ConfirmAction
+              title="Delete role?"
+              description={selectedRoleName ? `This permanently deletes the ${selectedRoleName} role.` : "This permanently deletes this role."}
+              confirmLabel="Delete role"
+              confirmBusyLabel="Deleting..."
+              confirmVariant="danger"
+              busy={deleteSaving}
+              error={deleteError}
+              onConfirm={() => void deleteRole()}
+              trigger={({ open, disabled }) => (
+                <Button
+                  className="w-full sm:w-auto"
+                  disabled={!selectedRoleName || disabled || saving || roleToolsLoading}
+                  onClick={() => { setDeleteError(null); open(); }}
+                  variant="destructive"
+                >
+                  Delete role
+                </Button>
+              )}
+            />
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+              <DialogClose asChild>
+                <Button disabled={saving || deleteSaving} variant="outline">
+                  Cancel
+                </Button>
+              </DialogClose>
+              <Button
+                disabled={!selectedRoleName || saving || roleToolsLoading}
+                onClick={() => void saveRoleTools()}
+                variant="default"
+              >
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </div>
         }
       >
         {/* Error alerts */}
@@ -562,25 +692,9 @@ export function RolesAdminPage() {
         </div>
 
         {/* Danger zone */}
-        <div className="mt-6 border-t border-border pt-4">
+        <div className="mt-8 mb-6 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-destructive">Danger zone</div>
           <p className="mt-1 text-sm text-muted-foreground">Delete this role and remove its tool assignments.</p>
-          <ConfirmAction
-            title="Delete role?"
-            description={selectedRoleName ? `This permanently deletes the ${selectedRoleName} role.` : "This permanently deletes this role."}
-            confirmLabel="Delete role"
-            confirmBusyLabel="Deleting..."
-            confirmVariant="danger"
-            busy={deleteSaving}
-            error={deleteError}
-            onConfirm={() => void deleteRole()}
-            trigger={({ open, disabled }) => (
-              <Button className="mt-3 w-full" disabled={!selectedRoleName || disabled || saving || roleToolsLoading}
-                onClick={() => { setDeleteError(null); open(); }} variant="destructive">
-                Delete role
-              </Button>
-            )}
-          />
         </div>
       </AdminDetailModal>
     </>

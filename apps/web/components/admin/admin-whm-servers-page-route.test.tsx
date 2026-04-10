@@ -28,9 +28,9 @@ vi.mock("@/components/lib/runtime-provider", () => ({
   ),
 }));
 
-vi.mock("@/components/admin/admin-sidebar-shell", () => ({
-  AdminSidebarShell: ({ children }: PropsWithChildren) => (
-    <div data-testid="admin-sidebar-shell">{children}</div>
+vi.mock("@/components/admin/admin-shell", () => ({
+  AdminShell: ({ children }: PropsWithChildren) => (
+    <div data-testid="admin-shell">{children}</div>
   ),
 }));
 
@@ -46,15 +46,13 @@ describe("/admin/whm/servers route wrappers", () => {
     mocks.isAdmin = true;
   });
 
-  it("renders WHM servers page inside runtime provider and admin sidebar shell when auth is ready and user is admin", () => {
+  it("renders WHM servers page inside the admin shell when auth is ready and user is admin", () => {
     render(<AdminWhmServersPage />);
 
-    const runtimeProvider = screen.getByTestId("runtime-provider");
-    const adminSidebarShell = screen.getByTestId("admin-sidebar-shell");
+    const adminShell = screen.getByTestId("admin-shell");
     const whmServersPage = screen.getByTestId("whm-servers-admin-page");
 
-    expect(runtimeProvider).toContainElement(adminSidebarShell);
-    expect(adminSidebarShell).toContainElement(whmServersPage);
+    expect(adminShell).toContainElement(whmServersPage);
   });
 
   it("renders null when auth is not ready", () => {

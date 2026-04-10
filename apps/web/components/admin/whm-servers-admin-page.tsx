@@ -4,8 +4,8 @@ import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AdminDetailModal } from "@/components/admin/admin-detail-modal";
-import { AdminListCard } from "@/components/admin/admin-list-card";
 import { AdminListLayout } from "@/components/admin/admin-list-layout";
+import { AdminStatusBadge } from "@/components/admin/admin-status-badge";
 import { Button } from "@/components/ui/button";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import {
@@ -119,6 +119,16 @@ function getSshAuthLabel(server: WhmServer | null): string {
   if (server.has_ssh_private_key) return "SSH key";
   if (server.has_ssh_password) return "Password";
   return "-";
+}
+
+function getValidationSummary(result: ValidateWhmServerResponse | undefined): {
+  label: string;
+  tone: "muted" | "success" | "danger";
+} {
+  if (!result) return { label: "Not run", tone: "muted" };
+  return result.ok
+    ? { label: "Validated", tone: "success" }
+    : { label: "Failed", tone: "danger" };
 }
 
 function formStateFromServer(server: WhmServer): WhmServerFormState {
@@ -816,42 +826,72 @@ export function WhmServersAdminPage() {
           </div>
         ) : null}
 
-        {sortedServers.map((server) => {
-          const validateResult = validateResultById[server.id];
-          const validationBadge =
-            validateResult === undefined
-              ? null
-              : validateResult.ok
-                ? { label: "Validated", style: "bg-success/15 text-success" }
-                : { label: "Failed", style: "bg-destructive/15 text-destructive" };
+        <div className="panel overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-left">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Server
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Validation
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    SSL
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    SSH
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Updated
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedServers.map((server) => {
+                  const validation = getValidationSummary(validateResultById[server.id]);
+                  const rowSshStatus = getSshStatus(server);
 
-          return (
-            <AdminListCard
-              key={server.id}
-              title={server.name}
-              subtitle={server.base_url}
-              selected={selectedServerId === server.id}
-              onClick={() => openPanelForServer(server)}
-              badges={
-                <span className="flex items-center gap-1.5">
-                  {validationBadge ? (
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${validationBadge.style}`}>
-                      {validationBadge.label}
-                    </span>
-                  ) : null}
-                  <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium bg-muted text-muted-foreground">
-                    SSL {server.verify_ssl ? "on" : "off"}
-                  </span>
-                </span>
-              }
-              metadata={
-                <span className="text-xs text-muted-foreground">
-                  {formatRelativeTime(server.updated_at)}
-                </span>
-              }
-            />
-          );
-        })}
+                  return (
+                    <tr
+                      key={server.id}
+                      aria-selected={selectedServerId === server.id}
+                      className={selectedServerId === server.id ? "bg-accent/40" : "bg-card"}
+                    >
+                      <th scope="row" className="px-4 py-3 align-top font-normal">
+                        <div className="text-sm font-medium text-foreground">{server.name}</div>
+                        <div className="mt-1 text-sm text-muted-foreground">{server.base_url}</div>
+                      </th>
+                      <td className="px-4 py-3 align-top">
+                        <AdminStatusBadge tone={validation.tone}>{validation.label}</AdminStatusBadge>
+                      </td>
+                      <td className="px-4 py-3 align-top text-sm text-foreground">
+                        {server.verify_ssl ? "Verify enabled" : "Verification off"}
+                      </td>
+                      <td className="px-4 py-3 align-top">
+                        <AdminStatusBadge tone={rowSshStatus.label === "Configured" ? "success" : "muted"}>
+                          {rowSshStatus.label}
+                        </AdminStatusBadge>
+                      </td>
+                      <td className="px-4 py-3 align-top text-sm text-muted-foreground">
+                        {formatRelativeTime(server.updated_at)}
+                      </td>
+                      <td className="px-4 py-3 align-top text-right">
+                        <Button onClick={() => openPanelForServer(server)} size="sm" variant="outline">
+                          {`Manage ${server.name}`}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </AdminListLayout>
 
       {/* Detail modal */}
@@ -861,17 +901,14 @@ export function WhmServersAdminPage() {
         title={selectedServer?.name ?? "WHM server"}
         subtitle={selectedServer?.base_url}
         size="lg"
+        headerActions={
+          <Button disabled={!selectedServer || deleteBusyId === selectedServer.id} onClick={openEdit} size="sm">
+            Edit server
+          </Button>
+        }
       >
-        {/* Server details card */}
-        <div className="rounded-xl border border-border bg-card px-4 py-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server details</div>
-            </div>
-            <Button disabled={!selectedServer || deleteBusyId === selectedServer.id} onClick={openEdit} size="sm">
-              Edit server
-            </Button>
-          </div>
+        <div className="panel px-4 py-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server details</div>
           <dl className="mt-3 grid gap-3 text-sm">
             <div>
               <dt className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Name</dt>
@@ -899,16 +936,18 @@ export function WhmServersAdminPage() {
         </div>
 
         {/* SSH access card */}
-        <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
+        <div className="panel mt-4 px-4 py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH access</div>
               <div className="mt-2 flex items-center gap-2">
-                <span className={["status-badge", sshStatus.className].join(" ")}>{sshStatus.label}</span>
+                <AdminStatusBadge tone={sshStatus.label === "Configured" ? "success" : "muted"}>
+                  {sshStatus.label}
+                </AdminStatusBadge>
                 {selectedServer?.ssh_host_key_fingerprint ? (
-                  <span className="status-badge status-badge-success">Host key pinned</span>
+                  <AdminStatusBadge tone="success">Host key pinned</AdminStatusBadge>
                 ) : (
-                  <span className="status-badge">Fingerprint missing</span>
+                  <AdminStatusBadge tone="muted">Fingerprint missing</AdminStatusBadge>
                 )}
               </div>
             </div>
@@ -938,25 +977,16 @@ export function WhmServersAdminPage() {
         </div>
 
         {/* Validation card */}
-        <div className="mt-4 rounded-xl border border-border bg-card px-4 py-4">
+        <div className="panel mt-4 px-4 py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest validation</div>
               <div className="mt-2 flex items-center gap-2">
-                {selectedServer && validateResultById[selectedServer.id] ? (
-                  <span
-                    className={[
-                      "status-badge",
-                      validateResultById[selectedServer.id]?.ok
-                        ? "status-badge-success"
-                        : "status-badge-danger",
-                    ].join(" ")}
-                  >
-                    {validateResultById[selectedServer.id]?.ok ? "Validated" : "Failed"}
-                  </span>
-                ) : (
-                  <span className="status-badge">Not run</span>
-                )}
+                {selectedServer ? (
+                  <AdminStatusBadge tone={getValidationSummary(validateResultById[selectedServer.id]).tone}>
+                    {getValidationSummary(validateResultById[selectedServer.id]).label}
+                  </AdminStatusBadge>
+                ) : null}
               </div>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {selectedServer && validateResultById[selectedServer.id]

@@ -19,6 +19,7 @@ type AdminDetailModalProps = {
   size?: "sm" | "md" | "lg";
   children: ReactNode;
   footer?: ReactNode;
+  headerActions?: ReactNode;
 };
 
 const sizeClasses = {
@@ -35,19 +36,21 @@ export function AdminDetailModal({
   size = "md",
   children,
   footer,
+  headerActions,
 }: AdminDetailModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn("max-h-[85vh] flex flex-col gap-0 p-0", sizeClasses[size])}>
-        <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+      <DialogContent className={cn("flex max-h-[calc(100svh-2rem)] flex-col gap-0 p-0", sizeClasses[size])}>
+        <DialogHeader className="shrink-0 border-b border-border bg-background/95 px-6 pt-6 pb-4 pr-14">
           <DialogTitle>{title}</DialogTitle>
           {subtitle && <DialogDescription>{subtitle}</DialogDescription>}
+          {headerActions ? <div className="flex flex-wrap items-center gap-2 pt-2">{headerActions}</div> : null}
         </DialogHeader>
-        <ScrollArea className="flex-1 min-h-0">
+        <ScrollArea className="min-h-0 flex-1 overscroll-contain">
           <div className="px-6 py-4">{children}</div>
         </ScrollArea>
         {footer && (
-          <div className="px-6 py-4 border-t border-border shrink-0">
+          <div className="shrink-0 border-t border-border bg-background/95 px-6 py-4">
             {footer}
           </div>
         )}

@@ -322,7 +322,7 @@ describe("ClaudeThreadList", () => {
     expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
   });
 
-  it("renders disabled Claude-style nav items under the new chat button", () => {
+  it("renders the current lightweight chat nav under the new chat button", () => {
     render(<ClaudeThreadList />);
 
     const newChatButton = screen.getByRole("button", { name: "New chat" });
@@ -330,57 +330,45 @@ describe("ClaudeThreadList", () => {
     const navSection = within(newChatButton.parentElement as HTMLElement);
 
     expect(navSection.queryByRole("button", { name: "Customize" })).not.toBeInTheDocument();
-
     expect(navSection.queryByRole("button", { name: "Projects" })).not.toBeInTheDocument();
 
-    for (const label of ["Search", "Artifacts", "Code"]) {
-      const button = navSection.getByRole("button", { name: label });
-      expect(button).toHaveAttribute("aria-disabled", "true");
-      expect(button).not.toBeDisabled();
-    }
+    const searchButton = navSection.getByRole("button", { name: "Search" });
+    expect(searchButton).toHaveAttribute("aria-disabled", "true");
+    expect(searchButton).not.toBeDisabled();
+    expect(navSection.queryByRole("button", { name: "Artifacts" })).not.toBeInTheDocument();
+    expect(navSection.queryByRole("button", { name: "Code" })).not.toBeInTheDocument();
   });
 
-  it("renders a Backend nav group with backend server links for admin users", () => {
+  it("does not render legacy admin nav groups inside the chat sidebar", () => {
     render(<ClaudeThreadList />);
 
     const newChatButton = screen.getByRole("button", { name: "New chat" });
     expect(newChatButton.parentElement).not.toBeNull();
     const navSection = within(newChatButton.parentElement as HTMLElement);
 
-    const backendToggle = navSection.getByRole("button", { name: "Backend" });
-    expect(backendToggle).toBeInTheDocument();
-
+    expect(navSection.queryByRole("button", { name: "Backend" })).not.toBeInTheDocument();
     expect(navSection.queryByRole("link", { name: "WHM Servers" })).not.toBeInTheDocument();
     expect(navSection.queryByRole("link", { name: "Proxmox Servers" })).not.toBeInTheDocument();
-    fireEvent.click(backendToggle);
-    expect(navSection.getByRole("link", { name: "WHM Servers" })).toHaveAttribute(
-      "href",
-      "/admin/whm/servers",
-    );
-    expect(navSection.getByRole("link", { name: "Proxmox Servers" })).toHaveAttribute(
-      "href",
-      "/admin/proxmox/servers",
-    );
   });
 
-  it("renders a Users nav link under the new chat section for admin users", () => {
+  it("does not render admin links under the new chat section", () => {
     render(<ClaudeThreadList />);
 
     const newChatButton = screen.getByRole("button", { name: "New chat" });
     expect(newChatButton.parentElement).not.toBeNull();
     const navSection = within(newChatButton.parentElement as HTMLElement);
 
-    expect(navSection.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
-    expect(navSection.getByRole("link", { name: "Roles" })).toHaveAttribute("href", "/admin/roles");
+    expect(navSection.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(navSection.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
   });
 
-  it("marks the active admin route link with aria-current", () => {
+  it("does not expose legacy admin route highlighting in the chat sidebar", () => {
     mocks.pathname = "/admin/users";
 
     render(<ClaudeThreadList />);
 
-    expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("link", { name: "Roles" })).not.toHaveAttribute("aria-current");
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
   });
 
   it("switches to a fresh draft without explicit navigation from a thread route (ThreadUrlSync handles route)", async () => {
@@ -396,7 +384,7 @@ describe("ClaudeThreadList", () => {
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
-  it("renders the Users nav link when roles include admin among others", () => {
+  it("keeps the chat sidebar free of admin links even when roles include admin among others", () => {
     mocks.user.roles = ["member", "admin"];
 
     render(<ClaudeThreadList />);
@@ -405,18 +393,19 @@ describe("ClaudeThreadList", () => {
     expect(newChatButton.parentElement).not.toBeNull();
     const navSection = within(newChatButton.parentElement as HTMLElement);
 
-    expect(navSection.getByRole("link", { name: "Users" })).toHaveAttribute("href", "/admin/users");
-    expect(navSection.getByRole("link", { name: "Roles" })).toHaveAttribute("href", "/admin/roles");
+    expect(navSection.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+    expect(navSection.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
   });
 
-  it("applies active styling to the selected thread row", () => {
+  it("applies sidebar-accent active styling to the selected thread row", () => {
     render(<ClaudeThreadList />);
 
     const trigger = screen.getAllByRole("button", { name: "Untitled" })[0];
     const row = trigger.closest("[data-active]");
 
     expect(row).not.toBeNull();
-    expect(row!).toHaveClass("data-[active]:bg-accent");
+    expect(row!).toHaveClass("data-[active]:bg-sidebar-accent");
+    expect(row!).toHaveClass("data-[active]:border-sidebar-border");
   });
 
   it("dedupes recents by remoteId", () => {

@@ -101,8 +101,8 @@ export function AdminShell({ children }: { children: ReactNode }) {
       </div>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="w-[18rem] max-w-[86vw] p-0 md:hidden">
-          <SheetTitle className="sr-only">Admin</SheetTitle>
+        <SheetContent side="left" showCloseButton={false} className="w-[18rem] max-w-[86vw] p-0 md:hidden">
+          <SheetTitle className="sr-only">Admin navigation</SheetTitle>
           <SheetDescription className="sr-only">Admin navigation menu.</SheetDescription>
           <div className="h-full">
             <AdminNavSidebar onClose={closeSidebar} />

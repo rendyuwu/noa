@@ -38,8 +38,10 @@ export function NavLinkItem({
       href={href}
       aria-current={isActive ? "page" : undefined}
       className={[
-        "flex w-full items-center justify-start gap-3 rounded-lg px-4 py-2 font-sans text-sm transition-colors active:scale-[0.99]",
-        isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:bg-accent hover:text-foreground",
+        "flex w-full items-center justify-start gap-3 rounded-xl px-4 py-2.5 font-sans text-sm transition-colors active:scale-[0.99]",
+        isActive
+          ? "bg-accent text-foreground shadow-sm ring-1 ring-border/80"
+          : "text-muted-foreground hover:bg-accent/80 hover:text-foreground",
       ].join(" ")}
     >
       <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">

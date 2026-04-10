@@ -100,7 +100,7 @@ describe("WhmServersAdminPage", () => {
     });
   });
 
-  it("opens the drawer and DELETEs /admin/whm/servers/:id from the danger zone", async () => {
+  it("opens the server modal from the table action and DELETEs /admin/whm/servers/:id from the danger zone", async () => {
     const serverId = "server-1";
     const listPayload = {
       servers: [
@@ -145,11 +145,10 @@ describe("WhmServersAdminPage", () => {
 
     render(<WhmServersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const row = (await within(table).findByRole("row", { name: /manage web1/i })).closest("tr");
-    if (!row) throw new Error("Missing server row");
+    expect(await screen.findByRole("columnheader", { name: "Server" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Validation" })).toBeInTheDocument();
 
-    fireEvent.click(row);
+    fireEvent.click(screen.getByRole("button", { name: "Manage web1" }));
 
     expect(await screen.findByText("Server details")).toBeInTheDocument();
 
@@ -165,7 +164,7 @@ describe("WhmServersAdminPage", () => {
     });
 
     await waitFor(() => {
-      expect(within(table).queryByText("web1")).not.toBeInTheDocument();
+      expect(screen.queryByText("web1")).not.toBeInTheDocument();
     });
   });
 
@@ -216,11 +215,7 @@ describe("WhmServersAdminPage", () => {
 
     render(<WhmServersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const row = (await within(table).findByRole("row", { name: /manage web1/i })).closest("tr");
-    if (!row) throw new Error("Missing server row");
-
-    fireEvent.click(row);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage web1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Edit server" }));
 
     fireEvent.click(screen.getByLabelText("Enable SSH"));
@@ -300,11 +295,7 @@ describe("WhmServersAdminPage", () => {
 
     render(<WhmServersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const row = (await within(table).findByRole("row", { name: /manage web1/i })).closest("tr");
-    if (!row) throw new Error("Missing server row");
-
-    fireEvent.click(row);
+    fireEvent.click(await screen.findByRole("button", { name: "Manage web1" }));
     fireEvent.click(await screen.findByRole("button", { name: "Validate" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("SSH authentication failed");
