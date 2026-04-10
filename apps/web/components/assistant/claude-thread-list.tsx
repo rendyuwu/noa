@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 import type { FC, ReactNode } from "react";
@@ -14,6 +15,7 @@ import {
 } from "@assistant-ui/react";
 import {
   ColumnsIcon,
+  GearIcon,
   MagnifyingGlassIcon,
   PlusIcon,
   TrashIcon,
@@ -21,7 +23,7 @@ import {
 
 import { formatClaudeGreetingName } from "@/components/assistant/claude-greeting";
 import { AccountMenu } from "@/components/noa/account-menu";
-import { DisabledNavItem } from "@/components/noa/nav-link-item";
+import { DisabledNavItem, NavLinkItem } from "@/components/noa/nav-link-item";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { clearAuth, getAuthUser } from "@/components/lib/auth-store";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
@@ -274,6 +276,7 @@ export function ClaudeThreadList({
   const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
   const secondary = user?.email?.trim() || user?.roles?.join(", ") || "Signed in";
+  const isAdminUser = Boolean(user?.roles?.includes("admin"));
 
   if (variant === "collapsed") {
     const railButtonClassName =
@@ -350,6 +353,18 @@ export function ClaudeThreadList({
           />
 
           <div className="mt-auto flex flex-col items-center gap-2 pt-3">
+            {isAdminUser ? (
+              <RailItem label="Admin">
+                <Link
+                  href="/admin"
+                  aria-label="Admin"
+                  className={railButtonClassName}
+                >
+                  <GearIcon width={14} height={14} />
+                </Link>
+              </RailItem>
+            ) : null}
+
             <RailItem label="Account">
               <AccountMenu
                 onLogout={clearAuth}
@@ -443,6 +458,12 @@ export function ClaudeThreadList({
       </div>
 
       <div className="border-sidebar-border/80 border-t bg-sidebar/70 px-4 py-3 font-sans backdrop-blur-sm">
+        {isAdminUser ? (
+          <div className="mb-2">
+            <NavLinkItem icon={<GearIcon width={16} height={16} />} label="Admin" href="/admin" />
+          </div>
+        ) : null}
+
         <AccountMenu
           onLogout={clearAuth}
           trigger={

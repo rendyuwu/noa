@@ -436,13 +436,15 @@ describe("ClaudeThreadList", () => {
     expect(screen.getAllByRole("button", { name: "Untitled" })).toHaveLength(2);
   });
 
-  it("renders a user footer with avatar initial, name, email, and logout action", async () => {
+  it("renders an admin footer link for admin users in expanded mode", async () => {
     render(<ClaudeThreadList />);
 
     expect(screen.getByText("C")).toBeInTheDocument();
     expect(screen.getByText("Casey Rivers")).toBeInTheDocument();
     expect(screen.getByText("casey@example.com")).toBeInTheDocument();
-    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
+
+    const adminLink = screen.getByRole("link", { name: "Admin" });
+    expect(adminLink).toHaveAttribute("href", "/admin");
 
     await userEvent.click(screen.getByRole("button", { name: "Account menu" }));
     const logoutItem = await screen.findByRole("menuitem", { name: "Log out" });
@@ -455,6 +457,30 @@ describe("ClaudeThreadList", () => {
 
     await userEvent.click(within(confirmDialog).getByRole("button", { name: "Log out" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
+  });
+
+  it("renders an admin rail item for admin users in collapsed mode", () => {
+    render(<ClaudeThreadList variant="collapsed" onExpandSidebar={() => {}} />);
+
+    const adminLink = screen.getByRole("link", { name: "Admin" });
+    expect(adminLink).toHaveAttribute("href", "/admin");
+    expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
+  });
+
+  it("keeps the admin entry hidden for non-admin users", () => {
+    mocks.user.roles = ["member"];
+
+    render(<ClaudeThreadList />);
+
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the admin entry hidden when there is no signed-in user", () => {
+    mocks.user = null as any;
+
+    render(<ClaudeThreadList variant="collapsed" onExpandSidebar={() => {}} />);
+
+    expect(screen.queryByRole("link", { name: "Admin" })).not.toBeInTheDocument();
   });
 
   it("uses sidebar semantic background tokens for the sidebar root (expanded)", () => {
