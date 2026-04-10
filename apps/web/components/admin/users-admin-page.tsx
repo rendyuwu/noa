@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
+import { AdminDataRow } from "@/components/admin/admin-data-row";
 import { AdminDetailModal } from "@/components/admin/admin-detail-modal";
-import { AdminListCard } from "@/components/admin/admin-list-card";
 import { AdminListLayout } from "@/components/admin/admin-list-layout";
+import { AdminStatusBadge } from "@/components/admin/admin-status-badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ConfirmAction } from "@/components/lib/confirm-dialog";
 import { toUserMessage } from "@/components/lib/error-message";
 import { fetchWithAuth, jsonOrThrow } from "@/components/lib/fetch-helper";
@@ -84,27 +86,25 @@ function formatRelativeTime(value: unknown): string {
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-function getUserStatus(user: AdminUser): { label: string; variant: "active" | "disabled" | "pending" } {
-  const isActive = user.is_active !== false;
-  if (isActive) return { label: "Active", variant: "active" };
-  const hasLoggedIn = Boolean(user.last_login_at);
-  if (hasLoggedIn) return { label: "Disabled", variant: "disabled" };
-  return { label: "Pending", variant: "pending" };
+function formatDate(value: unknown): string {
+  if (typeof value !== "string" || !value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-const statusStyles = {
-  active: "bg-success/15 text-success",
-  disabled: "bg-destructive/15 text-destructive",
-  pending: "bg-warning/15 text-warning",
-} as const;
+function getUserStatus(user: AdminUser): { label: string; tone: "success" | "danger" | "warning" } {
+  const isActive = user.is_active !== false;
+  if (isActive) return { label: "Active", tone: "success" };
+  const hasLoggedIn = Boolean(user.last_login_at);
+  if (hasLoggedIn) return { label: "Disabled", tone: "danger" };
+  return { label: "Pending", tone: "warning" };
+}
 
 function StatusBadge({ user }: { user: AdminUser }) {
-  const { label, variant } = getUserStatus(user);
-  return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${statusStyles[variant]}`}>
-      {label}
-    </span>
-  );
+  const { label, tone } = getUserStatus(user);
+  return <AdminStatusBadge tone={tone}>{label}</AdminStatusBadge>;
 }
 
 export function UsersAdminPage() {
@@ -162,8 +162,9 @@ export function UsersAdminPage() {
       if (seq !== loadSeqRef.current) return;
       setLoadError(toUserMessage(error, "Unable to load users"));
     } finally {
-      if (seq !== loadSeqRef.current) return;
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -352,8 +353,8 @@ export function UsersAdminPage() {
         emptyTitle="No users yet"
         emptyDescription="Users will appear here after they sign in or are provisioned."
         filter={
-          <input
-            className="input w-full"
+          <Input
+            aria-label="Search users"
             placeholder="Search by email or name..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
@@ -365,33 +366,75 @@ export function UsersAdminPage() {
           </Button>
         }
       >
-        {filteredUsers.map((user) => {
-          const roles = coerceStringArray(user.roles);
-          const lastLoginLabel = formatRelativeTime(user.last_login_at);
-          const subtitle =
-            user.display_name && user.display_name !== user.email
-              ? user.display_name
-              : undefined;
+        <div className="panel overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="min-w-full border-collapse text-left">
+              <thead className="bg-muted/50">
+                <tr>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    User
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Status
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Role
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Created
+                  </th>
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Last login
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredUsers.map((user) => {
+                  const roles = coerceStringArray(user.roles);
+                  const subtitle =
+                    user.display_name && user.display_name !== user.email
+                      ? user.display_name
+                      : undefined;
 
-          return (
-            <AdminListCard
-              key={user.id}
-              title={user.email}
-              subtitle={subtitle}
-              badges={<StatusBadge user={user} />}
-              metadata={
-                <span className="text-xs">
-                  {roles.length > 0 ? (
-                    <span className="mr-3">{roles.join(", ")}</span>
-                  ) : null}
-                  <span className="text-muted-foreground">{lastLoginLabel}</span>
-                </span>
-              }
-              selected={selectedUserId === user.id}
-              onClick={() => openPanelForUser(user)}
-            />
-          );
-        })}
+                  return (
+                    <AdminDataRow
+                      key={user.id}
+                      selected={selectedUserId === user.id}
+                      primaryAction={
+                        <button
+                          type="button"
+                          className="group block rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                          onClick={() => openPanelForUser(user)}
+                        >
+                          <span className="block text-sm font-medium text-foreground group-hover:underline">
+                            {user.email}
+                          </span>
+                          {subtitle ? <span className="mt-1 block text-sm text-muted-foreground">{subtitle}</span> : null}
+                        </button>
+                      }
+                      statusCell={<StatusBadge user={user} />}
+                      roleCell={
+                        roles.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {roles.map((role) => (
+                              <AdminStatusBadge key={role} tone="outline">
+                                {role}
+                              </AdminStatusBadge>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">No roles</span>
+                        )
+                      }
+                      createdCell={formatDate(user.created_at)}
+                      lastLoginCell={formatRelativeTime(user.last_login_at)}
+                    />
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </AdminListLayout>
 
       <AdminDetailModal
@@ -400,6 +443,17 @@ export function UsersAdminPage() {
         title={selectedUser?.display_name ?? selectedUser?.email ?? "User"}
         subtitle={selectedUser?.email}
         size="lg"
+        headerActions={
+          <Button
+            className="shrink-0"
+            disabled={!selectedUser || statusSaving}
+            variant={selectedUser?.is_active === false ? "default" : "destructive"}
+            onClick={() => void toggleUserStatus()}
+            size="sm"
+          >
+            {selectedUser?.is_active === false ? "Enable" : "Disable"}
+          </Button>
+        }
         footer={
           <Button
             className="w-full"
@@ -411,24 +465,10 @@ export function UsersAdminPage() {
           </Button>
         }
       >
-        {/* Status card */}
-        <div className="rounded-xl border border-border bg-card px-3 py-3">
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</div>
-              <div className="mt-1 text-sm text-foreground">
-                {selectedUser?.is_active === false ? "Inactive" : "Active"}
-              </div>
-            </div>
-            <Button
-              className="shrink-0"
-              disabled={!selectedUser || statusSaving}
-              variant={selectedUser?.is_active === false ? "default" : "destructive"}
-              onClick={() => void toggleUserStatus()}
-              size="sm"
-            >
-              {selectedUser?.is_active === false ? "Enable" : "Disable"}
-            </Button>
+        <div className="panel px-4 py-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Status</div>
+          <div className="mt-2">
+            {selectedUser ? <StatusBadge user={selectedUser} /> : <AdminStatusBadge>Unknown</AdminStatusBadge>}
           </div>
         </div>
 
@@ -464,18 +504,19 @@ export function UsersAdminPage() {
             </p>
           ) : null}
 
-          <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="role-filter">
-            Role assignment
-          </label>
-          <input
-            id="role-filter"
-            className="input mt-2 w-full"
-            placeholder="Filter roles..."
-            value={roleFilter}
-            onChange={(e) => setRoleFilter(e.target.value)}
-          />
+          <div className="panel p-4">
+            <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground" htmlFor="role-filter">
+              Role assignment
+            </label>
+            <input
+              id="role-filter"
+              className="input mt-2 w-full"
+              placeholder="Filter roles..."
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            />
 
-          <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
+            <div className="mt-3 overflow-hidden rounded-lg border border-border bg-background/25">
             <div className="max-h-[50vh] overflow-y-auto p-2">
               {filteredRoleNames.length === 0 ? (
                 <div className="px-2 py-3 text-sm text-muted-foreground">No matching roles.</div>
@@ -505,12 +546,13 @@ export function UsersAdminPage() {
                     );
                   })}
                 </ul>
-              )}
+                )}
+              </div>
             </div>
           </div>
 
           {/* Effective tools */}
-          <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
+          <div className="panel mt-4 px-4 py-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Effective tools</div>
             <div className="mt-2 overflow-hidden rounded-lg border border-border bg-background/25">
               <div className="max-h-48 overflow-y-auto p-2">
@@ -531,7 +573,7 @@ export function UsersAdminPage() {
 
           {/* Legacy direct grants */}
           {coerceStringArray(selectedUser?.direct_tools).length ? (
-            <div className="mt-4 rounded-xl border border-border bg-card px-3 py-3">
+            <div className="panel mt-4 px-4 py-4">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                 Legacy direct grants
               </div>
@@ -555,11 +597,9 @@ export function UsersAdminPage() {
           ) : null}
 
           {/* Danger zone */}
-          <div className="mt-6 border-t border-border pt-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-destructive">
-              Danger zone
-            </div>
-            <p className="mt-1 text-sm text-muted-foreground">
+          <div className="danger-zone mt-6">
+            <div className="danger-zone-label">Danger zone</div>
+            <p className="danger-zone-copy">
               Delete this user account and remove its access from NOA.
             </p>
             <ConfirmAction

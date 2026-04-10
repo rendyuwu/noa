@@ -215,23 +215,23 @@ describe("ClaudeThread", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the empty-thread landing with a personalized greeting and prompt chips", () => {
+  it("renders the empty-thread landing with a personalized greeting and current prompt chips", () => {
     render(<ClaudeThread />);
 
     expect(screen.getByText(/Morning, Casey/)).toBeInTheDocument();
     expect(screen.getByTestId("landing-composer")).toBeInTheDocument();
     expect(screen.queryByTestId("bottom-composer")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Code" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Claude's choice" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Server status" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Help" })).toBeInTheDocument();
   });
 
   it("prefills the landing composer and focuses the input when a prompt chip is clicked", async () => {
     render(<ClaudeThread />);
 
     const input = screen.getByLabelText("Message input");
-    fireEvent.click(screen.getByRole("button", { name: "Code" }));
+    fireEvent.click(screen.getByRole("button", { name: "Server status" }));
 
-    expect(setText).toHaveBeenCalledWith("Help me write code for...");
+    expect(setText).toHaveBeenCalledWith("Show me the current status of my servers.");
     expect(input).toHaveFocus();
   });
 

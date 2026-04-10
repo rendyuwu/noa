@@ -88,7 +88,7 @@ describe("UsersAdminPage", () => {
     render(<UsersAdminPage />);
 
     expect(screen.getByRole("heading", { name: "Users" })).toBeInTheDocument();
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
     expect(table).toBeInTheDocument();
 
     await waitFor(() => {
@@ -165,7 +165,7 @@ describe("UsersAdminPage", () => {
 
     render(<UsersAdminPage />);
 
-    const table = screen.getByRole("table");
+    const table = await screen.findByRole("table");
 
     await waitFor(() => {
       const calledPaths = mocks.fetchWithAuth.mock.calls.map((call) => call[0]);
@@ -176,7 +176,7 @@ describe("UsersAdminPage", () => {
     expect(within(table).getByRole("columnheader", { name: "Last login" })).toBeInTheDocument();
 
     expect(await within(table).findByText("pending@example.com")).toBeInTheDocument();
-    expect(within(table).getByText("Pending approval")).toBeInTheDocument();
+    expect(within(table).getByText("Pending")).toBeInTheDocument();
     expect(within(table).getByText("disabled@example.com")).toBeInTheDocument();
     expect(within(table).getByText("Disabled")).toBeInTheDocument();
   });
@@ -196,7 +196,7 @@ describe("UsersAdminPage", () => {
     expect(alert).not.toHaveTextContent("database connection exploded");
   });
 
-  it("PUTs /admin/users/:id/roles to update role assignments from the drawer", async () => {
+  it("PUTs /admin/users/:id/roles to update role assignments from the modal", async () => {
     const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
     const usersPayload = {
       users: [
@@ -262,11 +262,8 @@ describe("UsersAdminPage", () => {
 
     render(<UsersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const emailCell = await within(table).findByText("casey@example.com");
-    const row = emailCell.closest("tr");
-    if (!row) throw new Error("Unable to locate user row");
-    fireEvent.click(row);
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
 
     fireEvent.click(await screen.findByLabelText("admin"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -335,18 +332,15 @@ describe("UsersAdminPage", () => {
 
     render(<UsersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const emailCell = await within(table).findByText("casey@example.com");
-    const row = emailCell.closest("tr");
-    if (!row) throw new Error("Unable to locate user row");
-    fireEvent.click(row);
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
 
     expect(await screen.findByText("Legacy direct grants")).toBeInTheDocument();
     expect(screen.getByText("legacy_tool")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /clear direct grants/i })).not.toBeInTheDocument();
   });
 
-  it("PATCHes /admin/users/:id to disable an active user from the drawer", async () => {
+  it("PATCHes /admin/users/:id to disable an active user from the modal header", async () => {
     const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
     const usersPayload = {
       users: [
@@ -416,11 +410,8 @@ describe("UsersAdminPage", () => {
 
     render(<UsersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const emailCell = await within(table).findByText("casey@example.com");
-    const row = emailCell.closest("tr");
-    if (!row) throw new Error("Unable to locate user row");
-    fireEvent.click(row);
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
 
     const disableButton = await screen.findByRole("button", { name: "Disable" });
     fireEvent.click(disableButton);
@@ -510,11 +501,8 @@ describe("UsersAdminPage", () => {
 
     render(<UsersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const emailCell = await within(table).findByText("casey@example.com");
-    const row = emailCell.closest("tr");
-    if (!row) throw new Error("Unable to locate user row");
-    fireEvent.click(row);
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
 
     const disableButton = await screen.findByRole("button", { name: "Disable" });
     fireEvent.click(disableButton);
@@ -611,11 +599,8 @@ describe("UsersAdminPage", () => {
 
     render(<UsersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const userAEmailCell = await within(table).findByText("casey@example.com");
-    const userARow = userAEmailCell.closest("tr");
-    if (!userARow) throw new Error("Unable to locate user A row");
-    fireEvent.click(userARow);
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
 
     const disableButton = await screen.findByRole("button", { name: "Disable" });
     fireEvent.click(disableButton);
@@ -631,10 +616,7 @@ describe("UsersAdminPage", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    const userBEmailCell = await within(table).findByText("riley@example.com");
-    const userBRow = userBEmailCell.closest("tr");
-    if (!userBRow) throw new Error("Unable to locate user B row");
-    fireEvent.click(userBRow);
+    fireEvent.click(await within(table).findByRole("button", { name: /riley@example.com/i }));
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("riley@example.com")).toBeInTheDocument();
@@ -649,7 +631,7 @@ describe("UsersAdminPage", () => {
     expect(within(screen.getByRole("dialog")).queryByText(conflictMessage)).not.toBeInTheDocument();
   });
 
-  it("DELETEs /admin/users/:id from the drawer danger zone", async () => {
+  it("DELETEs /admin/users/:id from the modal danger zone", async () => {
     const userId = "a6c6e5b2-5d50-4c1e-92c1-9a06b0a2c9fb";
     const usersPayload = {
       users: [
@@ -719,11 +701,8 @@ describe("UsersAdminPage", () => {
 
     render(<UsersAdminPage />);
 
-    const table = screen.getByRole("table");
-    const emailCell = await within(table).findByText("casey@example.com");
-    const row = emailCell.closest("tr");
-    if (!row) throw new Error("Unable to locate user row");
-    fireEvent.click(row);
+    const table = await screen.findByRole("table");
+    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete user" }));
 

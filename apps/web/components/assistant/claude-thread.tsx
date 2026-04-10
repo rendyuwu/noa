@@ -70,21 +70,21 @@ function ComposerControlsRow() {
       <div className="relative flex min-w-0 flex-1 shrink items-center gap-2">
         <DisabledIconButton
           label="Add attachment"
-          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border/80 bg-background/80 px-1.5 text-muted-foreground shadow-sm transition-all hover:border-border hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <PlusIcon width={16} height={16} />
         </DisabledIconButton>
 
         <DisabledIconButton
           label="Open tools menu"
-          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-8 min-w-8 items-center justify-center overflow-hidden rounded-lg border border-border/80 bg-background/80 px-1.5 text-muted-foreground shadow-sm transition-all hover:border-border hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <MixerHorizontalIcon width={16} height={16} />
         </DisabledIconButton>
 
         <DisabledIconButton
           label="Extended thinking"
-          className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border bg-transparent px-1.5 text-muted-foreground transition-all hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
+          className="flex h-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-border/80 bg-background/80 px-1.5 text-muted-foreground shadow-sm transition-all hover:border-border hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50"
         >
           <ReloadIcon width={16} height={16} />
         </DisabledIconButton>
@@ -122,7 +122,7 @@ function ClaudeRunIndicator() {
     <div
       role="status"
       aria-label="Claude is responding"
-      className="inline-flex items-center gap-2 rounded-full border border-border bg-card/85 px-3 py-1.5 font-sans text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
+        className="inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/90 px-3 py-1.5 font-sans text-xs text-muted-foreground shadow-sm backdrop-blur-sm"
     >
       <ClaudeLiveDot />
       <span>Responding...</span>
@@ -154,7 +154,7 @@ function EmptyLanding() {
       </div>
 
       <div className="noa-landing-anim-2 mt-8 w-full max-w-2xl">
-        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-2xl border border-border bg-card p-0.5 shadow-md">
+        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-[1.35rem] border border-border/80 bg-card/95 p-1 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)] backdrop-blur-sm">
           <div className="m-4 flex flex-col gap-3.5">
             <ScrollArea
               className="w-full"
@@ -166,7 +166,7 @@ function EmptyLanding() {
                 ref={inputRef}
                 placeholder="How can I help you today?"
                 aria-label="Message input"
-                className="block min-h-10 w-full resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
+                className="block min-h-10 w-full resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground/90"
               />
             </ScrollArea>
 
@@ -189,9 +189,9 @@ function EmptyLanding() {
               onClick={() => setPrompt(chip.label, chip.text)}
               aria-pressed={activeChip === chip.label}
               className={[
-                "inline-flex items-center gap-2 rounded-full border border-border bg-card/70 px-3 py-1.5 font-sans text-sm text-foreground shadow-sm transition",
-                "hover:bg-card active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
-                activeChip === chip.label ? "border-primary/40" : "",
+                 "inline-flex items-center gap-2 rounded-full border border-border/80 bg-card/75 px-3 py-1.5 font-sans text-sm text-foreground shadow-sm transition",
+                 "hover:border-border hover:bg-card active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/35 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+                 activeChip === chip.label ? "border-primary/35 bg-accent/80 shadow-md" : "",
               ].join(" ")}
               title="Prefill prompt"
             >
@@ -252,7 +252,7 @@ export const ClaudeThread: FC<{
           <button
             type="button"
             onClick={onOpenSidebarAction}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border bg-card/70 text-muted-foreground shadow-sm backdrop-blur-sm transition hover:bg-card hover:text-foreground active:scale-[0.98]"
+            className="flex h-9 w-9 items-center justify-center rounded-lg border border-border/80 bg-card/80 text-muted-foreground shadow-sm backdrop-blur-sm transition hover:border-border hover:bg-card hover:text-foreground active:scale-[0.98]"
             aria-label="Open sidebar"
           >
             <HamburgerMenuIcon width={18} height={18} />
@@ -285,14 +285,14 @@ export const ClaudeThread: FC<{
           ) : null}
 
 
-          <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border bg-card p-0.5 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
+          <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border/80 bg-card/95 p-1 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
             <div className="m-3.5 flex flex-col gap-3.5">
               <div className="relative">
                 <ScrollArea className="w-full" viewportClassName="wrap-break-word max-h-96">
                   <ComposerPrimitive.Input
                     placeholder="How can I help you today?"
                     aria-label="Message input"
-                    className="block min-h-6 w-full resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground"
+                    className="block min-h-6 w-full resize-none bg-transparent text-foreground outline-none placeholder:text-muted-foreground/90"
                   />
                 </ScrollArea>
               </div>
@@ -450,7 +450,7 @@ const ChatMessage: FC = () => {
         <div className="flex w-full justify-end">
           <div
             data-testid="user-message"
-            className="ml-auto max-w-[75ch] rounded-2xl bg-accent px-4 py-3 text-foreground shadow-sm ring-1 ring-border/40"
+            className="ml-auto max-w-[75ch] rounded-2xl bg-accent/90 px-4 py-3 text-foreground shadow-sm ring-1 ring-border/50"
           >
             <div className="wrap-break-word">
               <MessagePrimitive.Parts components={{ Text: UserText }} />
@@ -463,7 +463,7 @@ const ChatMessage: FC = () => {
         <div className={["relative font-serif", assistantSpacingClassName].join(" ")}>
           <div className="relative leading-[1.65rem]">
             <div className="grid grid-cols-1 gap-2.5">
-              <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-foreground">
+               <div className="wrap-break-word whitespace-normal pr-8 pl-2 font-serif text-foreground">
                 {showLoading ? <ClaudeThinkingIndicator /> : null}
                 <MessagePrimitive.Parts
                   components={{

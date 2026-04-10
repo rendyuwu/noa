@@ -28,9 +28,9 @@ vi.mock("@/components/lib/runtime-provider", () => ({
   ),
 }));
 
-vi.mock("@/components/admin/admin-sidebar-shell", () => ({
-  AdminSidebarShell: ({ children }: PropsWithChildren) => (
-    <div data-testid="admin-sidebar-shell">{children}</div>
+vi.mock("@/components/admin/admin-shell", () => ({
+  AdminShell: ({ children }: PropsWithChildren) => (
+    <div data-testid="admin-shell">{children}</div>
   ),
 }));
 
@@ -46,15 +46,13 @@ describe("/admin/proxmox/servers route wrappers", () => {
     mocks.isAdmin = true;
   });
 
-  it("renders Proxmox servers page inside runtime provider and admin sidebar shell when auth is ready and user is admin", () => {
+  it("renders Proxmox servers page inside the admin shell when auth is ready and user is admin", () => {
     render(<AdminProxmoxServersPage />);
 
-    const runtimeProvider = screen.getByTestId("runtime-provider");
-    const adminSidebarShell = screen.getByTestId("admin-sidebar-shell");
+    const adminShell = screen.getByTestId("admin-shell");
     const proxmoxServersPage = screen.getByTestId("proxmox-servers-admin-page");
 
-    expect(runtimeProvider).toContainElement(adminSidebarShell);
-    expect(adminSidebarShell).toContainElement(proxmoxServersPage);
+    expect(adminShell).toContainElement(proxmoxServersPage);
   });
 
   it("renders null when auth is not ready", () => {

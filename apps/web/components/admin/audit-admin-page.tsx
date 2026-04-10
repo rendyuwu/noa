@@ -12,6 +12,8 @@ import {
   MinusCircledIcon,
 } from "@radix-ui/react-icons";
 
+import { AdminPageHeader } from "@/components/admin/admin-page-header";
+import { AdminStatusBadge } from "@/components/admin/admin-status-badge";
 import { AdminTableEmptyState, AdminTableLoadingRows } from "@/components/admin/admin-table-empty-state";
 import { DisclosureSection } from "@/components/assistant/inline-disclosure";
 import { Button } from "@/components/ui/button";
@@ -202,18 +204,6 @@ function statusLabel(item: AuditActionRequestListItem): {
   return { label: status || "Unknown", tone: "muted" };
 }
 
-function statusBadgeClass(tone: "muted" | "success" | "danger" | "accent"): string {
-  if (tone === "success") return "status-badge status-badge-success";
-  if (tone === "danger") return "status-badge status-badge-danger";
-  if (tone === "accent") return "status-badge status-badge-accent";
-  return "status-badge status-badge-muted";
-}
-
-function riskBadgeClass(risk: string): string {
-  void risk;
-  return "status-badge status-badge-outline";
-}
-
 function normalizeDateRange(filters: Filters): { from?: string; to?: string } {
   const fromDate = filters.fromDate.trim();
   const toDate = filters.toDate.trim();
@@ -302,8 +292,9 @@ export function AuditAdminPage() {
       setItems([]);
       setNextCursor(null);
     } finally {
-      if (seq !== loadSeqRef.current) return;
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, [queryParams]);
 
@@ -346,18 +337,14 @@ export function AuditAdminPage() {
 
   return (
     <main className="min-h-dvh bg-background p-6">
-      <div className="mx-auto w-full max-w-[78rem]">
-        <div className="flex items-end justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold">Audit</h1>
-            <p className="mt-1 font-sans text-sm text-muted-foreground">
-              Review approvals, executions, and receipts across all threads.
-            </p>
-          </div>
-          {loading ? <div className="font-sans text-sm text-muted-foreground">Loading...</div> : null}
-        </div>
+      <div className="mx-auto w-full max-w-6xl">
+        <AdminPageHeader
+          title="Audit"
+          description="Review approvals, executions, and receipts across all threads."
+          actions={loading ? <div className="font-sans text-sm text-muted-foreground">Loading...</div> : undefined}
+        />
 
-        <div className="mt-3">
+        <div className="panel mt-4 px-4 py-4">
           <DisclosureSection
             title="Filters"
             icon={<MixerHorizontalIcon width={16} height={16} />}
@@ -530,8 +517,6 @@ export function AuditAdminPage() {
                   const label = statusLabel(item);
                   const idsOpen = openIdsForActionRequestId === item.actionRequestId;
 
-                  const statusChipClass = statusBadgeClass(label.tone);
-                  const riskChipClass = riskBadgeClass(item.risk);
                   const actionChipClass =
                     "inline-flex items-center gap-1 rounded-full border border-border bg-background/20 px-2.5 py-1 text-xs font-medium text-primary transition hover:bg-accent hover:text-foreground";
                   const noReceiptClass =
@@ -554,9 +539,9 @@ export function AuditAdminPage() {
                                 by <span className="font-medium text-foreground/90">{requestedBy}</span>
                               </span>
                               <span className="text-border/70">•</span>
-                              <span className={riskChipClass} title={risk.title}>
+                              <AdminStatusBadge tone="outline" className="font-medium" title={risk.title}>
                                 {risk.label}
-                              </span>
+                              </AdminStatusBadge>
                             </div>
                           </div>
                         </td>
@@ -589,7 +574,7 @@ export function AuditAdminPage() {
                           </div>
                         </td>
                         <td className="px-4 py-3 text-right align-top">
-                          <span className={statusChipClass}>{label.label}</span>
+                          <AdminStatusBadge tone={label.tone}>{label.label}</AdminStatusBadge>
                         </td>
                       </tr>
                       {idsOpen ? (
