@@ -30,12 +30,14 @@ describe("AdminNavSidebar", () => {
     mocks.pathname = "/admin/users";
   });
 
-  it("renders section labels, moves back navigation before admin links, and keeps the active state", () => {
-    render(<AdminNavSidebar />);
+  it("renders the serif NOA heading, section labels, and active nav state", () => {
+    const { container } = render(<AdminNavSidebar />);
 
     const nav = screen.getByRole("navigation");
 
-    expect(screen.getByText("NOA").parentElement).not.toHaveTextContent("Admin");
+    expect(screen.getByText("NOA")).toHaveClass("font-serif");
+    expect(nav).toHaveClass("bg-sidebar/95");
+    expect(nav).toHaveClass("border-sidebar-border/80");
     expect(screen.getByText("Infrastructure")).toBeInTheDocument();
     expect(within(nav).getAllByText("Admin").some((element) => element.tagName === "DIV")).toBe(true);
 
@@ -45,5 +47,6 @@ describe("AdminNavSidebar", () => {
     expect(linkNames.indexOf("Back to Assistant")).toBeGreaterThanOrEqual(0);
     expect(linkNames.indexOf("Back to Assistant")).toBeLessThan(linkNames.indexOf("Users"));
     expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
+    expect(container.querySelector('span.font-serif')).toHaveTextContent("NOA");
   });
 });

@@ -40,9 +40,14 @@ export function AdminDetailModal({
 }: AdminDetailModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className={cn("flex max-h-[calc(100svh-2rem)] flex-col gap-0 p-0", sizeClasses[size])}>
-        <DialogHeader className="shrink-0 border-b border-border bg-background/95 px-6 pt-6 pb-4 pr-14">
-          <DialogTitle>{title}</DialogTitle>
+      <DialogContent
+        className={cn(
+          "flex max-h-[calc(100svh-2rem)] flex-col gap-0 overflow-hidden rounded-[32px] border border-border/80 bg-card/80 p-0 shadow-xl shadow-amber-950/5 backdrop-blur",
+          sizeClasses[size],
+        )}
+      >
+        <DialogHeader className="shrink-0 border-b border-border/70 bg-background/90 px-6 pt-6 pb-4 pr-14">
+          <DialogTitle className="font-serif text-[1.5rem] tracking-[-0.02em]">{title}</DialogTitle>
           {subtitle && <DialogDescription>{subtitle}</DialogDescription>}
           {headerActions ? <div className="flex flex-wrap items-center gap-2 pt-2">{headerActions}</div> : null}
         </DialogHeader>
@@ -50,7 +55,7 @@ export function AdminDetailModal({
           <div className="px-6 py-4">{children}</div>
         </ScrollArea>
         {footer && (
-          <div className="shrink-0 border-t border-border bg-background/95 px-6 py-4">
+          <div className="shrink-0 border-t border-border/70 bg-background/90 px-6 py-4">
             {footer}
           </div>
         )}

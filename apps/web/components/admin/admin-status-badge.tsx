@@ -20,7 +20,7 @@ const toneClasses: Record<AdminStatusBadgeTone, string> = {
 
 export function AdminStatusBadge({ tone = "muted", children, className, ...props }: AdminStatusBadgeProps) {
   return (
-    <span {...props} className={cn("status-badge", toneClasses[tone], className)}>
+    <span {...props} className={cn("status-badge shadow-sm", toneClasses[tone], className)}>
       {children}
     </span>
   );

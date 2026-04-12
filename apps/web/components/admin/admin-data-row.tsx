@@ -25,8 +25,8 @@ export function AdminDataRow({
     <tr
       aria-selected={selected}
       className={cn(
-        "border-b border-border last:border-b-0",
-        selected ? "bg-accent/40" : "bg-card",
+        "border-b border-border/80 transition-colors hover:bg-card/90 last:border-b-0",
+        selected ? "bg-accent/35" : "bg-card/80",
         className,
       )}
     >

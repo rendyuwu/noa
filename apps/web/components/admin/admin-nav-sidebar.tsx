@@ -37,20 +37,20 @@ const infrastructureLinks = [
 ];
 
 const railButtonClassName =
-  "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+  "flex h-9 w-9 items-center justify-center rounded-xl border border-transparent bg-card/70 text-muted-foreground shadow-sm transition-colors hover:border-border/80 hover:bg-card hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 const RailItem: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
   return (
     <div className="group relative flex">
       {children}
-      <div
-        aria-hidden="true"
-        className={[
-          "pointer-events-none absolute top-1/2 left-full z-20 ml-2 -translate-y-1/2",
-          "whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 font-sans text-xs text-foreground shadow-sm",
-          "opacity-0 translate-x-1 transition",
-          "group-hover:translate-x-0 group-hover:opacity-100",
-          "group-focus-within:translate-x-0 group-focus-within:opacity-100",
+        <div
+          aria-hidden="true"
+          className={[
+            "pointer-events-none absolute top-1/2 left-full z-20 ml-2 -translate-y-1/2",
+            "whitespace-nowrap rounded-lg border border-border/80 bg-card/90 px-2 py-1 font-sans text-xs text-foreground shadow-sm backdrop-blur",
+            "opacity-0 translate-x-1 transition",
+            "group-hover:translate-x-0 group-hover:opacity-100",
+            "group-focus-within:translate-x-0 group-focus-within:opacity-100",
         ].join(" ")}
       >
         {label}
@@ -95,7 +95,7 @@ export function AdminNavSidebar({
 
   if (variant === "collapsed") {
     return (
-      <nav className="flex h-full flex-col bg-sidebar py-3">
+      <nav className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar/95 py-3 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
         <div className="flex flex-1 flex-col items-center gap-1">
           {onExpand ? (
             <RailItem label="Expand sidebar">
@@ -116,13 +116,13 @@ export function AdminNavSidebar({
             </Link>
           </RailItem>
 
-          <div className="mt-2 h-px w-6 bg-border" />
+            <div className="mt-2 h-px w-6 bg-border/70" />
 
           <RailNavLink href="/admin/users" label="Users" icon={<PersonIcon width={14} height={14} />} />
           <RailNavLink href="/admin/roles" label="Roles" icon={<IdCardIcon width={14} height={14} />} />
           <RailNavLink href="/admin/audit" label="Audit" icon={<ActivityLogIcon width={14} height={14} />} />
 
-          <div className="mt-2 h-px w-6 bg-border" />
+            <div className="mt-2 h-px w-6 bg-border/70" />
 
           <RailNavLink href="/admin/whm/servers" label="WHM Servers" icon={<DesktopIcon width={14} height={14} />} />
           <RailNavLink href="/admin/proxmox/servers" label="Proxmox" icon={<DesktopIcon width={14} height={14} />} />
@@ -157,10 +157,10 @@ export function AdminNavSidebar({
   const closeActionLabel = onCollapse ? "Collapse sidebar" : "Close sidebar";
 
   return (
-    <nav className="flex h-full flex-col bg-sidebar">
+    <nav className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar/95 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
       <div className="pt-3 font-sans">
         <div className="flex items-center justify-between px-4">
-          <span className="font-serif text-lg font-semibold tracking-[-0.01em] text-foreground">NOA</span>
+          <span className="font-serif text-lg font-semibold tracking-[-0.02em] text-foreground">NOA</span>
 
           {closeAction ? (
             <button
@@ -177,24 +177,24 @@ export function AdminNavSidebar({
         </div>
 
         <div className="mt-3 space-y-1 px-2">
-          <Link
-            href="/assistant"
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent/80 hover:text-foreground active:scale-[0.99]"
-          >
+            <Link
+              href="/assistant"
+              className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:border-border/70 hover:bg-card/70 hover:text-foreground active:scale-[0.99]"
+            >
             <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center">
               <ArrowLeftIcon width={16} height={16} />
             </span>
             Back to Assistant
           </Link>
 
-          <div className="px-2 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="px-2 pt-3 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">
             Admin
           </div>
           {adminLinks.map((item) => (
             <NavLinkItem key={item.href} icon={item.icon} label={item.label} href={item.href} />
           ))}
 
-          <div className="px-2 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <div className="px-2 pt-4 pb-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">
             Infrastructure
           </div>
           {infrastructureLinks.map((item) => (
@@ -203,7 +203,7 @@ export function AdminNavSidebar({
         </div>
       </div>
 
-      <div className="mt-auto border-sidebar-border border-t font-sans">
+      <div className="mt-auto border-sidebar-border/80 border-t font-sans">
         <div className="px-4 pb-3">
           <AccountMenu
             onLogout={clearAuth}
@@ -211,9 +211,9 @@ export function AdminNavSidebar({
               <button
                 type="button"
                 aria-label="Account menu"
-                className="flex w-full items-center gap-3 rounded-lg px-4 py-3 text-left transition-colors hover:bg-accent active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+                className="flex w-full items-center gap-3 rounded-2xl border border-transparent px-4 py-3 text-left transition-colors hover:border-border/70 hover:bg-card/70 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               >
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-border/10 bg-foreground text-sm font-semibold text-background shadow-sm">
                   {initial}
                 </div>
 

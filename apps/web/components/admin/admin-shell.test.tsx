@@ -111,7 +111,7 @@ describe("AdminShell", () => {
       </AdminShell>,
     );
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[20rem_minmax(0,1fr)]");
     expect(screen.getByTestId("admin-nav-sidebar")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-variant")).toHaveTextContent("expanded");
   });
@@ -124,10 +124,10 @@ describe("AdminShell", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[4rem_minmax(0,1fr)]");
 
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[20rem_minmax(0,1fr)]");
   });
 
   it("keeps the manual desktop sidebar mode across viewport changes", () => {
@@ -138,14 +138,14 @@ describe("AdminShell", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[4rem_minmax(0,1fr)]");
 
     mediaController.setDesktopMatch(false);
     act(() => {
       mediaController.setDesktopMatch(true);
     });
 
-    expect(container.firstElementChild).toHaveClass("md:grid-cols-[3rem_minmax(0,1fr)]");
+    expect(container.firstElementChild).toHaveClass("md:grid-cols-[4rem_minmax(0,1fr)]");
   });
 
   it("keeps the mobile sheet trigger available after open, close, and reopen", () => {

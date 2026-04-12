@@ -71,11 +71,11 @@ export function AdminShell({ children }: { children: ReactNode }) {
       className={[
         "grid h-dvh min-h-0 w-full grid-cols-1 overflow-hidden bg-background transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none",
         desktopSidebarMode === "expanded"
-          ? "md:grid-cols-[18rem_minmax(0,1fr)]"
-          : "md:grid-cols-[3rem_minmax(0,1fr)]",
+          ? "md:grid-cols-[20rem_minmax(0,1fr)]"
+          : "md:grid-cols-[4rem_minmax(0,1fr)]",
       ].join(" ")}
     >
-      <aside className="hidden h-full min-h-0 border-border border-r md:block">
+      <aside className="hidden h-full min-h-0 border-r border-sidebar-border/80 bg-sidebar/95 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)] md:block">
         <AdminNavSidebar
           variant={desktopSidebarMode}
           onCollapse={collapseDesktopSidebar}
@@ -101,7 +101,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
       </div>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" showCloseButton={false} className="w-[18rem] max-w-[86vw] p-0 md:hidden">
+        <SheetContent side="left" showCloseButton={false} className="w-[20rem] max-w-[86vw] p-0 md:hidden">
           <SheetTitle className="sr-only">Admin navigation</SheetTitle>
           <SheetDescription className="sr-only">Admin navigation menu.</SheetDescription>
           <div className="h-full">
