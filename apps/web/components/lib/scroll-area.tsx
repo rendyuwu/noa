@@ -54,9 +54,10 @@ export const ScrollBar = forwardRef<ElementRef<typeof ScrollAreaPrimitive.Scroll
       <ScrollAreaPrimitive.Scrollbar
         ref={ref}
         data-slot="scroll-area-scrollbar"
+        forceMount
         orientation={orientation}
         className={cn(
-          "flex touch-none select-none p-px transition-colors",
+          "flex touch-none select-none p-0.5 transition-colors",
           orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent",
           orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent",
           className,
@@ -65,7 +66,8 @@ export const ScrollBar = forwardRef<ElementRef<typeof ScrollAreaPrimitive.Scroll
       >
         <ScrollAreaPrimitive.Thumb
           data-slot="scroll-area-thumb"
-          className="relative flex-1 rounded-full bg-border/80 transition-colors hover:bg-border"
+          forceMount
+          className="relative flex-1 rounded-full bg-border/70 transition-colors hover:bg-border/80"
         />
       </ScrollAreaPrimitive.Scrollbar>
     );
