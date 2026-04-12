@@ -334,6 +334,8 @@ export function WorkflowRunDetailsBody({
   sections: AssistantDetailEvidenceSection[];
   variant?: WorkflowRunDetailsVariant;
 }) {
+  const todoKeyCounts = new Map<string, number>();
+
   if (variant === "inline") {
     const rawJson = JSON.stringify({ todos, sections }, null, 2);
 
@@ -363,9 +365,13 @@ export function WorkflowRunDetailsBody({
   return (
     <div className="space-y-3">
       <WorkflowTodoStatsGrid todos={todos} />
-      {todos.map((todo, index) => (
-        <WorkflowTodoRow key={`${todo.content}-${todo.status}`} todo={todo} index={index} />
-      ))}
+      {todos.map((todo, index) => {
+        const baseKey = `${todo.content}-${todo.status}-${todo.priority}`;
+        const occurrence = (todoKeyCounts.get(baseKey) ?? 0) + 1;
+        todoKeyCounts.set(baseKey, occurrence);
+
+        return <WorkflowTodoRow key={`${baseKey}-${occurrence}`} todo={todo} index={index} />;
+      })}
       <DetailSections sections={sections} variant="sheet" />
     </div>
   );

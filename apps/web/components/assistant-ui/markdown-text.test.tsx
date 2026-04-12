@@ -25,10 +25,16 @@ describe("MarkdownText", () => {
     const H1 = lastProps.components.h1;
     const P = lastProps.components.p;
 
+    const headingElement = H1({ node: { type: "heading" }, children: "Editorial heading" });
+    expect(headingElement.props.node).toBeUndefined();
+
     const { container: headingContainer } = render(<H1>Editorial heading</H1>);
     const heading = headingContainer.querySelector("h1");
     expect(heading).toHaveClass("font-serif");
     expect(heading).toHaveClass("tracking-[-0.025em]");
+
+    const paragraphElement = P({ children: "Editorial body" });
+    expect(paragraphElement.props.className).toContain("my-4");
 
     const { container: paragraphContainer } = render(<P>Editorial body</P>);
     const paragraph = paragraphContainer.querySelector("p");

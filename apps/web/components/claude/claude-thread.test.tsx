@@ -329,6 +329,20 @@ describe("ClaudeThread", () => {
     expect(screen.queryByTestId("landing-composer")).not.toBeInTheDocument();
   });
 
+  it("renders the editorial docked composer shell in active threads", () => {
+    mockThreadIsEmpty = false;
+
+    render(<ClaudeThread />);
+
+    const dock = screen.getByTestId("composer-dock-stack");
+    const composer = screen.getByTestId("bottom-composer");
+
+    expect(dock).toHaveClass("rounded-[2rem]");
+    expect(dock).toHaveClass("bg-card/65");
+    expect(composer).toHaveClass("rounded-[1.75rem]");
+    expect(composer).toHaveClass("bg-card/95");
+  });
+
   it("makes the thread viewport the scroll container", () => {
     mockThreadIsEmpty = false;
 

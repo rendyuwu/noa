@@ -17,7 +17,7 @@ export const MarkdownText = (_props: any) => {
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
       components={{
-        h1: ({ className, ...props }: any) => (
+        h1: ({ node: _node, className, ...props }: any) => (
           <h1
             {...props}
             className={mergeClassNames(
@@ -26,7 +26,7 @@ export const MarkdownText = (_props: any) => {
             )}
           />
         ),
-        h2: ({ className, ...props }: any) => (
+        h2: ({ node: _node, className, ...props }: any) => (
           <h2
             {...props}
             className={mergeClassNames(
@@ -35,8 +35,11 @@ export const MarkdownText = (_props: any) => {
             )}
           />
         ),
-        p: ({ className, ...props }: any) => (
-          <p {...props} className={mergeClassNames("text-[15px] leading-7 text-foreground/90", className)} />
+        p: ({ node: _node, className, ...props }: any) => (
+          <p
+            {...props}
+            className={mergeClassNames("my-4 text-[15px] leading-7 text-foreground/90", className)}
+          />
         ),
         table: ({ className, node: _node, ...props }: any) => (
           <ScrollArea
