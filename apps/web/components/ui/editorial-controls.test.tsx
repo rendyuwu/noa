@@ -1,17 +1,34 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Alert } from "./alert";
 import { Badge } from "./badge";
 import { Button } from "./button";
 import { Input } from "./input";
+import { Separator } from "./separator";
 import { Skeleton } from "./skeleton";
+import { Toaster } from "./sonner";
+
+const { sonnerMock, useThemeMock } = vi.hoisted(() => ({
+  sonnerMock: vi.fn((props: any) => <div data-testid="sonner" data-theme={props?.theme} />),
+  useThemeMock: vi.fn(() => ({ theme: "system" })),
+}));
+
+vi.mock("next-themes", () => ({
+  useTheme: () => useThemeMock(),
+}));
+
+vi.mock("sonner", () => ({
+  Toaster: (props: unknown) => sonnerMock(props),
+}));
 
 describe("editorial shared controls", () => {
   it("uses warmer button treatments across core variants", () => {
     const { container: defaultContainer } = render(<Button>Primary</Button>);
     const { container: secondaryContainer } = render(<Button variant="secondary">Secondary</Button>);
     const { container: outlineContainer } = render(<Button variant="outline">Outline</Button>);
+    const { container: ghostContainer } = render(<Button variant="ghost">Ghost</Button>);
+    const { container: linkContainer } = render(<Button variant="link">Link</Button>);
 
     expect(defaultContainer.firstElementChild).toHaveClass("rounded-xl");
     expect(defaultContainer.firstElementChild).toHaveClass("bg-primary");
@@ -24,6 +41,9 @@ describe("editorial shared controls", () => {
     expect(outlineContainer.firstElementChild).toHaveClass("rounded-xl");
     expect(outlineContainer.firstElementChild).toHaveClass("bg-card/80");
     expect(outlineContainer.firstElementChild).toHaveClass("border-border");
+
+    expect(ghostContainer.firstElementChild).not.toHaveClass("shadow-sm");
+    expect(linkContainer.firstElementChild).not.toHaveClass("shadow-sm");
   });
 
   it("uses the editorial contained input surface", () => {
@@ -55,5 +75,25 @@ describe("editorial shared controls", () => {
     const { container } = render(<Skeleton />);
 
     expect(container.firstElementChild).toHaveClass("rounded-xl");
+  });
+
+  it("softens separators with the editorial tone", () => {
+    const { container } = render(<Separator />);
+
+    expect(container.firstElementChild).toHaveClass("bg-border/60");
+  });
+
+  it("keeps toaster surfaces warm and contained", () => {
+    render(<Toaster />);
+
+    expect(sonnerMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        toastOptions: expect.objectContaining({
+          classNames: expect.objectContaining({
+            toast: expect.stringContaining("rounded-2xl"),
+          }),
+        }),
+      }),
+    );
   });
 });
