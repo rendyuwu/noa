@@ -1,5 +1,7 @@
-import { render, waitFor } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import * as React from "react";
+
+import { render } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   Dialog,
@@ -14,6 +16,49 @@ import {
 } from "./dropdown-menu";
 import { ScrollArea } from "./scroll-area";
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from "./sheet";
+import { ScrollArea as LibScrollArea } from "../lib/scroll-area";
+
+const { uiScrollAreaCalls, libScrollAreaCalls } = vi.hoisted(() => ({
+  uiScrollAreaCalls: [] as Array<{ scrollbar?: Record<string, unknown>; thumb?: Record<string, unknown> }>,
+  libScrollAreaCalls: [] as Array<{ scrollbar?: Record<string, unknown>; thumb?: Record<string, unknown> }>,
+}));
+
+vi.mock("radix-ui", async () => {
+  const actual = await vi.importActual<typeof import("radix-ui")>("radix-ui");
+
+  return {
+    ...actual,
+    ScrollArea: {
+      ...actual.ScrollArea,
+      ScrollAreaScrollbar: ({ children, ...props }: any) => {
+        uiScrollAreaCalls.push({ scrollbar: props });
+        return <div data-slot="scroll-area-scrollbar">{children}</div>;
+      },
+      ScrollAreaThumb: (props: any) => {
+        uiScrollAreaCalls[uiScrollAreaCalls.length - 1] ??= {};
+        uiScrollAreaCalls[uiScrollAreaCalls.length - 1].thumb = props;
+        return <div data-slot="scroll-area-thumb" />;
+      },
+    },
+  };
+});
+
+vi.mock("@radix-ui/react-scroll-area", async () => {
+  const actual = await vi.importActual<typeof import("@radix-ui/react-scroll-area")>("@radix-ui/react-scroll-area");
+
+  return {
+    ...actual,
+    Scrollbar: ({ children, ...props }: any) => {
+      libScrollAreaCalls.push({ scrollbar: props });
+      return <div data-slot="scroll-area-scrollbar">{children}</div>;
+    },
+    Thumb: (props: any) => {
+      libScrollAreaCalls[libScrollAreaCalls.length - 1] ??= {};
+      libScrollAreaCalls[libScrollAreaCalls.length - 1].thumb = props;
+      return <div data-slot="scroll-area-thumb" />;
+    },
+  };
+});
 
 describe("editorial overlays", () => {
   it("uses the warm dialog surface", () => {
@@ -68,20 +113,24 @@ describe("editorial overlays", () => {
     expect(menuContent).toHaveClass("shadow-[0_16px_40px_-24px_rgba(15,23,42,0.25)]");
   });
 
-  it("uses the softer scrollbar tone", async () => {
+  it("uses the softer scrollbar tone in both implementations", () => {
     render(
-      <ScrollArea className="h-24 w-24" type="always">
-        <div className="h-64 w-64">Editorial scroll</div>
-      </ScrollArea>,
+      <>
+        <ScrollArea className="h-24 w-24">
+          <div className="h-64 w-64">Editorial scroll</div>
+        </ScrollArea>
+        <LibScrollArea className="h-24 w-24">
+          <div className="h-64 w-64">Editorial scroll</div>
+        </LibScrollArea>
+      </>,
     );
 
-    await waitFor(() => {
-      expect(document.querySelector('[data-slot="scroll-area-thumb"]')).not.toBeNull();
-    });
+    expect(uiScrollAreaCalls[0].scrollbar).not.toHaveProperty("forceMount");
+    expect(uiScrollAreaCalls[0].thumb).not.toHaveProperty("forceMount");
+    expect(libScrollAreaCalls[0].scrollbar).not.toHaveProperty("forceMount");
+    expect(libScrollAreaCalls[0].thumb).not.toHaveProperty("forceMount");
 
-    const thumb = document.querySelector('[data-slot="scroll-area-thumb"]');
-
-    expect(thumb).toHaveClass("bg-border/70");
-    expect(thumb).toHaveClass("hover:bg-border/80");
+    expect(document.querySelectorAll('[data-slot="scroll-area-scrollbar"]')).toHaveLength(2);
+    expect(document.querySelectorAll('[data-slot="scroll-area-thumb"]')).toHaveLength(2);
   });
 });
