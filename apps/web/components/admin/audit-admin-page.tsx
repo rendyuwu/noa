@@ -344,7 +344,7 @@ export function AuditAdminPage() {
           actions={loading ? <div className="font-sans text-sm text-muted-foreground">Loading...</div> : undefined}
         />
 
-        <div className="editorial-subpanel mt-6 p-4">
+        <div className="editorial-subpanel p-4">
           <DisclosureSection
             title="Filters"
             icon={<MixerHorizontalIcon width={16} height={16} />}
@@ -455,7 +455,7 @@ export function AuditAdminPage() {
         </div>
 
         {loadError ? (
-          <div role="alert" aria-live="assertive" className="danger-zone mt-4 font-sans">
+          <div role="alert" aria-live="assertive" className="danger-zone font-sans">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="danger-zone-label text-xs font-semibold uppercase tracking-[0.12em]">
@@ -470,7 +470,7 @@ export function AuditAdminPage() {
           </div>
         ) : null}
 
-        <div className="editorial-subpanel mt-6 overflow-hidden p-0">
+        <div className="editorial-subpanel overflow-hidden p-0">
           <table className="w-full font-sans text-sm">
             <thead className="bg-accent text-accent-foreground">
               <tr>
