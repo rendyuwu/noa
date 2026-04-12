@@ -187,7 +187,7 @@ export function ClaudeWorkspace() {
           className={[
             "grid h-full min-h-0 grid-cols-1 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none",
             desktopSidebarMode === "expanded"
-              ? "md:grid-cols-[20rem_minmax(0,1fr)]"
+              ? "md:grid-cols-[19rem_minmax(0,1fr)]"
               : "md:grid-cols-[3rem_minmax(0,1fr)]",
           ].join(" ")}
         >
@@ -229,7 +229,7 @@ export function ClaudeWorkspace() {
             </div>
           </div>
 
-        <SheetContent side="left" className="w-[20rem] max-w-[86vw] p-0 md:hidden">
+        <SheetContent side="left" className="w-[19rem] max-w-[88vw] p-0 md:hidden">
           <SheetTitle className="sr-only">Chats</SheetTitle>
           <SheetDescription className="sr-only">
             Browse recent conversations and start a new chat.
