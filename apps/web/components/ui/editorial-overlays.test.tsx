@@ -130,6 +130,11 @@ describe("editorial overlays", () => {
     expect(libScrollAreaCalls[0].scrollbar).not.toHaveProperty("forceMount");
     expect(libScrollAreaCalls[0].thumb).not.toHaveProperty("forceMount");
 
+    expect(uiScrollAreaCalls[0].thumb?.className).toContain("bg-border/70");
+    expect(uiScrollAreaCalls[0].thumb?.className).toContain("hover:bg-border/80");
+    expect(libScrollAreaCalls[0].thumb?.className).toContain("bg-border/70");
+    expect(libScrollAreaCalls[0].thumb?.className).toContain("hover:bg-border/80");
+
     expect(document.querySelectorAll('[data-slot="scroll-area-scrollbar"]')).toHaveLength(2);
     expect(document.querySelectorAll('[data-slot="scroll-area-thumb"]')).toHaveLength(2);
   });
