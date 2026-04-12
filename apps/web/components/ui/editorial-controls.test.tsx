@@ -50,8 +50,8 @@ describe("editorial shared controls", () => {
     const { container } = render(<Input aria-label="Editorial input" />);
 
     expect(container.firstElementChild).toHaveClass("input");
-    expect(container.firstElementChild).toHaveClass("rounded-xl");
-    expect(container.firstElementChild).toHaveClass("bg-card/80");
+    expect(container.firstElementChild).toHaveClass("text-base");
+    expect(container.firstElementChild).toHaveClass("md:text-sm");
   });
 
   it("keeps badges rounded and editorial", () => {

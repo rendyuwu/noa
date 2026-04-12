@@ -84,6 +84,10 @@ describe("globals.css", () => {
     expect(css).toMatch(/\.dark\s*\{[\s\S]*--card:\s*oklch\(0\.235\s+0\.012\s+50\);/);
     expect(css).toMatch(/\.dark\s*\{[\s\S]*--primary:\s*oklch\(0\.880\s+0\.018\s+90\);/);
     expect(css).toMatch(/\.input\s*\{/);
+    expect(css).toMatch(/\.input\s*\{[\s\S]*rounded-xl/);
+    expect(css).toMatch(/\.input\s*\{[\s\S]*bg-card\/80/);
+    expect(css).toMatch(/\.input\s*\{[\s\S]*text-base/);
+    expect(css).toMatch(/\.input\s*\{[\s\S]*md:text-sm/);
     expect(css).toMatch(/\.editorial-kicker\s*\{/);
     expect(css).toMatch(/\.editorial-title\s*\{/);
     expect(css).toMatch(/\.editorial-subpanel\s*\{/);
