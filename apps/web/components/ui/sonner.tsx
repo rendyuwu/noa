@@ -17,12 +17,12 @@ export function Toaster({ ...props }: ToasterProps) {
       toastOptions={{
         classNames: {
           toast:
-            "group toast group-[.toaster]:bg-background group-[.toaster]:text-foreground group-[.toaster]:border-border group-[.toaster]:shadow-lg",
+            "group toast rounded-2xl border border-border bg-card/95 text-card-foreground shadow-[0_12px_30px_-18px_rgba(15,23,42,0.35)] group-[.toaster]:bg-card/95 group-[.toaster]:text-card-foreground group-[.toaster]:border-border group-[.toaster]:shadow-[0_12px_30px_-18px_rgba(15,23,42,0.35)]",
           description: "group-[.toast]:text-muted-foreground",
           actionButton:
-            "group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
+            "group-[.toast]:rounded-full group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",
           cancelButton:
-            "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
+            "group-[.toast]:rounded-full group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
         },
       }}
       {...props}
