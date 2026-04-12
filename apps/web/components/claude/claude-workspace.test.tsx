@@ -135,23 +135,23 @@ describe("/assistant full-bleed shell", () => {
     expect(grid!).toHaveClass("min-h-0");
   });
 
-  it("sets the desktop sidebar column to 18rem", () => {
+  it("sets the desktop sidebar column to 20rem", () => {
     render(<ClaudeWorkspace />);
 
     const thread = screen.getByTestId("claude-thread");
     const grid = thread.parentElement?.parentElement?.parentElement;
     expect(grid).not.toBeNull();
-    expect(grid!).toHaveClass("md:grid-cols-[18rem_minmax(0,1fr)]");
+    expect(grid!).toHaveClass("md:grid-cols-[20rem_minmax(0,1fr)]");
   });
 
-  it("sets the mobile drawer width to 18rem (capped to 86vw)", () => {
+  it("sets the mobile drawer width to 20rem (capped to 86vw)", () => {
     render(<ClaudeWorkspace />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open sidebar" }));
 
     const drawer = screen.getByRole("dialog", { name: "Chats" });
     expect(drawer).not.toBeNull();
-    expect(drawer!).toHaveClass("w-[18rem]");
+    expect(drawer!).toHaveClass("w-[20rem]");
     expect(drawer!).toHaveClass("max-w-[86vw]");
     expect(drawer!).toHaveAttribute("data-state", "open");
   });

@@ -187,7 +187,7 @@ export function ClaudeWorkspace() {
           className={[
             "grid h-full min-h-0 grid-cols-1 transition-[grid-template-columns] duration-200 ease-out motion-reduce:transition-none",
             desktopSidebarMode === "expanded"
-              ? "md:grid-cols-[18rem_minmax(0,1fr)]"
+              ? "md:grid-cols-[20rem_minmax(0,1fr)]"
               : "md:grid-cols-[3rem_minmax(0,1fr)]",
           ].join(" ")}
         >
@@ -199,23 +199,29 @@ export function ClaudeWorkspace() {
             />
           </aside>
 
-           <div className="h-full min-h-0 min-w-0">
-             {routeThreadError ? (
-               <div className="mx-auto max-w-[56rem] px-4 pt-4">
-                  <div className="rounded-2xl border border-border bg-card/70 px-4 py-3 font-sans text-sm text-foreground shadow-sm">
-                   <div className="flex flex-wrap items-center justify-between gap-3">
-                     <p>{routeThreadError}</p>
+          <div className="h-full min-h-0 min-w-0">
+              {routeThreadError ? (
+                <div className="mx-auto max-w-[60rem] px-4 pt-4 md:pt-5">
+                  <div className="overflow-hidden rounded-[28px] border border-border/80 bg-card/90 shadow-xl shadow-amber-950/5 backdrop-blur">
+                    <div className="flex flex-wrap items-center justify-between gap-4 px-5 py-4">
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                          Editorial routing
+                        </p>
+                        <p className="font-sans text-sm text-foreground">{routeThreadError}</p>
+                      </div>
+
                       <button
                         type="button"
                         onClick={() => router.push("/assistant", { scroll: false })}
-                        className="inline-flex items-center justify-center rounded-xl bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition hover:bg-primary/90 active:scale-[0.99]"
+                        className="inline-flex items-center justify-center rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-sm transition hover:bg-foreground/90 active:scale-[0.99]"
                       >
-                       New chat
-                     </button>
-                   </div>
-                 </div>
-               </div>
-             ) : null}
+                        New chat
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
               <ClaudeThread
                 onOpenSidebarAction={openSidebar}
                 forceHydrationSkeleton={forceHydrationSkeleton}
@@ -223,7 +229,7 @@ export function ClaudeWorkspace() {
             </div>
           </div>
 
-        <SheetContent side="left" className="w-[18rem] max-w-[86vw] p-0 md:hidden">
+        <SheetContent side="left" className="w-[20rem] max-w-[86vw] p-0 md:hidden">
           <SheetTitle className="sr-only">Chats</SheetTitle>
           <SheetDescription className="sr-only">
             Browse recent conversations and start a new chat.

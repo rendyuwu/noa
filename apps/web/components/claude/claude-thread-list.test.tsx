@@ -397,15 +397,16 @@ describe("ClaudeThreadList", () => {
     expect(navSection.queryByRole("link", { name: "Roles" })).not.toBeInTheDocument();
   });
 
-  it("applies sidebar-accent active styling to the selected thread row", () => {
+  it("applies editorial card active styling to the selected thread row", () => {
     render(<ClaudeThreadList />);
 
     const trigger = screen.getAllByRole("button", { name: "Untitled" })[0];
     const row = trigger.closest("[data-active]");
 
     expect(row).not.toBeNull();
-    expect(row!).toHaveClass("data-[active]:bg-sidebar-accent");
-    expect(row!).toHaveClass("data-[active]:border-sidebar-border");
+    expect(row!).toHaveClass("data-[active]:bg-card");
+    expect(row!).toHaveClass("data-[active]:border-border/70");
+    expect(row!).toHaveClass("data-[active]:shadow-sm");
   });
 
   it("dedupes recents by remoteId", () => {

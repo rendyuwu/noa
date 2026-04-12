@@ -60,7 +60,7 @@ const ThreadListItem: FC<{
   const titleTooltip = threadTitle?.trim();
 
   return (
-    <ThreadListItemPrimitive.Root className="group flex items-center gap-2 rounded-xl border border-transparent px-3 py-2 transition-colors hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 data-[active]:border-sidebar-border data-[active]:bg-sidebar-accent">
+    <ThreadListItemPrimitive.Root className="group flex items-stretch gap-2 rounded-[20px] border border-transparent px-3 py-3 transition-all duration-150 hover:border-border/70 hover:bg-card/70 hover:shadow-sm data-[active]:border-border/70 data-[active]:bg-card data-[active]:shadow-sm data-[active]:shadow-amber-950/5">
       <ThreadListItemPrimitive.Trigger
         onClick={() => {
           onSelect?.();
@@ -79,7 +79,7 @@ const ThreadListItem: FC<{
             }
           })();
         }}
-        className="min-w-0 flex-1 rounded-lg px-1 text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="min-w-0 flex-1 rounded-[14px] px-1 text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <span className="block line-clamp-2 text-sm leading-5" title={titleTooltip || remoteId}>
           <ThreadListItemPrimitive.Title fallback="Untitled" />
@@ -173,7 +173,7 @@ const ThreadListItem: FC<{
         trigger={({ open, disabled }) => (
           <button
             type="button"
-            className="shrink-0 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground opacity-0 transition hover:bg-sidebar-accent hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 group-data-[active]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-transparent text-muted-foreground opacity-0 transition hover:border-border/70 hover:bg-background/80 hover:text-foreground group-hover:opacity-100 group-focus-within:opacity-100 group-data-[active]:opacity-100 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             aria-label="Delete thread"
             disabled={disabled}
             onClick={(event) => {
@@ -280,7 +280,7 @@ export function ClaudeThreadList({
 
   if (variant === "collapsed") {
     const railButtonClassName =
-      "flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+      "flex h-10 w-10 items-center justify-center rounded-[14px] border border-transparent bg-card/60 text-muted-foreground shadow-sm transition hover:border-border/70 hover:bg-card hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
     const RailItem: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
       return (
@@ -290,7 +290,7 @@ export function ClaudeThreadList({
             aria-hidden="true"
             className={[
               "pointer-events-none absolute top-1/2 left-full z-20 ml-2 -translate-y-1/2",
-               "whitespace-nowrap rounded-md border border-sidebar-border bg-popover px-2 py-1 font-sans text-xs text-foreground shadow-sm",
+              "whitespace-nowrap rounded-full border border-sidebar-border/70 bg-popover/95 px-2.5 py-1.5 font-sans text-[11px] text-foreground shadow-lg shadow-amber-950/5 backdrop-blur",
               "opacity-0 translate-x-1 transition",
               "group-hover:translate-x-0 group-hover:opacity-100",
               "group-focus-within:translate-x-0 group-focus-within:opacity-100",
@@ -321,8 +321,8 @@ export function ClaudeThreadList({
     };
 
     return (
-      <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar py-3">
-        <div className="flex flex-1 flex-col items-center gap-1">
+      <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar py-4 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
+        <div className="flex flex-1 flex-col items-center gap-1 px-2">
           {onExpandSidebar ? (
             <RailItem label="Expand sidebar">
               <button
@@ -341,9 +341,9 @@ export function ClaudeThreadList({
               type="button"
               onClick={handleNewChat}
               aria-label="New chat"
-              className={[railButtonClassName, "mt-4"].join(" ")}
+              className={[railButtonClassName, "mt-3"].join(" ")}
             >
-              <PlusIcon width={14} height={14} />
+              <PlusIcon width={15} height={15} />
             </button>
           </RailItem>
 
@@ -352,7 +352,7 @@ export function ClaudeThreadList({
             icon={<MagnifyingGlassIcon width={14} height={14} />}
           />
 
-          <div className="mt-auto flex flex-col items-center gap-2 pt-3">
+          <div className="mt-auto flex flex-col items-center gap-2 border-t border-sidebar-border/70 pt-3">
             {isAdminUser ? (
               <RailItem label="Admin">
                 <Link
@@ -376,7 +376,7 @@ export function ClaudeThreadList({
                   >
                     <span
                       aria-hidden="true"
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground font-sans text-sm font-semibold text-background"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground font-sans text-sm font-semibold text-background shadow-sm"
                     >
                       {initial}
                     </span>
@@ -394,11 +394,16 @@ export function ClaudeThreadList({
   const closeActionLabel = onCollapseSidebar ? "Collapse sidebar" : "Close sidebar";
 
   return (
-    <ThreadListPrimitive.Root className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar">
-      <div className="pt-3 font-sans">
-        <div className="flex items-center justify-between px-4">
-          <div className="font-serif text-lg font-semibold tracking-[-0.01em] text-foreground">
-            NOA
+    <ThreadListPrimitive.Root className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
+      <div className="pt-4 font-sans">
+        <div className="flex items-start justify-between gap-3 px-4">
+          <div className="min-w-0">
+            <div className="font-serif text-xl font-semibold tracking-[-0.02em] text-foreground">
+              NOA
+            </div>
+            <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+              Editorial conversations
+            </p>
           </div>
 
           {closeAction ? (
@@ -406,28 +411,28 @@ export function ClaudeThreadList({
               type="button"
               onClick={closeAction}
               aria-label={closeActionLabel}
-                className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground active:scale-[0.98]"
+              className="flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-card/70 text-muted-foreground shadow-sm transition-colors hover:border-border hover:bg-card hover:text-foreground active:scale-[0.98]"
             >
               <ColumnsIcon width={18} height={18} />
             </button>
           ) : (
-            <div aria-hidden="true" className="h-9 w-9" />
+            <div aria-hidden="true" className="h-10 w-10" />
           )}
         </div>
 
-        <div className="mt-3">
+        <div className="mt-4 px-4">
           <button
             type="button"
             onClick={handleNewChat}
-            className="flex w-full items-center gap-3 rounded-xl px-4 py-2 font-sans text-sm text-foreground transition-colors hover:bg-sidebar-accent active:scale-[0.99]"
+            className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-card/75 px-4 py-3 font-sans text-sm text-foreground shadow-sm transition hover:bg-card hover:shadow-md active:scale-[0.99]"
           >
             <span
               aria-hidden="true"
-               className="flex h-6 w-6 items-center justify-center rounded-full border border-sidebar-border bg-card text-muted-foreground shadow-sm"
+              className="flex h-7 w-7 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15"
             >
               <PlusIcon width={14} height={14} />
             </span>
-            New chat
+            <span className="font-semibold">New chat</span>
           </button>
 
           <div className="mt-2">
@@ -437,8 +442,10 @@ export function ClaudeThreadList({
       </div>
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col font-sans">
-        <p className="px-4 pb-2 text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">Recents</p>
-        <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-2 [scrollbar-gutter:stable]">
+        <p className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+          Recents
+        </p>
+        <div className="min-h-0 flex-1 overflow-y-auto pb-4 pr-3 [scrollbar-gutter:stable]">
           {uniqueThreadItems.map((item, index) => (
             <ThreadListItemByIndexProvider
               key={`${item.remoteId}:${item.id}`}
@@ -457,9 +464,9 @@ export function ClaudeThreadList({
         </div>
       </div>
 
-      <div className="border-sidebar-border/80 border-t bg-sidebar/70 px-4 py-3 font-sans backdrop-blur-sm">
+      <div className="border-sidebar-border/80 border-t bg-sidebar/85 px-4 py-4 font-sans backdrop-blur-sm">
         {isAdminUser ? (
-          <div className="mb-2">
+          <div className="mb-3">
             <NavLinkItem icon={<GearIcon width={16} height={16} />} label="Admin" href="/admin" />
           </div>
         ) : null}
@@ -470,9 +477,9 @@ export function ClaudeThreadList({
             <button
               type="button"
               aria-label="Account menu"
-              className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-colors hover:bg-sidebar-accent active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-card/75 px-4 py-3 text-left shadow-sm transition hover:bg-card active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background shadow-sm">
                 {initial}
               </div>
 
