@@ -74,9 +74,18 @@ describe("globals.css", () => {
   it("defines the editorial font and warm UI utilities", () => {
     const css = readFileSync(path.join(dirname, "globals.css"), "utf8");
 
-    expect(css).toMatch(/--font-serif:\s*var\(--font-newsreader\)/);
-    expect(css).toMatch(/:root\s*\{[\s\S]*--background:\s*oklch\([^)]+\)[\s\S]*--card:\s*oklch\([^)]+\)[\s\S]*--primary:\s*oklch\([^)]+\)/);
+    expect(css).toMatch(
+      /--font-serif:\s*var\(--font-newsreader\),\s*ui-serif,\s*Georgia,\s*"Iowan Old Style",\s*"Palatino Linotype",\s*Palatino,\s*"Times New Roman",\s*Times,\s*serif;/,
+    );
+    expect(css).toMatch(/:root\s*\{[\s\S]*--background:\s*oklch\(0\.985\s+0\.006\s+78\);/);
+    expect(css).toMatch(/:root\s*\{[\s\S]*--card:\s*oklch\(0\.996\s+0\.003\s+78\);/);
+    expect(css).toMatch(/:root\s*\{[\s\S]*--primary:\s*oklch\(0\.360\s+0\.075\s+46\);/);
+    expect(css).toMatch(/\.dark\s*\{[\s\S]*--background:\s*oklch\(0\.170\s+0\.010\s+50\);/);
+    expect(css).toMatch(/\.dark\s*\{[\s\S]*--card:\s*oklch\(0\.235\s+0\.012\s+50\);/);
+    expect(css).toMatch(/\.dark\s*\{[\s\S]*--primary:\s*oklch\(0\.880\s+0\.018\s+90\);/);
     expect(css).toMatch(/\.input\s*\{/);
+    expect(css).toMatch(/\.editorial-kicker\s*\{/);
     expect(css).toMatch(/\.editorial-title\s*\{/);
+    expect(css).toMatch(/\.editorial-subpanel\s*\{/);
   });
 });

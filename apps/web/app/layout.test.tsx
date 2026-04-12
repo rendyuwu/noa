@@ -41,6 +41,13 @@ describe("RootLayout", () => {
     );
 
     expect(document.body.className).toContain("--font-newsreader");
+    expect(newsreaderMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        subsets: ["latin"],
+        variable: "--font-newsreader",
+        weight: ["400", "500"],
+      }),
+    );
     expect(themeProviderMock).toHaveBeenCalledWith(
       expect.objectContaining({
         attribute: "class",
