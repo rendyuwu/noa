@@ -87,5 +87,6 @@ describe("globals.css", () => {
     expect(css).toMatch(/\.editorial-kicker\s*\{/);
     expect(css).toMatch(/\.editorial-title\s*\{/);
     expect(css).toMatch(/\.editorial-subpanel\s*\{/);
+    expect(css).toMatch(/\.font-serif\.font-semibold\s*\{[\s\S]*font-weight:\s*500\s*!important;/);
   });
 });

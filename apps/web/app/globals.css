@@ -269,6 +269,12 @@
   }
 }
 
+@layer utilities {
+  .font-serif.font-semibold {
+    font-weight: 500 !important;
+  }
+}
+
 @keyframes noa-fade-up {
   from {
     opacity: 0;
