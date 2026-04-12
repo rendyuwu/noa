@@ -40,11 +40,13 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
         if (seq !== loadSeqRef.current) return;
         setPayload(receipt);
       } catch (error) {
-        if (seq !== loadSeqRef.current) return;
-        setLoadError(toUserMessage(error, "Unable to load receipt"));
+        if (seq === loadSeqRef.current) {
+          setLoadError(toUserMessage(error, "Unable to load receipt"));
+        }
       } finally {
-        if (seq !== loadSeqRef.current) return;
-        setLoading(false);
+        if (seq === loadSeqRef.current) {
+          setLoading(false);
+        }
       }
     })();
 
@@ -99,76 +101,86 @@ export function AuditReceiptPage({ actionRequestId }: { actionRequestId: string 
   }, [actionRequestId, capturePngBlob, payload]);
 
   return (
-    <main className="min-h-dvh bg-background p-6">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-semibold">Receipt</h1>
-          <p className="mt-1 font-sans text-sm text-muted-foreground">Standalone, export-friendly receipt view.</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/admin/audit"
-            className="font-sans text-sm text-muted-foreground underline decoration-border/60 underline-offset-4 hover:text-foreground hover:decoration-border"
-          >
-            Back to Audit
-          </Link>
-        </div>
-      </div>
-
-      {loadError ? (
-        <div
-          role="alert"
-          aria-live="assertive"
-          className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
-        >
-          <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">{loadError}</div>
-            <Button size="sm" onClick={() => window.location.reload()}>
-              Reload
-            </Button>
+    <main className="min-h-dvh bg-background px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <div className="editorial-subpanel flex items-start justify-between gap-3 px-4 py-4">
+          <div className="min-w-0">
+            <h1 className="editorial-title text-3xl">Receipt</h1>
+            <p className="mt-1 font-sans text-sm text-muted-foreground">Standalone, export-friendly receipt view.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              href="/admin/audit"
+              className="font-sans text-sm text-muted-foreground underline decoration-border/60 underline-offset-4 hover:text-foreground hover:decoration-border"
+            >
+              Back to Audit
+            </Link>
           </div>
         </div>
-      ) : null}
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            size="sm"
-            onClick={copyImage}
-            disabled={!payload || loading}
-            title={
-              canCopyImage
-                ? undefined
-                : "Copy image requires HTTPS (or localhost) and browser support for ClipboardItem."
-            }
-          >
-            {copyImageState === "copied"
-              ? "Copied"
-              : copyImageState === "failed"
-                ? "Failed"
-                : "Copy image"}
-          </Button>
-          <Button size="sm" variant="outline" onClick={downloadPng} disabled={!payload || loading}>
-            {downloadState === "done" ? "Downloaded" : downloadState === "failed" ? "Download failed" : "Download PNG"}
-          </Button>
+        <div className="space-y-6">
+          {loadError ? (
+            <div
+              role="alert"
+              aria-live="assertive"
+              className="mt-4 rounded-xl border border-destructive/25 bg-destructive/10 px-3 py-2 font-sans text-sm text-destructive"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">{loadError}</div>
+                <Button size="sm" onClick={() => window.location.reload()}>
+                  Reload
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="editorial-subpanel px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={copyImage}
+                  disabled={!payload || loading}
+                  title={
+                    canCopyImage
+                      ? undefined
+                      : "Copy image requires HTTPS (or localhost) and browser support for ClipboardItem."
+                  }
+                >
+                  {copyImageState === "copied"
+                    ? "Copied"
+                    : copyImageState === "failed"
+                      ? "Failed"
+                      : "Copy image"}
+                </Button>
+                <Button size="sm" variant="outline" onClick={downloadPng} disabled={!payload || loading}>
+                  {downloadState === "done"
+                    ? "Downloaded"
+                    : downloadState === "failed"
+                      ? "Download failed"
+                      : "Download PNG"}
+                </Button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4" ref={captureWrapperRef}>
+            {payload ? (
+              <div className="mx-auto w-full max-w-[52rem]">
+                <WorkflowReceiptSurface
+                  payload={payload}
+                  className="w-full"
+                  captureId={`audit-${actionRequestId}`}
+                  openMode="export"
+                />
+              </div>
+            ) : (
+              <div className="panel mx-auto w-full max-w-[52rem] p-6 font-sans text-sm text-muted-foreground">
+                {loading ? "Loading receipt..." : "Receipt unavailable."}
+              </div>
+            )}
+          </div>
         </div>
-      </div>
-
-      <div className="mt-4" ref={captureWrapperRef}>
-        {payload ? (
-          <div className="mx-auto w-full max-w-[52rem]">
-            <WorkflowReceiptSurface
-              payload={payload}
-              className="w-full"
-              captureId={`audit-${actionRequestId}`}
-              openMode="export"
-            />
-          </div>
-        ) : (
-          <div className="panel mx-auto w-full max-w-[52rem] p-6 font-sans text-sm text-muted-foreground">
-            {loading ? "Loading receipt..." : "Receipt unavailable."}
-          </div>
-        )}
       </div>
     </main>
   );

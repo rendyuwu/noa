@@ -19,7 +19,7 @@ describe("AuditAdminPage", () => {
     mocks.jsonOrThrow.mockReset();
   });
 
-  it("renders the shared header shell, filters, and audit table", async () => {
+  it("renders the shared header shell, editorial surfaces, and audit table", async () => {
     const payload = {
       items: [
         {
@@ -52,18 +52,26 @@ describe("AuditAdminPage", () => {
       throw new Error("Unexpected jsonOrThrow response");
     });
 
-    render(<AuditAdminPage />);
+    const { container } = render(<AuditAdminPage />);
 
+    const table = await screen.findByRole("table");
+
+    expect(container.firstElementChild?.firstElementChild).toHaveClass("max-w-7xl");
     expect(screen.getByRole("heading", { name: "Audit" })).toBeInTheDocument();
     expect(screen.getByText("Review approvals, executions, and receipts across all threads.")).toBeInTheDocument();
 
     const filtersButton = await screen.findByRole("button", { name: "Filters" });
+    expect(filtersButton.closest(".editorial-subpanel")).not.toBeNull();
     fireEvent.click(filtersButton);
     expect(await screen.findByRole("combobox", { name: "Status" })).toBeInTheDocument();
 
-    const table = await screen.findByRole("table");
+    expect(table.closest(".editorial-subpanel")).not.toBeNull();
     expect(within(table).getByRole("columnheader", { name: "Created" })).toBeInTheDocument();
     expect(within(table).getByText("Create Account")).toBeInTheDocument();
     expect(within(table).getByText("Finished")).toBeInTheDocument();
+
+    fireEvent.click(within(table).getByRole("button", { name: "IDs" }));
+    expect(await screen.findByText("Identifiers")).toBeInTheDocument();
+    expect(screen.getByText("Identifiers").closest(".editorial-subpanel")).not.toBeNull();
   });
 });

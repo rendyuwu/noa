@@ -336,15 +336,15 @@ export function AuditAdminPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-background p-6">
-      <div className="mx-auto w-full max-w-6xl">
+    <main className="min-h-dvh bg-background px-4 py-8 sm:px-6 lg:px-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
         <AdminPageHeader
           title="Audit"
           description="Review approvals, executions, and receipts across all threads."
           actions={loading ? <div className="font-sans text-sm text-muted-foreground">Loading...</div> : undefined}
         />
 
-        <div className="panel mt-4 px-4 py-4">
+        <div className="editorial-subpanel mt-6 p-4">
           <DisclosureSection
             title="Filters"
             icon={<MixerHorizontalIcon width={16} height={16} />}
@@ -470,7 +470,7 @@ export function AuditAdminPage() {
           </div>
         ) : null}
 
-        <div className="panel mt-6 overflow-hidden">
+        <div className="editorial-subpanel mt-6 overflow-hidden p-0">
           <table className="w-full font-sans text-sm">
             <thead className="bg-accent text-accent-foreground">
               <tr>
@@ -582,7 +582,7 @@ export function AuditAdminPage() {
                           <td colSpan={4} className="px-4 py-3">
                             <div
                               id={`audit-ids-${item.actionRequestId}`}
-                              className="rounded-xl border border-border bg-background/25 px-4 py-3"
+                              className="editorial-subpanel px-4 py-3"
                             >
                               <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                                 Identifiers
@@ -605,7 +605,7 @@ export function AuditAdminPage() {
           </table>
 
           {!loading && !loadError && (items.length > 0 || cursorStack.length > 0 || Boolean(nextCursor)) ? (
-            <div className="border-t border-border bg-card/30 px-4 py-3 font-sans">
+            <div className="border-t border-border/70 bg-card/60 px-4 py-3 font-sans">
               <div className="grid gap-2 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
                 <div className="text-sm text-muted-foreground">
                   Showing {items.length} result{items.length === 1 ? "" : "s"} on this page.
