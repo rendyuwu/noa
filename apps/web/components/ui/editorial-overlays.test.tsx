@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -94,7 +94,7 @@ describe("editorial overlays", () => {
       </Sheet>,
     );
 
-    const sheetContent = document.querySelector('[data-slot="sheet-content"]');
+    const sheetContent = screen.getByText("Editorial sheet").closest('[data-slot="sheet-content"]');
 
     expect(sheetContent).not.toBeNull();
     expect(sheetContent).toHaveClass("bg-card/95");
@@ -106,6 +106,38 @@ describe("editorial overlays", () => {
 
     render(
       <Sheet open>
+        <SheetContent side="top">
+          <SheetTitle>Editorial sheet top</SheetTitle>
+          <SheetDescription>Sheet body</SheetDescription>
+        </SheetContent>
+      </Sheet>,
+    );
+
+    const topSheetContent = screen.getByText("Editorial sheet top").closest('[data-slot="sheet-content"]');
+
+    expect(topSheetContent).not.toBeNull();
+    expect(topSheetContent).toHaveClass("inset-x-0");
+    expect(topSheetContent).toHaveClass("top-0");
+    expect(topSheetContent).toHaveClass("h-auto");
+
+    render(
+      <Sheet open>
+        <SheetContent side="bottom">
+          <SheetTitle>Editorial sheet bottom</SheetTitle>
+          <SheetDescription>Sheet body</SheetDescription>
+        </SheetContent>
+      </Sheet>,
+    );
+
+    const bottomSheetContent = screen.getByText("Editorial sheet bottom").closest('[data-slot="sheet-content"]');
+
+    expect(bottomSheetContent).not.toBeNull();
+    expect(bottomSheetContent).toHaveClass("inset-x-0");
+    expect(bottomSheetContent).toHaveClass("bottom-0");
+    expect(bottomSheetContent).toHaveClass("h-auto");
+
+    render(
+      <Sheet open>
         <SheetContent side="left">
           <SheetTitle>Editorial sheet left</SheetTitle>
           <SheetDescription>Sheet body</SheetDescription>
@@ -113,7 +145,7 @@ describe("editorial overlays", () => {
       </Sheet>,
     );
 
-    const leftSheetContent = document.querySelectorAll('[data-slot="sheet-content"]')[1];
+    const leftSheetContent = screen.getByText("Editorial sheet left").closest('[data-slot="sheet-content"]');
 
     expect(leftSheetContent).not.toBeNull();
     expect(leftSheetContent).toHaveClass("inset-y-0");
