@@ -75,7 +75,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           : "md:grid-cols-[4rem_minmax(0,1fr)]",
       ].join(" ")}
     >
-      <aside className="hidden h-full min-h-0 border-r border-sidebar-border/80 bg-sidebar/95 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)] md:block">
+      <aside className="hidden h-full min-h-0 md:block">
         <AdminNavSidebar
           variant={desktopSidebarMode}
           onCollapse={collapseDesktopSidebar}
