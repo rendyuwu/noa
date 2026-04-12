@@ -7,12 +7,37 @@ import "@assistant-ui/react-markdown/styles/dot.css";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+function mergeClassNames(...values: Array<string | undefined>): string {
+  return values.filter(Boolean).join(" ");
+}
+
 // Used as a MessagePrimitive.Parts Text renderer.
 export const MarkdownText = (_props: any) => {
   return (
     <MarkdownTextPrimitive
       remarkPlugins={[remarkGfm]}
       components={{
+        h1: ({ className, ...props }: any) => (
+          <h1
+            {...props}
+            className={mergeClassNames(
+              "mt-6 mb-3 font-serif text-[1.95em] leading-[1.1] tracking-[-0.025em] text-foreground",
+              className,
+            )}
+          />
+        ),
+        h2: ({ className, ...props }: any) => (
+          <h2
+            {...props}
+            className={mergeClassNames(
+              "mt-5 mb-2 font-serif text-[1.45em] leading-[1.2] tracking-[-0.02em] text-foreground",
+              className,
+            )}
+          />
+        ),
+        p: ({ className, ...props }: any) => (
+          <p {...props} className={mergeClassNames("text-[15px] leading-7 text-foreground/90", className)} />
+        ),
         table: ({ className, node: _node, ...props }: any) => (
           <ScrollArea
             data-testid="md-table-scroll"
@@ -33,7 +58,8 @@ export const MarkdownText = (_props: any) => {
         ),
       }}
       className={[
-        "[&_:is(p,ul,ol,pre,blockquote,table)]:my-2",
+        "[&_:is(ul,ol,pre,blockquote,table)]:my-2",
+        "[&_:is(h1,h2,h3,h4,h5,h6,p)]:mx-0",
         "[&_pre]:overflow-auto [&_pre]:rounded-lg [&_pre]:border [&_pre]:border-border [&_pre]:bg-accent [&_pre]:p-2",
         "[&_code:not(pre_code)]:rounded-md [&_code:not(pre_code)]:bg-accent/70 [&_code:not(pre_code)]:px-1 [&_code:not(pre_code)]:py-0.5",
         "[&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground",

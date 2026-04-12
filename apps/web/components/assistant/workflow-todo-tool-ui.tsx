@@ -201,14 +201,14 @@ export function WorkflowTodoCard({
   const sections = evidenceSections ?? [];
 
   return (
-    <div className="mt-3 rounded-lg border border-border/60 bg-background/10 px-3 py-2">
+    <div className="mt-4 rounded-2xl border border-border/70 bg-card/80 px-4 py-4 shadow-sm">
       <div className="flex items-center justify-between gap-3">
         <div className="min-w-0">
-          <div className="text-sm text-foreground">{title}</div>
-          <div className="mt-1 text-xs text-muted-foreground">{summaryParts.join(" · ")}</div>
+          <div className="text-base font-medium text-foreground">{title}</div>
+          <div className="mt-1 text-sm text-muted-foreground">{summaryParts.join(" · ")}</div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <div className={["rounded-full px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]", badgeClassName].join(" ")}>
+          <div className={["rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]", badgeClassName].join(" ")}>
             {badge}
           </div>
           <button
@@ -233,19 +233,18 @@ export function WorkflowTodoCard({
         </div>
       </div>
 
-      <div
+      <section
         id={panelId}
-        role="region"
         aria-labelledby={toggleId}
         hidden={!detailsOpen}
         className="mt-3"
       >
         {detailsOpen ? (
-          <div className="rounded-xl border border-border bg-background/15 px-3 py-3">
+          <div className="rounded-2xl border border-border/60 bg-background/25 px-4 py-4">
             <WorkflowRunDetailsBody todos={todos} sections={sections} variant="inline" />
           </div>
         ) : null}
-      </div>
+      </section>
     </div>
   );
 }
@@ -365,7 +364,7 @@ export function WorkflowRunDetailsBody({
     <div className="space-y-3">
       <WorkflowTodoStatsGrid todos={todos} />
       {todos.map((todo, index) => (
-        <WorkflowTodoRow key={`${todo.content}-${index}`} todo={todo} index={index} />
+        <WorkflowTodoRow key={`${todo.content}-${todo.status}`} todo={todo} index={index} />
       ))}
       <DetailSections sections={sections} variant="sheet" />
     </div>

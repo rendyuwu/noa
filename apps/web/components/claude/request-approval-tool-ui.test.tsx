@@ -23,7 +23,7 @@ describe("ClaudeToolFallback", () => {
   it("prefers evidence sections for preview and details", () => {
     mockThreadMessages = [];
 
-    render(
+    const { container } = render(
       <RequestApprovalToolUI
         args={{
           actionRequestId: "approval-2",
@@ -43,6 +43,10 @@ describe("ClaudeToolFallback", () => {
         }}
       />,
     );
+
+    const card = container.firstElementChild as HTMLElement;
+    expect(card).toHaveClass("rounded-2xl");
+    expect(card).toHaveClass("bg-card/80");
 
     expect(screen.getByText("Account: alice · Reason: Billing")).toBeInTheDocument();
 

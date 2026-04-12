@@ -352,14 +352,14 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
   };
 
   return (
-      <div className="mt-3 rounded-2xl border border-border/60 bg-background/10 px-3 py-3">
+    <div className="mt-4 rounded-2xl border border-border/70 bg-card/80 px-4 py-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <div className="truncate text-sm font-semibold text-foreground">{replyTemplate.title}</div>
+          <div className="truncate text-base font-semibold text-foreground">{replyTemplate.title}</div>
         </div>
         <div
           className={[
-            "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
+            "inline-flex shrink-0 items-center rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.08em]",
             badge.className,
           ].join(" ")}
         >
@@ -367,7 +367,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         </div>
       </div>
 
-      <div className="mt-1 text-xs text-muted-foreground" style={clampStyle(2)}>
+      <div className="mt-1 text-sm text-muted-foreground" style={clampStyle(2)}>
         {replyTemplate.summary}
       </div>
 
@@ -375,7 +375,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         {renderPreviewBlock("Change", changeItems)}
         {renderPreviewBlock("Verification", verifyItems)}
         {moreCount > 0 ? (
-           <div className="px-1 text-[11px] text-muted-foreground">+{moreCount} more</div>
+          <div className="px-1 text-[11px] text-muted-foreground">+{moreCount} more</div>
         ) : null}
       </div>
 
@@ -386,7 +386,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
           aria-expanded={detailsOpen}
           aria-controls={panelId}
           onClick={() => setDetailsOpen((value) => !value)}
-           className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            className="inline-flex h-9 items-center justify-center gap-1 rounded-xl border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
         >
           {detailsOpen ? "Hide details" : "Details"}
           <ChevronRightIcon
@@ -409,7 +409,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
                 ? undefined
                 : "Copy image requires HTTPS (or localhost) and browser support for ClipboardItem."
             }
-            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {copyImageState === "copied"
               ? "Copied"
@@ -421,7 +421,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
             type="button"
             onClick={downloadPng}
             disabled={imageBusy}
-            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {downloadState === "done"
               ? "Downloaded"
@@ -439,7 +439,7 @@ function ReceiptCard({ payload }: { payload: Record<string, unknown> }) {
         className="mt-3"
       >
         {detailsOpen ? (
-          <div className="rounded-xl border border-border bg-background/15 px-3 py-3">
+          <div className="rounded-2xl border border-border/60 bg-background/25 px-4 py-4">
             <DetailSections sections={sectionsForInline} variant="inline" showEmptyState />
           </div>
         ) : null}

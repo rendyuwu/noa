@@ -127,11 +127,14 @@ function Actions({ args }: { args: Record<string, unknown> }) {
 
   if (lifecycleStatus === "requested") {
     return (
-      <div className="mt-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-3">
+      <section
+        aria-label={activity}
+        className="mt-4 rounded-2xl border border-border/70 bg-card/80 px-4 py-4 shadow-sm"
+      >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="text-sm font-medium text-foreground">{activity}</div>
-            <div className="mt-1 text-xs text-muted-foreground">
+            <div className="text-base font-medium text-foreground">{activity}</div>
+            <div className="mt-1 text-sm text-muted-foreground">
               {summaryText ?? copy.detail}
             </div>
           </div>
@@ -154,7 +157,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
               setPendingDecision("approving");
               sendCommand({ type: "approve-action", actionRequestId });
             }}
-            className="inline-flex h-8 items-center justify-center rounded-lg bg-primary px-3 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-9 items-center justify-center rounded-xl bg-primary px-3.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pendingDecision === "approving" ? "Approving..." : "Approve"}
           </button>
@@ -165,7 +168,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
               setPendingDecision("denying");
               sendCommand({ type: "deny-action", actionRequestId });
             }}
-            className="inline-flex h-8 items-center justify-center rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-foreground transition-all hover:bg-accent active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex h-9 items-center justify-center rounded-xl border border-border bg-transparent px-3.5 text-xs font-medium text-foreground transition-all hover:bg-accent active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pendingDecision === "denying" ? "Denying..." : "Deny"}
           </button>
@@ -175,7 +178,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
             aria-expanded={detailsOpen}
             aria-controls={panelId}
             onClick={() => setDetailsOpen((value) => !value)}
-            className="inline-flex h-8 items-center justify-center gap-1 rounded-lg border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            className="inline-flex h-9 items-center justify-center gap-1 rounded-xl border border-border bg-transparent px-3 text-xs font-medium text-muted-foreground transition hover:bg-accent hover:text-foreground"
           >
             {detailsOpen ? "Hide details" : "Details"}
             <ChevronRightIcon
@@ -190,20 +193,19 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           </button>
         </div>
 
-        <div
+        <section
           id={panelId}
-          role="region"
           aria-labelledby={toggleId}
           hidden={!detailsOpen}
           className="mt-3"
         >
           {detailsOpen ? (
-            <div className="rounded-xl border border-border bg-background/15 px-3 py-3">
+            <div className="rounded-2xl border border-border/60 bg-background/25 px-4 py-4">
               <DetailSections sections={sectionsForInline} variant="inline" showEmptyState />
             </div>
           ) : null}
-        </div>
-      </div>
+        </section>
+      </section>
     );
   }
 

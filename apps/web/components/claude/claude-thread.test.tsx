@@ -218,8 +218,15 @@ describe("ClaudeThread", () => {
   it("renders the empty-thread landing with a personalized greeting and current prompt chips", () => {
     render(<ClaudeThread />);
 
-    expect(screen.getByText(/Morning, Casey/)).toBeInTheDocument();
-    expect(screen.getByTestId("landing-composer")).toBeInTheDocument();
+    const greeting = screen.getByText(/Morning, Casey/);
+    expect(greeting).toBeInTheDocument();
+    expect(greeting).toHaveClass("font-serif");
+    expect(greeting).toHaveClass("tracking-[-0.03em]");
+
+    const landingComposer = screen.getByTestId("landing-composer");
+    expect(landingComposer).toHaveClass("rounded-[1.75rem]");
+    expect(landingComposer).toHaveClass("bg-card/95");
+    expect(landingComposer).toBeInTheDocument();
     expect(screen.queryByTestId("bottom-composer")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Server status" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Help" })).toBeInTheDocument();

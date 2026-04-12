@@ -148,13 +148,13 @@ function EmptyLanding() {
   return (
     <div className="flex min-h-full w-full flex-1 flex-col items-center justify-center px-3 py-10">
       <div className="noa-landing-anim-1 text-foreground">
-        <h1 className="text-center text-4xl font-medium tracking-[-0.02em] sm:text-5xl">
+        <h1 className="font-serif text-center text-4xl font-medium tracking-[-0.03em] sm:text-5xl">
           {timeGreeting}, {name}
         </h1>
       </div>
 
       <div className="noa-landing-anim-2 mt-8 w-full max-w-2xl">
-        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-[1.35rem] border border-border/80 bg-card/95 p-1 shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)] backdrop-blur-sm">
+        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-[1.75rem] border border-border/70 bg-card/95 p-1 shadow-[0_18px_60px_-38px_rgba(15,23,42,0.45)] ring-1 ring-border/25 backdrop-blur-md">
           <div className="m-4 flex flex-col gap-3.5">
             <ScrollArea
               className="w-full"
@@ -277,7 +277,10 @@ export const ClaudeThread: FC<{
       </ThreadPrimitive.Viewport>
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
-        <div className="mx-auto w-full max-w-3xl shrink-0" data-testid="composer-dock-stack">
+        <div
+          className="mx-auto w-full max-w-3xl shrink-0 rounded-[2rem] border border-border/60 bg-card/65 px-2 py-2 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.4)] backdrop-blur-md"
+          data-testid="composer-dock-stack"
+        >
           {threadIsRunning ? (
             <div className="mb-3 flex items-center justify-start">
               <ClaudeRunIndicator />
@@ -285,7 +288,7 @@ export const ClaudeThread: FC<{
           ) : null}
 
 
-          <ComposerPrimitive.Root className="flex w-full flex-col rounded-2xl border border-border/80 bg-card/95 p-1 shadow-sm transition-shadow duration-200 hover:shadow-md focus-within:shadow-md">
+          <ComposerPrimitive.Root className="flex w-full flex-col rounded-[1.75rem] border border-border/70 bg-card/95 p-1 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.42)] transition-shadow duration-200 hover:shadow-[0_22px_70px_-44px_rgba(15,23,42,0.5)] focus-within:shadow-[0_22px_70px_-44px_rgba(15,23,42,0.5)]">
             <div className="m-3.5 flex flex-col gap-3.5">
               <div className="relative">
                 <ScrollArea className="w-full" viewportClassName="wrap-break-word max-h-96">
