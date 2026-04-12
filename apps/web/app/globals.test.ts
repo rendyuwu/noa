@@ -88,6 +88,8 @@ describe("globals.css", () => {
     expect(css).toMatch(/\.input\s*\{[\s\S]*bg-card\/80/);
     expect(css).toMatch(/\.input\s*\{[\s\S]*text-base/);
     expect(css).toMatch(/\.input\s*\{[\s\S]*md:text-sm/);
+    expect(css).toMatch(/\.input\s*\{[\s\S]*aria-invalid:border-destructive/);
+    expect(css).toMatch(/\.input\s*\{[\s\S]*aria-invalid:ring-destructive\/20/);
     expect(css).toMatch(/\.editorial-kicker\s*\{/);
     expect(css).toMatch(/\.editorial-title\s*\{/);
     expect(css).toMatch(/\.editorial-subpanel\s*\{/);

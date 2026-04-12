@@ -52,6 +52,8 @@ describe("editorial shared controls", () => {
     expect(container.firstElementChild).toHaveClass("input");
     expect(container.firstElementChild).toHaveClass("text-base");
     expect(container.firstElementChild).toHaveClass("md:text-sm");
+    expect(container.firstElementChild).toHaveClass("aria-invalid:border-destructive");
+    expect(container.firstElementChild).toHaveClass("aria-invalid:ring-destructive/20");
   });
 
   it("keeps badges rounded and editorial", () => {
