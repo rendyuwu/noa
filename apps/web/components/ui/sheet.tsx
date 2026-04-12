@@ -62,9 +62,9 @@ function SheetContent({
         className={cn(
           "fixed z-50 flex flex-col gap-4 overflow-hidden rounded-[28px] border border-border/70 bg-card/95 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.3)] transition ease-in-out backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
           side === "right" &&
-            "inset-y-3 right-3 h-[calc(100svh-1.5rem)] w-[min(90vw,24rem)] border-l data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
+            "inset-y-0 right-0 h-full w-3/4 border-l sm:max-w-sm data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
           side === "left" &&
-            "inset-y-3 left-3 h-[calc(100svh-1.5rem)] w-[min(90vw,24rem)] border-r data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
+            "inset-y-0 left-0 h-full w-3/4 border-r sm:max-w-sm data-[state=closed]:slide-out-to-left data-[state=open]:slide-in-from-left",
           side === "top" &&
             "inset-x-3 top-3 h-auto border-b rounded-[28px] rounded-b-[24px] data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top",
           side === "bottom" &&

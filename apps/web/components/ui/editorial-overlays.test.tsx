@@ -1,7 +1,7 @@
 import * as React from "react";
 
 import { render } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   Dialog,
@@ -61,6 +61,11 @@ vi.mock("@radix-ui/react-scroll-area", async () => {
 });
 
 describe("editorial overlays", () => {
+  beforeEach(() => {
+    uiScrollAreaCalls.length = 0;
+    libScrollAreaCalls.length = 0;
+  });
+
   it("uses the warm dialog surface", () => {
     render(
       <Dialog open>
@@ -95,6 +100,25 @@ describe("editorial overlays", () => {
     expect(sheetContent).toHaveClass("bg-card/95");
     expect(sheetContent).toHaveClass("rounded-[28px]");
     expect(sheetContent).toHaveClass("shadow-[0_24px_60px_-32px_rgba(15,23,42,0.3)]");
+    expect(sheetContent).toHaveClass("inset-y-0");
+    expect(sheetContent).toHaveClass("right-0");
+    expect(sheetContent).toHaveClass("w-3/4");
+
+    render(
+      <Sheet open>
+        <SheetContent side="left">
+          <SheetTitle>Editorial sheet left</SheetTitle>
+          <SheetDescription>Sheet body</SheetDescription>
+        </SheetContent>
+      </Sheet>,
+    );
+
+    const leftSheetContent = document.querySelectorAll('[data-slot="sheet-content"]')[1];
+
+    expect(leftSheetContent).not.toBeNull();
+    expect(leftSheetContent).toHaveClass("inset-y-0");
+    expect(leftSheetContent).toHaveClass("left-0");
+    expect(leftSheetContent).toHaveClass("w-3/4");
   });
 
   it("uses the rounded dropdown menu surface", () => {
