@@ -49,4 +49,15 @@ describe("AdminNavSidebar", () => {
     expect(screen.getByRole("link", { name: "Users" })).toHaveAttribute("aria-current", "page");
     expect(container.querySelector('span.font-serif')).toHaveTextContent("NOA");
   });
+
+  it("omits sidebar chrome in the mobile drawer path", () => {
+    const { container } = render(<AdminNavSidebar onClose={() => {}} />);
+
+    expect(screen.getByRole("navigation")).not.toHaveClass(
+      "border-r",
+      "bg-sidebar/95",
+      "shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]",
+    );
+    expect(container.querySelector('button[aria-label="Close sidebar"]')).toBeInTheDocument();
+  });
 });

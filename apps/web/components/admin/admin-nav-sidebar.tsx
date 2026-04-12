@@ -92,6 +92,7 @@ export function AdminNavSidebar({
   const name = user ? formatClaudeGreetingName(user) : "NOA User";
   const initial = name.trim().slice(0, 1).toUpperCase() || "U";
   const secondary = user?.email?.trim() || "Signed in";
+  const inDrawer = Boolean(onClose && !onCollapse && !onExpand);
 
   if (variant === "collapsed") {
     return (
@@ -157,7 +158,12 @@ export function AdminNavSidebar({
   const closeActionLabel = onCollapse ? "Collapse sidebar" : "Close sidebar";
 
   return (
-    <nav className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar/95 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
+    <nav
+      className={[
+        "flex h-full flex-col",
+        inDrawer ? "" : "border-r border-sidebar-border/80 bg-sidebar/95 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]",
+      ].join(" ")}
+    >
       <div className="pt-3 font-sans">
         <div className="flex items-center justify-between px-4">
           <span className="font-serif text-lg font-semibold tracking-[-0.02em] text-foreground">NOA</span>
