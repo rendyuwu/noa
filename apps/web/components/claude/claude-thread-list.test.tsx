@@ -468,6 +468,19 @@ describe("ClaudeThreadList", () => {
     expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
   });
 
+  it("keeps collapsed rail controls compact enough for the 3rem shell", () => {
+    const { container } = render(<ClaudeThreadList variant="collapsed" onExpandSidebar={() => {}} />);
+
+    const rail = container.firstElementChild?.firstElementChild;
+    expect(rail).not.toBeNull();
+    expect(rail!).toHaveClass("px-1.5");
+
+    expect(screen.getByRole("button", { name: "Expand sidebar" })).toHaveClass("h-8", "w-8");
+    expect(screen.getByRole("button", { name: "New chat" })).toHaveClass("h-8", "w-8");
+    expect(screen.getByTitle("Coming soon")).toHaveClass("h-8", "w-8");
+    expect(screen.getByRole("button", { name: "Account menu" })).toHaveClass("h-8", "w-8");
+  });
+
   it("keeps the admin entry hidden for non-admin users", () => {
     mocks.user.roles = ["member"];
 

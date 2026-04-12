@@ -280,7 +280,7 @@ export function ClaudeThreadList({
 
   if (variant === "collapsed") {
     const railButtonClassName =
-      "flex h-10 w-10 items-center justify-center rounded-[14px] border border-transparent bg-card/60 text-muted-foreground shadow-sm transition hover:border-border/70 hover:bg-card hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+      "flex h-8 w-8 items-center justify-center rounded-[12px] border border-transparent bg-card/60 text-muted-foreground shadow-sm transition hover:border-border/70 hover:bg-card hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
     const RailItem: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
       return (
@@ -322,7 +322,7 @@ export function ClaudeThreadList({
 
     return (
       <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar py-4 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
-        <div className="flex flex-1 flex-col items-center gap-1 px-2">
+        <div className="flex flex-1 flex-col items-center gap-1 px-1.5">
           {onExpandSidebar ? (
             <RailItem label="Expand sidebar">
               <button
