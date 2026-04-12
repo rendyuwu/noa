@@ -32,15 +32,14 @@ const loadRootLayout = async () => {
 describe("RootLayout", () => {
   it("applies the editorial font and theme shell", async () => {
     const RootLayout = await loadRootLayout();
+    const layout = RootLayout({
+      children: <main>Content</main>,
+    });
+    const body = layout.props.children;
 
-    render(
-      <RootLayout>
-        <main>Content</main>
-      </RootLayout>,
-      { container: document.documentElement },
-    );
+    render(<>{body.props.children}</>);
 
-    expect(document.body.className).toContain("--font-newsreader");
+    expect(body.props.className).toContain("--font-newsreader");
     expect(newsreaderMock).toHaveBeenCalledWith(
       expect.objectContaining({
         subsets: ["latin"],
