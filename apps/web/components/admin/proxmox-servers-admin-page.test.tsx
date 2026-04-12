@@ -90,6 +90,8 @@ describe("ProxmoxServersAdminPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Add server" }));
 
+    expect(screen.getByLabelText("Name").closest(".editorial-subpanel")).not.toBeNull();
+
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "pve1" } });
     fireEvent.change(screen.getByLabelText("Base URL"), {
       target: { value: "https://pve1.example.com:8006" },

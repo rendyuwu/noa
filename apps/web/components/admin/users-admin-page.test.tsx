@@ -90,6 +90,7 @@ describe("UsersAdminPage", () => {
     expect(screen.getByRole("heading", { name: "Users" })).toBeInTheDocument();
     const table = await screen.findByRole("table");
     expect(table).toBeInTheDocument();
+    expect(table.closest(".panel")).not.toBeNull();
 
     await waitFor(() => {
       const calledPaths = mocks.fetchWithAuth.mock.calls.map((call) => call[0]);
@@ -264,6 +265,8 @@ describe("UsersAdminPage", () => {
 
     const table = await screen.findByRole("table");
     fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
+
+    expect(screen.getByLabelText("Role assignment").closest(".editorial-subpanel")).not.toBeNull();
 
     fireEvent.click(await screen.findByLabelText("admin"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

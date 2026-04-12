@@ -310,7 +310,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-xl border border-border bg-card/50 px-4 py-4">
+      <div className="editorial-subpanel">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">WHM API</div>
         <div className="mt-3 grid gap-4">
           <div>
@@ -393,7 +393,7 @@ function WhmServerFormFields({ form, setForm, disabled, mode, existingServer }: 
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card/50 px-4 py-4">
+      <div className="editorial-subpanel">
         <div className="flex items-start justify-between gap-4">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH access</div>
@@ -584,8 +584,9 @@ export function WhmServersAdminPage() {
       if (seq !== loadSeqRef.current) return;
       setLoadError(toUserMessage(error, "Unable to load WHM servers"));
     } finally {
-      if (seq !== loadSeqRef.current) return;
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 
@@ -829,21 +830,21 @@ export function WhmServersAdminPage() {
         <div className="panel overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-left">
-              <thead className="bg-muted/50">
+              <thead className="bg-accent/40 text-accent-foreground">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Server
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Validation
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     SSL
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     SSH
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Updated
                   </th>
                 </tr>
@@ -907,7 +908,7 @@ export function WhmServersAdminPage() {
           </Button>
         }
       >
-        <div className="panel px-4 py-4">
+        <div className="editorial-subpanel">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Server details</div>
           <dl className="mt-3 grid gap-3 text-sm">
             <div>
@@ -936,7 +937,7 @@ export function WhmServersAdminPage() {
         </div>
 
         {/* SSH access card */}
-        <div className="panel mt-4 px-4 py-4">
+        <div className="editorial-subpanel mt-4">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">SSH access</div>
@@ -977,7 +978,7 @@ export function WhmServersAdminPage() {
         </div>
 
         {/* Validation card */}
-        <div className="panel mt-4 px-4 py-4">
+        <div className="editorial-subpanel mt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Latest validation</div>
@@ -1060,7 +1061,7 @@ export function WhmServersAdminPage() {
       {/* Create server dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogHeader className="border-b border-border/70 bg-card/70 px-6 pb-4 pt-6 shrink-0">
             <DialogTitle>Add WHM server</DialogTitle>
             <DialogDescription>
               WHM API token and SSH credentials are stored securely and never displayed again. CSF and firewall tools use the SSH path.
@@ -1095,7 +1096,7 @@ export function WhmServersAdminPage() {
       {/* Edit server dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogHeader className="border-b border-border/70 bg-card/70 px-6 pb-4 pt-6 shrink-0">
             <DialogTitle>Edit WHM server</DialogTitle>
             <DialogDescription>
               Stored secrets can be replaced, but they are never shown again.

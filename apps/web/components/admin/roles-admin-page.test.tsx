@@ -92,6 +92,8 @@ describe("RolesAdminPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Manage admin" }));
 
+    expect((await screen.findByRole("checkbox", { name: "set_demo_flag" })).closest(".editorial-subpanel")).not.toBeNull();
+
     fireEvent.click(await screen.findByLabelText("set_demo_flag"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 

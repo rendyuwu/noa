@@ -495,12 +495,12 @@ export function RolesAdminPage() {
         <div className="panel overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-left">
-              <thead className="bg-muted/50">
+              <thead className="bg-accent/40 text-accent-foreground">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Role
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Tools
                   </th>
                 </tr>
@@ -549,7 +549,7 @@ export function RolesAdminPage() {
             <DialogTitle>Add role</DialogTitle>
             <DialogDescription>Create a new role name to assign tools and grant access.</DialogDescription>
           </DialogHeader>
-          <div className="font-sans">
+          <div className="editorial-subpanel font-sans">
             <label className="block text-sm font-medium text-foreground" htmlFor="role-name">Role name</label>
             <input id="role-name" className="input mt-2 w-full" placeholder="e.g. support" value={createName} disabled={creating} onChange={(e) => setCreateName(e.target.value)} />
             {createError ? (
@@ -664,7 +664,7 @@ export function RolesAdminPage() {
         />
 
         {/* Tool checkbox list */}
-        <div className="mt-3 overflow-hidden rounded-xl border border-border bg-card">
+        <div className="editorial-subpanel mt-3 p-4">
           <div className="max-h-[50vh] overflow-y-auto p-2">
             {roleToolsLoading ? (
               <div className="px-2 py-3 text-sm text-muted-foreground">Loading role tools...</div>
@@ -692,9 +692,9 @@ export function RolesAdminPage() {
         </div>
 
         {/* Danger zone */}
-        <div className="mt-8 mb-6 rounded-xl border border-destructive/20 bg-destructive/5 p-4">
-          <div className="text-xs font-semibold uppercase tracking-wide text-destructive">Danger zone</div>
-          <p className="mt-1 text-sm text-muted-foreground">Delete this role and remove its tool assignments.</p>
+        <div className="danger-zone mt-8">
+          <div className="danger-zone-label">Danger zone</div>
+          <p className="danger-zone-copy">Delete this role and remove its tool assignments.</p>
         </div>
       </AdminDetailModal>
     </>

@@ -161,7 +161,7 @@ function ProxmoxServerFormFields({ form, setForm, disabled, mode }: FormFieldsPr
 
   return (
     <div className="grid gap-4">
-      <div className="rounded-xl border border-border bg-card/50 px-4 py-4">
+      <div className="editorial-subpanel">
         <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Proxmox API</div>
         <div className="mt-3 grid gap-4">
           <div>
@@ -552,21 +552,21 @@ export function ProxmoxServersAdminPage() {
         <div className="panel overflow-hidden">
           <div className="overflow-x-auto">
             <table className="min-w-full border-collapse text-left">
-              <thead className="bg-muted/50">
+              <thead className="bg-accent/40 text-accent-foreground">
                 <tr>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Server
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Validation
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     SSL
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Token secret
                   </th>
-                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th scope="col" className="px-4 py-3 text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">
                     Updated
                   </th>
                 </tr>
@@ -636,7 +636,7 @@ export function ProxmoxServersAdminPage() {
           </Button>
         }
       >
-        <div className="panel px-4 py-4">
+        <div className="editorial-subpanel">
           <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Server details
           </div>
@@ -677,7 +677,7 @@ export function ProxmoxServersAdminPage() {
         </div>
 
         {/* Validation card */}
-        <div className="panel mt-4 px-4 py-4">
+        <div className="editorial-subpanel mt-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -768,7 +768,7 @@ export function ProxmoxServersAdminPage() {
       {/* Create server dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogHeader className="border-b border-border/70 bg-card/70 px-6 pb-4 pt-6 shrink-0">
             <DialogTitle>Add Proxmox server</DialogTitle>
             <DialogDescription>
               Proxmox API token secret is stored securely and never displayed again.
@@ -808,7 +808,7 @@ export function ProxmoxServersAdminPage() {
       {/* Edit server dialog */}
       <Dialog open={editOpen} onOpenChange={setEditOpen}>
         <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b border-border shrink-0">
+          <DialogHeader className="border-b border-border/70 bg-card/70 px-6 pb-4 pt-6 shrink-0">
             <DialogTitle>Edit Proxmox server</DialogTitle>
             <DialogDescription>
               Stored secrets can be replaced, but they are never shown again.

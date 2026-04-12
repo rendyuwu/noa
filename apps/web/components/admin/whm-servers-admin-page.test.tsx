@@ -60,6 +60,8 @@ describe("WhmServersAdminPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Add server" }));
 
+    expect(screen.getByLabelText("Name").closest(".editorial-subpanel")).not.toBeNull();
+
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "web1" } });
     fireEvent.change(screen.getByLabelText("Base URL"), {
       target: { value: "https://whm.example.com:2087" },
