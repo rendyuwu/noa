@@ -98,11 +98,12 @@ describe("editorial overlays", () => {
 
     expect(sheetContent).not.toBeNull();
     expect(sheetContent).toHaveClass("bg-card/95");
-    expect(sheetContent).toHaveClass("rounded-[28px]");
     expect(sheetContent).toHaveClass("shadow-[0_24px_60px_-32px_rgba(15,23,42,0.3)]");
     expect(sheetContent).toHaveClass("inset-y-0");
     expect(sheetContent).toHaveClass("right-0");
     expect(sheetContent).toHaveClass("w-3/4");
+    expect(sheetContent).toHaveClass("rounded-l-[28px]");
+    expect(sheetContent).not.toHaveClass("rounded-[28px]");
 
     render(
       <Sheet open>
@@ -151,6 +152,8 @@ describe("editorial overlays", () => {
     expect(leftSheetContent).toHaveClass("inset-y-0");
     expect(leftSheetContent).toHaveClass("left-0");
     expect(leftSheetContent).toHaveClass("w-3/4");
+    expect(leftSheetContent).toHaveClass("rounded-r-[28px]");
+    expect(leftSheetContent).not.toHaveClass("rounded-[28px]");
   });
 
   it("uses the rounded dropdown menu surface", () => {
