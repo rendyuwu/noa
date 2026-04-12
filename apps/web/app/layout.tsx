@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Newsreader } from "next/font/google";
 import "./globals.css";
 
 import { ErrorReportingProvider } from "@/components/lib/observability/error-reporting-provider";
@@ -14,6 +14,12 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const newsreader = Newsreader({
+  variable: "--font-newsreader",
+  subsets: ["latin"],
+  weight: ["400", "500"],
 });
 
 export const metadata: Metadata = {
@@ -31,12 +37,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         className={[
           geistSans.variable,
           geistMono.variable,
+          newsreader.variable,
           "min-h-dvh bg-background text-foreground font-sans antialiased",
         ].join(" ")}
       >
         <ThemeProvider
           attribute="class"
-          defaultTheme="dark"
+          defaultTheme="light"
           enableSystem
           disableTransitionOnChange
         >

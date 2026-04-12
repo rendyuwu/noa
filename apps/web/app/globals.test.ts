@@ -70,4 +70,13 @@ describe("globals.css", () => {
     expect(css).toMatch(/\.dark body\s*\{[\s\S]*line-height:\s*1\.625;[\s\S]*letter-spacing:\s*0\.01em;[\s\S]*\}/);
     expect(css).toMatch(/\.dark code,\s*\.dark pre,\s*\.dark \.font-mono\s*\{[\s\S]*letter-spacing:\s*0;[\s\S]*\}/);
   });
+
+  it("defines the editorial font and warm UI utilities", () => {
+    const css = readFileSync(path.join(dirname, "globals.css"), "utf8");
+
+    expect(css).toMatch(/--font-serif:\s*var\(--font-newsreader\)/);
+    expect(css).toMatch(/:root\s*\{[\s\S]*--background:\s*oklch\([^)]+\)[\s\S]*--card:\s*oklch\([^)]+\)[\s\S]*--primary:\s*oklch\([^)]+\)/);
+    expect(css).toMatch(/\.input\s*\{/);
+    expect(css).toMatch(/\.editorial-title\s*\{/);
+  });
 });
