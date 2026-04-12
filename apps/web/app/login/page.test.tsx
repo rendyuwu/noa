@@ -100,6 +100,14 @@ describe("LoginPage", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
+  it("renders the editorial shell with a serif heading", () => {
+    const { container } = render(<LoginPage />);
+
+    expect(container.querySelector("form")).toHaveClass("rounded-[32px]");
+    expect(container.querySelector("form")).toHaveClass("bg-card/80");
+    expect(screen.getByRole("heading", { name: "Login" })).toHaveClass("font-serif");
+  });
+
   it("shows inline email format validation error and does not submit", async () => {
     render(<LoginPage />);
 

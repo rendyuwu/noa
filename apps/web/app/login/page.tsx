@@ -110,25 +110,29 @@ export default function LoginPage() {
         onSubmit={onSubmit}
         noValidate
         aria-busy={submitting}
-        className="w-full max-w-[420px] overflow-hidden rounded-2xl border border-border bg-card/70 shadow-lg backdrop-blur-sm"
+        className="w-full max-w-[460px] overflow-hidden rounded-[32px] border border-border/80 bg-card/80 shadow-xl shadow-amber-950/5 backdrop-blur"
       >
-        <div className="p-6 sm:p-7">
-          <div className="mb-5 flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/12 text-primary ring-1 ring-primary/20">
+        <div className="p-8 sm:p-10">
+          <div className="mb-6 flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-primary/12 text-primary ring-1 ring-primary/20">
               <span className="text-sm font-semibold tracking-wide">NOA</span>
             </div>
             <div>
-              <p className="text-sm font-medium text-foreground">NOA</p>
-              <p className="text-xs text-muted-foreground">Assistant and admin console</p>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Editorial access
+              </p>
+              <p className="text-sm text-muted-foreground">Assistant and admin console</p>
             </div>
           </div>
 
-          <h1 className="text-3xl font-semibold leading-tight tracking-[-0.02em] text-foreground">
+          <h1 className="font-serif text-4xl font-semibold leading-tight tracking-[-0.03em] text-foreground">
             Login
           </h1>
-          <p className="mt-2 font-sans text-sm text-muted-foreground">Sign in with your LDAP credentials.</p>
+          <p className="mt-3 font-sans text-sm text-muted-foreground">
+            Sign in with your LDAP credentials.
+          </p>
 
-          <div className="mt-6 space-y-4 font-sans">
+          <div className="mt-8 space-y-4 font-sans">
             <div>
               <Label htmlFor="login-email">
                 Email
@@ -193,7 +197,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <div className="mt-6 border-t border-border pt-5">
+          <div className="mt-8 border-t border-border/70 pt-6">
             <Button className="w-full" disabled={submitting} type="submit">
               {submitting ? "Signing in..." : "Sign in"}
             </Button>

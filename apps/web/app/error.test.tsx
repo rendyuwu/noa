@@ -42,6 +42,18 @@ describe("app/error", () => {
     expect(reset).toHaveBeenCalledTimes(1);
   });
 
+  it("renders the editorial shell with a serif heading", async () => {
+    const GlobalError = await loadGlobalError();
+
+    const { container } = render(<GlobalError error={new Error("boom")} reset={vi.fn()} />);
+
+    expect(container.querySelector("section")).toHaveClass("rounded-[32px]");
+    expect(container.querySelector("section")).toHaveClass("bg-card/80");
+    expect(screen.getByRole("heading", { name: "Something went wrong" })).toHaveClass(
+      "font-serif",
+    );
+  });
+
   it("reports route-level render failures through the client error adapter", async () => {
     const GlobalError = await loadGlobalError();
     const error = Object.assign(new Error("boom"), { digest: "digest-123" });
