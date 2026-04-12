@@ -592,7 +592,7 @@ export function RolesAdminPage() {
         subtitle="Manage tool assignments"
         size="md"
         footer={
-          <div className="flex flex-col gap-3 border-t border-border pt-6 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <ConfirmAction
               title="Delete role?"
               description={selectedRoleName ? `This permanently deletes the ${selectedRoleName} role.` : "This permanently deletes this role."}

@@ -156,11 +156,13 @@ describe("AdminShell", () => {
   it("keeps the mobile sheet trigger available after open, close, and reopen", () => {
     mediaController.setDesktopMatch(false);
 
-    render(
+    const { container } = render(
       <AdminShell>
         <div>Admin content</div>
       </AdminShell>,
     );
+
+    expect(container.querySelector(".pt-14.md\\:pt-0")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
 

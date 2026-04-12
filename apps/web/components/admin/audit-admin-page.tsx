@@ -471,138 +471,140 @@ export function AuditAdminPage() {
         ) : null}
 
         <div className="editorial-subpanel overflow-hidden p-0">
-          <table className="w-full font-sans text-sm">
-            <thead className="bg-accent text-accent-foreground">
-              <tr>
-                <th className="w-[13rem] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
-                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Event</th>
-                <th className="w-[16rem] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Context</th>
-                <th className="w-[10rem] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
-              {items.length === 0 ? (
-                loading ? (
-                  <AdminTableLoadingRows columns={4} />
-                ) : loadError ? (
-                  <tr>
-                    <td className="px-4 py-6 text-sm text-muted-foreground" colSpan={4}>
-                      Unable to load audit history.
-                    </td>
-                  </tr>
-                ) : activeFilterCount ? (
-                  <tr>
-                    <td className="px-4 py-6 text-sm text-muted-foreground" colSpan={4}>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">No results match your filters.</div>
-                        <Button size="sm" variant="outline" onClick={clearFilters}>
-                          Clear filters
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
+          <div className="overflow-x-auto">
+            <table className="min-w-full font-sans text-sm">
+              <thead className="bg-accent text-accent-foreground">
+                <tr>
+                  <th className="w-[13rem] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Created</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Event</th>
+                  <th className="w-[16rem] px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Context</th>
+                  <th className="w-[10rem] px-4 py-3 text-right text-xs font-semibold uppercase tracking-wide">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border">
+                {items.length === 0 ? (
+                  loading ? (
+                    <AdminTableLoadingRows columns={4} />
+                  ) : loadError ? (
+                    <tr>
+                      <td className="px-4 py-6 text-sm text-muted-foreground" colSpan={4}>
+                        Unable to load audit history.
+                      </td>
+                    </tr>
+                  ) : activeFilterCount ? (
+                    <tr>
+                      <td className="px-4 py-6 text-sm text-muted-foreground" colSpan={4}>
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="min-w-0">No results match your filters.</div>
+                          <Button size="sm" variant="outline" onClick={clearFilters}>
+                            Clear filters
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <AdminTableEmptyState
+                      columns={4}
+                      title="No audit events"
+                      description="Approval receipts and audit activity will appear here."
+                    />
+                  )
                 ) : (
-                  <AdminTableEmptyState
-                    columns={4}
-                    title="No audit events"
-                    description="Approval receipts and audit activity will appear here."
-                  />
-                )
-              ) : (
-                items.map((item) => {
-                  const created = formatCreated(item.createdAt);
-                  const requestedBy = item.requestedByEmail?.trim() || "Unknown";
-                  const displayName = humanizeToolName(item.toolName);
-                  const risk = formatRisk(item.risk);
-                  const label = statusLabel(item);
-                  const idsOpen = openIdsForActionRequestId === item.actionRequestId;
+                  items.map((item) => {
+                    const created = formatCreated(item.createdAt);
+                    const requestedBy = item.requestedByEmail?.trim() || "Unknown";
+                    const displayName = humanizeToolName(item.toolName);
+                    const risk = formatRisk(item.risk);
+                    const label = statusLabel(item);
+                    const idsOpen = openIdsForActionRequestId === item.actionRequestId;
 
                   const actionChipClass =
                     "inline-flex items-center gap-1 rounded-full border border-border bg-background/20 px-2.5 py-1 text-xs font-medium text-primary transition hover:bg-accent hover:text-foreground";
                   const noReceiptClass =
                     "inline-flex items-center gap-1 rounded-full border border-border/60 border-dashed bg-transparent px-2.5 py-1 text-xs font-medium text-muted-foreground opacity-70";
 
-                  return (
-                    <Fragment key={item.actionRequestId}>
-                      <tr className="transition-colors hover:bg-accent/40">
-                        <td className="px-4 py-3 whitespace-nowrap text-muted-foreground" title={created.title}>
-                          <div className="text-sm text-foreground/90">{created.primary}</div>
-                          <div className="mt-0.5 font-sans text-xs text-muted-foreground">{created.secondary}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="min-w-0">
-                            <div className="truncate font-medium text-foreground" title={item.toolName}>
-                              {displayName}
-                            </div>
-                            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-sans text-xs text-muted-foreground">
-                              <span>
-                                by <span className="font-medium text-foreground/90">{requestedBy}</span>
-                              </span>
-                              <span className="text-border/70">•</span>
-                              <AdminStatusBadge tone="outline" className="font-medium" title={risk.title}>
-                                {risk.label}
-                              </AdminStatusBadge>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {item.hasReceipt ? (
-                              <Link
-                                href={`/admin/audit/receipts/${encodeURIComponent(item.actionRequestId)}`}
-                                className={actionChipClass}
-                              >
-                                <FileTextIcon width={14} height={14} />
-                                Receipt
-                              </Link>
-                            ) : (
-                              <span className={noReceiptClass} aria-disabled="true">
-                                <MinusCircledIcon width={14} height={14} />
-                                No receipt
-                              </span>
-                            )}
-                            <button
-                              type="button"
-                              aria-expanded={idsOpen}
-                              aria-controls={`audit-ids-${item.actionRequestId}`}
-                              onClick={() => toggleIds(item.actionRequestId)}
-                              className={actionChipClass}
-                            >
-                              <IdCardIcon width={14} height={14} />
-                              {idsOpen ? "Hide IDs" : "IDs"}
-                            </button>
-                          </div>
-                        </td>
-                        <td className="px-4 py-3 text-right align-top">
-                          <AdminStatusBadge tone={label.tone}>{label.label}</AdminStatusBadge>
-                        </td>
-                      </tr>
-                      {idsOpen ? (
-                        <tr className="bg-background/10">
-                          <td colSpan={4} className="px-4 py-3">
-                            <div
-                              id={`audit-ids-${item.actionRequestId}`}
-                              className="editorial-subpanel px-4 py-3"
-                            >
-                              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                                Identifiers
+                    return (
+                      <Fragment key={item.actionRequestId}>
+                        <tr className="transition-colors hover:bg-accent/40">
+                          <td className="px-4 py-3 whitespace-nowrap text-muted-foreground" title={created.title}>
+                            <div className="text-sm text-foreground/90">{created.primary}</div>
+                            <div className="mt-0.5 font-sans text-xs text-muted-foreground">{created.secondary}</div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="min-w-0">
+                              <div className="truncate font-medium text-foreground" title={item.toolName}>
+                                {displayName}
                               </div>
-                              <div className="mt-3 grid gap-3">
-                                <IdRow label="Thread" value={item.threadId} />
-                                <IdRow label="Action" value={item.actionRequestId} />
-                                <IdRow label="Tool run" value={item.toolRunId} />
-                                <IdRow label="Receipt" value={item.receiptId} />
+                              <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 font-sans text-xs text-muted-foreground">
+                                <span>
+                                  by <span className="font-medium text-foreground/90">{requestedBy}</span>
+                                </span>
+                                <span className="text-border/70">•</span>
+                                <AdminStatusBadge tone="outline" className="font-medium" title={risk.title}>
+                                  {risk.label}
+                                </AdminStatusBadge>
                               </div>
                             </div>
                           </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {item.hasReceipt ? (
+                                <Link
+                                  href={`/admin/audit/receipts/${encodeURIComponent(item.actionRequestId)}`}
+                                  className={actionChipClass}
+                                >
+                                  <FileTextIcon width={14} height={14} />
+                                  Receipt
+                                </Link>
+                              ) : (
+                                <span className={noReceiptClass} aria-disabled="true">
+                                  <MinusCircledIcon width={14} height={14} />
+                                  No receipt
+                                </span>
+                              )}
+                              <button
+                                type="button"
+                                aria-expanded={idsOpen}
+                                aria-controls={`audit-ids-${item.actionRequestId}`}
+                                onClick={() => toggleIds(item.actionRequestId)}
+                                className={actionChipClass}
+                              >
+                                <IdCardIcon width={14} height={14} />
+                                {idsOpen ? "Hide IDs" : "IDs"}
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-right align-top">
+                            <AdminStatusBadge tone={label.tone}>{label.label}</AdminStatusBadge>
+                          </td>
                         </tr>
-                      ) : null}
-                    </Fragment>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
+                        {idsOpen ? (
+                          <tr className="bg-background/10">
+                            <td colSpan={4} className="px-4 py-3">
+                              <div
+                                id={`audit-ids-${item.actionRequestId}`}
+                                className="editorial-subpanel px-4 py-3"
+                              >
+                                <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                                  Identifiers
+                                </div>
+                                <div className="mt-3 grid gap-3">
+                                  <IdRow label="Thread" value={item.threadId} />
+                                  <IdRow label="Action" value={item.actionRequestId} />
+                                  <IdRow label="Tool run" value={item.toolRunId} />
+                                  <IdRow label="Receipt" value={item.receiptId} />
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
 
           {!loading && !loadError && (items.length > 0 || cursorStack.length > 0 || Boolean(nextCursor)) ? (
             <div className="border-t border-border/70 bg-card/60 px-4 py-3 font-sans">

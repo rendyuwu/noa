@@ -83,7 +83,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         />
       </aside>
 
-      <div className="relative h-full min-h-0 min-w-0">
+      <div className="relative h-full min-h-0 min-w-0 pt-14 md:pt-0">
         <div className="absolute top-3 left-3 z-10 flex items-center gap-2 md:hidden">
           <button
             type="button"

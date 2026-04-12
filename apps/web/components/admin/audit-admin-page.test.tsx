@@ -65,6 +65,7 @@ describe("AuditAdminPage", () => {
     fireEvent.click(filtersButton);
     expect(await screen.findByRole("combobox", { name: "Status" })).toBeInTheDocument();
 
+    expect(table.parentElement).toHaveClass("overflow-x-auto");
     expect(table.closest(".editorial-subpanel")).not.toBeNull();
     expect(within(table).getByRole("columnheader", { name: "Created" })).toBeInTheDocument();
     expect(within(table).getByText("Create Account")).toBeInTheDocument();
