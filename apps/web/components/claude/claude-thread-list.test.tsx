@@ -336,7 +336,7 @@ describe("ClaudeThreadList", () => {
 
     const newChatButton = screen.getByRole("button", { name: "New chat" });
     expect(newChatButton).toBeInTheDocument();
-    expect(newChatButton).toHaveClass("px-4");
+    expect(newChatButton).toHaveClass("rounded-xl", "px-3", "py-2.5");
 
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
@@ -352,9 +352,9 @@ describe("ClaudeThreadList", () => {
 
     render(<ClaudeThreadList onCollapseSidebar={() => {}} />);
 
-    expect(screen.getByRole("button", { name: "New chat" })).not.toHaveClass("bg-card/75", "shadow-sm");
-    expect(screen.getByRole("button", { name: "Collapse sidebar" })).not.toHaveClass("rounded-full", "bg-card/70", "shadow-sm");
-    expect(screen.getByRole("button", { name: "Account menu" })).not.toHaveClass("bg-card/75", "shadow-sm");
+    expect(screen.getByRole("button", { name: "New chat" })).toHaveClass("rounded-xl", "px-3", "py-2.5");
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).toHaveClass("rounded-xl");
+    expect(screen.getByRole("button", { name: "Account menu" })).toHaveClass("rounded-xl", "px-3", "py-2.5");
 
     const titleButton = screen.getByRole("button", {
       name: "A very long recent thread title that should stay on one line and never show a tooltip",
@@ -365,6 +365,12 @@ describe("ClaudeThreadList", () => {
 
     expect(title).toHaveClass("truncate");
     expect(title).not.toHaveAttribute("title");
+
+    const row = titleButton.closest("[data-active]");
+
+    expect(row).not.toBeNull();
+    expect(row).toHaveClass("gap-1", "rounded-xl", "px-2.5", "py-2", "data-[active]:bg-foreground/[0.08]");
+    expect(row).not.toHaveClass("data-[active]:border-border/70", "data-[active]:shadow-sm");
   });
 
   it("renders the current lightweight chat nav under the new chat button", () => {
@@ -449,9 +455,9 @@ describe("ClaudeThreadList", () => {
     const row = trigger.closest("[data-active]");
 
     expect(row).not.toBeNull();
-    expect(row!).toHaveClass("data-[active]:bg-card");
-    expect(row!).toHaveClass("data-[active]:border-border/70");
-    expect(row!).toHaveClass("data-[active]:shadow-sm");
+    expect(row!).toHaveClass("data-[active]:bg-foreground/[0.08]");
+    expect(row!).toHaveClass("rounded-xl", "px-2.5", "py-2");
+    expect(row!).not.toHaveClass("data-[active]:border-border/70", "data-[active]:shadow-sm");
   });
 
   it("dedupes recents by remoteId", () => {
