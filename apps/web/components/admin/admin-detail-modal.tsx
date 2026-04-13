@@ -7,7 +7,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
@@ -51,9 +50,12 @@ export function AdminDetailModal({
           {subtitle && <DialogDescription>{subtitle}</DialogDescription>}
           {headerActions ? <div className="flex flex-wrap items-center gap-2 pt-2">{headerActions}</div> : null}
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1 overscroll-contain">
-          <div className="px-6 py-4">{children}</div>
-        </ScrollArea>
+        <div
+          data-testid="admin-detail-modal-body"
+          className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4"
+        >
+          {children}
+        </div>
         {footer && (
           <div className="shrink-0 border-t border-border/70 bg-background/90 px-6 py-4">
             {footer}

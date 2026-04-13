@@ -154,6 +154,7 @@ describe("WhmServersAdminPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "web1" }));
 
     expect(await screen.findByText("Server details")).toBeInTheDocument();
+    expect(screen.getByTestId("admin-detail-modal-body")).toHaveClass("overflow-y-auto");
 
     fireEvent.click(screen.getByRole("button", { name: "Delete server" }));
 
