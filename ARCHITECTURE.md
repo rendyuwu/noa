@@ -70,6 +70,7 @@ Core entities:
   - SSH execution is implemented as a shared backend capability, not a generic end-user "run arbitrary command" tool
   - Purpose-built tools resolve an approved server record from the DB, decrypt its credentials server-side, and call the shared SSH executor with a normalized connection config
   - This keeps secrets out of tool arguments and lets future integrations (WHM, Proxmox, other server inventories) reuse one SSH layer with server-type-specific credential providers
+  - Canonical per-integration operational references live in `docs/integrations/whm.md` and `docs/integrations/proxmox.md`
 
 - Safety policy:
   - READ tools can execute immediately if the user is permitted.
@@ -152,6 +153,7 @@ The backend writes audit events for:
   - runs a harmless SSH command to verify command execution
 - CSF/firewall tools use the SSH execution path rather than the WHM API token path
 - Normal SSH-backed tools require a pinned fingerprint to be present and fail closed if it is missing or does not match
+- See `docs/integrations/whm.md` for the exact current admin endpoints, upstream WHM calls, and SSH commands used by the implementation
 
 ## What’s Next (Short List)
 
@@ -159,3 +161,4 @@ The backend writes audit events for:
 - True LLM token streaming (server-side streaming completions)
 - Org/tenant model, shared threads, and finer-grained RBAC
 - Stronger UX around approval previews, diffs, and reversibility
+- See `docs/integrations/proxmox.md` for the current implemented Proxmox surface area and backlog research

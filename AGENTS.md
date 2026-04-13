@@ -90,6 +90,15 @@ Notes:
 - Browser code should never call FastAPI directly; use same-origin `/api/...`.
   - `apps/web/app/api/[...path]/route.ts` proxies to `NOA_API_URL` server-side.
 
+## Documentation map
+
+- `ARCHITECTURE.md`: implemented MVP architecture and system boundaries.
+- `DESIGN.md`: canonical web UI design-system reference.
+- `docs/assistant/workflow-templates.md`: canonical workflow template contract and UI documentation.
+- `docs/integrations/whm.md`: canonical WHM integration reference, including NOA admin endpoints, upstream WHM API calls, SSH commands, and supported features.
+- `docs/integrations/proxmox.md`: canonical Proxmox integration reference, including NOA admin endpoints, upstream Proxmox API calls, implemented features, and backlog research.
+- When adding or changing WHM or Proxmox features, update the corresponding file in `docs/integrations/` in the same change.
+
 ## Code style & conventions
 
 ### General

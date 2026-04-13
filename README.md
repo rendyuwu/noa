@@ -7,11 +7,16 @@ The model interprets and proposes actions; the platform enforces permissions, ap
 
 Docs:
 - `ARCHITECTURE.md`
+- `DESIGN.md`
 - `docs/STATUS.md`
+- `docs/integrations/whm.md`
+- `docs/integrations/proxmox.md`
 - `docs/assistant/workflow-templates.md`
 - `docs/observability/README.md`
-- `docs/plans/2026-03-09-project-noa-mvp-design.md`
-- `docs/reports/2026-03-09-task-11-verification.md`
+
+The integration docs are the canonical record of the admin endpoints, upstream API calls,
+and SSH commands currently used by the codebase. Update them whenever WHM or Proxmox
+features change.
 
 ## Repo Layout
 
@@ -101,7 +106,8 @@ Approval-oriented tool families use workflow templates on the API side to drive 
 
 ## Known Limitations
 
-- WHM is currently the only real server integration wired into the tool layer
+- WHM is currently the most complete server integration; Proxmox server inventory,
+  validation, and VM NIC enable/disable flows are also implemented
 - SSH trust is pinned per WHM server record; admins must run server validation after SSH credentials are added or rotated
 - LLM token streaming is not implemented; assistant text is chunked after completion
 - No multi-tenant orgs or shared threads (threads are owner-scoped)

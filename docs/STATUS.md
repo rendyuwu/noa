@@ -24,6 +24,9 @@ This is a living checklist of what is implemented in the MVP and what is intenti
   - CSF/firewall WHM tools now execute over SSH/bash instead of the WHM API token path
   - Shared SSH execution layer for future server-backed tools
   - READ-only WHM SSH binary checker tool
+  - Proxmox server inventory for API-backed tools
+  - Proxmox server connectivity validation
+  - Proxmox QEMU VM NIC preflight plus enable/disable operations
 
 - Frontend (Next.js + assistant-ui)
   - Login page (`/login`)
@@ -35,12 +38,12 @@ This is a living checklist of what is implemented in the MVP and what is intenti
 
 ## Verified
 
-- Backend unit/integration tests exist and pass locally (see `docs/reports/2026-03-09-task-11-verification.md`)
+- Backend unit/integration tests exist and pass locally
 - Web build/typecheck passes (`npm run build`)
 
 ## Not Implemented Yet (By Design)
 
-- Additional real integrations beyond WHM (Proxmox/DNS/monitoring/billing/support)
+- Additional mature integrations beyond the current WHM and Proxmox surface area (DNS/monitoring/billing/support)
 - True LLM token streaming (current MVP chunks completed text)
 - Multi-tenant org/team model and shared threads
 - File uploads / attachments / sync server (Assistant Cloud)
@@ -59,3 +62,8 @@ This is a living checklist of what is implemented in the MVP and what is intenti
 1) Add one real integration (pick a small READ-only subset first).
 2) Add true LLM streaming (server-side streamed completions).
 3) Add per-tool “preview” summaries for CHANGE actions (diff/impact explanation).
+
+## Canonical Integration References
+
+- `docs/integrations/whm.md`
+- `docs/integrations/proxmox.md`

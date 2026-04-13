@@ -38,4 +38,4 @@ The next step is operational rollout work:
 - Use this file as the current status and next-step entry point.
 - Use `docs/observability/backend-observability-baseline.md` for dashboard and alert realization.
 - Use `docs/observability/frontend-error-reporting.md` for frontend rollout policy and validation expectations.
-- Treat `docs/plans/` as implementation history and branch handoff material, not the primary source for current observability status.
+- Treat planning docs and branch handoff material as implementation history, not the primary source for current observability status.
