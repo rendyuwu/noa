@@ -57,7 +57,7 @@ const ThreadListItem: FC<{
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   return (
-    <ThreadListItemPrimitive.Root className="group flex items-stretch gap-2 rounded-[20px] border border-transparent px-3 py-3 transition-all duration-150 hover:border-border/70 hover:bg-card/70 hover:shadow-sm data-[active]:border-border/70 data-[active]:bg-card data-[active]:shadow-sm data-[active]:shadow-amber-950/5">
+    <ThreadListItemPrimitive.Root className="group flex items-stretch gap-1 rounded-xl px-2.5 py-2 transition-colors hover:bg-foreground/[0.05] data-[active]:bg-foreground/[0.08]">
       <ThreadListItemPrimitive.Trigger
         onClick={() => {
           onSelect?.();
@@ -76,7 +76,7 @@ const ThreadListItem: FC<{
             }
           })();
         }}
-        className="min-w-0 flex-1 rounded-[14px] px-1 text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+        className="min-w-0 flex-1 rounded-lg px-1 text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
         <span className="block truncate text-sm leading-5">
           <ThreadListItemPrimitive.Title fallback="Untitled" />
@@ -408,7 +408,7 @@ export function ClaudeThreadList({
               type="button"
               onClick={closeAction}
               aria-label={closeActionLabel}
-              className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-transparent text-muted-foreground transition hover:border-border/70 hover:bg-background/70 hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition hover:bg-foreground/[0.05] hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <ColumnsIcon width={18} height={18} />
             </button>
@@ -421,15 +421,12 @@ export function ClaudeThreadList({
           <button
             type="button"
             onClick={handleNewChat}
-            className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-background/70 px-4 py-3 font-sans text-sm text-foreground transition hover:bg-background/80 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 font-sans text-sm text-foreground transition hover:bg-foreground/[0.05] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
-            <span
-              aria-hidden="true"
-              className="flex h-7 w-7 items-center justify-center rounded-2xl bg-primary/10 text-primary ring-1 ring-primary/15"
-            >
+            <span aria-hidden="true" className="flex h-4 w-4 items-center justify-center text-muted-foreground">
               <PlusIcon width={14} height={14} />
             </span>
-            <span className="font-semibold">New chat</span>
+            <span className="font-medium">New chat</span>
           </button>
 
           <div className="mt-2">
@@ -442,7 +439,7 @@ export function ClaudeThreadList({
         <p className="px-4 pb-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
           Recents
         </p>
-        <div className="min-h-0 flex-1 overflow-y-auto pb-4 pr-3 [scrollbar-gutter:stable]">
+        <div className="min-h-0 flex-1 overflow-y-auto pb-3 pr-2 [scrollbar-gutter:stable]">
           {uniqueThreadItems.map((item, index) => (
             <ThreadListItemByIndexProvider
               key={`${item.remoteId}:${item.id}`}
@@ -460,9 +457,9 @@ export function ClaudeThreadList({
         </div>
       </div>
 
-      <div className="border-sidebar-border/80 border-t bg-sidebar/85 px-4 py-4 font-sans backdrop-blur-sm">
+      <div className="border-sidebar-border/80 border-t bg-sidebar px-4 py-3 font-sans">
         {isAdminUser ? (
-          <div className="mb-3">
+          <div className="mb-2">
             <NavLinkItem icon={<GearIcon width={16} height={16} />} label="Admin" href="/admin" flat />
           </div>
         ) : null}
@@ -473,9 +470,9 @@ export function ClaudeThreadList({
             <button
               type="button"
               aria-label="Account menu"
-              className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-background/70 px-4 py-3 text-left transition hover:bg-background/80 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition hover:bg-foreground/[0.05] active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background shadow-sm">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background">
                 {initial}
               </div>
 
