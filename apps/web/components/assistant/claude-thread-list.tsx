@@ -277,7 +277,7 @@ export function ClaudeThreadList({
 
   if (variant === "collapsed") {
     const railButtonClassName =
-      "flex h-8 w-8 items-center justify-center rounded-[12px] border border-transparent bg-card/60 text-muted-foreground shadow-sm transition hover:border-border/70 hover:bg-card hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+      "flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/[0.06] hover:text-foreground active:bg-foreground/[0.1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
     const RailItem: FC<{ label: string; children: ReactNode }> = ({ label, children }) => {
       return (
@@ -318,7 +318,7 @@ export function ClaudeThreadList({
     };
 
     return (
-      <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar py-4 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
+      <ThreadListPrimitive.Root className="flex h-full flex-col bg-sidebar py-4">
         <div className="flex flex-1 flex-col items-center gap-1 px-1.5">
           {onExpandSidebar ? (
             <RailItem label="Expand sidebar">
@@ -349,7 +349,7 @@ export function ClaudeThreadList({
             icon={<MagnifyingGlassIcon width={14} height={14} />}
           />
 
-          <div className="mt-auto flex flex-col items-center gap-2 border-t border-sidebar-border/70 pt-3">
+          <div className="mt-auto flex flex-col items-center gap-1 pt-3">
             {isAdminUser ? (
               <RailItem label="Admin">
                 <Link
@@ -373,7 +373,7 @@ export function ClaudeThreadList({
                   >
                     <span
                       aria-hidden="true"
-                      className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground font-sans text-sm font-semibold text-background shadow-sm"
+                      className="flex h-8 w-8 items-center justify-center rounded-full bg-foreground font-sans text-sm font-semibold text-background"
                     >
                       {initial}
                     </span>
