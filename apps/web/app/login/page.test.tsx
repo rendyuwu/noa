@@ -108,6 +108,18 @@ describe("LoginPage", () => {
     expect(screen.getByRole("heading", { name: "Login" })).toHaveClass("font-serif");
   });
 
+  it("uses app-managed email field semantics instead of native email validation UI", () => {
+    render(<LoginPage />);
+
+    const emailInput = screen.getByLabelText("Email");
+
+    expect(emailInput).toHaveAttribute("type", "text");
+    expect(emailInput).toHaveAttribute("inputmode", "email");
+    expect(emailInput).toHaveAttribute("autocomplete", "username");
+    expect(emailInput).toHaveAttribute("autocapitalize", "none");
+    expect(emailInput).toHaveAttribute("spellcheck", "false");
+  });
+
   it("shows inline email format validation error and does not submit", async () => {
     render(<LoginPage />);
 

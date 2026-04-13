@@ -141,9 +141,11 @@ export default function LoginPage() {
                 id="login-email"
                 name="email"
                 autoComplete="username"
+                autoCapitalize="none"
+                spellCheck={false}
                 inputMode="email"
                 className="mt-1"
-                type="email"
+                type="text"
                 value={email}
                 disabled={submitting}
                 aria-invalid={!!fieldErrors.email}

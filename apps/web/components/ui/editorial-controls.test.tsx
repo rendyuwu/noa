@@ -50,7 +50,9 @@ describe("editorial shared controls", () => {
     const { container } = render(<Input aria-label="Editorial input" />);
 
     expect(container.firstElementChild).toHaveClass("input");
+    expect(container.firstElementChild).toHaveClass("appearance-none");
     expect(container.firstElementChild).toHaveClass("text-base");
+    expect(container.firstElementChild).toHaveClass("text-foreground");
     expect(container.firstElementChild).toHaveClass("md:text-sm");
     expect(container.firstElementChild).toHaveClass("aria-invalid:border-destructive");
     expect(container.firstElementChild).toHaveClass("aria-invalid:ring-destructive/20");
