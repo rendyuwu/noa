@@ -329,7 +329,7 @@ describe("ClaudeThread", () => {
     expect(screen.queryByTestId("landing-composer")).not.toBeInTheDocument();
   });
 
-  it("renders the editorial docked composer shell in active threads", () => {
+  it("keeps the active-thread composer dock unstyled while preserving the inner composer card", () => {
     mockThreadIsEmpty = false;
 
     render(<ClaudeThread />);
@@ -337,8 +337,10 @@ describe("ClaudeThread", () => {
     const dock = screen.getByTestId("composer-dock-stack");
     const composer = screen.getByTestId("bottom-composer");
 
-    expect(dock).toHaveClass("rounded-[2rem]");
-    expect(dock).toHaveClass("bg-card/65");
+    expect(dock).not.toHaveClass("rounded-[2rem]");
+    expect(dock).not.toHaveClass("bg-card/65");
+    expect(screen.queryByTestId("landing-composer")).not.toBeInTheDocument();
+    expect(composer).toBeInTheDocument();
     expect(composer).toHaveClass("rounded-[1.75rem]");
     expect(composer).toHaveClass("bg-card/95");
   });

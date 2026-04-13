@@ -278,7 +278,7 @@ export const ClaudeThread: FC<{
 
       <AssistantIf condition={({ thread }) => !thread.isEmpty}>
         <div
-          className="mx-auto w-full max-w-3xl shrink-0 rounded-[2rem] border border-border/60 bg-card/65 px-2 py-2 shadow-[0_18px_50px_-42px_rgba(15,23,42,0.4)] backdrop-blur-md"
+          className="mx-auto w-full max-w-3xl shrink-0 px-2 py-2"
           data-testid="composer-dock-stack"
         >
           {threadIsRunning ? (
