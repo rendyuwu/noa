@@ -42,13 +42,11 @@ const ThreadListItem: FC<{
   activeRemoteId?: string | null;
   itemId: string;
   remoteId: string;
-  threadTitle?: string | null;
 }> = ({
   onSelect,
   activeRemoteId,
   itemId,
   remoteId,
-  threadTitle,
 }) => {
   const runtime = useAssistantRuntime();
   const resetRuntime = useResetAssistantRuntime();
@@ -57,7 +55,6 @@ const ThreadListItem: FC<{
   const pathnameRef = useRef(pathname);
   pathnameRef.current = pathname;
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const titleTooltip = threadTitle?.trim();
 
   return (
     <ThreadListItemPrimitive.Root className="group flex items-stretch gap-2 rounded-[20px] border border-transparent px-3 py-3 transition-all duration-150 hover:border-border/70 hover:bg-card/70 hover:shadow-sm data-[active]:border-border/70 data-[active]:bg-card data-[active]:shadow-sm data-[active]:shadow-amber-950/5">
@@ -81,7 +78,7 @@ const ThreadListItem: FC<{
         }}
         className="min-w-0 flex-1 rounded-[14px] px-1 text-left font-sans text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
       >
-        <span className="block line-clamp-2 text-sm leading-5" title={titleTooltip || remoteId}>
+        <span className="block truncate text-sm leading-5">
           <ThreadListItemPrimitive.Title fallback="Untitled" />
         </span>
       </ThreadListItemPrimitive.Trigger>
@@ -411,7 +408,7 @@ export function ClaudeThreadList({
               type="button"
               onClick={closeAction}
               aria-label={closeActionLabel}
-              className="flex h-10 w-10 items-center justify-center rounded-full border border-border/70 bg-card/70 text-muted-foreground shadow-sm transition-colors hover:border-border hover:bg-card hover:text-foreground active:scale-[0.98]"
+              className="flex h-10 w-10 items-center justify-center rounded-[14px] border border-transparent text-muted-foreground transition hover:border-border/70 hover:bg-background/70 hover:text-foreground active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <ColumnsIcon width={18} height={18} />
             </button>
@@ -424,7 +421,7 @@ export function ClaudeThreadList({
           <button
             type="button"
             onClick={handleNewChat}
-            className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-card/75 px-4 py-3 font-sans text-sm text-foreground shadow-sm transition hover:bg-card hover:shadow-md active:scale-[0.99]"
+            className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-background/70 px-4 py-3 font-sans text-sm text-foreground transition hover:bg-background/80 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <span
               aria-hidden="true"
@@ -457,7 +454,6 @@ export function ClaudeThreadList({
                 activeRemoteId={activeRemoteId}
                 itemId={item.id}
                 remoteId={item.remoteId}
-                threadTitle={item.title}
               />
             </ThreadListItemByIndexProvider>
           ))}
@@ -477,7 +473,7 @@ export function ClaudeThreadList({
             <button
               type="button"
               aria-label="Account menu"
-              className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-card/75 px-4 py-3 text-left shadow-sm transition hover:bg-card active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+              className="flex w-full items-center gap-3 rounded-[20px] border border-border/70 bg-background/70 px-4 py-3 text-left transition hover:bg-background/80 active:scale-[0.99] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
             >
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-foreground text-sm font-semibold text-background shadow-sm">
                 {initial}

@@ -96,6 +96,12 @@ vi.mock("@/components/lib/runtime-provider", () => ({
 vi.mock("@/components/ui/dropdown-menu", () => {
   const React = require("react") as typeof import("react");
 
+  type MenuButtonProps = React.ComponentPropsWithoutRef<"button"> & {
+    children?: ReactNode;
+    asChild?: boolean;
+    onSelect?: () => void;
+  };
+
   const DropdownMenuContext = createContext<{
     open: boolean;
     setOpen: (open: boolean) => void;
@@ -107,7 +113,7 @@ vi.mock("@/components/ui/dropdown-menu", () => {
     return <DropdownMenuContext.Provider value={{ open, setOpen }}>{children}</DropdownMenuContext.Provider>;
   }
 
-  function DropdownMenuTrigger({ children, asChild, ...props }: { children?: ReactNode; asChild?: boolean }) {
+  function DropdownMenuTrigger({ children, asChild, ...props }: MenuButtonProps) {
     const context = useContext(DropdownMenuContext);
 
     const handleClick = (event: React.MouseEvent) => {
@@ -116,7 +122,7 @@ vi.mock("@/components/ui/dropdown-menu", () => {
     };
 
     if (asChild && React.isValidElement(children)) {
-      return React.cloneElement(children as React.ReactElement, {
+      return React.cloneElement(children as React.ReactElement<React.ComponentPropsWithoutRef<"button">>, {
         ...props,
         onClick: handleClick,
       });
@@ -139,7 +145,7 @@ vi.mock("@/components/ui/dropdown-menu", () => {
     return <div role="menu">{children}</div>;
   }
 
-  function DropdownMenuItem({ children, onSelect, ...props }: { children?: ReactNode; onSelect?: () => void }) {
+  function DropdownMenuItem({ children, onSelect, ...props }: MenuButtonProps) {
     return (
       <button
         type="button"
@@ -183,66 +189,80 @@ vi.mock("@/components/ui/dropdown-menu", () => {
   };
 });
 
-vi.mock("@assistant-ui/react", () => ({
-  useAssistantApi: () => ({
-    threads: () => ({
-      switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
+vi.mock("@assistant-ui/react", () => {
+  const ThreadListItemIndexContext = createContext<number | null>(null);
+  type DivProps = import("react").ComponentPropsWithoutRef<"div">;
+  type ButtonProps = import("react").ComponentPropsWithoutRef<"button">;
+
+  return {
+    useAssistantApi: () => ({
+      threads: () => ({
+        switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
+      }),
     }),
-  }),
-  useAssistantRuntime: () => ({
-    thread: {
-      cancelRun: (...args: unknown[]) => mocks.cancelRun(...args),
-      getState: () => ({ isRunning: false }),
-    },
-    threads: {
-      getState: () => ({ mainThreadId: mocks.mainThreadId }),
-      getItemById: (id: string) => {
-        if (!mocks.itemApiById.has(id)) {
-          mocks.itemApiById.set(id, {
-            delete: vi.fn((...args: unknown[]) => mocks.deleteThreadItem(id, ...args)),
-          });
-        }
-
-        const itemApi = mocks.itemApiById.get(id)!;
-
-        return {
-          getState: () => ({ id }),
-          switchTo: (...args: unknown[]) => mocks.switchToThreadItem(...args),
-          unstable_on: () => () => {},
-          detach: (...args: unknown[]) => mocks.detachThreadItem(id, ...args),
-          delete: (...args: unknown[]) => itemApi.delete(...args),
-        };
+    useAssistantRuntime: () => ({
+      thread: {
+        cancelRun: (...args: unknown[]) => mocks.cancelRun(...args),
+        getState: () => ({ isRunning: false }),
       },
-      switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
-    },
-  }),
-  useAssistantState: (selector: any) => selector({
-    threadListItem: {
-      remoteId: mocks.remoteId,
-    },
-    threads: {
-      mainThreadId: mocks.mainThreadId,
-      threadIds: mocks.threadIds,
-      threadItems: mocks.threadItems,
-    },
-  }),
-  ThreadListItemByIndexProvider: ({ children }: { children?: ReactNode }) => <>{children}</>,
-  ThreadListPrimitive: {
-    Root: ({ children, className }: { children?: ReactNode; className?: string }) => (
-      <div className={className}>{children}</div>
+      threads: {
+        getState: () => ({ mainThreadId: mocks.mainThreadId }),
+        getItemById: (id: string) => {
+          if (!mocks.itemApiById.has(id)) {
+            mocks.itemApiById.set(id, {
+              delete: vi.fn((...args: unknown[]) => mocks.deleteThreadItem(id, ...args)),
+            });
+          }
+
+          const itemApi = mocks.itemApiById.get(id)!;
+
+          return {
+            getState: () => ({ id }),
+            switchTo: (...args: unknown[]) => mocks.switchToThreadItem(...args),
+            unstable_on: () => () => {},
+            detach: (...args: unknown[]) => mocks.detachThreadItem(id, ...args),
+            delete: (...args: unknown[]) => itemApi.delete(...args),
+          };
+        },
+        switchToNewThread: (...args: unknown[]) => mocks.switchToNewThread(...args),
+      },
+    }),
+    useAssistantState: (selector: any) =>
+      selector({
+        threadListItem: {
+          remoteId: mocks.remoteId,
+        },
+        threads: {
+          mainThreadId: mocks.mainThreadId,
+          threadIds: mocks.threadIds,
+          threadItems: mocks.threadItems,
+        },
+      }),
+    ThreadListItemByIndexProvider: ({ children, index }: { children?: ReactNode; index?: number }) => (
+      <ThreadListItemIndexContext.Provider value={index ?? null}>{children}</ThreadListItemIndexContext.Provider>
     ),
-  },
-  ThreadListItemPrimitive: {
-    Root: ({ children, ...props }: React.ComponentPropsWithoutRef<"div">) => (
-      <div {...props} data-active="true">
-        {children}
-      </div>
-    ),
-    Trigger: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => <button {...props}>{children}</button>,
-    Title: ({ fallback }: { fallback?: string }) => <span>{fallback ?? "Untitled"}</span>,
-    Delete: ({ children, ...props }: React.ComponentPropsWithoutRef<"button">) => <button {...props}>{children}</button>,
-  },
-}));
+    ThreadListPrimitive: {
+      Root: ({ children, className }: { children?: ReactNode; className?: string }) => (
+        <div className={className}>{children}</div>
+      ),
+    },
+    ThreadListItemPrimitive: {
+      Root: ({ children, ...props }: DivProps) => (
+        <div {...props} data-active="true">
+          {children}
+        </div>
+      ),
+      Trigger: ({ children, ...props }: ButtonProps) => <button {...props}>{children}</button>,
+      Title: ({ fallback }: { fallback?: string }) => {
+        const index = useContext(ThreadListItemIndexContext);
+        const title = index == null ? undefined : mocks.threadItems[index]?.title;
+
+        return <span>{title ?? fallback ?? "Untitled"}</span>;
+      },
+      Delete: ({ children, ...props }: ButtonProps) => <button {...props}>{children}</button>,
+    },
+  };
+});
 
 vi.mock("@/components/lib/auth-store", () => ({
   clearAuth: mocks.clearAuth,
@@ -320,6 +340,31 @@ describe("ClaudeThreadList", () => {
 
     expect(screen.getByRole("button", { name: "Search" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Account menu" })).toBeInTheDocument();
+  });
+
+  it("keeps expanded controls flat and clamps recent titles to one line", () => {
+    mocks.threadItems[0] = {
+      id: "thread-a",
+      remoteId: "11111111-1111-1111-1111-111111111111",
+      title: "A very long recent thread title that should stay on one line and never show a tooltip",
+      status: "regular",
+    };
+
+    render(<ClaudeThreadList onCollapseSidebar={() => {}} />);
+
+    expect(screen.getByRole("button", { name: "New chat" })).not.toHaveClass("bg-card/75", "shadow-sm");
+    expect(screen.getByRole("button", { name: "Collapse sidebar" })).not.toHaveClass("rounded-full", "bg-card/70", "shadow-sm");
+    expect(screen.getByRole("button", { name: "Account menu" })).not.toHaveClass("bg-card/75", "shadow-sm");
+
+    const titleButton = screen.getByRole("button", {
+      name: "A very long recent thread title that should stay on one line and never show a tooltip",
+    });
+    const title = titleButton.querySelector("span.block");
+
+    expect(title).not.toBeNull();
+
+    expect(title).toHaveClass("truncate");
+    expect(title).not.toHaveAttribute("title");
   });
 
   it("renders the current lightweight chat nav under the new chat button", () => {
@@ -400,7 +445,7 @@ describe("ClaudeThreadList", () => {
   it("applies editorial card active styling to the selected thread row", () => {
     render(<ClaudeThreadList />);
 
-    const trigger = screen.getAllByRole("button", { name: "Untitled" })[0];
+    const trigger = screen.getAllByRole("button", { name: "Hello" })[0];
     const row = trigger.closest("[data-active]");
 
     expect(row).not.toBeNull();
@@ -434,7 +479,8 @@ describe("ClaudeThreadList", () => {
 
     render(<ClaudeThreadList />);
 
-    expect(screen.getAllByRole("button", { name: "Untitled" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "Hello" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Howdy" })).toHaveLength(1);
   });
 
   it("renders an admin footer link for admin users in expanded mode", async () => {
