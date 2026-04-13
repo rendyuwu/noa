@@ -463,7 +463,7 @@ export function ClaudeThreadList({
       <div className="border-sidebar-border/80 border-t bg-sidebar/85 px-4 py-4 font-sans backdrop-blur-sm">
         {isAdminUser ? (
           <div className="mb-3">
-            <NavLinkItem icon={<GearIcon width={16} height={16} />} label="Admin" href="/admin" />
+            <NavLinkItem icon={<GearIcon width={16} height={16} />} label="Admin" href="/admin" flat />
           </div>
         ) : null}
 
