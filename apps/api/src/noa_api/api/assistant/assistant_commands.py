@@ -130,9 +130,7 @@ class AssistantServiceProtocol(Protocol):
 
 def validate_commands(commands: list[AssistantCommand]) -> None:
     for command in commands:
-        if isinstance(command, AddMessageCommand) and (
-            command.parent_id is not None or command.source_id is not None
-        ):
+        if isinstance(command, AddMessageCommand) and command.source_id is not None:
             raise ApiHTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Editing existing messages is not supported yet",

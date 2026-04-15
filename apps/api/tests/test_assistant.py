@@ -1023,7 +1023,9 @@ async def test_assistant_route_streams_canonical_state_and_applies_commands() ->
     assert state.get("isRunning") is False
 
 
-async def test_assistant_route_rejects_edit_style_add_message() -> None:
+async def test_assistant_route_accepts_add_message_with_parent_id_and_null_source_id() -> (
+    None
+):
     owner_id = uuid4()
     thread_id = uuid4()
     service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
@@ -1045,6 +1047,157 @@ async def test_assistant_route_rejects_edit_style_add_message() -> None:
             {
                 "type": "add-message",
                 "parentId": "parent-1",
+                "sourceId": None,
+                "message": {
+                    "role": "user",
+                    "parts": [{"type": "text", "text": "Follow-up"}],
+                },
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+
+    state: dict[str, object] = {}
+    for event in _iter_assistant_transport_events(response.text):
+        if event.get("type") != "update-state":
+            continue
+        operations = event.get("operations") or event.get("patches")
+        if isinstance(operations, list):
+            _apply_assistant_stream_patches(state, operations)
+            continue
+        event_state = event.get("state")
+        if isinstance(event_state, dict):
+            state.clear()
+            state.update(event_state)
+
+    assert _state_contains_user_text(state, "Follow-up")
+
+
+async def test_assistant_route_accepts_follow_up_add_message_in_same_thread() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        first_response = await client.post(
+            "/assistant",
+            json={
+                "state": {"messages": [], "isRunning": False},
+                "commands": [
+                    {
+                        "type": "add-message",
+                        "message": {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": "Hello"}],
+                        },
+                    }
+                ],
+                "threadId": str(thread_id),
+            },
+        )
+
+        assert first_response.status_code == 200
+        assert first_response.headers["content-type"].startswith("text/event-stream")
+
+        first_state: dict[str, object] = {}
+        for event in _iter_assistant_transport_events(first_response.text):
+            if event.get("type") != "update-state":
+                continue
+            operations = event.get("operations") or event.get("patches")
+            if isinstance(operations, list):
+                _apply_assistant_stream_patches(first_state, operations)
+                continue
+            event_state = event.get("state")
+            if isinstance(event_state, dict):
+                first_state.clear()
+                first_state.update(event_state)
+
+        messages = first_state.get("messages")
+        assert isinstance(messages, list)
+        first_message = next(
+            message for message in messages if isinstance(message, dict)
+        )
+        parent_id = first_message["id"]
+
+        second_response = await client.post(
+            "/assistant",
+            json={
+                "state": first_state,
+                "commands": [
+                    {
+                        "type": "add-message",
+                        "parentId": parent_id,
+                        "sourceId": None,
+                        "message": {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": "Follow-up"}],
+                        },
+                    }
+                ],
+                "threadId": str(thread_id),
+            },
+        )
+
+    assert second_response.status_code == 200
+    assert second_response.headers["content-type"].startswith("text/event-stream")
+
+    second_state: dict[str, object] = {}
+    for event in _iter_assistant_transport_events(second_response.text):
+        if event.get("type") != "update-state":
+            continue
+        operations = event.get("operations") or event.get("patches")
+        if isinstance(operations, list):
+            _apply_assistant_stream_patches(second_state, operations)
+            continue
+        event_state = event.get("state")
+        if isinstance(event_state, dict):
+            second_state.clear()
+            second_state.update(event_state)
+
+    assert _state_contains_user_text(second_state, "Hello")
+    assert _state_contains_user_text(second_state, "Follow-up")
+
+
+async def test_assistant_route_rejects_add_message_with_non_null_source_id() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    app = _build_app(
+        service,
+        AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-message",
                 "sourceId": "source-1",
                 "message": {
                     "role": "user",

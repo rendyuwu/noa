@@ -180,6 +180,43 @@ def test_validate_commands_rejects_non_user_add_message_role() -> None:
     assert exc_info.value.error_code == "invalid_add_message_role"
 
 
+def test_validate_commands_allows_add_message_with_parent_id_and_null_source_id() -> (
+    None
+):
+    validate_commands(
+        [
+            AddMessageCommand(
+                type="add-message",
+                parent_id="parent-1",
+                source_id=None,
+                message=AssistantMessage(
+                    role="user",
+                    parts=[{"type": "text", "text": "Follow-up"}],
+                ),
+            )
+        ]
+    )
+
+
+def test_validate_commands_rejects_add_message_with_non_null_source_id() -> None:
+    with pytest.raises(ApiHTTPException) as exc_info:
+        validate_commands(
+            [
+                AddMessageCommand(
+                    type="add-message",
+                    source_id="source-1",
+                    message=AssistantMessage(
+                        role="user",
+                        parts=[{"type": "text", "text": "Follow-up"}],
+                    ),
+                )
+            ]
+        )
+
+    assert exc_info.value.detail == "Editing existing messages is not supported yet"
+    assert exc_info.value.error_code == "message_edit_not_supported"
+
+
 def test_assistant_command_schemas_keep_required_ids() -> None:
     add_tool_result_schema = AddToolResultCommand.model_json_schema(by_alias=True)
     approve_action_schema = ApproveActionCommand.model_json_schema(by_alias=True)
