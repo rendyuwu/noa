@@ -52,16 +52,20 @@ def _upstream_error(
 def _pool_members(result: dict[str, object]) -> list[dict[str, object]]:
     data = result.get("data")
     if not isinstance(data, list):
-        return []
+        raise ValueError("invalid pool payload")
     members: list[dict[str, object]] = []
     for entry in data:
         if not isinstance(entry, dict):
-            continue
+            raise ValueError("invalid pool payload")
         entry_members = entry.get("members")
         if isinstance(entry_members, list):
             for member in entry_members:
                 if isinstance(member, dict):
                     members.append(member)
+                else:
+                    raise ValueError("invalid pool payload")
+        else:
+            raise ValueError("invalid pool payload")
     return members
 
 
@@ -72,6 +76,15 @@ def _member_vmids(result: dict[str, object]) -> set[int]:
         if isinstance(vmid, int):
             vmids.add(vmid)
     return vmids
+
+
+def _validated_pool_vmids(result: dict[str, object]) -> set[int] | None:
+    if result.get("ok") is not True:
+        return None
+    try:
+        return _member_vmids(result)
+    except ValueError:
+        return None
 
 
 def _meaningful_permission_entries(
@@ -86,20 +99,11 @@ def _meaningful_permission_entries(
     return permissions
 
 
-def _vmids_present_in_source_pool(result: dict[str, object], vmids: list[int]) -> bool:
-    source_vmids = _member_vmids(result)
-    return all(vmid in source_vmids for vmid in vmids)
-
-
-def _vmids_verified_after_move(
-    *,
-    source_pool_after: dict[str, object],
-    destination_pool_after: dict[str, object],
-    vmids: list[int],
-) -> bool:
-    source_vmids = _member_vmids(source_pool_after)
-    destination_vmids = _member_vmids(destination_pool_after)
-    return all(vmid not in source_vmids and vmid in destination_vmids for vmid in vmids)
+def _pool_result_vmids(result: dict[str, object]) -> set[int]:
+    vmids = _validated_pool_vmids(result)
+    if vmids is None:
+        raise ValueError("invalid pool payload")
+    return vmids
 
 
 async def _resolve_client(
@@ -150,6 +154,13 @@ async def proxmox_preflight_move_vms_between_pools(
     normalized_destination_pool = destination_pool.strip()
     normalized_userid = _normalize_proxmox_userid(email)
 
+    if len(vmids) == 0:
+        return {
+            "ok": False,
+            "error_code": "invalid_request",
+            "message": "At least one VMID is required",
+        }
+
     if normalized_source_pool == normalized_destination_pool:
         return {
             "ok": False,
@@ -163,6 +174,14 @@ async def proxmox_preflight_move_vms_between_pools(
             source_pool_result,
             fallback_message="Proxmox source pool lookup failed",
         )
+    try:
+        source_pool_vmids = _pool_result_vmids(source_pool_result)
+    except ValueError:
+        return {
+            "ok": False,
+            "error_code": "invalid_response",
+            "message": "Proxmox returned an unexpected pool payload",
+        }
 
     destination_pool_result = await client.get_pool(normalized_destination_pool)
     if destination_pool_result.get("ok") is not True:
@@ -170,6 +189,14 @@ async def proxmox_preflight_move_vms_between_pools(
             destination_pool_result,
             fallback_message="Proxmox destination pool lookup failed",
         )
+    try:
+        _pool_result_vmids(destination_pool_result)
+    except ValueError:
+        return {
+            "ok": False,
+            "error_code": "invalid_response",
+            "message": "Proxmox returned an unexpected pool payload",
+        }
 
     target_user_result = await client.get_user(normalized_userid)
     if target_user_result.get("ok") is not True:
@@ -199,7 +226,7 @@ async def proxmox_preflight_move_vms_between_pools(
             "message": "Proxmox destination pool permissions are required before moving VMs",
         }
 
-    if not _vmids_present_in_source_pool(source_pool_result, vmids):
+    if not all(vmid in source_pool_vmids for vmid in vmids):
         return {
             "ok": False,
             "error_code": "vmid_not_in_source_pool",
@@ -255,31 +282,68 @@ async def proxmox_move_vms_between_pools(
             fallback_message="Unable to add VM(s) to the destination pool",
         )
 
-    remove_result = await client.remove_vms_from_pool(normalized_source_pool, vmids)
-    if remove_result.get("ok") is not True:
+    source_pool_after_add = await client.get_pool(normalized_source_pool)
+    if source_pool_after_add.get("ok") is not True:
         return _upstream_error(
-            remove_result,
-            fallback_message="Unable to remove VM(s) from the source pool",
+            source_pool_after_add,
+            fallback_message="Unable to refetch the source pool after the add step",
         )
 
-    source_pool_after = await client.get_pool(normalized_source_pool)
-    if source_pool_after.get("ok") is not True:
+    destination_pool_after_add = await client.get_pool(normalized_destination_pool)
+    if destination_pool_after_add.get("ok") is not True:
         return _upstream_error(
-            source_pool_after,
-            fallback_message="Unable to refetch the source pool after the move",
+            destination_pool_after_add,
+            fallback_message="Unable to refetch the destination pool after the add step",
         )
 
-    destination_pool_after = await client.get_pool(normalized_destination_pool)
-    if destination_pool_after.get("ok") is not True:
-        return _upstream_error(
-            destination_pool_after,
-            fallback_message="Unable to refetch the destination pool after the move",
-        )
+    try:
+        source_vmids_after_add = _pool_result_vmids(source_pool_after_add)
+        destination_vmids_after_add = _pool_result_vmids(destination_pool_after_add)
+    except ValueError:
+        return {
+            "ok": False,
+            "error_code": "invalid_response",
+            "message": "Proxmox returned an unexpected pool payload",
+        }
 
-    if not _vmids_verified_after_move(
-        source_pool_after=source_pool_after,
-        destination_pool_after=destination_pool_after,
-        vmids=vmids,
+    remove_result: dict[str, object] | None = None
+    source_pool_after = source_pool_after_add
+    destination_pool_after = destination_pool_after_add
+    if any(vmid in source_vmids_after_add for vmid in vmids):
+        remove_result = await client.remove_vms_from_pool(normalized_source_pool, vmids)
+        if remove_result.get("ok") is not True:
+            return _upstream_error(
+                remove_result,
+                fallback_message="Unable to remove VM(s) from the source pool",
+            )
+
+        source_pool_after = await client.get_pool(normalized_source_pool)
+        if source_pool_after.get("ok") is not True:
+            return _upstream_error(
+                source_pool_after,
+                fallback_message="Unable to refetch the source pool after the move",
+            )
+
+        destination_pool_after = await client.get_pool(normalized_destination_pool)
+        if destination_pool_after.get("ok") is not True:
+            return _upstream_error(
+                destination_pool_after,
+                fallback_message="Unable to refetch the destination pool after the move",
+            )
+
+    try:
+        source_vmids_after = _pool_result_vmids(source_pool_after)
+        destination_vmids_after = _pool_result_vmids(destination_pool_after)
+    except ValueError:
+        return {
+            "ok": False,
+            "error_code": "invalid_response",
+            "message": "Proxmox returned an unexpected pool payload",
+        }
+
+    if not all(
+        vmid not in source_vmids_after and vmid in destination_vmids_after
+        for vmid in vmids
     ):
         return {
             "ok": False,
