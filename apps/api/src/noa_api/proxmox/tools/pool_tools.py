@@ -49,6 +49,59 @@ def _upstream_error(
     }
 
 
+def _pool_members(result: dict[str, object]) -> list[dict[str, object]]:
+    data = result.get("data")
+    if not isinstance(data, list):
+        return []
+    members: list[dict[str, object]] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        entry_members = entry.get("members")
+        if isinstance(entry_members, list):
+            for member in entry_members:
+                if isinstance(member, dict):
+                    members.append(member)
+    return members
+
+
+def _member_vmids(result: dict[str, object]) -> set[int]:
+    vmids: set[int] = set()
+    for member in _pool_members(result):
+        vmid = member.get("vmid")
+        if isinstance(vmid, int):
+            vmids.add(vmid)
+    return vmids
+
+
+def _meaningful_permission_entries(
+    result: dict[str, object], path: str
+) -> dict[str, object] | None:
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return None
+    permissions = data.get(path)
+    if not isinstance(permissions, dict) or not permissions:
+        return None
+    return permissions
+
+
+def _vmids_present_in_source_pool(result: dict[str, object], vmids: list[int]) -> bool:
+    source_vmids = _member_vmids(result)
+    return all(vmid in source_vmids for vmid in vmids)
+
+
+def _vmids_verified_after_move(
+    *,
+    source_pool_after: dict[str, object],
+    destination_pool_after: dict[str, object],
+    vmids: list[int],
+) -> bool:
+    source_vmids = _member_vmids(source_pool_after)
+    destination_vmids = _member_vmids(destination_pool_after)
+    return all(vmid not in source_vmids and vmid in destination_vmids for vmid in vmids)
+
+
 async def _resolve_client(
     *, session: AsyncSession, server_ref: str
 ) -> tuple[ProxmoxClient, str] | dict[str, object]:
@@ -97,6 +150,13 @@ async def proxmox_preflight_move_vms_between_pools(
     normalized_destination_pool = destination_pool.strip()
     normalized_userid = _normalize_proxmox_userid(email)
 
+    if normalized_source_pool == normalized_destination_pool:
+        return {
+            "ok": False,
+            "error_code": "invalid_request",
+            "message": "Source and destination pools must be different",
+        }
+
     source_pool_result = await client.get_pool(normalized_source_pool)
     if source_pool_result.get("ok") is not True:
         return _upstream_error(
@@ -126,6 +186,25 @@ async def proxmox_preflight_move_vms_between_pools(
             permission_result,
             fallback_message="Proxmox destination permission lookup failed",
         )
+
+    if (
+        _meaningful_permission_entries(
+            permission_result, f"/pool/{normalized_destination_pool}"
+        )
+        is None
+    ):
+        return {
+            "ok": False,
+            "error_code": "permission_required",
+            "message": "Proxmox destination pool permissions are required before moving VMs",
+        }
+
+    if not _vmids_present_in_source_pool(source_pool_result, vmids):
+        return {
+            "ok": False,
+            "error_code": "vmid_not_in_source_pool",
+            "message": "One or more requested VMIDs were not found in the source pool",
+        }
 
     return {
         "ok": True,
@@ -196,6 +275,17 @@ async def proxmox_move_vms_between_pools(
             destination_pool_after,
             fallback_message="Unable to refetch the destination pool after the move",
         )
+
+    if not _vmids_verified_after_move(
+        source_pool_after=source_pool_after,
+        destination_pool_after=destination_pool_after,
+        vmids=vmids,
+    ):
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox pool move verification did not confirm the requested VMIDs",
+        }
 
     return {
         "ok": True,

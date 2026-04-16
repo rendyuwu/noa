@@ -63,6 +63,14 @@ def _server() -> _Server:
     )
 
 
+def _pool_payload(poolid: str, members: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "ok": True,
+        "message": "ok",
+        "data": [{"poolid": poolid, "members": members}],
+    }
+
+
 def _install_client(monkeypatch, state: _ClientState) -> None:
     from noa_api.proxmox.tools import pool_tools
 
@@ -145,7 +153,7 @@ async def test_proxmox_preflight_move_vms_between_pools_returns_wrapped_payloads
     source_pool_result = {
         "ok": True,
         "message": "ok",
-        "data": [{"poolid": "pool_a", "members": [{"vmid": 1057}]}],
+        "data": [{"poolid": "pool_a", "members": [{"vmid": 1057}, {"vmid": 1058}]}],
     }
     destination_pool_result = {
         "ok": True,
@@ -209,6 +217,228 @@ async def test_proxmox_preflight_move_vms_between_pools_returns_wrapped_payloads
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
     ]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_preflight_move_vms_between_pools_rejects_same_source_and_destination(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    state = _ClientState(
+        get_pool_results={},
+        get_user_result={"ok": True, "message": "ok", "data": {}},
+        get_effective_permissions_result={"ok": True, "message": "ok", "data": {}},
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": None},
+        remove_vms_from_pool_result={"ok": True, "message": "ok", "data": None},
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await pool_tools.proxmox_preflight_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_a",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_request",
+        "message": "Source and destination pools must be different",
+    }
+    assert state.calls == []
+
+
+@pytest.mark.asyncio
+async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_destination_permission(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    state = _ClientState(
+        get_pool_results={
+            "pool_a": _pool_payload("pool_a", [{"vmid": 1057}]),
+            "pool_b": _pool_payload("pool_b", []),
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={"ok": True, "message": "ok", "data": {}},
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": None},
+        remove_vms_from_pool_result={"ok": True, "message": "ok", "data": None},
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await pool_tools.proxmox_preflight_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "permission_required",
+        "message": "Proxmox destination pool permissions are required before moving VMs",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_preflight_move_vms_between_pools_rejects_missing_source_vmids(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    state = _ClientState(
+        get_pool_results={
+            "pool_a": _pool_payload("pool_a", [{"vmid": 1057}]),
+            "pool_b": _pool_payload("pool_b", []),
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Console": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": None},
+        remove_vms_from_pool_result={"ok": True, "message": "ok", "data": None},
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await pool_tools.proxmox_preflight_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057, 1058],
+        email="l1@biznetgio.com",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "vmid_not_in_source_pool",
+        "message": "One or more requested VMIDs were not found in the source pool",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_move_vms_between_pools_fails_when_postflight_does_not_confirm_move(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    source_pool_before = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_before = _pool_payload("pool_b", [])
+    source_pool_after = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_after = _pool_payload("pool_b", [])
+    state = _ClientState(
+        get_pool_results={
+            "pool_a": source_pool_before,
+            "pool_b": destination_pool_before,
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Console": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
+        remove_vms_from_pool_result={
+            "ok": True,
+            "message": "ok",
+            "data": "UPID:REMOVE",
+        },
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            _ = kwargs
+
+        async def get_pool(self, poolid: str) -> dict[str, object]:
+            state.calls.append(("get_pool", poolid))
+            if state.calls.count(("get_pool", poolid)) == 1:
+                return state.get_pool_results[poolid]
+            if poolid == "pool_a":
+                return source_pool_after
+            return destination_pool_after
+
+        async def get_user(self, userid: str) -> dict[str, object]:
+            state.calls.append(("get_user", userid))
+            return state.get_user_result
+
+        async def get_effective_permissions(
+            self, userid: str, path: str
+        ) -> dict[str, object]:
+            state.calls.append(("get_effective_permissions", (userid, path)))
+            return state.get_effective_permissions_result
+
+        async def add_vms_to_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            state.calls.append(("add_vms_to_pool", (poolid, vmids)))
+            return state.add_vms_to_pool_result
+
+        async def remove_vms_from_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
+            return state.remove_vms_from_pool_result
+
+    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+
+    result = await pool_tools.proxmox_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "postflight_failed",
+        "message": "Proxmox pool move verification did not confirm the requested VMIDs",
+    }
 
 
 @pytest.mark.asyncio
@@ -355,7 +585,7 @@ async def test_proxmox_move_vms_between_pools_fails_closed_on_add_failure(
     server = _server()
     state = _ClientState(
         get_pool_results={
-            "pool_a": {"ok": True, "message": "ok", "data": []},
+            "pool_a": _pool_payload("pool_a", [{"vmid": 1057}]),
             "pool_b": {"ok": True, "message": "ok", "data": []},
         },
         get_user_result={
