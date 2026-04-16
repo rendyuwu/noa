@@ -34,11 +34,6 @@ class _Repo:
         return None
 
 
-@dataclass
-class _Session:
-    pass
-
-
 def _server() -> _Server:
     now = datetime.now(UTC)
     return _Server(
@@ -101,7 +96,7 @@ async def test_proxmox_get_vm_status_current_returns_upstream_data(monkeypatch) 
     )
 
     result = await vm_read_tools.proxmox_get_vm_status_current(
-        session=_Session(),
+        session=object(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -133,7 +128,7 @@ async def test_proxmox_get_vm_config_preserves_resolution_errors(monkeypatch) ->
     )
 
     result = await vm_read_tools.proxmox_get_vm_config(
-        session=_Session(),
+        session=object(),
         server_ref="missing",
         node="pve1-node",
         vmid=101,
@@ -167,7 +162,7 @@ async def test_proxmox_get_vm_pending_returns_upstream_data(monkeypatch) -> None
     )
 
     result = await vm_read_tools.proxmox_get_vm_pending(
-        session=_Session(),
+        session=object(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -185,6 +180,7 @@ async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) ->
     from noa_api.proxmox.tools import vm_read_tools
 
     server = _server()
+    config_payload = {"name": "vm101", "cores": 2, "digest": "digest-1"}
     monkeypatch.setattr(
         vm_read_tools,
         "SQLProxmoxServerRepository",
@@ -197,7 +193,7 @@ async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) ->
             "config": {
                 "ok": True,
                 "message": "ok",
-                "config": {"name": "vm101", "cores": 2},
+                "config": config_payload,
                 "digest": "digest-1",
             },
             "pending": {"ok": True, "message": "ok", "data": {}},
@@ -205,7 +201,7 @@ async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) ->
     )
 
     result = await vm_read_tools.proxmox_get_vm_config(
-        session=_Session(),
+        session=object(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -214,8 +210,139 @@ async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) ->
     assert result == {
         "ok": True,
         "message": "ok",
-        "data": {"name": "vm101", "cores": 2},
+        "data": config_payload,
     }
+    assert result["data"] is config_payload
+
+
+@pytest.mark.asyncio
+async def test_proxmox_get_vm_config_handles_upstream_failure(monkeypatch) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        {
+            "status_current": {"ok": True, "message": "ok", "data": {}},
+            "config": {
+                "ok": False,
+                "error_code": "http_error",
+                "message": "Proxmox returned HTTP 500",
+            },
+            "pending": {"ok": True, "message": "ok", "data": {}},
+        },
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_config(
+        session=object(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "http_error",
+        "message": "Proxmox returned HTTP 500",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_get_vm_pending_handles_upstream_failure(monkeypatch) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        {
+            "status_current": {"ok": True, "message": "ok", "data": {}},
+            "config": {"ok": True, "message": "ok", "config": {}, "digest": "digest-1"},
+            "pending": {
+                "ok": False,
+                "error_code": "upstream_error",
+                "message": "pending failed",
+            },
+        },
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_pending(
+        session=object(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "upstream_error",
+        "message": "pending failed",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_get_vm_status_current_preserves_ambiguous_choices(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    now = datetime.now(UTC)
+    server_a = _Server(
+        id=uuid4(),
+        name="pve1",
+        base_url="https://proxmox-a.example.com:8006",
+        api_token_id="root@pam!token-a",
+        api_token_secret="SECRET-A",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    server_b = _Server(
+        id=uuid4(),
+        name="pve1",
+        base_url="https://proxmox-b.example.com:8006",
+        api_token_id="root@pam!token-b",
+        api_token_secret="SECRET-B",
+        verify_ssl=True,
+        created_at=now,
+        updated_at=now,
+    )
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server_a, server_b]),
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_status_current(
+        session=object(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "host_ambiguous"
+    assert result["choices"] == [
+        {
+            "id": str(server_a.id),
+            "name": "pve1",
+            "base_url": "https://proxmox-a.example.com:8006",
+        },
+        {
+            "id": str(server_b.id),
+            "name": "pve1",
+            "base_url": "https://proxmox-b.example.com:8006",
+        },
+    ]
 
 
 @pytest.mark.asyncio
@@ -244,7 +371,7 @@ async def test_proxmox_get_vm_status_current_preserves_client_errors(
     )
 
     result = await vm_read_tools.proxmox_get_vm_status_current(
-        session=_Session(),
+        session=object(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
