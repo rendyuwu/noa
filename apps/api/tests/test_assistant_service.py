@@ -24,13 +24,13 @@ from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 def test_build_tool_result_part_shapes_payload() -> None:
     assert build_tool_result_part(
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         tool_call_id="tool-call-1",
         result={"ok": True},
         is_error=False,
     ) == {
         "type": "tool-result",
-        "toolName": "set_demo_flag",
+        "toolName": "fake_change_tool",
         "toolCallId": "tool-call-1",
         "result": {"ok": True},
         "isError": False,
@@ -60,7 +60,7 @@ class _ProposalRunner:
                             "toolCallId": "request-approval-1",
                             "args": {
                                 "actionRequestId": str(uuid4()),
-                                "toolName": "set_demo_flag",
+                                "toolName": "fake_change_tool",
                                 "risk": "CHANGE",
                                 "arguments": {"key": "feature_x", "value": True},
                             },
@@ -386,7 +386,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
             ActionRequest(
                 id=pending_request_id,
                 thread_id=thread_id,
-                tool_name="set_demo_flag",
+                tool_name="fake_change_tool",
                 args={"key": "feature_x", "value": True},
                 risk=ToolRisk.CHANGE,
                 status=ActionRequestStatus.PENDING,
@@ -399,7 +399,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
             ActionRequest(
                 id=denied_request_id,
                 thread_id=thread_id,
-                tool_name="set_demo_flag",
+                tool_name="fake_change_tool",
                 args={"key": "feature_y", "value": False},
                 risk=ToolRisk.CHANGE,
                 status=ActionRequestStatus.DENIED,
@@ -412,7 +412,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
             ActionRequest(
                 id=finished_request_id,
                 thread_id=thread_id,
-                tool_name="set_demo_flag",
+                tool_name="fake_change_tool",
                 args={"key": "feature_z", "value": True},
                 risk=ToolRisk.CHANGE,
                 status=ActionRequestStatus.APPROVED,
@@ -427,7 +427,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
             ToolRun(
                 id=uuid4(),
                 thread_id=thread_id,
-                tool_name="set_demo_flag",
+                tool_name="fake_change_tool",
                 args={"key": "feature_z", "value": True},
                 status=ToolRunStatus.COMPLETED,
                 result={"ok": True},
@@ -478,7 +478,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
     assert state["pendingApprovals"] == [
         {
             "actionRequestId": str(pending_request_id),
-            "toolName": "set_demo_flag",
+            "toolName": "fake_change_tool",
             "risk": "CHANGE",
             "arguments": {"key": "feature_x", "value": True},
             "status": "PENDING",
@@ -487,7 +487,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
     assert state["actionRequests"] == [
         {
             "actionRequestId": str(pending_request_id),
-            "toolName": "set_demo_flag",
+            "toolName": "fake_change_tool",
             "risk": "CHANGE",
             "arguments": {"key": "feature_x", "value": True},
             "status": "PENDING",
@@ -495,7 +495,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
         },
         {
             "actionRequestId": str(denied_request_id),
-            "toolName": "set_demo_flag",
+            "toolName": "fake_change_tool",
             "risk": "CHANGE",
             "arguments": {"key": "feature_y", "value": False},
             "status": "DENIED",
@@ -503,7 +503,7 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
         },
         {
             "actionRequestId": str(finished_request_id),
-            "toolName": "set_demo_flag",
+            "toolName": "fake_change_tool",
             "risk": "CHANGE",
             "arguments": {"key": "feature_z", "value": True},
             "status": "APPROVED",
@@ -562,7 +562,7 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
@@ -591,7 +591,7 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
         "parts": [
             {
                 "type": "tool-call",
-                "toolName": "set_demo_flag",
+                "toolName": "fake_change_tool",
                 "toolCallId": str(started.id),
                 "args": {"key": "feature_x", "value": True},
             }
@@ -601,7 +601,7 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
         "action_approved",
         "tool_started",
     ]
-    assert operations.calls == [("execute", "set_demo_flag")]
+    assert operations.calls == [("execute", "fake_change_tool")]
 
 
 async def test_execute_approved_tool_run_fails_when_tool_definition_missing(
@@ -2063,7 +2063,7 @@ async def test_deny_action_request_writes_message_and_audit_metadata() -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
@@ -2086,14 +2086,14 @@ async def test_deny_action_request_writes_message_and_audit_metadata() -> None:
         "parts": [
             {
                 "type": "text",
-                "text": "Denied action request for tool 'set_demo_flag'.",
+                "text": "Denied action request for tool 'fake_change_tool'.",
             }
         ],
     }
     assert assistant_repo.audits[-1] == {
         "event_type": "action_denied",
         "actor_email": "owner@example.com",
-        "tool_name": "set_demo_flag",
+        "tool_name": "fake_change_tool",
         "metadata": {
             "thread_id": str(thread_id),
             "action_request_id": str(request.id),
@@ -2110,19 +2110,19 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
 
-    async def set_demo_flag(*, session, key: str, value: bool, **kwargs):
+    async def fake_change_tool(*, session, key: str, value: bool, **kwargs):
         _ = session, key, value, kwargs
         return {"ok": True}
 
     tool = ToolDefinition(
-        name="set_demo_flag",
-        description="Sets a demo flag.",
+        name="fake_change_tool",
+        description="Fake change tool.",
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
@@ -2133,7 +2133,7 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
             "required": ["key", "value"],
             "additionalProperties": False,
         },
-        execute=set_demo_flag,
+        execute=fake_change_tool,
     )
 
     monkeypatch.setattr(
@@ -2179,7 +2179,7 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
     )
     assert getattr(record, "thread_id") == str(thread_id)
     assert getattr(record, "user_id") == str(owner_id)
-    assert getattr(record, "tool_name") == "set_demo_flag"
+    assert getattr(record, "tool_name") == "fake_change_tool"
     assert getattr(record, "action_request_id") == str(request.id)
     assert getattr(record, "tool_run_id") == str(run.id)
 
@@ -2629,7 +2629,7 @@ async def test_assistant_service_deny_marks_denied_with_audit_and_message() -> N
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
@@ -2706,7 +2706,7 @@ async def test_assistant_service_deny_logs_success_context(
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
@@ -2735,7 +2735,7 @@ async def test_assistant_service_deny_logs_success_context(
     )
     assert getattr(record, "thread_id") == str(thread_id)
     assert getattr(record, "user_id") == str(owner_id)
-    assert getattr(record, "tool_name") == "set_demo_flag"
+    assert getattr(record, "tool_name") == "fake_change_tool"
     assert getattr(record, "action_request_id") == str(request.id)
 
 
@@ -2745,7 +2745,7 @@ async def test_assistant_service_rejects_approval_replay() -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
@@ -2783,7 +2783,7 @@ async def test_assistant_service_rejects_deny_replay() -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     request = await repo.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
@@ -2893,19 +2893,19 @@ async def test_assistant_service_add_tool_result_rejects_invalid_result_payload(
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
     started = await repo.start_tool_run(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "feature_x", "value": True},
         action_request_id=None,
         requested_by_user_id=owner_id,
     )
 
-    async def set_demo_flag(*, session, key: str, value: bool, **kwargs):
+    async def fake_change_tool(*, session, key: str, value: bool, **kwargs):
         _ = session, key, value, kwargs
         return {"ok": True, "status": "changed", "message": "Flag updated"}
 
     tool = ToolDefinition(
-        name="set_demo_flag",
-        description="Sets a demo flag.",
+        name="fake_change_tool",
+        description="Fake change tool.",
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
@@ -2926,7 +2926,7 @@ async def test_assistant_service_add_tool_result_rejects_invalid_result_payload(
             "required": ["ok", "status", "message"],
             "additionalProperties": False,
         },
-        execute=set_demo_flag,
+        execute=fake_change_tool,
     )
 
     monkeypatch.setattr(
@@ -3111,7 +3111,7 @@ async def test_assistant_service_run_agent_turn_emits_action_requested_audit() -
         owner_user_id=owner_id,
         owner_user_email="owner@example.com",
         thread_id=thread_id,
-        available_tool_names={"set_demo_flag"},
+        available_tool_names={"fake_change_tool"},
     )
 
     assert any(
