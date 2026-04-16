@@ -145,11 +145,17 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_auth_settings(self) -> "Settings":
         env = self.environment.lower()
+        llm_api_key_value = (
+            self.llm_api_key.get_secret_value() if self.llm_api_key is not None else ""
+        )
         secret_value = (
             self.auth_jwt_secret.get_secret_value()
             if self.auth_jwt_secret is not None
             else ""
         )
+
+        if not llm_api_key_value:
+            raise ValueError("llm_api_key is required")
 
         if self.auth_dev_bypass_ldap and env not in {"development", "dev", "test"}:
             raise ValueError(

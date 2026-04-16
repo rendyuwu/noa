@@ -14,6 +14,16 @@ def _settings(**kwargs: object) -> Settings:
     return Settings(environment="test", _env_file=None, **kwargs)  # type: ignore[call-arg]
 
 
+def test_settings_requires_llm_api_key_in_test_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+    monkeypatch.setenv("ENVIRONMENT", "test")
+
+    with pytest.raises(ValueError, match="llm_api_key is required"):
+        Settings(_env_file=None)
+
+
 def test_default_system_prompt_loads_and_is_non_empty() -> None:
     prompt = load_system_prompt(_settings())
 
