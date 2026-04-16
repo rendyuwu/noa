@@ -2102,6 +2102,7 @@ async def test_deny_action_request_writes_message_and_audit_metadata() -> None:
 
 
 async def test_assistant_service_approve_executes_pending_change_and_writes_audit(
+    monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     owner_id = uuid4()
@@ -2113,6 +2114,35 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
         args={"key": "feature_x", "value": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
+    )
+
+    async def set_demo_flag(*, session, key: str, value: bool, **kwargs):
+        _ = session, key, value, kwargs
+        return {"ok": True}
+
+    tool = ToolDefinition(
+        name="set_demo_flag",
+        description="Sets a demo flag.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "minLength": 1},
+                "value": {"type": "boolean"},
+            },
+            "required": ["key", "value"],
+            "additionalProperties": False,
+        },
+        execute=set_demo_flag,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
     )
 
     assistant_repo = _FakeAssistantRepository()
@@ -2855,9 +2885,9 @@ async def test_assistant_service_add_tool_result_rejects_unknown_or_stale_ids() 
     assert assistant_repo.messages[-1]["role"] == "tool"
 
 
-async def test_assistant_service_add_tool_result_rejects_invalid_result_payload() -> (
-    None
-):
+async def test_assistant_service_add_tool_result_rejects_invalid_result_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     owner_id = uuid4()
     thread_id = uuid4()
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
@@ -2867,6 +2897,45 @@ async def test_assistant_service_add_tool_result_rejects_invalid_result_payload(
         args={"key": "feature_x", "value": True},
         action_request_id=None,
         requested_by_user_id=owner_id,
+    )
+
+    async def set_demo_flag(*, session, key: str, value: bool, **kwargs):
+        _ = session, key, value, kwargs
+        return {"ok": True, "status": "changed", "message": "Flag updated"}
+
+    tool = ToolDefinition(
+        name="set_demo_flag",
+        description="Sets a demo flag.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "key": {"type": "string", "minLength": 1},
+                "value": {"type": "boolean"},
+            },
+            "required": ["key", "value"],
+            "additionalProperties": False,
+        },
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "status": {"type": "string"},
+                "message": {"type": "string"},
+            },
+            "required": ["ok", "status", "message"],
+            "additionalProperties": False,
+        },
+        execute=set_demo_flag,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
     )
 
     assistant_repo = _FakeAssistantRepository()

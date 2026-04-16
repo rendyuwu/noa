@@ -885,7 +885,7 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
         if payload["event"] == "admin_tools_list_succeeded"
     ]
     assert len(tools_list_events) == 1
-    assert tools_list_events[0]["tool_count"] == 3
+    assert tools_list_events[0]["tool_count"] == 2
     assert tools_list_events[0]["user_id"] == str(admin_user.user_id)
     assert tools_list_events[0]["user_email"] == admin_user.email
 
@@ -941,7 +941,7 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
         TelemetryEvent(
             name="admin_tools_list_succeeded",
             attributes={
-                "tool_count": 3,
+                "tool_count": 2,
                 "user_email": admin_user.email,
                 "user_id": str(admin_user.user_id),
             },
