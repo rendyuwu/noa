@@ -9,10 +9,18 @@ from noa_api.proxmox.tools.read_tools import (
     proxmox_list_servers,
     proxmox_validate_server,
 )
+from noa_api.proxmox.tools.vm_read_tools import (
+    proxmox_get_vm_config,
+    proxmox_get_vm_pending,
+    proxmox_get_vm_status_current,
+)
 
 __all__ = [
     "proxmox_disable_vm_nic",
     "proxmox_enable_vm_nic",
+    "proxmox_get_vm_config",
+    "proxmox_get_vm_pending",
+    "proxmox_get_vm_status_current",
     "proxmox_list_servers",
     "proxmox_preflight_vm_nic_toggle",
     "proxmox_validate_server",
