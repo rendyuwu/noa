@@ -38,7 +38,7 @@ def _upstream_error(
     }
 
 
-async def _fetch_vm_read(
+async def _fetch_vm_read_data(
     *,
     session: AsyncSession,
     server_ref: str,
@@ -68,6 +68,35 @@ async def _fetch_vm_read(
     }
 
 
+async def _fetch_vm_config(
+    *,
+    session: AsyncSession,
+    server_ref: str,
+    node: str,
+    vmid: int,
+) -> dict[str, object]:
+    repo: Any = SQLProxmoxServerRepository(session)
+    resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
+    if not resolution.ok:
+        return _resolution_error(resolution)
+
+    server = resolution.server
+    assert server is not None
+
+    client = _client_for_server(server)
+    result = await client.get_qemu_config(node.strip(), vmid)
+    if result.get("ok") is not True:
+        return _upstream_error(
+            result, fallback_message="Proxmox VM config lookup failed"
+        )
+
+    return {
+        "ok": True,
+        "message": "ok",
+        "data": result.get("config"),
+    }
+
+
 async def proxmox_get_vm_status_current(
     *,
     session: AsyncSession,
@@ -75,7 +104,7 @@ async def proxmox_get_vm_status_current(
     node: str,
     vmid: int,
 ) -> dict[str, object]:
-    return await _fetch_vm_read(
+    return await _fetch_vm_read_data(
         session=session,
         server_ref=server_ref,
         node=node,
@@ -92,13 +121,8 @@ async def proxmox_get_vm_config(
     node: str,
     vmid: int,
 ) -> dict[str, object]:
-    return await _fetch_vm_read(
-        session=session,
-        server_ref=server_ref,
-        node=node,
-        vmid=vmid,
-        fetcher="get_qemu_config",
-        fallback_message="Proxmox VM config lookup failed",
+    return await _fetch_vm_config(
+        session=session, server_ref=server_ref, node=node, vmid=vmid
     )
 
 
@@ -109,7 +133,7 @@ async def proxmox_get_vm_pending(
     node: str,
     vmid: int,
 ) -> dict[str, object]:
-    return await _fetch_vm_read(
+    return await _fetch_vm_read_data(
         session=session,
         server_ref=server_ref,
         node=node,

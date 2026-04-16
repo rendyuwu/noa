@@ -181,6 +181,44 @@ async def test_proxmox_get_vm_pending_returns_upstream_data(monkeypatch) -> None
 
 
 @pytest.mark.asyncio
+async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        {
+            "status_current": {"ok": True, "message": "ok", "data": {}},
+            "config": {
+                "ok": True,
+                "message": "ok",
+                "config": {"name": "vm101", "cores": 2},
+                "digest": "digest-1",
+            },
+            "pending": {"ok": True, "message": "ok", "data": {}},
+        },
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_config(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result == {
+        "ok": True,
+        "message": "ok",
+        "data": {"name": "vm101", "cores": 2},
+    }
+
+
+@pytest.mark.asyncio
 async def test_proxmox_get_vm_status_current_preserves_client_errors(
     monkeypatch,
 ) -> None:
