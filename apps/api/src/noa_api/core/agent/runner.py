@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
-import re
 from dataclasses import dataclass
 from inspect import signature
 from typing import Any, Awaitable, Callable, Protocol, cast
@@ -190,123 +188,6 @@ def _prompt_replay_parts(parts: list[dict[str, object]]) -> list[dict[str, objec
             continue
         replay_parts.append(part_dict)
     return replay_parts
-
-
-class RuleBasedLLMClient:
-    async def run_turn(
-        self,
-        *,
-        messages: list[dict[str, object]],
-        tools: list[dict[str, object]],
-        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
-    ) -> LLMTurnResponse:
-        _ = tools
-
-        async def _emit_text_turn(text: str) -> LLMTurnResponse:
-            turn = LLMTurnResponse(text=text, tool_calls=[])
-            if on_text_delta is not None and turn.text:
-                for chunk in _split_text_deltas(turn.text):
-                    await on_text_delta(chunk)
-                    await asyncio.sleep(0)
-            return turn
-
-        tool_result_templates: dict[str, tuple[str, str]] = {
-            "get_current_date": ("date", "Today's date is {value}."),
-            "get_current_time": ("time", "The current time is {value}."),
-        }
-        relevant_tool_results = set(tool_result_templates) | {"set_demo_flag"}
-
-        last_user_index = -1
-        for index, message in enumerate(messages):
-            if message.get("role") == "user":
-                last_user_index = index
-
-        latest_relevant_tool_result: dict[str, object] | None = None
-        for message in reversed(messages[last_user_index + 1 :]):
-            if message.get("role") != "tool":
-                continue
-            parts = message.get("parts")
-            if not isinstance(parts, list):
-                continue
-            for part in parts:
-                part_dict = _as_object_dict(part)
-                if part_dict is None or part_dict.get("type") != "tool-result":
-                    continue
-                tool_name = part_dict.get("toolName")
-                if not isinstance(tool_name, str):
-                    continue
-                if tool_name in relevant_tool_results:
-                    latest_relevant_tool_result = part_dict
-                    break
-            if latest_relevant_tool_result is not None:
-                break
-
-        if latest_relevant_tool_result is not None:
-            if latest_relevant_tool_result.get("isError") is not True:
-                tool_name = latest_relevant_tool_result.get("toolName")
-                result = _as_object_dict(latest_relevant_tool_result.get("result"))
-                if isinstance(tool_name, str) and result is not None:
-                    if tool_name == "set_demo_flag":
-                        if result.get("ok") is True:
-                            return await _emit_text_turn("The demo flag was updated.")
-                        return await _emit_text_turn(
-                            "I could not confirm the demo flag update."
-                        )
-                    value_key, template = tool_result_templates[tool_name]
-                    raw_value = result.get(value_key)
-                    if isinstance(raw_value, str) and raw_value:
-                        return await _emit_text_turn(template.format(value=raw_value))
-
-        last_user_text = ""
-        for message in reversed(messages):
-            if message.get("role") != "user":
-                continue
-            parts = message.get("parts")
-            if not isinstance(parts, list):
-                continue
-            for part in parts:
-                part_dict = _as_object_dict(part)
-                if part_dict is None or part_dict.get("type") != "text":
-                    continue
-                text = part_dict.get("text")
-                if isinstance(text, str):
-                    last_user_text = text
-                    break
-            if last_user_text:
-                break
-
-        lowered = last_user_text.lower()
-        if "time" in lowered:
-            turn = LLMTurnResponse(
-                text="I'll check the current server time.",
-                tool_calls=[LLMToolCall(name="get_current_time", arguments={})],
-            )
-        elif "date" in lowered:
-            turn = LLMTurnResponse(
-                text="I'll check today's server date.",
-                tool_calls=[LLMToolCall(name="get_current_date", arguments={})],
-            )
-        elif "demo flag" in lowered:
-            key, value = _extract_demo_flag_args(last_user_text)
-            turn = LLMTurnResponse(
-                text="I can set that demo flag after your approval.",
-                tool_calls=[
-                    LLMToolCall(
-                        name="set_demo_flag", arguments={"key": key, "value": value}
-                    )
-                ],
-            )
-        else:
-            turn = LLMTurnResponse(
-                text="I can help with date/time checks and demo flag requests in this MVP.",
-                tool_calls=[],
-            )
-
-        if on_text_delta is not None and turn.text:
-            for chunk in _split_text_deltas(turn.text):
-                await on_text_delta(chunk)
-                await asyncio.sleep(0)
-        return turn
 
 
 class OpenAICompatibleLLMClient:
@@ -1779,21 +1660,3 @@ def _split_text_deltas(text: str, *, chunk_size: int = 24) -> list[str]:
     return [
         text[index : index + chunk_size] for index in range(0, len(text), chunk_size)
     ]
-
-
-def _extract_demo_flag_args(text: str) -> tuple[str, object]:
-    match = re.search(
-        r"demo\s+flag\s+([a-zA-Z0-9_.-]+)\s*=\s*(.+)$", text, flags=re.IGNORECASE
-    )
-    if not match:
-        return "demo_flag", True
-    key = match.group(1)
-    raw_value = match.group(2).strip()
-    lowered = raw_value.lower()
-    if lowered in {"true", "yes", "on"}:
-        return key, True
-    if lowered in {"false", "no", "off"}:
-        return key, False
-    if raw_value.isdigit():
-        return key, int(raw_value)
-    return key, raw_value

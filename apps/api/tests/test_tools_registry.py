@@ -1,34 +1,15 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from datetime import date, datetime
-from typing import cast
 
 from noa_api.core.agent.runner import _to_openai_tool_schema
 from noa_api.core.tools import catalog
 from noa_api.core.tools.catalog import get_tool_catalog
-from noa_api.core.tools.demo_tools import (
-    get_current_date,
-    get_current_time,
-    set_demo_flag,
-)
+from noa_api.core.tools.demo_tools import get_current_date, get_current_time
 from noa_api.core.tools.registry import get_tool_definition, get_tool_registry
-from noa_api.storage.postgres.models import AuditLog
 
 
-@dataclass
-class _FakeSession:
-    added: list[object]
-    flushed: bool = False
-
-    def add(self, instance: object) -> None:
-        self.added.append(instance)
-
-    async def flush(self) -> None:
-        self.flushed = True
-
-
-async def test_tool_registry_contains_demo_tools_with_expected_risk() -> None:
+async def test_tool_registry_contains_core_tools_with_expected_risk() -> None:
     registry = get_tool_registry()
     names = tuple(tool.name for tool in registry)
     risks = {tool.name: tool.risk for tool in registry}
@@ -36,8 +17,10 @@ async def test_tool_registry_contains_demo_tools_with_expected_risk() -> None:
     assert names == get_tool_catalog()
     assert risks["get_current_time"] == "READ"
     assert risks["get_current_date"] == "READ"
-    assert risks["set_demo_flag"] == "CHANGE"
-    assert get_tool_definition("set_demo_flag") is not None
+    assert risks["update_workflow_todo"] == "READ"
+    assert get_tool_definition("get_current_time") is not None
+    assert get_tool_definition("get_current_date") is not None
+    assert get_tool_definition("set_demo_flag") is None
     assert get_tool_definition("unknown_tool") is None
 
 
@@ -46,17 +29,8 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
 
     assert by_name["get_current_time"].parameters_schema["properties"] == {}
     assert by_name["get_current_date"].parameters_schema["properties"] == {}
-
-    set_demo_flag_schema = by_name["set_demo_flag"].parameters_schema
-    assert set_demo_flag_schema["required"] == ["key", "value"]
-    assert (
-        set_demo_flag_schema["properties"]["key"]["description"]
-        == "Demo flag name to persist in the audit log, such as a feature or scenario identifier."
-    )
-    assert (
-        set_demo_flag_schema["properties"]["value"]["description"]
-        == "JSON-serializable flag value to persist for the demo marker."
-    )
+    assert by_name["update_workflow_todo"].risk == "READ"
+    assert by_name["update_workflow_todo"].result_schema is not None
 
     change_email_schema = by_name["whm_change_contact_email"].parameters_schema
     assert change_email_schema["properties"]["new_email"]["format"] == "email"
@@ -78,8 +52,6 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     ]
     assert proxmox_disable_schema["properties"]["net"]["pattern"] == r"^net\d+$"
 
-    assert by_name["set_demo_flag"].result_schema is not None
-    assert by_name["update_workflow_todo"].result_schema is not None
     assert by_name["whm_suspend_account"].result_schema is not None
     assert by_name["whm_firewall_unblock"].result_schema is not None
     assert by_name["proxmox_preflight_vm_nic_toggle"].result_schema is not None
@@ -164,18 +136,3 @@ async def test_read_demo_tools_return_time_and_date_payloads() -> None:
     assert "date" in current_date
     datetime.fromisoformat(current_time["time"])
     date.fromisoformat(current_date["date"])
-
-
-async def test_set_demo_flag_writes_db_backed_marker() -> None:
-    session = _FakeSession(added=[])
-
-    result = await set_demo_flag(session=session, key="feature_x", value=True)
-
-    assert session.flushed is True
-    assert len(session.added) == 1
-    marker = cast(AuditLog, session.added[0])
-    assert isinstance(marker, AuditLog)
-    assert marker.event_type == "demo_flag_set"
-    assert marker.tool_name == "set_demo_flag"
-    assert marker.meta_data == {"key": "feature_x", "value": True}
-    assert result == {"ok": True, "flag": {"key": "feature_x", "value": True}}

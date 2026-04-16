@@ -17,7 +17,6 @@ from noa_api.core.agent.runner import (
     LLMToolCall,
     LLMTurnResponse,
     OpenAICompatibleLLMClient,
-    RuleBasedLLMClient,
 )
 from noa_api.core.config import Settings
 from noa_api.core.tools.registry import ToolDefinition
@@ -1006,37 +1005,59 @@ async def test_agent_runner_allows_five_rounds_before_safety_limit() -> None:
     )
 
 
-async def test_agent_runner_creates_action_request_for_change_tools_without_execution() -> (
-    None
-):
+async def test_agent_runner_creates_action_request_for_change_tools_without_execution(
+    monkeypatch,
+) -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change_tool(*, reason: str) -> dict[str, object]:
+        raise AssertionError(f"unexpected execution for {reason}")
+
+    tool = ToolDefinition(
+        name="guarded_change_tool",
+        description="Requires approval before execution.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
     runner = AgentRunner(
         llm_client=_FakeLLMClient(
             response=LLMTurnResponse(
-                text="I can set that flag after your approval.",
-                tool_calls=[
-                    LLMToolCall(
-                        name="set_demo_flag",
-                        arguments={"key": "feature_x", "value": True},
-                    )
-                ],
+                text="I can handle that after your approval.",
+                tool_calls=[LLMToolCall(name=tool.name, arguments={"reason": "ops"})],
             )
         ),
         action_tool_run_service=ActionToolRunService(repository=repo),
     )
 
     result = await runner.run_turn(
-        thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Set demo flag"}]}
-        ],
-        available_tool_names={"set_demo_flag"},
+        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "go"}]}],
+        available_tool_names={tool.name},
         thread_id=uuid4(),
         requested_by_user_id=uuid4(),
     )
 
     assert len(repo.action_requests) == 1
     request = next(iter(repo.action_requests.values()))
-    assert request.tool_name == "set_demo_flag"
+    assert request.tool_name == tool.name
     assert request.status == ActionRequestStatus.PENDING
 
     assert repo.tool_runs == {}
@@ -3664,223 +3685,3 @@ async def test_build_approval_context_uses_correct_change_arguments_in_activity(
     assert change_reply["outcome"] == "info"
     assert unblock_reply["title"] == "Firewall change approval requested"
     assert unblock_reply["outcome"] == "info"
-
-
-async def test_rule_based_llm_responds_to_date_tool_result() -> None:
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "user",
-                "parts": [{"type": "text", "text": "What's the date?"}],
-            },
-            {
-                "role": "assistant",
-                "parts": [
-                    {
-                        "type": "tool-call",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-1",
-                        "args": {},
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-1",
-                        "result": {"date": "2026-03-12"},
-                        "isError": False,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert turn.text == "Today's date is 2026-03-12."
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_responds_to_time_tool_result() -> None:
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_time",
-                        "toolCallId": "tc-2",
-                        "result": {"time": "2026-03-12T22:30:00+00:00"},
-                        "isError": False,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert turn.text == "The current time is 2026-03-12T22:30:00+00:00."
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_ignores_errored_tool_result() -> None:
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-3",
-                        "result": {"error": "boom"},
-                        "isError": True,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert (
-        turn.text
-        == "I can help with date/time checks and demo flag requests in this MVP."
-    )
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_does_not_use_stale_success_when_latest_result_errors() -> (
-    None
-):
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-ok",
-                        "result": {"date": "2026-03-11"},
-                        "isError": False,
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-err",
-                        "result": {"error": "boom"},
-                        "isError": True,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert (
-        turn.text
-        == "I can help with date/time checks and demo flag requests in this MVP."
-    )
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_prioritizes_latest_user_turn_over_old_tool_result() -> (
-    None
-):
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-old",
-                        "result": {"date": "2026-03-11"},
-                        "isError": False,
-                    }
-                ],
-            },
-            {
-                "role": "user",
-                "parts": [{"type": "text", "text": "hello"}],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert (
-        turn.text
-        == "I can help with date/time checks and demo flag requests in this MVP."
-    )
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_handles_set_demo_flag_tool_result_without_reasking() -> (
-    None
-):
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "user",
-                "parts": [{"type": "text", "text": "Set demo flag feature_x = true"}],
-            },
-            {
-                "role": "assistant",
-                "parts": [
-                    {
-                        "type": "tool-call",
-                        "toolName": "set_demo_flag",
-                        "toolCallId": "tc-change-1",
-                        "args": {"key": "feature_x", "value": True},
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "set_demo_flag",
-                        "toolCallId": "tc-change-1",
-                        "result": {
-                            "ok": True,
-                            "flag": {"key": "feature_x", "value": True},
-                        },
-                        "isError": False,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert turn.text == "The demo flag was updated."
-    assert turn.tool_calls == []
