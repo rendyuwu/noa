@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any
+from typing import Any, cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -194,7 +194,7 @@ async def _fetch_vm_nic_state(
             "message": "Proxmox returned an unexpected QEMU config payload",
         }
 
-    nets = _normalize_nics(config)
+    nets = _normalize_nics(cast(dict[str, object], config))
     selected_net, selection_error = _select_nic(nets=nets, requested_net=net)
     if selection_error is not None:
         return {
@@ -436,7 +436,7 @@ async def _change_vm_nic_link_state(
             "message": "Proxmox returned an unexpected post-update QEMU config payload",
         }
 
-    after_net = _normalized_text(post_config.get(selected_net))
+    after_net = _normalized_text(cast(dict[str, object], post_config).get(selected_net))
     if after_net is None:
         return {
             "ok": False,
@@ -483,6 +483,7 @@ async def proxmox_disable_vm_nic(
     vmid: int,
     net: str,
     digest: str,
+    reason: str,
 ) -> dict[str, object]:
     return await _change_vm_nic_link_state(
         session=session,
@@ -503,6 +504,7 @@ async def proxmox_enable_vm_nic(
     vmid: int,
     net: str,
     digest: str,
+    reason: str,
 ) -> dict[str, object]:
     return await _change_vm_nic_link_state(
         session=session,

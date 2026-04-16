@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any, cast
 
 from noa_api.core.agent.runner import _to_openai_tool_schema
 from noa_api.core.tools import catalog
 from noa_api.core.tools.catalog import get_tool_catalog
+from noa_api.core.tools import registry as tool_registry_module
 from noa_api.core.tools.demo_tools import get_current_date, get_current_time
 from noa_api.core.tools.registry import get_tool_definition, get_tool_registry
 
@@ -49,8 +51,19 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
         "vmid",
         "net",
         "digest",
+        "reason",
     ]
     assert proxmox_disable_schema["properties"]["net"]["pattern"] == r"^net\d+$"
+
+    proxmox_enable_schema = by_name["proxmox_enable_vm_nic"].parameters_schema
+    assert proxmox_enable_schema["required"] == [
+        "server_ref",
+        "node",
+        "vmid",
+        "net",
+        "digest",
+        "reason",
+    ]
 
     assert by_name["whm_suspend_account"].result_schema is not None
     assert by_name["whm_firewall_unblock"].result_schema is not None
@@ -65,8 +78,8 @@ async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
     assert suspend_tool is not None
     assert todo_tool is not None
 
-    suspend_schema = _to_openai_tool_schema(suspend_tool)
-    todo_schema = _to_openai_tool_schema(todo_tool)
+    suspend_schema = cast(dict[str, Any], _to_openai_tool_schema(suspend_tool))
+    todo_schema = cast(dict[str, Any], _to_openai_tool_schema(todo_tool))
 
     suspend_description = suspend_schema["function"]["description"]
     assert (
@@ -120,6 +133,18 @@ async def test_whm_change_tools_expose_workflow_families() -> None:
         by_name["proxmox_enable_vm_nic"].workflow_family
         == "proxmox-vm-nic-connectivity"
     )
+
+
+async def test_all_change_tools_require_shared_reason_parameter() -> None:
+    for tool in get_tool_registry():
+        if tool.risk != "CHANGE":
+            continue
+
+        properties = cast(dict[str, Any], tool.parameters_schema.get("properties"))
+        required = cast(list[str], tool.parameters_schema.get("required"))
+        reason_schema = properties.get("reason")
+        assert reason_schema is tool_registry_module._REASON_PARAM
+        assert "reason" in required
 
 
 async def test_tools_catalog_is_sourced_live_from_registry(monkeypatch) -> None:

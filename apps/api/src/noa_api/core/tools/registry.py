@@ -1226,8 +1226,9 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "vmid": _PROXMOX_VMID_PARAM,
                 "net": _PROXMOX_NET_PARAM,
                 "digest": _PROXMOX_DIGEST_PARAM,
+                "reason": _REASON_PARAM,
             },
-            required=["server_ref", "node", "vmid", "net", "digest"],
+            required=["server_ref", "node", "vmid", "net", "digest", "reason"],
         ),
         execute=proxmox_disable_vm_nic,
         prompt_hints=(
@@ -1248,8 +1249,9 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "vmid": _PROXMOX_VMID_PARAM,
                 "net": _PROXMOX_NET_PARAM,
                 "digest": _PROXMOX_DIGEST_PARAM,
+                "reason": _REASON_PARAM,
             },
-            required=["server_ref", "node", "vmid", "net", "digest"],
+            required=["server_ref", "node", "vmid", "net", "digest", "reason"],
         ),
         execute=proxmox_enable_vm_nic,
         prompt_hints=(

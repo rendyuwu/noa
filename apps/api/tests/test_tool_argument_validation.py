@@ -59,6 +59,49 @@ def test_validate_tool_arguments_accepts_trimmed_primary_domain_strings() -> Non
     )
 
 
+def test_validate_tool_arguments_accepts_ticket_style_proxmox_reason() -> None:
+    tool = get_tool_definition("proxmox_disable_vm_nic")
+
+    assert tool is not None
+
+    validate_tool_arguments(
+        tool=tool,
+        args={
+            "server_ref": "pve1",
+            "node": "node1",
+            "vmid": 100,
+            "net": "net0",
+            "digest": "abc123",
+            "reason": "CHG-12345: customer-approved NIC maintenance",
+        },
+    )
+
+
+def test_validate_tool_arguments_rejects_blank_proxmox_reason() -> None:
+    tool = get_tool_definition("proxmox_disable_vm_nic")
+
+    assert tool is not None
+
+    with pytest.raises(ToolArgumentValidationError) as exc_info:
+        validate_tool_arguments(
+            tool=tool,
+            args={
+                "server_ref": "pve1",
+                "node": "node1",
+                "vmid": 100,
+                "net": "net0",
+                "digest": "abc123",
+                "reason": "   ",
+            },
+        )
+
+    assert exc_info.value.as_result() == {
+        "error": "Tool arguments are invalid",
+        "error_code": "invalid_tool_arguments",
+        "details": ["reason must not be blank"],
+    }
+
+
 def test_validate_tool_arguments_rejects_duplicate_firewall_targets() -> None:
     tool = get_tool_definition("whm_firewall_unblock")
 
