@@ -242,8 +242,8 @@ class ProxmoxClient:
         self, node: str, vmid: int, new_password: str
     ) -> dict[str, object]:
         return await self._request_json(
-            "PUT",
-            f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit",
+            "POST",
+            f"/api2/json/nodes/{node}/qemu/{vmid}/config",
             form_data={"cipassword": new_password},
         )
 

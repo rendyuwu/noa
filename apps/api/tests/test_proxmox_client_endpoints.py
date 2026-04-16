@@ -109,11 +109,16 @@ async def test_proxmox_client_get_qemu_cloudinit_dump_user_uses_query_param() ->
     assert result == {"ok": True, "message": "ok", "data": "ciuser: alice"}
 
 
-async def test_proxmox_client_set_qemu_cloudinit_password_posts_form_body() -> None:
+async def test_proxmox_client_set_qemu_cloudinit_password_posts_config_form_body() -> (
+    None
+):
     from noa_api.proxmox.integrations.client import ProxmoxClient
 
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.method == "PUT"
+        assert request.method == "POST"
+        assert str(request.url) == (
+            "https://proxmox.example.com:8006/api2/json/nodes/pve1/qemu/101/config"
+        )
         assert request.headers["content-type"].startswith(
             "application/x-www-form-urlencoded"
         )
@@ -259,6 +264,7 @@ async def test_proxmox_client_add_vms_to_pool_posts_allow_move_form() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "PUT"
+        assert str(request.url) == "https://proxmox.example.com:8006/api2/json/pools"
         assert request.content == b"poolid=pool_b&vms=1057%2C1058&allow-move=1"
         return httpx.Response(status_code=200, json={"data": None}, request=request)
 
@@ -280,6 +286,7 @@ async def test_proxmox_client_remove_vms_from_pool_posts_delete_form() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "PUT"
+        assert str(request.url) == "https://proxmox.example.com:8006/api2/json/pools"
         assert request.content == b"poolid=pool_a&vms=1057%2C1058&delete=1"
         return httpx.Response(status_code=200, json={"data": None}, request=request)
 
