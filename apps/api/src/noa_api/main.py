@@ -16,8 +16,20 @@ from noa_api.core.telemetry import create_telemetry_recorder
 logger = logging.getLogger(__name__)
 
 
+def _require_llm_api_key(app_settings: Settings) -> str:
+    api_key = (
+        app_settings.llm_api_key.get_secret_value()
+        if app_settings.llm_api_key is not None
+        else ""
+    )
+    if not api_key.strip():
+        raise ValueError("llm_api_key is required")
+    return api_key
+
+
 def create_app(app_settings: Settings = settings) -> FastAPI:
     configure_logging()
+    _require_llm_api_key(app_settings)
     prompt = load_system_prompt(app_settings)
     logger.info(
         "llm_system_prompt_loaded",

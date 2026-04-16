@@ -5,11 +5,16 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+import pytest
+from pydantic import SecretStr
+
+from noa_api.core.agent import runner as runner_module
 from noa_api.core.agent.runner import (
     _build_approval_context,
     _to_openai_chat_messages,
     AgentRunner,
     AgentRunnerResult,
+    create_default_llm_client,
     LLMToolCall,
     LLMTurnResponse,
     OpenAICompatibleLLMClient,
@@ -27,6 +32,24 @@ from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 async def _async_return(value):
     return value
+
+
+def test_create_default_llm_client_requires_llm_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner_module.settings, "llm_api_key", None)
+
+    with pytest.raises(ValueError, match="llm_api_key is required"):
+        create_default_llm_client()
+
+
+def test_create_default_llm_client_rejects_blank_llm_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runner_module.settings, "llm_api_key", SecretStr("   "))
+
+    with pytest.raises(ValueError, match="llm_api_key is required"):
+        create_default_llm_client()
 
 
 @dataclass
@@ -252,18 +275,19 @@ async def test_agent_runner_aggregates_reasoning_once_across_rounds() -> None:
                     reasoning="First internal note.",
                 )
 
-            assistant_messages = [
-                message
-                for message in messages
-                if message.get("role") == "assistant"
-                and isinstance(message.get("parts"), list)
-                and any(
+            assistant_messages = []
+            for message in messages:
+                parts = message.get("parts")
+                if message.get("role") != "assistant" or not isinstance(parts, list):
+                    continue
+                if any(
                     isinstance(part, dict)
-                    and part.get("type") == "text"
-                    and part.get("text") == "I'll check the server time."
-                    for part in message["parts"]
-                )
-            ]
+                    and cast(dict[str, object], part).get("type") == "text"
+                    and cast(dict[str, object], part).get("text")
+                    == "I'll check the server time."
+                    for part in parts
+                ):
+                    assistant_messages.append(message)
             assert assistant_messages == [
                 {
                     "role": "assistant",

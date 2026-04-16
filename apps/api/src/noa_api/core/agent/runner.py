@@ -1142,15 +1142,16 @@ def create_default_llm_client() -> LLMClientProtocol:
         if settings.llm_api_key is not None
         else ""
     )
-    if api_key:
-        prompt = load_system_prompt(settings)
-        return OpenAICompatibleLLMClient(
-            model=settings.llm_model,
-            api_key=api_key,
-            base_url=settings.llm_base_url,
-            system_prompt=prompt.text,
-        )
-    return RuleBasedLLMClient()
+    if not api_key.strip():
+        raise ValueError("llm_api_key is required")
+
+    prompt = load_system_prompt(settings)
+    return OpenAICompatibleLLMClient(
+        model=settings.llm_model,
+        api_key=api_key,
+        base_url=settings.llm_base_url,
+        system_prompt=prompt.text,
+    )
 
 
 def _to_openai_chat_messages(
