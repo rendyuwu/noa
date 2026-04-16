@@ -24,6 +24,16 @@ def test_settings_requires_llm_api_key_in_test_env(
         Settings(_env_file=None)
 
 
+def test_settings_rejects_whitespace_only_llm_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ENVIRONMENT", "test")
+    monkeypatch.setenv("LLM_API_KEY", "   ")
+
+    with pytest.raises(ValueError, match="llm_api_key is required"):
+        Settings(_env_file=None)
+
+
 def test_default_system_prompt_loads_and_is_non_empty() -> None:
     prompt = load_system_prompt(_settings())
 

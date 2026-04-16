@@ -154,7 +154,7 @@ class Settings(BaseSettings):
             else ""
         )
 
-        if not llm_api_key_value:
+        if not llm_api_key_value.strip():
             raise ValueError("llm_api_key is required")
 
         if self.auth_dev_bypass_ldap and env not in {"development", "dev", "test"}:
