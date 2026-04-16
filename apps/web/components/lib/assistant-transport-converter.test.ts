@@ -168,7 +168,7 @@ describe("convertAssistantState", () => {
         pendingApprovals: [
           {
             actionRequestId: "approval-1",
-            toolName: "set_demo_flag",
+            toolName: "whm_suspend_account",
             risk: "CHANGE",
             arguments: { key: "feature_x", value: true },
             status: "PENDING",
@@ -177,7 +177,7 @@ describe("convertAssistantState", () => {
         actionRequests: [
           {
             actionRequestId: "approval-1",
-            toolName: "set_demo_flag",
+            toolName: "whm_suspend_account",
             risk: "CHANGE",
             arguments: { key: "feature_x", value: true },
             status: "PENDING",
@@ -211,7 +211,7 @@ describe("convertAssistantState", () => {
     expect((converted.messages[0] as any)?.metadata?.custom?.pendingApprovals).toEqual([
       {
         actionRequestId: "approval-1",
-        toolName: "set_demo_flag",
+        toolName: "whm_suspend_account",
         risk: "CHANGE",
         arguments: { key: "feature_x", value: true },
         status: "PENDING",
@@ -220,7 +220,7 @@ describe("convertAssistantState", () => {
     expect((converted.messages[0] as any)?.metadata?.custom?.actionRequests).toEqual([
       {
         actionRequestId: "approval-1",
-        toolName: "set_demo_flag",
+        toolName: "whm_suspend_account",
         risk: "CHANGE",
         arguments: { key: "feature_x", value: true },
         status: "PENDING",
@@ -261,7 +261,7 @@ describe("convertAssistantState", () => {
             parts: [
               {
                 type: "tool-call",
-                toolName: "set_demo_flag",
+                toolName: "mock_change_tool",
                 toolCallId: "proposal-123",
                 args: { key: "demo_flag", value: true },
               },

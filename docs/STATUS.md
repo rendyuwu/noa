@@ -1,6 +1,6 @@
 # Project NOA - Status
 
-Last updated: 2026-03-28
+Last updated: 2026-04-16
 
 This is a living checklist of what is implemented in the MVP and what is intentionally not implemented yet.
 
@@ -15,8 +15,8 @@ This is a living checklist of what is implemented in the MVP and what is intenti
   - Postgres persistence + Alembic migrations
   - Thread CRUD API for assistant-ui remote thread list
   - Assistant Transport endpoint (`POST /assistant`) using assistant-stream
-  - Tool registry (READ vs CHANGE) + demo tools
-  - Approval gate for CHANGE tools, including approve/deny execution path
+  - Tool registry (READ vs CHANGE) + real tools
+  - Approval gate for CHANGE tools, including approve/deny execution path and recorded reasons
   - Audit log events for auth/admin/actions/tools
   - WHM server inventory with encrypted API token storage for WHM API-backed tools
   - Optional WHM SSH credential storage with encrypted password/private key/passphrase fields
@@ -26,7 +26,7 @@ This is a living checklist of what is implemented in the MVP and what is intenti
   - READ-only WHM SSH binary checker tool
   - Proxmox server inventory for API-backed tools
   - Proxmox server connectivity validation
-  - Proxmox QEMU VM NIC preflight plus enable/disable operations
+  - Proxmox QEMU VM NIC preflight plus enable/disable operations with recorded reasons and evidence
 
 - Frontend (Next.js + assistant-ui)
   - Login page (`/login`)
