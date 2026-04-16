@@ -133,6 +133,7 @@ class ProxmoxClient:
         path: str,
         *,
         form_data: Mapping[str, object] | None = None,
+        query_params: Mapping[str, object] | None = None,
     ) -> dict[str, object]:
         url = f"{self._base_url}/{path.lstrip('/')}"
         try:
@@ -146,6 +147,7 @@ class ProxmoxClient:
                     url,
                     headers=self._headers(),
                     data=dict(form_data or {}),
+                    params=dict(query_params or {}),
                 )
         except httpx.TimeoutException:
             return {
@@ -208,6 +210,96 @@ class ProxmoxClient:
 
     async def get_version(self) -> dict[str, object]:
         return await self._request_json("GET", "/api2/json/version")
+
+    async def get_qemu_status_current(self, node: str, vmid: int) -> dict[str, object]:
+        return await self._request_json(
+            "GET",
+            f"/api2/json/nodes/{node}/qemu/{vmid}/status/current",
+        )
+
+    async def get_qemu_pending(self, node: str, vmid: int) -> dict[str, object]:
+        return await self._request_json(
+            "GET",
+            f"/api2/json/nodes/{node}/qemu/{vmid}/pending",
+        )
+
+    async def get_qemu_cloudinit(self, node: str, vmid: int) -> dict[str, object]:
+        return await self._request_json(
+            "GET",
+            f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit",
+        )
+
+    async def get_qemu_cloudinit_dump_user(
+        self, node: str, vmid: int
+    ) -> dict[str, object]:
+        return await self._request_json(
+            "GET",
+            f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit/dump",
+            query_params={"type": "user"},
+        )
+
+    async def set_qemu_cloudinit_password(
+        self, node: str, vmid: int, new_password: str
+    ) -> dict[str, object]:
+        return await self._request_json(
+            "PUT",
+            f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit",
+            form_data={"cipassword": new_password},
+        )
+
+    async def regenerate_qemu_cloudinit(
+        self, node: str, vmid: int
+    ) -> dict[str, object]:
+        return await self._request_json(
+            "PUT",
+            f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit",
+        )
+
+    async def get_user(self, userid: str) -> dict[str, object]:
+        return await self._request_json(
+            "GET",
+            f"/api2/json/access/users/{userid}",
+        )
+
+    async def get_pool(self, poolid: str) -> dict[str, object]:
+        return await self._request_json(
+            "GET",
+            "/api2/json/pools",
+            query_params={"poolid": poolid},
+        )
+
+    async def get_effective_permissions(
+        self, userid: str, path: str
+    ) -> dict[str, object]:
+        return await self._request_json(
+            "GET",
+            "/api2/json/access/permissions",
+            query_params={"userid": userid, "path": path},
+        )
+
+    async def add_vms_to_pool(self, poolid: str, vmids: list[int]) -> dict[str, object]:
+        return await self._request_json(
+            "PUT",
+            "/api2/json/pools",
+            form_data={
+                "poolid": poolid,
+                "vms": ",".join(str(vmid) for vmid in vmids),
+                "allow-move": 1,
+            },
+        )
+
+    async def remove_vms_from_pool(
+        self, poolid: str, vmids: list[int]
+    ) -> dict[str, object]:
+        return await self._request_json(
+            "PUT",
+            "/api2/json/pools",
+            form_data={
+                "poolid": poolid,
+                "vms": ",".join(str(vmid) for vmid in vmids),
+                "delete": 1,
+            },
+        )
 
     async def get_qemu_config(self, node: str, vmid: int) -> dict[str, object]:
         result = await self._request_json(
