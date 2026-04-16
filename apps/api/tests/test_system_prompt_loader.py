@@ -1,21 +1,19 @@
 from __future__ import annotations
 
-import os
 import logging
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 from noa_api.core.config import Settings
 from noa_api.core.prompts.loader import load_system_prompt
 
-os.environ.setdefault("LLM_API_KEY", "test-llm-api-key")
-
-from noa_api.main import create_app
-
 
 def _settings(**kwargs: object) -> Settings:
-    return Settings.model_validate({"environment": "test", **kwargs})
+    return Settings.model_validate(
+        {"environment": "test", "llm_api_key": SecretStr("test-key"), **kwargs}
+    )
 
 
 def test_settings_can_load_without_llm_api_key_for_generic_consumers(
@@ -123,11 +121,12 @@ def test_settings_parse_prompt_extra_paths_from_string() -> None:
 
 
 def test_create_app_logs_system_prompt_fingerprint(
+    create_test_app,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.INFO, logger="noa_api.main")
 
-    _ = create_app(_settings())
+    _ = create_test_app(_settings())
 
     record = next(
         record

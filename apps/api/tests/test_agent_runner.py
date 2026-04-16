@@ -8,7 +8,6 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import SecretStr
 
-from noa_api.core.agent import runner as runner_module
 from noa_api.core.agent.runner import (
     _build_approval_context,
     _to_openai_chat_messages,
@@ -20,6 +19,7 @@ from noa_api.core.agent.runner import (
     OpenAICompatibleLLMClient,
     RuleBasedLLMClient,
 )
+from noa_api.core.config import Settings
 from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
@@ -34,22 +34,22 @@ async def _async_return(value):
     return value
 
 
-def test_create_default_llm_client_requires_llm_api_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(runner_module.settings, "llm_api_key", None)
+def _settings(**kwargs: object) -> Settings:
+    return Settings.model_validate({"environment": "test", **kwargs})
+
+
+def test_create_default_llm_client_requires_llm_api_key() -> None:
+    settings = _settings(llm_api_key=None)
 
     with pytest.raises(ValueError, match="llm_api_key is required"):
-        create_default_llm_client()
+        create_default_llm_client(settings)
 
 
-def test_create_default_llm_client_rejects_blank_llm_api_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(runner_module.settings, "llm_api_key", SecretStr("   "))
+def test_create_default_llm_client_rejects_blank_llm_api_key() -> None:
+    settings = _settings(llm_api_key=SecretStr("   "))
 
     with pytest.raises(ValueError, match="llm_api_key is required"):
-        create_default_llm_client()
+        create_default_llm_client(settings)
 
 
 @dataclass
