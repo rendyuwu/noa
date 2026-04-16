@@ -12,8 +12,8 @@ from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
 _TASK_POLL_ATTEMPTS = 5
 _TASK_POLL_DELAY_SECONDS = 0.1
-_VERIFICATION_POLL_ATTEMPTS = 5
-_VERIFICATION_POLL_DELAY_SECONDS = 0.1
+_VERIFICATION_POLL_ATTEMPTS = 10
+_VERIFICATION_POLL_DELAY_SECONDS = 0.25
 
 
 def _normalized_text(value: object) -> str | None:

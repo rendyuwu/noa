@@ -134,6 +134,8 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
 
     monkeypatch.setattr(cloudinit_tools, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "_TASK_POLL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(cloudinit_tools, "_VERIFICATION_POLL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(cloudinit_tools, "_VERIFICATION_POLL_DELAY_SECONDS", 0)
 
 
 @pytest.mark.asyncio
@@ -407,6 +409,8 @@ async def test_proxmox_reset_vm_cloudinit_password_retries_verification_until_co
     )
     monkeypatch.setattr(cloudinit_tools, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "_TASK_POLL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(cloudinit_tools, "_VERIFICATION_POLL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(cloudinit_tools, "_VERIFICATION_POLL_DELAY_SECONDS", 0)
 
     result = await cloudinit_tools.proxmox_reset_vm_cloudinit_password(
         session=_Session(),
@@ -502,7 +506,7 @@ async def test_proxmox_reset_vm_cloudinit_password_times_out_when_verification_n
         "error_code": "postflight_failed",
         "message": "Proxmox cloud-init verification did not confirm the password reset",
     }
-    assert call_counts == {"cloudinit": 5, "dump": 5}
+    assert call_counts == {"cloudinit": 10, "dump": 10}
 
 
 @pytest.mark.asyncio
