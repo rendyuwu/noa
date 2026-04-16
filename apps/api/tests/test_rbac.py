@@ -251,7 +251,7 @@ class _FakeAuthorizationService:
                 last_login_at=None,
             )
         ]
-        self.all_tools = ["get_current_time", "get_current_date", "set_demo_flag"]
+        self.all_tools = ["get_current_time", "get_current_date"]
         self.last_set_tools: list[str] | None = None
         self.last_is_active: bool | None = None
         self.deleted_user_id: UUID | None = None
@@ -425,7 +425,7 @@ async def test_authorization_service_non_admin_depends_on_tool_permissions() -> 
         direct_tools=[],
     )
     assert await service.authorize_tool_access(user, "get_current_time") is True
-    assert await service.authorize_tool_access(user, "set_demo_flag") is False
+    assert await service.authorize_tool_access(user, "whm_suspend_account") is False
 
 
 async def test_authorization_service_lists_canonical_tools() -> None:
@@ -436,7 +436,6 @@ async def test_authorization_service_lists_canonical_tools() -> None:
     assert await service.list_tools() == [
         "get_current_time",
         "get_current_date",
-        "set_demo_flag",
         "update_workflow_todo",
         "whm_list_servers",
         "whm_validate_server",
@@ -849,16 +848,14 @@ async def test_admin_routes_allow_admin_management_operations() -> None:
             )
             put_response = await client.put(
                 f"/admin/users/{service.target_user_id}/tools",
-                json={"tools": ["set_demo_flag", "get_current_date"]},
+                json={"tools": ["get_current_time", "get_current_date"]},
             )
 
     assert users_response.status_code == 200
     assert users_response.json()["users"][0]["email"] == "member@example.com"
 
     assert tools_response.status_code == 200
-    assert tools_response.json() == {
-        "tools": ["get_current_time", "get_current_date", "set_demo_flag"]
-    }
+    assert tools_response.json() == {"tools": ["get_current_time", "get_current_date"]}
 
     assert patch_response.status_code == 200
     assert patch_response.json()["user"]["is_active"] is False
@@ -1330,7 +1327,7 @@ async def test_admin_migration_direct_grants_converts_internal_roles_to_shared_r
     app = _create_admin_app()
 
     repo = _InMemoryAuthorizationRepository()
-    tools = ["get_current_date", "set_demo_flag"]
+    tools = ["get_current_time", "get_current_date"]
     joined = "\n".join(sorted(tools))
     role_name = f"legacy_tools_{hashlib.sha256(joined.encode('utf-8')).hexdigest()[:8]}"
 
@@ -1426,7 +1423,7 @@ async def test_admin_user_roles_endpoint_replaces_non_internal_roles_and_preserv
     repo.roles.update({"admin", "member", "viewer"})
     repo.user_roles[target_user_id] = {"member", "viewer", internal_role}
     repo.role_tools["member"] = {"get_current_time"}
-    repo.role_tools[internal_role] = {"set_demo_flag"}
+    repo.role_tools[internal_role] = {"get_current_date"}
     service = _build_authorization_service(repo)
 
     app.dependency_overrides[get_authorization_service] = lambda: service
@@ -1451,8 +1448,8 @@ async def test_admin_user_roles_endpoint_replaces_non_internal_roles_and_preserv
     body = response.json()["user"]
     assert "member" in body["roles"]
     assert "viewer" not in body["roles"]
-    assert body["direct_tools"] == ["set_demo_flag"]
-    assert body["tools"] == ["get_current_time", "set_demo_flag"]
+    assert body["direct_tools"] == ["get_current_date"]
+    assert body["tools"] == ["get_current_date", "get_current_time"]
 
     # Internal roles stay assigned (direct grants preserved).
     assert internal_role in repo.user_roles[target_user_id]

@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
@@ -131,7 +132,7 @@ async def test_action_tool_run_service_transitions_core_states() -> None:
 
     request = await service.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "k", "value": "v"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=actor_id,
@@ -152,7 +153,7 @@ async def test_action_tool_run_service_transitions_core_states() -> None:
 
     run = await service.start_tool_run(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "k", "value": "v"},
         action_request_id=request.id,
         requested_by_user_id=actor_id,
@@ -176,7 +177,7 @@ async def test_action_tool_run_service_can_fail_tool_run() -> None:
 
     run = await service.start_tool_run(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "k", "value": "v"},
         action_request_id=None,
         requested_by_user_id=None,
@@ -198,7 +199,7 @@ async def test_action_tool_run_service_rejects_re_deciding_action_request() -> N
 
     request = await service.create_action_request(
         thread_id=thread_id,
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "k", "value": "v"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=actor_id,
@@ -226,7 +227,7 @@ async def test_action_tool_run_service_rejects_complete_then_failed_transition()
 
     run = await service.start_tool_run(
         thread_id=uuid4(),
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "k", "value": "v"},
         action_request_id=None,
         requested_by_user_id=None,
@@ -248,7 +249,7 @@ async def test_action_tool_run_service_rejects_failed_then_completed_transition(
 
     run = await service.start_tool_run(
         thread_id=uuid4(),
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "k", "value": "v"},
         action_request_id=None,
         requested_by_user_id=None,
@@ -282,13 +283,39 @@ async def test_action_tool_run_service_sanitizes_non_json_result_values() -> Non
     assert completed.result["flag"]["completed_at"] == "2026-03-13T12:00:00+00:00"
 
 
-async def test_action_tool_run_service_rejects_invalid_tool_result_shape() -> None:
+async def test_action_tool_run_service_rejects_invalid_tool_result_shape(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
     service = ActionToolRunService(repository=repo)
 
+    async def _execute(**_kwargs: object) -> dict[str, object]:
+        return {}
+
+    fake_tool = ToolDefinition(
+        name="fake_change_tool",
+        description="fake tool for lifecycle validation",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={"type": "object", "properties": {}, "required": []},
+        execute=_execute,
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "flag": {"type": "object"},
+            },
+            "required": ["flag"],
+            "additionalProperties": False,
+        },
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda tool_name: fake_tool if tool_name == "fake_change_tool" else None,
+    )
+
     run = await service.start_tool_run(
         thread_id=uuid4(),
-        tool_name="set_demo_flag",
+        tool_name="fake_change_tool",
         args={"key": "k", "value": "v"},
         action_request_id=None,
         requested_by_user_id=None,
