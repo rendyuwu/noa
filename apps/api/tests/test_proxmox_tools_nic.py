@@ -221,6 +221,7 @@ async def test_proxmox_disable_vm_nic_rejects_digest_mismatch(monkeypatch) -> No
         vmid=101,
         net="net0",
         digest="stale-digest",
+        reason="Ticket #1661262",
     )
 
     assert result == {
@@ -261,6 +262,7 @@ async def test_proxmox_disable_vm_nic_fails_when_task_exit_status_is_not_ok(
         vmid=101,
         net="net0",
         digest="digest-1",
+        reason="Ticket #1661262",
     )
 
     assert result == {
@@ -336,6 +338,7 @@ async def test_proxmox_nic_change_tools_handle_noop_and_change_paths(
         vmid=101,
         net="net0",
         digest="digest-1",
+        reason="Ticket #1661262",
     )
 
     assert result["ok"] is True

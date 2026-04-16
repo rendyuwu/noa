@@ -12,7 +12,6 @@ from httpx import ASGITransport, AsyncClient
 from noa_api.core.logging import configure_logging
 from noa_api.core.logging_context import log_context
 from noa_api.core.telemetry import TelemetryEvent
-from noa_api.main import create_app
 
 
 class RecordingTelemetryRecorder:
@@ -36,8 +35,8 @@ class TraceFailingTelemetryRecorder(RecordingTelemetryRecorder):
         raise RuntimeError("trace boom")
 
 
-async def test_health_includes_x_request_id_header() -> None:
-    app = create_app()
+async def test_health_includes_x_request_id_header(create_test_app) -> None:
+    app = create_test_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get("/health")
@@ -46,8 +45,8 @@ async def test_health_includes_x_request_id_header() -> None:
     assert response.headers.get("x-request-id")
 
 
-async def test_inbound_x_request_id_is_preserved() -> None:
-    app = create_app()
+async def test_inbound_x_request_id_is_preserved(create_test_app) -> None:
+    app = create_test_app()
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
@@ -58,8 +57,10 @@ async def test_inbound_x_request_id_is_preserved() -> None:
     assert response.headers.get("x-request-id") == "req-from-client"
 
 
-async def test_request_completion_records_request_lifecycle_trace_and_metrics() -> None:
-    app = create_app()
+async def test_request_completion_records_request_lifecycle_trace_and_metrics(
+    create_test_app,
+) -> None:
+    app = create_test_app()
     recorder = RecordingTelemetryRecorder()
     app.state.telemetry = recorder
 
@@ -98,8 +99,10 @@ async def test_request_completion_records_request_lifecycle_trace_and_metrics() 
     assert recorder.report_events == []
 
 
-async def test_request_completion_metrics_use_normalized_route_template() -> None:
-    app = create_app()
+async def test_request_completion_metrics_use_normalized_route_template(
+    create_test_app,
+) -> None:
+    app = create_test_app()
     recorder = RecordingTelemetryRecorder()
     app.state.telemetry = recorder
 
@@ -125,10 +128,10 @@ async def test_request_completion_metrics_use_normalized_route_template() -> Non
     )
 
 
-async def test_request_completion_metrics_use_bounded_fallback_for_unmatched_route() -> (
-    None
-):
-    app = create_app()
+async def test_request_completion_metrics_use_bounded_fallback_for_unmatched_route(
+    create_test_app,
+) -> None:
+    app = create_test_app()
     recorder = RecordingTelemetryRecorder()
     app.state.telemetry = recorder
 
@@ -149,9 +152,10 @@ async def test_request_completion_metrics_use_bounded_fallback_for_unmatched_rou
 
 
 async def test_request_completion_tolerates_telemetry_trace_failure(
+    create_test_app,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    app = create_app()
+    app = create_test_app()
     recorder = TraceFailingTelemetryRecorder()
     app.state.telemetry = recorder
 
@@ -175,8 +179,10 @@ async def test_request_completion_tolerates_telemetry_trace_failure(
     assert "trace boom" in caplog.text
 
 
-async def test_uncaught_exception_returns_safe_500_envelope_with_request_id() -> None:
-    app = create_app()
+async def test_uncaught_exception_returns_safe_500_envelope_with_request_id(
+    create_test_app,
+) -> None:
+    app = create_test_app()
 
     @app.get("/_tests/error")
     async def error_route() -> Response:
@@ -197,7 +203,9 @@ async def test_uncaught_exception_returns_safe_500_envelope_with_request_id() ->
     }
 
 
-def test_create_app_preserves_existing_root_logging_configuration() -> None:
+def test_create_app_preserves_existing_root_logging_configuration(
+    create_test_app,
+) -> None:
     root_logger = logging.getLogger()
     original_handlers = list(root_logger.handlers)
     original_level = root_logger.level
@@ -212,8 +220,8 @@ def test_create_app_preserves_existing_root_logging_configuration() -> None:
     root_logger.setLevel(logging.WARNING)
 
     try:
-        create_app()
-        create_app()
+        create_test_app()
+        create_test_app()
 
         assert root_logger.handlers == [sentinel]
         assert root_logger.level == logging.WARNING

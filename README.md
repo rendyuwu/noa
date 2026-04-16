@@ -3,7 +3,7 @@
 AI operations workspace: chat UI + controlled tools.
 
 The goal is a natural-language control center for infrastructure and operations.
-The model interprets and proposes actions; the platform enforces permissions, approvals, and auditability.
+The model interprets and proposes actions; the platform enforces permissions, approvals, recorded reasons, and auditability.
 
 Docs:
 - `ARCHITECTURE.md`
@@ -64,6 +64,7 @@ Create `./.env` from the repo-root `.env.example`.
 Notes:
 - The browser never calls the FastAPI backend directly. The web app calls same-origin `/api/...`, and a Next route handler proxies those requests server-side.
 - Configure the proxy with `NOA_API_URL=http://localhost:8000` (server-side; used by Next). `NEXT_PUBLIC_API_URL` is a legacy fallback; prefer `NOA_API_URL`.
+- `LLM_API_KEY` is required for the assistant runtime; there is no demo fallback path.
 
 ```bash
 cp .env.example .env
@@ -78,7 +79,7 @@ Open: http://localhost:3000
 
 1) Login via LDAP at `/login` using a user in `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
 2) In `/assistant`, create a thread and ask: `what time is it` (READ tool).
-3) Ask: `set demo flag foo=bar` (CHANGE tool) and approve/deny the action card.
+3) If you have configured WHM/Proxmox inventory plus a preflight-ready target, try a CHANGE action such as `suspend a WHM account` and include a reason like `Ticket #1661262` before approving/denying the action card.
 4) Visit `/admin` to enable/disable users and update tool allowlists.
 
 ## What’s Implemented (MVP)
@@ -87,8 +88,8 @@ Open: http://localhost:3000
 - Admin RBAC: enable/disable users, assign tool allowlists
 - Thread persistence (list/create/rename/archive/delete) backed by Postgres
 - Assistant Transport streaming endpoint (`POST /assistant`)
-- Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools
-- Workflow template registry for approval-oriented tool families, with WHM as the reference implementation
+- Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools plus recorded reasons
+- Workflow template registry for approval-oriented tool families, with WHM as the reference implementation and reason/evidence capture
 - WHM server inventory with encrypted stored API tokens for WHM API-backed tools
 - Optional WHM SSH credentials with DB-pinned host fingerprints captured during validation
 - CSF/firewall WHM tools now execute over SSH/bash instead of the WHM API token path

@@ -489,7 +489,7 @@ async def test_thread_state_route_includes_workflow_and_pending_approvals() -> N
         pending_approvals=[
             {
                 "actionRequestId": str(uuid4()),
-                "toolName": "set_demo_flag",
+                "toolName": "fake_change_tool",
                 "risk": "CHANGE",
                 "arguments": {"key": "feature_x", "value": True},
                 "status": "PENDING",
@@ -498,7 +498,7 @@ async def test_thread_state_route_includes_workflow_and_pending_approvals() -> N
         action_requests=[
             {
                 "actionRequestId": str(uuid4()),
-                "toolName": "set_demo_flag",
+                "toolName": "fake_change_tool",
                 "risk": "CHANGE",
                 "arguments": {"key": "feature_x", "value": True},
                 "status": "PENDING",
@@ -555,7 +555,7 @@ async def test_assistant_route_streams_canonical_workflow_and_pending_approvals(
         pending_approvals=[
             {
                 "actionRequestId": str(uuid4()),
-                "toolName": "set_demo_flag",
+                "toolName": "fake_change_tool",
                 "risk": "CHANGE",
                 "arguments": {"key": "feature_x", "value": True},
                 "status": "PENDING",
@@ -564,7 +564,7 @@ async def test_assistant_route_streams_canonical_workflow_and_pending_approvals(
         action_requests=[
             {
                 "actionRequestId": str(uuid4()),
-                "toolName": "set_demo_flag",
+                "toolName": "fake_change_tool",
                 "risk": "CHANGE",
                 "arguments": {"key": "feature_x", "value": True},
                 "status": "PENDING",

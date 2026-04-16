@@ -5,16 +5,20 @@ from datetime import UTC, datetime
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+import pytest
+from pydantic import SecretStr
+
 from noa_api.core.agent.runner import (
     _build_approval_context,
     _to_openai_chat_messages,
     AgentRunner,
     AgentRunnerResult,
+    create_default_llm_client,
     LLMToolCall,
     LLMTurnResponse,
     OpenAICompatibleLLMClient,
-    RuleBasedLLMClient,
 )
+from noa_api.core.config import Settings
 from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
@@ -27,6 +31,24 @@ from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 async def _async_return(value):
     return value
+
+
+def _settings(**kwargs: object) -> Settings:
+    return Settings.model_validate({"environment": "test", **kwargs})
+
+
+def test_create_default_llm_client_requires_llm_api_key() -> None:
+    settings = _settings(llm_api_key=None)
+
+    with pytest.raises(ValueError, match="llm_api_key is required"):
+        create_default_llm_client(settings)
+
+
+def test_create_default_llm_client_rejects_blank_llm_api_key() -> None:
+    settings = _settings(llm_api_key=SecretStr("   "))
+
+    with pytest.raises(ValueError, match="llm_api_key is required"):
+        create_default_llm_client(settings)
 
 
 @dataclass
@@ -252,18 +274,19 @@ async def test_agent_runner_aggregates_reasoning_once_across_rounds() -> None:
                     reasoning="First internal note.",
                 )
 
-            assistant_messages = [
-                message
-                for message in messages
-                if message.get("role") == "assistant"
-                and isinstance(message.get("parts"), list)
-                and any(
+            assistant_messages = []
+            for message in messages:
+                parts = message.get("parts")
+                if message.get("role") != "assistant" or not isinstance(parts, list):
+                    continue
+                if any(
                     isinstance(part, dict)
-                    and part.get("type") == "text"
-                    and part.get("text") == "I'll check the server time."
-                    for part in message["parts"]
-                )
-            ]
+                    and cast(dict[str, object], part).get("type") == "text"
+                    and cast(dict[str, object], part).get("text")
+                    == "I'll check the server time."
+                    for part in parts
+                ):
+                    assistant_messages.append(message)
             assert assistant_messages == [
                 {
                     "role": "assistant",
@@ -982,37 +1005,59 @@ async def test_agent_runner_allows_five_rounds_before_safety_limit() -> None:
     )
 
 
-async def test_agent_runner_creates_action_request_for_change_tools_without_execution() -> (
-    None
-):
+async def test_agent_runner_creates_action_request_for_change_tools_without_execution(
+    monkeypatch,
+) -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change_tool(*, reason: str) -> dict[str, object]:
+        raise AssertionError(f"unexpected execution for {reason}")
+
+    tool = ToolDefinition(
+        name="guarded_change_tool",
+        description="Requires approval before execution.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change_tool,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.action_tool_runs.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
     runner = AgentRunner(
         llm_client=_FakeLLMClient(
             response=LLMTurnResponse(
-                text="I can set that flag after your approval.",
-                tool_calls=[
-                    LLMToolCall(
-                        name="set_demo_flag",
-                        arguments={"key": "feature_x", "value": True},
-                    )
-                ],
+                text="I can handle that after your approval.",
+                tool_calls=[LLMToolCall(name=tool.name, arguments={"reason": "ops"})],
             )
         ),
         action_tool_run_service=ActionToolRunService(repository=repo),
     )
 
     result = await runner.run_turn(
-        thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Set demo flag"}]}
-        ],
-        available_tool_names={"set_demo_flag"},
+        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "go"}]}],
+        available_tool_names={tool.name},
         thread_id=uuid4(),
         requested_by_user_id=uuid4(),
     )
 
     assert len(repo.action_requests) == 1
     request = next(iter(repo.action_requests.values()))
-    assert request.tool_name == "set_demo_flag"
+    assert request.tool_name == tool.name
     assert request.status == ActionRequestStatus.PENDING
 
     assert repo.tool_runs == {}
@@ -1304,7 +1349,9 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
     final_part = result.messages[-1].parts[0]
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
-    assert "short, human-readable reason" in cast(str, final_part["text"])
+    text = cast(str, final_part["text"])
+    assert "Ticket #1661262" in text
+    assert "brief description" in text
 
 
 async def test_agent_runner_stops_retry_loop_when_reason_is_missing(
@@ -1401,7 +1448,9 @@ async def test_agent_runner_stops_retry_loop_when_reason_is_missing(
     final_part = result.messages[-1].parts[0]
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
-    assert "Please provide the reason" in cast(str, final_part["text"])
+    text = cast(str, final_part["text"])
+    assert "Ticket #1661262" in text
+    assert "brief description" in text
 
 
 async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_for_approval(
@@ -1507,6 +1556,90 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
         and part.get("toolName") == "update_workflow_todo"
     )
     assert isinstance(todo_tool_call.get("args"), dict)
+
+
+async def test_agent_runner_missing_reason_guidance_mentions_ticket_reference(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name="whm_suspend_account",
+                        arguments={"server_ref": "web1", "username": "alice"},
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={"whm_suspend_account"},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    final_part = result.messages[-1].parts[0]
+    assert isinstance(final_part, dict)
+    assert final_part["type"] == "text"
+    text = cast(str, final_part["text"])
+    assert "Ticket #1661262" in text
+    assert "brief description" in text
+    assert captured["todos"]
 
 
 async def test_agent_runner_replaces_prior_whm_family_workflow_with_firewall_waiting_state(
@@ -3640,223 +3773,3 @@ async def test_build_approval_context_uses_correct_change_arguments_in_activity(
     assert change_reply["outcome"] == "info"
     assert unblock_reply["title"] == "Firewall change approval requested"
     assert unblock_reply["outcome"] == "info"
-
-
-async def test_rule_based_llm_responds_to_date_tool_result() -> None:
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "user",
-                "parts": [{"type": "text", "text": "What's the date?"}],
-            },
-            {
-                "role": "assistant",
-                "parts": [
-                    {
-                        "type": "tool-call",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-1",
-                        "args": {},
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-1",
-                        "result": {"date": "2026-03-12"},
-                        "isError": False,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert turn.text == "Today's date is 2026-03-12."
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_responds_to_time_tool_result() -> None:
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_time",
-                        "toolCallId": "tc-2",
-                        "result": {"time": "2026-03-12T22:30:00+00:00"},
-                        "isError": False,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert turn.text == "The current time is 2026-03-12T22:30:00+00:00."
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_ignores_errored_tool_result() -> None:
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-3",
-                        "result": {"error": "boom"},
-                        "isError": True,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert (
-        turn.text
-        == "I can help with date/time checks and demo flag requests in this MVP."
-    )
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_does_not_use_stale_success_when_latest_result_errors() -> (
-    None
-):
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-ok",
-                        "result": {"date": "2026-03-11"},
-                        "isError": False,
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-err",
-                        "result": {"error": "boom"},
-                        "isError": True,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert (
-        turn.text
-        == "I can help with date/time checks and demo flag requests in this MVP."
-    )
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_prioritizes_latest_user_turn_over_old_tool_result() -> (
-    None
-):
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "get_current_date",
-                        "toolCallId": "tc-old",
-                        "result": {"date": "2026-03-11"},
-                        "isError": False,
-                    }
-                ],
-            },
-            {
-                "role": "user",
-                "parts": [{"type": "text", "text": "hello"}],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert (
-        turn.text
-        == "I can help with date/time checks and demo flag requests in this MVP."
-    )
-    assert turn.tool_calls == []
-
-
-async def test_rule_based_llm_handles_set_demo_flag_tool_result_without_reasking() -> (
-    None
-):
-    client = RuleBasedLLMClient()
-
-    turn = await client.run_turn(
-        messages=[
-            {
-                "role": "user",
-                "parts": [{"type": "text", "text": "Set demo flag feature_x = true"}],
-            },
-            {
-                "role": "assistant",
-                "parts": [
-                    {
-                        "type": "tool-call",
-                        "toolName": "set_demo_flag",
-                        "toolCallId": "tc-change-1",
-                        "args": {"key": "feature_x", "value": True},
-                    }
-                ],
-            },
-            {
-                "role": "tool",
-                "parts": [
-                    {
-                        "type": "tool-result",
-                        "toolName": "set_demo_flag",
-                        "toolCallId": "tc-change-1",
-                        "result": {
-                            "ok": True,
-                            "flag": {"key": "feature_x", "value": True},
-                        },
-                        "isError": False,
-                    }
-                ],
-            },
-        ],
-        tools=[],
-        on_text_delta=None,
-    )
-
-    assert turn.text == "The demo flag was updated."
-    assert turn.tool_calls == []

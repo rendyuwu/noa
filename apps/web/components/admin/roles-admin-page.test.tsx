@@ -32,7 +32,7 @@ describe("RolesAdminPage", () => {
       roles: [{ name: "admin" }, { name: "member" }],
     };
     const toolsPayload = {
-      tools: ["get_current_time", "set_demo_flag"],
+      tools: ["get_current_time", "whm_suspend_account"],
     };
     const roleToolsPayload = {
       tools: ["get_current_time"],
@@ -92,9 +92,9 @@ describe("RolesAdminPage", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Manage admin" }));
 
-    expect((await screen.findByRole("checkbox", { name: "set_demo_flag" })).closest(".editorial-subpanel")).not.toBeNull();
+    expect((await screen.findByRole("checkbox", { name: "whm_suspend_account" })).closest(".editorial-subpanel")).not.toBeNull();
 
-    fireEvent.click(await screen.findByLabelText("set_demo_flag"));
+    fireEvent.click(await screen.findByLabelText("whm_suspend_account"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {
@@ -105,7 +105,7 @@ describe("RolesAdminPage", () => {
           headers: expect.objectContaining({
             "content-type": "application/json",
           }),
-          body: JSON.stringify({ tools: ["get_current_time", "set_demo_flag"] }),
+          body: JSON.stringify({ tools: ["get_current_time", "whm_suspend_account"] }),
         })
       );
     });
@@ -288,7 +288,7 @@ describe("RolesAdminPage", () => {
       roles: [{ name: "admin" }],
     };
     const toolsPayload = {
-      tools: ["get_current_time", "set_demo_flag"],
+      tools: ["get_current_time", "whm_suspend_account"],
     };
     const staleRoleToolsPayload = {
       tools: ["get_current_time"],
@@ -346,7 +346,7 @@ describe("RolesAdminPage", () => {
     expect(within(table).getByText("—")).toBeInTheDocument();
 
     fireEvent.click(await screen.findByRole("button", { name: "Manage admin" }));
-    fireEvent.click(await screen.findByLabelText("set_demo_flag"));
+    fireEvent.click(await screen.findByLabelText("whm_suspend_account"));
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() => {

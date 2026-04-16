@@ -2,11 +2,26 @@ from __future__ import annotations
 
 import pytest
 
-from noa_api.core.tools.registry import get_tool_definition
+from noa_api.core.tools.registry import ToolDefinition, get_tool_definition
 from noa_api.core.tools.result_validation import (
     ToolResultValidationError,
     validate_tool_result,
 )
+from noa_api.storage.postgres.lifecycle import ToolRisk
+
+
+def _fake_tool_definition(*, result_schema: dict[str, object]) -> ToolDefinition:
+    async def _execute(**_kwargs: object) -> dict[str, object]:
+        return {}
+
+    return ToolDefinition(
+        name="fake_tool",
+        description="fake tool for validation tests",
+        risk=ToolRisk.READ,
+        parameters_schema={"type": "object", "properties": {}, "required": []},
+        execute=_execute,
+        result_schema=result_schema,
+    )
 
 
 def test_validate_tool_result_accepts_workflow_success_payload() -> None:
@@ -30,9 +45,17 @@ def test_validate_tool_result_accepts_workflow_success_payload() -> None:
 
 
 def test_validate_tool_result_rejects_missing_required_fields() -> None:
-    tool = get_tool_definition("set_demo_flag")
-
-    assert tool is not None
+    tool = _fake_tool_definition(
+        result_schema={
+            "type": "object",
+            "properties": {
+                "ok": {"type": "boolean"},
+                "flag": {"type": "boolean"},
+            },
+            "required": ["flag"],
+            "additionalProperties": False,
+        }
+    )
 
     with pytest.raises(ToolResultValidationError) as exc_info:
         validate_tool_result(tool=tool, result={"ok": True})

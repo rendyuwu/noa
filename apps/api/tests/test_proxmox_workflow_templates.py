@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from noa_api.core.workflows.registry import (
+    build_workflow_evidence_template,
     build_workflow_reply_template,
+    build_workflow_todos,
     require_matching_preflight,
 )
 
@@ -149,3 +151,139 @@ def test_proxmox_workflow_preflight_matching_uses_generic_preflight_collection()
 
     assert mismatch is not None
     assert mismatch.error_code == "preflight_mismatch"
+
+
+def test_proxmox_workflow_waiting_on_user_todos_include_reason_step() -> None:
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_disable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+        },
+        phase="waiting_on_user",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                    "link_state": "up",
+                    "auto_selected_net": True,
+                    "nets": [],
+                },
+            }
+        ],
+    )
+
+    assert workflow_todos is not None
+    assert len(workflow_todos) == 5
+    assert workflow_todos[1]["status"] == "waiting_on_user"
+    assert "reason" in workflow_todos[1]["content"].lower()
+
+
+def test_proxmox_workflow_requested_change_evidence_includes_reason() -> None:
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_disable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[],
+    )
+
+    assert evidence is not None
+    requested_change = next(
+        section for section in evidence.sections if section.key == "requested_change"
+    )
+    assert any(
+        item.label == "Reason" and item.value == "customer request"
+        for item in requested_change.items
+    )
+
+
+def test_proxmox_workflow_terminal_todos_keep_captured_reason_completed() -> None:
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_disable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "maintenance window",
+        },
+        phase="denied",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                    "link_state": "up",
+                    "auto_selected_net": True,
+                    "nets": [],
+                },
+            }
+        ],
+    )
+
+    assert workflow_todos is not None
+    assert workflow_todos[1]["status"] == "completed"
+
+    failed_todos = build_workflow_todos(
+        tool_name="proxmox_disable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "maintenance window",
+        },
+        phase="failed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                    "link_state": "up",
+                    "auto_selected_net": True,
+                    "nets": [],
+                },
+            }
+        ],
+    )
+
+    assert failed_todos is not None
+    assert failed_todos[1]["status"] == "completed"

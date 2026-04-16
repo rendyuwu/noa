@@ -47,6 +47,7 @@ curl -k \
 
 ##### Update QEMU VM config
 Current implementation uses this for NIC enable/disable.
+Those NIC CHANGE actions require approval, a recorded reason, and captured before/after evidence.
 
 ```bash
 curl -k -X POST \
@@ -67,8 +68,8 @@ curl -k \
 - Proxmox server inventory CRUD in NOA admin UI/API
 - Proxmox server connectivity validation
 - QEMU VM NIC preflight
-- Disable VM network interface
-- Enable VM network interface
+- Disable VM network interface with approval, recorded reason, and evidence capture
+- Enable VM network interface with approval, recorded reason, and evidence capture
 
 ## Backlog / research notes
 - QEMU cloud-init password reset flow

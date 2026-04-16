@@ -47,6 +47,7 @@ from noa_api.core.agent.runner import (
     AgentRunnerResult,
     create_default_llm_client,
 )
+from noa_api.core.config import get_app_settings
 from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,
@@ -395,7 +396,10 @@ class AssistantService:
         return result
 
 
-async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
+async def get_assistant_service(
+    request: Request,
+) -> AsyncGenerator[AssistantService, None]:
+    app_settings = get_app_settings(request.app)
     async with get_session_factory()() as session:
         action_tool_run_service = ActionToolRunService(
             repository=SQLActionToolRunRepository(session)
@@ -403,7 +407,7 @@ async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
         service = AssistantService(
             SQLAssistantRepository(session),
             AgentRunner(
-                llm_client=create_default_llm_client(),
+                llm_client=create_default_llm_client(app_settings),
                 action_tool_run_service=action_tool_run_service,
                 session=session,
             ),

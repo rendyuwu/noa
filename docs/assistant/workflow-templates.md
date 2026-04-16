@@ -1,6 +1,6 @@
 # Workflow templates
 
-NOA workflow UI is driven by canonical workflow todos stored in assistant thread state. To add a new operational tool family, register a workflow template on the API side and keep the web dock/detail UI unchanged.
+NOA workflow UI is driven by canonical workflow todos stored in assistant thread state. CHANGE tools require approval plus a recorded reason. To add a new operational tool family, register a workflow template on the API side and keep the web dock/detail UI unchanged.
 
 ## How registration works
 
@@ -18,12 +18,14 @@ Family-specific operational reply behavior should also live here rather than in 
 - `describe_activity(...)`: optional; customizes approval activity copy.
 - `build_before_state(...)`: optional; maps preflight evidence into approval before-state rows.
 - `build_evidence_template(...)`: optional; returns structured evidence sections (`before_state`, `requested_change`, `after_state`, `verification`, `outcomes`, `failure`) for approval/completion receipts.
-- `build_reply_template(...)`: optional; returns structured proposal/completion/denial/no-op/partial/failure reply guidance for the family.
+- `build_reply_template(...)`: optional; returns structured proposal/completion/denial/no-op/partial/failure reply guidance for the family. Use it to ask for a missing reason, such as `Ticket #1661262` or a brief description.
 - `require_preflight(...)`: optional; blocks unsafe CHANGE requests until matching evidence exists.
 - `fetch_postflight_result(...)`: optional; loads verification evidence after execution.
 - `infer_waiting_on_user_workflow(...)`: optional; seeds a waiting workflow when the assistant asks the user for missing input without emitting a CHANGE tool call yet.
 
 The reply/evidence contracts are structured data, not markdown-authored prose, so the same family-owned semantics can drive assistant replies now and richer receipts/detail views later.
+
+When a workflow needs a change reason, the prompt should mention a ticket reference like `Ticket #1661262` or ask for a brief human-readable description.
 
 `build_before_state(...)` is now a compatibility shim. New workflow families should primarily implement `build_evidence_template(...)`; the registry projects `beforeState` from the `before_state` evidence section when present, and only falls back to `build_before_state(...)` for legacy templates.
 

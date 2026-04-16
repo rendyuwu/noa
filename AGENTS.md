@@ -98,6 +98,7 @@ Notes:
 - `docs/integrations/whm.md`: canonical WHM integration reference, including NOA admin endpoints, upstream WHM API calls, SSH commands, and supported features.
 - `docs/integrations/proxmox.md`: canonical Proxmox integration reference, including NOA admin endpoints, upstream Proxmox API calls, implemented features, and backlog research.
 - When adding or changing WHM or Proxmox features, update the corresponding file in `docs/integrations/` in the same change.
+- `LLM_API_KEY` is required for the assistant runtime; there is no demo fallback path.
 
 ## Code style & conventions
 
@@ -130,7 +131,7 @@ DB / SQLAlchemy async:
 Tools + approval gate:
 - Tool metadata lives in `noa_api.core.tools.registry`.
 - Every tool is classified as `ToolRisk.READ` or `ToolRisk.CHANGE`.
-- Any mutating behavior must be `CHANGE` and go through the persisted approval flow (`request_approval` -> approve/deny).
+- Any mutating behavior must be `CHANGE` and go through the persisted approval flow (`request_approval` -> approve/deny), with a recorded reason such as `Ticket #1661262` or a brief description.
 
 Assistant workflows:
 - Approval-oriented tool families register workflow templates in `apps/api/src/noa_api/core/workflows/registry.py`; avoid adding new family-specific branches in `apps/api/src/noa_api/core/agent/runner.py` when a template hook can own the behavior.

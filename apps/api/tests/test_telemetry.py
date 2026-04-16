@@ -3,8 +3,10 @@ from __future__ import annotations
 import importlib
 import inspect
 import logging
+from typing import Any, cast
 
 import pytest
+from pydantic import SecretStr
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -18,7 +20,6 @@ from httpx import ASGITransport, AsyncClient
 
 from noa_api.api.error_handling import install_error_handling
 from noa_api.core.config import Settings
-from noa_api.main import create_app
 from noa_api.core.telemetry import (
     NoOpTelemetryRecorder,
     TelemetryEvent,
@@ -28,7 +29,7 @@ from noa_api.core.telemetry import (
 
 
 def _settings(**kwargs: object) -> Settings:
-    return Settings(**kwargs, _env_file=None)  # type: ignore[call-arg]
+    return Settings.model_validate({"llm_api_key": SecretStr("test-key"), **kwargs})
 
 
 def _telemetry_otel_module():
@@ -121,7 +122,7 @@ def test_telemetry_settings_parse_otlp_headers_from_env(
         "authorization=Bearer token, x-tenant-id = tenant-123",
     )
 
-    settings = Settings(_env_file=None)
+    settings = cast(Any, Settings)(_env_file=None)
 
     assert settings.telemetry_otlp_headers == {
         "authorization": "Bearer token",
@@ -143,9 +144,9 @@ def test_telemetry_settings_ignore_malformed_otlp_headers() -> None:
     }
 
 
-def test_create_app_exposes_app_scoped_noop_telemetry_recorder() -> None:
-    app = create_app()
-    other_app = create_app()
+def test_create_app_exposes_app_scoped_noop_telemetry_recorder(create_test_app) -> None:
+    app = create_test_app()
+    other_app = create_test_app()
     recorder = get_telemetry_recorder(app)
     other_recorder = get_telemetry_recorder(other_app)
 
@@ -355,6 +356,7 @@ def test_create_telemetry_recorder_skips_missing_endpoint_warning_when_both_sign
 
 
 def test_create_app_passes_settings_into_telemetry_factory(
+    create_test_app,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app_settings = _settings(
@@ -374,13 +376,14 @@ def test_create_app_passes_settings_into_telemetry_factory(
         fake_create_telemetry_recorder,
     )
 
-    app = create_app(app_settings)
+    app = create_test_app(app_settings)
 
     assert calls == [app_settings]
     assert app.state.telemetry is fake_recorder
 
 
 def test_create_app_shuts_down_enabled_telemetry_on_app_shutdown(
+    create_test_app,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     app_settings = _settings(
@@ -395,7 +398,7 @@ def test_create_app_shuts_down_enabled_telemetry_on_app_shutdown(
         lambda settings: recorder,
     )
 
-    app = create_app(app_settings)
+    app = create_test_app(app_settings)
 
     with TestClient(app):
         pass
@@ -554,8 +557,10 @@ async def test_install_error_handling_app_uses_noop_telemetry_without_error_log(
     )
 
 
-async def test_unhandled_exception_records_reporting_candidate() -> None:
-    app = create_app()
+async def test_unhandled_exception_records_reporting_candidate(
+    create_test_app,
+) -> None:
+    app = create_test_app()
     recorder = RecordingTelemetryRecorder()
     app.state.telemetry = recorder
 
@@ -580,9 +585,10 @@ async def test_unhandled_exception_records_reporting_candidate() -> None:
 
 
 async def test_unhandled_exception_tolerates_reporting_failure(
+    create_test_app,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    app = create_app()
+    app = create_test_app()
     recorder = ReportFailingTelemetryRecorder()
     app.state.telemetry = recorder
 
@@ -618,10 +624,11 @@ async def test_unhandled_exception_tolerates_reporting_failure(
 
 
 async def test_request_still_succeeds_when_otel_export_raises(
+    create_test_app,
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    app = create_app()
+    app = create_test_app()
     module = _telemetry_otel_module()
     recorder_class = getattr(module, "OpenTelemetryRecorder", None)
 

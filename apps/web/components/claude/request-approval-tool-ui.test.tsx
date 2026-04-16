@@ -121,16 +121,16 @@ describe("ClaudeToolFallback", () => {
   it("shows requires-action tools as waiting states", () => {
     render(
       <ClaudeToolFallback
-        toolName="set_demo_flag"
+        toolName="mock_change_tool"
         toolCallId="tool-call-3"
         status={{ type: "requires-action" }}
         isError={undefined}
       />,
     );
 
-    expect(screen.getByText(/^Set Demo Flag$/i)).toBeVisible();
+    expect(screen.getByText(/^Mock Change Tool$/i)).toBeVisible();
     expect(screen.getByText(/requires-action/i)).toBeInTheDocument();
-    expect(screen.getByText(/waiting for approval before continuing set demo flag/i)).toBeVisible();
+    expect(screen.getByText(/waiting for approval before continuing mock change tool/i)).toBeVisible();
   });
 
   it("renders a compact row for failed tools", () => {

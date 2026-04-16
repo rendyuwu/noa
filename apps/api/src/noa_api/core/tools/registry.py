@@ -3,11 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable
 
-from noa_api.core.tools.demo_tools import (
-    get_current_date,
-    get_current_time,
-    set_demo_flag,
-)
+from noa_api.core.tools.demo_tools import get_current_date, get_current_time
 from noa_api.core.tools.workflow_todo import update_workflow_todo
 from noa_api.proxmox.tools.nic_tools import (
     proxmox_disable_vm_nic,
@@ -420,14 +416,6 @@ _WORKFLOW_RESULT_SCHEMA = _result_any_of(
     _RESULT_ERROR_SCHEMA,
 )
 
-_DEMO_FLAG_RESULT_SCHEMA = _result_object_schema(
-    properties={
-        **_RESULT_SUCCESS_OK_SCHEMA,
-        "flag": {"type": "object"},
-    },
-    required=["ok", "flag"],
-)
-
 _SERVERS_RESULT_SCHEMA = _result_any_of(
     _result_object_schema(
         properties={
@@ -777,28 +765,6 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Use this only when the user asks for the current date or when date is needed as evidence.",
             "Successful results return `{date}`.",
         ),
-    ),
-    ToolDefinition(
-        name="set_demo_flag",
-        description="Persist a demo marker value for internal or development workflows.",
-        risk=ToolRisk.CHANGE,
-        parameters_schema=_object_schema(
-            properties={
-                "key": _string_param(
-                    "Demo flag name to persist in the audit log, such as a feature or scenario identifier."
-                ),
-                "value": {
-                    "description": "JSON-serializable flag value to persist for the demo marker."
-                },
-            },
-            required=["key", "value"],
-        ),
-        execute=set_demo_flag,
-        prompt_hints=(
-            "Use only for explicit demo-flag requests.",
-            "Successful results return `ok: true` and echo the saved `flag` payload.",
-        ),
-        result_schema=_DEMO_FLAG_RESULT_SCHEMA,
     ),
     ToolDefinition(
         name="update_workflow_todo",
@@ -1260,8 +1226,9 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "vmid": _PROXMOX_VMID_PARAM,
                 "net": _PROXMOX_NET_PARAM,
                 "digest": _PROXMOX_DIGEST_PARAM,
+                "reason": _REASON_PARAM,
             },
-            required=["server_ref", "node", "vmid", "net", "digest"],
+            required=["server_ref", "node", "vmid", "net", "digest", "reason"],
         ),
         execute=proxmox_disable_vm_nic,
         prompt_hints=(
@@ -1282,8 +1249,9 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
                 "vmid": _PROXMOX_VMID_PARAM,
                 "net": _PROXMOX_NET_PARAM,
                 "digest": _PROXMOX_DIGEST_PARAM,
+                "reason": _REASON_PARAM,
             },
-            required=["server_ref", "node", "vmid", "net", "digest"],
+            required=["server_ref", "node", "vmid", "net", "digest", "reason"],
         ),
         execute=proxmox_enable_vm_nic,
         prompt_hints=(

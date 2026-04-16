@@ -424,7 +424,7 @@ async def test_run_agent_phase_refreshes_workflow_and_pending_approvals() -> Non
         "pendingApprovals": [
             {
                 "actionRequestId": str(uuid4()),
-                "toolName": "set_demo_flag",
+                "toolName": "fake_change_tool",
                 "risk": "CHANGE",
                 "arguments": {"key": "feature_x", "value": True},
                 "status": "PENDING",
@@ -433,7 +433,7 @@ async def test_run_agent_phase_refreshes_workflow_and_pending_approvals() -> Non
         "actionRequests": [
             {
                 "actionRequestId": str(uuid4()),
-                "toolName": "set_demo_flag",
+                "toolName": "fake_change_tool",
                 "risk": "CHANGE",
                 "arguments": {"key": "feature_x", "value": True},
                 "status": "PENDING",

@@ -1,8 +1,9 @@
 import json
 import secrets
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, cast
 
+from fastapi import FastAPI
 from pydantic import Field, PostgresDsn, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
@@ -37,8 +38,8 @@ class Settings(BaseSettings):
     )
 
     environment: str = "development"
-    postgres_url: PostgresDsn = (
-        "postgresql+asyncpg://postgres:postgres@localhost:5432/noa"
+    postgres_url: PostgresDsn = cast(
+        PostgresDsn, "postgresql+asyncpg://postgres:postgres@localhost:5432/noa"
     )
     noa_db_secret_key: SecretStr | None = None
     telemetry_enabled: bool = False
@@ -180,6 +181,24 @@ class Settings(BaseSettings):
                 )
 
         return self
+
+
+def get_required_llm_api_key(app_settings: Settings) -> str:
+    api_key = (
+        app_settings.llm_api_key.get_secret_value()
+        if app_settings.llm_api_key is not None
+        else ""
+    )
+    if not api_key.strip():
+        raise ValueError("llm_api_key is required")
+    return api_key
+
+
+def get_app_settings(app: FastAPI) -> Settings:
+    app_settings = getattr(app.state, "settings", None)
+    if not isinstance(app_settings, Settings):
+        raise RuntimeError("app settings are not configured")
+    return app_settings
 
 
 settings = Settings()

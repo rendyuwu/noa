@@ -16,7 +16,7 @@ This document describes the implemented MVP architecture: a Next.js + assistant-
   - Postgres persistence (SQLAlchemy async + Alembic)
   - Assistant Transport endpoint: `POST /assistant` (assistant-stream)
   - Tool registry + tool execution engine
-  - Approval gate for CHANGE tools
+  - Approval gate for CHANGE tools, with recorded reasons for each approved action
 
 - Postgres 16
   - Local dev via `docker-compose.yml`
@@ -75,7 +75,7 @@ Core entities:
 - Safety policy:
   - READ tools can execute immediately if the user is permitted.
   - CHANGE tools never execute directly from an LLM proposal.
-    They create an `action_request` that must be explicitly approved for that specific instance.
+    They create an `action_request` that must be explicitly approved, with a recorded reason, for that specific instance.
 
 ## Approval Gate (Two-Phase)
 

@@ -4,14 +4,26 @@ import logging
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 from noa_api.core.config import Settings
 from noa_api.core.prompts.loader import load_system_prompt
-from noa_api.main import create_app
 
 
 def _settings(**kwargs: object) -> Settings:
-    return Settings(environment="test", _env_file=None, **kwargs)  # type: ignore[call-arg]
+    return Settings.model_validate(
+        {"environment": "test", "llm_api_key": SecretStr("test-key"), **kwargs}
+    )
+
+
+def test_settings_can_load_without_llm_api_key_for_generic_consumers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("LLM_API_KEY", raising=False)
+
+    settings = Settings.model_validate({"environment": "test", "llm_api_key": None})
+
+    assert settings.llm_api_key is None
 
 
 def test_default_system_prompt_loads_and_is_non_empty() -> None:
@@ -93,16 +105,13 @@ def test_default_prompt_contains_required_policy_lines() -> None:
     assert "workflow-family reply template data is present" in prompt
 
 
-def test_settings_parse_prompt_extra_paths_from_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("ENVIRONMENT", "test")
-    monkeypatch.setenv(
-        "LLM_SYSTEM_PROMPT_EXTRA_PATHS",
-        "first.md, second.md , third.md",
+def test_settings_parse_prompt_extra_paths_from_string() -> None:
+    settings = Settings.model_validate(
+        {
+            "environment": "test",
+            "llm_system_prompt_extra_paths": "first.md, second.md , third.md",
+        }
     )
-
-    settings = Settings(_env_file=None)
 
     assert settings.llm_system_prompt_extra_paths == [
         "first.md",
@@ -112,11 +121,12 @@ def test_settings_parse_prompt_extra_paths_from_env(
 
 
 def test_create_app_logs_system_prompt_fingerprint(
+    create_test_app,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     caplog.set_level(logging.INFO, logger="noa_api.main")
 
-    _ = create_app(_settings())
+    _ = create_test_app(_settings())
 
     record = next(
         record

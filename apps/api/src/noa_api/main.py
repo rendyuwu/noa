@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.router import api_router
-from noa_api.core.config import Settings, settings
+from noa_api.core.config import Settings, get_required_llm_api_key, settings
 from noa_api.core.logging import configure_logging
 from noa_api.core.prompts.loader import load_system_prompt
 from noa_api.core.telemetry import create_telemetry_recorder
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 def create_app(app_settings: Settings = settings) -> FastAPI:
     configure_logging()
+    get_required_llm_api_key(app_settings)
     prompt = load_system_prompt(app_settings)
     logger.info(
         "llm_system_prompt_loaded",
@@ -37,6 +38,7 @@ def create_app(app_settings: Settings = settings) -> FastAPI:
             telemetry.shutdown()
 
     app = FastAPI(title="Project NOA API", lifespan=lifespan)
+    app.state.settings = app_settings
     app.state.telemetry = telemetry
     if app_settings.api_cors_allowed_origins:
         app.add_middleware(
