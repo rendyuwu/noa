@@ -77,6 +77,24 @@ def test_validate_tool_arguments_accepts_ticket_style_proxmox_reason() -> None:
     )
 
 
+def test_validate_tool_arguments_accepts_ticket_style_proxmox_enable_reason() -> None:
+    tool = get_tool_definition("proxmox_enable_vm_nic")
+
+    assert tool is not None
+
+    validate_tool_arguments(
+        tool=tool,
+        args={
+            "server_ref": "pve1",
+            "node": "node1",
+            "vmid": 100,
+            "net": "net0",
+            "digest": "abc123",
+            "reason": "Ticket #1661262: restore NIC connectivity",
+        },
+    )
+
+
 def test_validate_tool_arguments_rejects_blank_proxmox_reason() -> None:
     tool = get_tool_definition("proxmox_disable_vm_nic")
 
