@@ -114,7 +114,7 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
             return {
                 "ok": True,
                 "message": "ok",
-                "data": "UPID:pve1:00000002:regen-cloudinit",
+                "data": None,
             }
 
         async def get_task_status(self, node: str, upid: str) -> dict[str, object]:
@@ -206,7 +206,7 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
         "message": "ok",
         "data": [
             {"key": "ciuser", "value": "rendy"},
-            {"key": "cipassword", "value": "secret"},
+            {"key": "cipassword", "value": "********"},
         ],
     }
     dump_result = {
@@ -250,7 +250,7 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
         "regenerate_cloudinit": {
             "ok": True,
             "message": "ok",
-            "data": "UPID:pve1:00000002:regen-cloudinit",
+            "data": None,
         },
         "cloudinit": cloudinit_result,
         "cloudinit_dump_user": {
@@ -273,8 +273,6 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
         ("get_task_status", "UPID:pve1:00000001:set-password"),
         ("get_task_status", "UPID:pve1:00000001:set-password"),
         ("regenerate_qemu_cloudinit", ("pve1-node", 101)),
-        ("get_task_status", "UPID:pve1:00000002:regen-cloudinit"),
-        ("get_task_status", "UPID:pve1:00000002:regen-cloudinit"),
         ("get_qemu_cloudinit", ("pve1-node", 101)),
         ("get_qemu_cloudinit_dump_user", ("pve1-node", 101)),
     ]
@@ -350,7 +348,7 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_verification_fails
             "message": "ok",
             "data": [
                 {"key": "ciuser", "value": "rendy"},
-                {"key": "cipassword", "value": "new-secret"},
+                {"key": "cipassword", "value": "********"},
             ],
         },
         cloudinit_dump_user={
@@ -385,8 +383,6 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_verification_fails
         ("get_task_status", "UPID:pve1:00000001:set-password"),
         ("get_task_status", "UPID:pve1:00000001:set-password"),
         ("regenerate_qemu_cloudinit", ("pve1-node", 101)),
-        ("get_task_status", "UPID:pve1:00000002:regen-cloudinit"),
-        ("get_task_status", "UPID:pve1:00000002:regen-cloudinit"),
         ("get_qemu_cloudinit", ("pve1-node", 101)),
         ("get_qemu_cloudinit_dump_user", ("pve1-node", 101)),
     ]
@@ -504,7 +500,7 @@ async def test_proxmox_reset_vm_cloudinit_password_redacts_password_hash_in_dump
             "message": "ok",
             "data": [
                 {"key": "ciuser", "value": "rendy"},
-                {"key": "cipassword", "value": "new-secret"},
+                {"key": "cipassword", "value": "********"},
             ],
         },
         cloudinit_dump_user={
@@ -555,7 +551,7 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_dump_missing_passw
             "message": "ok",
             "data": [
                 {"key": "ciuser", "value": "rendy"},
-                {"key": "cipassword", "value": "new-secret"},
+                {"key": "cipassword", "value": "********"},
             ],
         },
         cloudinit_dump_user={
