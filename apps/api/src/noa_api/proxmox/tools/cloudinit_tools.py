@@ -49,6 +49,46 @@ def _upstream_error(
     }
 
 
+def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return False
+    return _normalized_text(data.get("cipassword")) is not None
+
+
+def _sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]:
+    if not isinstance(dump_value, str):
+        return None, False
+
+    dump_text = dump_value.strip()
+    if not dump_text:
+        return None, False
+
+    sanitized_lines: list[str] = []
+    found_password = False
+    for line in dump_text.splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("password:"):
+            sanitized_lines.append(line)
+            continue
+
+        value = stripped[len("password:") :].strip()
+        if not value:
+            return None, False
+
+        leading = line[: len(line) - len(stripped)]
+        sanitized_lines.append(f"{leading}password: [REDACTED]")
+        found_password = True
+
+    if not found_password:
+        return None, False
+
+    sanitized = "\n".join(sanitized_lines)
+    if dump_value.endswith("\n"):
+        sanitized += "\n"
+    return sanitized, True
+
+
 async def _resolve_client(
     *, session: AsyncSession, server_ref: str
 ) -> tuple[ProxmoxClient, str] | dict[str, object]:
@@ -246,12 +286,29 @@ async def proxmox_reset_vm_cloudinit_password(
             fallback_message="Unable to verify Proxmox cloud-init values",
         )
 
+    if not _cloudinit_confirms_password_reset(cloudinit_result):
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox cloud-init payload did not confirm the password reset",
+        }
+
     dump_result = await client.get_qemu_cloudinit_dump_user(normalized_node, vmid)
     if dump_result.get("ok") is not True:
         return _upstream_error(
             dump_result,
             fallback_message="Unable to verify Proxmox cloud-init user dump",
         )
+
+    sanitized_dump, dump_confirmed = _sanitize_cloudinit_dump_user(
+        dump_result.get("data")
+    )
+    if not dump_confirmed or sanitized_dump is None:
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox cloud-init dump did not confirm the password reset",
+        }
 
     return {
         "ok": True,
@@ -263,6 +320,6 @@ async def proxmox_reset_vm_cloudinit_password(
         "set_password_task": set_result,
         "regenerate_cloudinit": regenerate_result,
         "cloudinit": cloudinit_result,
-        "cloudinit_dump_user": dump_result,
+        "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
         "verified": True,
     }

@@ -202,7 +202,11 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
         "message": "ok",
         "data": {"ciuser": "rendy", "cipassword": "secret"},
     }
-    dump_result = {"ok": True, "message": "ok", "data": "ciuser=rendy"}
+    dump_result = {
+        "ok": True,
+        "message": "ok",
+        "data": "ciuser: rendy\npassword: $6$abc123$verysecret\n",
+    }
     state = _ClientState(
         config=config_result,
         cloudinit=cloudinit_result,
@@ -242,13 +246,21 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
             "data": "UPID:pve1:00000002:regen-cloudinit",
         },
         "cloudinit": cloudinit_result,
-        "cloudinit_dump_user": dump_result,
+        "cloudinit_dump_user": {
+            "ok": True,
+            "message": "ok",
+            "data": "ciuser: rendy\npassword: [REDACTED]\n",
+        },
         "verified": True,
     }
     assert result["set_password_task"] is not None
     assert result["regenerate_cloudinit"] is not None
     assert result["cloudinit"] is cloudinit_result
-    assert result["cloudinit_dump_user"] is dump_result
+    assert result["cloudinit_dump_user"] is not dump_result
+    assert (
+        result["cloudinit_dump_user"]["data"] == "ciuser: rendy\npassword: [REDACTED]\n"
+    )
+    assert "$6$abc123$verysecret" not in result["cloudinit_dump_user"]["data"]
     assert state.calls == [
         ("set_qemu_cloudinit_password", ("pve1-node", 101, "new-secret")),
         ("get_task_status", "UPID:pve1:00000001:set-password"),
@@ -322,7 +334,11 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_verification_fails
             "config": {"digest": "digest-1", "ciuser": "rendy"},
             "digest": "digest-1",
         },
-        cloudinit={"ok": True, "message": "ok", "data": {"ciuser": "rendy"}},
+        cloudinit={
+            "ok": True,
+            "message": "ok",
+            "data": {"ciuser": "rendy", "cipassword": "new-secret"},
+        },
         cloudinit_dump_user={
             "ok": False,
             "error_code": "upstream_error",
@@ -360,3 +376,143 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_verification_fails
         ("get_qemu_cloudinit", ("pve1-node", 101)),
         ("get_qemu_cloudinit_dump_user", ("pve1-node", 101)),
     ]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_reset_vm_cloudinit_password_fails_when_cloudinit_payload_does_not_confirm_reset(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import cloudinit_tools
+
+    server = _server()
+    state = _ClientState(
+        config={
+            "ok": True,
+            "message": "ok",
+            "config": {"digest": "digest-1", "ciuser": "rendy"},
+            "digest": "digest-1",
+        },
+        cloudinit={"ok": True, "message": "ok", "data": {"ciuser": "rendy"}},
+        cloudinit_dump_user={
+            "ok": True,
+            "message": "ok",
+            "data": "ciuser: rendy\npassword: $6$abc123$verysecret\n",
+        },
+    )
+    monkeypatch.setattr(
+        cloudinit_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await cloudinit_tools.proxmox_reset_vm_cloudinit_password(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+        new_password="new-secret",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "postflight_failed",
+        "message": "Proxmox cloud-init payload did not confirm the password reset",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_reset_vm_cloudinit_password_redacts_password_hash_in_dump(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import cloudinit_tools
+
+    server = _server()
+    state = _ClientState(
+        config={
+            "ok": True,
+            "message": "ok",
+            "config": {"digest": "digest-1", "ciuser": "rendy"},
+            "digest": "digest-1",
+        },
+        cloudinit={
+            "ok": True,
+            "message": "ok",
+            "data": {"ciuser": "rendy", "cipassword": "new-secret"},
+        },
+        cloudinit_dump_user={
+            "ok": True,
+            "message": "ok",
+            "data": "ciuser: rendy\npassword: $6$abc123$verysecret\nssh_authorized_keys:\n  - one\n",
+        },
+    )
+    monkeypatch.setattr(
+        cloudinit_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await cloudinit_tools.proxmox_reset_vm_cloudinit_password(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+        new_password="new-secret",
+        reason="Ticket #1661262",
+    )
+
+    assert result["ok"] is True
+    assert result["cloudinit_dump_user"]["data"] == (
+        "ciuser: rendy\npassword: [REDACTED]\nssh_authorized_keys:\n  - one\n"
+    )
+    assert "$6$abc123$verysecret" not in result["cloudinit_dump_user"]["data"]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_reset_vm_cloudinit_password_fails_when_dump_missing_password_stanza(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import cloudinit_tools
+
+    server = _server()
+    state = _ClientState(
+        config={
+            "ok": True,
+            "message": "ok",
+            "config": {"digest": "digest-1", "ciuser": "rendy"},
+            "digest": "digest-1",
+        },
+        cloudinit={
+            "ok": True,
+            "message": "ok",
+            "data": {"ciuser": "rendy", "cipassword": "new-secret"},
+        },
+        cloudinit_dump_user={
+            "ok": True,
+            "message": "ok",
+            "data": "ciuser: rendy\nssh_authorized_keys:\n  - one\n",
+        },
+    )
+    monkeypatch.setattr(
+        cloudinit_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await cloudinit_tools.proxmox_reset_vm_cloudinit_password(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+        new_password="new-secret",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "postflight_failed",
+        "message": "Proxmox cloud-init dump did not confirm the password reset",
+    }
