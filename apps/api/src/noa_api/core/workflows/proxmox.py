@@ -22,25 +22,33 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         action_label = _action_label(context.tool_name)
         subject = _subject(context.args)
         before_state = _matching_preflight(context.preflight_evidence, context.args)
+        reason = normalized_text(context.args.get("reason"))
 
+        reason_status = "completed" if reason is not None else "pending"
         approval_status = "pending"
         execute_status = "pending"
         verify_status = "pending"
 
+        if context.phase == "waiting_on_user":
+            reason_status = "waiting_on_user"
         if context.phase == "waiting_on_approval":
             approval_status = "waiting_on_approval"
         elif context.phase == "executing":
+            reason_status = "completed"
             approval_status = "completed"
             execute_status = "in_progress"
         elif context.phase == "completed":
+            reason_status = "completed"
             approval_status = "completed"
             execute_status = "completed"
             verify_status = "completed"
         elif context.phase == "denied":
+            reason_status = "cancelled"
             approval_status = "cancelled"
             execute_status = "cancelled"
             verify_status = "cancelled"
         elif context.phase == "failed":
+            reason_status = "cancelled"
             approval_status = "completed"
             execute_status = "cancelled"
             verify_status = "cancelled"
@@ -51,6 +59,15 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                     subject=subject, before_state=before_state
                 ),
                 "status": "completed" if before_state is not None else "in_progress",
+                "priority": "high",
+            },
+            {
+                "content": _reason_step_content(
+                    action_label=action_label,
+                    action_verb=_action_verb(context.tool_name),
+                    reason=reason,
+                ),
+                "status": reason_status,
                 "priority": "high",
             },
             {
@@ -201,6 +218,11 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                         WorkflowEvidenceItem(
                             label="Requested digest",
                             value=normalized_text(context.args.get("digest")) or "none",
+                        ),
+                        WorkflowEvidenceItem(
+                            label="Reason",
+                            value=normalized_text(context.args.get("reason"))
+                            or "none provided",
                         ),
                     ],
                 ),
@@ -459,6 +481,15 @@ def _verification_content(context: WorkflowTemplateContext) -> str:
         final_state = _link_state(result) or _desired_link_state(context.tool_name)
         return f"Verify that the NIC finished in link state {final_state}."
     return "Poll the task and verify the NIC link state after the change."
+
+
+def _reason_step_content(
+    *, action_label: str, action_verb: str, reason: str | None
+) -> str:
+    if reason is None:
+        gerund = "enabling" if action_verb == "enable" else "disabling"
+        return f"Ask for a short reason before {gerund} the VM NIC."
+    return f"Reason captured for the {action_label} change: {reason}."
 
 
 def _before_state_items(

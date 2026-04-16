@@ -1225,7 +1225,7 @@ async def test_execute_approved_tool_run_allows_execution_after_reason_follow_up
                         "type": "text",
                         "text": (
                             "To proceed with suspending the account, I need a brief "
-                            "human-readable reason for the change. Could you provide the reason?"
+                            "human-readable reason for the change, such as Ticket #1661262 or a short description. Could you provide it?"
                         ),
                     }
                 ],

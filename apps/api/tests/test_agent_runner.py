@@ -1349,7 +1349,9 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
     final_part = result.messages[-1].parts[0]
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
-    assert "short, human-readable reason" in cast(str, final_part["text"])
+    text = cast(str, final_part["text"])
+    assert "Ticket #1661262" in text
+    assert "brief description" in text
 
 
 async def test_agent_runner_stops_retry_loop_when_reason_is_missing(
@@ -1446,7 +1448,9 @@ async def test_agent_runner_stops_retry_loop_when_reason_is_missing(
     final_part = result.messages[-1].parts[0]
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
-    assert "Please provide the reason" in cast(str, final_part["text"])
+    text = cast(str, final_part["text"])
+    assert "Ticket #1661262" in text
+    assert "brief description" in text
 
 
 async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_for_approval(
@@ -1552,6 +1556,90 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
         and part.get("toolName") == "update_workflow_todo"
     )
     assert isinstance(todo_tool_call.get("args"), dict)
+
+
+async def test_agent_runner_missing_reason_guidance_mentions_ticket_reference(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name="whm_suspend_account",
+                        arguments={"server_ref": "web1", "username": "alice"},
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={"whm_suspend_account"},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    final_part = result.messages[-1].parts[0]
+    assert isinstance(final_part, dict)
+    assert final_part["type"] == "text"
+    text = cast(str, final_part["text"])
+    assert "Ticket #1661262" in text
+    assert "brief description" in text
+    assert captured["todos"]
 
 
 async def test_agent_runner_replaces_prior_whm_family_workflow_with_firewall_waiting_state(

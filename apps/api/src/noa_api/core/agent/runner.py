@@ -1308,7 +1308,7 @@ def _assistant_guidance_for_change_validation_error(
     activity = describe_workflow_activity(tool_name=tool_name, args=args).lower()
     return (
         f"I need a short, human-readable reason before I can continue {activity}. "
-        "Please provide the reason you want recorded for this change."
+        "Please provide the reason you want recorded for this change, such as Ticket #1661262 or a brief description."
     )
 
 
