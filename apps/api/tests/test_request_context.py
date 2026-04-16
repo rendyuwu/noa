@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import json
 import logging
+import os
 
 import pytest
 import structlog
@@ -12,6 +13,9 @@ from httpx import ASGITransport, AsyncClient
 from noa_api.core.logging import configure_logging
 from noa_api.core.logging_context import log_context
 from noa_api.core.telemetry import TelemetryEvent
+
+os.environ.setdefault("LLM_API_KEY", "test-llm-api-key")
+
 from noa_api.main import create_app
 
 

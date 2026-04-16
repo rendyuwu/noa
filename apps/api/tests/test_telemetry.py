@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib
 import inspect
 import logging
+import os
 
 import pytest
 from opentelemetry.sdk.metrics import MeterProvider
@@ -18,6 +19,9 @@ from httpx import ASGITransport, AsyncClient
 
 from noa_api.api.error_handling import install_error_handling
 from noa_api.core.config import Settings
+
+os.environ.setdefault("LLM_API_KEY", "test-llm-api-key")
+
 from noa_api.main import create_app
 from noa_api.core.telemetry import (
     NoOpTelemetryRecorder,

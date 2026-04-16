@@ -395,7 +395,10 @@ class AssistantService:
         return result
 
 
-async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
+async def get_assistant_service(
+    request: Request,
+) -> AsyncGenerator[AssistantService, None]:
+    app_settings = cast(Any, request.app.state.settings)
     async with get_session_factory()() as session:
         action_tool_run_service = ActionToolRunService(
             repository=SQLActionToolRunRepository(session)
@@ -403,7 +406,7 @@ async def get_assistant_service() -> AsyncGenerator[AssistantService, None]:
         service = AssistantService(
             SQLAssistantRepository(session),
             AgentRunner(
-                llm_client=create_default_llm_client(),
+                llm_client=create_default_llm_client(app_settings),
                 action_tool_run_service=action_tool_run_service,
                 session=session,
             ),

@@ -11,7 +11,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.core.config import settings
+from noa_api.core.config import Settings, settings
 from noa_api.core.json_safety import json_safe
 from noa_api.core.prompts.loader import load_system_prompt
 from noa_api.core.secrets.redaction import redact_sensitive_data
@@ -190,6 +190,17 @@ def _prompt_replay_parts(parts: list[dict[str, object]]) -> list[dict[str, objec
             continue
         replay_parts.append(part_dict)
     return replay_parts
+
+
+def require_llm_api_key(app_settings: Settings) -> str:
+    api_key = (
+        app_settings.llm_api_key.get_secret_value()
+        if app_settings.llm_api_key is not None
+        else ""
+    )
+    if not api_key.strip():
+        raise ValueError("llm_api_key is required")
+    return api_key
 
 
 class RuleBasedLLMClient:
@@ -1136,20 +1147,17 @@ class AgentRunner:
         return await tool.execute(**args)
 
 
-def create_default_llm_client() -> LLMClientProtocol:
-    api_key = (
-        settings.llm_api_key.get_secret_value()
-        if settings.llm_api_key is not None
-        else ""
-    )
-    if not api_key.strip():
-        raise ValueError("llm_api_key is required")
+def create_default_llm_client(
+    app_settings: Settings | None = None,
+) -> LLMClientProtocol:
+    resolved_settings = app_settings or settings
+    api_key = require_llm_api_key(resolved_settings)
 
-    prompt = load_system_prompt(settings)
+    prompt = load_system_prompt(resolved_settings)
     return OpenAICompatibleLLMClient(
-        model=settings.llm_model,
+        model=resolved_settings.llm_model,
         api_key=api_key,
-        base_url=settings.llm_base_url,
+        base_url=resolved_settings.llm_base_url,
         system_prompt=prompt.text,
     )
 

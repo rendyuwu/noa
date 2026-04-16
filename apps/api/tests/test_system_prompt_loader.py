@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import logging
 from pathlib import Path
 
@@ -7,6 +8,9 @@ import pytest
 
 from noa_api.core.config import Settings
 from noa_api.core.prompts.loader import load_system_prompt
+
+os.environ.setdefault("LLM_API_KEY", "test-llm-api-key")
+
 from noa_api.main import create_app
 
 

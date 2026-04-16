@@ -11,25 +11,15 @@ from noa_api.core.config import Settings, settings
 from noa_api.core.logging import configure_logging
 from noa_api.core.prompts.loader import load_system_prompt
 from noa_api.core.telemetry import create_telemetry_recorder
+from noa_api.core.agent.runner import require_llm_api_key
 
 
 logger = logging.getLogger(__name__)
 
 
-def _require_llm_api_key(app_settings: Settings) -> str:
-    api_key = (
-        app_settings.llm_api_key.get_secret_value()
-        if app_settings.llm_api_key is not None
-        else ""
-    )
-    if not api_key.strip():
-        raise ValueError("llm_api_key is required")
-    return api_key
-
-
 def create_app(app_settings: Settings = settings) -> FastAPI:
     configure_logging()
-    _require_llm_api_key(app_settings)
+    require_llm_api_key(app_settings)
     prompt = load_system_prompt(app_settings)
     logger.info(
         "llm_system_prompt_loaded",
@@ -49,6 +39,7 @@ def create_app(app_settings: Settings = settings) -> FastAPI:
             telemetry.shutdown()
 
     app = FastAPI(title="Project NOA API", lifespan=lifespan)
+    app.state.settings = app_settings
     app.state.telemetry = telemetry
     if app_settings.api_cors_allowed_origins:
         app.add_middleware(

@@ -1,7 +1,12 @@
-from httpx import ASGITransport, AsyncClient
+import os
+
 import pytest
+from httpx import ASGITransport, AsyncClient
 
 from noa_api.core.config import Settings
+
+os.environ.setdefault("LLM_API_KEY", "test-llm-api-key")
+
 from noa_api.main import create_app
 
 
