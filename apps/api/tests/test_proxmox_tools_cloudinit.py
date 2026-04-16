@@ -330,6 +330,182 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_task_exit_status_i
 
 
 @pytest.mark.asyncio
+async def test_proxmox_reset_vm_cloudinit_password_retries_verification_until_confirmed(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import cloudinit_tools
+
+    server = _server()
+    call_counts = {"cloudinit": 0, "dump": 0}
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            _ = kwargs
+
+        async def set_qemu_cloudinit_password(
+            self, node: str, vmid: int, new_password: str
+        ) -> dict[str, object]:
+            _ = (node, vmid, new_password)
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": "UPID:pve1:00000001:set-password",
+            }
+
+        async def regenerate_qemu_cloudinit(
+            self, node: str, vmid: int
+        ) -> dict[str, object]:
+            _ = (node, vmid)
+            return {"ok": True, "message": "ok", "data": None}
+
+        async def get_task_status(self, node: str, upid: str) -> dict[str, object]:
+            _ = (node, upid)
+            return {
+                "ok": True,
+                "message": "ok",
+                "upid": upid,
+                "task_status": "stopped",
+                "task_exit_status": "OK",
+                "data": {},
+            }
+
+        async def get_qemu_cloudinit(self, node: str, vmid: int) -> dict[str, object]:
+            _ = (node, vmid)
+            call_counts["cloudinit"] += 1
+            if call_counts["cloudinit"] == 1:
+                return {
+                    "ok": True,
+                    "message": "ok",
+                    "data": [{"key": "ciuser", "value": "rendy"}],
+                }
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [
+                    {"key": "ciuser", "value": "rendy"},
+                    {"key": "cipassword", "value": "********"},
+                ],
+            }
+
+        async def get_qemu_cloudinit_dump_user(
+            self, node: str, vmid: int
+        ) -> dict[str, object]:
+            _ = (node, vmid)
+            call_counts["dump"] += 1
+            if call_counts["dump"] == 1:
+                return {"ok": True, "message": "ok", "data": "ciuser: rendy\n"}
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": "ciuser: rendy\npassword: $6$abc123$verysecret\n",
+            }
+
+    monkeypatch.setattr(
+        cloudinit_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    monkeypatch.setattr(cloudinit_tools, "ProxmoxClient", _Client)
+    monkeypatch.setattr(cloudinit_tools, "_TASK_POLL_DELAY_SECONDS", 0)
+
+    result = await cloudinit_tools.proxmox_reset_vm_cloudinit_password(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+        new_password="new-secret",
+        reason="Ticket #1661262",
+    )
+
+    assert result["ok"] is True
+    assert call_counts == {"cloudinit": 2, "dump": 2}
+    assert result["cloudinit_dump_user"]["data"] == (
+        "ciuser: rendy\npassword: [REDACTED]\n"
+    )
+
+
+@pytest.mark.asyncio
+async def test_proxmox_reset_vm_cloudinit_password_times_out_when_verification_never_confirms(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import cloudinit_tools
+
+    server = _server()
+    call_counts = {"cloudinit": 0, "dump": 0}
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            _ = kwargs
+
+        async def set_qemu_cloudinit_password(
+            self, node: str, vmid: int, new_password: str
+        ) -> dict[str, object]:
+            _ = (node, vmid, new_password)
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": "UPID:pve1:00000001:set-password",
+            }
+
+        async def regenerate_qemu_cloudinit(
+            self, node: str, vmid: int
+        ) -> dict[str, object]:
+            _ = (node, vmid)
+            return {"ok": True, "message": "ok", "data": None}
+
+        async def get_task_status(self, node: str, upid: str) -> dict[str, object]:
+            _ = (node, upid)
+            return {
+                "ok": True,
+                "message": "ok",
+                "upid": upid,
+                "task_status": "stopped",
+                "task_exit_status": "OK",
+                "data": {},
+            }
+
+        async def get_qemu_cloudinit(self, node: str, vmid: int) -> dict[str, object]:
+            _ = (node, vmid)
+            call_counts["cloudinit"] += 1
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "ciuser", "value": "rendy"}],
+            }
+
+        async def get_qemu_cloudinit_dump_user(
+            self, node: str, vmid: int
+        ) -> dict[str, object]:
+            _ = (node, vmid)
+            call_counts["dump"] += 1
+            return {"ok": True, "message": "ok", "data": "ciuser: rendy\n"}
+
+    monkeypatch.setattr(
+        cloudinit_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    monkeypatch.setattr(cloudinit_tools, "ProxmoxClient", _Client)
+    monkeypatch.setattr(cloudinit_tools, "_TASK_POLL_DELAY_SECONDS", 0)
+
+    result = await cloudinit_tools.proxmox_reset_vm_cloudinit_password(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+        new_password="new-secret",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "postflight_failed",
+        "message": "Proxmox cloud-init verification did not confirm the password reset",
+    }
+    assert call_counts == {"cloudinit": 5, "dump": 5}
+
+
+@pytest.mark.asyncio
 async def test_proxmox_reset_vm_cloudinit_password_fails_when_verification_fails(
     monkeypatch,
 ) -> None:
@@ -432,7 +608,7 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_cloudinit_payload_
     assert result == {
         "ok": False,
         "error_code": "postflight_failed",
-        "message": "Proxmox cloud-init payload did not confirm the password reset",
+        "message": "Proxmox cloud-init verification did not confirm the password reset",
     }
 
 
@@ -579,5 +755,5 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_dump_missing_passw
     assert result == {
         "ok": False,
         "error_code": "postflight_failed",
-        "message": "Proxmox cloud-init dump did not confirm the password reset",
+        "message": "Proxmox cloud-init verification did not confirm the password reset",
     }

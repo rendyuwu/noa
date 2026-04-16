@@ -12,6 +12,8 @@ from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
 _TASK_POLL_ATTEMPTS = 5
 _TASK_POLL_DELAY_SECONDS = 0.1
+_VERIFICATION_POLL_ATTEMPTS = 5
+_VERIFICATION_POLL_DELAY_SECONDS = 0.1
 
 
 def _normalized_text(value: object) -> str | None:
@@ -98,6 +100,11 @@ def _sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]
     if dump_value.endswith("\n"):
         sanitized += "\n"
     return sanitized, True
+
+
+def _cloudinit_dump_confirms_password_reset(dump_value: object) -> bool:
+    sanitized_dump, confirmed = _sanitize_cloudinit_dump_user(dump_value)
+    return confirmed and sanitized_dump is not None
 
 
 async def _resolve_client(
@@ -225,6 +232,48 @@ async def _wait_for_terminal_task(
     return None
 
 
+async def _wait_for_cloudinit_verification(
+    *,
+    client: ProxmoxClient,
+    node: str,
+    vmid: int,
+) -> dict[str, object]:
+    for attempt in range(_VERIFICATION_POLL_ATTEMPTS):
+        cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
+        if cloudinit_result.get("ok") is not True:
+            return _upstream_error(
+                cloudinit_result,
+                fallback_message="Unable to verify Proxmox cloud-init values",
+            )
+
+        dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
+        if dump_result.get("ok") is not True:
+            return _upstream_error(
+                dump_result,
+                fallback_message="Unable to verify Proxmox cloud-init user dump",
+            )
+
+        if _cloudinit_confirms_password_reset(
+            cloudinit_result
+        ) and _cloudinit_dump_confirms_password_reset(dump_result.get("data")):
+            sanitized_dump, _ = _sanitize_cloudinit_dump_user(dump_result.get("data"))
+            assert sanitized_dump is not None
+            return {
+                "ok": True,
+                "cloudinit": cloudinit_result,
+                "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
+            }
+
+        if attempt < _VERIFICATION_POLL_ATTEMPTS - 1:
+            await asyncio.sleep(_VERIFICATION_POLL_DELAY_SECONDS)
+
+    return {
+        "ok": False,
+        "error_code": "postflight_failed",
+        "message": "Proxmox cloud-init verification did not confirm the password reset",
+    }
+
+
 async def proxmox_reset_vm_cloudinit_password(
     *,
     session: AsyncSession,
@@ -274,36 +323,18 @@ async def proxmox_reset_vm_cloudinit_password(
             fallback_message="Proxmox cloud-init regeneration failed",
         )
 
-    cloudinit_result = await client.get_qemu_cloudinit(normalized_node, vmid)
-    if cloudinit_result.get("ok") is not True:
-        return _upstream_error(
-            cloudinit_result,
-            fallback_message="Unable to verify Proxmox cloud-init values",
-        )
-
-    if not _cloudinit_confirms_password_reset(cloudinit_result):
-        return {
-            "ok": False,
-            "error_code": "postflight_failed",
-            "message": "Proxmox cloud-init payload did not confirm the password reset",
-        }
-
-    dump_result = await client.get_qemu_cloudinit_dump_user(normalized_node, vmid)
-    if dump_result.get("ok") is not True:
-        return _upstream_error(
-            dump_result,
-            fallback_message="Unable to verify Proxmox cloud-init user dump",
-        )
-
-    sanitized_dump, dump_confirmed = _sanitize_cloudinit_dump_user(
-        dump_result.get("data")
+    verification_result = await _wait_for_cloudinit_verification(
+        client=client,
+        node=normalized_node,
+        vmid=vmid,
     )
-    if not dump_confirmed or sanitized_dump is None:
-        return {
-            "ok": False,
-            "error_code": "postflight_failed",
-            "message": "Proxmox cloud-init dump did not confirm the password reset",
-        }
+    if verification_result.get("ok") is not True:
+        return verification_result
+
+    cloudinit_result = verification_result["cloudinit"]
+    dump_result = verification_result["cloudinit_dump_user"]
+    assert isinstance(cloudinit_result, dict)
+    assert isinstance(dump_result, dict)
 
     return {
         "ok": True,
@@ -315,6 +346,6 @@ async def proxmox_reset_vm_cloudinit_password(
         "set_password_task": set_result,
         "regenerate_cloudinit": regenerate_result,
         "cloudinit": cloudinit_result,
-        "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
+        "cloudinit_dump_user": verification_result["cloudinit_dump_user"],
         "verified": True,
     }
