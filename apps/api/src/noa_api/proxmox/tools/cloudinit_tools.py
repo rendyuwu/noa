@@ -51,9 +51,20 @@ def _upstream_error(
 
 def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:
     data = result.get("data")
-    if not isinstance(data, dict):
+    if isinstance(data, dict):
+        return _normalized_text(data.get("cipassword")) is not None
+
+    if not isinstance(data, list):
         return False
-    return _normalized_text(data.get("cipassword")) is not None
+
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if _normalized_text(entry.get("key")) != "cipassword":
+            continue
+        if _normalized_text(entry.get("value")) is not None:
+            return True
+    return False
 
 
 def _sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]:

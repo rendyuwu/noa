@@ -149,7 +149,11 @@ async def test_proxmox_preflight_vm_cloudinit_password_reset_returns_exact_paylo
         "config": {"digest": "digest-1", "ciuser": "rendy"},
         "digest": "digest-1",
     }
-    cloudinit_result = {"ok": True, "message": "ok", "data": {"ciuser": "rendy"}}
+    cloudinit_result = {
+        "ok": True,
+        "message": "ok",
+        "data": [{"key": "ciuser", "value": "rendy"}],
+    }
     monkeypatch.setattr(
         cloudinit_tools,
         "SQLProxmoxServerRepository",
@@ -200,7 +204,10 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
     cloudinit_result = {
         "ok": True,
         "message": "ok",
-        "data": {"ciuser": "rendy", "cipassword": "secret"},
+        "data": [
+            {"key": "ciuser", "value": "rendy"},
+            {"key": "cipassword", "value": "secret"},
+        ],
     }
     dump_result = {
         "ok": True,
@@ -287,7 +294,11 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_task_exit_status_i
             "config": {"digest": "digest-1", "ciuser": "rendy"},
             "digest": "digest-1",
         },
-        cloudinit={"ok": True, "message": "ok", "data": {}},
+        cloudinit={
+            "ok": True,
+            "message": "ok",
+            "data": [{"key": "ciuser", "value": "rendy"}],
+        },
         cloudinit_dump_user={"ok": True, "message": "ok", "data": ""},
         task_statuses=[
             {"task_status": "stopped", "task_exit_status": "configuration error"}
@@ -337,7 +348,10 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_verification_fails
         cloudinit={
             "ok": True,
             "message": "ok",
-            "data": {"ciuser": "rendy", "cipassword": "new-secret"},
+            "data": [
+                {"key": "ciuser", "value": "rendy"},
+                {"key": "cipassword", "value": "new-secret"},
+            ],
         },
         cloudinit_dump_user={
             "ok": False,
@@ -392,7 +406,11 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_cloudinit_payload_
             "config": {"digest": "digest-1", "ciuser": "rendy"},
             "digest": "digest-1",
         },
-        cloudinit={"ok": True, "message": "ok", "data": {"ciuser": "rendy"}},
+        cloudinit={
+            "ok": True,
+            "message": "ok",
+            "data": [{"key": "ciuser", "value": "rendy"}],
+        },
         cloudinit_dump_user={
             "ok": True,
             "message": "ok",
@@ -423,6 +441,51 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_cloudinit_payload_
 
 
 @pytest.mark.asyncio
+async def test_proxmox_reset_vm_cloudinit_password_fails_on_task_timeout(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import cloudinit_tools
+
+    server = _server()
+    state = _ClientState(
+        config={
+            "ok": True,
+            "message": "ok",
+            "config": {"digest": "digest-1", "ciuser": "rendy"},
+            "digest": "digest-1",
+        },
+        cloudinit={
+            "ok": True,
+            "message": "ok",
+            "data": [{"key": "ciuser", "value": "rendy"}],
+        },
+        cloudinit_dump_user={"ok": True, "message": "ok", "data": "unused"},
+        task_statuses=[{"task_status": "running", "task_exit_status": None}] * 5,
+    )
+    monkeypatch.setattr(
+        cloudinit_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await cloudinit_tools.proxmox_reset_vm_cloudinit_password(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+        new_password="new-secret",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "task_timeout",
+        "message": "Proxmox task did not reach a terminal state before verification timed out",
+    }
+
+
+@pytest.mark.asyncio
 async def test_proxmox_reset_vm_cloudinit_password_redacts_password_hash_in_dump(
     monkeypatch,
 ) -> None:
@@ -439,7 +502,10 @@ async def test_proxmox_reset_vm_cloudinit_password_redacts_password_hash_in_dump
         cloudinit={
             "ok": True,
             "message": "ok",
-            "data": {"ciuser": "rendy", "cipassword": "new-secret"},
+            "data": [
+                {"key": "ciuser", "value": "rendy"},
+                {"key": "cipassword", "value": "new-secret"},
+            ],
         },
         cloudinit_dump_user={
             "ok": True,
@@ -487,7 +553,10 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_dump_missing_passw
         cloudinit={
             "ok": True,
             "message": "ok",
-            "data": {"ciuser": "rendy", "cipassword": "new-secret"},
+            "data": [
+                {"key": "ciuser", "value": "rendy"},
+                {"key": "cipassword", "value": "new-secret"},
+            ],
         },
         cloudinit_dump_user={
             "ok": True,
