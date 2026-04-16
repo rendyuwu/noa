@@ -59,7 +59,7 @@ This is a living checklist of what is implemented in the MVP and what is intenti
 
 ## Suggested Next Steps
 
-1) Add one real integration (pick a small READ-only subset first).
+1) Expand the existing integration surface (for example, add more READ-only coverage or broader CHANGE workflows for WHM/Proxmox).
 2) Add true LLM streaming (server-side streamed completions).
 3) Add per-tool “preview” summaries for CHANGE actions (diff/impact explanation).
 

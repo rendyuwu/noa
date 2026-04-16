@@ -79,7 +79,7 @@ Open: http://localhost:3000
 
 1) Login via LDAP at `/login` using a user in `AUTH_BOOTSTRAP_ADMIN_EMAILS`.
 2) In `/assistant`, create a thread and ask: `what time is it` (READ tool).
-3) Ask: `suspend a WHM account` (CHANGE tool) and include a reason such as `Ticket #1661262` before approving/denying the action card.
+3) If you have configured WHM/Proxmox inventory plus a preflight-ready target, try a CHANGE action such as `suspend a WHM account` and include a reason like `Ticket #1661262` before approving/denying the action card.
 4) Visit `/admin` to enable/disable users and update tool allowlists.
 
 ## What’s Implemented (MVP)
