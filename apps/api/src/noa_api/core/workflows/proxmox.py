@@ -43,15 +43,16 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
             execute_status = "completed"
             verify_status = "completed"
         elif context.phase == "denied":
-            reason_status = "cancelled"
             approval_status = "cancelled"
             execute_status = "cancelled"
             verify_status = "cancelled"
         elif context.phase == "failed":
-            reason_status = "cancelled"
             approval_status = "completed"
             execute_status = "cancelled"
             verify_status = "cancelled"
+
+        if reason is None and context.phase in {"completed", "denied", "failed"}:
+            reason_status = "cancelled"
 
         return [
             {
