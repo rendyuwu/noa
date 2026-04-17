@@ -53,7 +53,9 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
             execute_status = "completed"
             verify_status = (
                 "completed"
-                if _postflight_verified(context.tool_name, context.postflight_result)
+                if _pool_move_verified(
+                    context.tool_name, result, context.postflight_result
+                )
                 else "cancelled"
             )
         elif context.phase == "denied":
@@ -1018,6 +1020,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
         before_state = _matching_pool_move_preflight(
             context.preflight_evidence, context.args
         )
+        result = context.result if isinstance(context.result, dict) else {}
         reason = normalized_text(context.args.get("reason"))
 
         preflight_status = "completed" if before_state is not None else "in_progress"
@@ -1040,7 +1043,9 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             execute_status = "completed"
             verify_status = (
                 "completed"
-                if _postflight_verified(context.tool_name, context.postflight_result)
+                if _pool_move_verified(
+                    context.tool_name, result, context.postflight_result
+                )
                 else "cancelled"
             )
         elif context.phase == "denied":
@@ -1124,7 +1129,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             )
 
         if context.phase == "completed" and failed_result:
-            if _postflight_verified(context.tool_name, postflight):
+            if _pool_move_verified(context.tool_name, result, postflight):
                 return WorkflowReplyTemplate(
                     title="Proxmox pool membership move partially completed",
                     outcome="partial",
@@ -1190,7 +1195,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 outcome="changed",
                 summary=(
                     f"Pool membership move completed for {subject}.\n\n"
-                    f"{_pool_move_completion_summary(before_state=before_state, result=result, postflight_result=postflight, args=context.args)}"
+                    f"{_pool_move_completion_summary(tool_name=context.tool_name, before_state=before_state, result=result, postflight_result=postflight, args=context.args)}"
                 ),
                 evidence_summary=_pool_move_evidence_summary(
                     tool_name=context.tool_name,
@@ -1998,12 +2003,9 @@ def _pool_move_verification_items(
     items = [
         WorkflowEvidenceItem(
             label="Verified",
-            value=(
-                "yes"
-                if result.get("verified") is True
-                or _postflight_verified(tool_name, postflight_result)
-                else "no"
-            ),
+            value="yes"
+            if _pool_move_verified(tool_name, result, postflight_result)
+            else "no",
         ),
         WorkflowEvidenceItem(
             label="Add task",
@@ -2024,11 +2026,17 @@ def _pool_move_verification_items(
             else "none",
         ),
     ]
-    if (
-        isinstance(postflight_result, dict)
-        and postflight_result.get("verified") is True
-    ):
-        items.append(WorkflowEvidenceItem(label="Postflight", value="verified"))
+    if isinstance(postflight_result, dict):
+        items.append(
+            WorkflowEvidenceItem(
+                label="Postflight",
+                value=(
+                    "verified"
+                    if postflight_result.get("verified") is True
+                    else "degraded"
+                ),
+            )
+        )
     return items
 
 
@@ -2044,6 +2052,10 @@ def _pool_move_evidence_summary(
         summary.append("Preflight captured for the exact source and destination pools.")
     if result.get("verified") is True:
         summary.append("Verification succeeded.")
+        if isinstance(postflight_result, dict) and not _postflight_verified(
+            tool_name, postflight_result
+        ):
+            summary.append("Postflight refetch was degraded.")
     elif _postflight_verified(tool_name, postflight_result):
         summary.append("Postflight verification succeeded.")
     return summary
@@ -2082,6 +2094,7 @@ def _pool_move_approval_summary(
 
 def _pool_move_completion_summary(
     *,
+    tool_name: str,
     before_state: dict[str, object] | None,
     result: dict[str, object],
     postflight_result: dict[str, object],
@@ -2124,7 +2137,31 @@ def _pool_move_completion_summary(
             _pool_table("Source pool after", source_after),
             _pool_table("Destination pool after", destination_after),
             f"Moved VMIDs: {_vmids_text(args.get('vmids'))}.",
+            *(
+                [
+                    "Verification succeeded.",
+                    "Postflight refetch was degraded.",
+                ]
+                if result.get("verified") is True
+                and isinstance(postflight_result, dict)
+                and not _postflight_verified(tool_name, postflight_result)
+                else ["Verification succeeded."]
+                if result.get("verified") is True
+                else ["Postflight verification succeeded."]
+                if _postflight_verified(tool_name, postflight_result)
+                else ["Postflight refetch was degraded."]
+                if isinstance(postflight_result, dict) and postflight_result
+                else []
+            ),
         ]
+    )
+
+
+def _pool_move_verified(
+    tool_name: str, result: dict[str, object], postflight_result: dict[str, object]
+) -> bool:
+    return result.get("verified") is True or _postflight_verified(
+        tool_name, postflight_result
     )
 
 
