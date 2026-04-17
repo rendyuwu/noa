@@ -850,3 +850,229 @@ async def test_proxmox_move_vms_between_pools_fails_closed_on_add_failure(
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
         ("add_vms_to_pool", ("pool_b", [1057])),
     ]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_move_vms_between_pools_fails_when_remove_step_fails(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    source_pool_before = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_before = _pool_payload("pool_b", [])
+    source_pool_after_add = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_after_add = _pool_payload("pool_b", [{"vmid": 1057}])
+    state = _ClientState(
+        get_pool_results={
+            "pool_a": source_pool_before,
+            "pool_b": destination_pool_before,
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Console": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
+        remove_vms_from_pool_result={
+            "ok": False,
+            "error_code": "upstream_error",
+            "message": "source remove failed",
+        },
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            _ = kwargs
+
+        async def get_pool(self, poolid: str) -> dict[str, object]:
+            state.calls.append(("get_pool", poolid))
+            if state.calls.count(("get_pool", poolid)) == 1:
+                return state.get_pool_results[poolid]
+            if poolid == "pool_a":
+                return source_pool_after_add
+            return destination_pool_after_add
+
+        async def get_user(self, userid: str) -> dict[str, object]:
+            state.calls.append(("get_user", userid))
+            return state.get_user_result
+
+        async def get_effective_permissions(
+            self, userid: str, path: str
+        ) -> dict[str, object]:
+            state.calls.append(("get_effective_permissions", (userid, path)))
+            return state.get_effective_permissions_result
+
+        async def add_vms_to_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            state.calls.append(("add_vms_to_pool", (poolid, vmids)))
+            return state.add_vms_to_pool_result
+
+        async def remove_vms_from_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
+            return state.remove_vms_from_pool_result
+
+    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+
+    result = await pool_tools.proxmox_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "upstream_error",
+        "message": "source remove failed",
+    }
+    assert state.calls == [
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("get_user", "l1@biznetgio.com@pve"),
+        ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("add_vms_to_pool", ("pool_b", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("remove_vms_from_pool", ("pool_a", [1057])),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_pool_after_move", "destination_pool_after_move"),
+    [
+        (
+            {"ok": True, "message": "ok", "data": {"poolid": "pool_a"}},
+            _pool_payload("pool_b", [{"vmid": 1057}]),
+        ),
+        (
+            _pool_payload("pool_a", []),
+            {"ok": True, "message": "ok", "data": {"poolid": "pool_b"}},
+        ),
+    ],
+)
+async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_after_move_path(
+    monkeypatch,
+    source_pool_after_move: dict[str, object],
+    destination_pool_after_move: dict[str, object],
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    source_pool_before = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_before = _pool_payload("pool_b", [])
+    source_pool_after_add = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_after_add = _pool_payload("pool_b", [{"vmid": 1057}])
+    state = _ClientState(
+        get_pool_results={
+            "pool_a": source_pool_before,
+            "pool_b": destination_pool_before,
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Console": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
+        remove_vms_from_pool_result={
+            "ok": True,
+            "message": "ok",
+            "data": "UPID:REMOVE",
+        },
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            _ = kwargs
+
+        async def get_pool(self, poolid: str) -> dict[str, object]:
+            state.calls.append(("get_pool", poolid))
+            call_number = state.calls.count(("get_pool", poolid))
+            if call_number == 1:
+                return state.get_pool_results[poolid]
+            if call_number == 2:
+                if poolid == "pool_a":
+                    return source_pool_after_add
+                return destination_pool_after_add
+            if poolid == "pool_a":
+                return source_pool_after_move
+            return destination_pool_after_move
+
+        async def get_user(self, userid: str) -> dict[str, object]:
+            state.calls.append(("get_user", userid))
+            return state.get_user_result
+
+        async def get_effective_permissions(
+            self, userid: str, path: str
+        ) -> dict[str, object]:
+            state.calls.append(("get_effective_permissions", (userid, path)))
+            return state.get_effective_permissions_result
+
+        async def add_vms_to_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            state.calls.append(("add_vms_to_pool", (poolid, vmids)))
+            return state.add_vms_to_pool_result
+
+        async def remove_vms_from_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
+            return state.remove_vms_from_pool_result
+
+    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+
+    result = await pool_tools.proxmox_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_response",
+        "message": "Proxmox returned an unexpected pool payload",
+    }
+    assert state.calls == [
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("get_user", "l1@biznetgio.com@pve"),
+        ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("add_vms_to_pool", ("pool_b", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("remove_vms_from_pool", ("pool_a", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+    ]
