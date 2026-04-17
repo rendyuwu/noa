@@ -29,6 +29,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         subject = _subject(context.args)
         before_state = _matching_preflight(context.preflight_evidence, context.args)
         reason = normalized_text(context.args.get("reason"))
+        failed_result = _workflow_result_failed(context.result)
 
         reason_status = "completed" if reason is not None else "pending"
         approval_status = "pending"
@@ -46,8 +47,8 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         elif context.phase == "completed":
             reason_status = "completed"
             approval_status = "completed"
-            execute_status = "completed"
-            verify_status = "completed"
+            execute_status = "completed" if not failed_result else "cancelled"
+            verify_status = "completed" if not failed_result else "cancelled"
         elif context.phase == "denied":
             approval_status = "cancelled"
             execute_status = "cancelled"
@@ -110,6 +111,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         desired_state = _desired_link_state(context.tool_name)
         current_state = _link_state(before_state)
         after_state = _link_state(result) or _link_state(postflight) or desired_state
+        failed_result = _workflow_result_failed(result)
 
         if context.phase == "waiting_on_approval":
             return WorkflowReplyTemplate(
@@ -141,6 +143,21 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                         postflight_result=postflight,
                     ),
                     next_step="Run preflight again before requesting another NIC state change.",
+                )
+
+            if failed_result:
+                return WorkflowReplyTemplate(
+                    title=f"Failed to {_action_verb(context.tool_name)} {title_subject}",
+                    outcome="failed",
+                    summary=(
+                        f"The request to {_action_label(context.tool_name)} {subject} did not complete successfully."
+                    ),
+                    evidence_summary=_evidence_summary(
+                        before_state=before_state,
+                        result=result,
+                        postflight_result=postflight,
+                    ),
+                    next_step="Run proxmox_preflight_vm_nic_toggle again to refresh the digest before retrying.",
                 )
 
             return WorkflowReplyTemplate(

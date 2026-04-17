@@ -1323,6 +1323,55 @@ def test_proxmox_workflow_completed_reply_summarizes_before_after_and_verificati
     assert "Verification succeeded." in reply.evidence_summary
 
 
+def test_proxmox_workflow_completed_reply_handles_failure_result() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_disable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "maintenance window",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                    "link_state": "up",
+                    "auto_selected_net": True,
+                    "nets": [],
+                },
+            }
+        ],
+        result={
+            "ok": False,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "status": "failed",
+            "message": "NIC disable failed",
+        },
+    )
+
+    assert reply is not None
+    assert reply.outcome == "failed"
+    assert "did not complete successfully" in reply.summary
+    assert "verification succeeded" not in reply.summary.lower()
+
+
 def test_proxmox_workflow_preflight_matching_uses_generic_preflight_collection() -> (
     None
 ):
@@ -1396,6 +1445,61 @@ def test_proxmox_workflow_preflight_matching_uses_generic_preflight_collection()
 
     assert mismatch is not None
     assert mismatch.error_code == "preflight_mismatch"
+
+
+def test_proxmox_workflow_completed_todos_mark_execution_and_verification_cancelled_on_failure() -> (
+    None
+):
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_disable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "maintenance window",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                    "link_state": "up",
+                    "auto_selected_net": True,
+                    "nets": [],
+                },
+            }
+        ],
+        result={
+            "ok": False,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "status": "failed",
+            "message": "NIC disable failed",
+        },
+    )
+
+    assert workflow_todos is not None
+    assert [todo["status"] for todo in workflow_todos] == [
+        "completed",
+        "completed",
+        "completed",
+        "cancelled",
+        "cancelled",
+    ]
 
 
 def test_proxmox_workflow_waiting_on_user_todos_include_reason_step() -> None:
