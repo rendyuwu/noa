@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import crypt
+
 import pytest
 
 from noa_api.core.workflows.registry import (
@@ -14,6 +16,10 @@ from noa_api.core.workflows.types import workflow_evidence_template_payload
 
 class _FakeSession:
     pass
+
+
+def _password_hash(password: str) -> str:
+    return str(crypt.crypt(password, crypt.mksalt(crypt.METHOD_SHA512)))
 
 
 def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_and_preflight_gated() -> (
@@ -255,7 +261,12 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
             }
 
         async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
-            return {"ok": True, "message": "ok", "data": "password: [REDACTED]"}
+            _ = node, vmid
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": f"password: {_password_hash('secret')}",
+            }
 
     async def _resolve(*, session, server_ref):
         _ = session, server_ref
@@ -267,7 +278,12 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
         postflight = await fetch_postflight_result(
             tool_name="proxmox_reset_vm_cloudinit_password",
             workflow_family="proxmox-vm-cloudinit-password-reset",
-            args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            args={
+                "server_ref": "pve1",
+                "node": "pve1-node",
+                "vmid": 101,
+                "new_password": "secret",
+            },
             session=_FakeSession(),
         )
     finally:
@@ -310,7 +326,12 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_redacts_
             }
 
         async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
-            return {"ok": True, "message": "ok", "data": "password: secret\n"}
+            _ = node, vmid
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": f"password: {_password_hash('secret')}\n",
+            }
 
     async def _resolve(*, session, server_ref):
         _ = session, server_ref
@@ -322,7 +343,12 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_redacts_
         postflight = await fetch_postflight_result(
             tool_name="proxmox_reset_vm_cloudinit_password",
             workflow_family="proxmox-vm-cloudinit-password-reset",
-            args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            args={
+                "server_ref": "pve1",
+                "node": "pve1-node",
+                "vmid": 101,
+                "new_password": "secret",
+            },
             session=_FakeSession(),
         )
     finally:
@@ -333,6 +359,54 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_redacts_
     assert postflight["verified"] is True
     assert postflight["cloudinit_dump_user"]["data"] == "password: [REDACTED]\n"
     assert "secret" not in postflight["cloudinit_dump_user"]["data"]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_rejects_nonmatching_password_hash() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    class _Client:
+        async def get_qemu_cloudinit(self, node: str, vmid: int):
+            return {
+                "ok": True,
+                "message": "ok",
+                "digest": "digest-2",
+                "data": {"cipassword": "secret"},
+            }
+
+        async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": f"password: {_password_hash('other-secret')}\n",
+            }
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        return _Client(), "srv-1"
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_reset_vm_cloudinit_password",
+            workflow_family="proxmox-vm-cloudinit-password-reset",
+            args={
+                "server_ref": "pve1",
+                "node": "pve1-node",
+                "vmid": 101,
+                "new_password": "secret",
+            },
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+
+    assert postflight is not None
+    assert postflight["ok"] is False
+    assert postflight["error_code"] == "postflight_failed"
 
 
 @pytest.mark.asyncio

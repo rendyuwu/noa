@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import crypt
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -912,7 +913,10 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             return None
 
         cloudinit_verified = await _cloudinit_postflight_result(
-            client=client, node=node, vmid=vmid
+            client=client,
+            node=node,
+            vmid=vmid,
+            new_password=normalized_text(args.get("new_password")),
         )
         if cloudinit_verified.get("ok") is not True:
             return cloudinit_verified
@@ -1358,10 +1362,13 @@ async def _resolve_proxmox_client(
 
 
 async def _cloudinit_postflight_result(
-    *, client: ProxmoxClient, node: str, vmid: int
+    *, client: ProxmoxClient, node: str, vmid: int, new_password: str | None = None
 ) -> dict[str, object] | None:
     verification_result = await _wait_for_cloudinit_verification(
-        client=client, node=node, vmid=vmid
+        client=client,
+        node=node,
+        vmid=vmid,
+        new_password=new_password or "",
     )
     if verification_result.get("ok") is not True:
         return verification_result
@@ -1424,6 +1431,7 @@ async def _wait_for_cloudinit_verification(
     client: ProxmoxClient,
     node: str,
     vmid: int,
+    new_password: str,
 ) -> dict[str, object]:
     cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
     if cloudinit_result.get("ok") is not True:
@@ -1448,6 +1456,13 @@ async def _wait_for_cloudinit_verification(
         }
 
     if not _cloudinit_confirms_password_reset(cloudinit_result):
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox cloud-init verification did not confirm the password reset",
+        }
+
+    if not _cloudinit_dump_matches_password(dump_result.get("data"), new_password):
         return {
             "ok": False,
             "error_code": "postflight_failed",
@@ -1519,6 +1534,29 @@ def _sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]
     if dump_value.endswith("\n"):
         sanitized += "\n"
     return sanitized, True
+
+
+def _extract_cloudinit_password_hash(dump_value: object) -> str | None:
+    if not isinstance(dump_value, str):
+        return None
+
+    for line in dump_value.splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("password:"):
+            continue
+        value = stripped[len("password:") :].strip()
+        return value or None
+    return None
+
+
+def _cloudinit_dump_matches_password(dump_value: object, new_password: str) -> bool:
+    password_hash = _extract_cloudinit_password_hash(dump_value)
+    if password_hash is None or password_hash == "[REDACTED]":
+        return False
+    try:
+        return crypt.crypt(new_password, password_hash) == password_hash
+    except (ValueError, TypeError):
+        return False
 
 
 def _pool_result_vmids(result: dict[str, object]) -> set[int]:

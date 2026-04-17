@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import crypt
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -124,6 +125,31 @@ def _sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]
     if dump_value.endswith("\n"):
         sanitized += "\n"
     return sanitized, True
+
+
+def _extract_cloudinit_password_hash(dump_value: object) -> str | None:
+    if not isinstance(dump_value, str):
+        return None
+
+    for line in dump_value.splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("password:"):
+            continue
+        value = stripped[len("password:") :].strip()
+        return value or None
+    return None
+
+
+def _cloudinit_dump_matches_password(dump_value: object, new_password: str) -> bool:
+    password_hash = _extract_cloudinit_password_hash(dump_value)
+    if password_hash is None:
+        return False
+    if password_hash == "[REDACTED]":
+        return False
+    try:
+        return crypt.crypt(new_password, password_hash) == password_hash
+    except (ValueError, TypeError):
+        return False
 
 
 def _cloudinit_dump_confirms_password_reset(dump_value: object) -> bool:
@@ -261,6 +287,7 @@ async def _wait_for_cloudinit_verification(
     client: ProxmoxClient,
     node: str,
     vmid: int,
+    new_password: str,
 ) -> dict[str, object]:
     for attempt in range(_VERIFICATION_POLL_ATTEMPTS):
         cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
@@ -277,16 +304,22 @@ async def _wait_for_cloudinit_verification(
                 fallback_message="Unable to verify Proxmox cloud-init user dump",
             )
 
-        if _cloudinit_confirms_password_reset(
-            cloudinit_result
-        ) and _cloudinit_dump_confirms_password_reset(dump_result.get("data")):
-            sanitized_dump, _ = _sanitize_cloudinit_dump_user(dump_result.get("data"))
-            assert sanitized_dump is not None
-            return {
-                "ok": True,
-                "cloudinit": cloudinit_result,
-                "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
-            }
+        if _cloudinit_confirms_password_reset(cloudinit_result):
+            sanitized_dump, confirmed = _sanitize_cloudinit_dump_user(
+                dump_result.get("data")
+            )
+            if (
+                confirmed
+                and sanitized_dump is not None
+                and _cloudinit_dump_matches_password(
+                    dump_result.get("data"), new_password
+                )
+            ):
+                return {
+                    "ok": True,
+                    "cloudinit": cloudinit_result,
+                    "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
+                }
 
         if attempt < _VERIFICATION_POLL_ATTEMPTS - 1:
             await asyncio.sleep(_VERIFICATION_POLL_DELAY_SECONDS)
@@ -351,6 +384,7 @@ async def proxmox_reset_vm_cloudinit_password(
         client=client,
         node=normalized_node,
         vmid=vmid,
+        new_password=new_password,
     )
     if verification_result.get("ok") is not True:
         return verification_result
