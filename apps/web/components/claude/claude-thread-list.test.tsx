@@ -489,7 +489,9 @@ describe("ClaudeThreadList", () => {
     expect(screen.getAllByRole("button", { name: "Howdy" })).toHaveLength(1);
   });
 
-  it("renders an admin footer link for admin users in expanded mode", async () => {
+  it("renders an admin footer link for admin users in expanded mode and logs out through the account menu", async () => {
+    const user = userEvent.setup();
+
     render(<ClaudeThreadList />);
 
     expect(screen.getByText("C")).toBeInTheDocument();
@@ -499,16 +501,15 @@ describe("ClaudeThreadList", () => {
     const adminLink = screen.getByRole("link", { name: "Admin" });
     expect(adminLink).toHaveAttribute("href", "/admin");
 
-    await userEvent.click(screen.getByRole("button", { name: "Account menu" }));
+    await user.click(screen.getByRole("button", { name: "Account menu" }));
     const logoutItem = await screen.findByRole("menuitem", { name: "Log out" });
-    logoutItem.focus();
-    await userEvent.keyboard("{Enter}");
+    await user.click(logoutItem);
 
     const confirmDialog = await screen.findByRole("dialog");
     expect(within(confirmDialog).getByText("Log out?")).toBeInTheDocument();
     expect(mocks.clearAuth).toHaveBeenCalledTimes(0);
 
-    await userEvent.click(within(confirmDialog).getByRole("button", { name: "Log out" }));
+    await user.click(within(confirmDialog).getByRole("button", { name: "Log out" }));
     expect(mocks.clearAuth).toHaveBeenCalledTimes(1);
   });
 
