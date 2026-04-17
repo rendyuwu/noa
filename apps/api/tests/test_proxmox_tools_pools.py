@@ -49,6 +49,54 @@ class _ClientState:
     calls: list[tuple[str, object]] = field(default_factory=list)
 
 
+@dataclass
+class _ScriptedClientState:
+    get_pool_results: dict[str, list[dict[str, object]]]
+    get_user_result: dict[str, object]
+    get_effective_permissions_result: dict[str, object]
+    add_vms_to_pool_result: dict[str, object]
+    remove_vms_from_pool_result: dict[str, object]
+    calls: list[tuple[str, object]] = field(default_factory=list)
+    get_pool_call_counts: dict[str, int] = field(default_factory=dict)
+
+
+class _ScriptedPoolClient:
+    def __init__(self, state: _ScriptedClientState, **kwargs: Any) -> None:
+        _ = kwargs
+        self._state = state
+
+    async def get_pool(self, poolid: str) -> dict[str, object]:
+        self._state.calls.append(("get_pool", poolid))
+        call_count = self._state.get_pool_call_counts.get(poolid, 0)
+        pool_results = self._state.get_pool_results[poolid]
+        if call_count >= len(pool_results):
+            raise AssertionError(
+                f"No scripted get_pool result for {poolid} call {call_count + 1}"
+            )
+        self._state.get_pool_call_counts[poolid] = call_count + 1
+        return pool_results[call_count]
+
+    async def get_user(self, userid: str) -> dict[str, object]:
+        self._state.calls.append(("get_user", userid))
+        return self._state.get_user_result
+
+    async def get_effective_permissions(
+        self, userid: str, path: str
+    ) -> dict[str, object]:
+        self._state.calls.append(("get_effective_permissions", (userid, path)))
+        return self._state.get_effective_permissions_result
+
+    async def add_vms_to_pool(self, poolid: str, vmids: list[int]) -> dict[str, object]:
+        self._state.calls.append(("add_vms_to_pool", (poolid, vmids)))
+        return self._state.add_vms_to_pool_result
+
+    async def remove_vms_from_pool(
+        self, poolid: str, vmids: list[int]
+    ) -> dict[str, object]:
+        self._state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
+        return self._state.remove_vms_from_pool_result
+
+
 def _server() -> _Server:
     now = datetime.now(UTC)
     return _Server(
@@ -105,6 +153,16 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
             return state.remove_vms_from_pool_result
 
     monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+
+
+def _install_scripted_client(monkeypatch, state: _ScriptedClientState) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    monkeypatch.setattr(
+        pool_tools,
+        "ProxmoxClient",
+        lambda **kwargs: _ScriptedPoolClient(state, **kwargs),
+    )
 
 
 @pytest.mark.asyncio
@@ -474,41 +532,17 @@ async def test_proxmox_move_vms_between_pools_fails_when_postflight_does_not_con
         lambda session: _Repo([server]),
     )
 
-    class _Client:
-        def __init__(self, **kwargs: Any) -> None:
-            _ = kwargs
-
-        async def get_pool(self, poolid: str) -> dict[str, object]:
-            state.calls.append(("get_pool", poolid))
-            if state.calls.count(("get_pool", poolid)) == 1:
-                return state.get_pool_results[poolid]
-            if poolid == "pool_a":
-                return source_pool_after
-            return destination_pool_after
-
-        async def get_user(self, userid: str) -> dict[str, object]:
-            state.calls.append(("get_user", userid))
-            return state.get_user_result
-
-        async def get_effective_permissions(
-            self, userid: str, path: str
-        ) -> dict[str, object]:
-            state.calls.append(("get_effective_permissions", (userid, path)))
-            return state.get_effective_permissions_result
-
-        async def add_vms_to_pool(
-            self, poolid: str, vmids: list[int]
-        ) -> dict[str, object]:
-            state.calls.append(("add_vms_to_pool", (poolid, vmids)))
-            return state.add_vms_to_pool_result
-
-        async def remove_vms_from_pool(
-            self, poolid: str, vmids: list[int]
-        ) -> dict[str, object]:
-            state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
-            return state.remove_vms_from_pool_result
-
-    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+    scripted_state = _ScriptedClientState(
+        get_pool_results={
+            "pool_a": [source_pool_before, source_pool_after],
+            "pool_b": [destination_pool_before, destination_pool_after],
+        },
+        get_user_result=state.get_user_result,
+        get_effective_permissions_result=state.get_effective_permissions_result,
+        add_vms_to_pool_result=state.add_vms_to_pool_result,
+        remove_vms_from_pool_result=state.remove_vms_from_pool_result,
+    )
+    _install_scripted_client(monkeypatch, scripted_state)
 
     result = await pool_tools.proxmox_move_vms_between_pools(
         session=_Session(),
@@ -524,6 +558,89 @@ async def test_proxmox_move_vms_between_pools_fails_when_postflight_does_not_con
         "ok": False,
         "error_code": "postflight_failed",
         "message": "Proxmox pool move verification did not confirm the requested VMIDs",
+    }
+    assert scripted_state.calls == [
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("get_user", "l1@biznetgio.com@pve"),
+        ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("add_vms_to_pool", ("pool_b", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_pool_after_add", "destination_pool_after_add"),
+    [
+        (
+            {"ok": True, "message": "ok", "data": {"poolid": "pool_a"}},
+            _pool_payload("pool_b", [{"vmid": 1057}]),
+        ),
+        (
+            _pool_payload("pool_a", []),
+            {"ok": True, "message": "ok", "data": {"poolid": "pool_b"}},
+        ),
+    ],
+)
+async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_after_add_step(
+    monkeypatch,
+    source_pool_after_add: dict[str, object],
+    destination_pool_after_add: dict[str, object],
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    state = _ScriptedClientState(
+        get_pool_results={
+            "pool_a": [
+                _pool_payload("pool_a", [{"vmid": 1057}]),
+                source_pool_after_add,
+            ],
+            "pool_b": [
+                _pool_payload("pool_b", []),
+                destination_pool_after_add,
+            ],
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Console": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
+        remove_vms_from_pool_result={
+            "ok": True,
+            "message": "ok",
+            "data": "UPID:REMOVE",
+        },
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_scripted_client(monkeypatch, state)
+
+    result = await pool_tools.proxmox_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_response",
+        "message": "Proxmox returned an unexpected pool payload",
     }
     assert state.calls == [
         ("get_pool", "pool_a"),
@@ -575,41 +692,17 @@ async def test_proxmox_move_vms_between_pools_skips_remove_when_add_already_move
         lambda session: _Repo([server]),
     )
 
-    class _Client:
-        def __init__(self, **kwargs: Any) -> None:
-            _ = kwargs
-
-        async def get_pool(self, poolid: str) -> dict[str, object]:
-            state.calls.append(("get_pool", poolid))
-            if state.calls.count(("get_pool", poolid)) == 1:
-                return state.get_pool_results[poolid]
-            if poolid == "pool_a":
-                return source_pool_after_add
-            return destination_pool_after_add
-
-        async def get_user(self, userid: str) -> dict[str, object]:
-            state.calls.append(("get_user", userid))
-            return state.get_user_result
-
-        async def get_effective_permissions(
-            self, userid: str, path: str
-        ) -> dict[str, object]:
-            state.calls.append(("get_effective_permissions", (userid, path)))
-            return state.get_effective_permissions_result
-
-        async def add_vms_to_pool(
-            self, poolid: str, vmids: list[int]
-        ) -> dict[str, object]:
-            state.calls.append(("add_vms_to_pool", (poolid, vmids)))
-            return state.add_vms_to_pool_result
-
-        async def remove_vms_from_pool(
-            self, poolid: str, vmids: list[int]
-        ) -> dict[str, object]:
-            state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
-            return state.remove_vms_from_pool_result
-
-    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+    scripted_state = _ScriptedClientState(
+        get_pool_results={
+            "pool_a": [source_pool_before, source_pool_after_add],
+            "pool_b": [destination_pool_before, destination_pool_after_add],
+        },
+        get_user_result=state.get_user_result,
+        get_effective_permissions_result=state.get_effective_permissions_result,
+        add_vms_to_pool_result=state.add_vms_to_pool_result,
+        remove_vms_from_pool_result=state.remove_vms_from_pool_result,
+    )
+    _install_scripted_client(monkeypatch, scripted_state)
 
     result = await pool_tools.proxmox_move_vms_between_pools(
         session=_Session(),
@@ -635,7 +728,7 @@ async def test_proxmox_move_vms_between_pools_skips_remove_when_add_already_move
         "results": [{"vmid": 1057, "status": "changed"}],
         "verified": True,
     }
-    assert state.calls == [
+    assert scripted_state.calls == [
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
@@ -706,45 +799,21 @@ async def test_proxmox_move_vms_between_pools_adds_before_removing_and_refetches
         lambda session: _Repo([server]),
     )
 
-    class _Client:
-        def __init__(self, **kwargs: Any) -> None:
-            _ = kwargs
-
-        async def get_pool(self, poolid: str) -> dict[str, object]:
-            state.calls.append(("get_pool", poolid))
-            if state.calls.count(("get_pool", poolid)) == 1:
-                return state.get_pool_results[poolid]
-            if state.calls.count(("get_pool", poolid)) == 2:
-                if poolid == "pool_a":
-                    return source_pool_after_add
-                return destination_pool_after
-            if poolid == "pool_a":
-                return source_pool_after
-            return destination_pool_after
-
-        async def get_user(self, userid: str) -> dict[str, object]:
-            state.calls.append(("get_user", userid))
-            return state.get_user_result
-
-        async def get_effective_permissions(
-            self, userid: str, path: str
-        ) -> dict[str, object]:
-            state.calls.append(("get_effective_permissions", (userid, path)))
-            return state.get_effective_permissions_result
-
-        async def add_vms_to_pool(
-            self, poolid: str, vmids: list[int]
-        ) -> dict[str, object]:
-            state.calls.append(("add_vms_to_pool", (poolid, vmids)))
-            return state.add_vms_to_pool_result
-
-        async def remove_vms_from_pool(
-            self, poolid: str, vmids: list[int]
-        ) -> dict[str, object]:
-            state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
-            return state.remove_vms_from_pool_result
-
-    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+    scripted_state = _ScriptedClientState(
+        get_pool_results={
+            "pool_a": [source_pool_before, source_pool_after_add, source_pool_after],
+            "pool_b": [
+                destination_pool_before,
+                destination_pool_after,
+                destination_pool_after,
+            ],
+        },
+        get_user_result=state.get_user_result,
+        get_effective_permissions_result=state.get_effective_permissions_result,
+        add_vms_to_pool_result=state.add_vms_to_pool_result,
+        remove_vms_from_pool_result=state.remove_vms_from_pool_result,
+    )
+    _install_scripted_client(monkeypatch, scripted_state)
 
     result = await pool_tools.proxmox_move_vms_between_pools(
         session=_Session(),
@@ -775,10 +844,10 @@ async def test_proxmox_move_vms_between_pools_adds_before_removing_and_refetches
         "verified": True,
     }
 
-    assert state.calls.index(
+    assert scripted_state.calls.index(
         ("add_vms_to_pool", ("pool_b", [1057]))
-    ) < state.calls.index(("remove_vms_from_pool", ("pool_a", [1057])))
-    assert state.calls == [
+    ) < scripted_state.calls.index(("remove_vms_from_pool", ("pool_a", [1057])))
+    assert scripted_state.calls == [
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
@@ -849,4 +918,185 @@ async def test_proxmox_move_vms_between_pools_fails_closed_on_add_failure(
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
         ("add_vms_to_pool", ("pool_b", [1057])),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_move_vms_between_pools_fails_when_remove_step_fails(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    source_pool_before = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_before = _pool_payload("pool_b", [])
+    source_pool_after_add = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_after_add = _pool_payload("pool_b", [{"vmid": 1057}])
+    state = _ClientState(
+        get_pool_results={
+            "pool_a": source_pool_before,
+            "pool_b": destination_pool_before,
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Console": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
+        remove_vms_from_pool_result={
+            "ok": False,
+            "error_code": "upstream_error",
+            "message": "source remove failed",
+        },
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    scripted_state = _ScriptedClientState(
+        get_pool_results={
+            "pool_a": [source_pool_before, source_pool_after_add],
+            "pool_b": [destination_pool_before, destination_pool_after_add],
+        },
+        get_user_result=state.get_user_result,
+        get_effective_permissions_result=state.get_effective_permissions_result,
+        add_vms_to_pool_result=state.add_vms_to_pool_result,
+        remove_vms_from_pool_result=state.remove_vms_from_pool_result,
+    )
+    _install_scripted_client(monkeypatch, scripted_state)
+
+    result = await pool_tools.proxmox_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "upstream_error",
+        "message": "source remove failed",
+    }
+    assert scripted_state.calls == [
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("get_user", "l1@biznetgio.com@pve"),
+        ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("add_vms_to_pool", ("pool_b", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("remove_vms_from_pool", ("pool_a", [1057])),
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_pool_after_move", "destination_pool_after_move"),
+    [
+        (
+            {"ok": True, "message": "ok", "data": {"poolid": "pool_a"}},
+            _pool_payload("pool_b", [{"vmid": 1057}]),
+        ),
+        (
+            _pool_payload("pool_a", []),
+            {"ok": True, "message": "ok", "data": {"poolid": "pool_b"}},
+        ),
+    ],
+)
+async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_after_move_path(
+    monkeypatch,
+    source_pool_after_move: dict[str, object],
+    destination_pool_after_move: dict[str, object],
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    source_pool_before = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_before = _pool_payload("pool_b", [])
+    source_pool_after_add = _pool_payload("pool_a", [{"vmid": 1057}])
+    destination_pool_after_add = _pool_payload("pool_b", [{"vmid": 1057}])
+    state = _ClientState(
+        get_pool_results={
+            "pool_a": source_pool_before,
+            "pool_b": destination_pool_before,
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"userid": "l1@biznetgio.com@pve", "enable": 1},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Console": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
+        remove_vms_from_pool_result={
+            "ok": True,
+            "message": "ok",
+            "data": "UPID:REMOVE",
+        },
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    scripted_state = _ScriptedClientState(
+        get_pool_results={
+            "pool_a": [
+                source_pool_before,
+                source_pool_after_add,
+                source_pool_after_move,
+            ],
+            "pool_b": [
+                destination_pool_before,
+                destination_pool_after_add,
+                destination_pool_after_move,
+            ],
+        },
+        get_user_result=state.get_user_result,
+        get_effective_permissions_result=state.get_effective_permissions_result,
+        add_vms_to_pool_result=state.add_vms_to_pool_result,
+        remove_vms_from_pool_result=state.remove_vms_from_pool_result,
+    )
+    _install_scripted_client(monkeypatch, scripted_state)
+
+    result = await pool_tools.proxmox_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="l1@biznetgio.com",
+        reason="Ticket #1661262",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_response",
+        "message": "Proxmox returned an unexpected pool payload",
+    }
+    assert scripted_state.calls == [
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("get_user", "l1@biznetgio.com@pve"),
+        ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("add_vms_to_pool", ("pool_b", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("remove_vms_from_pool", ("pool_a", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
     ]

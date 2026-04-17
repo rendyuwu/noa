@@ -38,22 +38,14 @@ curl -k \
   'https://<pve-host>:8006/api2/json/version'
 ```
 
-##### Read QEMU VM configuration
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
-```
-
 ##### Update QEMU VM config
 Current implementation uses this for NIC enable/disable.
-Those NIC CHANGE actions require approval, a recorded reason, and captured before/after evidence.
 
 ```bash
 curl -k -X POST \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   --data-urlencode 'digest=<digest-from-config>' \
-  --data-urlencode 'net0=<updated-net-config>' \
+  --data-urlencode '<net-key>=<updated-net-config>' \
   'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
 ```
 
@@ -62,26 +54,6 @@ curl -k -X POST \
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   'https://<pve-host>:8006/api2/json/nodes/<node>/tasks/<upid>/status'
-```
-
-##### Read exact-node VM runtime state
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
-```
-
-##### Read exact-node VM config / pending changes
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
-```
-
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
 ```
 
 ##### Cloud-init password reset / verification
@@ -234,31 +206,25 @@ curl -k \
 
 This workflow requires the exact Proxmox node name. If the user only provides a VMID, ask for the node instead of using cluster-wide discovery endpoints.
 
-### Live runtime status/usage
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
-```
-
-### Full VM configuration/hardware
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
-```
-
-### Pending config changes
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
-```
+The curl examples for `status/current`, `config`, and `pending` are listed in the upstream endpoint inventory above.
 
 ### Notes
 - `status/current` = runtime state + CPU/mem/disk/net counters.
 - `config` = VM configuration/hardware definitions (disk/RAM/CPU/network).
 - `pending` = pending config changes not yet applied.
+
+### VM NIC toggle workflow
+
+Use this flow for enabling or disabling a specific VM NIC on an exact node.
+
+- Preflight-only NIC selection: when the VM has exactly one NIC, preflight may infer it; otherwise preflight returns `net_selection_required` and the available NIC list for user choice, and the ensuing CHANGE must use the concrete NIC key confirmed in that preflight.
+- `proxmox_preflight_vm_nic_toggle` must come from the current turn/context so the approval step uses matching preflight data for the same `server_ref`, `node`, `vmid`, and selected NIC.
+- Preflight returns the config digest; the CHANGE call must reuse that returned value exactly, and if the VM config changed in the meantime the operation fails closed with `digest_mismatch` and requires a fresh preflight.
+- Enable/disable CHANGE calls are approval-gated and require a recorded non-empty reason.
+- If the selected NIC is already in the requested state, the enable/disable request may return success with `status: "no-op"` and no config mutation.
+- Postflight verification must re-read the VM config and confirm the requested final link state: `up` for enable, `down` for disable.
+- Approval responses should summarize the selected NIC and the link-state transition; digest and verification details belong in the evidence/verification view.
+- Completion responses should summarize the selected NIC and the completed link-state transition; digest and verification details belong in the evidence/verification view.
 
 ### Pool membership move workflow
 
@@ -266,7 +232,8 @@ Important:
 - In this workflow, “change email” / “change PIC” means moving one or more VMs from one pool to another.
 - Do not mutate Proxmox user email fields.
 - Do not add or remove ACL entries as part of this flow.
-- Ask the user directly for the source pool, destination pool, one or more VMIDs, and target email.
+- Ask the user directly for the source pool, destination pool, one or more VMIDs, and a bare email address.
+- Do not pass an already-suffixed Proxmox userid here; the implementation appends `@pve`.
 
 ### Read one user by email-derived userid
 - Do not call `GET /access/users`; require the email from the user.

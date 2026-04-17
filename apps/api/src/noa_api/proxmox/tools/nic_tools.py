@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import re
-from typing import Any, cast
+from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,7 +23,13 @@ def _normalized_text(value: object) -> str | None:
     return normalized or None
 
 
-def _resolution_error(result: Any) -> dict[str, object]:
+def _object_dict(value: object) -> dict[str, object] | None:
+    if not isinstance(value, dict):
+        return None
+    return cast(dict[str, object], value)
+
+
+def _resolution_error(result: object) -> dict[str, object]:
     return {
         "ok": False,
         "error_code": str(getattr(result, "error_code", None) or "unknown"),
@@ -32,7 +38,7 @@ def _resolution_error(result: Any) -> dict[str, object]:
     }
 
 
-def _client_for_server(server: Any) -> ProxmoxClient:
+def _client_for_server(server: object) -> ProxmoxClient:
     return ProxmoxClient(
         base_url=str(getattr(server, "base_url")),
         api_token_id=str(getattr(server, "api_token_id")),
@@ -166,7 +172,7 @@ async def _fetch_vm_nic_state(
     vmid: int,
     net: str | None,
 ) -> dict[str, object]:
-    repo: Any = SQLProxmoxServerRepository(session)
+    repo = SQLProxmoxServerRepository(session)
     resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)
@@ -187,14 +193,15 @@ async def _fetch_vm_nic_state(
 
     config = config_result.get("config")
     digest = _normalized_text(config_result.get("digest"))
-    if not isinstance(config, dict) or digest is None:
+    config = _object_dict(config)
+    if config is None or digest is None:
         return {
             "ok": False,
             "error_code": "invalid_response",
             "message": "Proxmox returned an unexpected QEMU config payload",
         }
 
-    nets = _normalize_nics(cast(dict[str, object], config))
+    nets = _normalize_nics(config)
     selected_net, selection_error = _select_nic(nets=nets, requested_net=net)
     if selection_error is not None:
         return {
@@ -350,7 +357,7 @@ async def _change_vm_nic_link_state(
             "task_exit_status": None,
         }
 
-    repo: Any = SQLProxmoxServerRepository(session)
+    repo = SQLProxmoxServerRepository(session)
     resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
     if not resolution.ok:
         return _resolution_error(resolution)
@@ -429,14 +436,15 @@ async def _change_vm_nic_link_state(
         }
 
     post_config = postflight.get("config")
-    if not isinstance(post_config, dict):
+    post_config = _object_dict(post_config)
+    if post_config is None:
         return {
             "ok": False,
             "error_code": "invalid_response",
             "message": "Proxmox returned an unexpected post-update QEMU config payload",
         }
 
-    after_net = _normalized_text(cast(dict[str, object], post_config).get(selected_net))
+    after_net = _normalized_text(post_config.get(selected_net))
     if after_net is None:
         return {
             "ok": False,
@@ -485,6 +493,7 @@ async def proxmox_disable_vm_nic(
     digest: str,
     reason: str,
 ) -> dict[str, object]:
+    _ = reason
     return await _change_vm_nic_link_state(
         session=session,
         server_ref=server_ref,
@@ -506,6 +515,7 @@ async def proxmox_enable_vm_nic(
     digest: str,
     reason: str,
 ) -> dict[str, object]:
+    _ = reason
     return await _change_vm_nic_link_state(
         session=session,
         server_ref=server_ref,
