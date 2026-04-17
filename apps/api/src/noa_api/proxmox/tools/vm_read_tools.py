@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -62,7 +63,7 @@ async def _fetch_vm_read_data(
     server_ref: str,
     node: str,
     vmid: int,
-    fetcher: str,
+    fetcher: Callable[[ProxmoxClient, str, int], Awaitable[dict[str, object]]],
     fallback_message: str,
 ) -> dict[str, object]:
     repo: Any = SQLProxmoxServerRepository(session)
@@ -74,8 +75,7 @@ async def _fetch_vm_read_data(
     assert server is not None
 
     client = _client_for_server(server)
-    method = getattr(client, fetcher)
-    result = await method(node.strip(), vmid)
+    result = await fetcher(client, node.strip(), vmid)
     if result.get("ok") is not True:
         return _upstream_error(result, fallback_message=fallback_message)
 
@@ -127,7 +127,7 @@ async def proxmox_get_vm_status_current(
         server_ref=server_ref,
         node=node,
         vmid=vmid,
-        fetcher="get_qemu_status_current",
+        fetcher=ProxmoxClient.get_qemu_status_current,
         fallback_message="Proxmox VM status lookup failed",
     )
 
@@ -156,6 +156,6 @@ async def proxmox_get_vm_pending(
         server_ref=server_ref,
         node=node,
         vmid=vmid,
-        fetcher="get_qemu_pending",
+        fetcher=ProxmoxClient.get_qemu_pending,
         fallback_message="Proxmox VM pending lookup failed",
     )

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -52,8 +51,8 @@ def _install_client(monkeypatch, responses: dict[str, dict[str, object]]) -> Non
     from noa_api.proxmox.tools import vm_read_tools
 
     class _Client:
-        def __init__(self, **kwargs: Any) -> None:
-            _ = kwargs
+        def __init__(self, **_: object) -> None:
+            pass
 
         async def get_qemu_status_current(
             self, node: str, vmid: int
