@@ -1,3 +1,9 @@
+"""Exact Proxmox client request-contract tests.
+
+These intentionally assert literal methods, URLs, and bodies so endpoint drift
+is visible and deliberate.
+"""
+
 from __future__ import annotations
 
 import httpx

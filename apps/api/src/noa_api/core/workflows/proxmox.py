@@ -794,7 +794,9 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                 execute_status = "completed"
                 verify_status = (
                     "completed"
-                    if _postflight_verified(context.postflight_result)
+                    if _postflight_verified(
+                        context.tool_name, context.postflight_result
+                    )
                     else "cancelled"
                 )
             else:
