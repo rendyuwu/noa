@@ -215,6 +215,10 @@ def _result_null_schema() -> ToolResultSchema:
     return {"enum": [None]}
 
 
+def _result_nullable_schema(schema: ToolResultSchema) -> ToolResultSchema:
+    return _result_any_of(schema, _result_null_schema())
+
+
 def _result_json_value_schema() -> ToolResultSchema:
     return _result_any_of(
         {"type": "object"},
@@ -411,9 +415,9 @@ _PROXMOX_NET_RESULT_SCHEMA = _result_object_schema(
         "value": _result_string_schema(),
         "link_down": _result_boolean_schema(),
         "link_state": _result_string_schema(enum=["up", "down"]),
-        "model": {"type": ["string", "null"]},
-        "mac_address": {"type": ["string", "null"]},
-        "bridge": {"type": ["string", "null"]},
+        "model": _result_nullable_schema(_result_string_schema()),
+        "mac_address": _result_nullable_schema(_result_string_schema()),
+        "bridge": _result_nullable_schema(_result_string_schema()),
     },
     required=[
         "key",
@@ -449,9 +453,9 @@ _SERVER_SAFE_RESULT_SCHEMA = _result_object_schema(
         "name": _result_string_schema(),
         "base_url": _result_string_schema(),
         "api_username": _result_string_schema(),
-        "ssh_username": {"type": ["string", "null"]},
-        "ssh_port": {"type": ["integer", "null"]},
-        "ssh_host_key_fingerprint": {"type": ["string", "null"]},
+        "ssh_username": _result_nullable_schema(_result_string_schema()),
+        "ssh_port": _result_nullable_schema(_result_integer_schema()),
+        "ssh_host_key_fingerprint": _result_nullable_schema(_result_string_schema()),
         "has_ssh_password": _result_boolean_schema(),
         "has_ssh_private_key": _result_boolean_schema(),
         "verify_ssl": _result_boolean_schema(),
@@ -758,9 +762,9 @@ _PROXMOX_NIC_CHANGE_RESULT_SCHEMA = _result_any_of(
             "after_net": _result_string_schema(),
             "link_state": _result_string_schema(enum=["up", "down"]),
             "verified": _result_boolean_schema(value=True),
-            "upid": {"type": ["string", "null"]},
-            "task_status": {"type": ["string", "null"]},
-            "task_exit_status": {"type": ["string", "null"]},
+            "upid": _result_nullable_schema(_result_string_schema()),
+            "task_status": _result_nullable_schema(_result_string_schema()),
+            "task_exit_status": _result_nullable_schema(_result_string_schema()),
         },
         required=[
             "ok",
@@ -789,7 +793,7 @@ _CHECK_BINARY_RESULT_SCHEMA = _result_any_of(
             **_RESULT_SUCCESS_OK_SCHEMA,
             "binary_name": _result_string_schema(),
             "found": _result_boolean_schema(),
-            "path": {"type": ["string", "null"]},
+            "path": _result_nullable_schema(_result_string_schema()),
         },
         required=["ok", "binary_name", "found", "path"],
     ),
@@ -865,7 +869,7 @@ _PREFLIGHT_ACCOUNT_RESULT_SCHEMA = _result_any_of(
 
 _DOMAIN_INVENTORY_RESULT_SCHEMA = _result_object_schema(
     properties={
-        "main_domain": {"type": ["string", "null"]},
+        "main_domain": _result_nullable_schema(_result_string_schema()),
         "addon_domains": _result_array_schema(items=_result_string_schema()),
         "parked_domains": _result_array_schema(items=_result_string_schema()),
         "sub_domains": _result_array_schema(items=_result_string_schema()),
@@ -880,7 +884,7 @@ _PRIMARY_DOMAIN_PREFLIGHT_RESULT_SCHEMA = _result_any_of(
             "server_id": _result_string_schema(),
             "account": _ACCOUNT_RESULT_SCHEMA,
             "requested_domain": _result_string_schema(),
-            "domain_owner": {"type": ["string", "null"]},
+            "domain_owner": _result_nullable_schema(_result_string_schema()),
             "requested_domain_location": _result_string_schema(
                 enum=["absent", "primary"]
             ),

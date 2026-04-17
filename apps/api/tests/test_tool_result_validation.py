@@ -350,3 +350,133 @@ def test_validate_tool_result_rejects_proxmox_pool_move_without_results() -> Non
         )
 
     assert exc_info.value.details == ("Missing required field 'results'",)
+
+
+def test_validate_tool_result_rejects_wrong_type_for_nullable_pool_move_field() -> None:
+    tool = get_tool_definition("proxmox_move_vms_between_pools")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "message": "ok",
+                "status": "changed",
+                "server_id": "srv-1",
+                "source_pool_before": {},
+                "destination_pool_before": {},
+                "add_to_destination": {},
+                "remove_from_source": "not-an-object",
+                "source_pool_after": {},
+                "destination_pool_after": {},
+                "results": [{"vmid": 100, "status": "changed"}],
+                "verified": True,
+            },
+        )
+
+    assert exc_info.value.details == ("remove_from_source must be an object",)
+
+
+def test_validate_tool_result_rejects_wrong_type_for_proxmox_net_nullable_field() -> (
+    None
+):
+    tool = get_tool_definition("proxmox_preflight_vm_nic_toggle")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "server_id": "srv-1",
+                "node": "pve1",
+                "vmid": 101,
+                "digest": "abc123",
+                "net": "net0",
+                "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                "link_state": "up",
+                "auto_selected_net": False,
+                "nets": [
+                    {
+                        "key": "net0",
+                        "value": "virtio=AA:BB:CC,bridge=vmbr0",
+                        "link_down": False,
+                        "link_state": "up",
+                        "model": 123,
+                        "mac_address": None,
+                        "bridge": None,
+                    }
+                ],
+            },
+        )
+
+    assert exc_info.value.details == ("nets[0].model must be a string",)
+
+
+def test_validate_tool_result_rejects_wrong_type_for_proxmox_task_nullable_field() -> (
+    None
+):
+    tool = get_tool_definition("proxmox_disable_vm_nic")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "server_id": "srv-1",
+                "node": "pve1",
+                "vmid": 101,
+                "net": "net0",
+                "digest": "abc123",
+                "status": "changed",
+                "message": "NIC disabled",
+                "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                "after_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+                "link_state": "down",
+                "verified": True,
+                "upid": 123,
+                "task_status": None,
+                "task_exit_status": None,
+            },
+        )
+
+    assert exc_info.value.details == ("upid must be a string",)
+
+
+def test_validate_tool_result_rejects_wrong_type_for_server_safe_nullable_field() -> (
+    None
+):
+    tool = get_tool_definition("whm_list_servers")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "servers": [
+                    {
+                        "id": "srv-1",
+                        "name": "web1",
+                        "base_url": "https://whm.example.com:2087",
+                        "api_username": "root",
+                        "ssh_username": 123,
+                        "ssh_port": 22,
+                        "ssh_host_key_fingerprint": None,
+                        "has_ssh_password": True,
+                        "has_ssh_private_key": False,
+                        "verify_ssl": True,
+                        "created_at": "2026-03-16T00:00:00+00:00",
+                        "updated_at": "2026-03-16T00:00:00+00:00",
+                    }
+                ],
+            },
+        )
+
+    assert exc_info.value.details == ("servers[0].ssh_username must be a string",)
