@@ -25,18 +25,22 @@ _YESCRYPT_PASSWORD_HASH = (
 )
 
 
-def _enable_vm_nic_args() -> dict[str, object]:
-    return {
+def _enable_vm_nic_args(
+    *, reason: str | None = "restore connectivity"
+) -> dict[str, object]:
+    args = {
         "server_ref": "pve1",
         "node": "pve1-node",
         "vmid": 101,
         "net": "net0",
         "digest": "digest-1",
-        "reason": "restore connectivity",
     }
+    if reason is not None:
+        args["reason"] = reason
+    return args
 
 
-def _enable_vm_nic_preflight_result() -> dict[str, object]:
+def _enable_vm_nic_preflight_result(*, link_state: str = "down") -> dict[str, object]:
     return {
         "ok": True,
         "server_id": "srv-1",
@@ -45,13 +49,33 @@ def _enable_vm_nic_preflight_result() -> dict[str, object]:
         "digest": "digest-1",
         "net": "net0",
         "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
-        "link_state": "down",
+        "link_state": link_state,
         "auto_selected_net": False,
         "nets": [],
     }
 
 
-def _enable_vm_nic_result(*, verified: bool, ok: bool = True) -> dict[str, object]:
+def _enable_vm_nic_preflight_evidence(
+    *, link_state: str = "down"
+) -> list[dict[str, object]]:
+    return [
+        {
+            "toolName": "proxmox_preflight_vm_nic_toggle",
+            "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            "result": _enable_vm_nic_preflight_result(link_state=link_state),
+        }
+    ]
+
+
+def _enable_vm_nic_result(
+    *,
+    verified: bool,
+    ok: bool = True,
+    status: str | None = None,
+    message: str | None = None,
+    link_state: str = "up",
+    after_net: str | None = None,
+) -> dict[str, object]:
     return {
         "ok": ok,
         "server_id": "srv-1",
@@ -59,11 +83,15 @@ def _enable_vm_nic_result(*, verified: bool, ok: bool = True) -> dict[str, objec
         "vmid": 101,
         "net": "net0",
         "digest": "digest-1",
-        "status": "changed" if ok else "failed",
-        "message": "NIC enabled" if ok else "NIC enable failed",
+        "status": status if status is not None else ("changed" if ok else "failed"),
+        "message": message
+        if message is not None
+        else ("NIC enabled" if ok else "NIC enable failed"),
         "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
-        "after_net": "virtio=AA:BB:CC,bridge=vmbr0",
-        "link_state": "up",
+        "after_net": after_net
+        if after_net is not None
+        else "virtio=AA:BB:CC,bridge=vmbr0",
+        "link_state": link_state,
         "verified": verified,
         "upid": "UPID:pve1:00000002:task",
         "task_status": "stopped",
@@ -71,11 +99,13 @@ def _enable_vm_nic_result(*, verified: bool, ok: bool = True) -> dict[str, objec
     }
 
 
-def _enable_vm_nic_postflight_result(*, link_state: str = "up") -> dict[str, object]:
+def _enable_vm_nic_postflight_result(
+    *, link_state: str = "up", verified: bool = True
+) -> dict[str, object]:
     return {
         "ok": True,
         "message": "ok",
-        "verified": True,
+        "verified": verified,
         "server_id": "srv-1",
         "node": "pve1-node",
         "vmid": 101,
@@ -2285,13 +2315,7 @@ def test_proxmox_enable_vm_nic_completed_reply_summarizes_before_after_and_verif
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=_enable_vm_nic_result(verified=True),
         postflight_result=_enable_vm_nic_postflight_result(),
     )
@@ -2309,13 +2333,7 @@ def test_proxmox_enable_vm_nic_completed_evidence_marks_postflight_verified() ->
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=_enable_vm_nic_result(verified=False),
         postflight_result=_enable_vm_nic_postflight_result(),
     )
@@ -2341,13 +2359,7 @@ def test_proxmox_enable_vm_nic_completed_todos_mark_verification_completed_when_
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=_enable_vm_nic_result(verified=False),
         postflight_result=_enable_vm_nic_postflight_result(),
     )
@@ -2373,13 +2385,7 @@ def test_proxmox_enable_vm_nic_completed_reply_returns_partial_when_failure_post
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=_enable_vm_nic_result(verified=False, ok=False),
         postflight_result=_enable_vm_nic_postflight_result(),
     )
@@ -2397,13 +2403,7 @@ def test_proxmox_enable_vm_nic_completed_reply_reports_verification_not_confirme
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=_enable_vm_nic_result(verified=False),
         postflight_result={},
     )
@@ -2424,13 +2424,7 @@ def test_proxmox_enable_vm_nic_completed_reply_evidence_and_todos_do_not_confirm
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=conflict_result,
         postflight_result=conflict_postflight,
     )
@@ -2440,13 +2434,7 @@ def test_proxmox_enable_vm_nic_completed_reply_evidence_and_todos_do_not_confirm
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=conflict_result,
         postflight_result=conflict_postflight,
     )
@@ -2456,13 +2444,7 @@ def test_proxmox_enable_vm_nic_completed_reply_evidence_and_todos_do_not_confirm
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=conflict_result,
         postflight_result=conflict_postflight,
     )
@@ -2496,13 +2478,7 @@ def test_proxmox_enable_vm_nic_completed_todos_mark_verification_completed_when_
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=_enable_vm_nic_result(verified=True),
         postflight_result={},
     )
@@ -2522,13 +2498,7 @@ def test_proxmox_enable_vm_nic_completed_todos_do_not_mark_verification_complete
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=_enable_vm_nic_result(verified=False),
         postflight_result={
             "ok": False,
@@ -2556,13 +2526,7 @@ def test_proxmox_enable_vm_nic_completed_reply_and_todo_prefer_postflight_link_s
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=conflict_result,
         postflight_result=conflict_postflight,
     )
@@ -2572,13 +2536,7 @@ def test_proxmox_enable_vm_nic_completed_reply_and_todo_prefer_postflight_link_s
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=conflict_result,
         postflight_result=conflict_postflight,
     )
@@ -2588,13 +2546,7 @@ def test_proxmox_enable_vm_nic_completed_reply_and_todo_prefer_postflight_link_s
         workflow_family="proxmox-vm-nic-connectivity",
         args=_enable_vm_nic_args(),
         phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_vm_nic_toggle",
-                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
-                "result": _enable_vm_nic_preflight_result(),
-            }
-        ],
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
         result=conflict_result,
         postflight_result=conflict_postflight,
     )
@@ -2615,6 +2567,170 @@ def test_proxmox_enable_vm_nic_completed_reply_and_todo_prefer_postflight_link_s
     )
     assert any(
         item["label"] == "Link state" and item["value"] == "up"
+        for item in verification["items"]
+    )
+
+
+def test_proxmox_enable_vm_nic_waiting_on_user_todos_require_reason_step() -> None:
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(reason=None),
+        phase="waiting_on_user",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+    )
+
+    assert workflow_todos is not None
+    assert [todo["status"] for todo in workflow_todos] == [
+        "completed",
+        "waiting_on_user",
+        "pending",
+        "pending",
+        "pending",
+    ]
+    assert (
+        "Ask for a short reason before enabling the VM NIC."
+        in workflow_todos[1]["content"]
+    )
+
+
+def test_proxmox_enable_vm_nic_completed_evidence_includes_reason() -> None:
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=_enable_vm_nic_result(verified=True),
+        postflight_result=_enable_vm_nic_postflight_result(),
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    requested_change = next(
+        section
+        for section in payload["evidenceSections"]
+        if section["key"] == "requested_change"
+    )
+    assert any(
+        item["label"] == "Reason" and item["value"] == "restore connectivity"
+        for item in requested_change["items"]
+    )
+
+
+def test_proxmox_enable_vm_nic_denied_reply_reports_request_denied() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="denied",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=_enable_vm_nic_result(verified=False),
+    )
+
+    assert reply is not None
+    assert reply.outcome == "denied"
+    assert "approval was denied" in reply.summary.lower()
+    assert "remains link down" in reply.summary.lower()
+
+
+def test_proxmox_enable_vm_nic_failed_reply_reports_execution_failure() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="failed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=_enable_vm_nic_result(verified=False, ok=False),
+    )
+
+    assert reply is not None
+    assert reply.outcome == "failed"
+    assert "did not complete successfully" in reply.summary.lower()
+
+
+def test_proxmox_enable_vm_nic_completed_reply_reports_no_op_when_already_enabled() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(link_state="up"),
+        result=_enable_vm_nic_result(
+            verified=True,
+            status="no-op",
+            message="NIC already enabled",
+            link_state="up",
+            after_net="virtio=AA:BB:CC,bridge=vmbr0",
+        ),
+        postflight_result=_enable_vm_nic_postflight_result(link_state="up"),
+    )
+
+    assert reply is not None
+    assert reply.outcome == "no_op"
+    assert "already link up" in reply.summary.lower()
+    assert "no proxmox config change was required" in reply.summary.lower()
+
+
+def test_proxmox_enable_vm_nic_completed_reply_and_todos_reject_verified_result_when_state_conflicts() -> (
+    None
+):
+    conflict_result = _enable_vm_nic_result(
+        verified=True,
+        link_state="down",
+        after_net="virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+    )
+    conflict_postflight = _enable_vm_nic_postflight_result(link_state="up")
+
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=conflict_result,
+        postflight_result=conflict_postflight,
+    )
+
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=conflict_result,
+        postflight_result=conflict_postflight,
+    )
+
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=conflict_result,
+        postflight_result=conflict_postflight,
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "verification is not confirmed" in reply.summary.lower()
+    assert "verification succeeded" not in reply.summary.lower()
+
+    assert workflow_todos is not None
+    assert workflow_todos[4]["status"] == "cancelled"
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    verification = next(
+        section
+        for section in payload["evidenceSections"]
+        if section["key"] == "verification"
+    )
+    assert any(
+        item["label"] == "Verified" and item["value"] == "no"
         for item in verification["items"]
     )
 

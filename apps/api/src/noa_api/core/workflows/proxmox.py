@@ -710,8 +710,6 @@ def _verification_summary_sentence(
 ) -> str:
     if _verification_confirmed(tool_name, result, postflight_result):
         return "verification succeeded"
-    if _postflight_verified(tool_name, postflight_result):
-        return "postflight verification succeeded"
     return "verification is not confirmed"
 
 
@@ -731,13 +729,12 @@ def _verification_confirmed(
 ) -> bool:
     if result.get("verified") is True:
         if tool_name in {"proxmox_disable_vm_nic", "proxmox_enable_vm_nic"}:
+            desired_state = _desired_link_state(tool_name)
             result_state = _link_state(result)
             postflight_state = _link_state(postflight_result)
-            if (
-                result_state is not None
-                and postflight_state is not None
-                and postflight_state != result_state
-            ):
+            if result_state != desired_state:
+                return False
+            if postflight_state is not None and postflight_state != desired_state:
                 return False
         return True
     return _postflight_verified(tool_name, postflight_result)
