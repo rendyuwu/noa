@@ -1,8 +1,57 @@
 from __future__ import annotations
 
 import hmac
+from ctypes import CDLL, c_char_p
+from ctypes.util import find_library
+from threading import Lock
 
-import legacycrypt
+
+_CRYPT_LOCK = Lock()
+_CRYPT_LIB = None
+
+
+def _load_crypt_lib() -> CDLL | None:
+    global _CRYPT_LIB
+    if _CRYPT_LIB is not None:
+        return _CRYPT_LIB
+
+    for candidate in (
+        find_library("crypt"),
+        find_library("xcrypt"),
+        "libcrypt.so.1",
+        "libcrypt.so",
+        "libxcrypt.so.2",
+        "libxcrypt.so.1",
+    ):
+        if not candidate:
+            continue
+        try:
+            library = CDLL(candidate)
+        except OSError:
+            continue
+        crypt_fn = getattr(library, "crypt", None)
+        if crypt_fn is None:
+            continue
+        crypt_fn.restype = c_char_p
+        crypt_fn.argtypes = [c_char_p, c_char_p]
+        _CRYPT_LIB = library
+        return library
+
+    _CRYPT_LIB = None
+    return None
+
+
+def _crypt_password(password: str, salt: str) -> str | None:
+    library = _load_crypt_lib()
+    if library is None:
+        return None
+
+    crypt_fn = getattr(library, "crypt")
+    with _CRYPT_LOCK:
+        result = crypt_fn(password.encode("utf-8"), salt.encode("utf-8"))
+    if result is None:
+        return None
+    return result.decode("utf-8")
 
 
 def sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]:
@@ -56,7 +105,7 @@ def cloudinit_dump_matches_password(dump_value: object, new_password: str) -> bo
     if password_hash is None or password_hash == "[REDACTED]":
         return False
     try:
-        computed = legacycrypt.crypt(new_password, password_hash)
+        computed = _crypt_password(new_password, password_hash)
         return computed is not None and hmac.compare_digest(computed, password_hash)
     except (TypeError, ValueError):
         return False

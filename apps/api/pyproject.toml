@@ -22,7 +22,6 @@ dependencies = [
   "opentelemetry-exporter-otlp-proto-http>=1.30.0",
   "PyJWT>=2.9.0",
   "python-ldap>=3.4.4",
-  "legacycrypt",
 ]
 
 [dependency-groups]

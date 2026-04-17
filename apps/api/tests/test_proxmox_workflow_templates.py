@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-import legacycrypt
 
 from noa_api.core.workflows.registry import (
     build_workflow_evidence_template,
@@ -17,8 +16,13 @@ class _FakeSession:
     pass
 
 
-def _password_hash(password: str) -> str:
-    return str(legacycrypt.crypt(password, legacycrypt.METHOD_SHA512))
+_SHA512_PASSWORD_HASH = "$6$saltstring$AIsRs/Ee56G/tC8MEHhvReZTfx8u3rXXMl6eYrjCG9ibix19DxoMBLogdTET5Ukw9Sf7eZTITsuk0Ry5qulYz."
+_SHA512_PASSWORD_HASH_ALT = "$6$saltstring$kBE8gj8nVc2heIhflmQyp6fT2NcwZxpZpzmO5C5lurdV60T8VT5krRwB2gqJvvlKpzQgTTxurOSB1L0gzIrFL."
+_SHA512_PASSWORD_HASH_MISMATCH = "$6$saltstring$r.1ZoBDig6ks.g50soeNlbxogxJLC6Q2IYHTECzAWa5/x3I1VwWSxpwKFVc19gh4ROQD5GEHESemYB3tFbCOU1"
+_SHA256_PASSWORD_HASH = "$5$saltstring$C3o4O1TC6aRHF4FI.QSZMXtHbaj2gSXr4sUc/3NcUi."
+_YESCRYPT_PASSWORD_HASH = (
+    "$y$j9T$0123456789abcdef$lR1n3oQf67KjQYqzXTbu5mO9zFkv9J6PEbyeH7jZQy4"
+)
 
 
 def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_and_preflight_gated() -> (
@@ -295,7 +299,7 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
             return {
                 "ok": True,
                 "message": "ok",
-                "data": f"password: {_password_hash('secret')}",
+                "data": f"password: {_SHA512_PASSWORD_HASH}",
             }
 
     async def _resolve(*, session, server_ref):
@@ -358,7 +362,7 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_redacts_
             return {
                 "ok": True,
                 "message": "ok",
-                "data": f"password: {_password_hash('secret')}\n",
+                "data": f"password: {_SHA512_PASSWORD_HASH}\n",
             }
 
     async def _resolve(*, session, server_ref):
@@ -407,7 +411,7 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_rejects_
             return {
                 "ok": True,
                 "message": "ok",
-                "data": f"password: {_password_hash('other-secret')}\n",
+                "data": f"password: {_SHA512_PASSWORD_HASH_MISMATCH}\n",
             }
 
     async def _resolve(*, session, server_ref):

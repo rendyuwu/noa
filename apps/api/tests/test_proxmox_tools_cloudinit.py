@@ -6,7 +6,6 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-import legacycrypt
 
 
 @dataclass
@@ -70,8 +69,13 @@ def _server() -> _Server:
     )
 
 
-def _password_hash(password: str) -> str:
-    return str(legacycrypt.crypt(password, legacycrypt.METHOD_SHA512))
+_SHA512_PASSWORD_HASH = "$6$saltstring$AIsRs/Ee56G/tC8MEHhvReZTfx8u3rXXMl6eYrjCG9ibix19DxoMBLogdTET5Ukw9Sf7eZTITsuk0Ry5qulYz."
+_SHA512_PASSWORD_HASH_ALT = "$6$saltstring$kBE8gj8nVc2heIhflmQyp6fT2NcwZxpZpzmO5C5lurdV60T8VT5krRwB2gqJvvlKpzQgTTxurOSB1L0gzIrFL."
+_SHA512_PASSWORD_HASH_MISMATCH = "$6$saltstring$r.1ZoBDig6ks.g50soeNlbxogxJLC6Q2IYHTECzAWa5/x3I1VwWSxpwKFVc19gh4ROQD5GEHESemYB3tFbCOU1"
+_SHA256_PASSWORD_HASH = "$5$saltstring$C3o4O1TC6aRHF4FI.QSZMXtHbaj2gSXr4sUc/3NcUi."
+_YESCRYPT_PASSWORD_HASH = (
+    "$y$j9T$0123456789abcdef$lR1n3oQf67KjQYqzXTbu5mO9zFkv9J6PEbyeH7jZQy4"
+)
 
 
 def test_cloudinit_password_hash_matcher_supports_linux_modular_crypt_hashes() -> None:
@@ -79,10 +83,15 @@ def test_cloudinit_password_hash_matcher_supports_linux_modular_crypt_hashes() -
         cloudinit_dump_matches_password,
     )
 
-    password_hash = _password_hash("secret")
-
-    assert cloudinit_dump_matches_password(f"password: {password_hash}\n", "secret")
-    assert not cloudinit_dump_matches_password(f"password: {password_hash}\n", "wrong")
+    for password_hash in (
+        _SHA512_PASSWORD_HASH,
+        _SHA256_PASSWORD_HASH,
+        _YESCRYPT_PASSWORD_HASH,
+    ):
+        assert cloudinit_dump_matches_password(f"password: {password_hash}\n", "secret")
+        assert not cloudinit_dump_matches_password(
+            f"password: {password_hash}\n", "wrong"
+        )
 
 
 def _install_client(monkeypatch, state: _ClientState) -> None:
@@ -272,7 +281,7 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
     dump_result = {
         "ok": True,
         "message": "ok",
-        "data": f"ciuser: rendy\npassword: {_password_hash('new-secret')}\n",
+        "data": f"ciuser: rendy\npassword: {_SHA512_PASSWORD_HASH_ALT}\n",
     }
     state = _ClientState(
         config=config_result,
@@ -365,7 +374,7 @@ async def test_proxmox_reset_vm_cloudinit_password_verifies_matching_hash(
         cloudinit_dump_user={
             "ok": True,
             "message": "ok",
-            "data": f"ciuser: rendy\npassword: {_password_hash('new-secret')}\n",
+            "data": f"ciuser: rendy\npassword: {_SHA512_PASSWORD_HASH_ALT}\n",
         },
     )
     monkeypatch.setattr(
@@ -411,7 +420,7 @@ async def test_proxmox_reset_vm_cloudinit_password_fails_when_hash_does_not_matc
         cloudinit_dump_user={
             "ok": True,
             "message": "ok",
-            "data": f"ciuser: rendy\npassword: {_password_hash('other-secret')}\n",
+            "data": f"ciuser: rendy\npassword: {_SHA512_PASSWORD_HASH_MISMATCH}\n",
         },
     )
     monkeypatch.setattr(
@@ -556,7 +565,7 @@ async def test_proxmox_reset_vm_cloudinit_password_retries_verification_until_co
             return {
                 "ok": True,
                 "message": "ok",
-                "data": f"ciuser: rendy\npassword: {_password_hash('new-secret')}\n",
+                "data": f"ciuser: rendy\npassword: {_SHA512_PASSWORD_HASH_ALT}\n",
             }
 
     monkeypatch.setattr(
@@ -844,7 +853,7 @@ async def test_proxmox_reset_vm_cloudinit_password_redacts_password_hash_in_dump
             "ok": True,
             "message": "ok",
             "data": (
-                f"ciuser: rendy\npassword: {_password_hash('new-secret')}\n"
+                f"ciuser: rendy\npassword: {_SHA512_PASSWORD_HASH_ALT}\n"
                 "ssh_authorized_keys:\n  - one\n"
             ),
         },
