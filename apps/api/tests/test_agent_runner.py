@@ -4400,7 +4400,10 @@ async def test_agent_runner_does_not_canonicalize_reason_follow_up_for_different
     assert captured["thread_id"] == thread_id
     todos = cast(list[dict[str, str]], captured["todos"])
     assert todos[1]["status"] == "waiting_on_user"
-    assert todos[1]["content"].startswith("Ask for reason")
+    assert todos[1]["content"] == (
+        "Ask the user for a reason—an osTicket/reference number or a brief "
+        "description—before suspending the account."
+    )
     assert "ticket #121233" not in todos[1]["content"]
 
     invalid_tool_part = next(
@@ -4539,7 +4542,10 @@ async def test_agent_runner_rejects_change_proposal_when_reason_is_not_explicit_
     assert len(todos) == 5
     assert todos[0]["status"] == "completed"
     assert todos[1]["status"] == "waiting_on_user"
-    assert todos[1]["content"].startswith("Ask for reason")
+    assert todos[1]["content"] == (
+        "Ask the user for a reason—an osTicket/reference number or a brief "
+        "description—before suspending the account."
+    )
     assert "ticket #121233" not in todos[1]["content"]
     assert todos[2]["status"] == "pending"
 
@@ -4690,7 +4696,10 @@ async def test_agent_runner_rejects_change_proposal_when_reason_is_descriptive_p
     assert len(todos) == 5
     assert todos[0]["status"] == "completed"
     assert todos[1]["status"] == "waiting_on_user"
-    assert todos[1]["content"].startswith("Ask for reason")
+    assert todos[1]["content"] == (
+        "Ask the user for a reason—an osTicket/reference number or a brief "
+        "description—before suspending the account."
+    )
     assert "customer request" not in todos[1]["content"]
     assert todos[2]["status"] == "pending"
 

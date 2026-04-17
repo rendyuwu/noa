@@ -75,14 +75,17 @@ Core entities:
 - Safety policy:
   - READ tools can execute immediately if the user is permitted.
   - CHANGE tools never execute directly from an LLM proposal.
-    They create an `action_request` that must be explicitly approved, with a recorded reason, for that specific instance.
+    They only create an `action_request` after matching preflight evidence exists and the assistant has captured a clear user-provided reason for that specific change.
+    If the reason is missing or ambiguous, the assistant stays in `waiting_on_user` and asks for an osTicket/reference number or a brief description before any approval request is created.
 
 ## Approval Gate (Two-Phase)
 
 1) Proposal phase
-  - LLM proposes a tool call
-  - For `risk=CHANGE`, backend stores `action_requests(status=pending)`
-  - Backend emits a `request_approval` tool-call part, which renders an approval card in the UI
+   - LLM proposes a tool call
+   - For `risk=CHANGE`, backend first requires matching preflight evidence plus a clear user-provided reason
+   - If either is missing, the workflow remains `waiting_on_user` and the assistant asks for an osTicket/reference number or a brief description
+   - Only then does the backend store `action_requests(status=pending)`
+   - Backend emits a `request_approval` tool-call part, which renders an approval card in the UI
 
 2) Decision + execution phase
   - User clicks Approve/Deny
