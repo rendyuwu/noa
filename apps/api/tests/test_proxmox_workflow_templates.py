@@ -8,6 +8,339 @@ from noa_api.core.workflows.registry import (
 )
 
 
+def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_and_preflight_gated() -> (
+    None
+):
+    todos = build_workflow_todos(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="waiting_on_user",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {"data": {"cipassword": "old"}},
+                },
+            }
+        ],
+    )
+
+    assert todos is not None
+    assert len(todos) == 5
+    assert [todo["status"] for todo in todos] == [
+        "completed",
+        "waiting_on_user",
+        "pending",
+        "pending",
+        "pending",
+    ]
+    assert "preflight" in todos[0]["content"].lower()
+
+
+def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {"data": {"cipassword": "old"}},
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "set_password_task": {"ok": True, "data": "UPID:SET"},
+            "regenerate_cloudinit": {"ok": True},
+            "cloudinit": {"ok": True},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "may not take effect immediately" in reply.summary
+    assert "restart or stop/start" in reply.next_step
+
+
+def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_tables() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101, 102],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101, 102],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {
+                                        "vmid": 101,
+                                        "name": "alpha",
+                                        "node": "pve1",
+                                        "status": "running",
+                                    },
+                                    {
+                                        "vmid": 102,
+                                        "name": "beta",
+                                        "node": "pve2",
+                                        "status": "stopped",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "destination_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-b",
+                                "members": [
+                                    {
+                                        "vmid": 201,
+                                        "name": "gamma",
+                                        "node": "pve3",
+                                        "status": "running",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101, 102],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    assert reply.outcome == "info"
+    assert "| VMID | Name | Node | Status |" in reply.summary
+    assert reply.summary.count("| 101 | alpha | pve1 | running |") == 1
+
+
+def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_after_tables() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {
+                                        "vmid": 101,
+                                        "name": "alpha",
+                                        "node": "pve1",
+                                        "status": "running",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "destination_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-b",
+                                "members": [
+                                    {
+                                        "vmid": 201,
+                                        "name": "gamma",
+                                        "node": "pve3",
+                                        "status": "running",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "source_pool_before": {
+                "data": [
+                    {
+                        "poolid": "pool-a",
+                        "members": [
+                            {
+                                "vmid": 101,
+                                "name": "alpha",
+                                "node": "pve1",
+                                "status": "running",
+                            },
+                        ],
+                    }
+                ]
+            },
+            "destination_pool_before": {
+                "data": [
+                    {
+                        "poolid": "pool-b",
+                        "members": [
+                            {
+                                "vmid": 201,
+                                "name": "gamma",
+                                "node": "pve3",
+                                "status": "running",
+                            },
+                        ],
+                    }
+                ]
+            },
+            "add_to_destination": {"ok": True, "data": "UPID:ADD"},
+            "remove_from_source": {"ok": True, "data": "UPID:REMOVE"},
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [
+                    {
+                        "poolid": "pool-b",
+                        "members": [
+                            {
+                                "vmid": 101,
+                                "name": "alpha",
+                                "node": "pve1",
+                                "status": "running",
+                            },
+                            {
+                                "vmid": 201,
+                                "name": "gamma",
+                                "node": "pve3",
+                                "status": "running",
+                            },
+                        ],
+                    }
+                ]
+            },
+            "results": [{"vmid": 101, "status": "changed"}],
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [
+                    {
+                        "poolid": "pool-b",
+                        "members": [
+                            {
+                                "vmid": 101,
+                                "name": "alpha",
+                                "node": "pve1",
+                                "status": "running",
+                            },
+                        ],
+                    }
+                ]
+            },
+            "verified": True,
+        },
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "Source pool before" in reply.summary
+    assert "| 101 | alpha | pve1 | running |" in reply.summary
+    assert "Source pool after" in reply.summary
+
+
 def test_proxmox_workflow_completed_reply_summarizes_before_after_and_verification() -> (
     None
 ):

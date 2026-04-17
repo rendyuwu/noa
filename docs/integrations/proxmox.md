@@ -70,23 +70,23 @@ curl -k \
 - QEMU VM NIC preflight
 - Disable VM network interface with approval, recorded reason, and evidence capture
 - Enable VM network interface with approval, recorded reason, and evidence capture
+- QEMU cloud-init password reset with approval, recorded reason, exact preflight matching, and postflight verification
+- Pool membership move with approval, recorded reason, exact preflight matching, and postflight verification
 
 ## Backlog / research notes
-- QEMU cloud-init password reset flow
 - QEMU guest-agent password reset flow
-- VM status/resource lookup workflow improvements for very large clusters
-- Pool membership move workflow
-- Pool ACL / permission move workflow by user email
+- Direct node-scoped VM status / hardware lookup workflow
 - Pool-based “change email” operational flow
 
 ## 1) Reset password from cloud-init (`qemu` only)
 
 ### Set cloud-init password on the VM
+- Only update the password; keep the existing guest username unchanged.
+
 ```bash
 curl -k -X POST \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   --data-urlencode 'cipassword=<new-password>' \
-  --data-urlencode 'ciuser=<guest-user>' \
   'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
 ```
 
@@ -112,56 +112,12 @@ curl -k \
 
 ### Caveat
 - This is cloud-init driven, not guaranteed immediate in-guest reset.
-- If you need immediate password change and QEMU Guest Agent is installed, official endpoint is:
+- After changing the password, tell the user they may need to restart the VM or do a stop/start cycle before the new password takes effect.
+- NOA workflow replies should repeat that restart / stop-start caveat after a successful reset.
 
-```bash
-curl -k -X POST \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'username=<guest-user>' \
-  --data-urlencode 'password=<new-password>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/agent/set-user-password'
-```
+## 2) Check VM status / resources / hardware / disk / RAM
 
-## 2) Check VM status / resources / start / stop / hardware / disk / RAM
-
-### Find VM cluster-wide by VMID, including `node` and `pool`
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/cluster/resources?type=vm'
-```
-
-### Large cluster note
-- Officially, `GET /cluster/resources` only documents `type` as query param.
-- I did **not** find an official server-side `vmid` or `search` filter for this endpoint.
-- For very large clusters, better official alternatives are:
-
-#### Per-node QEMU list
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu'
-```
-
-#### Per-node QEMU list with `full=1`
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu?full=1'
-```
-
-#### Direct VM lookup when node is already known
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
-```
-
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
-```
+This workflow requires the exact Proxmox node name. If the user only provides a VMID, ask for the node instead of using cluster-wide discovery endpoints.
 
 ### Live runtime status/usage
 ```bash
@@ -184,161 +140,83 @@ curl -k \
   'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
 ```
 
-### Start VM
-```bash
-curl -k -X POST \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/start'
-```
-
-### Stop VM
-```bash
-curl -k -X POST \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/stop'
-```
-
 ### Notes
 - `status/current` = runtime state + CPU/mem/disk/net counters.
 - `config` = hardware/disk/RAM/CPU/network definitions.
-- `cluster/resources?type=vm` = best first call if you only know `vmid`.
+- `pending` = pending config changes not yet applied.
 
-## 3) Change email
-
-### If you mean literal Proxmox user email
-```bash
-curl -k -X PUT \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'email=<new-email@example.com>' \
-  'https://<pve-host>:8006/api2/json/access/users/<userid>'
-```
-
-### Read user(s)
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/access/users'
-```
-
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/access/users/<userid>'
-```
-
-## 3b) Pool membership + pool permissions flow for “change email”
+## 3) Pool-based “change email” flow
 
 Important:
-- Pools store VM/storage membership via the pool endpoints.
-- The user email shown in the pool **Permissions** tab is not a pool field; it is an ACL entry on path `/pool/<poolid>`.
-- So “change email pool” usually means two separate actions:
-  1. change VM membership between pools
-  2. change ACL user permission between old/new pool
+- In this workflow, “change email” / “change PIC” means moving one or more VMs from one pool to another.
+- Do not mutate Proxmox user email fields.
+- Do not add or remove ACL entries as part of this flow.
+- Ask the user directly for the source pool, destination pool, one or more VMIDs, and target email.
 
-### 1. Search VM pool id from VMID
+### Read one user by email-derived userid
+- Do not call `GET /access/users`; require the email from the user.
+- Backend/tool should normalize the provided email to a Proxmox userid by appending `@pve`.
+
 ```bash
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/cluster/resources?type=vm'
+  'https://<pve-host>:8006/api2/json/access/users/<email@pve>'
 ```
 
-### 1b. Search user by email
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/access/users'
-```
+Example normalization:
+- User input: `l1@biznetgio.com`
+- Tool userid: `l1@biznetgio.com@pve`
 
-### 2. Verify pool member and user ACL
+### 1. Verify source pool exists / inspect current members
 ```bash
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   'https://<pve-host>:8006/api2/json/pools?poolid=<old-poolid>'
 ```
 
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/access/users/<userid>'
-```
-
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/access/acl'
-```
-
-Filter client-side for:
-- `path=/pool/<old-poolid>`
-- `type=user`
-- `ugid=<email@realm>`
-
-### 2b. Optional: verify effective permission for one user on one pool
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --get \
-  --data-urlencode 'userid=<email@realm>' \
-  --data-urlencode 'path=/pool/<old-poolid>' \
-  'https://<pve-host>:8006/api2/json/access/permissions'
-```
-
-### 3. Remove VM from old pool
-```bash
-curl -k -X PUT \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'poolid=<old-poolid>' \
-  --data-urlencode 'vms=<vmid>' \
-  --data-urlencode 'delete=1' \
-  'https://<pve-host>:8006/api2/json/pools'
-```
-
-### 4. Verify new pool exists / inspect members
+### 2. Verify destination pool exists / inspect members
 ```bash
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   'https://<pve-host>:8006/api2/json/pools?poolid=<new-poolid>'
 ```
 
-### 4b. Verify new pool ACL target
+### 3. Verify effective permission for one user on one pool
+- Use this to confirm the target user already has permission on the destination pool.
+
 ```bash
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/access/acl'
+  --get \
+  --data-urlencode 'userid=<email@pve>' \
+  --data-urlencode 'path=/pool/<poolid>' \
+  'https://<pve-host>:8006/api2/json/access/permissions'
 ```
 
-Filter client-side for:
-- `path=/pool/<new-poolid>`
-- confirm whether the target email/user already exists there
+### 4. Remove VM(s) from the source pool
+```bash
+curl -k -X PUT \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  --data-urlencode 'poolid=<old-poolid>' \
+  --data-urlencode 'vms=<vmid-list>' \
+  --data-urlencode 'delete=1' \
+  'https://<pve-host>:8006/api2/json/pools'
+```
 
-### 5. Add VM to new pool
+### 5. Add VM(s) to the destination pool
 ```bash
 curl -k -X PUT \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   --data-urlencode 'poolid=<new-poolid>' \
-  --data-urlencode 'vms=<vmid>' \
+  --data-urlencode 'vms=<vmid-list>' \
   --data-urlencode 'allow-move=1' \
   'https://<pve-host>:8006/api2/json/pools'
 ```
 
-### 6. Remove old pool permission for old email/user
-```bash
-curl -k -X PUT \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'path=/pool/<old-poolid>' \
-  --data-urlencode 'users=<old-email@realm>' \
-  --data-urlencode 'roles=<roleid>' \
-  --data-urlencode 'delete=1' \
-  'https://<pve-host>:8006/api2/json/access/acl'
-```
-
-### 7. Add new pool permission for new email/user
-```bash
-curl -k -X PUT \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'path=/pool/<new-poolid>' \
-  --data-urlencode 'users=<new-email@realm>' \
-  --data-urlencode 'roles=<roleid>' \
-  --data-urlencode 'propagate=1' \
-  'https://<pve-host>:8006/api2/json/access/acl'
-```
+### Operational notes
+- Preflight and postflight verification are required.
+- Support moving one VM or multiple VMs in the same flow.
+- Ask the user for explicit pool IDs, VMIDs, and email values instead of relying on large cluster-wide discovery endpoints.
+- User-facing results should summarize before/after pool membership for the moved VM set.
+- NOA workflow replies should render the pool membership tables from structured member data with columns `VMID`, `Name`, `Node`, and `Status`.
+- Approval replies should show source pool before and destination pool before; completion replies should show source before/after and destination before/after.
