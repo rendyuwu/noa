@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
+
+from sqlalchemy.ext.asyncio import AsyncSession
 
 
 @dataclass
@@ -45,6 +48,10 @@ def _server() -> _Server:
         created_at=now,
         updated_at=now,
     )
+
+
+def _session() -> AsyncSession:
+    return cast(AsyncSession, object())
 
 
 def _install_client(monkeypatch, responses: dict[str, dict[str, object]]) -> None:
@@ -95,7 +102,7 @@ async def test_proxmox_get_vm_status_current_returns_upstream_data(monkeypatch) 
     )
 
     result = await vm_read_tools.proxmox_get_vm_status_current(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -127,7 +134,7 @@ async def test_proxmox_get_vm_config_preserves_resolution_errors(monkeypatch) ->
     )
 
     result = await vm_read_tools.proxmox_get_vm_config(
-        session=object(),
+        session=_session(),
         server_ref="missing",
         node="pve1-node",
         vmid=101,
@@ -161,7 +168,7 @@ async def test_proxmox_get_vm_pending_returns_upstream_data(monkeypatch) -> None
     )
 
     result = await vm_read_tools.proxmox_get_vm_pending(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -200,7 +207,7 @@ async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) ->
     )
 
     result = await vm_read_tools.proxmox_get_vm_config(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -237,7 +244,7 @@ async def test_proxmox_get_vm_config_handles_upstream_failure(monkeypatch) -> No
     )
 
     result = await vm_read_tools.proxmox_get_vm_config(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -275,15 +282,57 @@ async def test_proxmox_get_vm_config_redacts_cipassword_in_payload(monkeypatch) 
     )
 
     result = await vm_read_tools.proxmox_get_vm_config(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
     )
 
     assert result["ok"] is True
-    assert result["data"]["cipassword"] == "[redacted]"
-    assert result["data"]["name"] == "vm101"
+    payload = cast(dict[str, object], result["data"])
+    assert payload["cipassword"] == "[redacted]"
+    assert payload["name"] == "vm101"
+
+
+@pytest.mark.asyncio
+async def test_proxmox_get_vm_config_redacts_cipassword_in_list_entry(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        {
+            "status_current": {"ok": True, "message": "ok", "data": {}},
+            "config": {
+                "ok": True,
+                "message": "ok",
+                "config": [
+                    {"key": "name", "value": "vm101"},
+                    {"key": "cipassword", "value": "super-secret"},
+                ],
+            },
+            "pending": {"ok": True, "message": "ok", "data": {}},
+        },
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_config(
+        session=_session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result["ok"] is True
+    payload = cast(list[dict[str, object]], result["data"])
+    assert payload[0] == {"key": "name", "value": "vm101"}
+    assert payload[1] == {"key": "cipassword", "value": "[redacted]"}
 
 
 @pytest.mark.asyncio
@@ -312,15 +361,16 @@ async def test_proxmox_get_vm_pending_redacts_cipassword_in_payload(
     )
 
     result = await vm_read_tools.proxmox_get_vm_pending(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
     )
 
     assert result["ok"] is True
-    assert result["data"]["cipassword"] == "[redacted]"
-    assert result["data"]["digest"] == "abc"
+    payload = cast(dict[str, object], result["data"])
+    assert payload["cipassword"] == "[redacted]"
+    assert payload["digest"] == "abc"
 
 
 @pytest.mark.asyncio
@@ -347,7 +397,7 @@ async def test_proxmox_get_vm_pending_handles_upstream_failure(monkeypatch) -> N
     )
 
     result = await vm_read_tools.proxmox_get_vm_pending(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -394,7 +444,7 @@ async def test_proxmox_get_vm_status_current_preserves_ambiguous_choices(
     )
 
     result = await vm_read_tools.proxmox_get_vm_status_current(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,
@@ -442,7 +492,7 @@ async def test_proxmox_get_vm_status_current_preserves_client_errors(
     )
 
     result = await vm_read_tools.proxmox_get_vm_status_current(
-        session=object(),
+        session=_session(),
         server_ref="pve1",
         node="pve1-node",
         vmid=101,

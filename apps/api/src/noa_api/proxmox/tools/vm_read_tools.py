@@ -66,15 +66,11 @@ async def _fetch_vm_read_data(
     fetcher: Callable[[ProxmoxClient, str, int], Awaitable[dict[str, object]]],
     fallback_message: str,
 ) -> dict[str, object]:
-    repo: Any = SQLProxmoxServerRepository(session)
-    resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
-    if not resolution.ok:
-        return _resolution_error(resolution)
+    client_or_error = await _resolve_vm_client(session=session, server_ref=server_ref)
+    if isinstance(client_or_error, dict):
+        return client_or_error
 
-    server = resolution.server
-    assert server is not None
-
-    client = _client_for_server(server)
+    client = client_or_error
     result = await fetcher(client, node.strip(), vmid)
     if result.get("ok") is not True:
         return _upstream_error(result, fallback_message=fallback_message)
@@ -86,13 +82,11 @@ async def _fetch_vm_read_data(
     }
 
 
-async def _fetch_vm_config(
+async def _resolve_vm_client(
     *,
     session: AsyncSession,
     server_ref: str,
-    node: str,
-    vmid: int,
-) -> dict[str, object]:
+) -> ProxmoxClient | dict[str, object]:
     repo: Any = SQLProxmoxServerRepository(session)
     resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
     if not resolution.ok:
@@ -100,8 +94,21 @@ async def _fetch_vm_config(
 
     server = resolution.server
     assert server is not None
+    return _client_for_server(server)
 
-    client = _client_for_server(server)
+
+async def _fetch_vm_config(
+    *,
+    session: AsyncSession,
+    server_ref: str,
+    node: str,
+    vmid: int,
+) -> dict[str, object]:
+    client_or_error = await _resolve_vm_client(session=session, server_ref=server_ref)
+    if isinstance(client_or_error, dict):
+        return client_or_error
+
+    client = client_or_error
     result = await client.get_qemu_config(node.strip(), vmid)
     if result.get("ok") is not True:
         return _upstream_error(
