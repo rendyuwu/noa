@@ -2611,6 +2611,67 @@ def test_proxmox_enable_vm_nic_completed_reply_and_todo_prefer_postflight_link_s
         item["label"] == "Link state" and item["value"] == "up"
         for item in verification["items"]
     )
+    assert any(
+        item["label"] == "NIC config"
+        and item["value"] == "virtio=AA:BB:CC,bridge=vmbr0"
+        for item in verification["items"]
+    )
+
+
+def test_proxmox_enable_vm_nic_completed_reply_matches_server_id_alias_preflight() -> (
+    None
+):
+    canonical_server_id = "11111111-1111-1111-1111-111111111111"
+    canonical_result = _enable_vm_nic_result(
+        verified=True,
+        link_state="up",
+        after_net="virtio=AA:BB:CC,bridge=vmbr0",
+    )
+    canonical_result["server_id"] = canonical_server_id
+    canonical_postflight = _enable_vm_nic_postflight_result(link_state="up")
+    canonical_postflight["server_id"] = canonical_server_id
+
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "restore connectivity",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {
+                    "server_ref": canonical_server_id,
+                    "node": "pve1-node",
+                    "vmid": 101,
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": canonical_server_id,
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+                    "link_state": "down",
+                    "auto_selected_net": False,
+                    "nets": [],
+                },
+            }
+        ],
+        result=canonical_result,
+        postflight_result=canonical_postflight,
+    )
+
+    assert reply is not None
+    assert "moved from link down to link up" in reply.summary
+    assert "verification succeeded" in reply.summary.lower()
 
 
 def test_proxmox_enable_vm_nic_waiting_on_user_todos_require_reason_step() -> None:

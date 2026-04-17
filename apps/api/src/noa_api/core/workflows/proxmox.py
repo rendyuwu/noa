@@ -31,12 +31,17 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
     def build_todos(self, context: WorkflowTemplateContext) -> list[WorkflowTodoItem]:
         action_label = _action_label(context.tool_name)
         subject = _subject(context.args)
-        before_state = _matching_preflight(context.preflight_evidence, context.args)
         result = context.result if isinstance(context.result, dict) else {}
         postflight = (
             context.postflight_result
             if isinstance(context.postflight_result, dict)
             else {}
+        )
+        before_state = _matching_preflight(
+            context.preflight_evidence,
+            context.args,
+            requested_server_id=normalized_text(result.get("server_id"))
+            or normalized_text(postflight.get("server_id")),
         )
         reason = normalized_text(context.args.get("reason"))
 
@@ -112,12 +117,17 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         self,
         context: WorkflowTemplateContext,
     ) -> WorkflowReplyTemplate | None:
-        before_state = _matching_preflight(context.preflight_evidence, context.args)
         result = context.result if isinstance(context.result, dict) else {}
         postflight = (
             context.postflight_result
             if isinstance(context.postflight_result, dict)
             else {}
+        )
+        before_state = _matching_preflight(
+            context.preflight_evidence,
+            context.args,
+            requested_server_id=normalized_text(result.get("server_id"))
+            or normalized_text(postflight.get("server_id")),
         )
         subject = _subject(context.args)
         title_subject = _title_subject(context.args)
@@ -244,12 +254,17 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         self,
         context: WorkflowTemplateContext,
     ) -> WorkflowEvidenceTemplate | None:
-        before_state = _matching_preflight(context.preflight_evidence, context.args)
         result = context.result if isinstance(context.result, dict) else {}
         postflight = (
             context.postflight_result
             if isinstance(context.postflight_result, dict)
             else {}
+        )
+        before_state = _matching_preflight(
+            context.preflight_evidence,
+            context.args,
+            requested_server_id=normalized_text(result.get("server_id"))
+            or normalized_text(postflight.get("server_id")),
         )
 
         before_items = _before_state_items(before_state)
@@ -428,6 +443,8 @@ def _server_identity_matches_any(
 def _matching_preflight(
     preflight_evidence: list[dict[str, object]],
     args: dict[str, object],
+    *,
+    requested_server_id: str | None = None,
 ) -> dict[str, object] | None:
     requested_server_ref = normalized_text(args.get("server_ref"))
     requested_node = normalized_text(args.get("node"))
@@ -456,7 +473,7 @@ def _matching_preflight(
             item_args=item_args,
             result=result,
             requested_server_ref=requested_server_ref,
-            requested_server_id=None,
+            requested_server_id=requested_server_id,
         ):
             continue
         if normalized_text(result.get("node")) != requested_node:
@@ -640,8 +657,8 @@ def _before_state_items(
 def _after_state_items(
     result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
-    after_net = normalized_text(result.get("after_net")) or normalized_text(
-        postflight_result.get("before_net")
+    after_net = normalized_text(postflight_result.get("before_net")) or normalized_text(
+        result.get("after_net")
     )
     link_state = _final_link_state(result, postflight_result)
     return [
