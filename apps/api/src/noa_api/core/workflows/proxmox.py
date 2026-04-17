@@ -2178,12 +2178,13 @@ def _pool_move_verification_summary_lines(
         return summary
     if postflight_state == "verified":
         return ["Postflight verification succeeded."]
+    summary = ["Verification not confirmed."]
     postflight_summary = _pool_move_postflight_summary_line(
         verified=False, postflight_state=postflight_state
     )
     if postflight_summary is not None:
-        return [postflight_summary]
-    return []
+        summary.append(postflight_summary)
+    return summary
 
 
 def _pool_move_postflight_state(
@@ -2205,7 +2206,7 @@ def _pool_move_postflight_summary_line(
         return None
     if verified:
         if postflight_state == "failed":
-            return "Postflight refetch failed."
+            return "Postflight verification disagreed with the result."
         return "Postflight refetch was degraded."
     if postflight_state == "failed":
         return "Postflight verification failed."

@@ -2336,9 +2336,9 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_mark_verified
             }
         ],
         result={
-            "ok": False,
-            "message": "task failed",
-            "status": "failed",
+            "ok": True,
+            "message": "task completed",
+            "status": "changed",
             "server_id": "srv-1",
             "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
             "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
@@ -2348,25 +2348,20 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_mark_verified
             "destination_pool_after": {
                 "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
             },
-            "results": [{"vmid": 101, "status": "failed"}],
-            "verified": False,
+            "results": [{"vmid": 101, "status": "changed"}],
+            "verified": True,
         },
         postflight_result={
-            "ok": True,
-            "message": "ok",
-            "status": "changed",
-            "server_id": "srv-1",
-            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
-            "destination_pool_after": {
-                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
-            },
-            "verified": True,
+            "ok": False,
+            "error_code": "bad_pool_refetch",
+            "message": "pool refetch temporarily unavailable",
         },
     )
 
     assert reply is not None
-    assert reply.outcome == "partial"
-    assert "Postflight verification succeeded." in reply.evidence_summary
+    assert reply.outcome == "changed"
+    assert "Verification succeeded." in reply.summary
+    assert "Verification succeeded." in reply.evidence_summary
 
     evidence = build_workflow_evidence_template(
         tool_name="proxmox_move_vms_between_pools",
@@ -2405,9 +2400,9 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_mark_verified
             }
         ],
         result={
-            "ok": False,
-            "message": "task failed",
-            "status": "failed",
+            "ok": True,
+            "message": "task completed",
+            "status": "changed",
             "server_id": "srv-1",
             "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
             "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
@@ -2417,20 +2412,10 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_mark_verified
             "destination_pool_after": {
                 "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
             },
-            "results": [{"vmid": 101, "status": "failed"}],
-            "verified": False,
-        },
-        postflight_result={
-            "ok": True,
-            "message": "ok",
-            "status": "changed",
-            "server_id": "srv-1",
-            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
-            "destination_pool_after": {
-                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
-            },
+            "results": [{"vmid": 101, "status": "changed"}],
             "verified": True,
         },
+        postflight_result=_pool_move_postflight_verified_result(),
     )
 
     assert evidence is not None
@@ -2489,7 +2474,11 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
             }
         ],
         result=_pool_move_result(verified=True),
-        postflight_result=_pool_move_postflight_refetch_failed_result(),
+        postflight_result={
+            "ok": False,
+            "error_code": "bad_pool_refetch",
+            "message": "pool refetch temporarily unavailable",
+        },
     )
 
     evidence = build_workflow_evidence_template(
@@ -2505,7 +2494,11 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
             }
         ],
         result=_pool_move_result(verified=True),
-        postflight_result=_pool_move_postflight_refetch_failed_result(),
+        postflight_result={
+            "ok": False,
+            "error_code": "bad_pool_refetch",
+            "message": "pool refetch temporarily unavailable",
+        },
     )
 
     assert reply is not None
@@ -2520,6 +2513,67 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
     )
     assert any(
         item.label == "Verified" and item.value == "yes" for item in verification.items
+    )
+    assert any(
+        item.label == "Postflight" and item.value == "degraded"
+        for item in verification.items
+    )
+
+
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_are_explicit_when_unverified_and_postflight_is_degraded() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=False),
+        postflight_result={
+            "ok": False,
+            "error_code": "bad_pool_refetch",
+            "message": "pool refetch temporarily unavailable",
+        },
+    )
+
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=False),
+        postflight_result={
+            "ok": False,
+            "error_code": "bad_pool_refetch",
+            "message": "pool refetch temporarily unavailable",
+        },
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "Verification not confirmed." in reply.summary
+    assert "Postflight refetch was degraded." in reply.summary
+
+    assert evidence is not None
+    verification = next(
+        section for section in evidence.sections if section.key == "verification"
+    )
+    assert any(
+        item.label == "Verified" and item.value == "no" for item in verification.items
     )
     assert any(
         item.label == "Postflight" and item.value == "degraded"
