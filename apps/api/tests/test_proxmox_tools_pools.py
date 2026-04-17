@@ -525,6 +525,15 @@ async def test_proxmox_move_vms_between_pools_fails_when_postflight_does_not_con
         "error_code": "postflight_failed",
         "message": "Proxmox pool move verification did not confirm the requested VMIDs",
     }
+    assert state.calls == [
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+        ("get_user", "l1@biznetgio.com@pve"),
+        ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("add_vms_to_pool", ("pool_b", [1057])),
+        ("get_pool", "pool_a"),
+        ("get_pool", "pool_b"),
+    ]
 
 
 @pytest.mark.asyncio

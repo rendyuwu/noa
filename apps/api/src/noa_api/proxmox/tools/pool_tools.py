@@ -298,12 +298,19 @@ async def proxmox_move_vms_between_pools(
 
     try:
         source_vmids_after_add = _pool_result_vmids(source_pool_after_add)
-        _pool_result_vmids(destination_pool_after_add)
+        destination_vmids_after_add = _pool_result_vmids(destination_pool_after_add)
     except ValueError:
         return {
             "ok": False,
             "error_code": "invalid_response",
             "message": "Proxmox returned an unexpected pool payload",
+        }
+
+    if not all(vmid in destination_vmids_after_add for vmid in vmids):
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox pool move verification did not confirm the requested VMIDs",
         }
 
     remove_result: dict[str, object] | None = None
