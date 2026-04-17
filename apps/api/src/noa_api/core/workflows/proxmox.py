@@ -1906,7 +1906,7 @@ def _pool_move_verification_content(
     *,
     context: WorkflowTemplateContext,
     result: dict[str, object],
-    postflight_result: dict[str, object],
+    postflight_result: dict[str, object] | None,
 ) -> str:
     if context.phase == "completed" and _pool_move_verified(
         context.tool_name, result, postflight_result

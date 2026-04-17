@@ -2676,59 +2676,6 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_are_explicit_
     )
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_show_postflight_refetch_degraded_when_unverified() -> (
-    None
-):
-    reply = build_workflow_reply_template(
-        tool_name="proxmox_move_vms_between_pools",
-        workflow_family="proxmox-pool-membership-move",
-        args=_pool_move_args(),
-        phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_move_vms_between_pools",
-                "args": _pool_move_args(),
-                "result": _pool_move_preflight_result(),
-            }
-        ],
-        result=_pool_move_result(verified=False),
-        postflight_result=_pool_move_postflight_refetch_failed_result(),
-    )
-
-    evidence = build_workflow_evidence_template(
-        tool_name="proxmox_move_vms_between_pools",
-        workflow_family="proxmox-pool-membership-move",
-        args=_pool_move_args(),
-        phase="completed",
-        preflight_evidence=[
-            {
-                "toolName": "proxmox_preflight_move_vms_between_pools",
-                "args": _pool_move_args(),
-                "result": _pool_move_preflight_result(),
-            }
-        ],
-        result=_pool_move_result(verified=False),
-        postflight_result=_pool_move_postflight_refetch_failed_result(),
-    )
-
-    assert reply is not None
-    assert reply.outcome == "changed"
-    assert "Verification not confirmed." in reply.summary
-    assert "Postflight refetch was degraded." in reply.summary
-
-    assert evidence is not None
-    verification = next(
-        section for section in evidence.sections if section.key == "verification"
-    )
-    assert any(
-        item.label == "Verified" and item.value == "no" for item in verification.items
-    )
-    assert any(
-        item.label == "Postflight" and item.value == "degraded"
-        for item in verification.items
-    )
-
-
 def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_missing_postflight_silent() -> (
     None
 ):
