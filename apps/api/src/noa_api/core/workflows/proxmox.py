@@ -2167,21 +2167,22 @@ def _pool_move_verification_summary_lines(
     result: dict[str, object],
     postflight_result: dict[str, object] | None,
 ) -> list[str]:
+    postflight_state = _pool_move_postflight_state(tool_name, postflight_result)
     if result.get("verified") is True:
         summary = ["Verification succeeded."]
-        postflight_state = _pool_move_postflight_state(tool_name, postflight_result)
-        if postflight_state == "degraded":
-            summary.append("Postflight refetch was degraded.")
-        elif postflight_state == "failed":
-            summary.append("Postflight verification failed.")
+        postflight_summary = _pool_move_postflight_summary_line(
+            verified=True, postflight_state=postflight_state
+        )
+        if postflight_summary is not None:
+            summary.append(postflight_summary)
         return summary
-    postflight_state = _pool_move_postflight_state(tool_name, postflight_result)
     if postflight_state == "verified":
         return ["Postflight verification succeeded."]
-    if postflight_state == "failed":
-        return ["Postflight verification failed."]
-    if postflight_state == "degraded":
-        return ["Postflight refetch was degraded."]
+    postflight_summary = _pool_move_postflight_summary_line(
+        verified=False, postflight_state=postflight_state
+    )
+    if postflight_summary is not None:
+        return [postflight_summary]
     return []
 
 
@@ -2195,6 +2196,20 @@ def _pool_move_postflight_state(
     if normalized_text(postflight_result.get("error_code")) == "postflight_failed":
         return "failed"
     return "degraded"
+
+
+def _pool_move_postflight_summary_line(
+    *, verified: bool, postflight_state: str | None
+) -> str | None:
+    if postflight_state is None or postflight_state == "verified":
+        return None
+    if verified:
+        if postflight_state == "failed":
+            return "Postflight refetch failed."
+        return "Postflight refetch was degraded."
+    if postflight_state == "failed":
+        return "Postflight verification failed."
+    return "Postflight refetch was degraded."
 
 
 def _matching_pool_move_preflight(

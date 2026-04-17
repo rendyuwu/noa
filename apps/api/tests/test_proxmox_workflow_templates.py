@@ -68,6 +68,36 @@ def _pool_move_result(*, verified: bool) -> dict[str, object]:
     }
 
 
+def _pool_move_postflight_verified_result() -> dict[str, object]:
+    return {
+        "ok": True,
+        "message": "ok",
+        "status": "changed",
+        "server_id": "srv-1",
+        "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+        "destination_pool_after": {
+            "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
+        },
+        "verified": True,
+    }
+
+
+def _pool_move_postflight_refetch_failed_result() -> dict[str, object]:
+    return {
+        "ok": False,
+        "error_code": "bad_pool_refetch",
+        "message": "pool refetch temporarily unavailable",
+    }
+
+
+def _pool_move_postflight_verification_failed_result() -> dict[str, object]:
+    return {
+        "ok": False,
+        "error_code": "postflight_failed",
+        "message": "Unable to verify pool membership after the move",
+    }
+
+
 def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_and_preflight_gated() -> (
     None
 ):
@@ -2459,17 +2489,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
             }
         ],
         result=_pool_move_result(verified=True),
-        postflight_result={
-            "ok": True,
-            "message": "ok",
-            "status": "changed",
-            "server_id": "srv-1",
-            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
-            "destination_pool_after": {
-                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
-            },
-            "verified": False,
-        },
+        postflight_result=_pool_move_postflight_refetch_failed_result(),
     )
 
     evidence = build_workflow_evidence_template(
@@ -2485,17 +2505,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
             }
         ],
         result=_pool_move_result(verified=True),
-        postflight_result={
-            "ok": True,
-            "message": "ok",
-            "status": "changed",
-            "server_id": "srv-1",
-            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
-            "destination_pool_after": {
-                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
-            },
-            "verified": False,
-        },
+        postflight_result=_pool_move_postflight_refetch_failed_result(),
     )
 
     assert reply is not None
@@ -2692,14 +2702,17 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_do_not_label_
 
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Postflight refetch was degraded." not in reply.summary
-    assert "Postflight refetch was degraded." not in reply.evidence_summary
+    assert "Verification succeeded." in reply.summary
+    assert "Verification succeeded." in reply.evidence_summary
 
     assert evidence is not None
     verification = next(
         section for section in evidence.sections if section.key == "verification"
     )
     assert not any(item.label == "Postflight" for item in verification.items)
+    assert any(
+        item.label == "Verified" and item.value == "yes" for item in verification.items
+    )
 
 
 def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verification_content_when_postflight_verifies_state() -> (
