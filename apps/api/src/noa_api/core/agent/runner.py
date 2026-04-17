@@ -31,6 +31,10 @@ from noa_api.core.workflows.registry import (
     persist_workflow_todos,
     require_matching_preflight,
 )
+from noa_api.core.workflows.types import (
+    assistant_is_requesting_reason,
+    messages_before_latest_user_if_reason_follow_up,
+)
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
@@ -488,10 +492,19 @@ class AgentRunner:
             saw_allowed_tool_call = False
             saw_internal_guidance_stop = False
             for tool_call in llm_response.tool_calls:
+                tool = get_tool_definition(tool_call.name)
+                tool_call_args = tool_call.arguments
+                if tool is not None and tool.risk == ToolRisk.CHANGE:
+                    tool_call_args = _canonicalize_reason_follow_up_args(
+                        tool=tool,
+                        args=tool_call_args,
+                        working_messages=working_messages,
+                    )
+
                 duplicate_failed_result = _latest_matching_failed_tool_result_part(
                     working_messages=working_messages,
                     tool_name=tool_call.name,
-                    args=tool_call.arguments,
+                    args=tool_call_args,
                 )
                 if duplicate_failed_result is not None:
                     fallback_text = _assistant_reply_from_tool_result_part(
@@ -562,7 +575,6 @@ class AgentRunner:
                         break
                     continue
 
-                tool = get_tool_definition(tool_call.name)
                 if tool is None or tool.name not in available_tool_names:
                     saw_denied_tool_call = True
                     unavailable_part: dict[str, object] = {
@@ -613,7 +625,7 @@ class AgentRunner:
 
                 processed = await self._process_tool_call(
                     tool=tool,
-                    args=tool_call.arguments,
+                    args=tool_call_args,
                     working_messages=working_messages,
                     thread_id=thread_id,
                     requested_by_user_id=requested_by_user_id,
@@ -705,6 +717,11 @@ class AgentRunner:
         thread_id: UUID,
         requested_by_user_id: UUID,
     ) -> ProcessedToolCall:
+        args = _canonicalize_reason_follow_up_args(
+            tool=tool,
+            args=args,
+            working_messages=working_messages,
+        )
         if tool.risk == ToolRisk.CHANGE:
             validation_error = await self._validate_tool_call(
                 tool=tool,
@@ -979,7 +996,7 @@ class AgentRunner:
         working_messages: list[dict[str, object]],
         thread_id: UUID,
     ) -> list[AgentMessage]:
-        if not _assistant_is_requesting_reason(assistant_text):
+        if not assistant_is_requesting_reason(assistant_text):
             return []
 
         inferred = _infer_waiting_on_user_workflow_from_messages(
@@ -1328,6 +1345,78 @@ def _validate_change_reason_provenance(
         error_code="invalid_tool_arguments",
         details=("Reason must be explicit in the latest user turn.",),
     )
+
+
+def _canonicalize_reason_follow_up_args(
+    *,
+    tool: ToolDefinition,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+) -> dict[str, object]:
+    if tool.risk != ToolRisk.CHANGE:
+        return args
+
+    latest_user_text = _latest_user_message_text(working_messages)
+    if latest_user_text is None:
+        return args
+
+    follow_up_context = messages_before_latest_user_if_reason_follow_up(
+        working_messages
+    )
+    if follow_up_context is None:
+        return args
+
+    if not _matches_reason_follow_up_workflow_action(
+        tool=tool,
+        args=args,
+        follow_up_context=follow_up_context,
+    ):
+        return args
+
+    candidate_args = dict(args)
+    candidate_args["reason"] = latest_user_text
+    if (
+        _validate_change_reason_provenance(
+            tool=tool,
+            args=candidate_args,
+            working_messages=working_messages,
+        )
+        is not None
+    ):
+        return args
+
+    return candidate_args
+
+
+def _matches_reason_follow_up_workflow_action(
+    *,
+    tool: ToolDefinition,
+    args: dict[str, object],
+    follow_up_context: list[dict[str, object]],
+) -> bool:
+    inferred = _infer_waiting_on_user_workflow_from_messages(
+        assistant_text="",
+        working_messages=follow_up_context,
+    )
+    if inferred is None:
+        return False
+
+    inferred_tool_name = inferred.get("tool_name")
+    inferred_args = inferred.get("args")
+    if inferred_tool_name != tool.name or not isinstance(inferred_args, dict):
+        return False
+
+    inferred_args_dict = {
+        str(key): value for key, value in inferred_args.items() if isinstance(key, str)
+    }
+
+    return _canonical_tool_args(
+        _tool_args_without_reason(args)
+    ) == _canonical_tool_args(_tool_args_without_reason(inferred_args_dict))
+
+
+def _tool_args_without_reason(args: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in args.items() if key != "reason"}
 
 
 def _message_has_text(message: dict[str, object], expected_text: str) -> bool:
@@ -1760,20 +1849,6 @@ def _generic_read_result_count(result: dict[str, object]) -> int | None:
             return len(value)
 
     return None
-
-
-def _assistant_is_requesting_reason(text: str) -> bool:
-    lowered = text.lower()
-    return "reason" in lowered and any(
-        phrase in lowered
-        for phrase in (
-            "could you provide",
-            "please provide",
-            "need a brief human-readable reason",
-            "need a human-readable reason",
-            "what reason",
-        )
-    )
 
 
 def _infer_waiting_on_user_workflow_from_messages(

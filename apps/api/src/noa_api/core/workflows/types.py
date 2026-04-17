@@ -259,7 +259,9 @@ def render_workflow_reply_text(template: WorkflowReplyTemplate) -> str:
 
 
 def _coerce_part_record(value: object) -> dict[str, object] | None:
-    return value if isinstance(value, dict) else None
+    if not isinstance(value, dict):
+        return None
+    return {str(key): item for key, item in value.items() if isinstance(key, str)}
 
 
 def _messages_since_last_user(
@@ -280,14 +282,40 @@ def _messages_for_recent_preflight(
         return working_messages
 
     current_window = working_messages[last_user_index + 1 :]
+    prior_messages = messages_before_latest_user_if_reason_follow_up(working_messages)
+    if prior_messages is None:
+        return current_window
+
+    previous_user_index = _last_user_index(prior_messages)
+    return working_messages[previous_user_index + 1 :]
+
+
+def assistant_is_requesting_reason(text: str) -> bool:
+    lowered = text.lower()
+    return "reason" in lowered and any(
+        phrase in lowered
+        for phrase in (
+            "could you provide",
+            "please provide",
+            "need a brief human-readable reason",
+            "need a human-readable reason",
+            "what reason",
+        )
+    )
+
+
+def messages_before_latest_user_if_reason_follow_up(
+    working_messages: list[dict[str, object]],
+) -> list[dict[str, object]] | None:
+    last_user_index = _last_user_index(working_messages)
+    if last_user_index < 0:
+        return None
     if not _assistant_requested_reason_before_user(
         working_messages=working_messages,
         user_index=last_user_index,
     ):
-        return current_window
-
-    previous_user_index = _last_user_index(working_messages[:last_user_index])
-    return working_messages[previous_user_index + 1 :]
+        return None
+    return working_messages[:last_user_index]
 
 
 def _last_user_index(working_messages: list[dict[str, object]]) -> int:
@@ -306,7 +334,9 @@ def _assistant_requested_reason_before_user(
         message = working_messages[index]
         role = message.get("role")
         if role == "assistant":
-            return _message_requests_reason(message)
+            if _message_requests_reason(message):
+                return True
+            continue
         if role == "user":
             return False
     return False
@@ -322,20 +352,6 @@ def _message_requests_reason(message: dict[str, object]) -> bool:
         if part is None or part.get("type") != "text":
             continue
         text = normalized_text(part.get("text"))
-        if text is not None and _assistant_is_requesting_reason(text):
+        if text is not None and assistant_is_requesting_reason(text):
             return True
     return False
-
-
-def _assistant_is_requesting_reason(text: str) -> bool:
-    lowered = text.lower()
-    return "reason" in lowered and any(
-        phrase in lowered
-        for phrase in (
-            "could you provide",
-            "please provide",
-            "need a brief human-readable reason",
-            "need a human-readable reason",
-            "what reason",
-        )
-    )

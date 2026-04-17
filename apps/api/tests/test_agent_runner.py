@@ -3591,6 +3591,7 @@ async def test_agent_runner_allows_change_proposal_after_reason_follow_up(
     assert len(repo.action_requests) == 1
     request = next(iter(repo.action_requests.values()))
     assert request.tool_name == tool.name
+    assert request.args["reason"] == "Requested by customer in ticket #121233."
     approval_part = next(
         part
         for message in result.messages
@@ -3600,6 +3601,843 @@ async def test_agent_runner_allows_change_proposal_after_reason_follow_up(
         and part.get("toolName") == "request_approval"
     )
     assert approval_part.get("toolName") == "request_approval"
+    approval_args = cast(dict[str, object], approval_part["args"])
+    approval_arguments = cast(dict[str, object], approval_args["arguments"])
+    assert approval_arguments["reason"] == "Requested by customer in ticket #121233."
+
+    proposal_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == tool.name
+    )
+    proposal_args = cast(dict[str, object], proposal_part["args"])
+    assert proposal_args["reason"] == "Requested by customer in ticket #121233."
+
+
+async def test_agent_runner_allows_change_proposal_after_reason_follow_up_when_model_omits_reason_argument(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="I can suspend that account after approval.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "To proceed with suspending the account, I need a brief "
+                            "human-readable reason for the change. Could you provide the reason?"
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "parts": [
+                    {"type": "text", "text": "Requested by customer in ticket #121233."}
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    request = next(iter(repo.action_requests.values()))
+    assert request.tool_name == tool.name
+    assert request.args["reason"] == "Requested by customer in ticket #121233."
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    approval_args = cast(dict[str, object], approval_part["args"])
+    approval_arguments = cast(dict[str, object], approval_args["arguments"])
+    assert approval_arguments["reason"] == "Requested by customer in ticket #121233."
+
+    proposal_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == tool.name
+    )
+    proposal_args = cast(dict[str, object], proposal_part["args"])
+    assert proposal_args["reason"] == "Requested by customer in ticket #121233."
+
+
+async def test_agent_runner_allows_change_proposal_after_reason_follow_up_with_persisted_workflow_todo_messages(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="I can suspend that account after approval.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "customer request",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "To proceed with suspending the account, I need a brief "
+                            "human-readable reason for the change. Could you provide the reason?"
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "update_workflow_todo",
+                        "toolCallId": "workflow-todo-1",
+                        "args": {
+                            "todos": [
+                                {
+                                    "content": "Inspect account 'alice' on 'web1'.",
+                                    "status": "completed",
+                                    "priority": "high",
+                                },
+                                {
+                                    "content": "Ask for reason to suspend account 'alice' on 'web1'.",
+                                    "status": "waiting_on_user",
+                                    "priority": "high",
+                                },
+                            ]
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "update_workflow_todo",
+                        "toolCallId": "workflow-todo-1",
+                        "result": {
+                            "ok": True,
+                            "todos": [
+                                {
+                                    "content": "Inspect account 'alice' on 'web1'.",
+                                    "status": "completed",
+                                    "priority": "high",
+                                },
+                                {
+                                    "content": "Ask for reason to suspend account 'alice' on 'web1'.",
+                                    "status": "waiting_on_user",
+                                    "priority": "high",
+                                },
+                            ],
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "parts": [
+                    {"type": "text", "text": "Requested by customer in ticket #121233."}
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    request = next(iter(repo.action_requests.values()))
+    assert request.tool_name == tool.name
+    assert request.args["reason"] == "Requested by customer in ticket #121233."
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    approval_args = cast(dict[str, object], approval_part["args"])
+    approval_arguments = cast(dict[str, object], approval_args["arguments"])
+    assert approval_arguments["reason"] == "Requested by customer in ticket #121233."
+
+    proposal_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == tool.name
+    )
+    proposal_args = cast(dict[str, object], proposal_part["args"])
+    assert proposal_args["reason"] == "Requested by customer in ticket #121233."
+
+
+async def test_agent_runner_allows_change_proposal_after_reason_follow_up_with_persisted_workflow_todo_messages_when_model_omits_reason_argument(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="I can suspend that account after approval.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "To proceed with suspending the account, I need a brief "
+                            "human-readable reason for the change. Could you provide the reason?"
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "update_workflow_todo",
+                        "toolCallId": "workflow-todo-2",
+                        "args": {
+                            "todos": [
+                                {
+                                    "content": "Inspect account 'alice' on 'web1'.",
+                                    "status": "completed",
+                                    "priority": "high",
+                                },
+                                {
+                                    "content": "Ask for reason to suspend account 'alice' on 'web1'.",
+                                    "status": "waiting_on_user",
+                                    "priority": "high",
+                                },
+                            ]
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "update_workflow_todo",
+                        "toolCallId": "workflow-todo-2",
+                        "result": {
+                            "ok": True,
+                            "todos": [
+                                {
+                                    "content": "Inspect account 'alice' on 'web1'.",
+                                    "status": "completed",
+                                    "priority": "high",
+                                },
+                                {
+                                    "content": "Ask for reason to suspend account 'alice' on 'web1'.",
+                                    "status": "waiting_on_user",
+                                    "priority": "high",
+                                },
+                            ],
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "parts": [
+                    {"type": "text", "text": "Requested by customer in ticket #121233."}
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    request = next(iter(repo.action_requests.values()))
+    assert request.tool_name == tool.name
+    assert request.args["reason"] == "Requested by customer in ticket #121233."
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    approval_args = cast(dict[str, object], approval_part["args"])
+    approval_arguments = cast(dict[str, object], approval_args["arguments"])
+    assert approval_arguments["reason"] == "Requested by customer in ticket #121233."
+
+    proposal_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == tool.name
+    )
+    proposal_args = cast(dict[str, object], proposal_part["args"])
+    assert proposal_args["reason"] == "Requested by customer in ticket #121233."
+
+
+async def test_agent_runner_recovers_reason_follow_up_before_duplicate_failed_change_short_circuit(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="I can suspend that account after approval.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": tool.name,
+                        "toolCallId": "invalid-prior-change",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": tool.name,
+                        "toolCallId": "invalid-prior-change",
+                        "result": {
+                            "error": "Tool arguments are invalid",
+                            "error_code": "invalid_tool_arguments",
+                            "details": ["Missing required field 'reason'"],
+                        },
+                        "isError": True,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "To proceed with suspending the account, I need a brief "
+                            "human-readable reason for the change. Could you provide the reason?"
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "parts": [
+                    {"type": "text", "text": "Requested by customer in ticket #121233."}
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    request = next(iter(repo.action_requests.values()))
+    assert request.tool_name == tool.name
+    assert request.args["reason"] == "Requested by customer in ticket #121233."
+    assert not any(
+        isinstance(part, dict)
+        and part.get("type") == "text"
+        and "already failed with these exact arguments"
+        in cast(str, part.get("text", ""))
+        for message in result.messages
+        for part in message.parts
+    )
+
+
+async def test_agent_runner_does_not_canonicalize_reason_follow_up_for_different_pending_change_action(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "bob",
+                            "reason": "customer request",
+                        },
+                    )
+                ],
+            )
+
+    thread_id = uuid4()
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-alice",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-alice",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-bob",
+                        "args": {"server_ref": "web1", "username": "bob"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-bob",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "bob", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "To proceed with suspending the account, I need a brief "
+                            "human-readable reason for the change. Could you provide the reason?"
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "parts": [
+                    {"type": "text", "text": "Requested by customer in ticket #121233."}
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=thread_id,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert repo.action_requests == {}
+    assert captured["thread_id"] == thread_id
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert todos[1]["status"] == "waiting_on_user"
+    assert todos[1]["content"].startswith("Ask for reason")
+    assert "ticket #121233" not in todos[1]["content"]
+
+    invalid_tool_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-result"
+        and part.get("toolName") == tool.name
+        and part.get("isError") is True
+    )
+    assert invalid_tool_part == {
+        "type": "tool-result",
+        "toolName": tool.name,
+        "toolCallId": invalid_tool_part["toolCallId"],
+        "result": {
+            "error": "Tool arguments are invalid",
+            "error_code": "invalid_tool_arguments",
+            "details": ["Reason must be explicit in the latest user turn."],
+        },
+        "isError": True,
+    }
+
+    invalid_tool_call_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == tool.name
+    )
+    assert invalid_tool_call_part == {
+        "type": "tool-call",
+        "toolName": tool.name,
+        "toolCallId": invalid_tool_call_part["toolCallId"],
+        "args": {"server_ref": "web1", "username": "bob"},
+    }
 
 
 async def test_agent_runner_rejects_change_proposal_when_reason_is_not_explicit_in_latest_user_turn(
