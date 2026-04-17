@@ -212,7 +212,6 @@ async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) ->
         "message": "ok",
         "data": config_payload,
     }
-    assert result["data"] is config_payload
 
 
 @pytest.mark.asyncio
@@ -250,6 +249,79 @@ async def test_proxmox_get_vm_config_handles_upstream_failure(monkeypatch) -> No
         "error_code": "http_error",
         "message": "Proxmox returned HTTP 500",
     }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_get_vm_config_redacts_cipassword_in_payload(monkeypatch) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    config_payload = {
+        "name": "vm101",
+        "cipassword": "super-secret",
+        "digest": "digest-1",
+    }
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        {
+            "status_current": {"ok": True, "message": "ok", "data": {}},
+            "config": {"ok": True, "message": "ok", "config": config_payload},
+            "pending": {"ok": True, "message": "ok", "data": {}},
+        },
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_config(
+        session=object(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["cipassword"] == "[redacted]"
+    assert result["data"]["name"] == "vm101"
+
+
+@pytest.mark.asyncio
+async def test_proxmox_get_vm_pending_redacts_cipassword_in_payload(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        {
+            "status_current": {"ok": True, "message": "ok", "data": {}},
+            "config": {"ok": True, "message": "ok", "data": {}},
+            "pending": {
+                "ok": True,
+                "message": "ok",
+                "data": {"cipassword": "super-secret", "digest": "abc"},
+            },
+        },
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_pending(
+        session=object(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result["ok"] is True
+    assert result["data"]["cipassword"] == "[redacted]"
+    assert result["data"]["digest"] == "abc"
 
 
 @pytest.mark.asyncio

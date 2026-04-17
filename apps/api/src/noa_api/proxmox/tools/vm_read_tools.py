@@ -5,6 +5,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.secrets.crypto import maybe_decrypt_text
+from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.proxmox.integrations.client import ProxmoxClient
 from noa_api.proxmox.server_ref import resolve_proxmox_server_ref
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
@@ -38,6 +39,23 @@ def _upstream_error(
     }
 
 
+def _sanitize_vm_payload(payload: object) -> object:
+    if isinstance(payload, list):
+        return [_sanitize_vm_payload(item) for item in payload]
+    if isinstance(payload, dict):
+        lowered_key = payload.get("key")
+        if isinstance(lowered_key, str) and lowered_key.strip().lower() == "cipassword":
+            return {
+                str(key): (
+                    "[redacted]"
+                    if str(key).strip().lower() == "value"
+                    else _sanitize_vm_payload(item)
+                )
+                for key, item in payload.items()
+            }
+    return redact_sensitive_data(payload)
+
+
 async def _fetch_vm_read_data(
     *,
     session: AsyncSession,
@@ -64,7 +82,7 @@ async def _fetch_vm_read_data(
     return {
         "ok": True,
         "message": "ok",
-        "data": result.get("data"),
+        "data": _sanitize_vm_payload(result.get("data")),
     }
 
 
@@ -93,7 +111,7 @@ async def _fetch_vm_config(
     return {
         "ok": True,
         "message": "ok",
-        "data": result.get("config"),
+        "data": _sanitize_vm_payload(result.get("config")),
     }
 
 

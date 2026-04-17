@@ -8,7 +8,9 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from noa_api.core.secrets.crypto import encrypt_text, maybe_decrypt_text
 from noa_api.core.json_safety import json_safe
+from noa_api.core.secrets.redaction import is_sensitive_key
 from noa_api.core.tools.registry import get_tool_definition
 from noa_api.core.tools.result_validation import validate_tool_result
 from noa_api.storage.postgres.lifecycle import (
@@ -24,6 +26,34 @@ def _safe_dict(value: object) -> dict[str, object]:
     if isinstance(safe, dict):
         return safe
     return {"value": safe}
+
+
+def _encrypt_sensitive_args(args: Mapping[str, object]) -> dict[str, object]:
+    protected: dict[str, object] = {}
+    for key, value in args.items():
+        if isinstance(key, str) and is_sensitive_key(key):
+            protected[key] = encrypt_text(value) if isinstance(value, str) else value
+        elif isinstance(value, Mapping):
+            protected[key] = _encrypt_sensitive_args(value)
+        else:
+            protected[key] = value
+    return protected
+
+
+def _decrypt_sensitive_args(args: Mapping[str, object]) -> dict[str, object]:
+    decrypted: dict[str, object] = {}
+    for key, value in args.items():
+        if isinstance(value, str):
+            decrypted[key] = maybe_decrypt_text(value)
+        elif isinstance(value, Mapping):
+            decrypted[key] = _decrypt_sensitive_args(value)
+        else:
+            decrypted[key] = value
+    return decrypted
+
+
+def decrypt_sensitive_args(args: Mapping[str, object]) -> dict[str, object]:
+    return _decrypt_sensitive_args(args)
 
 
 class ActionToolRunRepositoryProtocol(Protocol):
@@ -190,7 +220,7 @@ class ActionToolRunService:
         return await self._repository.create_action_request(
             thread_id=thread_id,
             tool_name=tool_name,
-            args=_safe_dict(args),
+            args=_safe_dict(_encrypt_sensitive_args(args)),
             risk=risk,
             requested_by_user_id=requested_by_user_id,
         )
@@ -246,7 +276,7 @@ class ActionToolRunService:
         return await self._repository.start_tool_run(
             thread_id=thread_id,
             tool_name=tool_name,
-            args=_safe_dict(args),
+            args=_safe_dict(_encrypt_sensitive_args(args)),
             action_request_id=action_request_id,
             requested_by_user_id=requested_by_user_id,
         )

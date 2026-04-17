@@ -38,7 +38,7 @@ curl -k \
   'https://<pve-host>:8006/api2/json/version'
 ```
 
-##### Read current QEMU VM config
+##### Read QEMU VM configuration
 ```bash
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
@@ -241,7 +241,7 @@ curl -k \
   'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
 ```
 
-### Full VM config/hardware
+### Full VM configuration/hardware
 ```bash
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
@@ -257,7 +257,7 @@ curl -k \
 
 ### Notes
 - `status/current` = runtime state + CPU/mem/disk/net counters.
-- `config` = hardware/disk/RAM/CPU/network definitions.
+- `config` = VM configuration/hardware definitions (disk/RAM/CPU/network).
 - `pending` = pending config changes not yet applied.
 
 ### Pool membership move workflow

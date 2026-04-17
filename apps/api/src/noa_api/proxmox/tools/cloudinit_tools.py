@@ -6,6 +6,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.secrets.crypto import maybe_decrypt_text
+from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.proxmox.integrations.client import ProxmoxClient
 from noa_api.proxmox.server_ref import resolve_proxmox_server_ref
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
@@ -49,6 +50,29 @@ def _upstream_error(
         "error_code": str(result.get("error_code") or "unknown"),
         "message": str(result.get("message") or fallback_message),
     }
+
+
+def _sanitize_payload(payload: object) -> object:
+    if isinstance(payload, list):
+        return [_sanitize_payload(item) for item in payload]
+    if isinstance(payload, dict):
+        lowered_key = payload.get("key")
+        if isinstance(lowered_key, str) and lowered_key.strip().lower() == "cipassword":
+            return {
+                str(key): (
+                    "[redacted]"
+                    if str(key).strip().lower() == "value"
+                    else _sanitize_payload(item)
+                )
+                for key, item in payload.items()
+            }
+        return {
+            str(key): _sanitize_payload(item)
+            if isinstance(item, (dict, list))
+            else ("[redacted]" if str(key).strip().lower() == "cipassword" else item)
+            for key, item in payload.items()
+        }
+    return redact_sensitive_data(payload)
 
 
 def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:
@@ -186,8 +210,8 @@ async def proxmox_preflight_vm_cloudinit_password_reset(
         "server_id": server_id,
         "node": normalized_node,
         "vmid": vmid,
-        "config": config_result,
-        "cloudinit": cloudinit_result,
+        "config": _sanitize_payload(config_result),
+        "cloudinit": _sanitize_payload(cloudinit_result),
     }
 
 
@@ -343,9 +367,11 @@ async def proxmox_reset_vm_cloudinit_password(
         "server_id": server_id,
         "node": normalized_node,
         "vmid": vmid,
-        "set_password_task": set_result,
-        "regenerate_cloudinit": regenerate_result,
-        "cloudinit": cloudinit_result,
-        "cloudinit_dump_user": verification_result["cloudinit_dump_user"],
+        "set_password_task": _sanitize_payload(set_result),
+        "regenerate_cloudinit": _sanitize_payload(regenerate_result),
+        "cloudinit": _sanitize_payload(cloudinit_result),
+        "cloudinit_dump_user": _sanitize_payload(
+            verification_result["cloudinit_dump_user"]
+        ),
         "verified": True,
     }

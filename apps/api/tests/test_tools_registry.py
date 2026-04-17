@@ -102,6 +102,19 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     assert by_name["proxmox_preflight_move_vms_between_pools"].result_schema is not None
     assert by_name["proxmox_move_vms_between_pools"].result_schema is not None
 
+    assert "VM configuration" in by_name["proxmox_get_vm_config"].description
+    assert "VM config or the digest" in by_name["proxmox_get_vm_config"].prompt_hints[0]
+    assert "VM configuration changes" in by_name["proxmox_get_vm_pending"].description
+    assert "queued VM changes" in by_name["proxmox_get_vm_pending"].prompt_hints[0]
+    assert (
+        "VM configuration and cloud-init state"
+        in by_name["proxmox_preflight_vm_cloudinit_password_reset"].description
+    )
+    assert (
+        "VM configuration plus cloud-init state"
+        in by_name["proxmox_preflight_vm_cloudinit_password_reset"].prompt_hints[0]
+    )
+
 
 async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
     suspend_tool = get_tool_definition("whm_suspend_account")

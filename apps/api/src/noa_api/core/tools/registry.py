@@ -1432,7 +1432,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="proxmox_get_vm_config",
-        description="Read the current Proxmox VM configuration for one exact VM.",
+        description="Read the Proxmox VM configuration and hardware layout for one exact VM.",
         risk=ToolRisk.READ,
         parameters_schema=_object_schema(
             properties={
@@ -1444,7 +1444,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=proxmox_get_vm_config,
         prompt_hints=(
-            "Use this when you need the current VM config or the digest before a follow-up change.",
+            "Use this when you need the VM config or the digest before a follow-up change.",
             "Successful results return `data` with the upstream QEMU config payload.",
         ),
         result_schema=_PROXMOX_VM_READ_RESULT_SCHEMA,
@@ -1488,7 +1488,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="proxmox_preflight_vm_cloudinit_password_reset",
-        description="Inspect Proxmox VM config and cloud-init state before resetting the cloud-init password.",
+        description="Inspect Proxmox VM configuration and cloud-init state before resetting the cloud-init password.",
         risk=ToolRisk.READ,
         parameters_schema=_object_schema(
             properties={
@@ -1500,7 +1500,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=proxmox_preflight_vm_cloudinit_password_reset,
         prompt_hints=(
-            "Run this before `proxmox_reset_vm_cloudinit_password` and summarize the VM config plus cloud-init state first.",
+            "Run this before `proxmox_reset_vm_cloudinit_password` and summarize the VM configuration plus cloud-init state first.",
             "Successful results return `config` and `cloudinit` evidence for the exact VM.",
         ),
         result_schema=_PROXMOX_PREFLIGHT_CLOUDINIT_PASSWORD_RESET_RESULT_SCHEMA,

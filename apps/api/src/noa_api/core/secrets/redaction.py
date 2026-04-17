@@ -15,6 +15,8 @@ _SENSITIVE_KEYS: Final[frozenset[str]] = frozenset(
         "ssh_private_key_passphrase",
         "private_key",
         "passphrase",
+        "new_password",
+        "cipassword",
     }
 )
 

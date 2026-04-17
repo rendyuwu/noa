@@ -186,8 +186,50 @@ async def test_proxmox_preflight_vm_cloudinit_password_reset_returns_exact_paylo
         "config": config_result,
         "cloudinit": cloudinit_result,
     }
-    assert result["config"] is config_result
-    assert result["cloudinit"] is cloudinit_result
+
+
+@pytest.mark.asyncio
+async def test_proxmox_preflight_vm_cloudinit_password_reset_redacts_cipassword(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import cloudinit_tools
+
+    server = _server()
+    config_result = {
+        "ok": True,
+        "message": "ok",
+        "config": {"digest": "digest-1", "cipassword": "super-secret"},
+        "digest": "digest-1",
+    }
+    cloudinit_result = {
+        "ok": True,
+        "message": "ok",
+        "data": [{"key": "cipassword", "value": "super-secret"}],
+    }
+    monkeypatch.setattr(
+        cloudinit_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        _ClientState(
+            config=config_result,
+            cloudinit=cloudinit_result,
+            cloudinit_dump_user={"ok": True, "message": "ok", "data": "unused"},
+        ),
+    )
+
+    result = await cloudinit_tools.proxmox_preflight_vm_cloudinit_password_reset(
+        session=_Session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result["ok"] is True
+    assert result["config"]["config"]["cipassword"] == "[redacted]"
+    assert result["cloudinit"]["data"][0]["value"] == "[redacted]"
 
 
 @pytest.mark.asyncio
@@ -254,7 +296,14 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
             "message": "ok",
             "data": None,
         },
-        "cloudinit": cloudinit_result,
+        "cloudinit": {
+            "ok": True,
+            "message": "ok",
+            "data": [
+                {"key": "ciuser", "value": "rendy"},
+                {"key": "cipassword", "value": "[redacted]"},
+            ],
+        },
         "cloudinit_dump_user": {
             "ok": True,
             "message": "ok",
@@ -264,8 +313,6 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
     }
     assert result["set_password_task"] is not None
     assert result["regenerate_cloudinit"] is not None
-    assert result["cloudinit"] is cloudinit_result
-    assert result["cloudinit_dump_user"] is not dump_result
     assert (
         result["cloudinit_dump_user"]["data"] == "ciuser: rendy\npassword: [REDACTED]\n"
     )

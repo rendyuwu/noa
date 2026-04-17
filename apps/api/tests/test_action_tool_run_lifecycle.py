@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from noa_api.core.tools.registry import ToolDefinition
+from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
@@ -281,6 +282,61 @@ async def test_action_tool_run_service_sanitizes_non_json_result_values() -> Non
     assert completed is not None
     assert completed.result is not None
     assert completed.result["flag"]["completed_at"] == "2026-03-13T12:00:00+00:00"
+
+
+async def test_action_tool_run_service_protects_sensitive_args_at_rest_and_supports_decryption(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from noa_api.storage.postgres import action_tool_runs
+
+    repo = _FakeActionToolRunRepository(action_requests={}, tool_runs={})
+    service = ActionToolRunService(repository=repo)
+    encrypted = "enc::new-secret"
+
+    monkeypatch.setattr(
+        action_tool_runs,
+        "encrypt_text",
+        lambda value: value if value.startswith("enc::") else f"enc::{value}",
+    )
+    monkeypatch.setattr(
+        action_tool_runs,
+        "maybe_decrypt_text",
+        lambda value: (
+            value.removeprefix("enc::") if value.startswith("enc::") else value
+        ),
+    )
+
+    request = await service.create_action_request(
+        thread_id=uuid4(),
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "new-secret",
+            "reason": "Ticket #1661262",
+        },
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert request.args["new_password"] == encrypted
+    assert redact_sensitive_data(request.args)["new_password"] == "[redacted]"
+
+    run = await service.start_tool_run(
+        thread_id=uuid4(),
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        args=request.args,
+        action_request_id=request.id,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert run.args["new_password"] == encrypted
+    assert redact_sensitive_data(run.args)["new_password"] == "[redacted]"
+    assert (
+        action_tool_runs.decrypt_sensitive_args(run.args)["new_password"]
+        == "new-secret"
+    )
 
 
 async def test_action_tool_run_service_rejects_invalid_tool_result_shape(

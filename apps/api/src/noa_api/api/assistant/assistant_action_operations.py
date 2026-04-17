@@ -23,6 +23,7 @@ from noa_api.api.assistant.assistant_tool_result_operations import (
     AssistantMessageAuditRepositoryProtocol,
 )
 from noa_api.core.logging_context import log_context
+from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.core.agent.runner import (
     _require_matching_preflight,
     _resolve_requested_server_id,
@@ -46,7 +47,10 @@ from noa_api.storage.postgres.action_receipts import (
     ActionReceiptService,
     SQLActionReceiptRepository,
 )
-from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
+from noa_api.storage.postgres.action_tool_runs import (
+    ActionToolRunService,
+    decrypt_sensitive_args,
+)
 from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
@@ -225,6 +229,7 @@ async def deny_action_request(
     should_emit_receipt = False
     if should_create_workflow_receipt:
         assert workflow_family is not None
+        denied_args = decrypt_sensitive_args(denied.args)
         working_messages = await _list_working_messages(
             repository=repository,
             thread_id=thread_id,
@@ -233,7 +238,7 @@ async def deny_action_request(
         workflow_todos = build_workflow_todos(
             tool_name=denied.tool_name,
             workflow_family=workflow_family,
-            args=denied.args,
+            args=denied_args,
             phase="denied",
             preflight_evidence=preflight_evidence,
         )
@@ -252,7 +257,7 @@ async def deny_action_request(
         reply_template = build_workflow_reply_template(
             tool_name=denied.tool_name,
             workflow_family=workflow_family,
-            args=denied.args,
+            args=denied_args,
             phase="denied",
             preflight_evidence=preflight_evidence,
         )
@@ -264,7 +269,7 @@ async def deny_action_request(
         evidence_template = build_workflow_evidence_template(
             tool_name=denied.tool_name,
             workflow_family=workflow_family,
-            args=denied.args,
+            args=denied_args,
             phase="denied",
             preflight_evidence=preflight_evidence,
         )
@@ -400,11 +405,12 @@ async def approve_action_request(
     started = await action_tool_run_service.start_tool_run(
         thread_id=thread_id,
         tool_name=approved.tool_name,
-        args=approved.args,
+        args=decrypt_sensitive_args(approved.args),
         action_request_id=approved.id,
         requested_by_user_id=owner_user_id,
     )
     tool_call_id = str(started.id)
+    execution_args = decrypt_sensitive_args(approved.args)
     with log_context(
         action_request_id=str(approved.id),
         thread_id=str(thread_id),
@@ -430,7 +436,7 @@ async def approve_action_request(
                     "type": "tool-call",
                     "toolName": approved.tool_name,
                     "toolCallId": tool_call_id,
-                    "args": approved.args,
+                    "args": redact_sensitive_data(execution_args),
                 }
             ],
         )
@@ -515,7 +521,7 @@ async def execute_approved_tool_run(
 
     preflight_error = await _validate_approved_tool_preflight(
         tool_name=approved_request.tool_name,
-        args=approved_request.args,
+        args=decrypt_sensitive_args(approved_request.args),
         thread_id=thread_id,
         repository=repository,
         session=session,
@@ -531,7 +537,7 @@ async def execute_approved_tool_run(
             failed_todos = build_workflow_todos(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=decrypt_sensitive_args(approved_request.args),
                 phase="failed",
                 preflight_evidence=preflight_evidence,
                 error_code=preflight_error.error_code,
@@ -569,7 +575,7 @@ async def execute_approved_tool_run(
             reply_template = build_workflow_reply_template(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=decrypt_sensitive_args(approved_request.args),
                 phase="failed",
                 preflight_evidence=preflight_evidence,
                 error_code=preflight_error.error_code,
@@ -582,7 +588,7 @@ async def execute_approved_tool_run(
             evidence_template = build_workflow_evidence_template(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=decrypt_sensitive_args(approved_request.args),
                 phase="failed",
                 preflight_evidence=preflight_evidence,
                 error_code=preflight_error.error_code,
@@ -636,12 +642,13 @@ async def execute_approved_tool_run(
         repository=repository,
         thread_id=thread_id,
     )
+    execution_args = decrypt_sensitive_args(approved_request.args)
     preflight_evidence = collect_recent_preflight_evidence(working_messages)
     if tool.workflow_family is not None:
         executing_todos = build_workflow_todos(
             tool_name=approved_request.tool_name,
             workflow_family=tool.workflow_family,
-            args=approved_request.args,
+            args=execution_args,
             phase="executing",
             preflight_evidence=preflight_evidence,
         )
@@ -658,10 +665,10 @@ async def execute_approved_tool_run(
             )
 
     try:
-        validate_tool_arguments(tool=tool, args=approved_request.args)
+        validate_tool_arguments(tool=tool, args=execution_args)
         result = await _execute_tool(
             tool=tool,
-            args=approved_request.args,
+            args=execution_args,
             session=session,
             thread_id=thread_id,
             requested_by_user_id=owner_user_id,
@@ -680,13 +687,13 @@ async def execute_approved_tool_run(
             postflight_result = await fetch_postflight_result(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=execution_args,
                 session=session,
             )
             completed_todos = build_workflow_todos(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=execution_args,
                 phase="completed",
                 preflight_evidence=preflight_evidence,
                 result=persisted_result,
@@ -719,7 +726,7 @@ async def execute_approved_tool_run(
             reply_template = build_workflow_reply_template(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=execution_args,
                 phase="completed",
                 preflight_evidence=preflight_evidence,
                 result=persisted_result,
@@ -733,7 +740,7 @@ async def execute_approved_tool_run(
             evidence_template = build_workflow_evidence_template(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=execution_args,
                 phase="completed",
                 preflight_evidence=preflight_evidence,
                 result=persisted_result,
@@ -811,7 +818,7 @@ async def execute_approved_tool_run(
             failed_todos = build_workflow_todos(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=execution_args,
                 phase="failed",
                 preflight_evidence=preflight_evidence,
                 error_code=sanitized_error.error_code,
@@ -850,7 +857,7 @@ async def execute_approved_tool_run(
             reply_template = build_workflow_reply_template(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=execution_args,
                 phase="failed",
                 preflight_evidence=preflight_evidence,
                 error_code=sanitized_error.error_code,
@@ -863,7 +870,7 @@ async def execute_approved_tool_run(
             evidence_template = build_workflow_evidence_template(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,
-                args=approved_request.args,
+                args=execution_args,
                 phase="failed",
                 preflight_evidence=preflight_evidence,
                 error_code=sanitized_error.error_code,
