@@ -2055,12 +2055,13 @@ def _pool_move_evidence_summary(
     summary: list[str] = []
     if isinstance(before_state, dict):
         summary.append("Preflight captured for the exact source and destination pools.")
-    if result.get("verified") is True:
-        summary.append("Verification succeeded.")
-        if _pool_move_postflight_state(tool_name, postflight_result) == "degraded":
-            summary.append("Postflight refetch was degraded.")
-    elif _postflight_verified(tool_name, postflight_result):
-        summary.append("Postflight verification succeeded.")
+    summary.extend(
+        _pool_move_verification_summary_lines(
+            tool_name=tool_name,
+            result=result,
+            postflight_result=postflight_result,
+        )
+    )
     return summary
 
 
@@ -2140,16 +2141,10 @@ def _pool_move_completion_summary(
             _pool_table("Source pool after", source_after),
             _pool_table("Destination pool after", destination_after),
             f"Moved VMIDs: {_vmids_text(args.get('vmids'))}.",
-            *(
-                ["Verification succeeded.", "Postflight refetch was degraded."]
-                if result.get("verified") is True
-                and _pool_move_postflight_state(tool_name, postflight_result)
-                == "degraded"
-                else ["Verification succeeded."]
-                if result.get("verified") is True
-                else ["Postflight verification succeeded."]
-                if _postflight_verified(tool_name, postflight_result)
-                else []
+            *_pool_move_verification_summary_lines(
+                tool_name=tool_name,
+                result=result,
+                postflight_result=postflight_result,
             ),
         ]
     )
@@ -2161,6 +2156,22 @@ def _pool_move_verified(
     return result.get("verified") is True or _postflight_verified(
         tool_name, postflight_result
     )
+
+
+def _pool_move_verification_summary_lines(
+    *,
+    tool_name: str,
+    result: dict[str, object],
+    postflight_result: dict[str, object],
+) -> list[str]:
+    if result.get("verified") is True:
+        summary = ["Verification succeeded."]
+        if _pool_move_postflight_state(tool_name, postflight_result) == "degraded":
+            summary.append("Postflight refetch was degraded.")
+        return summary
+    if _postflight_verified(tool_name, postflight_result):
+        return ["Postflight verification succeeded."]
+    return []
 
 
 def _pool_move_postflight_state(
