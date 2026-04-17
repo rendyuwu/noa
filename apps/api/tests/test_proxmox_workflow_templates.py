@@ -1385,6 +1385,70 @@ def test_proxmox_workflow_completed_reply_summarizes_before_after_and_verificati
     assert "Verification succeeded." in reply.evidence_summary
 
 
+def test_proxmox_workflow_completed_evidence_marks_nic_postflight_verified() -> None:
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_disable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "maintenance window",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+                    "link_state": "up",
+                    "auto_selected_net": True,
+                    "nets": [],
+                },
+            }
+        ],
+        result={
+            "ok": False,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "status": "failed",
+            "message": "NIC disable failed",
+        },
+        postflight_result={
+            "ok": True,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "digest": "digest-2",
+            "net": "net0",
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+            "link_state": "down",
+            "auto_selected_net": False,
+            "nets": [],
+        },
+    )
+
+    assert evidence is not None
+    verification = next(
+        section for section in evidence.sections if section.key == "verification"
+    )
+    assert any(
+        item.label == "Verified" and item.value == "yes" for item in verification.items
+    )
+
+
 def test_proxmox_workflow_completed_reply_handles_failure_result_with_postflight_data() -> (
     None
 ):

@@ -244,7 +244,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
 
         before_items = _before_state_items(before_state)
         after_items = _after_state_items(result, postflight)
-        verification_items = _verification_items(result, postflight)
+        verification_items = _verification_items(context.tool_name, result, postflight)
 
         return WorkflowEvidenceTemplate(
             sections=[
@@ -636,11 +636,12 @@ def _after_state_items(
 
 
 def _verification_items(
-    result: dict[str, object], postflight_result: dict[str, object]
+    tool_name: str, result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
     verified = (
         "yes"
-        if result.get("verified") is True or _postflight_verified(postflight_result)
+        if result.get("verified") is True
+        or _postflight_verified(tool_name, postflight_result)
         else "no"
     )
     items = [
