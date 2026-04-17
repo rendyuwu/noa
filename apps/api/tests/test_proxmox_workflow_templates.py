@@ -2430,6 +2430,179 @@ def test_proxmox_enable_vm_nic_completed_todos_mark_verification_completed_when_
     )
 
 
+def test_proxmox_enable_vm_nic_completed_reply_returns_partial_when_failure_postflight_verifies_state() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "restore connectivity",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+                    "link_state": "down",
+                    "auto_selected_net": False,
+                    "nets": [],
+                },
+            }
+        ],
+        result={
+            "ok": False,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "status": "failed",
+            "message": "NIC enable failed",
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "verified": True,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "digest": "digest-2",
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+            "link_state": "up",
+        },
+    )
+
+    assert reply is not None
+    assert reply.outcome == "partial"
+    assert "postflight" in reply.summary.lower()
+
+
+def test_proxmox_enable_vm_nic_completed_reply_reports_verification_not_confirmed_without_postflight() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "restore connectivity",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+                    "link_state": "down",
+                    "auto_selected_net": False,
+                    "nets": [],
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "status": "changed",
+            "message": "NIC enabled",
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+            "after_net": "virtio=AA:BB:CC,bridge=vmbr0",
+            "link_state": "up",
+            "verified": False,
+        },
+        postflight_result={},
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "verification is not confirmed" in reply.summary.lower()
+
+
+def test_proxmox_enable_vm_nic_completed_todos_mark_verification_completed_when_result_verified() -> (
+    None
+):
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "reason": "restore connectivity",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "digest": "digest-1",
+                    "net": "net0",
+                    "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+                    "link_state": "down",
+                    "auto_selected_net": False,
+                    "nets": [],
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "status": "changed",
+            "message": "NIC enabled",
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+            "after_net": "virtio=AA:BB:CC,bridge=vmbr0",
+            "link_state": "up",
+            "verified": True,
+        },
+        postflight_result={},
+    )
+
+    assert workflow_todos is not None
+    assert workflow_todos[4]["status"] == "completed"
+    assert (
+        "Verify that the NIC finished in link state up." == workflow_todos[4]["content"]
+    )
+
+
 def test_proxmox_cloudinit_password_reset_completed_reply_matches_server_id_alias_preflight() -> (
     None
 ):

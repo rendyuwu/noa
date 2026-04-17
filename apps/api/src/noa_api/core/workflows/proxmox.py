@@ -32,6 +32,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         action_label = _action_label(context.tool_name)
         subject = _subject(context.args)
         before_state = _matching_preflight(context.preflight_evidence, context.args)
+        result = context.result if isinstance(context.result, dict) else {}
         reason = normalized_text(context.args.get("reason"))
 
         reason_status = "completed" if reason is not None else "pending"
@@ -53,7 +54,8 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
             execute_status = "completed"
             verify_status = (
                 "completed"
-                if _postflight_verified(context.tool_name, context.postflight_result)
+                if result.get("verified") is True
+                or _postflight_verified(context.tool_name, context.postflight_result)
                 else "cancelled"
             )
         elif context.phase == "denied":
@@ -189,7 +191,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                 title=f"{_action_completed_label(context.tool_name)} {title_subject}",
                 outcome="changed",
                 summary=(
-                    f"{subject} moved from link {current_state or 'unknown'} to link {after_state}, and verification succeeded."
+                    f"{subject} moved from link {current_state or 'unknown'} to link {after_state}, and {_verification_summary_sentence(context.tool_name, result, postflight)}."
                 ),
                 evidence_summary=_evidence_summary(
                     tool_name=context.tool_name,
@@ -693,6 +695,18 @@ def _evidence_summary(
     elif _postflight_verified(tool_name, postflight_result):
         summary.append("Postflight verification succeeded.")
     return summary
+
+
+def _verification_summary_sentence(
+    tool_name: str,
+    result: dict[str, object],
+    postflight_result: dict[str, object],
+) -> str:
+    if result.get("verified") is True:
+        return "verification succeeded"
+    if _postflight_verified(tool_name, postflight_result):
+        return "postflight verification succeeded"
+    return "verification is not confirmed"
 
 
 class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
