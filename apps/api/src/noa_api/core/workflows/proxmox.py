@@ -53,9 +53,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
             execute_status = "completed"
             verify_status = (
                 "completed"
-                if _pool_move_verified(
-                    context.tool_name, result, context.postflight_result
-                )
+                if _postflight_verified(context.tool_name, context.postflight_result)
                 else "cancelled"
             )
         elif context.phase == "denied":
