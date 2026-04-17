@@ -129,26 +129,6 @@ curl -k \
   'https://<pve-host>:8006/api2/json/access/users/<email@pve>'
 ```
 
-##### Read exact-node VM runtime state
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
-```
-
-##### Read exact-node VM config / pending changes
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
-```
-
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
-```
-
 ## Current Proxmox features actually implemented
 - Proxmox server inventory CRUD in NOA admin UI/API
 - Proxmox server connectivity validation
@@ -206,6 +186,27 @@ curl -k \
 
 This workflow requires the exact Proxmox node name. If the user only provides a VMID, ask for the node instead of using cluster-wide discovery endpoints.
 
+### Live runtime status/usage
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
+```
+
+### Full VM configuration/hardware
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
+```
+
+### Pending config changes
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
+```
+
 ### Notes
 - `status/current` = runtime state + CPU/mem/disk/net counters.
 - `config` = VM configuration/hardware definitions (disk/RAM/CPU/network).
@@ -215,10 +216,10 @@ This workflow requires the exact Proxmox node name. If the user only provides a 
 
 Use this flow for enabling or disabling a specific VM NIC on an exact node.
 
-- Auto-selection of `net` is preflight-only: when the VM has exactly one NIC, preflight may infer it; otherwise preflight returns `net_selection_required` and the available NIC list for user choice. Enable/disable CHANGE calls must use the concrete NIC key returned or confirmed by preflight.
-- Always run `proxmox_preflight_vm_nic_toggle` before any enable/disable CHANGE action.
-- The preflight must match the same `server_ref`, `node`, `vmid`, `net`, and `digest` that will be used for the change.
-- The preflight returns the config digest; the CHANGE call must echo that exact digest. If the VM config changed in the meantime, the operation fails closed with `digest_mismatch` and requires a fresh preflight.
+- Preflight-only NIC selection: when the VM has exactly one NIC, preflight may infer it; otherwise preflight returns `net_selection_required` and the available NIC list for user choice, and the ensuing CHANGE must use the concrete NIC key confirmed in that preflight.
+- `proxmox_preflight_vm_nic_toggle` must come from the current turn/context so the approval step uses matching preflight data for the same `server_ref`, `node`, `vmid`, and selected NIC.
+- Preflight returns the config digest; the CHANGE call must reuse that returned value exactly, and if the VM config changed in the meantime the operation fails closed with `digest_mismatch` and requires a fresh preflight.
+- Enable/disable CHANGE calls are approval-gated and require a recorded non-empty reason.
 - If the selected NIC is already in the requested state, the enable/disable request may return success with `status: "no-op"` and no config mutation.
 - Postflight verification must re-read the VM config and confirm the requested final link state: `up` for enable, `down` for disable.
 - Approval responses should summarize the selected NIC, the link-state transition, the digest, and the evidence expectations.
