@@ -480,3 +480,30 @@ def test_validate_tool_result_rejects_wrong_type_for_server_safe_nullable_field(
         )
 
     assert exc_info.value.details == ("servers[0].ssh_username must be a string",)
+
+
+def test_validate_tool_result_rejects_wrong_type_for_firewall_nullable_field() -> None:
+    tool = get_tool_definition("whm_firewall_unblock")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "available_tools": {"csf": True, "imunify": False},
+                "results": [
+                    {
+                        "target": "1.2.3.4",
+                        "ok": True,
+                        "status": "changed",
+                        "available_tools": {"csf": True, "imunify": False},
+                        "csf": "not-an-object",
+                        "imunify": None,
+                    }
+                ],
+            },
+        )
+
+    assert exc_info.value.details == ("results[0].csf must be an object",)
