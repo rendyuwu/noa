@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import crypt
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from passlib.hash import sha512_crypt
 
 
 @dataclass
@@ -71,7 +71,7 @@ def _server() -> _Server:
 
 
 def _password_hash(password: str) -> str:
-    return str(crypt.crypt(password, crypt.mksalt(crypt.METHOD_SHA512)))
+    return sha512_crypt.hash(password)
 
 
 def _install_client(monkeypatch, state: _ClientState) -> None:

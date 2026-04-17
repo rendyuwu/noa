@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import crypt
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,6 +10,10 @@ from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.proxmox.integrations.client import ProxmoxClient
 from noa_api.proxmox.server_ref import resolve_proxmox_server_ref
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
+from noa_api.proxmox.tools._cloudinit_passwords import (
+    cloudinit_dump_matches_password,
+    sanitize_cloudinit_dump_user,
+)
 
 _TASK_POLL_ATTEMPTS = 5
 _TASK_POLL_DELAY_SECONDS = 0.1
@@ -94,66 +97,8 @@ def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:
     return False
 
 
-def _sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]:
-    if not isinstance(dump_value, str):
-        return None, False
-
-    dump_text = dump_value.strip()
-    if not dump_text:
-        return None, False
-
-    sanitized_lines: list[str] = []
-    found_password = False
-    for line in dump_text.splitlines():
-        stripped = line.lstrip()
-        if not stripped.startswith("password:"):
-            sanitized_lines.append(line)
-            continue
-
-        value = stripped[len("password:") :].strip()
-        if not value:
-            return None, False
-
-        leading = line[: len(line) - len(stripped)]
-        sanitized_lines.append(f"{leading}password: [REDACTED]")
-        found_password = True
-
-    if not found_password:
-        return None, False
-
-    sanitized = "\n".join(sanitized_lines)
-    if dump_value.endswith("\n"):
-        sanitized += "\n"
-    return sanitized, True
-
-
-def _extract_cloudinit_password_hash(dump_value: object) -> str | None:
-    if not isinstance(dump_value, str):
-        return None
-
-    for line in dump_value.splitlines():
-        stripped = line.lstrip()
-        if not stripped.startswith("password:"):
-            continue
-        value = stripped[len("password:") :].strip()
-        return value or None
-    return None
-
-
-def _cloudinit_dump_matches_password(dump_value: object, new_password: str) -> bool:
-    password_hash = _extract_cloudinit_password_hash(dump_value)
-    if password_hash is None:
-        return False
-    if password_hash == "[REDACTED]":
-        return False
-    try:
-        return crypt.crypt(new_password, password_hash) == password_hash
-    except (ValueError, TypeError):
-        return False
-
-
 def _cloudinit_dump_confirms_password_reset(dump_value: object) -> bool:
-    sanitized_dump, confirmed = _sanitize_cloudinit_dump_user(dump_value)
+    sanitized_dump, confirmed = sanitize_cloudinit_dump_user(dump_value)
     return confirmed and sanitized_dump is not None
 
 
@@ -305,13 +250,13 @@ async def _wait_for_cloudinit_verification(
             )
 
         if _cloudinit_confirms_password_reset(cloudinit_result):
-            sanitized_dump, confirmed = _sanitize_cloudinit_dump_user(
+            sanitized_dump, confirmed = sanitize_cloudinit_dump_user(
                 dump_result.get("data")
             )
             if (
                 confirmed
                 and sanitized_dump is not None
-                and _cloudinit_dump_matches_password(
+                and cloudinit_dump_matches_password(
                     dump_result.get("data"), new_password
                 )
             ):

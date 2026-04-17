@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import crypt
-
 import pytest
+from passlib.hash import sha512_crypt
 
 from noa_api.core.workflows.registry import (
     build_workflow_evidence_template,
@@ -19,7 +18,7 @@ class _FakeSession:
 
 
 def _password_hash(password: str) -> str:
-    return str(crypt.crypt(password, crypt.mksalt(crypt.METHOD_SHA512)))
+    return sha512_crypt.hash(password)
 
 
 def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_and_preflight_gated() -> (
