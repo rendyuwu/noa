@@ -45,7 +45,7 @@ Current implementation uses this for NIC enable/disable.
 curl -k -X POST \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   --data-urlencode 'digest=<digest-from-config>' \
-  --data-urlencode 'net0=<updated-net-config>' \
+  --data-urlencode '<net-key>=<updated-net-config>' \
   'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
 ```
 
@@ -127,6 +127,26 @@ curl -k -X PUT \
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   'https://<pve-host>:8006/api2/json/access/users/<email@pve>'
+```
+
+##### Read exact-node VM runtime state
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
+```
+
+##### Read exact-node VM config / pending changes
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
+```
+
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
 ```
 
 ## Current Proxmox features actually implemented
