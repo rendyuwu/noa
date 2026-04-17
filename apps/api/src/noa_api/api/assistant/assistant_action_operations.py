@@ -14,6 +14,7 @@ from noa_api.api.assistant.assistant_errors import (
     action_request_already_decided_error,
     action_request_not_found_error,
     change_approval_required_error,
+    change_reason_required_error,
     parse_action_request_id,
     tool_access_denied_error,
     user_pending_approval_error,
@@ -55,6 +56,11 @@ from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRisk
 from noa_api.storage.postgres.models import ActionRequest, ToolRun
 
 logger = logging.getLogger(__name__)
+
+
+def _has_recorded_change_reason(args: dict[str, object]) -> bool:
+    reason = args.get("reason")
+    return isinstance(reason, str) and reason.strip() != ""
 
 
 async def _emit_update_workflow_todo_messages(
@@ -379,6 +385,8 @@ async def approve_action_request(
     )
     if request.risk != ToolRisk.CHANGE:
         raise change_approval_required_error()
+    if not _has_recorded_change_reason(request.args):
+        raise change_reason_required_error()
     if not await authorize_tool_access(request.tool_name):
         raise tool_access_denied_error()
 

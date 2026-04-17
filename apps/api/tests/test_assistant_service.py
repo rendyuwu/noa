@@ -563,7 +563,7 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
     request = await repo.create_action_request(
         thread_id=thread_id,
         tool_name="fake_change_tool",
-        args={"key": "feature_x", "value": True},
+        args={"key": "feature_x", "value": True, "reason": "customer request"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
@@ -593,7 +593,11 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
                 "type": "tool-call",
                 "toolName": "fake_change_tool",
                 "toolCallId": str(started.id),
-                "args": {"key": "feature_x", "value": True},
+                "args": {
+                    "key": "feature_x",
+                    "value": True,
+                    "reason": "customer request",
+                },
             }
         ],
     }
@@ -602,6 +606,50 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
         "tool_started",
     ]
     assert operations.calls == [("execute", "fake_change_tool")]
+
+
+async def test_approve_action_rejects_change_request_without_recorded_reason() -> None:
+    from noa_api.api.routes.assistant_action_operations import (
+        approve_action_request,
+    )
+
+    owner_id = uuid4()
+    thread_id = uuid4()
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    request = await repo.create_action_request(
+        thread_id=thread_id,
+        tool_name="fake_change_tool",
+        args={"key": "feature_x", "value": True},
+        risk=ToolRisk.CHANGE,
+        requested_by_user_id=owner_id,
+    )
+    assistant_repo = _FakeAssistantRepository()
+    operations = _FakeApprovedToolExecutor()
+
+    with pytest.raises(Exception) as exc_info:
+        await approve_action_request(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            action_request_id=str(request.id),
+            is_user_active=True,
+            authorize_tool_access=lambda _tool: _allow(),
+            repository=assistant_repo,
+            action_tool_run_service=ActionToolRunService(repository=repo),
+            execute_tool=operations.execute,
+        )
+
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=409,
+        detail="Change action request is missing reason",
+        error_code="change_reason_required",
+    )
+    assert request.status == ActionRequestStatus.PENDING
+    assert repo.tool_runs == {}
+    assert assistant_repo.messages == []
+    assert assistant_repo.audits == []
+    assert operations.calls == []
 
 
 async def test_execute_approved_tool_run_fails_when_tool_definition_missing(
@@ -2111,13 +2159,15 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
     request = await repo.create_action_request(
         thread_id=thread_id,
         tool_name="fake_change_tool",
-        args={"key": "feature_x", "value": True},
+        args={"key": "feature_x", "value": True, "reason": "customer request"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
 
-    async def fake_change_tool(*, session, key: str, value: bool, **kwargs):
-        _ = session, key, value, kwargs
+    async def fake_change_tool(
+        *, session, key: str, value: bool, reason: str, **kwargs
+    ):
+        _ = session, key, value, reason, kwargs
         return {"ok": True}
 
     tool = ToolDefinition(
@@ -2129,8 +2179,9 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
             "properties": {
                 "key": {"type": "string", "minLength": 1},
                 "value": {"type": "boolean"},
+                "reason": {"type": "string", "minLength": 1},
             },
-            "required": ["key", "value"],
+            "required": ["key", "value", "reason"],
             "additionalProperties": False,
         },
         execute=fake_change_tool,
@@ -2193,13 +2244,13 @@ async def test_assistant_service_approve_change_tool_failure_is_persisted_and_do
     request = await repo.create_action_request(
         thread_id=thread_id,
         tool_name="failing_change",
-        args={},
+        args={"reason": "customer request"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
 
-    async def failing_change(*, session, **kwargs):
-        _ = session, kwargs
+    async def failing_change(*, session, reason: str, **kwargs):
+        _ = session, reason, kwargs
         raise RuntimeError("boom")
 
     tool = ToolDefinition(
@@ -2208,8 +2259,10 @@ async def test_assistant_service_approve_change_tool_failure_is_persisted_and_do
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
-            "properties": {},
-            "required": [],
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
             "additionalProperties": False,
         },
         execute=failing_change,
@@ -2269,13 +2322,13 @@ async def test_assistant_service_approve_change_tool_timeout_is_sanitized(
     request = await repo.create_action_request(
         thread_id=thread_id,
         tool_name="timeout_change",
-        args={},
+        args={"reason": "customer request"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
 
-    async def timeout_change(*, session, **kwargs):
-        _ = session, kwargs
+    async def timeout_change(*, session, reason: str, **kwargs):
+        _ = session, reason, kwargs
         raise asyncio.TimeoutError("slow backend")
 
     tool = ToolDefinition(
@@ -2284,8 +2337,10 @@ async def test_assistant_service_approve_change_tool_timeout_is_sanitized(
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
-            "properties": {},
-            "required": [],
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
             "additionalProperties": False,
         },
         execute=timeout_change,
@@ -2337,7 +2392,7 @@ async def test_assistant_service_approve_change_tool_invalid_args_is_persisted(
     request = await repo.create_action_request(
         thread_id=thread_id,
         tool_name="invalid_change_args",
-        args={},
+        args={"reason": "customer request", "unexpected": True},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
@@ -2394,7 +2449,7 @@ async def test_assistant_service_approve_change_tool_invalid_args_is_persisted(
     assert part["result"] == {
         "error": "Tool arguments are invalid",
         "error_code": "invalid_tool_arguments",
-        "details": ["Missing required field 'reason'"],
+        "details": ["Unexpected field 'unexpected'"],
     }
 
     assert [event["event_type"] for event in assistant_repo.audits] == [
@@ -2404,9 +2459,9 @@ async def test_assistant_service_approve_change_tool_invalid_args_is_persisted(
     ]
 
 
-async def test_assistant_service_approve_change_tool_blank_string_args_are_rejected(
-    monkeypatch,
-) -> None:
+async def test_assistant_service_approve_change_tool_blank_reason_is_rejected_at_approval() -> (
+    None
+):
     owner_id = uuid4()
     thread_id = uuid4()
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
@@ -2418,30 +2473,6 @@ async def test_assistant_service_approve_change_tool_blank_string_args_are_rejec
         requested_by_user_id=owner_id,
     )
 
-    async def guarded_change(*, session, reason: str, **kwargs):
-        _ = session, reason, kwargs
-        raise AssertionError("tool should not execute when args are blank")
-
-    tool = ToolDefinition(
-        name="invalid_blank_change_args",
-        description="Requires a non-blank reason argument.",
-        risk=ToolRisk.CHANGE,
-        parameters_schema={
-            "type": "object",
-            "properties": {
-                "reason": {"type": "string", "minLength": 1},
-            },
-            "required": ["reason"],
-            "additionalProperties": False,
-        },
-        execute=guarded_change,
-    )
-
-    monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
-        lambda name: tool if name == tool.name else None,
-    )
-
     assistant_repo = _FakeAssistantRepository()
     service = AssistantService(
         assistant_repo,
@@ -2450,23 +2481,26 @@ async def test_assistant_service_approve_change_tool_blank_string_args_are_rejec
         session=_FakeSession(),
     )
 
-    await service.approve_action(
-        owner_user_id=owner_id,
-        owner_user_email="owner@example.com",
-        thread_id=thread_id,
-        action_request_id=str(request.id),
-        is_user_active=True,
-        authorize_tool_access=lambda _tool: _allow(),
-    )
+    with pytest.raises(Exception) as exc_info:
+        await service.approve_action(
+            owner_user_id=owner_id,
+            owner_user_email="owner@example.com",
+            thread_id=thread_id,
+            action_request_id=str(request.id),
+            is_user_active=True,
+            authorize_tool_access=lambda _tool: _allow(),
+        )
 
-    run = next(iter(repo.tool_runs.values()))
-    assert run.status == ToolRunStatus.FAILED
-    assert run.error == "invalid_tool_arguments"
-    assert assistant_repo.messages[-1]["parts"][0]["result"] == {
-        "error": "Tool arguments are invalid",
-        "error_code": "invalid_tool_arguments",
-        "details": ["reason must not be blank"],
-    }
+    _assert_assistant_domain_error(
+        exc_info.value,
+        status_code=409,
+        detail="Change action request is missing reason",
+        error_code="change_reason_required",
+    )
+    assert request.status == ActionRequestStatus.PENDING
+    assert repo.tool_runs == {}
+    assert assistant_repo.messages == []
+    assert assistant_repo.audits == []
 
 
 async def test_assistant_service_approve_change_tool_invalid_result_is_persisted(
@@ -2560,13 +2594,13 @@ async def test_assistant_service_approve_change_tool_logs_original_exception(
     request = await repo.create_action_request(
         thread_id=thread_id,
         tool_name="failing_change_logged",
-        args={},
+        args={"reason": "customer request"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
 
-    async def failing_change(*, session, **kwargs):
-        _ = session, kwargs
+    async def failing_change(*, session, reason: str, **kwargs):
+        _ = session, reason, kwargs
         raise RuntimeError("boom")
 
     tool = ToolDefinition(
@@ -2575,8 +2609,10 @@ async def test_assistant_service_approve_change_tool_logs_original_exception(
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
-            "properties": {},
-            "required": [],
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
             "additionalProperties": False,
         },
         execute=failing_change,
@@ -3129,13 +3165,13 @@ async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools
     request = await repo.create_action_request(
         thread_id=thread_id,
         tool_name="json_unsafe_change",
-        args={},
+        args={"reason": "customer request"},
         risk=ToolRisk.CHANGE,
         requested_by_user_id=owner_id,
     )
 
-    async def change_tool(*, session, **kwargs):
-        _ = session, kwargs
+    async def change_tool(*, session, reason: str, **kwargs):
+        _ = session, reason, kwargs
         return {"when": datetime(2026, 3, 13, 12, 0, 0, tzinfo=UTC)}
 
     tool = ToolDefinition(
@@ -3144,8 +3180,10 @@ async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools
         risk=ToolRisk.CHANGE,
         parameters_schema={
             "type": "object",
-            "properties": {},
-            "required": [],
+            "properties": {
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["reason"],
             "additionalProperties": False,
         },
         execute=change_tool,

@@ -8,6 +8,7 @@ from noa_api.api.error_codes import (
     ACTION_REQUEST_ALREADY_DECIDED,
     ACTION_REQUEST_NOT_FOUND,
     CHANGE_APPROVAL_REQUIRED,
+    CHANGE_REASON_REQUIRED,
     INVALID_ACTION_REQUEST_ID,
     INVALID_TOOL_RESULT,
     INVALID_TOOL_CALL_ID,
@@ -177,6 +178,14 @@ def change_approval_required_error() -> AssistantDomainError:
         status_code=status.HTTP_400_BAD_REQUEST,
         detail="Only CHANGE actions require approval",
         error_code=CHANGE_APPROVAL_REQUIRED,
+    )
+
+
+def change_reason_required_error() -> AssistantDomainError:
+    return assistant_domain_error(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Change action request is missing reason",
+        error_code=CHANGE_REASON_REQUIRED,
     )
 
 
