@@ -40,14 +40,6 @@ def _upstream_error(
     }
 
 
-def _invalid_node_error() -> dict[str, object]:
-    return {
-        "ok": False,
-        "error_code": "invalid_request",
-        "message": "Node is required",
-    }
-
-
 def _sanitize_vm_payload(payload: object) -> object:
     if isinstance(payload, list):
         return [_sanitize_vm_payload(item) for item in payload]
@@ -80,9 +72,6 @@ async def _fetch_vm_read_data(
 
     client = client_or_error
     normalized_node = node.strip()
-    if not normalized_node:
-        return _invalid_node_error()
-
     result = await fetcher(client, normalized_node, vmid)
     if result.get("ok") is not True:
         return _upstream_error(result, fallback_message=fallback_message)
@@ -122,8 +111,6 @@ async def _fetch_vm_config(
 
     client = client_or_error
     normalized_node = node.strip()
-    if not normalized_node:
-        return _invalid_node_error()
 
     result = await client.get_qemu_config(normalized_node, vmid)
     if result.get("ok") is not True:
@@ -131,18 +118,10 @@ async def _fetch_vm_config(
             result, fallback_message="Proxmox VM config lookup failed"
         )
 
-    config = result.get("config")
-    if not isinstance(config, (dict, list)):
-        return {
-            "ok": False,
-            "error_code": "invalid_response",
-            "message": "Proxmox returned an unexpected QEMU config payload",
-        }
-
     return {
         "ok": True,
         "message": "ok",
-        "data": _sanitize_vm_payload(config),
+        "data": _sanitize_vm_payload(result.get("config")),
     }
 
 
