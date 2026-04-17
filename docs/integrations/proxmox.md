@@ -46,8 +46,8 @@ curl -k \
 ```
 
 ##### Update QEMU VM config
-Current implementation uses this for NIC enable/disable.
-Those NIC CHANGE actions require approval, a recorded reason, and captured before/after evidence.
+Current implementation uses this for NIC enable/disable after `proxmox_preflight_vm_nic_toggle`.
+Those NIC CHANGE actions require approval, a recorded reason, exact preflight matching on `server_ref`, `node`, `vmid`, `net`, and `digest`, digest reuse from preflight, and captured before/after evidence.
 
 ```bash
 curl -k -X POST \
@@ -62,26 +62,6 @@ curl -k -X POST \
 curl -k \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   'https://<pve-host>:8006/api2/json/nodes/<node>/tasks/<upid>/status'
-```
-
-##### Read exact-node VM runtime state
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
-```
-
-##### Read exact-node VM config / pending changes
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
-```
-
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
 ```
 
 ##### Cloud-init password reset / verification
@@ -259,6 +239,17 @@ curl -k \
 - `status/current` = runtime state + CPU/mem/disk/net counters.
 - `config` = VM configuration/hardware definitions (disk/RAM/CPU/network).
 - `pending` = pending config changes not yet applied.
+
+### VM NIC toggle workflow
+
+Use this flow for enabling or disabling a specific VM NIC on an exact node.
+
+- Always run `proxmox_preflight_vm_nic_toggle` before any enable/disable CHANGE action.
+- The preflight must match the same `server_ref`, `node`, `vmid`, `net`, and `digest` that will be used for the change.
+- The CHANGE call reuses the config digest captured during preflight so the update is guarded by the same optimistic-lock value.
+- Postflight verification must re-read the VM config and confirm the requested final link state: `up` for enable, `down` for disable.
+- Approval responses should summarize the selected NIC, the link-state transition, the digest, and the evidence expectations.
+- Completion responses should summarize the selected NIC, the completed link-state transition, the digest used, and the verification evidence collected.
 
 ### Pool membership move workflow
 
