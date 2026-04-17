@@ -2646,7 +2646,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postf
     )
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_show_postflight_verification_failure_when_postflight_fails() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_show_postflight_refetch_degraded_when_unverified() -> (
     None
 ):
     reply = build_workflow_reply_template(
