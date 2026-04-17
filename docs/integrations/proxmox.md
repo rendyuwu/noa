@@ -193,23 +193,23 @@ curl -k \
   'https://<pve-host>:8006/api2/json/access/permissions'
 ```
 
-### 4. Remove VM(s) from the source pool
-```bash
-curl -k -X PUT \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'poolid=<old-poolid>' \
-  --data-urlencode 'vms=<vmid-list>' \
-  --data-urlencode 'delete=1' \
-  'https://<pve-host>:8006/api2/json/pools'
-```
-
-### 5. Add VM(s) to the destination pool
+### 4. Add VM(s) to the destination pool
 ```bash
 curl -k -X PUT \
   -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
   --data-urlencode 'poolid=<new-poolid>' \
   --data-urlencode 'vms=<vmid-list>' \
   --data-urlencode 'allow-move=1' \
+  'https://<pve-host>:8006/api2/json/pools'
+```
+
+### 5. Remove VM(s) from the source pool if they still remain there
+```bash
+curl -k -X PUT \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  --data-urlencode 'poolid=<old-poolid>' \
+  --data-urlencode 'vms=<vmid-list>' \
+  --data-urlencode 'delete=1' \
   'https://<pve-host>:8006/api2/json/pools'
 ```
 
@@ -220,3 +220,4 @@ curl -k -X PUT \
 - User-facing results should summarize before/after pool membership for the moved VM set.
 - NOA workflow replies should render the pool membership tables from structured member data with columns `VMID`, `Name`, `Node`, and `Status`.
 - Approval replies should show source pool before and destination pool before; completion replies should show source before/after and destination before/after.
+- Implementation order is add-to-destination first, then remove-from-source only if the requested VMIDs still remain in the source pool, followed by final-state verification.

@@ -485,9 +485,15 @@ def _verification_content(context: WorkflowTemplateContext) -> str:
 
 
 def _reason_step_content(
-    *, action_label: str, action_verb: str, reason: str | None
+    *,
+    action_label: str,
+    action_verb: str,
+    reason: str | None,
+    missing_reason_text: str | None = None,
 ) -> str:
     if reason is None:
+        if missing_reason_text is not None:
+            return missing_reason_text
         gerund = "enabling" if action_verb == "enable" else "disabling"
         return f"Ask for a short reason before {gerund} the VM NIC."
     return f"Reason captured for the {action_label} change: {reason}."
@@ -635,6 +641,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                 "content": _reason_step_content(
                     action_label="reset cloud-init password",
                     action_verb="reset",
+                    missing_reason_text="Ask for a short reason before resetting the cloud-init password.",
                     reason=reason,
                 ),
                 "status": reason_status,
@@ -861,6 +868,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 "content": _reason_step_content(
                     action_label="move pool membership",
                     action_verb="move",
+                    missing_reason_text="Ask for a short reason before moving pool membership.",
                     reason=reason,
                 ),
                 "status": reason_status,
@@ -1279,23 +1287,32 @@ def _cloudinit_verification_items(
         ),
         WorkflowEvidenceItem(
             label="Task status",
-            value=normalized_text(
-                (result.get("set_password_task") or {}).get("task_status")
+            value=(
+                normalized_text(
+                    (result.get("set_password_task") or {}).get("task_status")
+                )
+                or "none"
             )
             if isinstance(result.get("set_password_task"), dict)
             else "none",
         ),
         WorkflowEvidenceItem(
             label="Task exit status",
-            value=normalized_text(
-                (result.get("set_password_task") or {}).get("task_exit_status")
+            value=(
+                normalized_text(
+                    (result.get("set_password_task") or {}).get("task_exit_status")
+                )
+                or "none"
             )
             if isinstance(result.get("set_password_task"), dict)
             else "none",
         ),
         WorkflowEvidenceItem(
             label="UPID",
-            value=normalized_text((result.get("set_password_task") or {}).get("data"))
+            value=(
+                normalized_text((result.get("set_password_task") or {}).get("data"))
+                or "none"
+            )
             if isinstance(result.get("set_password_task"), dict)
             else "none",
         ),
@@ -1544,13 +1561,19 @@ def _pool_move_verification_items(
         ),
         WorkflowEvidenceItem(
             label="Add task",
-            value=normalized_text((result.get("add_to_destination") or {}).get("data"))
+            value=(
+                normalized_text((result.get("add_to_destination") or {}).get("data"))
+                or "none"
+            )
             if isinstance(result.get("add_to_destination"), dict)
             else "none",
         ),
         WorkflowEvidenceItem(
             label="Remove task",
-            value=normalized_text((result.get("remove_from_source") or {}).get("data"))
+            value=(
+                normalized_text((result.get("remove_from_source") or {}).get("data"))
+                or "none"
+            )
             if isinstance(result.get("remove_from_source"), dict)
             else "none",
         ),

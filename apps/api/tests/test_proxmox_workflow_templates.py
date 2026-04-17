@@ -6,6 +6,7 @@ from noa_api.core.workflows.registry import (
     build_workflow_todos,
     require_matching_preflight,
 )
+from noa_api.core.workflows.types import workflow_evidence_template_payload
 
 
 def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_and_preflight_gated() -> (
@@ -19,7 +20,6 @@ def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_an
             "node": "pve1-node",
             "vmid": 101,
             "new_password": "secret",
-            "reason": "customer request",
         },
         phase="waiting_on_user",
         preflight_evidence=[
@@ -48,6 +48,7 @@ def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_an
         "pending",
     ]
     assert "preflight" in todos[0]["content"].lower()
+    assert "resetting the cloud-init password" in todos[1]["content"].lower()
 
 
 def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note() -> (
@@ -97,6 +98,80 @@ def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note(
     assert reply.outcome == "changed"
     assert "may not take effect immediately" in reply.summary
     assert "restart or stop/start" in reply.next_step
+
+
+def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wrapper_data() -> (
+    None
+):
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {"data": {"cipassword": "old"}},
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "set_password_task": {"ok": True, "message": "ok", "data": None},
+            "regenerate_cloudinit": {"ok": True, "message": "ok", "data": None},
+            "cloudinit": {"ok": True, "message": "ok", "digest": "digest-2"},
+            "cloudinit_dump_user": {
+                "ok": True,
+                "message": "ok",
+                "data": {"password": "secret"},
+            },
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "cloudinit": {"ok": True, "message": "ok", "digest": "digest-2"},
+            "cloudinit_dump_user": {
+                "ok": True,
+                "message": "ok",
+                "data": {"password": "secret"},
+            },
+            "verified": True,
+        },
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    verification = next(
+        section
+        for section in payload["evidenceSections"]
+        if section["key"] == "verification"
+    )
+    assert any(
+        item["label"] == "UPID" and item["value"] == "none"
+        for item in verification["items"]
+    )
 
 
 def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_tables() -> (
@@ -178,6 +253,72 @@ def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_ta
     assert reply.outcome == "info"
     assert "| VMID | Name | Node | Status |" in reply.summary
     assert reply.summary.count("| 101 | alpha | pve1 | running |") == 1
+    assert "pool membership" in reply.summary.lower()
+
+
+def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_reason() -> (
+    None
+):
+    todos = build_workflow_todos(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101, 102],
+            "email": "l1@example.com",
+        },
+        phase="waiting_on_user",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101, 102],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {
+                                        "vmid": 101,
+                                        "name": "alpha",
+                                        "node": "pve1",
+                                        "status": "running",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "destination_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-b",
+                                "members": [],
+                            }
+                        ]
+                    },
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101, 102],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+    )
+
+    assert todos is not None
+    assert "moving pool membership" in todos[1]["content"].lower()
 
 
 def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_after_tables() -> (
@@ -339,6 +480,149 @@ def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_a
     assert "Source pool before" in reply.summary
     assert "| 101 | alpha | pve1 | running |" in reply.summary
     assert "Source pool after" in reply.summary
+
+
+def test_proxmox_pool_membership_move_completed_evidence_serializes_null_wrapper_data() -> (
+    None
+):
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {
+                                        "vmid": 101,
+                                        "name": "alpha",
+                                        "node": "pve1",
+                                        "status": "running",
+                                    }
+                                ],
+                            }
+                        ]
+                    },
+                    "destination_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-b",
+                                "members": [],
+                            }
+                        ]
+                    },
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "source_pool_before": {
+                "data": [
+                    {
+                        "poolid": "pool-a",
+                        "members": [
+                            {
+                                "vmid": 101,
+                                "name": "alpha",
+                                "node": "pve1",
+                                "status": "running",
+                            }
+                        ],
+                    }
+                ]
+            },
+            "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
+            "add_to_destination": {"ok": True, "message": "ok", "data": None},
+            "remove_from_source": {"ok": True, "message": "ok", "data": None},
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [
+                    {
+                        "poolid": "pool-b",
+                        "members": [
+                            {
+                                "vmid": 101,
+                                "name": "alpha",
+                                "node": "pve1",
+                                "status": "running",
+                            }
+                        ],
+                    }
+                ]
+            },
+            "results": [{"vmid": 101, "status": "changed"}],
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "server_id": "srv-1",
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [
+                    {
+                        "poolid": "pool-b",
+                        "members": [
+                            {
+                                "vmid": 101,
+                                "name": "alpha",
+                                "node": "pve1",
+                                "status": "running",
+                            }
+                        ],
+                    }
+                ]
+            },
+            "verified": True,
+        },
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    verification = next(
+        section
+        for section in payload["evidenceSections"]
+        if section["key"] == "verification"
+    )
+    assert any(
+        item["label"] == "Add task" and item["value"] == "none"
+        for item in verification["items"]
+    )
+    assert any(
+        item["label"] == "Remove task" and item["value"] == "none"
+        for item in verification["items"]
+    )
 
 
 def test_proxmox_workflow_completed_reply_summarizes_before_after_and_verification() -> (
