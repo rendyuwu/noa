@@ -696,9 +696,13 @@ def _evidence_summary(
         summary.append(f"After: link {final_state}.")
     if normalized_text(result.get("message")) is not None:
         summary.append(f"Tool result: {normalized_text(result.get('message'))}.")
-    if _verification_confirmed(tool_name, result, postflight_result):
+    if result.get("verified") is True and _verification_confirmed(
+        tool_name, result, postflight_result
+    ):
         summary.append("Verification succeeded.")
-    elif _postflight_verified(tool_name, postflight_result):
+    elif result.get("verified") is not True and _postflight_verified(
+        tool_name, postflight_result
+    ):
         summary.append("Postflight verification succeeded.")
     return summary
 
@@ -708,8 +712,14 @@ def _verification_summary_sentence(
     result: dict[str, object],
     postflight_result: dict[str, object],
 ) -> str:
-    if _verification_confirmed(tool_name, result, postflight_result):
+    if result.get("verified") is True and _verification_confirmed(
+        tool_name, result, postflight_result
+    ):
         return "verification succeeded"
+    if result.get("verified") is not True and _postflight_verified(
+        tool_name, postflight_result
+    ):
+        return "postflight verification succeeded"
     return "verification is not confirmed"
 
 

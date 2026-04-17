@@ -2351,6 +2351,48 @@ def test_proxmox_enable_vm_nic_completed_evidence_marks_postflight_verified() ->
     )
 
 
+def test_proxmox_enable_vm_nic_completed_reply_and_evidence_use_postflight_verification_wording_when_only_postflight_confirms_state() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=_enable_vm_nic_result(verified=False),
+        postflight_result=_enable_vm_nic_postflight_result(),
+    )
+
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+        result=_enable_vm_nic_result(verified=False),
+        postflight_result=_enable_vm_nic_postflight_result(),
+    )
+
+    assert reply is not None
+    assert "postflight verification succeeded." in reply.summary.lower()
+    assert "verification succeeded." not in reply.summary.lower().replace(
+        "postflight verification succeeded.", ""
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    verification = next(
+        section
+        for section in payload["evidenceSections"]
+        if section["key"] == "verification"
+    )
+    assert any(
+        item["label"] == "Verified" and item["value"] == "yes"
+        for item in verification["items"]
+    )
+
+
 def test_proxmox_enable_vm_nic_completed_todos_mark_verification_completed_when_postflight_verified() -> (
     None
 ):
