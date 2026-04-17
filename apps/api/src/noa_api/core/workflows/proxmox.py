@@ -2050,7 +2050,7 @@ def _pool_move_evidence_summary(
     tool_name: str,
     before_state: dict[str, object] | None,
     result: dict[str, object],
-    postflight_result: dict[str, object],
+    postflight_result: dict[str, object] | None,
 ) -> list[str]:
     summary: list[str] = []
     if isinstance(before_state, dict):
@@ -2101,9 +2101,10 @@ def _pool_move_completion_summary(
     tool_name: str,
     before_state: dict[str, object] | None,
     result: dict[str, object],
-    postflight_result: dict[str, object],
+    postflight_result: dict[str, object] | None,
     args: dict[str, object],
 ) -> str:
+    postflight = postflight_result if isinstance(postflight_result, dict) else {}
     source_before = (
         before_state.get("source_pool")
         if isinstance(before_state, dict)
@@ -2123,15 +2124,15 @@ def _pool_move_completion_summary(
     source_after = (
         result.get("source_pool_after")
         if isinstance(result.get("source_pool_after"), dict)
-        else postflight_result.get("source_pool_after")
-        if isinstance(postflight_result.get("source_pool_after"), dict)
+        else postflight.get("source_pool_after")
+        if isinstance(postflight.get("source_pool_after"), dict)
         else None
     )
     destination_after = (
         result.get("destination_pool_after")
         if isinstance(result.get("destination_pool_after"), dict)
-        else postflight_result.get("destination_pool_after")
-        if isinstance(postflight_result.get("destination_pool_after"), dict)
+        else postflight.get("destination_pool_after")
+        if isinstance(postflight.get("destination_pool_after"), dict)
         else None
     )
     return "\n\n".join(
@@ -2151,7 +2152,9 @@ def _pool_move_completion_summary(
 
 
 def _pool_move_verified(
-    tool_name: str, result: dict[str, object], postflight_result: dict[str, object]
+    tool_name: str,
+    result: dict[str, object],
+    postflight_result: dict[str, object] | None,
 ) -> bool:
     return result.get("verified") is True or _postflight_verified(
         tool_name, postflight_result
@@ -2162,25 +2165,35 @@ def _pool_move_verification_summary_lines(
     *,
     tool_name: str,
     result: dict[str, object],
-    postflight_result: dict[str, object],
+    postflight_result: dict[str, object] | None,
 ) -> list[str]:
     if result.get("verified") is True:
         summary = ["Verification succeeded."]
-        if _pool_move_postflight_state(tool_name, postflight_result) == "degraded":
+        postflight_state = _pool_move_postflight_state(tool_name, postflight_result)
+        if postflight_state == "degraded":
             summary.append("Postflight refetch was degraded.")
+        elif postflight_state == "failed":
+            summary.append("Postflight verification failed.")
         return summary
-    if _postflight_verified(tool_name, postflight_result):
+    postflight_state = _pool_move_postflight_state(tool_name, postflight_result)
+    if postflight_state == "verified":
         return ["Postflight verification succeeded."]
+    if postflight_state == "failed":
+        return ["Postflight verification failed."]
+    if postflight_state == "degraded":
+        return ["Postflight refetch was degraded."]
     return []
 
 
 def _pool_move_postflight_state(
-    tool_name: str, postflight_result: dict[str, object]
+    tool_name: str, postflight_result: dict[str, object] | None
 ) -> str | None:
     if not isinstance(postflight_result, dict) or not postflight_result:
         return None
     if _postflight_verified(tool_name, postflight_result):
         return "verified"
+    if normalized_text(postflight_result.get("error_code")) == "postflight_failed":
+        return "failed"
     return "degraded"
 
 
