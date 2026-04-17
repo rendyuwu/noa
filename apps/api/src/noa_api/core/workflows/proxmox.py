@@ -431,10 +431,9 @@ def _server_identity_matches_any(
     result_server_id = normalized_text(result.get("server_id"))
     item_server_ref = normalized_text(item_args.get("server_ref"))
     if requested_server_id is not None and result_server_id is not None:
-        return (
-            result_server_id == requested_server_id
-            or item_server_ref == requested_server_ref
-        )
+        return result_server_id == requested_server_id
+    if requested_server_id is not None:
+        return item_server_ref == requested_server_ref
     if item_server_ref == requested_server_ref:
         return True
     return result_server_id is not None and result_server_id == requested_server_ref
