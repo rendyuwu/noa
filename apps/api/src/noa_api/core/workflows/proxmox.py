@@ -754,6 +754,10 @@ def _verification_confirmed(
             postflight_state = _link_state(postflight_result)
             if result_state != desired_state:
                 return False
+            if postflight_result and not _postflight_verified(
+                tool_name, postflight_result
+            ):
+                return False
             if postflight_state is not None and postflight_state != desired_state:
                 return False
         return True
