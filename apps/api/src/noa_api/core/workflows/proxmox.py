@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
 from noa_api.core.workflows.types import (
     WorkflowEvidenceItem,
@@ -13,6 +16,9 @@ from noa_api.core.workflows.types import (
     collect_recent_preflight_evidence,
     normalized_text,
 )
+from noa_api.proxmox.integrations.client import ProxmoxClient
+from noa_api.proxmox.server_ref import resolve_proxmox_server_ref
+from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 from noa_api.proxmox.tools.nic_tools import proxmox_preflight_vm_nic_toggle
 from noa_api.storage.postgres.workflow_todos import WorkflowTodoItem
 
@@ -597,6 +603,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             context.preflight_evidence, context.args
         )
         reason = normalized_text(context.args.get("reason"))
+        failed_result = _workflow_result_failed(context.result)
 
         preflight_status = "completed" if before_state is not None else "in_progress"
         reason_status = "completed" if reason is not None else "pending"
@@ -615,8 +622,8 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
         elif context.phase == "completed":
             reason_status = "completed"
             approval_status = "completed"
-            execute_status = "completed"
-            verify_status = "completed"
+            execute_status = "completed" if not failed_result else "cancelled"
+            verify_status = "completed" if not failed_result else "cancelled"
         elif context.phase == "denied":
             approval_status = "cancelled"
             execute_status = "cancelled"
@@ -678,6 +685,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             else {}
         )
         subject = _cloudinit_subject(context.args)
+        failed_result = _workflow_result_failed(result)
 
         if context.phase == "waiting_on_approval":
             return WorkflowReplyTemplate(
@@ -695,20 +703,19 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                 next_step="Approve the request to reset the cloud-init password.",
             )
 
-        if context.phase == "completed":
+        if context.phase == "completed" and failed_result:
             return WorkflowReplyTemplate(
-                title="Cloud-init password reset completed",
-                outcome="changed",
+                title="Cloud-init password reset failed",
+                outcome="failed",
                 summary=(
-                    f"Cloud-init password reset completed for {subject}. The new password may not take effect immediately and may require a VM restart or stop/start cycle.\n\n"
-                    f"{_cloudinit_completion_summary(before_state=before_state, result=result, postflight_result=postflight)}"
+                    f"The request to reset the cloud-init password for {subject} did not complete successfully."
                 ),
                 evidence_summary=_cloudinit_evidence_summary(
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
                 ),
-                next_step="If the guest still shows the old password, restart or stop/start the VM before trying again.",
+                next_step="Run proxmox_preflight_vm_cloudinit_password_reset again before retrying.",
             )
 
         if context.phase == "denied":
@@ -741,7 +748,75 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                 next_step="Run proxmox_preflight_vm_cloudinit_password_reset again before retrying.",
             )
 
+        if context.phase == "completed":
+            return WorkflowReplyTemplate(
+                title="Cloud-init password reset completed",
+                outcome="changed",
+                summary=(
+                    f"Cloud-init password reset completed for {subject}. The new password may not take effect immediately and may require a VM restart or stop/start cycle.\n\n"
+                    f"{_cloudinit_completion_summary(before_state=before_state, result=result, postflight_result=postflight)}"
+                ),
+                evidence_summary=_cloudinit_evidence_summary(
+                    before_state=before_state,
+                    result=result,
+                    postflight_result=postflight,
+                ),
+                next_step="If the guest still shows the old password, restart or stop/start the VM before trying again.",
+            )
+
         return None
+
+    async def fetch_postflight_result(
+        self,
+        *,
+        tool_name: str,
+        args: dict[str, object],
+        session: AsyncSession,
+    ) -> dict[str, object] | None:
+        _ = tool_name
+        resolved = await _resolve_proxmox_client(
+            session=session, server_ref=args.get("server_ref")
+        )
+        if isinstance(resolved, dict):
+            return resolved
+
+        client, server_id = resolved
+        node = normalized_text(args.get("node"))
+        vmid = _normalized_int(args.get("vmid"))
+        if node is None or vmid is None:
+            return None
+
+        cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
+        if cloudinit_result.get("ok") is not True:
+            return _upstream_error(
+                cloudinit_result,
+                fallback_message="Unable to fetch Proxmox cloud-init state",
+            )
+
+        dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
+        if dump_result.get("ok") is not True:
+            return _upstream_error(
+                dump_result,
+                fallback_message="Unable to fetch Proxmox cloud-init user dump",
+            )
+
+        cloudinit_verified = await _cloudinit_postflight_result(
+            client=client, node=node, vmid=vmid
+        )
+        if cloudinit_verified is None:
+            return None
+
+        return {
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": server_id,
+            "node": node,
+            "vmid": vmid,
+            "cloudinit": cloudinit_verified["cloudinit"],
+            "cloudinit_dump_user": cloudinit_verified["cloudinit_dump_user"],
+            "verified": True,
+        }
 
     def build_evidence_template(
         self,
@@ -824,6 +899,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             context.preflight_evidence, context.args
         )
         reason = normalized_text(context.args.get("reason"))
+        failed_result = _workflow_result_failed(context.result)
 
         preflight_status = "completed" if before_state is not None else "in_progress"
         reason_status = "completed" if reason is not None else "pending"
@@ -842,8 +918,8 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
         elif context.phase == "completed":
             reason_status = "completed"
             approval_status = "completed"
-            execute_status = "completed"
-            verify_status = "completed"
+            execute_status = "completed" if not failed_result else "cancelled"
+            verify_status = "completed" if not failed_result else "cancelled"
         elif context.phase == "denied":
             approval_status = "cancelled"
             execute_status = "cancelled"
@@ -905,6 +981,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             else {}
         )
         subject = _pool_move_subject(context.args)
+        failed_result = _workflow_result_failed(result)
 
         if context.phase == "waiting_on_approval":
             return WorkflowReplyTemplate(
@@ -922,20 +999,19 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 next_step="Approve the request to move the VMIDs between pools.",
             )
 
-        if context.phase == "completed":
+        if context.phase == "completed" and failed_result:
             return WorkflowReplyTemplate(
-                title="Proxmox pool membership move completed",
-                outcome="changed",
+                title="Proxmox pool membership move failed",
+                outcome="failed",
                 summary=(
-                    f"Pool membership move completed for {subject}.\n\n"
-                    f"{_pool_move_completion_summary(before_state=before_state, result=result, postflight_result=postflight, args=context.args)}"
+                    f"The request to move {subject} did not complete successfully."
                 ),
                 evidence_summary=_pool_move_evidence_summary(
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
                 ),
-                next_step="Review both pools and confirm the moved VMIDs now appear in the destination pool.",
+                next_step="Run proxmox_preflight_move_vms_between_pools again before retrying.",
             )
 
         if context.phase == "denied":
@@ -966,7 +1042,75 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 next_step="Run proxmox_preflight_move_vms_between_pools again before retrying.",
             )
 
+        if context.phase == "completed":
+            return WorkflowReplyTemplate(
+                title="Proxmox pool membership move completed",
+                outcome="changed",
+                summary=(
+                    f"Pool membership move completed for {subject}.\n\n"
+                    f"{_pool_move_completion_summary(before_state=before_state, result=result, postflight_result=postflight, args=context.args)}"
+                ),
+                evidence_summary=_pool_move_evidence_summary(
+                    before_state=before_state,
+                    result=result,
+                    postflight_result=postflight,
+                ),
+                next_step="Review both pools and confirm the moved VMIDs now appear in the destination pool.",
+            )
+
         return None
+
+    async def fetch_postflight_result(
+        self,
+        *,
+        tool_name: str,
+        args: dict[str, object],
+        session: AsyncSession,
+    ) -> dict[str, object] | None:
+        _ = tool_name
+        resolved = await _resolve_proxmox_client(
+            session=session, server_ref=args.get("server_ref")
+        )
+        if isinstance(resolved, dict):
+            return resolved
+
+        client, server_id = resolved
+        source_pool = normalized_text(args.get("source_pool"))
+        destination_pool = normalized_text(args.get("destination_pool"))
+        if source_pool is None or destination_pool is None:
+            return None
+
+        source_pool_after = await client.get_pool(source_pool)
+        if source_pool_after.get("ok") is not True:
+            return _upstream_error(
+                source_pool_after,
+                fallback_message="Unable to fetch the source pool after the move",
+            )
+
+        destination_pool_after = await client.get_pool(destination_pool)
+        if destination_pool_after.get("ok") is not True:
+            return _upstream_error(
+                destination_pool_after,
+                fallback_message="Unable to fetch the destination pool after the move",
+            )
+
+        pool_state = await _pool_postflight_result(
+            client=client,
+            source_pool=source_pool,
+            destination_pool=destination_pool,
+        )
+        if pool_state is None:
+            return None
+
+        return {
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": server_id,
+            "source_pool_after": pool_state["source_pool_after"],
+            "destination_pool_after": pool_state["destination_pool_after"],
+            "verified": True,
+        }
 
     def build_evidence_template(
         self,
@@ -1057,6 +1201,65 @@ def _cloudinit_subject(args: dict[str, object]) -> str:
     return f"VM {vmid_text} on node {node}"
 
 
+async def _resolve_proxmox_client(
+    *, session: AsyncSession, server_ref: object
+) -> tuple[ProxmoxClient, str] | dict[str, object] | None:
+    server_ref_text = normalized_text(server_ref)
+    if server_ref_text is None:
+        return None
+
+    repo: Any = SQLProxmoxServerRepository(session)
+    resolution = await resolve_proxmox_server_ref(server_ref_text, repo=repo)
+    if not resolution.ok:
+        return {
+            "ok": False,
+            "error_code": str(resolution.error_code or "unknown"),
+            "message": str(resolution.message or "Proxmox server lookup failed"),
+        }
+
+    server = resolution.server
+    if server is None or resolution.server_id is None:
+        return None
+
+    client = ProxmoxClient(
+        base_url=str(getattr(server, "base_url")),
+        api_token_id=str(getattr(server, "api_token_id")),
+        api_token_secret=maybe_decrypt_text(str(getattr(server, "api_token_secret"))),
+        verify_ssl=bool(getattr(server, "verify_ssl")),
+    )
+    return client, str(resolution.server_id)
+
+
+async def _cloudinit_postflight_result(
+    *, client: ProxmoxClient, node: str, vmid: int
+) -> dict[str, object] | None:
+    cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
+    if cloudinit_result.get("ok") is not True:
+        return None
+    dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
+    if dump_result.get("ok") is not True:
+        return None
+    return {"cloudinit": cloudinit_result, "cloudinit_dump_user": dump_result}
+
+
+async def _pool_postflight_result(
+    *,
+    client: ProxmoxClient,
+    source_pool: str,
+    destination_pool: str,
+) -> dict[str, object] | None:
+    source_pool_after = await client.get_pool(source_pool)
+    if source_pool_after.get("ok") is not True:
+        return None
+    destination_pool_after = await client.get_pool(destination_pool)
+    if destination_pool_after.get("ok") is not True:
+        return None
+    return {
+        "source_pool_after": source_pool_after,
+        "destination_pool_after": destination_pool_after,
+    }
+
+
 def _pool_move_subject(args: dict[str, object]) -> str:
     source_pool = normalized_text(args.get("source_pool")) or "unknown-source-pool"
     destination_pool = (
@@ -1064,6 +1267,10 @@ def _pool_move_subject(args: dict[str, object]) -> str:
     )
     vmids_text = _vmids_text(args.get("vmids"))
     return f"VMIDs {vmids_text} from {source_pool} to {destination_pool}"
+
+
+def _workflow_result_failed(result: dict[str, object] | None) -> bool:
+    return isinstance(result, dict) and result.get("ok") is False
 
 
 def _vmids_text(value: object) -> str:

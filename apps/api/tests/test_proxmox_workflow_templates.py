@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+import pytest
+
 from noa_api.core.workflows.registry import (
     build_workflow_evidence_template,
     build_workflow_reply_template,
     build_workflow_todos,
+    fetch_postflight_result,
     require_matching_preflight,
 )
 from noa_api.core.workflows.types import workflow_evidence_template_payload
+
+
+class _FakeSession:
+    pass
 
 
 def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_and_preflight_gated() -> (
@@ -168,6 +175,51 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_integer_vmid_and_
     assert reply is not None
     assert "VM 101 on node pve1-node" in reply.summary
     assert "Verified digest: digest-2." in reply.summary
+
+
+@pytest.mark.asyncio
+async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_runtime_shape() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    class _Client:
+        async def get_qemu_cloudinit(self, node: str, vmid: int):
+            return {"ok": True, "message": "ok", "digest": "digest-2"}
+
+        async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
+            return {"ok": True, "message": "ok", "data": "password: [REDACTED]"}
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        return _Client(), "srv-1"
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_reset_vm_cloudinit_password",
+            workflow_family="proxmox-vm-cloudinit-password-reset",
+            args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+    assert postflight == {
+        "ok": True,
+        "message": "ok",
+        "status": "changed",
+        "server_id": "srv-1",
+        "node": "pve1-node",
+        "vmid": 101,
+        "cloudinit": {"ok": True, "message": "ok", "digest": "digest-2"},
+        "cloudinit_dump_user": {
+            "ok": True,
+            "message": "ok",
+            "data": "password: [REDACTED]",
+        },
+        "verified": True,
+    }
 
 
 def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wrapper_data() -> (
@@ -446,6 +498,107 @@ def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_
 
     assert todos is not None
     assert "moving pool membership" in todos[1]["content"].lower()
+
+
+def test_proxmox_pool_membership_move_completed_reply_handles_failure_result() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
+                    "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+        result={"ok": False, "message": "pool move failed", "error_code": "boom"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_proxmox_pool_membership_move_fetch_postflight_result_returns_runtime_shape() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    class _Client:
+        async def get_pool(self, poolid: str):
+            if poolid == "pool-a":
+                return {
+                    "ok": True,
+                    "message": "ok",
+                    "data": [{"poolid": "pool-a", "members": []}],
+                }
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}],
+            }
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        return _Client(), "srv-1"
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_move_vms_between_pools",
+            workflow_family="proxmox-pool-membership-move",
+            args={
+                "server_ref": "pve1",
+                "source_pool": "pool-a",
+                "destination_pool": "pool-b",
+                "vmids": [101],
+                "email": "l1@example.com",
+            },
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+    assert postflight == {
+        "ok": True,
+        "message": "ok",
+        "status": "changed",
+        "server_id": "srv-1",
+        "source_pool_after": {
+            "ok": True,
+            "message": "ok",
+            "data": [{"poolid": "pool-a", "members": []}],
+        },
+        "destination_pool_after": {
+            "ok": True,
+            "message": "ok",
+            "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}],
+        },
+        "verified": True,
+    }
 
 
 def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_after_tables() -> (
