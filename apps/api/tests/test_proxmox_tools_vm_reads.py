@@ -221,6 +221,76 @@ async def test_proxmox_get_vm_config_returns_real_config_payload(monkeypatch) ->
 
 
 @pytest.mark.asyncio
+async def test_proxmox_get_vm_config_handles_missing_config_payload(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(
+        monkeypatch,
+        {
+            "status_current": {"ok": True, "message": "ok", "data": {}},
+            "config": {"ok": True, "message": "ok"},
+            "pending": {"ok": True, "message": "ok", "data": {}},
+        },
+    )
+
+    result = await vm_read_tools.proxmox_get_vm_config(
+        session=_session(),
+        server_ref="pve1",
+        node="pve1-node",
+        vmid=101,
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_response",
+        "message": "Proxmox returned an unexpected QEMU config payload",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_get_vm_config_rejects_whitespace_only_node(monkeypatch) -> None:
+    from noa_api.proxmox.tools import vm_read_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        vm_read_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    class _Client:
+        def __init__(self, **_: object) -> None:
+            pass
+
+        async def get_qemu_config(self, node: str, vmid: int) -> dict[str, object]:
+            _ = (node, vmid)
+            raise AssertionError("get_qemu_config should not be called")
+
+    monkeypatch.setattr(vm_read_tools, "ProxmoxClient", _Client)
+
+    result = await vm_read_tools.proxmox_get_vm_config(
+        session=_session(),
+        server_ref="pve1",
+        node="   ",
+        vmid=101,
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_request",
+        "message": "Node is required",
+    }
+
+
+@pytest.mark.asyncio
 async def test_proxmox_get_vm_config_handles_upstream_failure(monkeypatch) -> None:
     from noa_api.proxmox.tools import vm_read_tools
 
