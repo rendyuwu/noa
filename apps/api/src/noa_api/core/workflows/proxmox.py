@@ -777,6 +777,8 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
         resolved = await _resolve_proxmox_client(
             session=session, server_ref=args.get("server_ref")
         )
+        if resolved is None:
+            return None
         if isinstance(resolved, dict):
             return resolved
 
@@ -786,25 +788,11 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
         if node is None or vmid is None:
             return None
 
-        cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
-        if cloudinit_result.get("ok") is not True:
-            return _upstream_error(
-                cloudinit_result,
-                fallback_message="Unable to fetch Proxmox cloud-init state",
-            )
-
-        dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
-        if dump_result.get("ok") is not True:
-            return _upstream_error(
-                dump_result,
-                fallback_message="Unable to fetch Proxmox cloud-init user dump",
-            )
-
         cloudinit_verified = await _cloudinit_postflight_result(
             client=client, node=node, vmid=vmid
         )
-        if cloudinit_verified is None:
-            return None
+        if cloudinit_verified.get("ok") is not True:
+            return cloudinit_verified
 
         return {
             "ok": True,
@@ -1071,6 +1059,8 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
         resolved = await _resolve_proxmox_client(
             session=session, server_ref=args.get("server_ref")
         )
+        if resolved is None:
+            return None
         if isinstance(resolved, dict):
             return resolved
 
@@ -1080,27 +1070,14 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
         if source_pool is None or destination_pool is None:
             return None
 
-        source_pool_after = await client.get_pool(source_pool)
-        if source_pool_after.get("ok") is not True:
-            return _upstream_error(
-                source_pool_after,
-                fallback_message="Unable to fetch the source pool after the move",
-            )
-
-        destination_pool_after = await client.get_pool(destination_pool)
-        if destination_pool_after.get("ok") is not True:
-            return _upstream_error(
-                destination_pool_after,
-                fallback_message="Unable to fetch the destination pool after the move",
-            )
-
         pool_state = await _pool_postflight_result(
             client=client,
             source_pool=source_pool,
             destination_pool=destination_pool,
+            vmids=_normalized_int_list(args.get("vmids")),
         )
-        if pool_state is None:
-            return None
+        if pool_state.get("ok") is not True:
+            return pool_state
 
         return {
             "ok": True,
@@ -1233,13 +1210,17 @@ async def _resolve_proxmox_client(
 async def _cloudinit_postflight_result(
     *, client: ProxmoxClient, node: str, vmid: int
 ) -> dict[str, object] | None:
-    cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
-    if cloudinit_result.get("ok") is not True:
-        return None
-    dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
-    if dump_result.get("ok") is not True:
-        return None
-    return {"cloudinit": cloudinit_result, "cloudinit_dump_user": dump_result}
+    verification_result = await _wait_for_cloudinit_verification(
+        client=client, node=node, vmid=vmid
+    )
+    if verification_result.get("ok") is not True:
+        return verification_result
+    return {
+        "ok": True,
+        "cloudinit": verification_result["cloudinit"],
+        "cloudinit_dump_user": verification_result["cloudinit_dump_user"],
+        "verified": True,
+    }
 
 
 async def _pool_postflight_result(
@@ -1247,17 +1228,156 @@ async def _pool_postflight_result(
     client: ProxmoxClient,
     source_pool: str,
     destination_pool: str,
+    vmids: list[int],
 ) -> dict[str, object] | None:
     source_pool_after = await client.get_pool(source_pool)
     if source_pool_after.get("ok") is not True:
-        return None
+        return _upstream_error(
+            source_pool_after,
+            fallback_message="Unable to fetch the source pool after the move",
+        )
     destination_pool_after = await client.get_pool(destination_pool)
     if destination_pool_after.get("ok") is not True:
-        return None
+        return _upstream_error(
+            destination_pool_after,
+            fallback_message="Unable to fetch the destination pool after the move",
+        )
+    try:
+        source_vmids_after = _pool_result_vmids(source_pool_after)
+        destination_vmids_after = _pool_result_vmids(destination_pool_after)
+    except ValueError:
+        return {
+            "ok": False,
+            "error_code": "invalid_response",
+            "message": "Proxmox returned an unexpected pool payload",
+        }
+    if not all(
+        vmid not in source_vmids_after and vmid in destination_vmids_after
+        for vmid in vmids
+    ):
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox pool move verification did not confirm the requested VMIDs",
+        }
     return {
+        "ok": True,
+        "message": "ok",
+        "verified": True,
         "source_pool_after": source_pool_after,
         "destination_pool_after": destination_pool_after,
     }
+
+
+async def _wait_for_cloudinit_verification(
+    *,
+    client: ProxmoxClient,
+    node: str,
+    vmid: int,
+) -> dict[str, object]:
+    cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
+    if cloudinit_result.get("ok") is not True:
+        return _upstream_error(
+            cloudinit_result,
+            fallback_message="Unable to verify Proxmox cloud-init values",
+        )
+
+    dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
+    if dump_result.get("ok") is not True:
+        return _upstream_error(
+            dump_result,
+            fallback_message="Unable to verify Proxmox cloud-init user dump",
+        )
+
+    sanitized_dump, confirmed = _sanitize_cloudinit_dump_user(dump_result.get("data"))
+    if not confirmed or sanitized_dump is None:
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox cloud-init verification did not confirm the password reset",
+        }
+
+    if not _cloudinit_confirms_password_reset(cloudinit_result):
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox cloud-init verification did not confirm the password reset",
+        }
+
+    return {
+        "ok": True,
+        "cloudinit": cloudinit_result,
+        "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
+        "verified": True,
+    }
+
+
+def _upstream_error(
+    result: dict[str, object], *, fallback_message: str
+) -> dict[str, object]:
+    return {
+        "ok": False,
+        "error_code": str(result.get("error_code") or "unknown"),
+        "message": str(result.get("message") or fallback_message),
+    }
+
+
+def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:
+    data = result.get("data")
+    if isinstance(data, dict):
+        return normalized_text(data.get("cipassword")) is not None
+    if not isinstance(data, list):
+        return False
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if normalized_text(entry.get("key")) != "cipassword":
+            continue
+        if normalized_text(entry.get("value")) is not None:
+            return True
+    return False
+
+
+def _sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]:
+    if not isinstance(dump_value, str):
+        return None, False
+
+    dump_text = dump_value.strip()
+    if not dump_text:
+        return None, False
+
+    sanitized_lines: list[str] = []
+    found_password = False
+    for line in dump_text.splitlines():
+        stripped = line.lstrip()
+        if not stripped.startswith("password:"):
+            sanitized_lines.append(line)
+            continue
+
+        value = stripped[len("password:") :].strip()
+        if not value:
+            return None, False
+
+        leading = line[: len(line) - len(stripped)]
+        sanitized_lines.append(f"{leading}password: [REDACTED]")
+        found_password = True
+
+    if not found_password:
+        return None, False
+
+    sanitized = "\n".join(sanitized_lines)
+    if dump_value.endswith("\n"):
+        sanitized += "\n"
+    return sanitized, True
+
+
+def _pool_result_vmids(result: dict[str, object]) -> set[int]:
+    vmids: set[int] = set()
+    for member in _pool_members_from_result(result):
+        vmid = member.get("vmid")
+        if isinstance(vmid, int) and not isinstance(vmid, bool):
+            vmids.add(vmid)
+    return vmids
 
 
 def _pool_move_subject(args: dict[str, object]) -> str:

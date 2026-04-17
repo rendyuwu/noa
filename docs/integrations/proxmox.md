@@ -130,6 +130,26 @@ curl -k -X PUT \
   'https://<pve-host>:8006/api2/json/pools'
 ```
 
+##### Read exact-node VM runtime state
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
+```
+
+##### Read exact-node VM config / pending changes
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
+```
+
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
+```
+
 ## Current Proxmox features actually implemented
 - Proxmox server inventory CRUD in NOA admin UI/API
 - Proxmox server connectivity validation

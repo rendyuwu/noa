@@ -185,7 +185,12 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
 
     class _Client:
         async def get_qemu_cloudinit(self, node: str, vmid: int):
-            return {"ok": True, "message": "ok", "digest": "digest-2"}
+            return {
+                "ok": True,
+                "message": "ok",
+                "digest": "digest-2",
+                "data": {"cipassword": "secret"},
+            }
 
         async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
             return {"ok": True, "message": "ok", "data": "password: [REDACTED]"}
@@ -212,7 +217,12 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
         "server_id": "srv-1",
         "node": "pve1-node",
         "vmid": 101,
-        "cloudinit": {"ok": True, "message": "ok", "digest": "digest-2"},
+        "cloudinit": {
+            "ok": True,
+            "message": "ok",
+            "digest": "digest-2",
+            "data": {"cipassword": "secret"},
+        },
         "cloudinit_dump_user": {
             "ok": True,
             "message": "ok",
@@ -220,6 +230,108 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
         },
         "verified": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_redacts_dump_and_verifies() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    class _Client:
+        async def get_qemu_cloudinit(self, node: str, vmid: int):
+            return {
+                "ok": True,
+                "message": "ok",
+                "digest": "digest-2",
+                "data": {"cipassword": "secret"},
+            }
+
+        async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
+            return {"ok": True, "message": "ok", "data": "password: secret\n"}
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        return _Client(), "srv-1"
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_reset_vm_cloudinit_password",
+            workflow_family="proxmox-vm-cloudinit-password-reset",
+            args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+
+    assert postflight is not None
+    assert postflight["ok"] is True
+    assert postflight["verified"] is True
+    assert postflight["cloudinit_dump_user"]["data"] == "password: [REDACTED]\n"
+    assert "secret" not in postflight["cloudinit_dump_user"]["data"]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_handles_upstream_error() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    class _Client:
+        async def get_qemu_cloudinit(self, node: str, vmid: int):
+            _ = node, vmid
+            return {"ok": False, "error_code": "bad_cloudinit", "message": "boom"}
+
+        async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
+            _ = node, vmid
+            return {"ok": True, "message": "ok", "data": "password: secret"}
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        return _Client(), "srv-1"
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_reset_vm_cloudinit_password",
+            workflow_family="proxmox-vm-cloudinit-password-reset",
+            args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+
+    assert postflight is not None
+    assert postflight["ok"] is False
+    assert postflight["error_code"] == "bad_cloudinit"
+
+
+@pytest.mark.asyncio
+async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_handles_missing_resolved_client() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        return None
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_reset_vm_cloudinit_password",
+            workflow_family="proxmox-vm-cloudinit-password-reset",
+            args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+
+    assert postflight is None
 
 
 def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wrapper_data() -> (
@@ -501,7 +613,7 @@ def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_
 
 
 def test_proxmox_pool_membership_move_completed_reply_handles_failure_result() -> None:
-    reply = build_workflow_reply_template(
+    build_workflow_reply_template(
         tool_name="proxmox_move_vms_between_pools",
         workflow_family="proxmox-pool-membership-move",
         args={
@@ -599,6 +711,65 @@ async def test_proxmox_pool_membership_move_fetch_postflight_result_returns_runt
         },
         "verified": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_pool_membership_move_fetch_postflight_result_rejects_unverified_final_state() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    class _Client:
+        async def get_pool(self, poolid: str):
+            if poolid == "pool-a":
+                return {
+                    "ok": True,
+                    "message": "ok",
+                    "data": [
+                        {
+                            "poolid": "pool-a",
+                            "members": [
+                                {
+                                    "vmid": 101,
+                                    "name": "alpha",
+                                    "node": "pve1",
+                                    "status": "running",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [{"poolid": "pool-b", "members": []}],
+            }
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        return _Client(), "srv-1"
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_move_vms_between_pools",
+            workflow_family="proxmox-pool-membership-move",
+            args={
+                "server_ref": "pve1",
+                "source_pool": "pool-a",
+                "destination_pool": "pool-b",
+                "vmids": [101],
+                "email": "l1@example.com",
+            },
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+
+    assert postflight is not None
+    assert postflight["ok"] is False
+    assert postflight["error_code"] == "postflight_failed"
 
 
 def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_after_tables() -> (
