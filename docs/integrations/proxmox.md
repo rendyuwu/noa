@@ -215,10 +215,10 @@ This workflow requires the exact Proxmox node name. If the user only provides a 
 
 Use this flow for enabling or disabling a specific VM NIC on an exact node.
 
-- The workflow/tool may omit `net` only when the VM has exactly one NIC; otherwise it returns `net_selection_required` and the available NIC list for user choice.
+- Auto-selection of `net` is preflight-only: when the VM has exactly one NIC, preflight may infer it; otherwise preflight returns `net_selection_required` and the available NIC list for user choice. Enable/disable CHANGE calls must use the concrete NIC key returned or confirmed by preflight.
 - Always run `proxmox_preflight_vm_nic_toggle` before any enable/disable CHANGE action.
 - The preflight must match the same `server_ref`, `node`, `vmid`, `net`, and `digest` that will be used for the change.
-- The CHANGE call reuses the config digest captured during preflight so the update is guarded by the same optimistic-lock value.
+- The preflight returns the config digest; the CHANGE call must echo that exact digest. If the VM config changed in the meantime, the operation fails closed with `digest_mismatch` and requires a fresh preflight.
 - If the selected NIC is already in the requested state, the enable/disable request may return success with `status: "no-op"` and no config mutation.
 - Postflight verification must re-read the VM config and confirm the requested final link state: `up` for enable, `down` for disable.
 - Approval responses should summarize the selected NIC, the link-state transition, the digest, and the evidence expectations.
