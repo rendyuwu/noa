@@ -588,15 +588,9 @@ def _verification_content(context: WorkflowTemplateContext) -> str:
     return "Poll the task and verify the NIC link state after the change."
 
 
-def _postflight_verified(*args: object) -> bool:
-    if len(args) == 1:
-        tool_name = None
-        postflight_result = args[0]
-    elif len(args) == 2:
-        tool_name = args[0] if isinstance(args[0], str) else None
-        postflight_result = args[1]
-    else:
-        raise TypeError("_postflight_verified expects 1 or 2 positional arguments")
+def _postflight_verified(
+    tool_name: str | None, postflight_result: dict[str, object] | None
+) -> bool:
     if not isinstance(postflight_result, dict):
         return False
     if tool_name in {"proxmox_disable_vm_nic", "proxmox_enable_vm_nic"}:

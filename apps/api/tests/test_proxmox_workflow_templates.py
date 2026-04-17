@@ -2553,6 +2553,119 @@ def test_proxmox_enable_vm_nic_completed_todos_do_not_mark_verification_complete
     assert workflow_todos[4]["status"] == "cancelled"
 
 
+@pytest.mark.asyncio
+async def test_proxmox_enable_vm_nic_fetch_postflight_result_returns_runtime_shape() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    async def _preflight(*, session, server_ref, node, vmid, net=None):
+        _ = session, server_ref, node, vmid, net
+        return {
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "net": "net0",
+            "digest": "digest-1",
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+            "after_net": "virtio=AA:BB:CC,bridge=vmbr0",
+            "link_state": "up",
+            "verified": True,
+            "upid": "UPID:pve1:00000002:task",
+            "task_status": "stopped",
+            "task_exit_status": "OK",
+        }
+
+    original_preflight = proxmox_workflows.proxmox_preflight_vm_nic_toggle
+    proxmox_workflows.proxmox_preflight_vm_nic_toggle = _preflight
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_enable_vm_nic",
+            workflow_family="proxmox-vm-nic-connectivity",
+            args=_enable_vm_nic_args(),
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows.proxmox_preflight_vm_nic_toggle = original_preflight
+
+    assert postflight == {
+        "ok": True,
+        "message": "ok",
+        "status": "changed",
+        "server_id": "srv-1",
+        "node": "pve1-node",
+        "vmid": 101,
+        "net": "net0",
+        "digest": "digest-1",
+        "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+        "after_net": "virtio=AA:BB:CC,bridge=vmbr0",
+        "link_state": "up",
+        "verified": True,
+        "upid": "UPID:pve1:00000002:task",
+        "task_status": "stopped",
+        "task_exit_status": "OK",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_enable_vm_nic_fetch_postflight_result_rejects_unverified_final_state() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    async def _preflight(*, session, server_ref, node, vmid, net=None):
+        _ = session, server_ref, node, vmid, net
+        return {
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Unable to verify NIC 'net0' after the update",
+        }
+
+    original_preflight = proxmox_workflows.proxmox_preflight_vm_nic_toggle
+    proxmox_workflows.proxmox_preflight_vm_nic_toggle = _preflight
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_enable_vm_nic",
+            workflow_family="proxmox-vm-nic-connectivity",
+            args=_enable_vm_nic_args(),
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows.proxmox_preflight_vm_nic_toggle = original_preflight
+
+    assert postflight is not None
+    assert postflight["ok"] is False
+    assert postflight["error_code"] == "postflight_failed"
+
+
+@pytest.mark.asyncio
+async def test_proxmox_enable_vm_nic_fetch_postflight_result_returns_none_for_missing_required_args() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+
+    async def _resolve(*, session, server_ref):
+        _ = session, server_ref
+        raise AssertionError("resolver should not be called")
+
+    original_resolve = proxmox_workflows._resolve_proxmox_client
+    proxmox_workflows._resolve_proxmox_client = _resolve
+    try:
+        postflight = await fetch_postflight_result(
+            tool_name="proxmox_enable_vm_nic",
+            workflow_family="proxmox-vm-nic-connectivity",
+            args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+            session=_FakeSession(),
+        )
+    finally:
+        proxmox_workflows._resolve_proxmox_client = original_resolve
+
+    assert postflight is None
+
+
 def test_proxmox_enable_vm_nic_completed_reply_and_todo_prefer_postflight_link_state_when_result_conflicts() -> (
     None
 ):
