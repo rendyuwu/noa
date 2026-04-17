@@ -1087,7 +1087,11 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 "priority": "high",
             },
             {
-                "content": _pool_move_verification_content(context=context),
+                "content": _pool_move_verification_content(
+                    context=context,
+                    result=result,
+                    postflight_result=context.postflight_result,
+                ),
                 "status": verify_status,
                 "priority": "high",
             },
@@ -1892,9 +1896,15 @@ def _pool_move_preflight_content(
     return f"Read the current Proxmox pool preflight membership for {subject}."
 
 
-def _pool_move_verification_content(context: WorkflowTemplateContext) -> str:
-    result = context.result if isinstance(context.result, dict) else {}
-    if context.phase == "completed" and result.get("verified") is True:
+def _pool_move_verification_content(
+    *,
+    context: WorkflowTemplateContext,
+    result: dict[str, object],
+    postflight_result: dict[str, object],
+) -> str:
+    if context.phase == "completed" and _pool_move_verified(
+        context.tool_name, result, postflight_result
+    ):
         return "Verify that the VMIDs were removed from the source pool and present in the destination pool."
     return "Poll the task and verify the source and destination pool memberships after the move."
 
@@ -2024,15 +2034,12 @@ def _pool_move_verification_items(
             else "none",
         ),
     ]
-    if isinstance(postflight_result, dict):
+    postflight_state = _pool_move_postflight_state(tool_name, postflight_result)
+    if postflight_state is not None:
         items.append(
             WorkflowEvidenceItem(
                 label="Postflight",
-                value=(
-                    "verified"
-                    if postflight_result.get("verified") is True
-                    else "degraded"
-                ),
+                value=postflight_state,
             )
         )
     return items
@@ -2050,9 +2057,7 @@ def _pool_move_evidence_summary(
         summary.append("Preflight captured for the exact source and destination pools.")
     if result.get("verified") is True:
         summary.append("Verification succeeded.")
-        if isinstance(postflight_result, dict) and not _postflight_verified(
-            tool_name, postflight_result
-        ):
+        if _pool_move_postflight_state(tool_name, postflight_result) == "degraded":
             summary.append("Postflight refetch was degraded.")
     elif _postflight_verified(tool_name, postflight_result):
         summary.append("Postflight verification succeeded.")
@@ -2136,19 +2141,14 @@ def _pool_move_completion_summary(
             _pool_table("Destination pool after", destination_after),
             f"Moved VMIDs: {_vmids_text(args.get('vmids'))}.",
             *(
-                [
-                    "Verification succeeded.",
-                    "Postflight refetch was degraded.",
-                ]
+                ["Verification succeeded.", "Postflight refetch was degraded."]
                 if result.get("verified") is True
-                and isinstance(postflight_result, dict)
-                and not _postflight_verified(tool_name, postflight_result)
+                and _pool_move_postflight_state(tool_name, postflight_result)
+                == "degraded"
                 else ["Verification succeeded."]
                 if result.get("verified") is True
                 else ["Postflight verification succeeded."]
                 if _postflight_verified(tool_name, postflight_result)
-                else ["Postflight refetch was degraded."]
-                if isinstance(postflight_result, dict) and postflight_result
                 else []
             ),
         ]
@@ -2161,6 +2161,16 @@ def _pool_move_verified(
     return result.get("verified") is True or _postflight_verified(
         tool_name, postflight_result
     )
+
+
+def _pool_move_postflight_state(
+    tool_name: str, postflight_result: dict[str, object]
+) -> str | None:
+    if not isinstance(postflight_result, dict) or not postflight_result:
+        return None
+    if _postflight_verified(tool_name, postflight_result):
+        return "verified"
+    return "degraded"
 
 
 def _matching_pool_move_preflight(

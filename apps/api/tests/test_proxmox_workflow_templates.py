@@ -2533,6 +2533,207 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
     )
 
 
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_do_not_label_missing_postflight_as_degraded() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
+                    "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "task completed",
+            "status": "changed",
+            "server_id": "srv-1",
+            "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
+            "add_to_destination": {"ok": True, "data": "UPID:ADD"},
+            "remove_from_source": {"ok": True, "data": "UPID:REMOVE"},
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
+            },
+            "results": [{"vmid": 101, "status": "changed"}],
+            "verified": True,
+        },
+        postflight_result=None,
+    )
+
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
+                    "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "task completed",
+            "status": "changed",
+            "server_id": "srv-1",
+            "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
+            "add_to_destination": {"ok": True, "data": "UPID:ADD"},
+            "remove_from_source": {"ok": True, "data": "UPID:REMOVE"},
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
+            },
+            "results": [{"vmid": 101, "status": "changed"}],
+            "verified": True,
+        },
+        postflight_result=None,
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "Postflight refetch was degraded." not in reply.summary
+    assert "Postflight refetch was degraded." not in reply.evidence_summary
+
+    assert evidence is not None
+    verification = next(
+        section for section in evidence.sections if section.key == "verification"
+    )
+    assert not any(item.label == "Postflight" for item in verification.items)
+
+
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verification_content_when_postflight_verifies_state() -> (
+    None
+):
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
+                    "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "task completed",
+            "status": "changed",
+            "server_id": "srv-1",
+            "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
+            "add_to_destination": {"ok": True, "data": "UPID:ADD"},
+            "remove_from_source": {"ok": True, "data": "UPID:REMOVE"},
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
+            },
+            "results": [{"vmid": 101, "status": "changed"}],
+            "verified": False,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
+            },
+            "verified": True,
+        },
+    )
+
+    assert workflow_todos is not None
+    assert workflow_todos[4]["status"] == "completed"
+    assert (
+        "Verify that the VMIDs were removed from the source pool"
+        in workflow_todos[4]["content"]
+    )
+
+
 def test_proxmox_workflow_waiting_on_user_todos_include_reason_step() -> None:
     workflow_todos = build_workflow_todos(
         tool_name="proxmox_disable_vm_nic",
