@@ -48,7 +48,9 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
             approval_status = "completed"
             execute_status = "completed"
             verify_status = (
-                "completed" if context.postflight_result is not None else "cancelled"
+                "completed"
+                if _postflight_verified(context.tool_name, context.postflight_result)
+                else "cancelled"
             )
         elif context.phase == "denied":
             approval_status = "cancelled"
@@ -122,6 +124,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                     f"{subject} is currently link {current_state or 'unknown'} and is ready to be moved to link {desired_state}."
                 ),
                 evidence_summary=_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -147,6 +150,21 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                 )
 
             if failed_result:
+                if _postflight_verified(context.tool_name, postflight):
+                    return WorkflowReplyTemplate(
+                        title=f"{_action_completed_label(context.tool_name)} {title_subject}",
+                        outcome="partial",
+                        summary=(
+                            f"{subject} reported a failure, but postflight verification confirmed the NIC finished in link state {_link_state(postflight) or _desired_link_state(context.tool_name)}."
+                        ),
+                        evidence_summary=_evidence_summary(
+                            tool_name=context.tool_name,
+                            before_state=before_state,
+                            result=result,
+                            postflight_result=postflight,
+                        ),
+                        next_step="Use a fresh preflight before making another VM NIC change.",
+                    )
                 return WorkflowReplyTemplate(
                     title=f"Failed to {_action_verb(context.tool_name)} {title_subject}",
                     outcome="failed",
@@ -154,6 +172,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                         f"The request to {_action_label(context.tool_name)} {subject} did not complete successfully."
                     ),
                     evidence_summary=_evidence_summary(
+                        tool_name=context.tool_name,
                         before_state=before_state,
                         result=result,
                         postflight_result=postflight,
@@ -168,6 +187,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                     f"{subject} moved from link {current_state or 'unknown'} to link {after_state}, and verification succeeded."
                 ),
                 evidence_summary=_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -526,10 +546,32 @@ def _preflight_content(*, subject: str, before_state: dict[str, object] | None) 
 def _verification_content(context: WorkflowTemplateContext) -> str:
     result = context.result if isinstance(context.result, dict) else {}
     verified = result.get("verified") is True
-    if context.phase == "completed" and verified:
+    if context.phase == "completed" and (
+        verified or _postflight_verified(context.tool_name, context.postflight_result)
+    ):
         final_state = _link_state(result) or _desired_link_state(context.tool_name)
         return f"Verify that the NIC finished in link state {final_state}."
     return "Poll the task and verify the NIC link state after the change."
+
+
+def _postflight_verified(*args: object) -> bool:
+    if len(args) == 1:
+        tool_name = None
+        postflight_result = args[0]
+    elif len(args) == 2:
+        tool_name = args[0] if isinstance(args[0], str) else None
+        postflight_result = args[1]
+    else:
+        raise TypeError("_postflight_verified expects 1 or 2 positional arguments")
+    if not isinstance(postflight_result, dict):
+        return False
+    if tool_name in {"proxmox_disable_vm_nic", "proxmox_enable_vm_nic"}:
+        desired_state = _desired_link_state(tool_name)
+        return (
+            postflight_result.get("ok") is True
+            and _link_state(postflight_result) == desired_state
+        )
+    return postflight_result.get("verified") is True
 
 
 def _reason_step_content(
@@ -593,7 +635,11 @@ def _after_state_items(
 def _verification_items(
     result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
-    verified = "yes" if result.get("verified") is True else "no"
+    verified = (
+        "yes"
+        if result.get("verified") is True or _postflight_verified(postflight_result)
+        else "no"
+    )
     items = [
         WorkflowEvidenceItem(label="Verified", value=verified),
         WorkflowEvidenceItem(
@@ -620,6 +666,7 @@ def _verification_items(
 
 def _evidence_summary(
     *,
+    tool_name: str,
     before_state: dict[str, object] | None,
     result: dict[str, object],
     postflight_result: dict[str, object],
@@ -635,6 +682,8 @@ def _evidence_summary(
         summary.append(f"Tool result: {normalized_text(result.get('message'))}.")
     if result.get("verified") is True:
         summary.append("Verification succeeded.")
+    elif _postflight_verified(tool_name, postflight_result):
+        summary.append("Postflight verification succeeded.")
     return summary
 
 
@@ -665,11 +714,12 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             reason_status = "completed"
             approval_status = "completed"
             if failed_result:
-                has_postflight = isinstance(context.postflight_result, dict) and bool(
-                    context.postflight_result
-                )
                 execute_status = "completed"
-                verify_status = "completed" if has_postflight else "cancelled"
+                verify_status = (
+                    "completed"
+                    if _postflight_verified(context.postflight_result)
+                    else "cancelled"
+                )
             else:
                 execute_status = "completed"
                 verify_status = "completed"
@@ -745,6 +795,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                     f"{_cloudinit_approval_summary(before_state=before_state)}"
                 ),
                 evidence_summary=_cloudinit_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -753,6 +804,21 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             )
 
         if context.phase == "completed" and failed_result:
+            if _postflight_verified(context.tool_name, postflight):
+                return WorkflowReplyTemplate(
+                    title="Cloud-init password reset partially completed",
+                    outcome="partial",
+                    summary=(
+                        f"The request to reset the cloud-init password for {subject} reported a failure, but postflight verification confirmed the regenerated state is available."
+                    ),
+                    evidence_summary=_cloudinit_evidence_summary(
+                        tool_name=context.tool_name,
+                        before_state=before_state,
+                        result=result,
+                        postflight_result=postflight,
+                    ),
+                    next_step="Use a fresh preflight before retrying the reset.",
+                )
             return WorkflowReplyTemplate(
                 title="Cloud-init password reset failed",
                 outcome="failed",
@@ -760,6 +826,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                     f"The request to reset the cloud-init password for {subject} did not complete successfully."
                 ),
                 evidence_summary=_cloudinit_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -775,6 +842,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                     f"Approval was denied, so the cloud-init password for {subject} was not changed."
                 ),
                 evidence_summary=_cloudinit_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -790,6 +858,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                     f"The request to reset the cloud-init password for {subject} did not complete successfully."
                 ),
                 evidence_summary=_cloudinit_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -806,6 +875,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                     f"{_cloudinit_completion_summary(before_state=before_state, result=result, postflight_result=postflight)}"
                 ),
                 evidence_summary=_cloudinit_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -956,7 +1026,9 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             approval_status = "completed"
             execute_status = "completed"
             verify_status = (
-                "completed" if context.postflight_result is not None else "cancelled"
+                "completed"
+                if _postflight_verified(context.tool_name, context.postflight_result)
+                else "cancelled"
             )
         elif context.phase == "denied":
             approval_status = "cancelled"
@@ -1030,6 +1102,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"{_pool_move_approval_summary(before_state=before_state, args=context.args)}"
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -1038,6 +1111,20 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             )
 
         if context.phase == "completed" and failed_result:
+            if _postflight_verified(context.tool_name, postflight):
+                return WorkflowReplyTemplate(
+                    title="Proxmox pool membership move partially completed",
+                    outcome="partial",
+                    summary=(
+                        f"The request to move {subject} reported a failure, but postflight verification confirmed the requested VMIDs are in the destination pool."
+                    ),
+                    evidence_summary=_pool_move_evidence_summary(
+                        before_state=before_state,
+                        result=result,
+                        postflight_result=postflight,
+                    ),
+                    next_step="Use a fresh preflight before retrying the pool move.",
+                )
             return WorkflowReplyTemplate(
                 title="Proxmox pool membership move failed",
                 outcome="failed",
@@ -1045,6 +1132,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"The request to move {subject} did not complete successfully."
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -1058,6 +1146,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 outcome="denied",
                 summary=(f"Approval was denied, so {subject} was not changed."),
                 evidence_summary=_pool_move_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -1073,6 +1162,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"The request to move {subject} did not complete successfully."
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -1089,6 +1179,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"{_pool_move_completion_summary(before_state=before_state, result=result, postflight_result=postflight, args=context.args)}"
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -1711,6 +1802,7 @@ def _cloudinit_verification_items(
 
 def _cloudinit_evidence_summary(
     *,
+    tool_name: str,
     before_state: dict[str, object] | None,
     result: dict[str, object],
     postflight_result: dict[str, object],
@@ -1723,6 +1815,8 @@ def _cloudinit_evidence_summary(
         )
     if result.get("verified") is True:
         summary.append("Verification succeeded.")
+    elif _postflight_verified(tool_name, postflight_result):
+        summary.append("Postflight verification succeeded.")
     digest = _cloudinit_digest_from_postflight(postflight_result)
     if digest is not None:
         summary.append(f"Current digest: {digest}.")
@@ -1975,6 +2069,7 @@ def _pool_move_verification_items(
 
 def _pool_move_evidence_summary(
     *,
+    tool_name: str,
     before_state: dict[str, object] | None,
     result: dict[str, object],
     postflight_result: dict[str, object],
@@ -1984,10 +2079,7 @@ def _pool_move_evidence_summary(
         summary.append("Preflight captured for the exact source and destination pools.")
     if result.get("verified") is True:
         summary.append("Verification succeeded.")
-    if (
-        isinstance(postflight_result, dict)
-        and postflight_result.get("verified") is True
-    ):
+    elif _postflight_verified(tool_name, postflight_result):
         summary.append("Postflight verification succeeded.")
     return summary
 
