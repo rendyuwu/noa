@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-from passlib.context import CryptContext
+import hmac
 
-_PASSWORD_CONTEXT = CryptContext(
-    schemes=["sha512_crypt", "sha256_crypt", "md5_crypt", "des_crypt", "bcrypt"],
-    deprecated="auto",
-)
+import legacycrypt
 
 
 def sanitize_cloudinit_dump_user(dump_value: object) -> tuple[str | None, bool]:
@@ -59,6 +56,7 @@ def cloudinit_dump_matches_password(dump_value: object, new_password: str) -> bo
     if password_hash is None or password_hash == "[REDACTED]":
         return False
     try:
-        return bool(_PASSWORD_CONTEXT.verify(new_password, password_hash))
+        computed = legacycrypt.crypt(new_password, password_hash)
+        return computed is not None and hmac.compare_digest(computed, password_hash)
     except (TypeError, ValueError):
         return False

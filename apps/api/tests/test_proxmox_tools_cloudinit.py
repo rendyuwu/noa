@@ -6,7 +6,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
-from passlib.hash import sha512_crypt
+import legacycrypt
 
 
 @dataclass
@@ -71,7 +71,18 @@ def _server() -> _Server:
 
 
 def _password_hash(password: str) -> str:
-    return sha512_crypt.hash(password)
+    return str(legacycrypt.crypt(password, legacycrypt.METHOD_SHA512))
+
+
+def test_cloudinit_password_hash_matcher_supports_linux_modular_crypt_hashes() -> None:
+    from noa_api.proxmox.tools._cloudinit_passwords import (
+        cloudinit_dump_matches_password,
+    )
+
+    password_hash = _password_hash("secret")
+
+    assert cloudinit_dump_matches_password(f"password: {password_hash}\n", "secret")
+    assert not cloudinit_dump_matches_password(f"password: {password_hash}\n", "wrong")
 
 
 def _install_client(monkeypatch, state: _ClientState) -> None:

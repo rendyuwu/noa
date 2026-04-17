@@ -97,11 +97,6 @@ def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:
     return False
 
 
-def _cloudinit_dump_confirms_password_reset(dump_value: object) -> bool:
-    sanitized_dump, confirmed = sanitize_cloudinit_dump_user(dump_value)
-    return confirmed and sanitized_dump is not None
-
-
 async def _resolve_client(
     *, session: AsyncSession, server_ref: str
 ) -> tuple[ProxmoxClient, str] | dict[str, object]:
