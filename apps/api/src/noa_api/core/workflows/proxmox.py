@@ -1667,8 +1667,9 @@ def _cloudinit_evidence_summary(
 ) -> list[str]:
     summary: list[str] = []
     if isinstance(before_state, dict):
+        vmid = before_state.get("vmid")
         summary.append(
-            f"Before: VM {normalized_text(before_state.get('vmid')) or 'unknown'} on {normalized_text(before_state.get('node')) or 'unknown-node'}."
+            f"Before: VM {str(vmid) if isinstance(vmid, int) and not isinstance(vmid, bool) else 'unknown'} on {normalized_text(before_state.get('node')) or 'unknown-node'}."
         )
     if result.get("verified") is True:
         summary.append("Verification succeeded.")

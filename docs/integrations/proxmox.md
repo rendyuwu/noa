@@ -64,6 +64,26 @@ curl -k \
   'https://<pve-host>:8006/api2/json/nodes/<node>/tasks/<upid>/status'
 ```
 
+##### Read exact-node VM runtime state
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/status/current'
+```
+
+##### Read exact-node VM config / pending changes
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
+```
+
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
+```
+
 ##### Cloud-init password reset / verification
 ```bash
 curl -k -X POST \
@@ -130,6 +150,13 @@ curl -k -X PUT \
   'https://<pve-host>:8006/api2/json/pools'
 ```
 
+##### Read one user by email-derived userid
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/access/users/<email@pve>'
+```
+
 ##### Read exact-node VM runtime state
 ```bash
 curl -k \
@@ -156,14 +183,17 @@ curl -k \
 - QEMU VM NIC preflight
 - Disable VM network interface with approval, recorded reason, and evidence capture
 - Enable VM network interface with approval, recorded reason, and evidence capture
+- Exact-node QEMU VM runtime status, config, and pending-change reads
 - QEMU cloud-init password reset with approval, recorded reason, exact preflight matching, and postflight verification
 - Pool membership move with approval, recorded reason, exact preflight matching, and postflight verification
+- User lookup by email-derived Proxmox userid for pool preflight
 
 ## Backlog / research notes
 - QEMU guest-agent password reset flow
-- Direct node-scoped VM status / hardware lookup workflow
 
-## 1) Reset password from cloud-init (`qemu` only)
+## Implemented workflow details
+
+### Cloud-init password reset workflow
 
 ### Set cloud-init password on the VM
 - Only update the password; keep the existing guest username unchanged.
@@ -200,7 +230,7 @@ curl -k \
 - After changing the password, tell the user they may need to restart the VM or do a stop/start cycle before the new password takes effect.
 - NOA workflow replies should repeat that restart / stop-start caveat after a successful reset.
 
-## 2) Check VM status / resources / hardware / disk / RAM
+### Exact-node VM status / hardware workflow
 
 This workflow requires the exact Proxmox node name. If the user only provides a VMID, ask for the node instead of using cluster-wide discovery endpoints.
 
@@ -230,7 +260,7 @@ curl -k \
 - `config` = hardware/disk/RAM/CPU/network definitions.
 - `pending` = pending config changes not yet applied.
 
-## 3) Pool-based “change email” flow
+### Pool membership move workflow
 
 Important:
 - In this workflow, “change email” / “change PIC” means moving one or more VMs from one pool to another.

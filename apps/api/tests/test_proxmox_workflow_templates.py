@@ -408,6 +408,70 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wra
     )
 
 
+def test_proxmox_cloudinit_password_reset_completed_evidence_reports_integer_vmid() -> (
+    None
+):
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {"data": {"cipassword": "old"}},
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "cloudinit": {
+                "ok": True,
+                "digest": "digest-2",
+                "data": {"cipassword": "secret"},
+            },
+            "cloudinit_dump_user": {"ok": True, "data": "password: [REDACTED]"},
+            "verified": True,
+        },
+    )
+
+    assert evidence is not None
+    before_state = next(
+        section for section in evidence.sections if section.key == "before_state"
+    )
+    assert any(
+        item.label == "VMID" and item.value == "101" for item in before_state.items
+    )
+
+
 def test_proxmox_cloudinit_password_reset_completed_reply_uses_nested_postflight_digest() -> (
     None
 ):
@@ -613,7 +677,7 @@ def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_
 
 
 def test_proxmox_pool_membership_move_completed_reply_handles_failure_result() -> None:
-    build_workflow_reply_template(
+    reply = build_workflow_reply_template(
         tool_name="proxmox_move_vms_between_pools",
         workflow_family="proxmox-pool-membership-move",
         args={
@@ -650,6 +714,15 @@ def test_proxmox_pool_membership_move_completed_reply_handles_failure_result() -
             }
         ],
         result={"ok": False, "message": "pool move failed", "error_code": "boom"},
+    )
+
+    assert reply is not None
+    assert reply.title == "Proxmox pool membership move failed"
+    assert reply.outcome == "failed"
+    assert "did not complete successfully" in reply.summary
+    assert (
+        "Run proxmox_preflight_move_vms_between_pools again before retrying."
+        in reply.next_step
     )
 
 
@@ -931,6 +1004,110 @@ def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_a
     assert "Source pool before" in reply.summary
     assert "| 101 | alpha | pve1 | running |" in reply.summary
     assert "Source pool after" in reply.summary
+
+
+def test_proxmox_cloudinit_password_reset_require_matching_preflight_matches_new_family() -> (
+    None
+):
+    working_messages = [
+        {
+            "role": "tool",
+            "parts": [
+                {
+                    "type": "tool-call",
+                    "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                    "toolCallId": "call-1",
+                    "args": {
+                        "server_ref": "pve1",
+                        "node": "pve1-node",
+                        "vmid": 101,
+                    },
+                },
+                {
+                    "type": "tool-result",
+                    "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                    "toolCallId": "call-1",
+                    "result": {
+                        "ok": True,
+                        "server_id": "srv-1",
+                        "node": "pve1-node",
+                        "vmid": 101,
+                        "config": {"digest": "digest-1"},
+                        "cloudinit": {"data": {"cipassword": "old"}},
+                    },
+                },
+            ],
+        }
+    ]
+
+    error = require_matching_preflight(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+        working_messages=working_messages,
+        requested_server_id="srv-1",
+    )
+
+    assert error is None
+
+
+def test_proxmox_pool_membership_move_require_matching_preflight_matches_new_family() -> (
+    None
+):
+    working_messages = [
+        {
+            "role": "tool",
+            "parts": [
+                {
+                    "type": "tool-call",
+                    "toolName": "proxmox_preflight_move_vms_between_pools",
+                    "toolCallId": "call-1",
+                    "args": {
+                        "server_ref": "pve1",
+                        "source_pool": "pool-a",
+                        "destination_pool": "pool-b",
+                        "vmids": [101],
+                        "email": "l1@example.com",
+                    },
+                },
+                {
+                    "type": "tool-result",
+                    "toolName": "proxmox_preflight_move_vms_between_pools",
+                    "toolCallId": "call-1",
+                    "result": {
+                        "ok": True,
+                        "server_id": "srv-1",
+                        "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
+                        "destination_pool": {
+                            "data": [{"poolid": "pool-b", "members": []}]
+                        },
+                        "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                        "destination_permission": {
+                            "data": {"/pool/pool-b": {"VM.Console": 1}}
+                        },
+                        "requested_vmids": [101],
+                        "normalized_userid": "l1@example.com@pve",
+                    },
+                },
+            ],
+        }
+    ]
+
+    error = require_matching_preflight(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+        },
+        working_messages=working_messages,
+        requested_server_id="srv-1",
+    )
+
+    assert error is None
 
 
 def test_proxmox_pool_membership_move_completed_evidence_serializes_null_wrapper_data() -> (
