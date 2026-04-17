@@ -202,3 +202,49 @@ def test_validate_tool_arguments_rejects_invalid_firewall_target() -> None:
         "error_code": "invalid_tool_arguments",
         "details": ["targets[0] must be a valid CSF target"],
     }
+
+
+def test_validate_tool_arguments_rejects_blank_proxmox_email() -> None:
+    tool = get_tool_definition("proxmox_get_user_by_email")
+
+    assert tool is not None
+
+    with pytest.raises(ToolArgumentValidationError) as exc_info:
+        validate_tool_arguments(
+            tool=tool,
+            args={"server_ref": "pve1", "email": "   "},
+        )
+
+    assert exc_info.value.as_result() == {
+        "error": "Tool arguments are invalid",
+        "error_code": "invalid_tool_arguments",
+        "details": [
+            "email must not be blank",
+            "email must be a valid email address",
+        ],
+    }
+
+
+def test_validate_tool_arguments_rejects_duplicate_vmids_for_pool_move() -> None:
+    tool = get_tool_definition("proxmox_move_vms_between_pools")
+
+    assert tool is not None
+
+    with pytest.raises(ToolArgumentValidationError) as exc_info:
+        validate_tool_arguments(
+            tool=tool,
+            args={
+                "server_ref": "pve1",
+                "source_pool": "source",
+                "destination_pool": "dest",
+                "vmids": [100, 100],
+                "email": "owner@example.com",
+                "reason": "move pool membership",
+            },
+        )
+
+    assert exc_info.value.as_result() == {
+        "error": "Tool arguments are invalid",
+        "error_code": "invalid_tool_arguments",
+        "details": ["vmids must not contain duplicate values: '100'"],
+    }

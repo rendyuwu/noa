@@ -70,6 +70,38 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     assert by_name["proxmox_preflight_vm_nic_toggle"].result_schema is not None
     assert by_name["proxmox_disable_vm_nic"].result_schema is not None
 
+    proxmox_user_schema = by_name["proxmox_get_user_by_email"].parameters_schema
+    assert proxmox_user_schema["properties"]["email"]["format"] == "email"
+
+    proxmox_move_schema = by_name["proxmox_move_vms_between_pools"].parameters_schema
+    assert proxmox_move_schema["required"] == [
+        "server_ref",
+        "source_pool",
+        "destination_pool",
+        "vmids",
+        "email",
+        "reason",
+    ]
+    assert proxmox_move_schema["properties"]["vmids"]["minItems"] == 1
+    assert proxmox_move_schema["properties"]["vmids"]["uniqueItems"] is True
+
+    proxmox_cloudinit_schema = by_name[
+        "proxmox_reset_vm_cloudinit_password"
+    ].parameters_schema
+    assert proxmox_cloudinit_schema["properties"]["new_password"]["minLength"] == 1
+
+    assert by_name["proxmox_get_vm_status_current"].result_schema is not None
+    assert by_name["proxmox_get_vm_config"].result_schema is not None
+    assert by_name["proxmox_get_vm_pending"].result_schema is not None
+    assert by_name["proxmox_get_user_by_email"].result_schema is not None
+    assert (
+        by_name["proxmox_preflight_vm_cloudinit_password_reset"].result_schema
+        is not None
+    )
+    assert by_name["proxmox_reset_vm_cloudinit_password"].result_schema is not None
+    assert by_name["proxmox_preflight_move_vms_between_pools"].result_schema is not None
+    assert by_name["proxmox_move_vms_between_pools"].result_schema is not None
+
 
 async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
     suspend_tool = get_tool_definition("whm_suspend_account")
@@ -132,6 +164,34 @@ async def test_whm_change_tools_expose_workflow_families() -> None:
     assert (
         by_name["proxmox_enable_vm_nic"].workflow_family
         == "proxmox-vm-nic-connectivity"
+    )
+    assert (
+        by_name["proxmox_reset_vm_cloudinit_password"].workflow_family
+        == "proxmox-vm-cloudinit-password-reset"
+    )
+    assert (
+        by_name["proxmox_move_vms_between_pools"].workflow_family
+        == "proxmox-pool-membership-move"
+    )
+
+
+async def test_proxmox_change_tools_expose_preflight_guidance() -> None:
+    cloudinit_tool = get_tool_definition("proxmox_reset_vm_cloudinit_password")
+    pool_move_tool = get_tool_definition("proxmox_move_vms_between_pools")
+
+    assert cloudinit_tool is not None
+    assert pool_move_tool is not None
+
+    cloudinit_schema = cast(dict[str, Any], _to_openai_tool_schema(cloudinit_tool))
+    pool_move_schema = cast(dict[str, Any], _to_openai_tool_schema(pool_move_tool))
+
+    assert (
+        "Run `proxmox_preflight_vm_cloudinit_password_reset` first"
+        in cloudinit_schema["function"]["description"]
+    )
+    assert (
+        "Run `proxmox_preflight_move_vms_between_pools` first"
+        in pool_move_schema["function"]["description"]
     )
 
 

@@ -277,3 +277,76 @@ def test_validate_tool_result_rejects_proxmox_change_without_verified() -> None:
         )
 
     assert exc_info.value.details == ("Missing required field 'verified'",)
+
+
+def test_validate_tool_result_rejects_proxmox_vm_status_without_data() -> None:
+    tool = get_tool_definition("proxmox_get_vm_status_current")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={"ok": True, "message": "ok"},
+        )
+
+    assert exc_info.value.details == ("Missing required field 'data'",)
+
+
+def test_validate_tool_result_rejects_proxmox_user_lookup_without_data() -> None:
+    tool = get_tool_definition("proxmox_get_user_by_email")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={"ok": True, "message": "ok"},
+        )
+
+    assert exc_info.value.details == ("Missing required field 'data'",)
+
+
+def test_validate_tool_result_rejects_proxmox_cloudinit_preflight_without_config() -> (
+    None
+):
+    tool = get_tool_definition("proxmox_preflight_vm_cloudinit_password_reset")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={"ok": True, "message": "ok", "server_id": "srv-1"},
+        )
+
+    assert exc_info.value.details == (
+        "Missing required field 'error_code'",
+        "ok must be one of False",
+    )
+
+
+def test_validate_tool_result_rejects_proxmox_pool_move_without_results() -> None:
+    tool = get_tool_definition("proxmox_move_vms_between_pools")
+
+    assert tool is not None
+
+    with pytest.raises(ToolResultValidationError) as exc_info:
+        validate_tool_result(
+            tool=tool,
+            result={
+                "ok": True,
+                "message": "ok",
+                "status": "changed",
+                "server_id": "srv-1",
+                "source_pool_before": {},
+                "destination_pool_before": {},
+                "add_to_destination": {},
+                "remove_from_source": None,
+                "source_pool_after": {},
+                "destination_pool_after": {},
+                "verified": True,
+            },
+        )
+
+    assert exc_info.value.details == ("Missing required field 'results'",)

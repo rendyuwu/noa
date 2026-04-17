@@ -5,14 +5,28 @@ from typing import Any, Awaitable, Callable
 
 from noa_api.core.tools.demo_tools import get_current_date, get_current_time
 from noa_api.core.tools.workflow_todo import update_workflow_todo
+from noa_api.proxmox.tools.cloudinit_tools import (
+    proxmox_preflight_vm_cloudinit_password_reset,
+    proxmox_reset_vm_cloudinit_password,
+)
 from noa_api.proxmox.tools.nic_tools import (
     proxmox_disable_vm_nic,
     proxmox_enable_vm_nic,
     proxmox_preflight_vm_nic_toggle,
 )
+from noa_api.proxmox.tools.pool_tools import (
+    proxmox_get_user_by_email,
+    proxmox_move_vms_between_pools,
+    proxmox_preflight_move_vms_between_pools,
+)
 from noa_api.proxmox.tools.read_tools import (
     proxmox_list_servers,
     proxmox_validate_server,
+)
+from noa_api.proxmox.tools.vm_read_tools import (
+    proxmox_get_vm_config,
+    proxmox_get_vm_pending,
+    proxmox_get_vm_status_current,
 )
 from noa_api.storage.postgres.lifecycle import ToolRisk
 from noa_api.whm.tools.account_change_tools import (
@@ -134,6 +148,23 @@ def _string_array_param(
     return schema
 
 
+def _integer_array_param(
+    description: str,
+    *,
+    min_items: int = 1,
+    unique_items: bool = False,
+) -> dict[str, Any]:
+    schema: dict[str, Any] = {
+        "type": "array",
+        "description": description,
+        "items": {"type": "integer"},
+        "minItems": min_items,
+    }
+    if unique_items:
+        schema["uniqueItems"] = True
+    return schema
+
+
 def _result_object_schema(
     *,
     properties: dict[str, Any],
@@ -180,6 +211,61 @@ def _result_any_of(*variants: ToolResultSchema) -> ToolResultSchema:
     return {"anyOf": list(variants)}
 
 
+def _result_null_schema() -> ToolResultSchema:
+    return {"enum": [None]}
+
+
+def _result_json_value_schema() -> ToolResultSchema:
+    return _result_any_of(
+        {"type": "object"},
+        {"type": "array"},
+        _result_string_schema(),
+        _result_integer_schema(),
+        _result_boolean_schema(),
+        _result_null_schema(),
+    )
+
+
+def _result_integer_schema() -> ToolResultSchema:
+    return {"type": "integer"}
+
+
+def _result_json_object_schema() -> ToolResultSchema:
+    return _result_object_schema(properties={}, required=[], additional_properties=True)
+
+
+def _result_json_array_schema() -> ToolResultSchema:
+    return _result_array_schema(items=_result_json_object_schema())
+
+
+def _result_upstream_response_schema(
+    *, data_schema: ToolResultSchema | None = None
+) -> ToolResultSchema:
+    return _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "message": _result_string_schema(),
+            "data": data_schema or _result_json_value_schema(),
+        },
+        required=["ok", "message", "data"],
+    )
+
+
+def _result_vm_data_schema() -> ToolResultSchema:
+    return _result_any_of(
+        _result_json_object_schema(),
+        _result_json_array_schema(),
+        _result_string_schema(),
+        _result_integer_schema(),
+        _result_boolean_schema(),
+        _result_null_schema(),
+    )
+
+
+def _result_pool_response_schema() -> ToolResultSchema:
+    return _result_upstream_response_schema(data_schema=_result_json_object_schema())
+
+
 _SERVER_REF_PARAM = _string_param(
     "Server reference that resolves to exactly one configured WHM server. Use a server name or UUID and ask the user to choose if the tool returns choices.",
     format_name="server-ref",
@@ -207,6 +293,24 @@ _PROXMOX_NET_PARAM = _string_param(
 
 _PROXMOX_DIGEST_PARAM = _string_param(
     "Exact Proxmox config digest returned by proxmox_preflight_vm_nic_toggle.",
+)
+
+_PROXMOX_EMAIL_PARAM = _string_param(
+    "Exact email address used to identify the Proxmox user account.",
+    format_name="email",
+)
+
+_PROXMOX_POOL_PARAM = _string_param(
+    "Exact Proxmox pool name.",
+)
+
+_PROXMOX_VMID_LIST_PARAM = _integer_array_param(
+    "One or more exact Proxmox QEMU VM IDs. Preserve the user-provided VMIDs and do not invent values.",
+    unique_items=True,
+)
+
+_PROXMOX_CLOUDINIT_PASSWORD_PARAM = _string_param(
+    "New Proxmox cloud-init password to set for the VM.",
 )
 
 _USERNAME_PARAM = _string_param(
@@ -479,6 +583,136 @@ _PROXMOX_VALIDATE_SERVER_RESULT_SCHEMA = _result_any_of(
             "message": _result_string_schema(),
         },
         required=["ok", "message"],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_VM_READ_RESULT_SCHEMA = _result_any_of(
+    _result_upstream_response_schema(data_schema=_result_vm_data_schema()),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_USER_RESULT_SCHEMA = _result_any_of(
+    _result_upstream_response_schema(data_schema=_result_json_object_schema()),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_PREFLIGHT_CLOUDINIT_PASSWORD_RESET_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "message": _result_string_schema(),
+            "server_id": _result_string_schema(),
+            "node": _result_string_schema(),
+            "vmid": _result_integer_schema(),
+            "config": _result_json_object_schema(),
+            "cloudinit": _result_json_object_schema(),
+        },
+        required=["ok", "message", "server_id", "node", "vmid", "config", "cloudinit"],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_CLOUDINIT_PASSWORD_RESET_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "message": _result_string_schema(),
+            "status": _result_string_schema(enum=["changed"]),
+            "server_id": _result_string_schema(),
+            "node": _result_string_schema(),
+            "vmid": _result_integer_schema(),
+            "set_password_task": _result_json_object_schema(),
+            "regenerate_cloudinit": _result_json_object_schema(),
+            "cloudinit": _result_json_object_schema(),
+            "cloudinit_dump_user": _result_json_object_schema(),
+            "verified": _result_boolean_schema(value=True),
+        },
+        required=[
+            "ok",
+            "message",
+            "status",
+            "server_id",
+            "node",
+            "vmid",
+            "set_password_task",
+            "regenerate_cloudinit",
+            "cloudinit",
+            "cloudinit_dump_user",
+            "verified",
+        ],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_PREFLIGHT_POOL_MOVE_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "message": _result_string_schema(),
+            "server_id": _result_string_schema(),
+            "source_pool": _result_json_object_schema(),
+            "destination_pool": _result_json_object_schema(),
+            "target_user": _result_json_object_schema(),
+            "destination_permission": _result_json_object_schema(),
+            "requested_vmids": _result_array_schema(items=_result_integer_schema()),
+            "normalized_userid": _result_string_schema(),
+        },
+        required=[
+            "ok",
+            "message",
+            "server_id",
+            "source_pool",
+            "destination_pool",
+            "target_user",
+            "destination_permission",
+            "requested_vmids",
+            "normalized_userid",
+        ],
+    ),
+    _PROXMOX_RESULT_ERROR_SCHEMA,
+)
+
+_PROXMOX_POOL_MOVE_RESULT_SCHEMA = _result_any_of(
+    _result_object_schema(
+        properties={
+            **_RESULT_SUCCESS_OK_SCHEMA,
+            "message": _result_string_schema(),
+            "status": _result_string_schema(enum=["changed"]),
+            "server_id": _result_string_schema(),
+            "source_pool_before": _result_json_object_schema(),
+            "destination_pool_before": _result_json_object_schema(),
+            "add_to_destination": _result_json_object_schema(),
+            "remove_from_source": _result_any_of(
+                _result_json_object_schema(), _result_null_schema()
+            ),
+            "source_pool_after": _result_json_object_schema(),
+            "destination_pool_after": _result_json_object_schema(),
+            "results": _result_array_schema(
+                items=_result_object_schema(
+                    properties={
+                        "vmid": _result_integer_schema(),
+                        "status": _result_string_schema(enum=["changed"]),
+                    },
+                    required=["vmid", "status"],
+                )
+            ),
+            "verified": _result_boolean_schema(value=True),
+        },
+        required=[
+            "ok",
+            "message",
+            "status",
+            "server_id",
+            "source_pool_before",
+            "destination_pool_before",
+            "add_to_destination",
+            "remove_from_source",
+            "source_pool_after",
+            "destination_pool_after",
+            "results",
+            "verified",
+        ],
     ),
     _PROXMOX_RESULT_ERROR_SCHEMA,
 )
@@ -1176,6 +1410,179 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
             "Successful results return `servers` and never include the API token secret.",
         ),
         result_schema=_PROXMOX_SERVERS_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_get_vm_status_current",
+        description="Read the current Proxmox VM runtime status for one exact VM.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+            },
+            required=["server_ref", "node", "vmid"],
+        ),
+        execute=proxmox_get_vm_status_current,
+        prompt_hints=(
+            "Use this to inspect the current VM state before proposing a Proxmox change.",
+            "Successful results return `data` with the upstream VM status payload.",
+        ),
+        result_schema=_PROXMOX_VM_READ_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_get_vm_config",
+        description="Read the current Proxmox VM configuration for one exact VM.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+            },
+            required=["server_ref", "node", "vmid"],
+        ),
+        execute=proxmox_get_vm_config,
+        prompt_hints=(
+            "Use this when you need the current VM config or the digest before a follow-up change.",
+            "Successful results return `data` with the upstream QEMU config payload.",
+        ),
+        result_schema=_PROXMOX_VM_READ_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_get_vm_pending",
+        description="Read the pending Proxmox VM configuration changes for one exact VM.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+            },
+            required=["server_ref", "node", "vmid"],
+        ),
+        execute=proxmox_get_vm_pending,
+        prompt_hints=(
+            "Use this to inspect queued VM changes before deciding whether a change is still needed.",
+            "Successful results return `data` with the upstream pending-change payload.",
+        ),
+        result_schema=_PROXMOX_VM_READ_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_get_user_by_email",
+        description="Resolve a Proxmox user account from an exact email address.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "email": _PROXMOX_EMAIL_PARAM,
+            },
+            required=["server_ref", "email"],
+        ),
+        execute=proxmox_get_user_by_email,
+        prompt_hints=(
+            "Use this to confirm the exact Proxmox user identity before any pool membership change.",
+            "Successful results return `data` with the upstream user payload.",
+        ),
+        result_schema=_PROXMOX_USER_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_preflight_vm_cloudinit_password_reset",
+        description="Inspect Proxmox VM config and cloud-init state before resetting the cloud-init password.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+            },
+            required=["server_ref", "node", "vmid"],
+        ),
+        execute=proxmox_preflight_vm_cloudinit_password_reset,
+        prompt_hints=(
+            "Run this before `proxmox_reset_vm_cloudinit_password` and summarize the VM config plus cloud-init state first.",
+            "Successful results return `config` and `cloudinit` evidence for the exact VM.",
+        ),
+        result_schema=_PROXMOX_PREFLIGHT_CLOUDINIT_PASSWORD_RESET_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_reset_vm_cloudinit_password",
+        description="Reset the Proxmox VM cloud-init password after the exact VM has been preflighted.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "node": _PROXMOX_NODE_PARAM,
+                "vmid": _PROXMOX_VMID_PARAM,
+                "new_password": _PROXMOX_CLOUDINIT_PASSWORD_PARAM,
+                "reason": _REASON_PARAM,
+            },
+            required=["server_ref", "node", "vmid", "new_password", "reason"],
+        ),
+        execute=proxmox_reset_vm_cloudinit_password,
+        prompt_hints=(
+            "Run `proxmox_preflight_vm_cloudinit_password_reset` first and reuse the same server_ref, node, and vmid.",
+            "Idempotent result contract: returns `status` `changed` only after postflight confirms the cloud-init password reset.",
+        ),
+        result_schema=_PROXMOX_CLOUDINIT_PASSWORD_RESET_RESULT_SCHEMA,
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+    ),
+    ToolDefinition(
+        name="proxmox_preflight_move_vms_between_pools",
+        description="Inspect source and destination Proxmox pools before moving exact VMIDs between them.",
+        risk=ToolRisk.READ,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "source_pool": _PROXMOX_POOL_PARAM,
+                "destination_pool": _PROXMOX_POOL_PARAM,
+                "vmids": _PROXMOX_VMID_LIST_PARAM,
+                "email": _PROXMOX_EMAIL_PARAM,
+            },
+            required=[
+                "server_ref",
+                "source_pool",
+                "destination_pool",
+                "vmids",
+                "email",
+            ],
+        ),
+        execute=proxmox_preflight_move_vms_between_pools,
+        prompt_hints=(
+            "Run this before `proxmox_move_vms_between_pools` and confirm the exact source pool, destination pool, VMIDs, and Proxmox user identity first.",
+            "Successful results return the source pool, destination pool, target user, and requested VMIDs.",
+        ),
+        result_schema=_PROXMOX_PREFLIGHT_POOL_MOVE_RESULT_SCHEMA,
+    ),
+    ToolDefinition(
+        name="proxmox_move_vms_between_pools",
+        description="Move exact Proxmox VMIDs from one pool to another after preflight verification.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema=_object_schema(
+            properties={
+                "server_ref": _PROXMOX_SERVER_REF_PARAM,
+                "source_pool": _PROXMOX_POOL_PARAM,
+                "destination_pool": _PROXMOX_POOL_PARAM,
+                "vmids": _PROXMOX_VMID_LIST_PARAM,
+                "email": _PROXMOX_EMAIL_PARAM,
+                "reason": _REASON_PARAM,
+            },
+            required=[
+                "server_ref",
+                "source_pool",
+                "destination_pool",
+                "vmids",
+                "email",
+                "reason",
+            ],
+        ),
+        execute=proxmox_move_vms_between_pools,
+        prompt_hints=(
+            "Run `proxmox_preflight_move_vms_between_pools` first and reuse the same server_ref, source_pool, destination_pool, vmids, and email.",
+            "Idempotent result contract: returns `status` `changed` only after postflight confirms the VMIDs moved into the destination pool and out of the source pool.",
+        ),
+        result_schema=_PROXMOX_POOL_MOVE_RESULT_SCHEMA,
+        workflow_family="proxmox-pool-membership-move",
     ),
     ToolDefinition(
         name="proxmox_validate_server",
