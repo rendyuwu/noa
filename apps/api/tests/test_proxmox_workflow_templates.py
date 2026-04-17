@@ -92,12 +92,82 @@ def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note(
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
     )
 
     assert reply is not None
     assert reply.outcome == "changed"
+    assert "VM 101 on node pve1-node" in reply.summary
     assert "may not take effect immediately" in reply.summary
+    assert "Verified digest: digest-2." in reply.summary
     assert "restart or stop/start" in reply.next_step
+
+
+def test_proxmox_cloudinit_password_reset_completed_reply_uses_integer_vmid_and_postflight_digest() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {"data": {"cipassword": "old"}},
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "set_password_task": {"ok": True, "data": "UPID:SET"},
+            "regenerate_cloudinit": {"ok": True},
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+    )
+
+    assert reply is not None
+    assert "VM 101 on node pve1-node" in reply.summary
+    assert "Verified digest: digest-2." in reply.summary
 
 
 def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wrapper_data() -> (
@@ -172,6 +242,63 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wra
         item["label"] == "UPID" and item["value"] == "none"
         for item in verification["items"]
     )
+
+
+def test_proxmox_cloudinit_password_reset_completed_reply_uses_nested_postflight_digest() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {"data": {"cipassword": "old"}},
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "set_password_task": {"ok": True, "data": "UPID:SET"},
+            "regenerate_cloudinit": {"ok": True},
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+    )
+
+    assert reply is not None
+    assert "Verified digest: digest-2." in reply.summary
 
 
 def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_tables() -> (

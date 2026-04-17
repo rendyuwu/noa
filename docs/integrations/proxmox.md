@@ -64,6 +64,72 @@ curl -k \
   'https://<pve-host>:8006/api2/json/nodes/<node>/tasks/<upid>/status'
 ```
 
+##### Cloud-init password reset / verification
+```bash
+curl -k -X POST \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  --data-urlencode 'cipassword=<new-password>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/config'
+```
+
+```bash
+curl -k -X PUT \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/cloudinit'
+```
+
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/cloudinit'
+```
+
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/cloudinit/dump?type=user'
+```
+
+##### Pool move preflight / permission / membership updates
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/pools?poolid=<old-poolid>'
+```
+
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  'https://<pve-host>:8006/api2/json/pools?poolid=<new-poolid>'
+```
+
+```bash
+curl -k \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  --get \
+  --data-urlencode 'userid=<email@pve>' \
+  --data-urlencode 'path=/pool/<poolid>' \
+  'https://<pve-host>:8006/api2/json/access/permissions'
+```
+
+```bash
+curl -k -X PUT \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  --data-urlencode 'poolid=<new-poolid>' \
+  --data-urlencode 'vms=<vmid-list>' \
+  --data-urlencode 'allow-move=1' \
+  'https://<pve-host>:8006/api2/json/pools'
+```
+
+```bash
+curl -k -X PUT \
+  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
+  --data-urlencode 'poolid=<old-poolid>' \
+  --data-urlencode 'vms=<vmid-list>' \
+  --data-urlencode 'delete=1' \
+  'https://<pve-host>:8006/api2/json/pools'
+```
+
 ## Current Proxmox features actually implemented
 - Proxmox server inventory CRUD in NOA admin UI/API
 - Proxmox server connectivity validation
@@ -76,7 +142,6 @@ curl -k \
 ## Backlog / research notes
 - QEMU guest-agent password reset flow
 - Direct node-scoped VM status / hardware lookup workflow
-- Pool-based “change email” operational flow
 
 ## 1) Reset password from cloud-init (`qemu` only)
 
@@ -166,52 +231,6 @@ curl -k \
 Example normalization:
 - User input: `l1@biznetgio.com`
 - Tool userid: `l1@biznetgio.com@pve`
-
-### 1. Verify source pool exists / inspect current members
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/pools?poolid=<old-poolid>'
-```
-
-### 2. Verify destination pool exists / inspect members
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  'https://<pve-host>:8006/api2/json/pools?poolid=<new-poolid>'
-```
-
-### 3. Verify effective permission for one user on one pool
-- Use this to confirm the target user already has permission on the destination pool.
-
-```bash
-curl -k \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --get \
-  --data-urlencode 'userid=<email@pve>' \
-  --data-urlencode 'path=/pool/<poolid>' \
-  'https://<pve-host>:8006/api2/json/access/permissions'
-```
-
-### 4. Add VM(s) to the destination pool
-```bash
-curl -k -X PUT \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'poolid=<new-poolid>' \
-  --data-urlencode 'vms=<vmid-list>' \
-  --data-urlencode 'allow-move=1' \
-  'https://<pve-host>:8006/api2/json/pools'
-```
-
-### 5. Remove VM(s) from the source pool if they still remain there
-```bash
-curl -k -X PUT \
-  -H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>' \
-  --data-urlencode 'poolid=<old-poolid>' \
-  --data-urlencode 'vms=<vmid-list>' \
-  --data-urlencode 'delete=1' \
-  'https://<pve-host>:8006/api2/json/pools'
-```
 
 ### Operational notes
 - Preflight and postflight verification are required.

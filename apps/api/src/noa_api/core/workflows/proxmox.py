@@ -1175,7 +1175,7 @@ def _cloudinit_completion_summary(
     )
     if isinstance(cloudinit, dict):
         after_digest = normalized_text(cloudinit.get("digest"))
-    postflight_digest = normalized_text(postflight_result.get("digest"))
+    postflight_digest = _cloudinit_digest_from_postflight(postflight_result)
     parts: list[str] = []
     if before_digest is not None:
         parts.append(f"Before config digest: {before_digest}.")
@@ -1345,16 +1345,19 @@ def _cloudinit_evidence_summary(
         )
     if result.get("verified") is True:
         summary.append("Verification succeeded.")
-    postflight_cloudinit = (
-        postflight_result.get("cloudinit")
-        if isinstance(postflight_result.get("cloudinit"), dict)
-        else None
-    )
-    if isinstance(postflight_cloudinit, dict):
-        digest = normalized_text(postflight_cloudinit.get("digest"))
-        if digest is not None:
-            summary.append(f"Current digest: {digest}.")
+    digest = _cloudinit_digest_from_postflight(postflight_result)
+    if digest is not None:
+        summary.append(f"Current digest: {digest}.")
     return summary
+
+
+def _cloudinit_digest_from_postflight(
+    postflight_result: dict[str, object],
+) -> str | None:
+    cloudinit = postflight_result.get("cloudinit")
+    if not isinstance(cloudinit, dict):
+        return None
+    return normalized_text(cloudinit.get("digest"))
 
 
 def _matching_cloudinit_preflight(
