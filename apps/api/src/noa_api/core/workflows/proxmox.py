@@ -2062,7 +2062,7 @@ def _pool_move_evidence_summary(
     summary: list[str] = []
     if isinstance(before_state, dict):
         summary.append("Preflight captured for the exact source and destination pools.")
-    if phase == "waiting_on_approval":
+    if phase in {"waiting_on_approval", "denied", "failed"}:
         return summary
     summary.extend(
         _pool_move_verification_summary_lines(
