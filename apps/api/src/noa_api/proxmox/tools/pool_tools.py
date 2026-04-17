@@ -298,7 +298,7 @@ async def proxmox_move_vms_between_pools(
 
     try:
         source_vmids_after_add = _pool_result_vmids(source_pool_after_add)
-        destination_vmids_after_add = _pool_result_vmids(destination_pool_after_add)
+        _pool_result_vmids(destination_pool_after_add)
     except ValueError:
         return {
             "ok": False,
