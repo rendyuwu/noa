@@ -119,7 +119,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         title_subject = _title_subject(context.args)
         desired_state = _desired_link_state(context.tool_name)
         current_state = _link_state(before_state)
-        after_state = _link_state(result) or _link_state(postflight) or desired_state
+        after_state = _final_link_state(result, postflight, fallback=desired_state)
         failed_result = _workflow_result_failed(result)
 
         if context.phase == "waiting_on_approval":
@@ -554,11 +554,18 @@ def _preflight_content(*, subject: str, before_state: dict[str, object] | None) 
 
 def _verification_content(context: WorkflowTemplateContext) -> str:
     result = context.result if isinstance(context.result, dict) else {}
+    postflight = (
+        context.postflight_result if isinstance(context.postflight_result, dict) else {}
+    )
     verified = result.get("verified") is True
     if context.phase == "completed" and (
         verified or _postflight_verified(context.tool_name, context.postflight_result)
     ):
-        final_state = _link_state(result) or _desired_link_state(context.tool_name)
+        final_state = _final_link_state(
+            result,
+            postflight,
+            fallback=_desired_link_state(context.tool_name),
+        )
         return f"Verify that the NIC finished in link state {final_state}."
     return "Poll the task and verify the NIC link state after the change."
 
@@ -634,7 +641,7 @@ def _after_state_items(
     after_net = normalized_text(result.get("after_net")) or normalized_text(
         postflight_result.get("before_net")
     )
-    link_state = _link_state(result) or _link_state(postflight_result)
+    link_state = _final_link_state(result, postflight_result)
     return [
         WorkflowEvidenceItem(label="Link state", value=link_state or "pending"),
         WorkflowEvidenceItem(label="NIC config", value=after_net or "pending"),
@@ -682,7 +689,7 @@ def _evidence_summary(
     postflight_result: dict[str, object],
 ) -> list[str]:
     current_state = _link_state(before_state)
-    final_state = _link_state(result) or _link_state(postflight_result)
+    final_state = _final_link_state(result, postflight_result)
     summary: list[str] = []
     if current_state is not None:
         summary.append(f"Before: link {current_state}.")
@@ -707,6 +714,15 @@ def _verification_summary_sentence(
     if _postflight_verified(tool_name, postflight_result):
         return "postflight verification succeeded"
     return "verification is not confirmed"
+
+
+def _final_link_state(
+    result: dict[str, object],
+    postflight_result: dict[str, object],
+    *,
+    fallback: str | None = None,
+) -> str | None:
+    return _link_state(postflight_result) or _link_state(result) or fallback
 
 
 class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
