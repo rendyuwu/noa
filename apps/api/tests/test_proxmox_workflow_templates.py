@@ -3022,6 +3022,79 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
     )
 
 
+def test_proxmox_pool_membership_move_completed_reply_and_todos_return_partial_when_failure_result_is_rescued_by_verified_postflight() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result={
+            "ok": False,
+            "message": "task failed",
+            "status": "failed",
+            "server_id": "srv-1",
+            "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
+            "add_to_destination": {
+                "ok": False,
+                "error_code": "permission_denied",
+                "message": "add to destination pool failed",
+            },
+            "remove_from_source": {"ok": False, "message": "removal not attempted"},
+            "results": [{"vmid": 101, "status": "failed"}],
+            "verified": False,
+        },
+        postflight_result=_pool_move_postflight_verified_result(),
+    )
+
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result={
+            "ok": False,
+            "message": "task failed",
+            "status": "failed",
+            "server_id": "srv-1",
+            "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
+            "add_to_destination": {
+                "ok": False,
+                "error_code": "permission_denied",
+                "message": "add to destination pool failed",
+            },
+            "remove_from_source": {"ok": False, "message": "removal not attempted"},
+            "results": [{"vmid": 101, "status": "failed"}],
+            "verified": False,
+        },
+        postflight_result=_pool_move_postflight_verified_result(),
+    )
+
+    assert reply is not None
+    assert reply.outcome == "partial"
+    assert "postflight" in reply.summary.lower()
+
+    assert workflow_todos is not None
+    assert workflow_todos[4]["status"] == "completed"
+
+
 def test_proxmox_workflow_waiting_on_user_todos_include_reason_step() -> None:
     workflow_todos = build_workflow_todos(
         tool_name="proxmox_disable_vm_nic",
