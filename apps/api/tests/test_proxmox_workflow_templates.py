@@ -2513,7 +2513,7 @@ def test_proxmox_pool_membership_move_completed_todos_keep_verified_outcome_when
     )
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postflight_verification_disagreement_when_verified() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postflight_refetch_degraded_when_verified() -> (
     None
 ):
     reply = build_workflow_reply_template(
