@@ -248,3 +248,31 @@ def test_validate_tool_arguments_rejects_duplicate_vmids_for_pool_move() -> None
         "error_code": "invalid_tool_arguments",
         "details": ["vmids must not contain duplicate values: '100'"],
     }
+
+
+@pytest.mark.parametrize("vmids", ([0], [-1]))
+def test_validate_tool_arguments_rejects_non_positive_pool_move_vmids(
+    vmids: list[int],
+) -> None:
+    tool = get_tool_definition("proxmox_move_vms_between_pools")
+
+    assert tool is not None
+
+    with pytest.raises(ToolArgumentValidationError) as exc_info:
+        validate_tool_arguments(
+            tool=tool,
+            args={
+                "server_ref": "pve1",
+                "source_pool": "source",
+                "destination_pool": "dest",
+                "vmids": vmids,
+                "email": "owner@example.com",
+                "reason": "move pool membership",
+            },
+        )
+
+    assert exc_info.value.as_result() == {
+        "error": "Tool arguments are invalid",
+        "error_code": "invalid_tool_arguments",
+        "details": ["vmids[0] must be greater than or equal to 1"],
+    }

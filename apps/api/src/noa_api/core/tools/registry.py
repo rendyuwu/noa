@@ -157,7 +157,7 @@ def _integer_array_param(
     schema: dict[str, Any] = {
         "type": "array",
         "description": description,
-        "items": {"type": "integer"},
+        "items": {"type": "integer", "minimum": 1},
         "minItems": min_items,
     }
     if unique_items:
@@ -220,8 +220,6 @@ def _result_json_value_schema() -> ToolResultSchema:
         {"type": "object"},
         {"type": "array"},
         _result_string_schema(),
-        _result_integer_schema(),
-        _result_boolean_schema(),
         _result_null_schema(),
     )
 
@@ -256,8 +254,6 @@ def _result_vm_data_schema() -> ToolResultSchema:
         _result_json_object_schema(),
         _result_json_array_schema(),
         _result_string_schema(),
-        _result_integer_schema(),
-        _result_boolean_schema(),
         _result_null_schema(),
     )
 
