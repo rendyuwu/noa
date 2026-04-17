@@ -276,7 +276,12 @@ class WHMAccountContactEmailTemplate(_WHMAccountTemplate):
             },
             {
                 "content": _reason_step_content(
-                    action_label="changing the contact email", reason=reason
+                    action_label="changing the contact email",
+                    reason=reason,
+                    missing_reason_text=(
+                        "Ask the user for a reason—an osTicket/reference number or a brief "
+                        "description—before changing the contact email for the account."
+                    ),
                 ),
                 "status": cast(Any, statuses["reason"]),
                 "priority": "high",
@@ -392,7 +397,12 @@ class WHMAccountPrimaryDomainTemplate(_WHMTemplate):
             },
             {
                 "content": _reason_step_content(
-                    action_label="changing the primary domain", reason=reason
+                    action_label="changing the primary domain",
+                    reason=reason,
+                    missing_reason_text=(
+                        "Ask the user for a reason—an osTicket/reference number or a brief "
+                        "description—before changing the primary domain for the account."
+                    ),
                 ),
                 "status": cast(Any, statuses["reason"]),
                 "priority": "high",
@@ -552,6 +562,9 @@ class WHMFirewallBatchTemplate(_WHMTemplate):
                 "content": _reason_step_content(
                     action_label=_firewall_action_phrase(context.tool_name),
                     reason=reason,
+                    missing_reason_text=_firewall_missing_reason_text(
+                        context.tool_name
+                    ),
                 ),
                 "status": cast(Any, statuses["reason"]),
                 "priority": "high",
@@ -1904,9 +1917,19 @@ def _preflight_step_content(
     return f"Account lookup / preflight for {subject}: {'; '.join(details)}."
 
 
-def _reason_step_content(*, action_label: str, reason: str | None) -> str:
+def _reason_step_content(
+    *,
+    action_label: str,
+    reason: str | None,
+    missing_reason_text: str | None = None,
+) -> str:
     if reason is None:
-        return f"Ask for reason if missing before {action_label}ing the account."
+        if missing_reason_text is not None:
+            return missing_reason_text
+        return (
+            f"Ask the user for a reason—an osTicket/reference number or a brief "
+            f"description—before {action_label}ing the account."
+        )
     return f"Reason captured for the {action_label}: {reason}."
 
 
@@ -2254,6 +2277,20 @@ def _firewall_action_phrase(tool_name: str) -> str:
         "whm_firewall_denylist_add_ttl": "add to denylist",
     }
     return phrases.get(tool_name, "change firewall")
+
+
+def _firewall_missing_reason_text(tool_name: str) -> str:
+    phrases = {
+        "whm_firewall_unblock": "before unblocking the account firewall.",
+        "whm_firewall_allowlist_add_ttl": "before adding the target to the firewall allowlist.",
+        "whm_firewall_allowlist_remove": "before removing the target from the firewall allowlist.",
+        "whm_firewall_denylist_add_ttl": "before adding the target to the firewall denylist.",
+    }
+    suffix = phrases.get(tool_name, "before changing the account firewall.")
+    return (
+        "Ask the user for a reason—an osTicket/reference number or a brief "
+        f"description—{suffix}"
+    )
 
 
 def _firewall_activity_phrase(tool_name: str) -> str:

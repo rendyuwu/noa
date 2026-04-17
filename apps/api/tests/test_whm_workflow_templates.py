@@ -45,6 +45,176 @@ def test_whm_account_lifecycle_failed_phase_keeps_terminal_todo_shape() -> None:
     assert len(todos) == 5
 
 
+def test_whm_account_lifecycle_waiting_on_user_reason_mentions_reference_or_description() -> (
+    None
+):
+    todos = build_workflow_todos(
+        tool_name="whm_suspend_account",
+        workflow_family="whm-account-lifecycle",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+        },
+        phase="waiting_on_user",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "suspended": False,
+                    },
+                },
+            }
+        ],
+    )
+
+    assert todos is not None
+    assert todos[1]["status"] == "waiting_on_user"
+    assert "osTicket/reference number or a brief description" in todos[1]["content"]
+
+
+def test_whm_contact_email_waiting_on_user_reason_uses_correct_wording() -> None:
+    todos = build_workflow_todos(
+        tool_name="whm_change_contact_email",
+        workflow_family="whm-account-contact-email",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_email": "new@example.com",
+        },
+        phase="waiting_on_user",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "contactemail": "old@example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert todos is not None
+    assert todos[1]["status"] == "waiting_on_user"
+    assert (
+        todos[1]["content"]
+        == "Ask the user for a reason—an osTicket/reference number or a brief description—before changing the contact email for the account."
+    )
+
+
+def test_whm_primary_domain_waiting_on_user_reason_uses_correct_wording() -> None:
+    todos = build_workflow_todos(
+        tool_name="whm_change_primary_domain",
+        workflow_family="whm-account-primary-domain",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_domain": "new.example.com",
+        },
+        phase="waiting_on_user",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_primary_domain_change",
+                "args": {
+                    "server_ref": "web1",
+                    "username": "alice",
+                    "new_domain": "new.example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "requested_domain": "new.example.com",
+                    "requested_domain_location": "absent",
+                    "domain_owner": None,
+                    "domain_inventory": {
+                        "main_domain": "old.example.com",
+                        "addon_domains": [],
+                        "parked_domains": [],
+                        "sub_domains": [],
+                    },
+                    "account": {
+                        "user": "alice",
+                        "domain": "old.example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert todos is not None
+    assert todos[1]["status"] == "waiting_on_user"
+    assert (
+        todos[1]["content"]
+        == "Ask the user for a reason—an osTicket/reference number or a brief description—before changing the primary domain for the account."
+    )
+
+
+def test_whm_firewall_waiting_on_user_reason_uses_correct_wording() -> None:
+    test_cases = [
+        (
+            "whm_firewall_unblock",
+            "Ask the user for a reason—an osTicket/reference number or a brief description—before unblocking the account firewall.",
+        ),
+        (
+            "whm_firewall_allowlist_add_ttl",
+            "Ask the user for a reason—an osTicket/reference number or a brief description—before adding the target to the firewall allowlist.",
+        ),
+        (
+            "whm_firewall_allowlist_remove",
+            "Ask the user for a reason—an osTicket/reference number or a brief description—before removing the target from the firewall allowlist.",
+        ),
+        (
+            "whm_firewall_denylist_add_ttl",
+            "Ask the user for a reason—an osTicket/reference number or a brief description—before adding the target to the firewall denylist.",
+        ),
+    ]
+
+    for tool_name, expected_content in test_cases:
+        todos = build_workflow_todos(
+            tool_name=tool_name,
+            workflow_family="whm-firewall-batch-change",
+            args={
+                "server_ref": "web2",
+                "targets": ["1.2.3.4", "5.6.7.8"],
+            },
+            phase="waiting_on_user",
+            preflight_evidence=[
+                {
+                    "toolName": "whm_preflight_firewall_entries",
+                    "args": {"server_ref": "web2", "target": "1.2.3.4"},
+                    "result": {
+                        "ok": True,
+                        "target": "1.2.3.4",
+                        "matches": ["/etc/csf/csf.deny"],
+                        "available_tools": {"csf": True, "imunify": True},
+                        "combined_verdict": "blocked",
+                    },
+                },
+                {
+                    "toolName": "whm_preflight_firewall_entries",
+                    "args": {"server_ref": "web2", "target": "5.6.7.8"},
+                    "result": {
+                        "ok": True,
+                        "target": "5.6.7.8",
+                        "matches": ["/etc/csf/csf.deny"],
+                        "available_tools": {"csf": True, "imunify": False},
+                        "combined_verdict": "blocked",
+                    },
+                },
+            ],
+        )
+
+        assert todos is not None
+        assert todos[1]["status"] == "waiting_on_user"
+        assert todos[1]["content"] == expected_content
+
+
 def test_whm_firewall_waiting_for_approval_builds_target_specific_blocked_todos() -> (
     None
 ):

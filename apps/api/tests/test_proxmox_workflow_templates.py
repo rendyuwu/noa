@@ -235,7 +235,7 @@ def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_an
         "pending",
     ]
     assert "preflight" in todos[0]["content"].lower()
-    assert "resetting the cloud-init password" in todos[1]["content"].lower()
+    assert "osTicket/reference number or a brief description" in todos[1]["content"]
 
 
 def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note() -> (
@@ -1082,7 +1082,7 @@ def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_
     )
 
     assert todos is not None
-    assert "moving pool membership" in todos[1]["content"].lower()
+    assert "osTicket/reference number or a brief description" in todos[1]["content"]
 
 
 def test_proxmox_pool_membership_move_completed_reply_handles_failure_result() -> None:
@@ -3027,7 +3027,7 @@ def test_proxmox_enable_vm_nic_waiting_on_user_todos_require_reason_step() -> No
         "pending",
     ]
     assert (
-        "Ask for a short reason before enabling the VM NIC."
+        "osTicket/reference number or a brief description"
         in workflow_todos[1]["content"]
     )
 

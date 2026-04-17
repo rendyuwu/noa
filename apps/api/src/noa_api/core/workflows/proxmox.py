@@ -613,7 +613,10 @@ def _reason_step_content(
         if missing_reason_text is not None:
             return missing_reason_text
         gerund = "enabling" if action_verb == "enable" else "disabling"
-        return f"Ask for a short reason before {gerund} the VM NIC."
+        return (
+            "Ask the user for a reason—an osTicket/reference number or a brief "
+            f"description—before {gerund} the VM NIC."
+        )
     return f"Reason captured for the {action_label} change: {reason}."
 
 
@@ -826,7 +829,10 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                 "content": _reason_step_content(
                     action_label="reset cloud-init password",
                     action_verb="reset",
-                    missing_reason_text="Ask for a short reason before resetting the cloud-init password.",
+                    missing_reason_text=(
+                        "Ask the user for a reason—an osTicket/reference number or a brief "
+                        "description—before resetting the cloud-init password."
+                    ),
                     reason=reason,
                 ),
                 "status": reason_status,
@@ -1141,7 +1147,10 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 "content": _reason_step_content(
                     action_label="move pool membership",
                     action_verb="move",
-                    missing_reason_text="Ask for a short reason before moving pool membership.",
+                    missing_reason_text=(
+                        "Ask the user for a reason—an osTicket/reference number or a brief "
+                        "description—before moving pool membership."
+                    ),
                     reason=reason,
                 ),
                 "status": reason_status,
