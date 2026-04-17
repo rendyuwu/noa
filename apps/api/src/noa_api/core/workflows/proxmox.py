@@ -29,7 +29,6 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         subject = _subject(context.args)
         before_state = _matching_preflight(context.preflight_evidence, context.args)
         reason = normalized_text(context.args.get("reason"))
-        failed_result = _workflow_result_failed(context.result)
 
         reason_status = "completed" if reason is not None else "pending"
         approval_status = "pending"
@@ -47,8 +46,10 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         elif context.phase == "completed":
             reason_status = "completed"
             approval_status = "completed"
-            execute_status = "completed" if not failed_result else "cancelled"
-            verify_status = "completed" if not failed_result else "cancelled"
+            execute_status = "completed"
+            verify_status = (
+                "completed" if context.postflight_result is not None else "cancelled"
+            )
         elif context.phase == "denied":
             approval_status = "cancelled"
             execute_status = "cancelled"
@@ -372,6 +373,25 @@ def _server_identity_matches(
     return normalized_text(item_args.get("server_ref")) == requested_server_ref
 
 
+def _server_identity_matches_any(
+    *,
+    item_args: dict[str, object],
+    result: dict[str, object],
+    requested_server_ref: str,
+    requested_server_id: str | None,
+) -> bool:
+    result_server_id = normalized_text(result.get("server_id"))
+    item_server_ref = normalized_text(item_args.get("server_ref"))
+    if requested_server_id is not None and result_server_id is not None:
+        return (
+            result_server_id == requested_server_id
+            or item_server_ref == requested_server_ref
+        )
+    if item_server_ref == requested_server_ref:
+        return True
+    return result_server_id is not None and result_server_id == requested_server_ref
+
+
 def _matching_preflight(
     preflight_evidence: list[dict[str, object]],
     args: dict[str, object],
@@ -399,7 +419,12 @@ def _matching_preflight(
             continue
         if result.get("ok") is not True:
             continue
-        if normalized_text(item_args.get("server_ref")) != requested_server_ref:
+        if not _server_identity_matches_any(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=None,
+        ):
             continue
         if normalized_text(result.get("node")) != requested_node:
             continue
@@ -639,8 +664,15 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
         elif context.phase == "completed":
             reason_status = "completed"
             approval_status = "completed"
-            execute_status = "completed" if not failed_result else "cancelled"
-            verify_status = "completed" if not failed_result else "cancelled"
+            if failed_result:
+                has_postflight = isinstance(context.postflight_result, dict) and bool(
+                    context.postflight_result
+                )
+                execute_status = "completed"
+                verify_status = "completed" if has_postflight else "cancelled"
+            else:
+                execute_status = "completed"
+                verify_status = "completed"
         elif context.phase == "denied":
             approval_status = "cancelled"
             execute_status = "cancelled"
@@ -904,7 +936,6 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             context.preflight_evidence, context.args
         )
         reason = normalized_text(context.args.get("reason"))
-        failed_result = _workflow_result_failed(context.result)
 
         preflight_status = "completed" if before_state is not None else "in_progress"
         reason_status = "completed" if reason is not None else "pending"
@@ -923,8 +954,10 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
         elif context.phase == "completed":
             reason_status = "completed"
             approval_status = "completed"
-            execute_status = "completed" if not failed_result else "cancelled"
-            verify_status = "completed" if not failed_result else "cancelled"
+            execute_status = "completed"
+            verify_status = (
+                "completed" if context.postflight_result is not None else "cancelled"
+            )
         elif context.phase == "denied":
             approval_status = "cancelled"
             execute_status = "cancelled"
@@ -1725,7 +1758,12 @@ def _matching_cloudinit_preflight(
             continue
         if result.get("ok") is not True:
             continue
-        if normalized_text(item_args.get("server_ref")) != requested_server_ref:
+        if not _server_identity_matches_any(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=None,
+        ):
             continue
         if normalized_text(result.get("node")) != requested_node:
             continue
@@ -1769,11 +1807,12 @@ def _require_cloudinit_preflight(
         result = item.get("result")
         if not isinstance(item_args, dict) or not isinstance(result, dict):
             continue
-        if requested_server_id is not None and normalized_text(
-            result.get("server_id")
-        ) not in {None, requested_server_id}:
-            continue
-        if normalized_text(item_args.get("server_ref")) != requested_server_ref:
+        if not _server_identity_matches_any(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
             continue
         if normalized_text(result.get("node")) != requested_node:
             continue
@@ -2060,7 +2099,12 @@ def _matching_pool_move_preflight(
             continue
         if result.get("ok") is not True:
             continue
-        if normalized_text(item_args.get("server_ref")) != requested_server_ref:
+        if not _server_identity_matches_any(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=None,
+        ):
             continue
         if normalized_text(item_args.get("source_pool")) != requested_source_pool:
             continue
@@ -2119,11 +2163,12 @@ def _require_pool_move_preflight(
         result = item.get("result")
         if not isinstance(item_args, dict) or not isinstance(result, dict):
             continue
-        if requested_server_id is not None and normalized_text(
-            result.get("server_id")
-        ) not in {None, requested_server_id}:
-            continue
-        if normalized_text(item_args.get("server_ref")) != requested_server_ref:
+        if not _server_identity_matches_any(
+            item_args=item_args,
+            result=result,
+            requested_server_ref=requested_server_ref,
+            requested_server_id=requested_server_id,
+        ):
             continue
         if normalized_text(item_args.get("source_pool")) != requested_source_pool:
             continue

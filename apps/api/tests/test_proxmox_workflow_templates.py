@@ -1323,12 +1323,14 @@ def test_proxmox_workflow_completed_reply_summarizes_before_after_and_verificati
     assert "Verification succeeded." in reply.evidence_summary
 
 
-def test_proxmox_workflow_completed_reply_handles_failure_result() -> None:
+def test_proxmox_workflow_completed_reply_handles_failure_result_with_postflight_data() -> (
+    None
+):
     reply = build_workflow_reply_template(
         tool_name="proxmox_disable_vm_nic",
         workflow_family="proxmox-vm-nic-connectivity",
         args={
-            "server_ref": "pve1",
+            "server_ref": "11111111-1111-1111-1111-111111111111",
             "node": "pve1-node",
             "vmid": 101,
             "net": "net0",
@@ -1342,7 +1344,7 @@ def test_proxmox_workflow_completed_reply_handles_failure_result() -> None:
                 "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
                 "result": {
                     "ok": True,
-                    "server_id": "srv-1",
+                    "server_id": "11111111-1111-1111-1111-111111111111",
                     "node": "pve1-node",
                     "vmid": 101,
                     "digest": "digest-1",
@@ -1363,6 +1365,18 @@ def test_proxmox_workflow_completed_reply_handles_failure_result() -> None:
             "digest": "digest-1",
             "status": "failed",
             "message": "NIC disable failed",
+        },
+        postflight_result={
+            "ok": True,
+            "server_id": "11111111-1111-1111-1111-111111111111",
+            "node": "pve1-node",
+            "vmid": 101,
+            "digest": "digest-2",
+            "net": "net0",
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+            "link_state": "down",
+            "auto_selected_net": False,
+            "nets": [],
         },
     )
 
@@ -1447,14 +1461,14 @@ def test_proxmox_workflow_preflight_matching_uses_generic_preflight_collection()
     assert mismatch.error_code == "preflight_mismatch"
 
 
-def test_proxmox_workflow_completed_todos_mark_execution_and_verification_cancelled_on_failure() -> (
+def test_proxmox_workflow_completed_todos_mark_execution_and_verification_completed_with_postflight_data() -> (
     None
 ):
     workflow_todos = build_workflow_todos(
         tool_name="proxmox_disable_vm_nic",
         workflow_family="proxmox-vm-nic-connectivity",
         args={
-            "server_ref": "pve1",
+            "server_ref": "11111111-1111-1111-1111-111111111111",
             "node": "pve1-node",
             "vmid": 101,
             "net": "net0",
@@ -1468,7 +1482,7 @@ def test_proxmox_workflow_completed_todos_mark_execution_and_verification_cancel
                 "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
                 "result": {
                     "ok": True,
-                    "server_id": "srv-1",
+                    "server_id": "11111111-1111-1111-1111-111111111111",
                     "node": "pve1-node",
                     "vmid": 101,
                     "digest": "digest-1",
@@ -1490,6 +1504,18 @@ def test_proxmox_workflow_completed_todos_mark_execution_and_verification_cancel
             "status": "failed",
             "message": "NIC disable failed",
         },
+        postflight_result={
+            "ok": True,
+            "server_id": "11111111-1111-1111-1111-111111111111",
+            "node": "pve1-node",
+            "vmid": 101,
+            "digest": "digest-2",
+            "net": "net0",
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+            "link_state": "down",
+            "auto_selected_net": False,
+            "nets": [],
+        },
     )
 
     assert workflow_todos is not None
@@ -1497,9 +1523,139 @@ def test_proxmox_workflow_completed_todos_mark_execution_and_verification_cancel
         "completed",
         "completed",
         "completed",
-        "cancelled",
-        "cancelled",
+        "completed",
+        "completed",
     ]
+
+
+def test_proxmox_cloudinit_password_reset_completed_reply_matches_server_id_alias_preflight() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "11111111-1111-1111-1111-111111111111",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "11111111-1111-1111-1111-111111111111",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {"data": {"cipassword": "old"}},
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "11111111-1111-1111-1111-111111111111",
+            "node": "pve1-node",
+            "vmid": 101,
+            "set_password_task": {"ok": True, "data": "UPID:SET"},
+            "regenerate_cloudinit": {"ok": True},
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "server_id": "11111111-1111-1111-1111-111111111111",
+            "node": "pve1-node",
+            "vmid": 101,
+            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+    )
+
+    assert reply is not None
+    assert "Before config digest: digest-1." in reply.summary
+
+
+def test_proxmox_pool_membership_move_completed_reply_matches_server_id_alias_preflight() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "11111111-1111-1111-1111-111111111111",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "11111111-1111-1111-1111-111111111111",
+                    "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
+                    "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "11111111-1111-1111-1111-111111111111",
+            "source_pool_before": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_before": {"data": [{"poolid": "pool-b", "members": []}]},
+            "add_to_destination": {"ok": True, "data": "UPID:ADD"},
+            "remove_from_source": {"ok": True, "data": "UPID:REMOVE"},
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
+            },
+            "results": [{"vmid": 101, "status": "changed"}],
+            "verified": True,
+        },
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "11111111-1111-1111-1111-111111111111",
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}]
+            },
+            "verified": True,
+        },
+    )
+
+    assert reply is not None
+    assert "Source pool before" in reply.summary
+    assert "Moved VMIDs: 101." in reply.summary
 
 
 def test_proxmox_workflow_waiting_on_user_todos_include_reason_step() -> None:
