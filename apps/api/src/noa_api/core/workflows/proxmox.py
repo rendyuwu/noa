@@ -142,6 +142,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                         f"{subject} was already link {desired_state}; no Proxmox config change was required."
                     ),
                     evidence_summary=_evidence_summary(
+                        tool_name=context.tool_name,
                         before_state=before_state,
                         result=result,
                         postflight_result=postflight,
@@ -203,6 +204,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                     f"Approval was denied, so {subject} remains link {current_state or 'unknown'}."
                 ),
                 evidence_summary=_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -218,6 +220,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                     f"The request to {_action_label(context.tool_name)} {subject} did not complete successfully."
                 ),
                 evidence_summary=_evidence_summary(
+                    tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
@@ -972,7 +975,9 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                 WorkflowEvidenceSection(
                     key="verification",
                     title="Verification",
-                    items=_cloudinit_verification_items(result, postflight),
+                    items=_cloudinit_verification_items(
+                        context.tool_name, result, postflight
+                    ),
                 ),
             ]
         )
@@ -1119,6 +1124,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                         f"The request to move {subject} reported a failure, but postflight verification confirmed the requested VMIDs are in the destination pool."
                     ),
                     evidence_summary=_pool_move_evidence_summary(
+                        tool_name=context.tool_name,
                         before_state=before_state,
                         result=result,
                         postflight_result=postflight,
@@ -1285,7 +1291,9 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 WorkflowEvidenceSection(
                     key="verification",
                     title="Verification",
-                    items=_pool_move_verification_items(result, postflight),
+                    items=_pool_move_verification_items(
+                        context.tool_name, result, postflight
+                    ),
                 ),
             ]
         )
@@ -1735,7 +1743,12 @@ def _cloudinit_after_state_items(
         ),
         WorkflowEvidenceItem(
             label="Cloud-init verified",
-            value="yes" if result.get("verified") is True else "no",
+            value="yes"
+            if result.get("verified") is True
+            or _postflight_verified(
+                "proxmox_reset_vm_cloudinit_password", postflight_result
+            )
+            else "no",
         ),
         WorkflowEvidenceItem(
             label="Current digest",
@@ -1747,11 +1760,17 @@ def _cloudinit_after_state_items(
 
 
 def _cloudinit_verification_items(
-    result: dict[str, object], postflight_result: dict[str, object]
+    tool_name: str, result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
     items = [
         WorkflowEvidenceItem(
-            label="Verified", value="yes" if result.get("verified") is True else "no"
+            label="Verified",
+            value=(
+                "yes"
+                if result.get("verified") is True
+                or _postflight_verified(tool_name, postflight_result)
+                else "no"
+            ),
         ),
         WorkflowEvidenceItem(
             label="Task status",
@@ -2028,17 +2047,26 @@ def _pool_move_after_state_items(
         ),
         WorkflowEvidenceItem(
             label="Move verified",
-            value="yes" if result.get("verified") is True else "no",
+            value="yes"
+            if result.get("verified") is True
+            or _postflight_verified("proxmox_move_vms_between_pools", postflight_result)
+            else "no",
         ),
     ]
 
 
 def _pool_move_verification_items(
-    result: dict[str, object], postflight_result: dict[str, object]
+    tool_name: str, result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
     items = [
         WorkflowEvidenceItem(
-            label="Verified", value="yes" if result.get("verified") is True else "no"
+            label="Verified",
+            value=(
+                "yes"
+                if result.get("verified") is True
+                or _postflight_verified(tool_name, postflight_result)
+                else "no"
+            ),
         ),
         WorkflowEvidenceItem(
             label="Add task",
