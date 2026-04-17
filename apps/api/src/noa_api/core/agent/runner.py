@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass
 from inspect import signature
 from typing import Any, Awaitable, Callable, Protocol, cast
@@ -709,6 +711,12 @@ class AgentRunner:
                 args=args,
                 working_messages=working_messages,
             )
+            if validation_error is None:
+                validation_error = _validate_change_reason_provenance(
+                    tool=tool,
+                    args=args,
+                    working_messages=working_messages,
+                )
             if validation_error is not None:
                 tool_call_id = f"invalid-{uuid4()}"
                 workflow_messages = (
@@ -717,11 +725,15 @@ class AgentRunner:
                         args=args,
                         working_messages=working_messages,
                         thread_id=thread_id,
+                        validation_error=validation_error,
                     )
                 )
+                message_args = dict(args)
+                if _is_reason_provenance_error(validation_error):
+                    message_args.pop("reason", None)
                 messages = _tool_error_messages(
                     tool=tool,
-                    args=args,
+                    args=message_args,
                     tool_call_id=tool_call_id,
                     error=validation_error,
                 )
@@ -930,16 +942,22 @@ class AgentRunner:
         args: dict[str, object],
         working_messages: list[dict[str, object]],
         thread_id: UUID,
+        validation_error: SanitizedToolError | None = None,
     ) -> list[AgentMessage]:
         if tool.risk != ToolRisk.CHANGE or tool.workflow_family is None:
             return []
-        if _normalized_text(args.get("reason")) is not None:
+        reason = _normalized_text(args.get("reason"))
+        if reason is not None and not _is_reason_provenance_error(validation_error):
             return []
+
+        workflow_args = dict(args)
+        if _is_reason_provenance_error(validation_error):
+            workflow_args.pop("reason", None)
 
         workflow_todos = build_workflow_todos(
             tool_name=tool.name,
             workflow_family=tool.workflow_family,
-            args=args,
+            args=workflow_args,
             phase="waiting_on_user",
             preflight_evidence=collect_recent_preflight_evidence(working_messages),
         )
@@ -1193,6 +1211,125 @@ def _normalized_text(value: object) -> str | None:
     return normalized or None
 
 
+def _reason_provenance_tokens(value: object) -> list[str]:
+    normalized = _normalized_text(value)
+    if normalized is None:
+        return []
+    folded = unicodedata.normalize("NFKC", normalized).casefold()
+    tokens: list[str] = []
+    current: list[str] = []
+
+    for char in folded:
+        if char.isalnum():
+            current.append(char)
+            continue
+        if char == "-" and current:
+            current.append(char)
+            continue
+        if current:
+            token = "".join(current).strip("-")
+            if token:
+                tokens.append(token)
+            current = []
+
+    if current:
+        token = "".join(current).strip("-")
+        if token:
+            tokens.append(token)
+
+    return tokens
+
+
+def _reason_tokens_are_explicit_in_latest_user_turn(
+    *,
+    reason_tokens: list[str],
+    latest_user_tokens: list[str],
+) -> bool:
+    reason_length = len(reason_tokens)
+    if reason_length == 0 or reason_length > len(latest_user_tokens):
+        return False
+
+    for start in range(len(latest_user_tokens) - reason_length + 1):
+        if latest_user_tokens[start : start + reason_length] == reason_tokens:
+            return True
+
+    return False
+
+
+def _is_reason_provenance_error(error: SanitizedToolError | None) -> bool:
+    if error is None or error.error_code != "invalid_tool_arguments":
+        return False
+    return any(
+        detail == "Reason must be explicit in the latest user turn."
+        for detail in (error.details or ())
+    )
+
+
+def _latest_user_message_text(
+    working_messages: list[dict[str, object]],
+) -> str | None:
+    for message in reversed(working_messages):
+        if message.get("role") != "user":
+            continue
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        text_parts: list[str] = []
+        for part in parts:
+            part_dict = _as_object_dict(part)
+            if part_dict is None or part_dict.get("type") != "text":
+                continue
+            text = _normalized_text(part_dict.get("text"))
+            if text is not None:
+                text_parts.append(text)
+        if text_parts:
+            return " ".join(text_parts)
+    return None
+
+
+def _validate_change_reason_provenance(
+    *,
+    tool: ToolDefinition,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+) -> SanitizedToolError | None:
+    if tool.risk != ToolRisk.CHANGE:
+        return None
+
+    reason = _normalized_text(args.get("reason"))
+    if reason is None:
+        return None
+
+    latest_user_text = _latest_user_message_text(working_messages)
+    if latest_user_text is None:
+        return SanitizedToolError(
+            error="Tool arguments are invalid",
+            error_code="invalid_tool_arguments",
+            details=("Reason must be explicit in the latest user turn.",),
+        )
+
+    reason_tokens = _reason_provenance_tokens(reason)
+    latest_user_tokens = _reason_provenance_tokens(latest_user_text)
+    if not reason_tokens or not latest_user_tokens:
+        return SanitizedToolError(
+            error="Tool arguments are invalid",
+            error_code="invalid_tool_arguments",
+            details=("Reason must be explicit in the latest user turn.",),
+        )
+
+    if _reason_tokens_are_explicit_in_latest_user_turn(
+        reason_tokens=reason_tokens,
+        latest_user_tokens=latest_user_tokens,
+    ):
+        return None
+
+    return SanitizedToolError(
+        error="Tool arguments are invalid",
+        error_code="invalid_tool_arguments",
+        details=("Reason must be explicit in the latest user turn.",),
+    )
+
+
 def _message_has_text(message: dict[str, object], expected_text: str) -> bool:
     parts = message.get("parts")
     if not isinstance(parts, list):
@@ -1308,7 +1445,7 @@ def _assistant_guidance_for_change_validation_error(
     activity = describe_workflow_activity(tool_name=tool_name, args=args).lower()
     return (
         f"I need a short, human-readable reason before I can continue {activity}. "
-        "Please provide the reason you want recorded for this change, such as Ticket #1661262 or a brief description."
+        "Please provide an osTicket/reference number or a brief description for the reason you want recorded for this change."
     )
 
 

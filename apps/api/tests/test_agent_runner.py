@@ -19,7 +19,7 @@ from noa_api.core.agent.runner import (
     OpenAICompatibleLLMClient,
 )
 from noa_api.core.config import Settings
-from noa_api.core.tools.registry import ToolDefinition
+from noa_api.core.tools.registry import ToolDefinition, get_tool_definition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
@@ -821,7 +821,15 @@ async def test_agent_runner_recovers_when_model_calls_request_approval_directly(
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -1049,7 +1057,9 @@ async def test_agent_runner_creates_action_request_for_change_tools_without_exec
     )
 
     result = await runner.run_turn(
-        thread_messages=[{"role": "user", "parts": [{"type": "text", "text": "go"}]}],
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "go ops"}]}
+        ],
         available_tool_names={tool.name},
         thread_id=uuid4(),
         requested_by_user_id=uuid4(),
@@ -1284,7 +1294,15 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice for billing hold.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -1350,7 +1368,7 @@ async def test_agent_runner_persists_deterministic_whm_workflow_when_reason_miss
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
     text = cast(str, final_part["text"])
-    assert "Ticket #1661262" in text
+    assert "osTicket/reference number" in text
     assert "brief description" in text
 
 
@@ -1404,7 +1422,15 @@ async def test_agent_runner_stops_retry_loop_when_reason_is_missing(
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice for billing hold.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -1449,7 +1475,7 @@ async def test_agent_runner_stops_retry_loop_when_reason_is_missing(
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
     text = cast(str, final_part["text"])
-    assert "Ticket #1661262" in text
+    assert "osTicket/reference number" in text
     assert "brief description" in text
 
 
@@ -1496,7 +1522,15 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice for billing hold.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -1600,7 +1634,15 @@ async def test_agent_runner_missing_reason_guidance_mentions_ticket_reference(
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -1637,7 +1679,7 @@ async def test_agent_runner_missing_reason_guidance_mentions_ticket_reference(
     assert isinstance(final_part, dict)
     assert final_part["type"] == "text"
     text = cast(str, final_part["text"])
-    assert "Ticket #1661262" in text
+    assert "osTicket/reference number" in text
     assert "brief description" in text
     assert captured["todos"]
 
@@ -1703,7 +1745,10 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_firewall_wai
                 "parts": [
                     {
                         "type": "text",
-                        "text": "Remove firewall block for 1.2.3.4 and 5.6.7.8 on web2",
+                        "text": (
+                            "Remove firewall block for 1.2.3.4 and 5.6.7.8 on web2 "
+                            "because of customer request"
+                        ),
                     }
                 ],
             },
@@ -2894,7 +2939,15 @@ async def test_agent_runner_rejects_account_change_when_preflight_targets_other_
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -3010,7 +3063,15 @@ async def test_agent_runner_rejects_account_change_when_preflight_result_user_di
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -3363,7 +3424,15 @@ async def test_agent_runner_allows_change_proposal_when_matching_preflight_exist
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -3463,7 +3532,15 @@ async def test_agent_runner_allows_change_proposal_after_reason_follow_up(
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
@@ -3514,6 +3591,513 @@ async def test_agent_runner_allows_change_proposal_after_reason_follow_up(
     assert len(repo.action_requests) == 1
     request = next(iter(repo.action_requests.values()))
     assert request.tool_name == tool.name
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
+
+
+async def test_agent_runner_rejects_change_proposal_when_reason_is_not_explicit_in_latest_user_turn(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "ticket #121233",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [{"type": "text", "text": "Suspend alice on web1."}],
+            },
+            {"role": "assistant", "parts": [{"type": "text", "text": "Okay."}]},
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice."}]},
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert repo.action_requests == {}
+    assert captured["thread_id"]
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert len(todos) == 5
+    assert todos[0]["status"] == "completed"
+    assert todos[1]["status"] == "waiting_on_user"
+    assert todos[1]["content"].startswith("Ask for reason")
+    assert "ticket #121233" not in todos[1]["content"]
+    assert todos[2]["status"] == "pending"
+
+    invalid_tool_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-result"
+        and part.get("toolName") == tool.name
+        and part.get("isError") is True
+    )
+    assert invalid_tool_part == {
+        "type": "tool-result",
+        "toolName": tool.name,
+        "toolCallId": invalid_tool_part["toolCallId"],
+        "result": {
+            "error": "Tool arguments are invalid",
+            "error_code": "invalid_tool_arguments",
+            "details": ["Reason must be explicit in the latest user turn."],
+        },
+        "isError": True,
+    }
+
+    invalid_tool_call_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == tool.name
+    )
+    assert invalid_tool_call_part == {
+        "type": "tool-call",
+        "toolName": tool.name,
+        "toolCallId": invalid_tool_call_part["toolCallId"],
+        "args": {"server_ref": "web1", "username": "alice"},
+    }
+
+    final_part = result.messages[-1].parts[0]
+    assert isinstance(final_part, dict)
+    assert final_part["type"] == "text"
+    text = cast(str, final_part["text"])
+    assert "osTicket/reference number" in text
+    assert "brief description" in text
+
+
+async def test_agent_runner_rejects_change_proposal_when_reason_is_descriptive_paraphrase_not_explicit_in_latest_user_turn(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "customer request",
+                        },
+                    )
+                ],
+            )
+
+    thread_id = uuid4()
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice because the customer asked us to.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=thread_id,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert repo.action_requests == {}
+    assert captured["thread_id"] == thread_id
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert len(todos) == 5
+    assert todos[0]["status"] == "completed"
+    assert todos[1]["status"] == "waiting_on_user"
+    assert todos[1]["content"].startswith("Ask for reason")
+    assert "customer request" not in todos[1]["content"]
+    assert todos[2]["status"] == "pending"
+
+    invalid_tool_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-result"
+        and part.get("toolName") == tool.name
+        and part.get("isError") is True
+    )
+    assert invalid_tool_part == {
+        "type": "tool-result",
+        "toolName": tool.name,
+        "toolCallId": invalid_tool_part["toolCallId"],
+        "result": {
+            "error": "Tool arguments are invalid",
+            "error_code": "invalid_tool_arguments",
+            "details": ["Reason must be explicit in the latest user turn."],
+        },
+        "isError": True,
+    }
+
+    final_part = result.messages[-1].parts[0]
+    assert isinstance(final_part, dict)
+    assert final_part["type"] == "text"
+    text = cast(str, final_part["text"])
+    assert "osTicket/reference number" in text
+    assert "brief description" in text
+
+
+async def test_agent_runner_allows_change_proposal_when_reason_is_explicit_in_latest_user_turn(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "ticket #121233",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {"type": "text", "text": "Suspend alice using ticket #121233."}
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    request = next(iter(repo.action_requests.values()))
+    assert request.tool_name == tool.name
+    assert request.args["reason"] == "ticket #121233"
+    assert captured["thread_id"]
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
+
+
+async def test_agent_runner_allows_change_proposal_when_unicode_reason_is_explicit_in_latest_user_turn(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "顧客依頼",
+                        },
+                    )
+                ],
+            )
+
+    thread_id = uuid4()
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1. 理由: 顧客依頼。",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=thread_id,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    request = next(iter(repo.action_requests.values()))
+    assert request.tool_name == tool.name
+    assert request.args["reason"] == "顧客依頼"
+    assert captured["thread_id"] == thread_id
+
     approval_part = next(
         part
         for message in result.messages
@@ -3586,7 +4170,15 @@ async def test_agent_runner_allows_change_proposal_when_server_id_matches(
 
     result = await runner.run_turn(
         thread_messages=[
-            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
             {
                 "role": "assistant",
                 "parts": [
