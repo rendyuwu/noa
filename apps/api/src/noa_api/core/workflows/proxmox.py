@@ -1684,20 +1684,9 @@ def _cloudinit_completion_summary(
         config = before_state.get("config")
         if isinstance(config, dict):
             before_digest = normalized_text(config.get("digest"))
-    after_digest = None
-    cloudinit = (
-        result.get("cloudinit") if isinstance(result.get("cloudinit"), dict) else None
-    )
-    if isinstance(cloudinit, dict):
-        after_digest = normalized_text(cloudinit.get("digest"))
-    postflight_digest = _cloudinit_digest_from_postflight(postflight_result)
     parts: list[str] = []
     if before_digest is not None:
         parts.append(f"Before config digest: {before_digest}.")
-    if after_digest is not None:
-        parts.append(f"After cloud-init digest: {after_digest}.")
-    if postflight_digest is not None:
-        parts.append(f"Verified digest: {postflight_digest}.")
     return " ".join(parts) if parts else "Cloud-init state was refreshed and verified."
 
 
@@ -1763,14 +1752,6 @@ def _cloudinit_before_state_items(
 def _cloudinit_after_state_items(
     result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
-    cloudinit = (
-        result.get("cloudinit") if isinstance(result.get("cloudinit"), dict) else {}
-    )
-    postflight_cloudinit = (
-        postflight_result.get("cloudinit")
-        if isinstance(postflight_result.get("cloudinit"), dict)
-        else {}
-    )
     return [
         WorkflowEvidenceItem(
             label="Password task",
@@ -1788,12 +1769,6 @@ def _cloudinit_after_state_items(
                 "proxmox_reset_vm_cloudinit_password", postflight_result
             )
             else "no",
-        ),
-        WorkflowEvidenceItem(
-            label="Current digest",
-            value=normalized_text(cloudinit.get("digest"))
-            or normalized_text(postflight_cloudinit.get("digest"))
-            or "unknown",
         ),
     ]
 
@@ -1843,18 +1818,6 @@ def _cloudinit_verification_items(
             else "none",
         ),
     ]
-    postflight_cloudinit = (
-        postflight_result.get("cloudinit")
-        if isinstance(postflight_result.get("cloudinit"), dict)
-        else None
-    )
-    if isinstance(postflight_cloudinit, dict):
-        items.append(
-            WorkflowEvidenceItem(
-                label="Current digest",
-                value=normalized_text(postflight_cloudinit.get("digest")) or "unknown",
-            )
-        )
     return items
 
 
@@ -1875,19 +1838,7 @@ def _cloudinit_evidence_summary(
         summary.append("Verification succeeded.")
     elif _postflight_verified(tool_name, postflight_result):
         summary.append("Postflight verification succeeded.")
-    digest = _cloudinit_digest_from_postflight(postflight_result)
-    if digest is not None:
-        summary.append(f"Current digest: {digest}.")
     return summary
-
-
-def _cloudinit_digest_from_postflight(
-    postflight_result: dict[str, object],
-) -> str | None:
-    cloudinit = postflight_result.get("cloudinit")
-    if not isinstance(cloudinit, dict):
-        return None
-    return normalized_text(cloudinit.get("digest"))
 
 
 def _matching_cloudinit_preflight(

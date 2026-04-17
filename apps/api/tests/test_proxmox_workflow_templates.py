@@ -45,7 +45,11 @@ def test_proxmox_cloudinit_password_reset_waiting_on_user_todos_are_five_step_an
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -88,7 +92,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note(
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -111,7 +119,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note(
             "server_id": "srv-1",
             "node": "pve1-node",
             "vmid": 101,
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
@@ -121,7 +133,7 @@ def test_proxmox_cloudinit_password_reset_completed_reply_mentions_restart_note(
     assert reply.outcome == "changed"
     assert "VM 101 on node pve1-node" in reply.summary
     assert "may not take effect immediately" in reply.summary
-    assert "Verified digest: digest-2." in reply.summary
+    assert "Before config digest: digest-1." in reply.summary
     assert "restart or stop/start" in reply.next_step
 
 
@@ -149,7 +161,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_integer_vmid_and_
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -162,7 +178,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_integer_vmid_and_
             "vmid": 101,
             "set_password_task": {"ok": True, "data": "UPID:SET"},
             "regenerate_cloudinit": {"ok": True},
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
@@ -172,7 +192,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_integer_vmid_and_
             "server_id": "srv-1",
             "node": "pve1-node",
             "vmid": 101,
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
@@ -180,7 +204,7 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_integer_vmid_and_
 
     assert reply is not None
     assert "VM 101 on node pve1-node" in reply.summary
-    assert "Verified digest: digest-2." in reply.summary
+    assert "Before config digest: digest-1." in reply.summary
 
 
 def test_proxmox_cloudinit_password_reset_completed_evidence_marks_verified_when_postflight_verifies_state() -> (
@@ -207,7 +231,11 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_marks_verified_when
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -230,7 +258,11 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_marks_verified_when
             "server_id": "srv-1",
             "node": "pve1-node",
             "vmid": 101,
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
@@ -256,8 +288,7 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
             return {
                 "ok": True,
                 "message": "ok",
-                "digest": "digest-2",
-                "data": {"cipassword": "secret"},
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
             }
 
         async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
@@ -298,8 +329,7 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_returns_
         "cloudinit": {
             "ok": True,
             "message": "ok",
-            "digest": "digest-2",
-            "data": {"cipassword": "secret"},
+            "data": [{"key": "cipassword", "value": "[redacted]"}],
         },
         "cloudinit_dump_user": {
             "ok": True,
@@ -321,8 +351,7 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_redacts_
             return {
                 "ok": True,
                 "message": "ok",
-                "digest": "digest-2",
-                "data": {"cipassword": "secret"},
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
             }
 
         async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
@@ -372,8 +401,7 @@ async def test_proxmox_cloudinit_password_reset_fetch_postflight_result_rejects_
             return {
                 "ok": True,
                 "message": "ok",
-                "digest": "digest-2",
-                "data": {"cipassword": "secret"},
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
             }
 
         async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
@@ -494,7 +522,11 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wra
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -507,7 +539,11 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wra
             "vmid": 101,
             "set_password_task": {"ok": True, "message": "ok", "data": None},
             "regenerate_cloudinit": {"ok": True, "message": "ok", "data": None},
-            "cloudinit": {"ok": True, "message": "ok", "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {
                 "ok": True,
                 "message": "ok",
@@ -521,7 +557,11 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_serializes_null_wra
             "server_id": "srv-1",
             "node": "pve1-node",
             "vmid": 101,
-            "cloudinit": {"ok": True, "message": "ok", "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {
                 "ok": True,
                 "message": "ok",
@@ -568,7 +608,11 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_reports_integer_vmi
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -579,7 +623,11 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_reports_integer_vmi
             "server_id": "srv-1",
             "node": "pve1-node",
             "vmid": 101,
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
@@ -591,8 +639,8 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_reports_integer_vmi
             "vmid": 101,
             "cloudinit": {
                 "ok": True,
-                "digest": "digest-2",
-                "data": {"cipassword": "secret"},
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
             },
             "cloudinit_dump_user": {"ok": True, "data": "password: [REDACTED]"},
             "verified": True,
@@ -608,7 +656,7 @@ def test_proxmox_cloudinit_password_reset_completed_evidence_reports_integer_vmi
     )
 
 
-def test_proxmox_cloudinit_password_reset_completed_reply_uses_nested_postflight_digest() -> (
+def test_proxmox_cloudinit_password_reset_completed_reply_uses_real_cloudinit_shape() -> (
     None
 ):
     reply = build_workflow_reply_template(
@@ -632,7 +680,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_nested_postflight
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -645,7 +697,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_nested_postflight
             "vmid": 101,
             "set_password_task": {"ok": True, "data": "UPID:SET"},
             "regenerate_cloudinit": {"ok": True},
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
@@ -655,14 +711,19 @@ def test_proxmox_cloudinit_password_reset_completed_reply_uses_nested_postflight
             "server_id": "srv-1",
             "node": "pve1-node",
             "vmid": 101,
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
     )
 
     assert reply is not None
-    assert "Verified digest: digest-2." in reply.summary
+    assert "Before config digest: digest-1." in reply.summary
+    assert "digest-2" not in reply.summary
 
 
 def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_tables() -> (
@@ -1169,7 +1230,11 @@ def test_proxmox_cloudinit_password_reset_require_matching_preflight_matches_new
                         "node": "pve1-node",
                         "vmid": 101,
                         "config": {"digest": "digest-1"},
-                        "cloudinit": {"data": {"cipassword": "old"}},
+                        "cloudinit": {
+                            "ok": True,
+                            "message": "ok",
+                            "data": [{"key": "cipassword", "value": "[redacted]"}],
+                        },
                     },
                 },
             ],
@@ -1995,7 +2060,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_matches_server_id_alia
                     "node": "pve1-node",
                     "vmid": 101,
                     "config": {"digest": "digest-1"},
-                    "cloudinit": {"data": {"cipassword": "old"}},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
                 },
             }
         ],
@@ -2008,7 +2077,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_matches_server_id_alia
             "vmid": 101,
             "set_password_task": {"ok": True, "data": "UPID:SET"},
             "regenerate_cloudinit": {"ok": True},
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
@@ -2018,7 +2091,11 @@ def test_proxmox_cloudinit_password_reset_completed_reply_matches_server_id_alia
             "server_id": "11111111-1111-1111-1111-111111111111",
             "node": "pve1-node",
             "vmid": 101,
-            "cloudinit": {"ok": True, "digest": "digest-2"},
+            "cloudinit": {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "[redacted]"}],
+            },
             "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
             "verified": True,
         },
