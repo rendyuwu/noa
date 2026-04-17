@@ -1122,6 +1122,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"{_pool_move_approval_summary(before_state=before_state, args=context.args)}"
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    phase=context.phase,
                     tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
@@ -1139,6 +1140,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                         f"The request to move {subject} reported a failure, but postflight verification confirmed the requested VMIDs are in the destination pool."
                     ),
                     evidence_summary=_pool_move_evidence_summary(
+                        phase=context.phase,
                         tool_name=context.tool_name,
                         before_state=before_state,
                         result=result,
@@ -1153,6 +1155,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"The request to move {subject} did not complete successfully."
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    phase=context.phase,
                     tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
@@ -1167,6 +1170,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 outcome="denied",
                 summary=(f"Approval was denied, so {subject} was not changed."),
                 evidence_summary=_pool_move_evidence_summary(
+                    phase=context.phase,
                     tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
@@ -1183,6 +1187,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"The request to move {subject} did not complete successfully."
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    phase=context.phase,
                     tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
@@ -1200,6 +1205,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"{_pool_move_completion_summary(tool_name=context.tool_name, before_state=before_state, result=result, postflight_result=postflight, args=context.args)}"
                 ),
                 evidence_summary=_pool_move_evidence_summary(
+                    phase=context.phase,
                     tool_name=context.tool_name,
                     before_state=before_state,
                     result=result,
@@ -2047,6 +2053,7 @@ def _pool_move_verification_items(
 
 def _pool_move_evidence_summary(
     *,
+    phase: str,
     tool_name: str,
     before_state: dict[str, object] | None,
     result: dict[str, object],
@@ -2055,7 +2062,7 @@ def _pool_move_evidence_summary(
     summary: list[str] = []
     if isinstance(before_state, dict):
         summary.append("Preflight captured for the exact source and destination pools.")
-    if not result.get("verified") and postflight_result is None:
+    if phase == "waiting_on_approval":
         return summary
     summary.extend(
         _pool_move_verification_summary_lines(
@@ -2180,9 +2187,9 @@ def _pool_move_verification_summary_lines(
         return summary
     if postflight_state == "verified":
         return ["Postflight verification succeeded."]
-    if postflight_state is None:
-        return []
     summary = ["Verification not confirmed."]
+    if postflight_state is None:
+        return summary
     postflight_summary = _pool_move_postflight_summary_line(
         verified=False, postflight_state=postflight_state
     )
