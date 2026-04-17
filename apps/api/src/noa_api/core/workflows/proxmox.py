@@ -33,6 +33,11 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         subject = _subject(context.args)
         before_state = _matching_preflight(context.preflight_evidence, context.args)
         result = context.result if isinstance(context.result, dict) else {}
+        postflight = (
+            context.postflight_result
+            if isinstance(context.postflight_result, dict)
+            else {}
+        )
         reason = normalized_text(context.args.get("reason"))
 
         reason_status = "completed" if reason is not None else "pending"
@@ -54,8 +59,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
             execute_status = "completed"
             verify_status = (
                 "completed"
-                if result.get("verified") is True
-                or _postflight_verified(context.tool_name, context.postflight_result)
+                if _verification_confirmed(context.tool_name, result, postflight)
                 else "cancelled"
             )
         elif context.phase == "denied":
@@ -557,10 +561,8 @@ def _verification_content(context: WorkflowTemplateContext) -> str:
     postflight = (
         context.postflight_result if isinstance(context.postflight_result, dict) else {}
     )
-    verified = result.get("verified") is True
-    if context.phase == "completed" and (
-        verified or _postflight_verified(context.tool_name, context.postflight_result)
-    ):
+    verified = _verification_confirmed(context.tool_name, result, postflight)
+    if context.phase == "completed" and verified:
         final_state = _final_link_state(
             result,
             postflight,
@@ -652,10 +654,7 @@ def _verification_items(
     tool_name: str, result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
     verified = (
-        "yes"
-        if result.get("verified") is True
-        or _postflight_verified(tool_name, postflight_result)
-        else "no"
+        "yes" if _verification_confirmed(tool_name, result, postflight_result) else "no"
     )
     items = [
         WorkflowEvidenceItem(label="Verified", value=verified),
@@ -697,7 +696,7 @@ def _evidence_summary(
         summary.append(f"After: link {final_state}.")
     if normalized_text(result.get("message")) is not None:
         summary.append(f"Tool result: {normalized_text(result.get('message'))}.")
-    if result.get("verified") is True:
+    if _verification_confirmed(tool_name, result, postflight_result):
         summary.append("Verification succeeded.")
     elif _postflight_verified(tool_name, postflight_result):
         summary.append("Postflight verification succeeded.")
@@ -709,7 +708,7 @@ def _verification_summary_sentence(
     result: dict[str, object],
     postflight_result: dict[str, object],
 ) -> str:
-    if result.get("verified") is True:
+    if _verification_confirmed(tool_name, result, postflight_result):
         return "verification succeeded"
     if _postflight_verified(tool_name, postflight_result):
         return "postflight verification succeeded"
@@ -723,6 +722,25 @@ def _final_link_state(
     fallback: str | None = None,
 ) -> str | None:
     return _link_state(postflight_result) or _link_state(result) or fallback
+
+
+def _verification_confirmed(
+    tool_name: str,
+    result: dict[str, object],
+    postflight_result: dict[str, object],
+) -> bool:
+    if result.get("verified") is True:
+        if tool_name in {"proxmox_disable_vm_nic", "proxmox_enable_vm_nic"}:
+            result_state = _link_state(result)
+            postflight_state = _link_state(postflight_result)
+            if (
+                result_state is not None
+                and postflight_state is not None
+                and postflight_state != result_state
+            ):
+                return False
+        return True
+    return _postflight_verified(tool_name, postflight_result)
 
 
 class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):

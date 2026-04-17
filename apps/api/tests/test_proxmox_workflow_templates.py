@@ -2413,6 +2413,81 @@ def test_proxmox_enable_vm_nic_completed_reply_reports_verification_not_confirme
     assert "verification is not confirmed" in reply.summary.lower()
 
 
+def test_proxmox_enable_vm_nic_completed_reply_evidence_and_todos_do_not_confirm_verified_result_when_postflight_disagrees() -> (
+    None
+):
+    conflict_result = _enable_vm_nic_result(verified=True)
+    conflict_postflight = _enable_vm_nic_postflight_result(link_state="down")
+
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": _enable_vm_nic_preflight_result(),
+            }
+        ],
+        result=conflict_result,
+        postflight_result=conflict_postflight,
+    )
+
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": _enable_vm_nic_preflight_result(),
+            }
+        ],
+        result=conflict_result,
+        postflight_result=conflict_postflight,
+    )
+
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": _enable_vm_nic_preflight_result(),
+            }
+        ],
+        result=conflict_result,
+        postflight_result=conflict_postflight,
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "verification succeeded" not in reply.summary.lower()
+    assert "verification succeeded" not in " ".join(reply.evidence_summary).lower()
+
+    assert workflow_todos is not None
+    assert workflow_todos[4]["status"] == "cancelled"
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    verification = next(
+        section
+        for section in payload["evidenceSections"]
+        if section["key"] == "verification"
+    )
+    assert any(
+        item["label"] == "Verified" and item["value"] == "no"
+        for item in verification["items"]
+    )
+
+
 def test_proxmox_enable_vm_nic_completed_todos_mark_verification_completed_when_result_verified() -> (
     None
 ):
@@ -2437,6 +2512,33 @@ def test_proxmox_enable_vm_nic_completed_todos_mark_verification_completed_when_
     assert (
         "Verify that the NIC finished in link state up." == workflow_todos[4]["content"]
     )
+
+
+def test_proxmox_enable_vm_nic_completed_todos_do_not_mark_verification_completed_when_postflight_errors() -> (
+    None
+):
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_nic_toggle",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": _enable_vm_nic_preflight_result(),
+            }
+        ],
+        result=_enable_vm_nic_result(verified=False),
+        postflight_result={
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Unable to verify Proxmox NIC state",
+        },
+    )
+
+    assert workflow_todos is not None
+    assert workflow_todos[4]["status"] == "cancelled"
 
 
 def test_proxmox_enable_vm_nic_completed_reply_and_todo_prefer_postflight_link_state_when_result_conflicts() -> (
