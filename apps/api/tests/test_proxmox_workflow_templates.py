@@ -2296,7 +2296,7 @@ def test_proxmox_pool_membership_move_completed_reply_matches_server_id_alias_pr
     assert "Moved VMIDs: 101." in reply.summary
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_mark_verified_when_postflight_verifies_state() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verified_when_postflight_is_notified() -> (
     None
 ):
     reply = build_workflow_reply_template(
@@ -2353,15 +2353,19 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_mark_verified
         },
         postflight_result={
             "ok": False,
-            "error_code": "bad_pool_refetch",
-            "message": "pool refetch temporarily unavailable",
+            "error_code": "postflight_failed",
+            "message": "Unable to verify pool membership after the move",
         },
     )
 
     assert reply is not None
     assert reply.outcome == "changed"
     assert "Verification succeeded." in reply.summary
+    assert "Postflight verification disagreed with the result." in reply.summary
     assert "Verification succeeded." in reply.evidence_summary
+    assert (
+        "Postflight verification disagreed with the result." in reply.evidence_summary
+    )
 
     evidence = build_workflow_evidence_template(
         tool_name="proxmox_move_vms_between_pools",
@@ -2425,6 +2429,10 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_mark_verified
     assert any(
         item.label == "Verified" and item.value == "yes" for item in verification.items
     )
+    assert any(
+        item.label == "Postflight" and item.value == "verified"
+        for item in verification.items
+    )
 
 
 def test_proxmox_pool_membership_move_completed_todos_keep_verified_outcome_when_postflight_is_degraded() -> (
@@ -2458,7 +2466,7 @@ def test_proxmox_pool_membership_move_completed_todos_keep_verified_outcome_when
     )
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified_when_postflight_is_degraded() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postflight_refetch_degraded_when_verified() -> (
     None
 ):
     reply = build_workflow_reply_template(
@@ -2476,8 +2484,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
         result=_pool_move_result(verified=True),
         postflight_result={
             "ok": False,
-            "error_code": "bad_pool_refetch",
-            "message": "pool refetch temporarily unavailable",
+            "error_code": "postflight_failed",
+            "message": "Unable to verify pool membership after the move",
         },
     )
 
@@ -2504,8 +2512,10 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_verified
     assert reply is not None
     assert reply.outcome == "changed"
     assert "Verification succeeded." in reply.summary
-    assert "Postflight refetch was degraded." in reply.summary
-    assert "Postflight refetch was degraded." in reply.evidence_summary
+    assert "Postflight verification disagreed with the result." in reply.summary
+    assert (
+        "Postflight verification disagreed with the result." in reply.evidence_summary
+    )
 
     assert evidence is not None
     verification = next(
@@ -2581,7 +2591,72 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_are_explicit_
     )
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_do_not_rescue_failed_verification_when_postflight_fails() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postflight_verification_disagreement_when_verified() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=True),
+        postflight_result={
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Unable to verify pool membership after the move",
+        },
+    )
+
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=True),
+        postflight_result={
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Unable to verify pool membership after the move",
+        },
+    )
+
+    assert reply is not None
+    assert reply.outcome == "changed"
+    assert "Verification succeeded." in reply.summary
+    assert "Postflight verification disagreed with the result." in reply.summary
+    assert "Verification succeeded." in reply.evidence_summary
+    assert (
+        "Postflight verification disagreed with the result." in reply.evidence_summary
+    )
+
+    assert evidence is not None
+    verification = next(
+        section for section in evidence.sections if section.key == "verification"
+    )
+    assert any(
+        item.label == "Verified" and item.value == "yes" for item in verification.items
+    )
+    assert any(
+        item.label == "Postflight" and item.value == "failed"
+        for item in verification.items
+    )
+
+
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_show_postflight_verification_failure_when_postflight_fails() -> (
     None
 ):
     reply = build_workflow_reply_template(
@@ -2627,6 +2702,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_do_not_rescue
     assert reply is not None
     assert reply.outcome == "changed"
     assert "Postflight verification failed." in reply.summary
+    assert "Verification not confirmed." in reply.summary
 
     assert evidence is not None
     verification = next(
@@ -2641,7 +2717,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_do_not_rescue
     )
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_do_not_label_missing_postflight_as_degraded() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_missing_postflight_silent() -> (
     None
 ):
     reply = build_workflow_reply_template(

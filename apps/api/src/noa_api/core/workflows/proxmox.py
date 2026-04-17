@@ -2055,6 +2055,8 @@ def _pool_move_evidence_summary(
     summary: list[str] = []
     if isinstance(before_state, dict):
         summary.append("Preflight captured for the exact source and destination pools.")
+    if not result.get("verified") and postflight_result is None:
+        return summary
     summary.extend(
         _pool_move_verification_summary_lines(
             tool_name=tool_name,
@@ -2178,6 +2180,8 @@ def _pool_move_verification_summary_lines(
         return summary
     if postflight_state == "verified":
         return ["Postflight verification succeeded."]
+    if postflight_state is None:
+        return []
     summary = ["Verification not confirmed."]
     postflight_summary = _pool_move_postflight_summary_line(
         verified=False, postflight_state=postflight_state
