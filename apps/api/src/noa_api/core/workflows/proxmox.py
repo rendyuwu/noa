@@ -40,8 +40,8 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         before_state = _matching_preflight(
             context.preflight_evidence,
             context.args,
-            requested_server_id=normalized_text(result.get("server_id"))
-            or normalized_text(postflight.get("server_id")),
+            requested_server_id=normalized_text(postflight.get("server_id"))
+            or normalized_text(result.get("server_id")),
         )
         reason = normalized_text(context.args.get("reason"))
 
@@ -126,8 +126,8 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         before_state = _matching_preflight(
             context.preflight_evidence,
             context.args,
-            requested_server_id=normalized_text(result.get("server_id"))
-            or normalized_text(postflight.get("server_id")),
+            requested_server_id=normalized_text(postflight.get("server_id"))
+            or normalized_text(result.get("server_id")),
         )
         subject = _subject(context.args)
         title_subject = _title_subject(context.args)
@@ -263,8 +263,8 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         before_state = _matching_preflight(
             context.preflight_evidence,
             context.args,
-            requested_server_id=normalized_text(result.get("server_id"))
-            or normalized_text(postflight.get("server_id")),
+            requested_server_id=normalized_text(postflight.get("server_id"))
+            or normalized_text(result.get("server_id")),
         )
 
         before_items = _before_state_items(before_state)
