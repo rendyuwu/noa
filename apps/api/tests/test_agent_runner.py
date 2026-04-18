@@ -1571,6 +1571,33 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
     assert todos[1]["status"] == "completed"
     assert todos[2]["status"] == "waiting_on_approval"
 
+    narration_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if message.role == "assistant"
+        and any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part_text := part.get("text"), str)
+            and "Suspend approval requested" in part_text
+            and "This will suspend 'alice' on 'web1' after approval." in part_text
+            for part in message.parts
+        )
+    )
+
+    request_approval_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if any(
+            isinstance(part, dict)
+            and part.get("type") == "tool-call"
+            and part.get("toolName") == "request_approval"
+            for part in message.parts
+        )
+    )
+
+    assert narration_index < request_approval_index
+
     approval_part = next(
         part
         for message in result.messages

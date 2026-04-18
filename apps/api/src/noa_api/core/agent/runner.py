@@ -23,6 +23,7 @@ from noa_api.core.tools.registry import (
 )
 from noa_api.core.workflows.registry import (
     build_approval_context,
+    build_workflow_reply_template,
     build_workflow_todos,
     collect_recent_preflight_evidence,
     describe_workflow_activity,
@@ -33,6 +34,7 @@ from noa_api.core.workflows.registry import (
 from noa_api.core.workflows.types import (
     assistant_is_requesting_reason,
     messages_before_latest_user_if_reason_follow_up,
+    render_workflow_reply_text,
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
@@ -779,12 +781,13 @@ class AgentRunner:
                 risk=tool.risk,
                 requested_by_user_id=requested_by_user_id,
             )
+            preflight_evidence = collect_recent_preflight_evidence(working_messages)
             workflow_todos = build_workflow_todos(
                 tool_name=tool.name,
                 workflow_family=tool.workflow_family,
                 args=args,
                 phase="waiting_on_approval",
-                preflight_evidence=collect_recent_preflight_evidence(working_messages),
+                preflight_evidence=preflight_evidence,
             )
             await persist_workflow_todos(
                 session=self._session,
@@ -804,8 +807,31 @@ class AgentRunner:
                 if isinstance(redacted_args, dict)
                 else {"value": redacted_args}
             )
+            approval_context = _build_approval_context(
+                tool_name=tool.name,
+                args=args,
+                working_messages=working_messages,
+            )
+            reply_template = build_workflow_reply_template(
+                tool_name=tool.name,
+                workflow_family=tool.workflow_family,
+                args=args,
+                phase="waiting_on_approval",
+                preflight_evidence=preflight_evidence,
+            )
+            messages: list[AgentMessage] = []
+            if reply_template is not None:
+                reply_text = render_workflow_reply_text(reply_template).strip()
+                if reply_text:
+                    messages.append(
+                        AgentMessage(
+                            role="assistant",
+                            parts=[{"type": "text", "text": reply_text}],
+                        )
+                    )
             return ProcessedToolCall(
                 messages=[
+                    *messages,
                     AgentMessage(
                         role="assistant",
                         parts=[
@@ -829,11 +855,7 @@ class AgentRunner:
                                     "toolName": tool.name,
                                     "risk": tool.risk.value,
                                     "arguments": safe_message_args,
-                                    **_build_approval_context(
-                                        tool_name=tool.name,
-                                        args=args,
-                                        working_messages=working_messages,
-                                    ),
+                                    **approval_context,
                                 },
                             }
                         ],
