@@ -43,6 +43,33 @@ const isEmptyAssistantMessage = (message: ThreadMessage): boolean => {
   return message.role === "assistant" && Array.isArray(message.content) && message.content.length === 0;
 };
 
+const singleAssistantText = (message: ThreadMessage): string | undefined => {
+  if (message.role !== "assistant" || !Array.isArray(message.content) || message.content.length !== 1) {
+    return undefined;
+  }
+
+  const [part] = message.content as Array<Record<string, unknown>>;
+  return part?.type === "text" && typeof part.text === "string" ? part.text : undefined;
+};
+
+const dedupeAdjacentAssistantTextMessages = (messages: ThreadMessage[]) => {
+  const deduped: ThreadMessage[] = [];
+
+  for (const message of messages) {
+    const previous = deduped[deduped.length - 1];
+    const currentText = singleAssistantText(message);
+    const previousText = previous ? singleAssistantText(previous) : undefined;
+
+    if (currentText && previousText === currentText) {
+      continue;
+    }
+
+    deduped.push(message);
+  }
+
+  return deduped;
+};
+
 const attachCanonicalMetadata = (
   messages: ThreadMessage[],
   state: Pick<AssistantState, "workflow" | "evidenceSections" | "pendingApprovals" | "actionRequests">,
@@ -294,7 +321,9 @@ export function convertAssistantState(
 
   return {
     messages: attachCanonicalMetadata(
-      [...persistedMessages, ...optimisticMessages].filter((message) => !isEmptyAssistantMessage(message)),
+      dedupeAdjacentAssistantTextMessages(
+        [...persistedMessages, ...optimisticMessages].filter((message) => !isEmptyAssistantMessage(message)),
+      ),
       state,
     ),
     isRunning: transportIsRunning,

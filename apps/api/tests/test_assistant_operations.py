@@ -464,6 +464,71 @@ async def test_run_agent_phase_refreshes_workflow_and_pending_approvals() -> Non
     assert controller.state == refreshed_state
 
 
+async def test_run_agent_phase_replaces_streamed_placeholder_with_canonical_messages() -> (
+    None
+):
+    refreshed_state = {
+        "messages": [_message_with_text("Final answer", role="assistant")],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": False,
+    }
+
+    @dataclass
+    class _FakeAssistantServiceThatStreamsAndSucceeds:
+        refreshed_state: dict[str, object]
+
+        async def run_agent_turn(
+            self,
+            *,
+            owner_user_id: UUID,
+            owner_user_email: str | None,
+            thread_id: UUID,
+            available_tool_names: set[str],
+            on_text_delta: Any = None,
+        ) -> None:
+            _ = owner_user_id, owner_user_email, thread_id, available_tool_names
+            assert on_text_delta is not None
+            await on_text_delta("I'll check")
+            await on_text_delta(" that for you.")
+
+        async def add_message(
+            self,
+            *,
+            owner_user_id: UUID,
+            thread_id: UUID,
+            role: str,
+            parts: list[dict[str, object]],
+        ) -> None:
+            _ = owner_user_id, thread_id, role, parts
+
+        async def load_state(
+            self, *, owner_user_id: UUID, thread_id: UUID
+        ) -> dict[str, object]:
+            _ = owner_user_id, thread_id
+            return self.refreshed_state
+
+    controller = _FakeController(state={})
+    service = _FakeAssistantServiceThatStreamsAndSucceeds(
+        refreshed_state=refreshed_state
+    )
+
+    await assistant_operations.run_agent_phase(
+        controller=controller,
+        payload=_payload_with_user_message(),
+        current_user=_active_user(),
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={"messages": [], "isRunning": False},
+        command_types=["add-message"],
+    )
+
+    assert controller.state == refreshed_state
+    messages = cast(list[dict[str, object]], controller.state["messages"])
+    assert all(message.get("id") != "assistant-streaming" for message in messages)
+
+
 async def test_run_agent_phase_emits_structured_agent_failure_log() -> None:
     current_user = _active_user()
     thread_id = uuid4()
