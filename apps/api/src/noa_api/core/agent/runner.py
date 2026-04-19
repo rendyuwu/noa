@@ -34,7 +34,6 @@ from noa_api.core.workflows.registry import (
 from noa_api.core.workflows.types import (
     assistant_is_requesting_reason,
     messages_before_latest_user_if_reason_follow_up,
-    render_workflow_reply_text,
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
