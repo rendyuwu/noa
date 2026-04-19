@@ -136,6 +136,52 @@ def _assistant_message_parts(*, reasoning: str, text: str) -> list[dict[str, obj
     return parts
 
 
+def _append_assistant_text_to_working_messages(
+    working_messages: list[dict[str, object]], *, text: str
+) -> None:
+    assistant_parts = _assistant_message_parts(reasoning="", text=text)
+    if not assistant_parts:
+        return
+
+    working_parts = _prompt_replay_parts(assistant_parts)
+    if not working_parts:
+        return
+
+    working_messages.append(
+        {
+            "role": "assistant",
+            "parts": working_parts,
+        }
+    )
+
+
+def _append_assistant_text_to_output_messages(
+    output_messages: list[AgentMessage], *, text: str
+) -> None:
+    assistant_parts = _assistant_message_parts(reasoning="", text=text)
+    if not assistant_parts:
+        return
+
+    output_messages.append(
+        AgentMessage(
+            role="assistant",
+            parts=assistant_parts,
+        )
+    )
+
+
+def _should_persist_assistant_text_this_round(
+    *, text: str, tool_calls: list[LLMToolCall]
+) -> bool:
+    if not text:
+        return False
+
+    if assistant_is_requesting_reason(text):
+        return True
+
+    return not tool_calls
+
+
 def _message_visible_text(parts: list[dict[str, object]]) -> str | None:
     visible_parts: list[str] = []
     for part in parts:
@@ -392,41 +438,37 @@ class AgentRunner:
                 )
                 pending_firewall_preflight_raw.clear()
 
-            assistant_parts = _assistant_message_parts(reasoning="", text=text)
-            if assistant_parts:
-                output_messages.append(
-                    AgentMessage(
-                        role="assistant",
-                        parts=assistant_parts,
-                    )
+            if text:
+                _append_assistant_text_to_working_messages(
+                    working_messages,
+                    text=text,
                 )
-                working_parts = _prompt_replay_parts(assistant_parts)
-                if working_parts:
-                    working_messages.append(
-                        {
-                            "role": "assistant",
-                            "parts": working_parts,
-                        }
+                text_deltas.extend(_split_text_deltas(text))
+
+                if _should_persist_assistant_text_this_round(
+                    text=text,
+                    tool_calls=llm_response.tool_calls,
+                ):
+                    _append_assistant_text_to_output_messages(
+                        output_messages,
+                        text=text,
                     )
 
-            if text:
-                text_deltas.extend(_split_text_deltas(text))
-                workflow_messages = (
-                    await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
+                if assistant_is_requesting_reason(text):
+                    workflow_messages = await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
                         assistant_text=text,
                         working_messages=working_messages,
                         thread_id=thread_id,
                     )
-                )
-                if workflow_messages:
-                    output_messages.extend(workflow_messages)
-                    for message in workflow_messages:
-                        working_messages.append(
-                            {
-                                "role": message.role,
-                                "parts": message.parts,
-                            }
-                        )
+                    if workflow_messages:
+                        output_messages.extend(workflow_messages)
+                        for message in workflow_messages:
+                            working_messages.append(
+                                {
+                                    "role": message.role,
+                                    "parts": message.parts,
+                                }
+                            )
 
             if not llm_response.tool_calls:
                 if not text:
