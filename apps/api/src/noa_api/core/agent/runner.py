@@ -182,6 +182,22 @@ def _should_persist_assistant_text_this_round(
     return not tool_calls
 
 
+def _should_suppress_provisional_assistant_text_this_round(
+    *, text: str, tool_calls: list[LLMToolCall]
+) -> bool:
+    if not text or assistant_is_requesting_reason(text):
+        return False
+
+    for tool_call in tool_calls:
+        if tool_call.name in {"request_approval", "update_workflow_todo"}:
+            return True
+        tool = get_tool_definition(tool_call.name)
+        if tool is not None and tool.risk == ToolRisk.CHANGE:
+            return True
+
+    return False
+
+
 def _message_visible_text(parts: list[dict[str, object]]) -> str | None:
     visible_parts: list[str] = []
     for part in parts:
@@ -195,6 +211,17 @@ def _message_visible_text(parts: list[dict[str, object]]) -> str | None:
     if not visible_parts:
         return None
     return "".join(visible_parts)
+
+
+def _render_workflow_milestone_text(title: str, summary: str) -> str:
+    normalized_title = title.strip()
+    normalized_summary = summary.strip()
+    if not normalized_title:
+        return normalized_summary
+    if not normalized_summary:
+        return normalized_title
+    separator = "" if normalized_title.endswith((".", "!", "?")) else "."
+    return f"{normalized_title}{separator} {normalized_summary}"
 
 
 def _finalize_turn_messages(
@@ -401,7 +428,11 @@ class AgentRunner:
         #
         # Execution is still gated by `available_tool_names` below; denied calls
         # emit an explicit user-facing message.
-        llm_tools = [_to_openai_tool_schema(tool) for tool in get_tool_registry()]
+        llm_tools = [
+            _to_openai_tool_schema(tool)
+            for tool in get_tool_registry()
+            if tool.name != "update_workflow_todo"
+        ]
         max_rounds = 6
         max_tool_calls = 8
 
@@ -439,11 +470,18 @@ class AgentRunner:
                 pending_firewall_preflight_raw.clear()
 
             if text:
-                _append_assistant_text_to_working_messages(
-                    working_messages,
-                    text=text,
+                suppress_provisional_text = (
+                    _should_suppress_provisional_assistant_text_this_round(
+                        text=text,
+                        tool_calls=llm_response.tool_calls,
+                    )
                 )
-                text_deltas.extend(_split_text_deltas(text))
+                if not suppress_provisional_text:
+                    _append_assistant_text_to_working_messages(
+                        working_messages,
+                        text=text,
+                    )
+                    text_deltas.extend(_split_text_deltas(text))
 
                 if _should_persist_assistant_text_this_round(
                     text=text,
@@ -863,7 +901,10 @@ class AgentRunner:
             )
             messages: list[AgentMessage] = []
             if reply_template is not None:
-                reply_text = render_workflow_reply_text(reply_template).strip()
+                reply_text = _render_workflow_milestone_text(
+                    reply_template.title,
+                    reply_template.summary,
+                ).strip()
                 if reply_text:
                     messages.append(
                         AgentMessage(
@@ -1607,11 +1648,16 @@ def _internal_tool_guidance(tool_name: str) -> str | None:
             "Approval requests are created automatically after you call the "
             "underlying CHANGE tool. Do not call request_approval directly."
         )
+    if tool_name == "update_workflow_todo":
+        return (
+            "Workflow TODO state is backend-managed for operational workflows. "
+            "For simple READ requests, answer directly after using tools instead of calling update_workflow_todo."
+        )
     return None
 
 
 def _should_stop_after_internal_tool_guidance(tool_name: str, count: int) -> bool:
-    return tool_name == "request_approval" and count >= 2
+    return tool_name in {"request_approval", "update_workflow_todo"} and count >= 2
 
 
 def _latest_tool_result_part(

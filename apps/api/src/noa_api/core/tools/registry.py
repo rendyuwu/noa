@@ -1002,7 +1002,7 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
     ),
     ToolDefinition(
         name="update_workflow_todo",
-        description="Create or replace the visible workflow checklist for multi-step or operational work.",
+        description="Internal workflow checklist surface used by backend-managed operational workflows.",
         risk=ToolRisk.READ,
         parameters_schema=_object_schema(
             properties={
@@ -1016,9 +1016,8 @@ _MVP_TOOLS: tuple[ToolDefinition, ...] = (
         ),
         execute=update_workflow_todo,
         prompt_hints=(
-            "Use this immediately for multi-step or operational requests, then keep it updated until the work is done.",
-            "Keep exactly one item in_progress at a time.",
-            "Do not use it for trivial Q and A.",
+            "This checklist is managed by backend workflow orchestration, not direct model tool calls.",
+            "Do not use it for simple READ questions or to narrate intermediate thinking.",
             "Successful results return the saved `todos`; invalid states return `ok: false` with an `error_code`.",
         ),
         result_schema=_WORKFLOW_RESULT_SCHEMA,
