@@ -229,6 +229,32 @@ describe("convertAssistantState", () => {
     ]);
   });
 
+  it("drops exact duplicate adjacent assistant text messages as a defensive fallback", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Same answer" }],
+          },
+          {
+            id: "m2",
+            role: "assistant",
+            parts: [{ type: "text", text: "Same answer" }],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: false },
+    );
+
+    expect(converted.messages).toHaveLength(1);
+    expect((converted.messages[0] as any)?.content).toEqual([
+      { type: "text", text: "Same answer" },
+    ]);
+  });
+
   it("clears canonical metadata arrays when workflow and approvals are absent", () => {
     const converted = convertAssistantState(
       {

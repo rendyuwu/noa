@@ -25,6 +25,9 @@ Family-specific operational reply behavior should also live here rather than in 
 
 The reply/evidence contracts are structured data, not markdown-authored prose, so the same family-owned semantics can drive assistant replies now and richer receipts/detail views later.
 
+Workflow replies are phase-owned milestone narration, not a transcript of every internal LLM round.
+When a workflow family returns reply semantics for `waiting_on_user`, `waiting_on_approval`, or terminal outcomes, those replies are the canonical user-visible milestones for that phase. Intermediate model narration that does not change conversation state should not be persisted alongside them.
+
 When a workflow needs a change reason, the prompt should mention a ticket reference like `Ticket #1661262` (or another osTicket/reference number) or ask for a brief human-readable description. If the reason is missing or ambiguous, keep the workflow in `waiting_on_user` instead of creating an approval request.
 
 `build_before_state(...)` is now a compatibility shim. New workflow families should primarily implement `build_evidence_template(...)`; the registry projects `beforeState` from the `before_state` evidence section when present, and only falls back to `build_before_state(...)` for legacy templates.

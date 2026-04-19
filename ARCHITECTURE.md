@@ -119,6 +119,11 @@ Important implementation detail:
 
 ## Streaming Behavior (MVP)
 
+- Assistant narration is canonicalized server-side before persistence.
+  - READ-oriented interactions usually persist one final assistant answer even if the model used multiple internal tool rounds.
+  - Operational workflows persist milestone narration only, such as missing input, approval handoff, and terminal outcome.
+  - Streamed placeholder text is provisional and may be replaced by a smaller canonical transcript after state refresh.
+
 - The transport channel streams **state updates** to the UI.
 - LLM token streaming is not implemented yet.
   The backend currently chunks the final assistant text into small deltas and streams those deltas.

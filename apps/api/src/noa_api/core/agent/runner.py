@@ -34,7 +34,6 @@ from noa_api.core.workflows.registry import (
 from noa_api.core.workflows.types import (
     assistant_is_requesting_reason,
     messages_before_latest_user_if_reason_follow_up,
-    render_workflow_reply_text,
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
@@ -136,6 +135,68 @@ def _assistant_message_parts(*, reasoning: str, text: str) -> list[dict[str, obj
     return parts
 
 
+def _append_assistant_text_to_working_messages(
+    working_messages: list[dict[str, object]], *, text: str
+) -> None:
+    assistant_parts = _assistant_message_parts(reasoning="", text=text)
+    if not assistant_parts:
+        return
+
+    working_parts = _prompt_replay_parts(assistant_parts)
+    if not working_parts:
+        return
+
+    working_messages.append(
+        {
+            "role": "assistant",
+            "parts": working_parts,
+        }
+    )
+
+
+def _append_assistant_text_to_output_messages(
+    output_messages: list[AgentMessage], *, text: str
+) -> None:
+    assistant_parts = _assistant_message_parts(reasoning="", text=text)
+    if not assistant_parts:
+        return
+
+    output_messages.append(
+        AgentMessage(
+            role="assistant",
+            parts=assistant_parts,
+        )
+    )
+
+
+def _should_persist_assistant_text_this_round(
+    *, text: str, tool_calls: list[LLMToolCall]
+) -> bool:
+    if not text:
+        return False
+
+    if assistant_is_requesting_reason(text):
+        return True
+
+    return not tool_calls
+
+
+def _should_suppress_provisional_assistant_text_this_round(
+    *, text: str, tool_calls: list[LLMToolCall]
+) -> bool:
+    if not text or assistant_is_requesting_reason(text):
+        return False
+
+    for tool_call in tool_calls:
+        if tool_call.name in {"request_approval", "update_workflow_todo"}:
+            return True
+        tool = get_tool_definition(tool_call.name)
+        if tool is not None and tool.risk == ToolRisk.CHANGE:
+            return True
+
+    return False
+
+
 def _message_visible_text(parts: list[dict[str, object]]) -> str | None:
     visible_parts: list[str] = []
     for part in parts:
@@ -149,6 +210,17 @@ def _message_visible_text(parts: list[dict[str, object]]) -> str | None:
     if not visible_parts:
         return None
     return "".join(visible_parts)
+
+
+def _render_workflow_milestone_text(title: str, summary: str) -> str:
+    normalized_title = title.strip()
+    normalized_summary = summary.strip()
+    if not normalized_title:
+        return normalized_summary
+    if not normalized_summary:
+        return normalized_title
+    separator = "" if normalized_title.endswith((".", "!", "?")) else "."
+    return f"{normalized_title}{separator} {normalized_summary}"
 
 
 def _finalize_turn_messages(
@@ -355,7 +427,11 @@ class AgentRunner:
         #
         # Execution is still gated by `available_tool_names` below; denied calls
         # emit an explicit user-facing message.
-        llm_tools = [_to_openai_tool_schema(tool) for tool in get_tool_registry()]
+        llm_tools = [
+            _to_openai_tool_schema(tool)
+            for tool in get_tool_registry()
+            if tool.name != "update_workflow_todo"
+        ]
         max_rounds = 6
         max_tool_calls = 8
 
@@ -370,6 +446,11 @@ class AgentRunner:
         reasoning_chunks: list[str] = []
         while rounds < max_rounds and tool_calls_processed < max_tool_calls:
             rounds += 1
+            round_text_chunks: list[str] = []
+
+            async def _collect_round_text_delta(delta: str) -> None:
+                round_text_chunks.append(delta)
+
             if on_text_delta is None:
                 llm_response = await self._llm_client.run_turn(
                     messages=working_messages,
@@ -379,7 +460,7 @@ class AgentRunner:
                 llm_response = await self._llm_client.run_turn(
                     messages=working_messages,
                     tools=llm_tools,
-                    on_text_delta=on_text_delta,
+                    on_text_delta=_collect_round_text_delta,
                 )
 
             text = llm_response.text.strip()
@@ -392,41 +473,47 @@ class AgentRunner:
                 )
                 pending_firewall_preflight_raw.clear()
 
-            assistant_parts = _assistant_message_parts(reasoning="", text=text)
-            if assistant_parts:
-                output_messages.append(
-                    AgentMessage(
-                        role="assistant",
-                        parts=assistant_parts,
+            if text:
+                suppress_provisional_text = (
+                    _should_suppress_provisional_assistant_text_this_round(
+                        text=text,
+                        tool_calls=llm_response.tool_calls,
                     )
                 )
-                working_parts = _prompt_replay_parts(assistant_parts)
-                if working_parts:
-                    working_messages.append(
-                        {
-                            "role": "assistant",
-                            "parts": working_parts,
-                        }
+                if not suppress_provisional_text:
+                    _append_assistant_text_to_working_messages(
+                        working_messages,
+                        text=text,
+                    )
+                    text_deltas.extend(_split_text_deltas(text))
+                    if on_text_delta is not None:
+                        for chunk in round_text_chunks:
+                            await on_text_delta(chunk)
+
+                if _should_persist_assistant_text_this_round(
+                    text=text,
+                    tool_calls=llm_response.tool_calls,
+                ):
+                    _append_assistant_text_to_output_messages(
+                        output_messages,
+                        text=text,
                     )
 
-            if text:
-                text_deltas.extend(_split_text_deltas(text))
-                workflow_messages = (
-                    await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
+                if assistant_is_requesting_reason(text):
+                    workflow_messages = await self._maybe_persist_waiting_on_user_workflow_from_text_turn(
                         assistant_text=text,
                         working_messages=working_messages,
                         thread_id=thread_id,
                     )
-                )
-                if workflow_messages:
-                    output_messages.extend(workflow_messages)
-                    for message in workflow_messages:
-                        working_messages.append(
-                            {
-                                "role": message.role,
-                                "parts": message.parts,
-                            }
-                        )
+                    if workflow_messages:
+                        output_messages.extend(workflow_messages)
+                        for message in workflow_messages:
+                            working_messages.append(
+                                {
+                                    "role": message.role,
+                                    "parts": message.parts,
+                                }
+                            )
 
             if not llm_response.tool_calls:
                 if not text:
@@ -821,7 +908,10 @@ class AgentRunner:
             )
             messages: list[AgentMessage] = []
             if reply_template is not None:
-                reply_text = render_workflow_reply_text(reply_template).strip()
+                reply_text = _render_workflow_milestone_text(
+                    reply_template.title,
+                    reply_template.summary,
+                ).strip()
                 if reply_text:
                     messages.append(
                         AgentMessage(
@@ -1565,11 +1655,16 @@ def _internal_tool_guidance(tool_name: str) -> str | None:
             "Approval requests are created automatically after you call the "
             "underlying CHANGE tool. Do not call request_approval directly."
         )
+    if tool_name == "update_workflow_todo":
+        return (
+            "Workflow TODO state is backend-managed for operational workflows. "
+            "For simple READ requests, answer directly after using tools instead of calling update_workflow_todo."
+        )
     return None
 
 
 def _should_stop_after_internal_tool_guidance(tool_name: str, count: int) -> bool:
-    return tool_name == "request_approval" and count >= 2
+    return tool_name in {"request_approval", "update_workflow_todo"} and count >= 2
 
 
 def _latest_tool_result_part(

@@ -2566,6 +2566,8 @@ def _firewall_imunify_receipt_value(
 
 def _firewall_entry_receipt_items(
     entry: dict[str, object],
+    *,
+    include_full_csf_raw_output: bool = False,
 ) -> list[WorkflowEvidenceItem]:
     target = normalized_text(entry.get("target"))
     if target is None:
@@ -2574,7 +2576,13 @@ def _firewall_entry_receipt_items(
     items: list[WorkflowEvidenceItem] = []
     csf = entry.get("csf")
     if isinstance(csf, dict):
-        csf_value = _firewall_csf_receipt_value(csf, target=target)
+        csf_value: str | None = None
+        if include_full_csf_raw_output:
+            raw_output = csf.get("raw_output")
+            if isinstance(raw_output, str) and raw_output.strip():
+                csf_value = raw_output.strip()
+        if csf_value is None:
+            csf_value = _firewall_csf_receipt_value(csf, target=target)
         if csf_value is not None:
             items.append(WorkflowEvidenceItem(label=f"{target} · CSF", value=csf_value))
 
@@ -2595,11 +2603,16 @@ def _firewall_entry_receipt_items(
 
 def _firewall_entries_items(
     entries: list[dict[str, object]],
+    *,
+    include_full_csf_raw_output: bool = False,
 ) -> list[WorkflowEvidenceItem]:
     return [
         item
         for entry in entries
-        for item in _firewall_entry_receipt_items(entry)
+        for item in _firewall_entry_receipt_items(
+            entry,
+            include_full_csf_raw_output=include_full_csf_raw_output,
+        )
         if item.label.strip() and item.value.strip()
     ]
 
@@ -2853,7 +2866,10 @@ def _build_firewall_evidence_template(
             key="before_state",
             title="Before state",
             items=(
-                _firewall_entries_items(before_entries)
+                _firewall_entries_items(
+                    before_entries,
+                    include_full_csf_raw_output=context.phase == "waiting_on_approval",
+                )
                 or [
                     WorkflowEvidenceItem(
                         label="Targets", value=", ".join(targets) or "unknown"

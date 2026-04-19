@@ -157,7 +157,9 @@ class _InMemoryActionToolRunRepository:
         return existing
 
 
-async def test_agent_runner_executes_read_tools_and_appends_result_messages() -> None:
+async def test_agent_runner_executes_read_tools_and_persists_only_final_answer() -> (
+    None
+):
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
     class _TwoTurnLLM:
@@ -194,12 +196,10 @@ async def test_agent_runner_executes_read_tools_and_appends_result_messages() ->
         requested_by_user_id=uuid4(),
     )
 
-    assert len(result.messages) == 4
-    assert result.messages[0].role == "assistant"
-    assert result.messages[0].parts[0]["type"] == "text"
-    assert result.messages[1].parts[0]["type"] == "tool-call"
-    assert result.messages[2].parts[0]["type"] == "tool-result"
-    final_part = result.messages[3].parts[0]
+    assert len(result.messages) == 3
+    assert result.messages[0].parts[0]["type"] == "tool-call"
+    assert result.messages[1].parts[0]["type"] == "tool-result"
+    final_part = result.messages[2].parts[0]
     assert isinstance(final_part, dict)
     assert final_part.get("type") == "text"
     assert final_part.get("text") == "The current time is available."
@@ -251,7 +251,9 @@ async def test_agent_runner_preserves_reasoning_summary_before_visible_text() ->
     assert parts[1]["text"] == "Visible answer."
 
 
-async def test_agent_runner_aggregates_reasoning_once_across_rounds() -> None:
+async def test_agent_runner_aggregates_reasoning_once_on_the_final_read_answer() -> (
+    None
+):
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
     class _TwoRoundLLM:
@@ -314,11 +316,10 @@ async def test_agent_runner_aggregates_reasoning_once_across_rounds() -> None:
         requested_by_user_id=uuid4(),
     )
 
-    assert len(result.messages) == 4
-    assert result.messages[0].parts == [
-        {"type": "text", "text": "I'll check the server time."}
-    ]
-    final_parts = result.messages[3].parts
+    assert len(result.messages) == 3
+    assert result.messages[0].parts[0]["type"] == "tool-call"
+    assert result.messages[1].parts[0]["type"] == "tool-result"
+    final_parts = result.messages[2].parts
     assert final_parts[0]["type"] == "reasoning"
     assert final_parts[0]["summary"] == "First internal note.\n\nFinal internal note."
     assert final_parts[1]["type"] == "text"
@@ -684,7 +685,18 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
     assert len(llm.calls) == 2
 
     saw_tool_result_in_second_call = False
+    saw_provisional_text_in_second_call = False
     for msg in llm.calls[1]:
+        if msg.get("role") == "assistant":
+            parts = msg.get("parts")
+            if isinstance(parts, list) and any(
+                isinstance(part, dict)
+                and cast(dict[str, object], part).get("type") == "text"
+                and cast(dict[str, object], part).get("text")
+                == "I'll check today's server date."
+                for part in parts
+            ):
+                saw_provisional_text_in_second_call = True
         if msg.get("role") != "tool":
             continue
         parts = msg.get("parts")
@@ -698,9 +710,9 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
             saw_tool_result_in_second_call = True
             break
     assert saw_tool_result_in_second_call is True
+    assert saw_provisional_text_in_second_call is True
 
     assert [m.role for m in result.messages] == [
-        "assistant",
         "assistant",
         "tool",
         "assistant",
@@ -709,12 +721,11 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
         m.parts[0].get("type") if isinstance(m.parts[0], dict) else None
         for m in result.messages
     ] == [
-        "text",
         "tool-call",
         "tool-result",
         "text",
     ]
-    final_part = result.messages[3].parts[0]
+    final_part = result.messages[2].parts[0]
     assert isinstance(final_part, dict)
     assert final_part.get("text") == "Today's date is available."
 
@@ -959,6 +970,165 @@ async def test_agent_runner_stops_after_repeated_direct_request_approval_calls(
     assert "Do not call request_approval directly" in cast(str, final_part["text"])
 
 
+async def test_agent_runner_keeps_only_the_workflow_milestone_when_change_round_also_has_text(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def _record_replace(_self, *, thread_id, todos):
+        _ = thread_id, todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="I checked the account and can request approval now.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "Ticket #1661262",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1 for Ticket #1661262.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assistant_texts = [
+        cast(str, part["text"])
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict) and part.get("type") == "text"
+    ]
+    assert assistant_texts == [
+        "Suspend approval requested. This will suspend 'alice' on 'web1' after approval."
+    ]
+
+
+async def test_agent_runner_ignores_model_workflow_todo_for_simple_read_requests() -> (
+    None
+):
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    class _TwoTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="The WHM account for rendy on web2 has been found.",
+                    tool_calls=[
+                        LLMToolCall(
+                            name="update_workflow_todo",
+                            arguments={
+                                "todos": [
+                                    {
+                                        "content": "Look up the WHM account for rendy on web2.",
+                                        "status": "completed",
+                                        "priority": "high",
+                                    }
+                                ]
+                            },
+                        )
+                    ],
+                )
+            return LLMTurnResponse(
+                text="The WHM account for rendy on web2 has been found.",
+                tool_calls=[],
+            )
+
+    runner = AgentRunner(
+        llm_client=_TwoTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Find the WHM account for rendy on web2.",
+                    }
+                ],
+            }
+        ],
+        available_tool_names={"update_workflow_todo"},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert [message.role for message in result.messages] == ["assistant"]
+    assert result.messages[0].parts == [
+        {"type": "text", "text": "The WHM account for rendy on web2 has been found."}
+    ]
+
+
 async def test_agent_runner_allows_five_rounds_before_safety_limit() -> None:
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
@@ -1071,8 +1241,24 @@ async def test_agent_runner_creates_action_request_for_change_tools_without_exec
     assert request.status == ActionRequestStatus.PENDING
 
     assert repo.tool_runs == {}
-    assert len(result.messages) == 3
-    approval_part = result.messages[2].parts[0]
+    assert len(result.messages) == 2
+    assert [message.role for message in result.messages] == ["assistant", "assistant"]
+    assert [
+        message.parts[0].get("type") if isinstance(message.parts[0], dict) else None
+        for message in result.messages
+    ] == ["tool-call", "tool-call"]
+    assert not any(
+        isinstance(part, dict) and part.get("type") == "text"
+        for message in result.messages
+        for part in message.parts
+    )
+
+    proposal_part = result.messages[0].parts[0]
+    assert isinstance(proposal_part, dict)
+    assert proposal_part["type"] == "tool-call"
+    assert proposal_part["toolName"] == tool.name
+
+    approval_part = result.messages[1].parts[0]
     assert isinstance(approval_part, dict)
     assert approval_part["type"] == "tool-call"
     assert approval_part["toolName"] == "request_approval"
@@ -2315,30 +2501,32 @@ async def test_agent_runner_appends_firewall_preflight_raw_output_to_followup_te
         requested_by_user_id=uuid4(),
     )
 
-    # Raw firewall preflight output should be appended to the follow-up narration before approval tool UI.
-    narration_index = next(
-        index
-        for index, message in enumerate(result.messages)
-        if message.role == "assistant"
-        and any(
-            isinstance(part, dict)
-            and part.get("type") == "text"
-            and isinstance(part_text := part.get("text"), str)
-            and "Raw preflight output for 103.103.11.123 (CSF)" in part_text
-            for part in message.parts
-        )
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
     )
-    request_approval_index = next(
-        index
-        for index, message in enumerate(result.messages)
-        if any(
-            isinstance(part, dict)
-            and part.get("type") == "tool-call"
-            and part.get("toolName") == "request_approval"
-            for part in message.parts
-        )
+    approval_args = approval_part.get("args")
+    assert isinstance(approval_args, dict)
+    evidence_sections = approval_args.get("evidenceSections")
+    assert isinstance(evidence_sections, list)
+
+    before_state = next(
+        section
+        for section in evidence_sections
+        if isinstance(section, dict) and section.get("key") == "before_state"
     )
-    assert narration_index < request_approval_index
+    items = before_state.get("items")
+    assert isinstance(items, list)
+    assert any(
+        isinstance(item, dict)
+        and item.get("label") == "103.103.11.123 · CSF"
+        and item.get("value") == raw_output
+        for item in items
+    )
 
 
 async def test_agent_runner_falls_back_for_generic_read_success_when_model_stays_empty(
