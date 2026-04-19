@@ -157,7 +157,9 @@ class _InMemoryActionToolRunRepository:
         return existing
 
 
-async def test_agent_runner_executes_read_tools_and_appends_result_messages() -> None:
+async def test_agent_runner_executes_read_tools_and_persists_only_final_answer() -> (
+    None
+):
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
     class _TwoTurnLLM:
@@ -194,12 +196,10 @@ async def test_agent_runner_executes_read_tools_and_appends_result_messages() ->
         requested_by_user_id=uuid4(),
     )
 
-    assert len(result.messages) == 4
-    assert result.messages[0].role == "assistant"
-    assert result.messages[0].parts[0]["type"] == "text"
-    assert result.messages[1].parts[0]["type"] == "tool-call"
-    assert result.messages[2].parts[0]["type"] == "tool-result"
-    final_part = result.messages[3].parts[0]
+    assert len(result.messages) == 3
+    assert result.messages[0].parts[0]["type"] == "tool-call"
+    assert result.messages[1].parts[0]["type"] == "tool-result"
+    final_part = result.messages[2].parts[0]
     assert isinstance(final_part, dict)
     assert final_part.get("type") == "text"
     assert final_part.get("text") == "The current time is available."
@@ -251,7 +251,9 @@ async def test_agent_runner_preserves_reasoning_summary_before_visible_text() ->
     assert parts[1]["text"] == "Visible answer."
 
 
-async def test_agent_runner_aggregates_reasoning_once_across_rounds() -> None:
+async def test_agent_runner_aggregates_reasoning_once_on_the_final_read_answer() -> (
+    None
+):
     repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
 
     class _TwoRoundLLM:
@@ -314,11 +316,10 @@ async def test_agent_runner_aggregates_reasoning_once_across_rounds() -> None:
         requested_by_user_id=uuid4(),
     )
 
-    assert len(result.messages) == 4
-    assert result.messages[0].parts == [
-        {"type": "text", "text": "I'll check the server time."}
-    ]
-    final_parts = result.messages[3].parts
+    assert len(result.messages) == 3
+    assert result.messages[0].parts[0]["type"] == "tool-call"
+    assert result.messages[1].parts[0]["type"] == "tool-result"
+    final_parts = result.messages[2].parts
     assert final_parts[0]["type"] == "reasoning"
     assert final_parts[0]["summary"] == "First internal note.\n\nFinal internal note."
     assert final_parts[1]["type"] == "text"
