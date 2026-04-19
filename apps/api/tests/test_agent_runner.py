@@ -685,7 +685,18 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
     assert len(llm.calls) == 2
 
     saw_tool_result_in_second_call = False
+    saw_provisional_text_in_second_call = False
     for msg in llm.calls[1]:
+        if msg.get("role") == "assistant":
+            parts = msg.get("parts")
+            if isinstance(parts, list) and any(
+                isinstance(part, dict)
+                and cast(dict[str, object], part).get("type") == "text"
+                and cast(dict[str, object], part).get("text")
+                == "I'll check today's server date."
+                for part in parts
+            ):
+                saw_provisional_text_in_second_call = True
         if msg.get("role") != "tool":
             continue
         parts = msg.get("parts")
@@ -699,9 +710,9 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
             saw_tool_result_in_second_call = True
             break
     assert saw_tool_result_in_second_call is True
+    assert saw_provisional_text_in_second_call is True
 
     assert [m.role for m in result.messages] == [
-        "assistant",
         "assistant",
         "tool",
         "assistant",
@@ -710,12 +721,11 @@ async def test_agent_runner_calls_llm_again_after_tool_results() -> None:
         m.parts[0].get("type") if isinstance(m.parts[0], dict) else None
         for m in result.messages
     ] == [
-        "text",
         "tool-call",
         "tool-result",
         "text",
     ]
-    final_part = result.messages[3].parts[0]
+    final_part = result.messages[2].parts[0]
     assert isinstance(final_part, dict)
     assert final_part.get("text") == "Today's date is available."
 
@@ -1231,8 +1241,24 @@ async def test_agent_runner_creates_action_request_for_change_tools_without_exec
     assert request.status == ActionRequestStatus.PENDING
 
     assert repo.tool_runs == {}
-    assert len(result.messages) == 3
-    approval_part = result.messages[2].parts[0]
+    assert len(result.messages) == 2
+    assert [message.role for message in result.messages] == ["assistant", "assistant"]
+    assert [
+        message.parts[0].get("type") if isinstance(message.parts[0], dict) else None
+        for message in result.messages
+    ] == ["tool-call", "tool-call"]
+    assert not any(
+        isinstance(part, dict) and part.get("type") == "text"
+        for message in result.messages
+        for part in message.parts
+    )
+
+    proposal_part = result.messages[0].parts[0]
+    assert isinstance(proposal_part, dict)
+    assert proposal_part["type"] == "tool-call"
+    assert proposal_part["toolName"] == tool.name
+
+    approval_part = result.messages[1].parts[0]
     assert isinstance(approval_part, dict)
     assert approval_part["type"] == "tool-call"
     assert approval_part["toolName"] == "request_approval"
@@ -2475,30 +2501,32 @@ async def test_agent_runner_appends_firewall_preflight_raw_output_to_followup_te
         requested_by_user_id=uuid4(),
     )
 
-    # Raw firewall preflight output should be appended to the follow-up narration before approval tool UI.
-    narration_index = next(
-        index
-        for index, message in enumerate(result.messages)
-        if message.role == "assistant"
-        and any(
-            isinstance(part, dict)
-            and part.get("type") == "text"
-            and isinstance(part_text := part.get("text"), str)
-            and "Raw preflight output for 103.103.11.123 (CSF)" in part_text
-            for part in message.parts
-        )
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
     )
-    request_approval_index = next(
-        index
-        for index, message in enumerate(result.messages)
-        if any(
-            isinstance(part, dict)
-            and part.get("type") == "tool-call"
-            and part.get("toolName") == "request_approval"
-            for part in message.parts
-        )
+    approval_args = approval_part.get("args")
+    assert isinstance(approval_args, dict)
+    evidence_sections = approval_args.get("evidenceSections")
+    assert isinstance(evidence_sections, list)
+
+    before_state = next(
+        section
+        for section in evidence_sections
+        if isinstance(section, dict) and section.get("key") == "before_state"
     )
-    assert narration_index < request_approval_index
+    items = before_state.get("items")
+    assert isinstance(items, list)
+    assert any(
+        isinstance(item, dict)
+        and item.get("label") == "103.103.11.123 · CSF"
+        and item.get("value") == raw_output
+        for item in items
+    )
 
 
 async def test_agent_runner_falls_back_for_generic_read_success_when_model_stays_empty(
