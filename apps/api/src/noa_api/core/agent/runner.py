@@ -447,6 +447,11 @@ class AgentRunner:
         reasoning_chunks: list[str] = []
         while rounds < max_rounds and tool_calls_processed < max_tool_calls:
             rounds += 1
+            round_text_chunks: list[str] = []
+
+            async def _collect_round_text_delta(delta: str) -> None:
+                round_text_chunks.append(delta)
+
             if on_text_delta is None:
                 llm_response = await self._llm_client.run_turn(
                     messages=working_messages,
@@ -456,7 +461,7 @@ class AgentRunner:
                 llm_response = await self._llm_client.run_turn(
                     messages=working_messages,
                     tools=llm_tools,
-                    on_text_delta=on_text_delta,
+                    on_text_delta=_collect_round_text_delta,
                 )
 
             text = llm_response.text.strip()
@@ -482,6 +487,9 @@ class AgentRunner:
                         text=text,
                     )
                     text_deltas.extend(_split_text_deltas(text))
+                    if on_text_delta is not None:
+                        for chunk in round_text_chunks:
+                            await on_text_delta(chunk)
 
                 if _should_persist_assistant_text_this_round(
                     text=text,

@@ -1,14 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 from uuid import uuid4
 
 from noa_api.core.agent.runner import (
     AgentRunner,
+    LLMToolCall,
     LLMTurnResponse,
     OpenAICompatibleLLMClient,
 )
+from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 
 
 async def test_agent_runner_passes_text_delta_callback_to_llm_client() -> None:
@@ -33,7 +35,7 @@ async def test_agent_runner_passes_text_delta_callback_to_llm_client() -> None:
 
     runner = AgentRunner(
         llm_client=_FakeLLMClient(),
-        action_tool_run_service=object(),
+        action_tool_run_service=cast(Any, object()),
         session=None,
     )
 
@@ -54,6 +56,135 @@ async def test_agent_runner_passes_text_delta_callback_to_llm_client() -> None:
     assert result.text_deltas == ["Hello world"]
     assert result.messages
     assert result.messages[0].parts[0]["text"] == "Hello world"
+
+
+async def test_agent_runner_does_not_stream_provisional_text_for_change_rounds(
+    monkeypatch,
+) -> None:
+    seen: list[str] = []
+
+    async def on_text_delta(delta: str) -> None:
+        seen.append(delta)
+
+    async def _record_replace(_self, *, thread_id, todos):
+        _ = thread_id, todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    from noa_api.core.tools.registry import get_tool_definition
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    @dataclass
+    class _ActionRequestStub:
+        id: object
+
+    class _ActionRequestRepository:
+        async def create_action_request(
+            self,
+            *,
+            thread_id,
+            tool_name,
+            args,
+            risk,
+            requested_by_user_id,
+        ) -> _ActionRequestStub:
+            _ = thread_id, tool_name, args, risk, requested_by_user_id
+            return _ActionRequestStub(id=uuid4())
+
+    class _StreamingChangeLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools
+            assert on_text_delta is not None
+            await on_text_delta("I checked")
+            await on_text_delta(" the account.")
+            return LLMTurnResponse(
+                text="I checked the account and can request approval now.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "Ticket #1661262",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_StreamingChangeLLM(),
+        action_tool_run_service=ActionToolRunService(
+            repository=cast(Any, _ActionRequestRepository())
+        ),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1 for Ticket #1661262.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+        on_text_delta=on_text_delta,
+    )
+
+    assistant_texts = [
+        cast(str, part["text"])
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict) and part.get("type") == "text"
+    ]
+
+    assert seen == []
+    assert assistant_texts == [
+        "Suspend approval requested. This will suspend 'alice' on 'web1' after approval."
+    ]
 
 
 async def test_openai_compatible_llm_client_streams_when_callback_present() -> None:
