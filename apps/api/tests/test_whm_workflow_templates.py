@@ -22,6 +22,25 @@ def _reply_detail_map(reply: WorkflowReplyTemplate) -> dict[str, str]:
     return {item["label"]: item["value"] for item in reply.details}
 
 
+def _assert_approval_markdown_matches_reply(
+    reply: WorkflowReplyTemplate,
+    *,
+    expected_paragraph: str,
+) -> str:
+    assert reply.approval_presentation is not None
+    assert reply.details is not None
+
+    markdown = render_workflow_approval_markdown(reply.approval_presentation)
+
+    assert expected_paragraph in markdown
+    for item in reply.details:
+        assert f"- **{item['label']}:** {item['value']}" in markdown
+    for item in reply.evidence_summary:
+        assert f"- {item}" in markdown
+
+    return markdown
+
+
 def test_render_workflow_approval_markdown_renders_key_value_rows_as_bullets() -> None:
     presentation = WorkflowApprovalPresentation(
         blocks=[
@@ -554,6 +573,41 @@ def test_whm_account_lifecycle_waiting_on_approval_reply_includes_detail_rows() 
     assert details["Success criteria"] == "'alice' on 'web1' ends in active state."
 
 
+def test_whm_account_lifecycle_approval_markdown_presentation() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_unsuspend_account",
+        workflow_family="whm-account-lifecycle",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "domain": "example.com",
+                        "suspended": True,
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraph="WHM account lifecycle request for 'alice' on 'web1'.",
+    )
+    assert "- Preflight found 'alice' on 'web1' in suspended state." in markdown
+    assert "- Success condition: 'alice' on 'web1' ends in active state." in markdown
+
+
 def test_whm_contact_email_waiting_on_approval_reply_includes_detail_rows() -> None:
     reply = build_workflow_reply_template(
         tool_name="whm_change_contact_email",
@@ -590,6 +644,46 @@ def test_whm_contact_email_waiting_on_approval_reply_includes_detail_rows() -> N
     assert (
         details["Success criteria"]
         == "The contact email changes from 'old@example.com' to 'new@example.com'."
+    )
+
+
+def test_whm_contact_email_approval_markdown_presentation() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_change_contact_email",
+        workflow_family="whm-account-contact-email",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_email": "new@example.com",
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "contactemail": "old@example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraph="WHM contact email change for 'alice' on 'web1'.",
+    )
+    assert (
+        "- Preflight found the current contact email as 'old@example.com'." in markdown
+    )
+    assert (
+        "- Success condition: The contact email changes from 'old@example.com' to 'new@example.com'."
+        in markdown
     )
 
 
@@ -645,6 +739,61 @@ def test_whm_primary_domain_waiting_on_approval_reply_includes_detail_rows() -> 
     )
 
 
+def test_whm_primary_domain_approval_markdown_presentation() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_change_primary_domain",
+        workflow_family="whm-account-primary-domain",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_domain": "new.example.com",
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_primary_domain_change",
+                "args": {
+                    "server_ref": "web1",
+                    "username": "alice",
+                    "new_domain": "new.example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "requested_domain": "new.example.com",
+                    "requested_domain_location": "absent",
+                    "domain_owner": None,
+                    "domain_inventory": {
+                        "main_domain": "old.example.com",
+                        "addon_domains": [],
+                        "parked_domains": [],
+                        "sub_domains": [],
+                    },
+                    "account": {
+                        "user": "alice",
+                        "domain": "old.example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraph="WHM primary domain change for 'alice' on 'web1'.",
+    )
+    assert "- Requested domain location on the account: absent." in markdown
+    assert (
+        "- Server ownership check: 'new.example.com' is not owned by another account."
+        in markdown
+    )
+    assert (
+        "- Success condition: The primary domain changes to 'new.example.com' and the DNS zone exists."
+        in markdown
+    )
+
+
 def test_whm_firewall_waiting_on_approval_reply_includes_detail_rows() -> None:
     reply = build_workflow_reply_template(
         tool_name="whm_firewall_unblock",
@@ -688,13 +837,66 @@ def test_whm_firewall_waiting_on_approval_reply_includes_detail_rows() -> None:
         == "Unblock firewall entries for '1.2.3.4', '5.6.7.8' on 'web2'."
     )
     assert details["Reason"] == "Ticket #1661262"
+    assert reply.evidence_summary[:2] == [
+        "1.2.3.4 is currently blocked (CSF, Imunify).",
+        "5.6.7.8 is currently blocked (CSF).",
+    ]
     assert (
         details["Evidence"]
-        == "1.2.3.4 is blocked in CSF and Imunify; 5.6.7.8 is blocked in CSF."
+        == "1.2.3.4 is currently blocked (CSF, Imunify); 5.6.7.8 is currently blocked (CSF)."
     )
     assert (
         details["Success criteria"]
         == "Postflight reflects the requested firewall state for '1.2.3.4', '5.6.7.8'."
+    )
+
+
+def test_whm_firewall_approval_markdown_presentation() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_firewall_unblock",
+        workflow_family="whm-firewall-batch-change",
+        args={
+            "server_ref": "web2",
+            "targets": ["1.2.3.4", "5.6.7.8"],
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_firewall_entries",
+                "args": {"server_ref": "web2", "target": "1.2.3.4"},
+                "result": {
+                    "ok": True,
+                    "target": "1.2.3.4",
+                    "matches": ["/etc/csf/csf.deny"],
+                    "available_tools": {"csf": True, "imunify": True},
+                    "combined_verdict": "blocked",
+                },
+            },
+            {
+                "toolName": "whm_preflight_firewall_entries",
+                "args": {"server_ref": "web2", "target": "5.6.7.8"},
+                "result": {
+                    "ok": True,
+                    "target": "5.6.7.8",
+                    "matches": ["/etc/csf/csf.deny"],
+                    "available_tools": {"csf": True, "imunify": False},
+                    "combined_verdict": "blocked",
+                },
+            },
+        ],
+    )
+
+    assert reply is not None
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraph="WHM firewall change for '1.2.3.4', '5.6.7.8' on 'web2'.",
+    )
+    assert "- 1.2.3.4 is currently blocked (CSF, Imunify)." in markdown
+    assert "- 5.6.7.8 is currently blocked (CSF)." in markdown
+    assert (
+        "- Success condition: Postflight reflects the requested firewall state for '1.2.3.4', '5.6.7.8'."
+        in markdown
     )
 
 

@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
 from noa_api.core.workflows.types import (
+    WorkflowApprovalPresentation,
+    WorkflowApprovalPresentationBlock,
     WorkflowEvidenceItem,
     WorkflowEvidenceSection,
     WorkflowEvidenceTemplate,
@@ -991,8 +993,78 @@ def _approval_detail_rows(*rows: tuple[str, str | None]) -> list[dict[str, str]]
     ]
 
 
+def _approval_key_value_block_from_details(
+    details: list[dict[str, str]] | None,
+) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(
+        kind="key_value_list",
+        evidence_items=_clean_items(
+            [
+                WorkflowEvidenceItem(label=label, value=value)
+                for item in details or []
+                for label in [normalized_text(item.get("label"))]
+                for value in [normalized_text(item.get("value"))]
+                if label is not None and value is not None
+            ]
+        ),
+    )
+
+
 def _approval_reason_detail(reason: str | None) -> str:
     return reason or "none provided"
+
+
+def _approval_paragraph_block(text: str | None) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(kind="paragraph", text=text)
+
+
+def _approval_bullet_list_block(
+    *items: str | None,
+) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(
+        kind="bullet_list",
+        items=[item for item in items if isinstance(item, str) and item.strip()],
+    )
+
+
+def _approval_key_value_block(
+    *rows: tuple[str, str | None],
+) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(
+        kind="key_value_list",
+        evidence_items=_clean_items(
+            [
+                WorkflowEvidenceItem(label=label, value=value)
+                for label, value in rows
+                if value is not None
+            ]
+        ),
+    )
+
+
+def _approval_presentation(
+    *blocks: WorkflowApprovalPresentationBlock,
+) -> WorkflowApprovalPresentation:
+    return WorkflowApprovalPresentation(
+        blocks=[
+            block
+            for block in blocks
+            if isinstance(block, WorkflowApprovalPresentationBlock)
+        ]
+    )
+
+
+def _approval_presentation_from_reply_data(
+    *,
+    paragraph: str | None,
+    details: list[dict[str, str]] | None,
+    evidence_summary: list[str],
+) -> WorkflowApprovalPresentation:
+    return _approval_presentation(
+        _approval_paragraph_block(paragraph),
+        _approval_key_value_block_from_details(details),
+        _approval_bullet_list_block(*evidence_summary),
+    )
 
 
 def _join_with_and(values: list[str]) -> str:
@@ -1005,24 +1077,12 @@ def _join_with_and(values: list[str]) -> str:
     return ", ".join(values[:-1]) + f", and {values[-1]}"
 
 
-def _firewall_entry_detail_summary(entry: dict[str, object]) -> str | None:
-    target = normalized_text(entry.get("target"))
-    verdict = normalized_text(entry.get("combined_verdict"))
-    if target is None or verdict is None:
-        return None
-
-    tool_names = _firewall_available_tool_names(entry)
-    if tool_names:
-        return f"{target} is {verdict} in {_join_with_and(tool_names)}"
-    return f"{target} is {verdict}"
-
-
-def _firewall_evidence_detail(entries: list[dict[str, object]]) -> str | None:
+def _approval_sentence_summary(items: list[str]) -> str | None:
     summaries = [
-        summary
-        for entry in entries
-        for summary in [_firewall_entry_detail_summary(entry)]
-        if summary is not None
+        text.removesuffix(".")
+        for item in items
+        for text in [normalized_text(item)]
+        if text is not None
     ]
     if not summaries:
         return None
@@ -1051,9 +1111,15 @@ def _build_account_lifecycle_reply_template_impl(
     result_message = _result_message(context.result)
 
     if context.phase == "waiting_on_approval":
+        success_criteria = f"{subject} ends in {desired_state} state."
+        details = _approval_detail_rows(
+            ("Action", f"{action_title} {subject}."),
+            ("Reason", _approval_reason_detail(reason)),
+            ("Success criteria", success_criteria),
+        )
         evidence = [
             f"Preflight found {subject} in {before_state} state.",
-            f"Success condition: the account ends in {desired_state} state.",
+            f"Success condition: {success_criteria}",
         ]
         if reason is not None:
             evidence.append(f"Recorded reason: {reason}.")
@@ -1062,11 +1128,12 @@ def _build_account_lifecycle_reply_template_impl(
             outcome="info",
             summary=f"This will {action_label} {subject} after approval.",
             evidence_summary=evidence,
-            details=_approval_detail_rows(
-                ("Action", f"{action_title} {subject}."),
-                ("Reason", _approval_reason_detail(reason)),
-                ("Success criteria", f"{subject} ends in {desired_state} state."),
+            approval_presentation=_approval_presentation_from_reply_data(
+                paragraph=f"WHM account lifecycle request for {subject}.",
+                details=details,
+                evidence_summary=evidence,
             ),
+            details=details,
             next_step=(
                 f"Approve the request to {action_label} the account, or deny it to leave the current state unchanged."
             ),
@@ -1176,9 +1243,20 @@ def _build_contact_email_reply_template_impl(
     result_message = _result_message(context.result)
 
     if context.phase == "waiting_on_approval":
+        success_criteria = (
+            f"The contact email changes from '{before_email}' to '{requested_email}'."
+        )
+        details = _approval_detail_rows(
+            (
+                "Action",
+                f"Change the contact email for {subject} to '{requested_email}'.",
+            ),
+            ("Reason", _approval_reason_detail(reason)),
+            ("Success criteria", success_criteria),
+        )
         evidence = [
             f"Preflight found the current contact email as '{before_email}'.",
-            f"Success condition: the contact email changes to '{requested_email}'.",
+            f"Success condition: {success_criteria}",
         ]
         if reason is not None:
             evidence.append(f"Recorded reason: {reason}.")
@@ -1187,17 +1265,12 @@ def _build_contact_email_reply_template_impl(
             outcome="info",
             summary=f"This will change the contact email for {subject} to '{requested_email}' after approval.",
             evidence_summary=evidence,
-            details=_approval_detail_rows(
-                (
-                    "Action",
-                    f"Change the contact email for {subject} to '{requested_email}'.",
-                ),
-                ("Reason", _approval_reason_detail(reason)),
-                (
-                    "Success criteria",
-                    f"The contact email changes from '{before_email}' to '{requested_email}'.",
-                ),
+            approval_presentation=_approval_presentation_from_reply_data(
+                paragraph=f"WHM contact email change for {subject}.",
+                details=details,
+                evidence_summary=evidence,
             ),
+            details=details,
             next_step="Approve the request to apply the email change, or deny it to keep the current address.",
         )
 
@@ -1311,6 +1384,15 @@ def _build_primary_domain_reply_template_impl(
     dns_zone_exists = _dns_zone_exists(context.postflight_result)
 
     if context.phase == "waiting_on_approval":
+        success_criteria = f"The primary domain changes to '{requested_domain}' and the DNS zone exists."
+        details = _approval_detail_rows(
+            (
+                "Action",
+                f"Change the primary domain for {subject} to '{requested_domain}'.",
+            ),
+            ("Reason", _approval_reason_detail(reason)),
+            ("Success criteria", success_criteria),
+        )
         evidence = [
             f"Preflight found the current primary domain as '{before_domain}'.",
             f"Requested domain location on the account: {requested_location}.",
@@ -1319,7 +1401,7 @@ def _build_primary_domain_reply_template_impl(
                 if owner is not None
                 else f"Server ownership check: '{requested_domain}' is not owned by another account."
             ),
-            f"Success condition: the primary domain changes to '{requested_domain}' and the DNS zone exists.",
+            f"Success condition: {success_criteria}",
         ]
         if reason is not None:
             evidence.append(f"Recorded reason: {reason}.")
@@ -1328,17 +1410,12 @@ def _build_primary_domain_reply_template_impl(
             outcome="info",
             summary=f"This will change the primary domain for {subject} to '{requested_domain}' after approval.",
             evidence_summary=evidence,
-            details=_approval_detail_rows(
-                (
-                    "Action",
-                    f"Change the primary domain for {subject} to '{requested_domain}'.",
-                ),
-                ("Reason", _approval_reason_detail(reason)),
-                (
-                    "Success criteria",
-                    f"The primary domain changes to '{requested_domain}' and the DNS zone exists.",
-                ),
+            approval_presentation=_approval_presentation_from_reply_data(
+                paragraph=f"WHM primary domain change for {subject}.",
+                details=details,
+                evidence_summary=evidence,
             ),
+            details=details,
             next_step="Approve the request to apply the primary-domain change, or deny it to keep the current domain.",
         )
 
@@ -2780,38 +2857,43 @@ def _build_firewall_reply_template(
     failed_targets = _targets_with_status(result_items, "error")
 
     if context.phase == "waiting_on_approval":
-        evidence = [
+        preflight_evidence = [
             summary
             for entry in before_entries
             for summary in [_firewall_entry_status_summary(entry)]
             if summary is not None
         ]
+        success_criteria = (
+            "Postflight reflects the requested firewall state for "
+            + ", ".join(repr(target) for target in targets)
+            + "."
+        )
+        details = _approval_detail_rows(
+            (
+                "Action",
+                f"{action_phrase.capitalize()} firewall entries for {subject}.",
+            ),
+            ("Reason", _approval_reason_detail(reason)),
+            ("Evidence", _approval_sentence_summary(preflight_evidence)),
+            ("Success criteria", success_criteria),
+        )
+        evidence = list(preflight_evidence)
         if duration_minutes is not None:
             evidence.append(f"Requested TTL: {duration_minutes} minute(s).")
         if reason is not None:
             evidence.append(f"Recorded reason: {reason}.")
-        evidence.append(
-            "Success condition: postflight reflects the requested firewall state."
-        )
+        evidence.append(f"Success condition: {success_criteria}")
         return WorkflowReplyTemplate(
             title="Firewall change approval requested",
             outcome="info",
             summary=f"This will {action_phrase} for {subject} after approval.",
             evidence_summary=evidence,
-            details=_approval_detail_rows(
-                (
-                    "Action",
-                    f"{action_phrase.capitalize()} firewall entries for {subject}.",
-                ),
-                ("Reason", _approval_reason_detail(reason)),
-                ("Evidence", _firewall_evidence_detail(before_entries)),
-                (
-                    "Success criteria",
-                    "Postflight reflects the requested firewall state for "
-                    + ", ".join(repr(target) for target in targets)
-                    + ".",
-                ),
+            approval_presentation=_approval_presentation_from_reply_data(
+                paragraph=f"WHM firewall change for {subject}.",
+                details=details,
+                evidence_summary=evidence,
             ),
+            details=details,
             next_step="Approve the request to run the firewall change, or deny it to leave the current state unchanged.",
         )
 
