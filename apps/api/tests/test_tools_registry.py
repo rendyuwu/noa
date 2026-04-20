@@ -139,7 +139,14 @@ async def test_openai_tool_schema_includes_risk_notes_and_guidance() -> None:
         "Risk: READ. Evidence-gathering only; it does not change system state."
         in todo_description
     )
-    assert "Keep exactly one item in_progress at a time" in todo_description
+    assert "backend-managed operational workflows" in todo_description
+    assert "Do not use it for simple READ questions" in todo_description
+    assert "Successful results return the saved `todos`" in todo_description
+
+    todo_items_description = todo_schema["function"]["parameters"]["properties"][
+        "todos"
+    ]["description"]
+    assert "Keep exactly one item in_progress at a time" in todo_items_description
 
 
 async def test_whm_change_tools_expose_workflow_families() -> None:

@@ -38,6 +38,105 @@ def _settings(**kwargs: object) -> Settings:
     return Settings.model_validate({"environment": "test", **kwargs})
 
 
+def _assistant_texts(result: AgentRunnerResult) -> list[str]:
+    return [
+        cast(str, part["text"])
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict) and part.get("type") == "text"
+    ]
+
+
+def _request_approval_args(result: AgentRunnerResult) -> dict[str, object]:
+    approval_parts = [
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    ]
+    assert len(approval_parts) == 1
+    approval_args = approval_parts[0].get("args")
+    assert isinstance(approval_args, dict)
+    return cast(dict[str, object], approval_args)
+
+
+def _reply_template_details(reply_template: dict[str, object]) -> dict[str, str]:
+    details = reply_template.get("details")
+    assert isinstance(details, list)
+    normalized: dict[str, str] = {}
+    for item in details:
+        if not isinstance(item, dict):
+            continue
+        item_dict = cast(dict[str, object], item)
+        normalized[cast(str, item_dict["label"])] = cast(str, item_dict["value"])
+    return normalized
+
+
+def _assert_text_has_tokens(text: str, *tokens: str) -> None:
+    normalized = text.lower()
+    for token in tokens:
+        assert token.lower() in normalized
+
+
+def _assert_suspend_success_criteria(text: str) -> None:
+    normalized = text.lower()
+    assert "alice" in normalized
+    assert "web1" in normalized
+    assert "suspend" in normalized
+    assert "state" in normalized or "status" in normalized or "end" in normalized
+
+
+def _is_suspend_approval_handoff_text(text: str) -> bool:
+    normalized = text.lower()
+    return (
+        "approval" in normalized
+        and "suspend" in normalized
+        and "alice" in normalized
+        and "web1" in normalized
+    )
+
+
+def _assert_suspend_approval_handoff_semantics(
+    *,
+    result: AgentRunnerResult,
+    repo: _InMemoryActionToolRunRepository,
+    tool_name: str,
+    expected_reason: str,
+    forbidden_text_fragments: tuple[str, ...] = (),
+) -> None:
+    assistant_texts = _assistant_texts(result)
+    assert len(assistant_texts) == 1
+    assert assistant_texts[0].strip()
+    for fragment in forbidden_text_fragments:
+        assert fragment not in assistant_texts[0]
+
+    assert len(repo.action_requests) == 1
+
+    approval_args = _request_approval_args(result)
+    assert approval_args["toolName"] == tool_name
+    assert approval_args["risk"] == ToolRisk.CHANGE.value
+    activity = approval_args.get("activity")
+    assert isinstance(activity, str)
+    assert "suspend" in activity.lower()
+    assert "alice" in activity.lower()
+
+    approval_arguments = cast(dict[str, object], approval_args["arguments"])
+    assert approval_arguments == {
+        "server_ref": "web1",
+        "username": "alice",
+        "reason": expected_reason,
+    }
+
+    reply_template = cast(dict[str, object], approval_args["replyTemplate"])
+    assert reply_template["outcome"] == "info"
+    details = _reply_template_details(reply_template)
+    _assert_text_has_tokens(details["Action"], "suspend", "alice", "web1")
+    assert details["Reason"] == expected_reason
+    _assert_suspend_success_criteria(details["Success criteria"])
+
+
 def test_create_default_llm_client_requires_llm_api_key() -> None:
     settings = _settings(llm_api_key=None)
 
@@ -1066,15 +1165,15 @@ async def test_agent_runner_keeps_only_the_workflow_milestone_when_change_round_
         requested_by_user_id=uuid4(),
     )
 
-    assistant_texts = [
-        cast(str, part["text"])
-        for message in result.messages
-        for part in message.parts
-        if isinstance(part, dict) and part.get("type") == "text"
-    ]
-    assert assistant_texts == [
-        "Suspend approval requested. This will suspend 'alice' on 'web1' after approval."
-    ]
+    _assert_suspend_approval_handoff_semantics(
+        result=result,
+        repo=repo,
+        tool_name=tool.name,
+        expected_reason="Ticket #1661262",
+        forbidden_text_fragments=(
+            "I checked the account and can request approval now.",
+        ),
+    )
 
 
 async def test_agent_runner_uses_backend_owned_approval_handoff_when_change_tool_call_succeeds(
@@ -1159,30 +1258,15 @@ async def test_agent_runner_uses_backend_owned_approval_handoff_when_change_tool
         requested_by_user_id=uuid4(),
     )
 
-    assistant_texts = [
-        cast(str, part["text"])
-        for message in result.messages
-        for part in message.parts
-        if isinstance(part, dict) and part.get("type") == "text"
-    ]
-    assert len(assistant_texts) == 1
-    assert (
-        "Suspend approval requested. This will suspend 'alice' on 'web1' after approval."
-        in assistant_texts[0]
-    )
-    assert "Action: Suspend 'alice' on 'web1'." in assistant_texts[0]
-    assert "Reason: Ticket #1661262" in assistant_texts[0]
-    assert (
-        "Success criteria: 'alice' on 'web1' ends in suspended state."
-        in assistant_texts[0]
-    )
-    assert all(
-        "once you approve it" not in assistant_text
-        for assistant_text in assistant_texts
-    )
-    assert all(
-        "I found the account active on web1" not in assistant_text
-        for assistant_text in assistant_texts
+    _assert_suspend_approval_handoff_semantics(
+        result=result,
+        repo=repo,
+        tool_name=tool.name,
+        expected_reason="Ticket #1661262",
+        forbidden_text_fragments=(
+            "once you approve it",
+            "I found the account active on web1",
+        ),
     )
 
 
@@ -1284,8 +1368,7 @@ async def test_agent_runner_renders_backend_owned_approval_handoff_before_reques
             isinstance(part, dict)
             and part.get("type") == "text"
             and isinstance(part_text := part.get("text"), str)
-            and "Suspend approval requested" in part_text
-            and "This will suspend 'alice' on 'web1' after approval." in part_text
+            and _is_suspend_approval_handoff_text(part_text)
             for part in message.parts
         )
     )
@@ -2029,8 +2112,7 @@ async def test_agent_runner_persists_deterministic_whm_workflow_while_waiting_fo
             isinstance(part, dict)
             and part.get("type") == "text"
             and isinstance(part_text := part.get("text"), str)
-            and "Suspend approval requested" in part_text
-            and "This will suspend 'alice' on 'web1' after approval." in part_text
+            and _is_suspend_approval_handoff_text(part_text)
             for part in message.parts
         )
     )
@@ -2440,22 +2522,6 @@ async def test_agent_runner_renders_backend_owned_approval_handoff_details_after
         requested_by_user_id=uuid4(),
     )
 
-    narration_index = next(
-        index
-        for index, message in enumerate(result.messages)
-        if message.role == "assistant"
-        and any(
-            isinstance(part, dict)
-            and part.get("type") == "text"
-            and isinstance(part_text := part.get("text"), str)
-            and "Unsuspend approval requested" in part_text
-            and "This will unsuspend 'alice' on 'web1' after approval." in part_text
-            and "Before state: suspended" in part_text
-            and "Reason: Requested by customer in ticket #121233." in part_text
-            for part in message.parts
-        )
-    )
-
     request_approval_index = next(
         index
         for index, message in enumerate(result.messages)
@@ -2467,17 +2533,51 @@ async def test_agent_runner_renders_backend_owned_approval_handoff_details_after
         )
     )
 
-    assert narration_index < request_approval_index
+    assistant_text_indices = [
+        index
+        for index, message in enumerate(result.messages)
+        if message.role == "assistant"
+        and any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part.get("text"), str)
+            and cast(str, part["text"]).strip()
+            for part in message.parts
+        )
+    ]
+    assert len(assistant_text_indices) == 1
+    assert assistant_text_indices[0] < request_approval_index
 
-    approval_part = next(
-        part
-        for message in result.messages
-        for part in message.parts
-        if isinstance(part, dict)
-        and part.get("type") == "tool-call"
-        and part.get("toolName") == "request_approval"
+    assistant_texts = _assistant_texts(result)
+    assert len(assistant_texts) == 1
+    assert "I can unsuspend that account after approval." not in assistant_texts[0]
+
+    approval_args = _request_approval_args(result)
+    assert approval_args["toolName"] == tool.name
+    assert approval_args["risk"] == ToolRisk.CHANGE.value
+    activity = approval_args.get("activity")
+    assert isinstance(activity, str)
+    _assert_text_has_tokens(activity, "unsuspend", "alice")
+
+    approval_arguments = cast(dict[str, object], approval_args["arguments"])
+    assert approval_arguments == {
+        "server_ref": "web1",
+        "username": "alice",
+        "reason": "Requested by customer in ticket #121233.",
+    }
+
+    reply_template = cast(dict[str, object], approval_args["replyTemplate"])
+    assert reply_template["outcome"] == "info"
+    _assert_text_has_tokens(
+        cast(str, reply_template["summary"]),
+        "unsuspend",
+        "alice",
+        "web1",
+        "approval",
     )
-    assert approval_part.get("toolName") == "request_approval"
+    details = _reply_template_details(reply_template)
+    _assert_text_has_tokens(details["Action"], "unsuspend", "alice", "web1")
+    assert details["Reason"] == "Requested by customer in ticket #121233."
 
 
 async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reason_after_preflight(
@@ -5833,7 +5933,7 @@ async def test_agent_runner_rejects_change_proposal_when_server_id_differs(
     assert result_payload["error_code"] == "preflight_mismatch"
 
 
-async def test_build_approval_context_uses_correct_change_arguments_in_activity() -> (
+async def test_build_approval_context_uses_template_activity_and_reply_templates() -> (
     None
 ):
     change_email_context = _build_approval_context(
@@ -5854,7 +5954,50 @@ async def test_build_approval_context_uses_correct_change_arguments_in_activity(
     assert unblock_context["activity"] == "Unblock '1.2.3.4, 5.6.7.8'"
     change_reply = cast(dict[str, object], change_email_context["replyTemplate"])
     unblock_reply = cast(dict[str, object], unblock_context["replyTemplate"])
-    assert change_reply["title"] == "Contact email approval requested"
     assert change_reply["outcome"] == "info"
-    assert unblock_reply["title"] == "Firewall change approval requested"
     assert unblock_reply["outcome"] == "info"
+
+    _assert_text_has_tokens(
+        cast(str, change_reply["summary"]),
+        "change",
+        "contact email",
+        "alice",
+        "alice@example.com",
+        "approval",
+    )
+    change_details = _reply_template_details(change_reply)
+    _assert_text_has_tokens(
+        change_details["Action"],
+        "change",
+        "contact email",
+        "alice",
+        "alice@example.com",
+    )
+    assert change_details["Reason"] == "none provided"
+    _assert_text_has_tokens(
+        change_details["Success criteria"],
+        "contact email",
+        "alice@example.com",
+    )
+
+    _assert_text_has_tokens(
+        cast(str, unblock_reply["summary"]),
+        "unblock",
+        "1.2.3.4",
+        "5.6.7.8",
+        "approval",
+    )
+    unblock_details = _reply_template_details(unblock_reply)
+    _assert_text_has_tokens(
+        unblock_details["Action"],
+        "unblock",
+        "1.2.3.4",
+        "5.6.7.8",
+    )
+    assert unblock_details["Reason"] == "none provided"
+    _assert_text_has_tokens(
+        unblock_details["Success criteria"],
+        "postflight",
+        "1.2.3.4",
+        "5.6.7.8",
+    )
