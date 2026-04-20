@@ -2832,17 +2832,21 @@ async def test_agent_runner_appends_firewall_preflight_raw_output_to_followup_te
     evidence_sections = typed_approval_args.get("evidenceSections")
     assert isinstance(evidence_sections, list)
 
-    before_state = next(
-        section
-        for section in evidence_sections
-        if isinstance(section, dict) and section.get("key") == "before_state"
+    before_state = cast(
+        dict[str, object],
+        next(
+            section
+            for section in evidence_sections
+            if isinstance(section, dict)
+            and cast(dict[str, object], section).get("key") == "before_state"
+        ),
     )
     items = before_state.get("items")
     assert isinstance(items, list)
     assert any(
         isinstance(item, dict)
-        and item.get("label") == "103.103.11.123 · CSF"
-        and item.get("value") == raw_output
+        and cast(dict[str, object], item).get("label") == "103.103.11.123 · CSF"
+        and cast(dict[str, object], item).get("value") == raw_output
         for item in items
     )
 
