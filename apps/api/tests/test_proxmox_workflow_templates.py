@@ -9,7 +9,10 @@ from noa_api.core.workflows.registry import (
     fetch_postflight_result,
     require_matching_preflight,
 )
-from noa_api.core.workflows.types import workflow_evidence_template_payload
+from noa_api.core.workflows.types import (
+    render_workflow_approval_markdown,
+    workflow_evidence_template_payload,
+)
 
 
 class _FakeSession:
@@ -20,6 +23,30 @@ def _reply_detail_map(reply) -> dict[str, str]:
     assert reply is not None
     assert reply.details is not None
     return {item["label"]: item["value"] for item in reply.details}
+
+
+def _assert_approval_markdown_matches_reply(
+    reply,
+    *,
+    expected_paragraphs: list[str],
+    expected_table_rows: list[str] | None = None,
+) -> str:
+    assert reply is not None
+    assert reply.approval_presentation is not None
+    assert reply.details is not None
+
+    markdown = render_workflow_approval_markdown(reply.approval_presentation)
+
+    for paragraph in expected_paragraphs:
+        assert paragraph in markdown
+    for item in reply.details:
+        assert f"- **{item['label']}:** {item['value']}" in markdown
+    for item in reply.evidence_summary:
+        assert f"- {item}" in markdown
+    for row in expected_table_rows or []:
+        assert row in markdown
+
+    return markdown
 
 
 _SHA512_PASSWORD_HASH = "$6$saltstring$AIsRs/Ee56G/tC8MEHhvReZTfx8u3rXXMl6eYrjCG9ibix19DxoMBLogdTET5Ukw9Sf7eZTITsuk0Ry5qulYz."
@@ -1042,6 +1069,27 @@ def test_proxmox_enable_vm_nic_waiting_on_approval_reply_includes_detail_rows() 
     }
 
 
+def test_proxmox_enable_vm_nic_approval_markdown_presentation_uses_paragraph_and_key_values() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="waiting_on_approval",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+    )
+
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraphs=[
+            "VM 101 NIC net0 on node pve1-node is currently link down and is ready to be moved to link up."
+        ],
+    )
+
+    assert "Before: link down." in markdown
+
+
 def test_proxmox_reset_vm_cloudinit_password_waiting_on_approval_reply_includes_detail_rows() -> (
     None
 ):
@@ -1081,6 +1129,50 @@ def test_proxmox_reset_vm_cloudinit_password_waiting_on_approval_reply_includes_
         "Reason": "customer request",
         "Success criteria": "The cloud-init password reset completes and the regenerated state is available for VM 101 on node pve1-node.",
     }
+
+
+def test_proxmox_reset_vm_cloudinit_password_approval_markdown_presentation_uses_paragraph_and_key_values() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
+                },
+            }
+        ],
+    )
+
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraphs=[
+            "Cloud-init password reset requested for VM 101 on node pve1-node."
+        ],
+    )
+
+    assert "Before: VM 101 on pve1-node." in markdown
 
 
 def test_proxmox_move_vms_between_pools_waiting_on_approval_reply_includes_detail_rows() -> (
@@ -1163,6 +1255,189 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_reply_includes_detai
         "Reason": "customer request",
         "Success criteria": "VMIDs 101, 102 are removed from pool-a and present in pool-b.",
     }
+
+
+def test_proxmox_move_vms_between_pools_approval_markdown_presentation_includes_table() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101, 102],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101, 102],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {
+                                        "vmid": 101,
+                                        "name": "alpha",
+                                        "node": "pve1",
+                                        "status": "running",
+                                    },
+                                    {
+                                        "vmid": 102,
+                                        "name": "beta",
+                                        "node": "pve2",
+                                        "status": "stopped",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "destination_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-b",
+                                "members": [
+                                    {
+                                        "vmid": 201,
+                                        "name": "gamma",
+                                        "node": "pve3",
+                                        "status": "running",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101, 102],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+    )
+
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraphs=[
+            "Pool membership move requested for VMIDs 101, 102 from pool-a to pool-b."
+        ],
+        expected_table_rows=[
+            "| VMID | Source pool | Destination pool |",
+            "| 101 | pool-a | pool-b |",
+            "| 102 | pool-a | pool-b |",
+        ],
+    )
+
+    assert "Preflight captured for the exact source and destination pools." in markdown
+
+
+def test_proxmox_move_vms_between_pools_waiting_on_approval_markdown_matches_requested_change_evidence() -> (
+    None
+):
+    args = {
+        "server_ref": "pve1",
+        "source_pool": "pool-a",
+        "destination_pool": "pool-b",
+        "vmids": [102, 101],
+        "email": "l1@example.com",
+        "reason": "customer request",
+    }
+    preflight_evidence = [
+        {
+            "toolName": "proxmox_preflight_move_vms_between_pools",
+            "args": {
+                "server_ref": "pve1",
+                "source_pool": "pool-a",
+                "destination_pool": "pool-b",
+                "vmids": [101, 102],
+                "email": "l1@example.com",
+            },
+            "result": {
+                "ok": True,
+                "server_id": "srv-1",
+                "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
+                "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
+                "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                "destination_permission": {"data": {"/pool/pool-b": {"VM.Console": 1}}},
+                "requested_vmids": [101, 102],
+                "normalized_userid": "l1@example.com@pve",
+            },
+        }
+    ]
+
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=args,
+        phase="waiting_on_approval",
+        preflight_evidence=preflight_evidence,
+    )
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=args,
+        phase="waiting_on_approval",
+        preflight_evidence=preflight_evidence,
+    )
+
+    assert reply is not None
+    assert evidence is not None
+    requested_change = next(
+        section for section in evidence.sections if section.key == "requested_change"
+    )
+    requested_change_map = {item.label: item.value for item in requested_change.items}
+    markdown = _assert_approval_markdown_matches_reply(
+        reply,
+        expected_paragraphs=[
+            "Pool membership move requested for VMIDs 102, 101 from pool-a to pool-b."
+        ],
+        expected_table_rows=[
+            "| 102 | pool-a | pool-b |",
+            "| 101 | pool-a | pool-b |",
+        ],
+    )
+
+    assert requested_change_map == {
+        "Source pool": "pool-a",
+        "Destination pool": "pool-b",
+        "VMIDs": "102, 101",
+        "Target user": "l1@example.com",
+        "Reason": "customer request",
+    }
+    details = _reply_detail_map(reply)
+    assert details["Action"] == (
+        f"Move VMIDs {requested_change_map['VMIDs']} from {requested_change_map['Source pool']} "
+        f"to {requested_change_map['Destination pool']}."
+    )
+    assert details["Reason"] == requested_change_map["Reason"]
+    assert details["Success criteria"] == (
+        f"VMIDs {requested_change_map['VMIDs']} are removed from {requested_change_map['Source pool']} "
+        f"and present in {requested_change_map['Destination pool']}."
+    )
+    assert (
+        f"| {requested_change_map['VMIDs'].split(', ')[0]} | pool-a | pool-b |"
+        in markdown
+    )
+    assert (
+        f"| {requested_change_map['VMIDs'].split(', ')[1]} | pool-a | pool-b |"
+        in markdown
+    )
 
 
 def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_reason() -> (
