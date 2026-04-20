@@ -51,6 +51,7 @@ class WorkflowReplyTemplate:
     outcome: WorkflowReplyOutcome
     summary: str
     evidence_summary: list[str]
+    details: list[dict[str, str]] | None = None
     next_step: str | None = None
     assistant_hint: str | None = None
 
@@ -217,7 +218,7 @@ def normalized_string_list(value: object) -> list[str]:
 def workflow_reply_template_payload(
     template: WorkflowReplyTemplate,
 ) -> dict[str, object]:
-    return {
+    payload: dict[str, object] = {
         "title": template.title,
         "outcome": template.outcome,
         "summary": template.summary,
@@ -225,6 +226,13 @@ def workflow_reply_template_payload(
         "nextStep": template.next_step,
         "assistantHint": template.assistant_hint,
     }
+    if template.details is not None:
+        payload["details"] = [
+            {"label": item["label"], "value": item["value"]}
+            for item in template.details
+            if item.get("label", "").strip() and item.get("value", "").strip()
+        ]
+    return payload
 
 
 def workflow_evidence_template_payload(

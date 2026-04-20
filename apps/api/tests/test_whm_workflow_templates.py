@@ -6,6 +6,38 @@ from noa_api.core.workflows.registry import (
     build_workflow_reply_template,
     build_workflow_todos,
 )
+from noa_api.core.workflows.types import (
+    WorkflowReplyTemplate,
+    workflow_reply_template_payload,
+)
+
+
+def test_workflow_reply_template_payload_includes_approval_handoff_details() -> None:
+    payload = workflow_reply_template_payload(
+        WorkflowReplyTemplate(
+            title="Approval needed",
+            outcome="info",
+            summary="Review the proposed change before execution.",
+            evidence_summary=["Current account state collected."],
+            details=[
+                {"label": "Action", "value": "Suspend account alice on web1."},
+                {"label": "Reason", "value": "Ticket #1661262"},
+                {
+                    "label": "Success criteria",
+                    "value": "Account is suspended and the reason is recorded.",
+                },
+            ],
+        )
+    )
+
+    assert payload["details"] == [
+        {"label": "Action", "value": "Suspend account alice on web1."},
+        {"label": "Reason", "value": "Ticket #1661262"},
+        {
+            "label": "Success criteria",
+            "value": "Account is suspended and the reason is recorded.",
+        },
+    ]
 
 
 def test_whm_account_lifecycle_failed_phase_keeps_terminal_todo_shape() -> None:
