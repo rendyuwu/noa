@@ -27,6 +27,13 @@ WorkflowReplyOutcome = Literal[
     "denied",
 ]
 
+WorkflowApprovalPresentationBlockKind = Literal[
+    "paragraph",
+    "bullet_list",
+    "key_value_list",
+    "table",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class WorkflowTemplateContext:
@@ -54,6 +61,17 @@ class WorkflowReplyTemplate:
     details: list[dict[str, str]] | None = None
     next_step: str | None = None
     assistant_hint: str | None = None
+    approval_presentation: WorkflowApprovalPresentation | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowApprovalPresentationBlock:
+    kind: WorkflowApprovalPresentationBlockKind
+    text: str | None = None
+    items: list[str] | None = None
+    evidence_items: list[WorkflowEvidenceItem] | None = None
+    table_headers: list[str] | None = None
+    table_rows: list[list[str]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +85,11 @@ class WorkflowEvidenceSection:
     key: str
     title: str
     items: list[WorkflowEvidenceItem]
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowApprovalPresentation:
+    blocks: list[WorkflowApprovalPresentationBlock]
 
 
 @dataclass(frozen=True, slots=True)
@@ -257,6 +280,12 @@ def workflow_evidence_template_payload(
 
 def render_workflow_reply_text(template: WorkflowReplyTemplate) -> str:
     sections: list[str] = [template.title, template.summary]
+    if template.approval_presentation is not None:
+        approval_markdown = render_workflow_approval_markdown(
+            template.approval_presentation
+        )
+        if approval_markdown.strip():
+            sections.append(approval_markdown)
     if template.evidence_summary:
         sections.append(
             "\n".join(f"- {item}" for item in template.evidence_summary if item.strip())
@@ -264,6 +293,80 @@ def render_workflow_reply_text(template: WorkflowReplyTemplate) -> str:
     if template.next_step is not None and template.next_step.strip():
         sections.append(f"Next safe step: {template.next_step.strip()}")
     return "\n\n".join(section for section in sections if section.strip())
+
+
+def render_workflow_approval_markdown(
+    presentation: WorkflowApprovalPresentation,
+) -> str:
+    sections = [
+        section
+        for block in presentation.blocks
+        if (section := _render_workflow_approval_block(block)) is not None
+    ]
+    return "\n\n".join(sections)
+
+
+def _render_workflow_approval_block(
+    block: WorkflowApprovalPresentationBlock,
+) -> str | None:
+    if block.kind == "paragraph":
+        return normalized_text(block.text)
+
+    if block.kind == "bullet_list":
+        items = [f"- {item}" for item in normalized_string_list(block.items)]
+        return "\n".join(items) or None
+
+    if block.kind == "key_value_list":
+        if not isinstance(block.evidence_items, list):
+            return None
+        items = [
+            f"- **{row.label}:** {row.value}"
+            for row in block.evidence_items
+            if isinstance(row, WorkflowEvidenceItem)
+            and row.label.strip()
+            and row.value.strip()
+        ]
+        return "\n".join(items) or None
+
+    if block.kind == "table":
+        headers = [
+            _escape_markdown_table_cell(header)
+            for header in normalized_string_list(block.table_headers)
+        ]
+        if not headers or not isinstance(block.table_rows, list):
+            return None
+
+        body_rows: list[str] = []
+        for row in block.table_rows:
+            if not isinstance(row, list):
+                continue
+            cells = [
+                _escape_markdown_table_cell(normalized_text(cell) or "") for cell in row
+            ]
+            if not any(cell for cell in cells):
+                continue
+            body_rows.append(_render_markdown_table_row(cells))
+
+        if not body_rows:
+            return None
+
+        separator = _render_markdown_table_row(["---"] * len(headers))
+        return "\n".join([_render_markdown_table_row(headers), separator, *body_rows])
+
+    return None
+
+
+def _render_markdown_table_row(cells: list[str]) -> str:
+    return f"| {' | '.join(cells)} |"
+
+
+def _escape_markdown_table_cell(value: str) -> str:
+    return (
+        value.replace("\r\n", "\n")
+        .replace("\r", "\n")
+        .replace("|", "\\|")
+        .replace("\n", "<br>")
+    )
 
 
 def _coerce_part_record(value: object) -> dict[str, object] | None:

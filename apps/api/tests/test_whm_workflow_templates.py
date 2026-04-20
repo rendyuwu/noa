@@ -7,7 +7,12 @@ from noa_api.core.workflows.registry import (
     build_workflow_todos,
 )
 from noa_api.core.workflows.types import (
+    WorkflowApprovalPresentation,
+    WorkflowApprovalPresentationBlock,
+    WorkflowEvidenceItem,
     WorkflowReplyTemplate,
+    render_workflow_reply_text,
+    render_workflow_approval_markdown,
     workflow_reply_template_payload,
 )
 
@@ -15,6 +20,90 @@ from noa_api.core.workflows.types import (
 def _reply_detail_map(reply: WorkflowReplyTemplate) -> dict[str, str]:
     assert reply.details is not None
     return {item["label"]: item["value"] for item in reply.details}
+
+
+def test_render_workflow_approval_markdown_renders_key_value_rows_as_bullets() -> None:
+    presentation = WorkflowApprovalPresentation(
+        blocks=[
+            WorkflowApprovalPresentationBlock(
+                kind="key_value_list",
+                evidence_items=[
+                    WorkflowEvidenceItem(label="Server", value="web1"),
+                    WorkflowEvidenceItem(label="Username", value="alice"),
+                ],
+            )
+        ]
+    )
+
+    assert render_workflow_approval_markdown(presentation) == (
+        "- **Server:** web1\n- **Username:** alice"
+    )
+
+
+def test_render_workflow_approval_markdown_renders_table_block() -> None:
+    presentation = WorkflowApprovalPresentation(
+        blocks=[
+            WorkflowApprovalPresentationBlock(
+                kind="table",
+                table_headers=["Target", "Verdict"],
+                table_rows=[
+                    ["1.2.3.4", "blocked"],
+                    ["5.6.7.8", "clear"],
+                ],
+            )
+        ]
+    )
+
+    assert render_workflow_approval_markdown(presentation) == (
+        "| Target | Verdict |\n"
+        "| --- | --- |\n"
+        "| 1.2.3.4 | blocked |\n"
+        "| 5.6.7.8 | clear |"
+    )
+
+
+def test_render_workflow_approval_markdown_escapes_table_cells() -> None:
+    presentation = WorkflowApprovalPresentation(
+        blocks=[
+            WorkflowApprovalPresentationBlock(
+                kind="table",
+                table_headers=["Tar|get", "Ver\ndict"],
+                table_rows=[["1.2|3.4", "blocked\nnow"]],
+            )
+        ]
+    )
+
+    assert render_workflow_approval_markdown(presentation) == (
+        "| Tar\\|get | Ver<br>dict |\n| --- | --- |\n| 1.2\\|3.4 | blocked<br>now |"
+    )
+
+
+def test_render_workflow_reply_text_uses_approval_presentation_when_present() -> None:
+    reply = WorkflowReplyTemplate(
+        title="Approval needed",
+        outcome="info",
+        summary="Review the proposed change before execution.",
+        evidence_summary=["Current account state collected."],
+        approval_presentation=WorkflowApprovalPresentation(
+            blocks=[
+                WorkflowApprovalPresentationBlock(
+                    kind="key_value_list",
+                    evidence_items=[
+                        WorkflowEvidenceItem(label="Action", value="Unsuspend alice"),
+                        WorkflowEvidenceItem(label="Reason", value="Ticket #1661262"),
+                    ],
+                )
+            ]
+        ),
+    )
+
+    assert render_workflow_reply_text(reply) == (
+        "Approval needed\n\n"
+        "Review the proposed change before execution.\n\n"
+        "- **Action:** Unsuspend alice\n"
+        "- **Reason:** Ticket #1661262\n\n"
+        "- Current account state collected."
+    )
 
 
 def test_workflow_reply_template_payload_includes_approval_handoff_details() -> None:
