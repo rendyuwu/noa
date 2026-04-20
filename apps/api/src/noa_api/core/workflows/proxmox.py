@@ -149,6 +149,22 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                     result=result,
                     postflight_result=postflight,
                 ),
+                details=_approval_detail_rows(
+                    (
+                        "Action",
+                        f"{_approval_action_label(context.tool_name)} {subject}.",
+                    ),
+                    (
+                        "Reason",
+                        _approval_reason_detail(
+                            normalized_text(context.args.get("reason"))
+                        ),
+                    ),
+                    (
+                        "Success criteria",
+                        f"{subject} ends in link state {desired_state}.",
+                    ),
+                ),
                 next_step=f"Approve the request to {_action_label(context.tool_name)} {subject}.",
             )
 
@@ -366,6 +382,12 @@ def _action_label(tool_name: str) -> str:
     if tool_name == "proxmox_enable_vm_nic":
         return "enable VM NIC"
     return "disable VM NIC"
+
+
+def _approval_action_label(tool_name: str) -> str:
+    if tool_name == "proxmox_enable_vm_nic":
+        return "Enable VM NIC"
+    return "Disable VM NIC"
 
 
 def _desired_link_state(tool_name: str) -> str:
@@ -885,6 +907,23 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                     result=result,
                     postflight_result=postflight,
                 ),
+                details=_approval_detail_rows(
+                    (
+                        "Action",
+                        f"Reset the cloud-init password for {subject}.",
+                    ),
+                    (
+                        "Reason",
+                        _approval_reason_detail(
+                            normalized_text(context.args.get("reason"))
+                        ),
+                    ),
+                    (
+                        "Success criteria",
+                        "The cloud-init password reset completes and the regenerated state "
+                        f"is available for {subject}.",
+                    ),
+                ),
                 next_step="Approve the request to reset the cloud-init password.",
             )
 
@@ -1207,6 +1246,22 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     before_state=before_state,
                     result=result,
                     postflight_result=postflight,
+                ),
+                details=_approval_detail_rows(
+                    (
+                        "Action",
+                        f"Move VMIDs {_vmids_text(context.args.get('vmids'))} from {_pool_value(context.args.get('source_pool'))} to {_pool_value(context.args.get('destination_pool'))}.",
+                    ),
+                    (
+                        "Reason",
+                        _approval_reason_detail(
+                            normalized_text(context.args.get("reason"))
+                        ),
+                    ),
+                    (
+                        "Success criteria",
+                        f"VMIDs {_vmids_text(context.args.get('vmids'))} are removed from {_pool_value(context.args.get('source_pool'))} and present in {_pool_value(context.args.get('destination_pool'))}.",
+                    ),
                 ),
                 next_step="Approve the request to move the VMIDs between pools.",
             )
@@ -1619,6 +1674,18 @@ def _pool_move_subject(args: dict[str, object]) -> str:
 
 def _workflow_result_failed(result: dict[str, object] | None) -> bool:
     return isinstance(result, dict) and result.get("ok") is False
+
+
+def _approval_detail_rows(*rows: tuple[str, str | None]) -> list[dict[str, str]]:
+    return [
+        {"label": label, "value": value}
+        for label, value in rows
+        if value is not None and label.strip() and value.strip()
+    ]
+
+
+def _approval_reason_detail(reason: str | None) -> str:
+    return reason or "none provided"
 
 
 def _vmids_text(value: object) -> str:

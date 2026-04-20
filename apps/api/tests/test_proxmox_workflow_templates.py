@@ -16,6 +16,12 @@ class _FakeSession:
     pass
 
 
+def _reply_detail_map(reply) -> dict[str, str]:
+    assert reply is not None
+    assert reply.details is not None
+    return {item["label"]: item["value"] for item in reply.details}
+
+
 _SHA512_PASSWORD_HASH = "$6$saltstring$AIsRs/Ee56G/tC8MEHhvReZTfx8u3rXXMl6eYrjCG9ibix19DxoMBLogdTET5Ukw9Sf7eZTITsuk0Ry5qulYz."
 _SHA512_PASSWORD_HASH_ALT = "$6$saltstring$kBE8gj8nVc2heIhflmQyp6fT2NcwZxpZpzmO5C5lurdV60T8VT5krRwB2gqJvvlKpzQgTTxurOSB1L0gzIrFL."
 _SHA512_PASSWORD_HASH_MISMATCH = "$6$saltstring$r.1ZoBDig6ks.g50soeNlbxogxJLC6Q2IYHTECzAWa5/x3I1VwWSxpwKFVc19gh4ROQD5GEHESemYB3tFbCOU1"
@@ -1018,6 +1024,145 @@ def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_ta
     assert "| VMID | Name | Node | Status |" in reply.summary
     assert reply.summary.count("| 101 | alpha | pve1 | running |") == 1
     assert "pool membership" in reply.summary.lower()
+
+
+def test_proxmox_enable_vm_nic_waiting_on_approval_reply_includes_detail_rows() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="waiting_on_approval",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+    )
+
+    assert _reply_detail_map(reply) == {
+        "Action": "Enable VM NIC VM 101 NIC net0 on node pve1-node.",
+        "Reason": "restore connectivity",
+        "Success criteria": "VM 101 NIC net0 on node pve1-node ends in link state up.",
+    }
+
+
+def test_proxmox_reset_vm_cloudinit_password_waiting_on_approval_reply_includes_detail_rows() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
+                },
+            }
+        ],
+    )
+
+    assert _reply_detail_map(reply) == {
+        "Action": "Reset the cloud-init password for VM 101 on node pve1-node.",
+        "Reason": "customer request",
+        "Success criteria": "The cloud-init password reset completes and the regenerated state is available for VM 101 on node pve1-node.",
+    }
+
+
+def test_proxmox_move_vms_between_pools_waiting_on_approval_reply_includes_detail_rows() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101, 102],
+            "email": "l1@example.com",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101, 102],
+                    "email": "l1@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {
+                                        "vmid": 101,
+                                        "name": "alpha",
+                                        "node": "pve1",
+                                        "status": "running",
+                                    },
+                                    {
+                                        "vmid": 102,
+                                        "name": "beta",
+                                        "node": "pve2",
+                                        "status": "stopped",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "destination_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-b",
+                                "members": [
+                                    {
+                                        "vmid": 201,
+                                        "name": "gamma",
+                                        "node": "pve3",
+                                        "status": "running",
+                                    },
+                                ],
+                            }
+                        ]
+                    },
+                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101, 102],
+                    "normalized_userid": "l1@example.com@pve",
+                },
+            }
+        ],
+    )
+
+    assert _reply_detail_map(reply) == {
+        "Action": "Move VMIDs 101, 102 from pool-a to pool-b.",
+        "Reason": "customer request",
+        "Success criteria": "VMIDs 101, 102 are removed from pool-a and present in pool-b.",
+    }
 
 
 def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_reason() -> (
