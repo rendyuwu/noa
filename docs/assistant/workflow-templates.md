@@ -30,6 +30,8 @@ When a workflow family returns reply semantics for `waiting_on_user`, `waiting_o
 
 Current CHANGE workflow families use a backend-owned `waiting_on_approval` handoff. The model gathers required inputs, runs family preflight, and calls the underlying CHANGE tool; after that validated CHANGE call succeeds, the backend workflow template owns the approval narration and approval card payload. Different families may keep different raw preflight schemas, but they should map those results into the shared approval-handoff contract exposed to the workflow UI.
 
+Workflow families may also provide a structured approval narration presentation contract that the backend renders centrally to markdown for the approval handoff. That presentation layer is descriptive only and does not replace the canonical structured approval payload consumed by the workflow UI and persisted in thread state.
+
 When a workflow needs a change reason, the prompt should mention a ticket reference like `Ticket #1661262` (or another osTicket/reference number) or ask for a brief human-readable description. If the reason is missing or ambiguous, keep the workflow in `waiting_on_user` instead of creating an approval request.
 
 `build_before_state(...)` is now a compatibility shim. New workflow families should primarily implement `build_evidence_template(...)`; the registry projects `beforeState` from the `before_state` evidence section when present, and only falls back to `build_before_state(...)` for legacy templates.
