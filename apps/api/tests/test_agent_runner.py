@@ -20,6 +20,7 @@ from noa_api.core.agent.runner import (
 )
 from noa_api.core.config import Settings
 from noa_api.core.tools.registry import ToolDefinition, get_tool_definition
+from noa_api.core.workflows.types import WorkflowReplyTemplate
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
@@ -768,6 +769,22 @@ async def test_agent_runner_recovers_when_model_calls_request_approval_directly(
         "noa_api.core.agent.runner._resolve_requested_server_id",
         lambda **_kwargs: _async_return("server-1"),
     )
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.build_workflow_reply_template",
+        lambda **_kwargs: WorkflowReplyTemplate(
+            title="Suspend approval requested",
+            outcome="info",
+            summary="This will suspend 'alice' on 'web1' after approval.",
+            evidence_summary=[],
+            details=[
+                {"label": "Before state", "value": "active"},
+                {
+                    "label": "Reason",
+                    "value": "Requested by customer in ticket #121233.",
+                },
+            ],
+        ),
+    )
 
     class _TwoTurnLLM:
         def __init__(self) -> None:
@@ -1058,6 +1075,144 @@ async def test_agent_runner_keeps_only_the_workflow_milestone_when_change_round_
     assert assistant_texts == [
         "Suspend approval requested. This will suspend 'alice' on 'web1' after approval."
     ]
+
+
+async def test_agent_runner_renders_backend_owned_approval_handoff_before_request_approval(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    captured: dict[str, object] = {}
+
+    async def _record_replace(_self, *, thread_id, todos):
+        captured["thread_id"] = thread_id
+        captured["todos"] = todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    thread_id = uuid4()
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name="whm_suspend_account",
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "billing hold",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice for billing hold.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=thread_id,
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    assert captured["thread_id"] == thread_id
+    todos = cast(list[dict[str, str]], captured["todos"])
+    assert len(todos) == 5
+    assert todos[0]["status"] == "completed"
+    assert todos[1]["status"] == "completed"
+    assert todos[2]["status"] == "waiting_on_approval"
+
+    narration_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if message.role == "assistant"
+        and any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part_text := part.get("text"), str)
+            and "Suspend approval requested" in part_text
+            and "This will suspend 'alice' on 'web1' after approval." in part_text
+            for part in message.parts
+        )
+    )
+
+    request_approval_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if any(
+            isinstance(part, dict)
+            and part.get("type") == "tool-call"
+            and part.get("toolName") == "request_approval"
+            for part in message.parts
+        )
+    )
+
+    assert narration_index < request_approval_index
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
+
+    todo_tool_call = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "update_workflow_todo"
+    )
+    assert isinstance(todo_tool_call.get("args"), dict)
 
 
 async def test_agent_runner_ignores_model_workflow_todo_for_simple_read_requests() -> (
@@ -2054,6 +2209,168 @@ async def test_agent_runner_replaces_prior_whm_family_workflow_with_firewall_wai
     assert isinstance(todo_tool_call.get("args"), dict)
 
 
+async def test_agent_runner_renders_backend_owned_approval_handoff_details_after_reason_follow_up(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_unsuspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.build_workflow_reply_template",
+        lambda **_kwargs: WorkflowReplyTemplate(
+            title="Unsuspend approval requested",
+            outcome="info",
+            summary="This will unsuspend 'alice' on 'web1' after approval.",
+            evidence_summary=[],
+            details=[
+                {"label": "Before state", "value": "suspended"},
+                {
+                    "label": "Reason",
+                    "value": "Requested by customer in ticket #121233.",
+                },
+            ],
+        ),
+    )
+
+    class _SingleTurnLLM:
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            return LLMTurnResponse(
+                text="I can unsuspend that account after approval.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                        },
+                    )
+                ],
+            )
+
+    runner = AgentRunner(
+        llm_client=_SingleTurnLLM(),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Unsuspend alice on web1.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {
+                                "user": "alice",
+                                "suspended": True,
+                                "suspendreason": "billing hold",
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": (
+                            "To proceed with unsuspending the account, I need a brief "
+                            "human-readable reason for the change. Could you provide the reason?"
+                        ),
+                    }
+                ],
+            },
+            {
+                "role": "user",
+                "parts": [
+                    {"type": "text", "text": "Requested by customer in ticket #121233."}
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    narration_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if message.role == "assistant"
+        and any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part_text := part.get("text"), str)
+            and "Unsuspend approval requested" in part_text
+            and "This will unsuspend 'alice' on 'web1' after approval." in part_text
+            and "Before state: suspended" in part_text
+            and "Reason: Requested by customer in ticket #121233." in part_text
+            for part in message.parts
+        )
+    )
+
+    request_approval_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if any(
+            isinstance(part, dict)
+            and part.get("type") == "tool-call"
+            and part.get("toolName") == "request_approval"
+            for part in message.parts
+        )
+    )
+
+    assert narration_index < request_approval_index
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    assert approval_part.get("toolName") == "request_approval"
+
+
 async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reason_after_preflight(
     monkeypatch,
 ) -> None:
@@ -2511,7 +2828,8 @@ async def test_agent_runner_appends_firewall_preflight_raw_output_to_followup_te
     )
     approval_args = approval_part.get("args")
     assert isinstance(approval_args, dict)
-    evidence_sections = approval_args.get("evidenceSections")
+    typed_approval_args = cast(dict[str, object], approval_args)
+    evidence_sections = typed_approval_args.get("evidenceSections")
     assert isinstance(evidence_sections, list)
 
     before_state = next(
