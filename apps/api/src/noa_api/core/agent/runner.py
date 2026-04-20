@@ -32,9 +32,9 @@ from noa_api.core.workflows.registry import (
     require_matching_preflight,
 )
 from noa_api.core.workflows.types import (
-    WorkflowReplyTemplate,
     assistant_is_requesting_reason,
     messages_before_latest_user_if_reason_follow_up,
+    render_workflow_reply_text,
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
@@ -222,19 +222,6 @@ def _render_workflow_milestone_text(title: str, summary: str) -> str:
         return normalized_title
     separator = "" if normalized_title.endswith((".", "!", "?")) else "."
     return f"{normalized_title}{separator} {normalized_summary}"
-
-
-def _render_workflow_reply_template_text(template: WorkflowReplyTemplate) -> str:
-    sections = [_render_workflow_milestone_text(template.title, template.summary)]
-    if template.details is not None:
-        sections.extend(
-            f"{label}: {value}"
-            for item in template.details
-            for label in [item.get("label", "").strip()]
-            for value in [item.get("value", "").strip()]
-            if label and value
-        )
-    return "\n".join(section for section in sections if section.strip())
 
 
 def _finalize_turn_messages(
@@ -922,9 +909,7 @@ class AgentRunner:
             )
             messages: list[AgentMessage] = []
             if reply_template is not None:
-                reply_text = _render_workflow_reply_template_text(
-                    reply_template
-                ).strip()
+                reply_text = render_workflow_reply_text(reply_template).strip()
                 if reply_text:
                     messages.append(
                         AgentMessage(

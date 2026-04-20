@@ -21,6 +21,10 @@ from noa_api.core.agent.runner import (
 from noa_api.core.config import Settings
 from noa_api.core.tools.registry import ToolDefinition, get_tool_definition
 from noa_api.core.workflows.types import WorkflowReplyTemplate
+from noa_api.core.workflows.types import (
+    WorkflowApprovalPresentation,
+    WorkflowApprovalPresentationBlock,
+)
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
@@ -85,6 +89,14 @@ def _assert_suspend_success_criteria(text: str) -> None:
     assert "alice" in normalized
     assert "web1" in normalized
     assert "suspend" in normalized
+    assert "state" in normalized or "status" in normalized or "end" in normalized
+
+
+def _assert_unsuspend_success_criteria(text: str) -> None:
+    normalized = text.lower()
+    assert "alice" in normalized
+    assert "web1" in normalized
+    assert "active" in normalized
     assert "state" in normalized or "status" in normalized or "end" in normalized
 
 
@@ -2578,6 +2590,298 @@ async def test_agent_runner_renders_backend_owned_approval_handoff_details_after
     details = _reply_template_details(reply_template)
     _assert_text_has_tokens(details["Action"], "unsuspend", "alice", "web1")
     assert details["Reason"] == "Requested by customer in ticket #121233."
+
+
+async def test_agent_runner_renders_family_owned_approval_markdown_above_card(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_unsuspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.build_workflow_reply_template",
+        lambda **_kwargs: WorkflowReplyTemplate(
+            title="Unsuspend approval requested",
+            outcome="info",
+            summary="Review the prepared unsuspend request.",
+            evidence_summary=[],
+            details=[
+                {"label": "Reason", "value": "Ticket #121233"},
+            ],
+            approval_presentation=WorkflowApprovalPresentation(
+                blocks=[
+                    WorkflowApprovalPresentationBlock(
+                        kind="paragraph",
+                        text="I verified the account can be unsuspended after approval.",
+                    ),
+                    WorkflowApprovalPresentationBlock(
+                        kind="bullet_list",
+                        items=[
+                            "Account: alice on web1",
+                            "Reason: Ticket #121233",
+                        ],
+                    ),
+                ]
+            ),
+        ),
+    )
+
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "Ticket #121233",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Unsuspend alice on web1 for Ticket #121233.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {
+                                "user": "alice",
+                                "suspended": True,
+                                "suspendreason": "billing hold",
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assistant_texts = _assistant_texts(result)
+    assert len(assistant_texts) == 1
+    assert (
+        "I verified the account can be unsuspended after approval."
+        in assistant_texts[0]
+    )
+    assert "- Account: alice on web1" in assistant_texts[0]
+    assert "- Reason: Ticket #121233" in assistant_texts[0]
+
+    assistant_text_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if message.role == "assistant"
+        and any(
+            isinstance(part, dict)
+            and part.get("type") == "text"
+            and isinstance(part.get("text"), str)
+            and cast(str, part["text"]).strip()
+            for part in message.parts
+        )
+    )
+    request_approval_index = next(
+        index
+        for index, message in enumerate(result.messages)
+        if any(
+            isinstance(part, dict)
+            and part.get("type") == "tool-call"
+            and part.get("toolName") == "request_approval"
+            for part in message.parts
+        )
+    )
+    assert assistant_text_index < request_approval_index
+
+    approval_args = _request_approval_args(result)
+    assert approval_args["toolName"] == tool.name
+    assert cast(dict[str, object], approval_args["arguments"]) == {
+        "server_ref": "web1",
+        "username": "alice",
+        "reason": "Ticket #121233",
+    }
+    reply_template = cast(dict[str, object], approval_args["replyTemplate"])
+    assert reply_template["outcome"] == "info"
+    _assert_text_has_tokens(
+        cast(str, reply_template["summary"]),
+        "unsuspend",
+        "alice",
+        "web1",
+        "approval",
+    )
+    evidence_summary = reply_template["evidenceSummary"]
+    assert isinstance(evidence_summary, list)
+    assert evidence_summary
+    next_step = reply_template["nextStep"]
+    assert isinstance(next_step, str)
+    _assert_text_has_tokens(next_step, "approve")
+    assert reply_template["assistantHint"] is None
+    details = _reply_template_details(reply_template)
+    _assert_text_has_tokens(details["Action"], "unsuspend", "alice", "web1")
+    assert details["Reason"] == "Ticket #121233"
+    _assert_unsuspend_success_criteria(details["Success criteria"])
+    assert "approvalPresentation" not in reply_template
+
+
+async def test_agent_runner_preserves_detail_fallback_without_approval_presentation(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_unsuspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.build_workflow_reply_template",
+        lambda **_kwargs: WorkflowReplyTemplate(
+            title="Unsuspend approval requested",
+            outcome="info",
+            summary="This will unsuspend 'alice' on 'web1' after approval.",
+            evidence_summary=[],
+            details=[
+                {"label": "Before state", "value": "suspended"},
+                {"label": "Reason", "value": "Ticket #121233"},
+            ],
+        ),
+    )
+
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="I can unsuspend that account after approval.",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "Ticket #121233",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Unsuspend alice on web1 for Ticket #121233.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-allow-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {
+                                "user": "alice",
+                                "suspended": True,
+                                "suspendreason": "billing hold",
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assistant_texts = _assistant_texts(result)
+    assert len(assistant_texts) == 1
+    assert "I can unsuspend that account after approval." not in assistant_texts[0]
+    assert "Unsuspend approval requested" in assistant_texts[0]
+    assert "This will unsuspend 'alice' on 'web1' after approval." in assistant_texts[0]
+    assert "- **Before state:** suspended" not in assistant_texts[0]
+    assert "- **Reason:** Ticket #121233" not in assistant_texts[0]
+
+    approval_args = _request_approval_args(result)
+    assert approval_args["toolName"] == tool.name
+    assert cast(dict[str, object], approval_args["arguments"]) == {
+        "server_ref": "web1",
+        "username": "alice",
+        "reason": "Ticket #121233",
+    }
+    reply_template = cast(dict[str, object], approval_args["replyTemplate"])
+    _assert_text_has_tokens(
+        cast(str, reply_template["summary"]),
+        "unsuspend",
+        "alice",
+        "web1",
+        "approval",
+    )
+    details = _reply_template_details(reply_template)
+    _assert_text_has_tokens(details["Action"], "unsuspend", "alice", "web1")
+    assert details["Reason"] == "Ticket #121233"
+    _assert_unsuspend_success_criteria(details["Success criteria"])
 
 
 async def test_agent_runner_seeds_waiting_workflow_when_assistant_asks_for_reason_after_preflight(
