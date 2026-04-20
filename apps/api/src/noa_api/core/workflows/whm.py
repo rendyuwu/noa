@@ -983,6 +983,52 @@ def _default_step_statuses(
     return statuses
 
 
+def _approval_detail_rows(*rows: tuple[str, str | None]) -> list[dict[str, str]]:
+    return [
+        {"label": label, "value": value}
+        for label, value in rows
+        if value is not None and label.strip() and value.strip()
+    ]
+
+
+def _approval_reason_detail(reason: str | None) -> str:
+    return reason or "none provided"
+
+
+def _join_with_and(values: list[str]) -> str:
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return ", ".join(values[:-1]) + f", and {values[-1]}"
+
+
+def _firewall_entry_detail_summary(entry: dict[str, object]) -> str | None:
+    target = normalized_text(entry.get("target"))
+    verdict = normalized_text(entry.get("combined_verdict"))
+    if target is None or verdict is None:
+        return None
+
+    tool_names = _firewall_available_tool_names(entry)
+    if tool_names:
+        return f"{target} is {verdict} in {_join_with_and(tool_names)}"
+    return f"{target} is {verdict}"
+
+
+def _firewall_evidence_detail(entries: list[dict[str, object]]) -> str | None:
+    summaries = [
+        summary
+        for entry in entries
+        for summary in [_firewall_entry_detail_summary(entry)]
+        if summary is not None
+    ]
+    if not summaries:
+        return None
+    return "; ".join(summaries) + "."
+
+
 def _build_account_lifecycle_reply_template_impl(
     context: WorkflowTemplateContext,
 ) -> WorkflowReplyTemplate | None:
@@ -1016,6 +1062,11 @@ def _build_account_lifecycle_reply_template_impl(
             outcome="info",
             summary=f"This will {action_label} {subject} after approval.",
             evidence_summary=evidence,
+            details=_approval_detail_rows(
+                ("Action", f"{action_title} {subject}."),
+                ("Reason", _approval_reason_detail(reason)),
+                ("Success criteria", f"{subject} ends in {desired_state} state."),
+            ),
             next_step=(
                 f"Approve the request to {action_label} the account, or deny it to leave the current state unchanged."
             ),
@@ -1136,6 +1187,17 @@ def _build_contact_email_reply_template_impl(
             outcome="info",
             summary=f"This will change the contact email for {subject} to '{requested_email}' after approval.",
             evidence_summary=evidence,
+            details=_approval_detail_rows(
+                (
+                    "Action",
+                    f"Change the contact email for {subject} to '{requested_email}'.",
+                ),
+                ("Reason", _approval_reason_detail(reason)),
+                (
+                    "Success criteria",
+                    f"The contact email changes from '{before_email}' to '{requested_email}'.",
+                ),
+            ),
             next_step="Approve the request to apply the email change, or deny it to keep the current address.",
         )
 
@@ -1266,6 +1328,17 @@ def _build_primary_domain_reply_template_impl(
             outcome="info",
             summary=f"This will change the primary domain for {subject} to '{requested_domain}' after approval.",
             evidence_summary=evidence,
+            details=_approval_detail_rows(
+                (
+                    "Action",
+                    f"Change the primary domain for {subject} to '{requested_domain}'.",
+                ),
+                ("Reason", _approval_reason_detail(reason)),
+                (
+                    "Success criteria",
+                    f"The primary domain changes to '{requested_domain}' and the DNS zone exists.",
+                ),
+            ),
             next_step="Approve the request to apply the primary-domain change, or deny it to keep the current domain.",
         )
 
@@ -2725,6 +2798,20 @@ def _build_firewall_reply_template(
             outcome="info",
             summary=f"This will {action_phrase} for {subject} after approval.",
             evidence_summary=evidence,
+            details=_approval_detail_rows(
+                (
+                    "Action",
+                    f"{action_phrase.capitalize()} firewall entries for {subject}.",
+                ),
+                ("Reason", _approval_reason_detail(reason)),
+                ("Evidence", _firewall_evidence_detail(before_entries)),
+                (
+                    "Success criteria",
+                    "Postflight reflects the requested firewall state for "
+                    + ", ".join(repr(target) for target in targets)
+                    + ".",
+                ),
+            ),
             next_step="Approve the request to run the firewall change, or deny it to leave the current state unchanged.",
         )
 

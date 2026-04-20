@@ -12,6 +12,11 @@ from noa_api.core.workflows.types import (
 )
 
 
+def _reply_detail_map(reply: WorkflowReplyTemplate) -> dict[str, str]:
+    assert reply.details is not None
+    return {item["label"]: item["value"] for item in reply.details}
+
+
 def test_workflow_reply_template_payload_includes_approval_handoff_details() -> None:
     payload = workflow_reply_template_payload(
         WorkflowReplyTemplate(
@@ -426,6 +431,182 @@ def test_whm_primary_domain_waiting_on_approval_builds_five_step_todos() -> None
     ]
     assert "requested domain: new.example.com" in todos[0]["content"]
     assert "Request approval" in todos[2]["content"]
+
+
+def test_whm_account_lifecycle_waiting_on_approval_reply_includes_detail_rows() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_unsuspend_account",
+        workflow_family="whm-account-lifecycle",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "suspended": True,
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    details = _reply_detail_map(reply)
+    assert details["Action"] == "Unsuspend 'alice' on 'web1'."
+    assert details["Reason"] == "Ticket #1661262"
+    assert details["Success criteria"] == "'alice' on 'web1' ends in active state."
+
+
+def test_whm_contact_email_waiting_on_approval_reply_includes_detail_rows() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_change_contact_email",
+        workflow_family="whm-account-contact-email",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_email": "new@example.com",
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web1", "username": "alice"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "alice",
+                        "contactemail": "old@example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    details = _reply_detail_map(reply)
+    assert (
+        details["Action"]
+        == "Change the contact email for 'alice' on 'web1' to 'new@example.com'."
+    )
+    assert details["Reason"] == "Ticket #1661262"
+    assert (
+        details["Success criteria"]
+        == "The contact email changes from 'old@example.com' to 'new@example.com'."
+    )
+
+
+def test_whm_primary_domain_waiting_on_approval_reply_includes_detail_rows() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_change_primary_domain",
+        workflow_family="whm-account-primary-domain",
+        args={
+            "server_ref": "web1",
+            "username": "alice",
+            "new_domain": "new.example.com",
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_primary_domain_change",
+                "args": {
+                    "server_ref": "web1",
+                    "username": "alice",
+                    "new_domain": "new.example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "requested_domain": "new.example.com",
+                    "requested_domain_location": "absent",
+                    "domain_owner": None,
+                    "domain_inventory": {
+                        "main_domain": "old.example.com",
+                        "addon_domains": [],
+                        "parked_domains": [],
+                        "sub_domains": [],
+                    },
+                    "account": {
+                        "user": "alice",
+                        "domain": "old.example.com",
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    details = _reply_detail_map(reply)
+    assert (
+        details["Action"]
+        == "Change the primary domain for 'alice' on 'web1' to 'new.example.com'."
+    )
+    assert details["Reason"] == "Ticket #1661262"
+    assert (
+        details["Success criteria"]
+        == "The primary domain changes to 'new.example.com' and the DNS zone exists."
+    )
+
+
+def test_whm_firewall_waiting_on_approval_reply_includes_detail_rows() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_firewall_unblock",
+        workflow_family="whm-firewall-batch-change",
+        args={
+            "server_ref": "web2",
+            "targets": ["1.2.3.4", "5.6.7.8"],
+            "reason": "Ticket #1661262",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_firewall_entries",
+                "args": {"server_ref": "web2", "target": "1.2.3.4"},
+                "result": {
+                    "ok": True,
+                    "target": "1.2.3.4",
+                    "matches": ["/etc/csf/csf.deny"],
+                    "available_tools": {"csf": True, "imunify": True},
+                    "combined_verdict": "blocked",
+                },
+            },
+            {
+                "toolName": "whm_preflight_firewall_entries",
+                "args": {"server_ref": "web2", "target": "5.6.7.8"},
+                "result": {
+                    "ok": True,
+                    "target": "5.6.7.8",
+                    "matches": ["/etc/csf/csf.deny"],
+                    "available_tools": {"csf": True, "imunify": False},
+                    "combined_verdict": "blocked",
+                },
+            },
+        ],
+    )
+
+    assert reply is not None
+    details = _reply_detail_map(reply)
+    assert (
+        details["Action"]
+        == "Unblock firewall entries for '1.2.3.4', '5.6.7.8' on 'web2'."
+    )
+    assert details["Reason"] == "Ticket #1661262"
+    assert (
+        details["Evidence"]
+        == "1.2.3.4 is blocked in CSF and Imunify; 5.6.7.8 is blocked in CSF."
+    )
+    assert (
+        details["Success criteria"]
+        == "Postflight reflects the requested firewall state for '1.2.3.4', '5.6.7.8'."
+    )
 
 
 def test_whm_primary_domain_completed_reply_template_requires_dns_zone() -> None:
