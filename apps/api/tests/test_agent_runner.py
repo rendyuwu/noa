@@ -1077,6 +1077,115 @@ async def test_agent_runner_keeps_only_the_workflow_milestone_when_change_round_
     ]
 
 
+async def test_agent_runner_uses_backend_owned_approval_handoff_when_change_tool_call_succeeds(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def _record_replace(_self, *, thread_id, todos):
+        _ = thread_id, todos
+
+    monkeypatch.setattr(
+        "noa_api.storage.postgres.workflow_todos.WorkflowTodoService.replace_workflow",
+        _record_replace,
+    )
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text=(
+                    "I found the account active on web1 and, once you approve it, I will "
+                    "suspend alice for Ticket #1661262."
+                ),
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "Ticket #1661262",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+        session=cast(Any, object()),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice on web1 for Ticket #1661262.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assistant_texts = [
+        cast(str, part["text"])
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict) and part.get("type") == "text"
+    ]
+    assert len(assistant_texts) == 1
+    assert (
+        "Suspend approval requested. This will suspend 'alice' on 'web1' after approval."
+        in assistant_texts[0]
+    )
+    assert "Action: Suspend 'alice' on 'web1'." in assistant_texts[0]
+    assert "Reason: Ticket #1661262" in assistant_texts[0]
+    assert (
+        "Success criteria: 'alice' on 'web1' ends in suspended state."
+        in assistant_texts[0]
+    )
+    assert all(
+        "once you approve it" not in assistant_text
+        for assistant_text in assistant_texts
+    )
+    assert all(
+        "I found the account active on web1" not in assistant_text
+        for assistant_text in assistant_texts
+    )
+
+
 async def test_agent_runner_renders_backend_owned_approval_handoff_before_request_approval(
     monkeypatch,
 ) -> None:
