@@ -2,6 +2,8 @@ import { render, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { normalizeAssistantState } from "@/components/lib/assistant-transport-converter";
+
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     replace: vi.fn(),
@@ -19,6 +21,17 @@ const fetchWithAuth = vi.fn();
 const jsonOrThrow = vi.fn();
 
 let assistantState: any;
+
+const normalizeHydratedState = (state: any) =>
+  normalizeAssistantState({
+    ...state,
+    messages: Array.isArray(state.messages) ? state.messages : [],
+    workflow: Array.isArray(state.workflow) ? state.workflow : [],
+    evidenceSections: Array.isArray(state.evidenceSections) ? state.evidenceSections : [],
+    pendingApprovals: Array.isArray(state.pendingApprovals) ? state.pendingApprovals : [],
+    actionRequests: Array.isArray(state.actionRequests) ? state.actionRequests : [],
+    isRunning: Boolean(state.isRunning),
+  });
 
 const syncActiveThreadItem = () => {
   assistantState.threads.threadItems = [
@@ -240,7 +253,7 @@ describe("NoaAssistantRuntimeProvider", () => {
     });
 
     await waitFor(() => {
-      expect(unstable_loadExternalState).toHaveBeenCalledWith(persistedState);
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(normalizeHydratedState(persistedState));
     });
   });
 
@@ -305,7 +318,7 @@ describe("NoaAssistantRuntimeProvider", () => {
     });
 
     await waitFor(() => {
-      expect(unstable_loadExternalState).toHaveBeenCalledWith(persistedState);
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(normalizeHydratedState(persistedState));
     });
   });
 
@@ -387,7 +400,7 @@ describe("NoaAssistantRuntimeProvider", () => {
     );
 
     await waitFor(() => {
-      expect(unstable_loadExternalState).toHaveBeenCalledWith(blockedState);
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(normalizeHydratedState(blockedState));
     });
 
     unmount();
@@ -409,7 +422,7 @@ describe("NoaAssistantRuntimeProvider", () => {
     });
 
     await waitFor(() => {
-      expect(unstable_loadExternalState).toHaveBeenCalledWith(clearedState);
+      expect(unstable_loadExternalState).toHaveBeenCalledWith(normalizeHydratedState(clearedState));
     });
   });
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from typing import Any, Awaitable, Callable, cast
 from uuid import UUID
 
@@ -35,7 +35,6 @@ from noa_api.api.assistant.assistant_errors import (
 )
 from noa_api.api.assistant.assistant_operations import (
     _record_assistant_failure_telemetry,
-    _apply_canonical_state,
     _resume_waiting_run_state,
     execute_active_run,
     prepare_assistant_transport,
@@ -594,7 +593,8 @@ def _extract_waiting_action_request_id(state: dict[str, object]) -> UUID | None:
     for pending_approval in pending_approvals:
         if not isinstance(pending_approval, dict):
             continue
-        action_request_id = _coerce_run_id(pending_approval.get("actionRequestId"))
+        pending_approval_map = cast(Mapping[str, object], pending_approval)
+        action_request_id = _coerce_run_id(pending_approval_map.get("actionRequestId"))
         if action_request_id is not None:
             return action_request_id
     return None
@@ -644,6 +644,37 @@ def _coordinator_sequence(
         return None
     sequence = sequences.get(run_id)
     return sequence if isinstance(sequence, int) else None
+
+
+def _snapshot_is_terminal(snapshot: Mapping[str, object]) -> bool:
+    run_status = snapshot.get("runStatus")
+    return run_status in {
+        AssistantRunStatus.COMPLETED.value,
+        AssistantRunStatus.FAILED.value,
+        AssistantRunStatus.WAITING_APPROVAL.value,
+    }
+
+
+def _terminal_live_event(
+    *,
+    coordinator: AssistantRunCoordinator,
+    run_id: UUID,
+    fallback_snapshot: Mapping[str, object] | None,
+    fallback_sequence: int,
+) -> bytes | None:
+    snapshot = coordinator.get_snapshot(run_id=run_id)
+    if snapshot is None and fallback_snapshot is not None:
+        snapshot = dict(fallback_snapshot)
+    if snapshot is None or not _snapshot_is_terminal(snapshot):
+        return None
+
+    sequence = _coordinator_sequence(coordinator=coordinator, run_id=run_id)
+    if sequence is None:
+        sequence = fallback_sequence
+
+    return encode_sse_event(
+        event=build_run_snapshot_event(sequence=sequence, snapshot=snapshot)
+    )
 
 
 def _terminal_failure_reason(
@@ -782,7 +813,7 @@ async def _execute_detached_run_job(
         run_handle=handle,
         payload=payload,
         current_user=current_user,
-        assistant_service=observed_service,
+        assistant_service=cast(Any, observed_service),
         authorization_service=authorization_service,
         canonical_state=canonical_state,
         command_types=command_types,
@@ -995,6 +1026,31 @@ async def assistant_transport(
                 raise translated_exc from exc
             raise
 
+    existing_run_id = _canonical_active_run_id(canonical_state)
+    if (
+        not should_run_agent(payload.commands)
+        and "deny-action" in command_types
+        and existing_run_id is not None
+        and canonical_state.get("runStatus")
+        == AssistantRunStatus.WAITING_APPROVAL.value
+    ):
+        canonical_state = dict(canonical_state)
+        canonical_state["activeRunId"] = str(existing_run_id)
+        canonical_state["isRunning"] = False
+        canonical_state["runStatus"] = AssistantRunStatus.COMPLETED.value
+        canonical_state["waitingForApproval"] = False
+        canonical_state["lastErrorReason"] = None
+        await assistant_service.append_run_snapshot(
+            run_id=existing_run_id,
+            snapshot=canonical_state,
+        )
+        await assistant_service.mark_run_completed(run_id=existing_run_id)
+        if _coordinator_task_done(coordinator=coordinator, run_id=existing_run_id) in {
+            True,
+            False,
+        }:
+            coordinator.remove_run(run_id=existing_run_id)
+
     if not should_run_agent(payload.commands):
         return AssistantRunAckResponse.model_validate(
             {
@@ -1004,7 +1060,6 @@ async def assistant_transport(
             }
         )
 
-    existing_run_id = _canonical_active_run_id(canonical_state)
     if existing_run_id is not None:
         if _should_resume_existing_run(
             command_types=command_types,
@@ -1090,6 +1145,18 @@ async def get_assistant_run_live(
         )
 
     async def _event_stream() -> AsyncGenerator[bytes, None]:
+        terminal_event = _terminal_live_event(
+            coordinator=coordinator,
+            run_id=run_id,
+            fallback_snapshot=getattr(run, "live_snapshot", None),
+            fallback_sequence=int(getattr(run, "sequence", 0) or 0),
+        )
+        if _coordinator_task_done(coordinator=coordinator, run_id=run_id) is True:
+            if terminal_event is not None:
+                yield terminal_event
+            coordinator.remove_run(run_id=run_id)
+            return
+
         if not coordinator.has_run(run_id=run_id) and getattr(
             run, "live_snapshot", None
         ):
@@ -1100,8 +1167,28 @@ async def get_assistant_run_live(
             yield encode_sse_event(
                 event=build_run_snapshot_event(sequence=sequence, snapshot=snapshot)
             )
+            return
 
         async for event in coordinator.subscribe(run_id=run_id):
             yield encode_sse_event(event=event)
+            snapshot = event.get("snapshot")
+            if not isinstance(snapshot, dict) or not _snapshot_is_terminal(
+                cast(Mapping[str, object], snapshot)
+            ):
+                continue
+            if snapshot.get("runStatus") == AssistantRunStatus.WAITING_APPROVAL.value:
+                if (
+                    _coordinator_task_done(coordinator=coordinator, run_id=run_id)
+                    is True
+                ):
+                    coordinator.remove_run(run_id=run_id)
+                break
+            if (
+                _coordinator_task_done(coordinator=coordinator, run_id=run_id)
+                is not True
+            ):
+                continue
+            coordinator.remove_run(run_id=run_id)
+            break
 
     return StreamingResponse(_event_stream(), media_type="text/event-stream")

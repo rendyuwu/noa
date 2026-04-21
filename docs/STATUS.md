@@ -1,6 +1,6 @@
 # Project NOA - Status
 
-Last updated: 2026-04-16
+Last updated: 2026-04-21
 
 This is a living checklist of what is implemented in the MVP and what is intentionally not implemented yet.
 
@@ -14,7 +14,7 @@ This is a living checklist of what is implemented in the MVP and what is intenti
   - Admin RBAC: enable/disable users, assign tool allowlists
   - Postgres persistence + Alembic migrations
   - Thread CRUD API for assistant-ui remote thread list
-  - Assistant Transport endpoint (`POST /assistant`) using assistant-stream
+  - Assistant run API with persisted active-run metadata, JSON ACK start/resume route (`POST /assistant`), and live reconnect SSE route (`GET /assistant/runs/{run_id}/live`)
   - Tool registry (READ vs CHANGE) + real tools
   - Approval gate for CHANGE tools, including approve/deny execution path and recorded reasons
   - Audit log events for auth/admin/actions/tools
@@ -33,6 +33,7 @@ This is a living checklist of what is implemented in the MVP and what is intenti
   - Assistant workspace (`/assistant`) with thread list + chat
   - Claude-style UI skin
   - Same-origin `/api/*` proxy (Next route handler) so the browser never calls the FastAPI backend directly (configure via `NOA_API_URL`)
+  - Assistant thread hydration now restores active-run metadata and reconnects to live assistant runs after refresh/disconnect while the API instance remains alive
   - Admin UI (`/admin`) for user and tool management
   - Approval card UI for CHANGE actions
 
@@ -45,6 +46,7 @@ This is a living checklist of what is implemented in the MVP and what is intenti
 
 - Additional mature integrations beyond the current WHM and Proxmox surface area (DNS/monitoring/billing/support)
 - True LLM token streaming (current MVP chunks completed text)
+- Surviving API process restart/deploy for in-flight assistant runs (current phase survives browser disconnect/refresh only while the owning API instance remains alive)
 - Multi-tenant org/team model and shared threads
 - File uploads / attachments / sync server (Assistant Cloud)
 - Claude-like UI controls are visible-but-disabled (kept for layout parity; show "Coming soon"): Edit/Reload, attachments, tools menu, extended thinking toggle, model selector, feedback.

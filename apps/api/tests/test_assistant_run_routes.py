@@ -4,7 +4,6 @@ import asyncio
 import json
 from uuid import UUID, uuid4
 
-import pytest
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import IntegrityError
@@ -603,6 +602,349 @@ async def test_assistant_run_live_route_streams_coordinator_events_for_owner() -
     assert event["sequence"] == 2
     assert event["snapshot"]["activeRunId"] == str(run.id)
     assert event["snapshot"]["marker"] == "latest"
+
+
+async def test_assistant_run_live_route_completes_after_terminal_run_finishes() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    run = await service.create_run(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        owner_instance_id="test-api",
+    )
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
+
+    terminal_snapshot: dict[str, object] = {
+        "messages": [],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": False,
+        "runStatus": AssistantRunStatus.COMPLETED.value,
+        "activeRunId": str(run.id),
+        "waitingForApproval": False,
+        "lastErrorReason": None,
+    }
+
+    await service.append_run_snapshot(run_id=run.id, snapshot=terminal_snapshot)
+    await service.mark_run_completed(run_id=run.id)
+
+    async def _job(handle):
+        handle.publish_snapshot(snapshot=terminal_snapshot)
+        return None
+
+    coordinator.start_detached_run(run_id=run.id, job_factory=_job)
+    await coordinator.wait_for_run(run_id=run.id, timeout=1)
+
+    app = _build_run_routes_app(
+        service=service,
+        current_user=AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        coordinator=coordinator,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await asyncio.wait_for(
+            client.get(f"/assistant/runs/{run.id}/live"),
+            timeout=1,
+        )
+
+    data_lines = [
+        line[len("data: ") :]
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert len(data_lines) == 1
+    event = json.loads(data_lines[0])
+    assert event["type"] == "snapshot"
+    assert event["snapshot"]["runStatus"] == AssistantRunStatus.COMPLETED.value
+    assert event["snapshot"]["activeRunId"] == str(run.id)
+
+
+async def test_assistant_run_live_route_returns_waiting_snapshot_when_persisted_before_connect() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    run = await service.create_run(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        owner_instance_id="test-api",
+    )
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
+    action_request_id = uuid4()
+
+    terminal_snapshot: dict[str, object] = {
+        "messages": [],
+        "workflow": [],
+        "pendingApprovals": [
+            {"actionRequestId": str(action_request_id), "status": "PENDING"}
+        ],
+        "actionRequests": [],
+        "isRunning": False,
+        "runStatus": AssistantRunStatus.WAITING_APPROVAL.value,
+        "activeRunId": str(run.id),
+        "waitingForApproval": True,
+        "lastErrorReason": None,
+    }
+
+    await service.append_run_snapshot(run_id=run.id, snapshot=terminal_snapshot)
+    await service.mark_run_waiting_approval(
+        run_id=run.id,
+        action_request_id=action_request_id,
+    )
+
+    async def _job(handle):
+        handle.publish_snapshot(snapshot=terminal_snapshot)
+        return None
+
+    coordinator.start_detached_run(run_id=run.id, job_factory=_job)
+    await coordinator.wait_for_run(run_id=run.id, timeout=1)
+
+    app = _build_run_routes_app(
+        service=service,
+        current_user=AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        coordinator=coordinator,
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await asyncio.wait_for(
+            client.get(f"/assistant/runs/{run.id}/live"),
+            timeout=1,
+        )
+
+    data_lines = [
+        line[len("data: ") :]
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert len(data_lines) == 1
+    event = json.loads(data_lines[0])
+    assert event["type"] == "snapshot"
+    assert event["snapshot"]["runStatus"] == AssistantRunStatus.WAITING_APPROVAL.value
+    assert event["snapshot"]["waitingForApproval"] is True
+    assert event["snapshot"]["activeRunId"] == str(run.id)
+    assert coordinator.has_run(run_id=run.id) is False
+
+
+async def test_assistant_run_live_route_closes_after_waiting_approval_transition() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    run = await service.create_run(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        owner_instance_id="test-api",
+    )
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
+    allow_pause = asyncio.Event()
+    action_request_id = uuid4()
+
+    async def _job(handle):
+        handle.publish_snapshot(
+            snapshot={
+                "messages": [],
+                "workflow": [],
+                "pendingApprovals": [],
+                "actionRequests": [],
+                "isRunning": True,
+                "runStatus": AssistantRunStatus.RUNNING.value,
+                "activeRunId": str(run.id),
+                "waitingForApproval": False,
+                "lastErrorReason": None,
+            }
+        )
+        await allow_pause.wait()
+        terminal_snapshot = {
+            "messages": [],
+            "workflow": [],
+            "pendingApprovals": [
+                {"actionRequestId": str(action_request_id), "status": "PENDING"}
+            ],
+            "actionRequests": [],
+            "isRunning": False,
+            "runStatus": AssistantRunStatus.WAITING_APPROVAL.value,
+            "activeRunId": str(run.id),
+            "waitingForApproval": True,
+            "lastErrorReason": None,
+        }
+        handle.publish_snapshot(snapshot=terminal_snapshot)
+        await service.append_run_snapshot(run_id=run.id, snapshot=terminal_snapshot)
+        await service.mark_run_waiting_approval(
+            run_id=run.id,
+            action_request_id=action_request_id,
+        )
+        return None
+
+    coordinator.start_detached_run(run_id=run.id, job_factory=_job)
+
+    app = _build_run_routes_app(
+        service=service,
+        current_user=AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        coordinator=coordinator,
+    )
+
+    async def _wait_for_subscription() -> None:
+        for _ in range(100):
+            subscribers = getattr(coordinator, "_subscribers", {})
+            if subscribers.get(run.id):
+                return
+            await asyncio.sleep(0.01)
+        raise AssertionError("live route did not subscribe in time")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response_task = asyncio.create_task(
+            client.get(f"/assistant/runs/{run.id}/live")
+        )
+        await _wait_for_subscription()
+        allow_pause.set()
+        response = await asyncio.wait_for(response_task, timeout=1)
+
+    if coordinator.has_run(run_id=run.id):
+        await coordinator.wait_for_run(run_id=run.id, timeout=1)
+        coordinator.remove_run(run_id=run.id)
+
+    data_lines = [
+        line[len("data: ") :]
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert len(data_lines) == 2
+    running_event = json.loads(data_lines[0])
+    waiting_event = json.loads(data_lines[1])
+    assert running_event["snapshot"]["runStatus"] == AssistantRunStatus.RUNNING.value
+    assert (
+        waiting_event["snapshot"]["runStatus"]
+        == AssistantRunStatus.WAITING_APPROVAL.value
+    )
+    assert waiting_event["snapshot"]["waitingForApproval"] is True
+    assert coordinator.has_run(run_id=run.id) is False
+
+
+async def test_assistant_route_deny_action_completes_waiting_run_and_unblocks_thread() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    existing_run = await service.create_run(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        owner_instance_id="test-api",
+    )
+    action_request_id = uuid4()
+    await service.mark_run_waiting_approval(
+        run_id=existing_run.id,
+        action_request_id=action_request_id,
+    )
+    await service.append_run_snapshot(
+        run_id=existing_run.id,
+        snapshot={
+            "messages": [],
+            "workflow": [],
+            "pendingApprovals": [
+                {"actionRequestId": str(action_request_id), "status": "PENDING"}
+            ],
+            "actionRequests": [],
+            "isRunning": False,
+            "runStatus": AssistantRunStatus.WAITING_APPROVAL.value,
+            "activeRunId": str(existing_run.id),
+            "waitingForApproval": True,
+            "lastErrorReason": None,
+        },
+    )
+
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
+    app = _build_run_routes_app(
+        service=service,
+        current_user=AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        coordinator=coordinator,
+    )
+
+    deny_payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {"type": "deny-action", "actionRequestId": str(action_request_id)}
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=deny_payload)
+
+        body = _assert_assistant_ack(
+            response,
+            thread_id=thread_id,
+            run_status=AssistantRunStatus.COMPLETED.value,
+            has_active_run_id=True,
+        )
+        assert body["activeRunId"] == str(existing_run.id)
+
+        follow_up_response = await client.post(
+            "/assistant",
+            json={
+                "state": {"messages": [], "isRunning": False},
+                "commands": [
+                    {
+                        "type": "add-message",
+                        "message": {
+                            "role": "user",
+                            "parts": [{"type": "text", "text": "Continue"}],
+                        },
+                    }
+                ],
+                "threadId": str(thread_id),
+            },
+        )
+
+    run = await service.get_run(run_id=existing_run.id)
+    assert run is not None
+    assert run.status == AssistantRunStatus.COMPLETED
+    assert run.live_snapshot["runStatus"] == AssistantRunStatus.COMPLETED.value
+    assert run.live_snapshot["waitingForApproval"] is False
+
+    follow_up_body = _assert_assistant_ack(
+        follow_up_response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    assert follow_up_body["activeRunId"] != str(existing_run.id)
 
 
 async def test_assistant_route_persists_failed_status_for_refresh_failure() -> None:

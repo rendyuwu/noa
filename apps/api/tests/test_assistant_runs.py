@@ -850,6 +850,7 @@ def test_build_live_run_snapshot_appends_streaming_placeholder() -> None:
     workflow = [{"content": "Plan", "status": "in_progress"}]
     pending_approvals = [{"actionRequestId": "approval-1"}]
     action_requests = [{"actionRequestId": "request-1"}]
+    active_run_id = str(uuid4())
 
     snapshot = build_live_run_snapshot(
         canonical_messages=canonical_messages,
@@ -858,6 +859,10 @@ def test_build_live_run_snapshot_appends_streaming_placeholder() -> None:
         pending_approvals=pending_approvals,
         action_requests=action_requests,
         is_running=False,
+        run_status="WAITING_APPROVAL",
+        active_run_id=active_run_id,
+        waiting_for_approval=True,
+        last_error_reason="approval_required",
     )
 
     assert snapshot == {
@@ -873,6 +878,10 @@ def test_build_live_run_snapshot_appends_streaming_placeholder() -> None:
         "pendingApprovals": pending_approvals,
         "actionRequests": action_requests,
         "isRunning": False,
+        "runStatus": "WAITING_APPROVAL",
+        "activeRunId": active_run_id,
+        "waitingForApproval": True,
+        "lastErrorReason": "approval_required",
     }
     assert canonical_messages == [
         {
