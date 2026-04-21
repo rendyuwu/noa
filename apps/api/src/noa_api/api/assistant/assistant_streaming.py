@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 from typing import cast
 from uuid import uuid4
 
@@ -21,6 +22,27 @@ def make_streaming_placeholder(text: str) -> dict[str, object]:
     }
 
 
+def build_live_run_snapshot(
+    *,
+    canonical_messages: Sequence[object],
+    streamed_text: str,
+    workflow: Sequence[object],
+    pending_approvals: Sequence[object],
+    action_requests: Sequence[object],
+    is_running: bool,
+) -> dict[str, object]:
+    return {
+        "messages": [
+            *canonical_messages,
+            make_streaming_placeholder(streamed_text),
+        ],
+        "workflow": list(workflow),
+        "pendingApprovals": list(pending_approvals),
+        "actionRequests": list(action_requests),
+        "isRunning": is_running,
+    }
+
+
 def make_fallback_error_message(text: str) -> dict[str, object]:
     return {
         "id": f"assistant-run-error-{uuid4()}",
@@ -33,7 +55,10 @@ def remove_streaming_placeholder(messages: list[object]) -> list[object]:
     return [
         message
         for message in messages
-        if not (isinstance(message, dict) and message.get("id") == STREAMING_MESSAGE_ID)
+        if not (
+            isinstance(message, dict)
+            and cast(dict[str, object], message).get("id") == STREAMING_MESSAGE_ID
+        )
     ]
 
 
@@ -76,7 +101,7 @@ async def _stream_assistant_text(
         controller.state = {"messages": []}
 
     base_messages = coerce_messages(controller.state.get("messages"))
-    streaming_message = cast(dict[str, object], make_streaming_placeholder(""))
+    streaming_message = make_streaming_placeholder("")
     base_messages.append(streaming_message)
     controller.state["messages"] = base_messages
 
