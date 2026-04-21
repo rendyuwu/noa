@@ -18,12 +18,15 @@ from httpx import ASGITransport, AsyncClient
 pytest.importorskip("assistant_stream")
 
 from noa_api.api.auth_dependencies import get_current_auth_user
+from noa_api.api.assistant.assistant_errors import assistant_domain_error
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.assistant import (
     AssistantService,
     _stream_assistant_text,
+    get_assistant_run_coordinator,
     get_assistant_service,
 )
+from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
 from noa_api.core.agent.runner import AgentMessage, AgentRunnerResult
 from noa_api.api.routes.assistant import router as assistant_router
 from noa_api.core.auth.authorization import (
@@ -33,6 +36,7 @@ from noa_api.core.auth.authorization import (
 from noa_api.core.logging import configure_logging
 from noa_api.core.telemetry import TelemetryEvent
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
+from noa_api.storage.postgres.lifecycle import AssistantRunStatus
 
 
 def _iter_assistant_transport_events(payload: str) -> list[dict[str, object]]:
@@ -196,6 +200,20 @@ class _FakeAssistantService:
     runner_messages: list[AgentMessage] = field(default_factory=list)
     runner_text_deltas: list[str] = field(default_factory=list)
     seen_available_tools: set[str] = field(default_factory=set)
+    active_runs: dict[UUID, SimpleNamespace] = field(default_factory=dict)
+
+    def _get_active_run_for_thread(self, *, thread_id: UUID) -> SimpleNamespace | None:
+        for run in self.active_runs.values():
+            if run.thread_id != thread_id:
+                continue
+            if run.status not in {
+                AssistantRunStatus.STARTING,
+                AssistantRunStatus.RUNNING,
+                AssistantRunStatus.WAITING_APPROVAL,
+            }:
+                continue
+            return run
+        return None
 
     async def thread_exists(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
         return owner_user_id == self.owner_user_id and thread_id == self.thread_id
@@ -205,12 +223,26 @@ class _FakeAssistantService:
     ) -> dict[str, object]:
         assert owner_user_id == self.owner_user_id
         assert thread_id == self.thread_id
+        active_run = self._get_active_run_for_thread(thread_id=thread_id)
+        active_run_status = active_run.status.value if active_run is not None else None
         return {
             "messages": list(self.messages),
             "workflow": list(self.workflow),
             "pendingApprovals": list(self.pending_approvals),
             "actionRequests": list(self.action_requests),
-            "isRunning": False,
+            "isRunning": active_run_status
+            in {
+                AssistantRunStatus.STARTING.value,
+                AssistantRunStatus.RUNNING.value,
+            },
+            "runStatus": active_run_status,
+            "activeRunId": str(active_run.id) if active_run is not None else None,
+            "waitingForApproval": bool(
+                active_run_status == AssistantRunStatus.WAITING_APPROVAL.value
+            ),
+            "lastErrorReason": (
+                active_run.last_error_reason if active_run is not None else None
+            ),
         }
 
     async def add_message(
@@ -223,6 +255,14 @@ class _FakeAssistantService:
     ) -> None:
         assert owner_user_id == self.owner_user_id
         assert thread_id == self.thread_id
+        if (
+            role == "user"
+            and self._get_active_run_for_thread(thread_id=thread_id) is not None
+        ):
+            raise assistant_domain_error(
+                status_code=409,
+                detail="Thread already has an active assistant run",
+            )
         self.messages.append(
             {
                 "id": str(uuid4()),
@@ -295,6 +335,76 @@ class _FakeAssistantService:
         return AgentRunnerResult(
             messages=self.runner_messages, text_deltas=self.runner_text_deltas
         )
+
+    async def create_run(
+        self,
+        *,
+        owner_user_id: UUID,
+        thread_id: UUID,
+        owner_instance_id: str,
+    ) -> SimpleNamespace:
+        assert owner_user_id == self.owner_user_id
+        assert thread_id == self.thread_id
+        run = SimpleNamespace(
+            id=uuid4(),
+            owner_user_id=owner_user_id,
+            thread_id=thread_id,
+            owner_instance_id=owner_instance_id,
+            status=AssistantRunStatus.STARTING,
+            sequence=0,
+            live_snapshot={},
+            last_error_reason=None,
+        )
+        self.active_runs[run.id] = run
+        return run
+
+    async def get_run(self, *, run_id: UUID) -> SimpleNamespace | None:
+        return self.active_runs.get(run_id)
+
+    async def mark_run_running(self, *, run_id: UUID) -> SimpleNamespace | None:
+        run = self.active_runs.get(run_id)
+        if run is None:
+            return None
+        run.status = AssistantRunStatus.RUNNING
+        run.last_error_reason = None
+        return run
+
+    async def mark_run_waiting_approval(
+        self, *, run_id: UUID, action_request_id: UUID
+    ) -> SimpleNamespace | None:
+        _ = action_request_id
+        run = self.active_runs.get(run_id)
+        if run is None:
+            return None
+        run.status = AssistantRunStatus.WAITING_APPROVAL
+        return run
+
+    async def append_run_snapshot(
+        self, *, run_id: UUID, snapshot: dict[str, object]
+    ) -> SimpleNamespace | None:
+        run = self.active_runs.get(run_id)
+        if run is None:
+            return None
+        run.sequence += 1
+        run.live_snapshot = dict(snapshot)
+        return run
+
+    async def mark_run_completed(self, *, run_id: UUID) -> SimpleNamespace | None:
+        run = self.active_runs.get(run_id)
+        if run is None:
+            return None
+        run.status = AssistantRunStatus.COMPLETED
+        return run
+
+    async def mark_run_failed(
+        self, *, run_id: UUID, reason: str
+    ) -> SimpleNamespace | None:
+        run = self.active_runs.get(run_id)
+        if run is None:
+            return None
+        run.status = AssistantRunStatus.FAILED
+        run.last_error_reason = reason
+        return run
 
 
 @dataclass
@@ -400,8 +510,12 @@ def _build_app(
     service: Any,
     current_user: AuthorizationUser,
     authorization_service: _FakeAuthorizationService | None = None,
+    coordinator: AssistantRunCoordinator | None = None,
 ) -> FastAPI:
     app = FastAPI()
+    resolved_coordinator = coordinator or AssistantRunCoordinator(
+        instance_id="test-api"
+    )
     install_error_handling(app)
     app.include_router(assistant_router)
     app.dependency_overrides[get_assistant_service] = lambda: service
@@ -409,7 +523,29 @@ def _build_app(
     app.dependency_overrides[get_authorization_service] = lambda: (
         authorization_service or _FakeAuthorizationService()
     )
+    app.dependency_overrides[get_assistant_run_coordinator] = lambda: (
+        resolved_coordinator
+    )
     return app
+
+
+def _assert_assistant_ack(
+    response: Any,
+    *,
+    thread_id: UUID,
+    run_status: str | None,
+    has_active_run_id: bool,
+) -> dict[str, object]:
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/json")
+    payload = response.json()
+    assert payload["threadId"] == str(thread_id)
+    assert payload["runStatus"] == run_status
+    if has_active_run_id:
+        UUID(payload["activeRunId"])
+    else:
+        assert payload["activeRunId"] is None
+    return cast(dict[str, object], payload)
 
 
 async def test_assistant_route_rejects_missing_thread_id() -> None:
@@ -530,7 +666,7 @@ async def test_thread_state_route_includes_workflow_and_pending_approvals() -> N
     assert data["actionRequests"] == service.action_requests
 
 
-async def test_assistant_route_streams_canonical_workflow_and_pending_approvals() -> (
+async def test_assistant_route_ack_keeps_workflow_and_pending_approvals_in_thread_state() -> (
     None
 ):
     owner_id = uuid4()
@@ -595,21 +731,18 @@ async def test_assistant_route_streams_canonical_workflow_and_pending_approvals(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
+    _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=None,
+        has_active_run_id=False,
+    )
 
-    state: dict[str, object] = {}
-    for event in _iter_assistant_transport_events(response.text):
-        if event.get("type") != "update-state":
-            continue
-        operations = event.get("operations") or event.get("patches")
-        if isinstance(operations, list):
-            _apply_assistant_stream_patches(state, operations)
-            continue
-        event_state = event.get("state")
-        if isinstance(event_state, dict):
-            state.clear()
-            state.update(event_state)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        state_response = await client.get(f"/assistant/threads/{thread_id}/state")
 
+    state = state_response.json()
     assert state.get("workflow") == service.workflow
     assert state.get("pendingApprovals") == service.pending_approvals
     assert state.get("actionRequests") == service.action_requests
@@ -645,7 +778,7 @@ async def test_assistant_route_returns_structured_http_error_when_thread_missing
     assert response.headers["x-request-id"] == body["request_id"]
 
 
-async def test_assistant_route_uses_assistant_transport_sse() -> None:
+async def test_assistant_route_returns_json_ack_for_noop_request() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
     service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
@@ -671,11 +804,12 @@ async def test_assistant_route_uses_assistant_transport_sse() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.text.rstrip().endswith("data: [DONE]")
-    events = _iter_assistant_transport_events(response.text)
-    assert any(event.get("type") == "update-state" for event in events)
+    _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=None,
+        has_active_run_id=False,
+    )
 
 
 async def test_assistant_route_warns_when_request_overrides_are_ignored(
@@ -710,7 +844,12 @@ async def test_assistant_route_warns_when_request_overrides_are_ignored(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
+    _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=None,
+        has_active_run_id=False,
+    )
     record = next(
         record
         for record in caplog.records
@@ -733,6 +872,7 @@ async def test_assistant_route_streams_fallback_text_after_agent_failure(
         raise RuntimeError("agent boom")
 
     monkeypatch.setattr(service, "run_agent_turn", _boom_run_agent_turn)
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
     app = _build_app(
         service,
         AuthorizationUser(
@@ -743,6 +883,7 @@ async def test_assistant_route_streams_fallback_text_after_agent_failure(
             roles=["member"],
             tools=[],
         ),
+        coordinator=coordinator,
     )
 
     payload = {
@@ -763,26 +904,16 @@ async def test_assistant_route_streams_fallback_text_after_agent_failure(
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-    assert response.text.rstrip().endswith("data: [DONE]")
-
-    state: dict[str, object] = {}
-    for event in _iter_assistant_transport_events(response.text):
-        if event.get("type") != "update-state":
-            continue
-
-        operations = event.get("operations") or event.get("patches")
-        if isinstance(operations, list):
-            _apply_assistant_stream_patches(state, operations)
-            continue
-
-        event_state = event.get("state")
-        if isinstance(event_state, dict):
-            state.clear()
-            state.update(event_state)
-
-    assert _state_contains_text(state, "Assistant run failed. Please try again.")
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    run = service.active_runs[UUID(str(ack["activeRunId"]))]
+    await coordinator.wait_for_run(run_id=run.id, timeout=1)
+    assert run.status == AssistantRunStatus.FAILED
+    assert run.last_error_reason == "agent boom"
 
 
 async def test_assistant_route_emits_structured_agent_failure_log_with_request_id(
@@ -798,6 +929,7 @@ async def test_assistant_route_emits_structured_agent_failure_log_with_request_i
         raise exc
 
     monkeypatch.setattr(service, "run_agent_turn", _boom_run_agent_turn)
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
     app = _build_app(
         service,
         AuthorizationUser(
@@ -808,6 +940,7 @@ async def test_assistant_route_emits_structured_agent_failure_log_with_request_i
             roles=["member"],
             tools=[],
         ),
+        coordinator=coordinator,
     )
 
     payload = {
@@ -831,6 +964,11 @@ async def test_assistant_route_emits_structured_agent_failure_log_with_request_i
                 "/assistant",
                 json=payload,
                 headers={"x-request-id": "assistant-agent-http-failure"},
+            )
+            ack = response.json()
+            await coordinator.wait_for_run(
+                run_id=UUID(ack["activeRunId"]),
+                timeout=1,
             )
 
     assert response.status_code == 200
@@ -861,6 +999,7 @@ async def test_assistant_route_records_unexpected_agent_failure_telemetry(
         raise RuntimeError("agent boom")
 
     monkeypatch.setattr(service, "run_agent_turn", _boom_run_agent_turn)
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
     app = _build_app(
         service,
         AuthorizationUser(
@@ -871,6 +1010,7 @@ async def test_assistant_route_records_unexpected_agent_failure_telemetry(
             roles=["member"],
             tools=[],
         ),
+        coordinator=coordinator,
     )
     app.state.telemetry = recorder
 
@@ -891,6 +1031,11 @@ async def test_assistant_route_records_unexpected_agent_failure_telemetry(
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
+        ack = response.json()
+        await coordinator.wait_for_run(
+            run_id=UUID(ack["activeRunId"]),
+            timeout=1,
+        )
 
     assert response.status_code == 200
     assistant_trace_events = [
@@ -1002,26 +1147,13 @@ async def test_assistant_route_streams_canonical_state_and_applies_commands() ->
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-
-    state: dict[str, object] = {}
-    for event in _iter_assistant_transport_events(response.text):
-        if event.get("type") != "update-state":
-            continue
-        operations = event.get("operations") or event.get("patches")
-        if isinstance(operations, list):
-            _apply_assistant_stream_patches(state, operations)
-            continue
-        event_state = event.get("state")
-        if isinstance(event_state, dict):
-            state.clear()
-            state.update(event_state)
-
-    assert _state_contains_text(state, "From DB")
-    assert _state_contains_text(state, "Hello from command")
-    assert not _state_contains_text(state, "Bogus")
-    assert state.get("isRunning") is False
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    assert UUID(str(ack["activeRunId"])) in service.active_runs
 
 
 async def test_assistant_route_accepts_add_message_with_parent_id_and_null_source_id() -> (
@@ -1062,23 +1194,13 @@ async def test_assistant_route_accepts_add_message_with_parent_id_and_null_sourc
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-
-    state: dict[str, object] = {}
-    for event in _iter_assistant_transport_events(response.text):
-        if event.get("type") != "update-state":
-            continue
-        operations = event.get("operations") or event.get("patches")
-        if isinstance(operations, list):
-            _apply_assistant_stream_patches(state, operations)
-            continue
-        event_state = event.get("state")
-        if isinstance(event_state, dict):
-            state.clear()
-            state.update(event_state)
-
-    assert _state_contains_user_text(state, "Follow-up")
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    assert UUID(str(ack["activeRunId"])) in service.active_runs
 
 
 async def test_assistant_route_accepts_follow_up_add_message_in_same_thread() -> None:
@@ -1116,22 +1238,17 @@ async def test_assistant_route_accepts_follow_up_add_message_in_same_thread() ->
             },
         )
 
-        assert first_response.status_code == 200
-        assert first_response.headers["content-type"].startswith("text/event-stream")
+        first_ack = _assert_assistant_ack(
+            first_response,
+            thread_id=thread_id,
+            run_status=AssistantRunStatus.STARTING.value,
+            has_active_run_id=True,
+        )
+        first_run_id = UUID(str(first_ack["activeRunId"]))
+        service.active_runs[first_run_id].status = AssistantRunStatus.COMPLETED
 
-        first_state: dict[str, object] = {}
-        for event in _iter_assistant_transport_events(first_response.text):
-            if event.get("type") != "update-state":
-                continue
-            operations = event.get("operations") or event.get("patches")
-            if isinstance(operations, list):
-                _apply_assistant_stream_patches(first_state, operations)
-                continue
-            event_state = event.get("state")
-            if isinstance(event_state, dict):
-                first_state.clear()
-                first_state.update(event_state)
-
+        state_response = await client.get(f"/assistant/threads/{thread_id}/state")
+        first_state = state_response.json()
         messages = first_state.get("messages")
         assert isinstance(messages, list)
         first_message = next(
@@ -1158,22 +1275,20 @@ async def test_assistant_route_accepts_follow_up_add_message_in_same_thread() ->
             },
         )
 
-    assert second_response.status_code == 200
-    assert second_response.headers["content-type"].startswith("text/event-stream")
+    second_ack = _assert_assistant_ack(
+        second_response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    second_run_id = UUID(str(second_ack["activeRunId"]))
+    service.active_runs[second_run_id].status = AssistantRunStatus.COMPLETED
 
-    second_state: dict[str, object] = {}
-    for event in _iter_assistant_transport_events(second_response.text):
-        if event.get("type") != "update-state":
-            continue
-        operations = event.get("operations") or event.get("patches")
-        if isinstance(operations, list):
-            _apply_assistant_stream_patches(second_state, operations)
-            continue
-        event_state = event.get("state")
-        if isinstance(event_state, dict):
-            second_state.clear()
-            second_state.update(event_state)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        state_response = await client.get(f"/assistant/threads/{thread_id}/state")
 
+    second_state = state_response.json()
     assert _state_contains_user_text(second_state, "Hello")
     assert _state_contains_user_text(second_state, "Follow-up")
 
@@ -1267,23 +1382,13 @@ async def test_assistant_route_accepts_add_tool_result_command() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("text/event-stream")
-
-    state: dict[str, object] = {}
-    for event in _iter_assistant_transport_events(response.text):
-        if event.get("type") != "update-state":
-            continue
-        operations = event.get("operations") or event.get("patches")
-        if isinstance(operations, list):
-            _apply_assistant_stream_patches(state, operations)
-            continue
-        event_state = event.get("state")
-        if isinstance(event_state, dict):
-            state.clear()
-            state.update(event_state)
-
-    assert _state_contains_text(state, "From DB")
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    assert UUID(str(ack["activeRunId"])) in service.active_runs
 
 
 async def test_assistant_route_returns_http_error_for_pre_agent_command_failure(
@@ -1803,8 +1908,13 @@ async def test_assistant_route_runs_agent_after_add_tool_result_command() -> Non
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert "Follow-up after tool result" in response.text
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    assert UUID(str(ack["activeRunId"])) in service.active_runs
 
 
 async def test_assistant_route_runs_agent_after_approve_action_command() -> None:
@@ -1855,8 +1965,13 @@ async def test_assistant_route_runs_agent_after_approve_action_command() -> None
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert "Follow-up after approval" in response.text
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    assert UUID(str(ack["activeRunId"])) in service.active_runs
 
 
 async def test_assistant_route_rejects_unknown_command_type() -> None:
@@ -1910,6 +2025,7 @@ async def test_assistant_route_runs_agent_with_rbac_filtered_tools() -> None:
         ],
         runner_text_deltas=["I'll check", " that for you."],
     )
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
     app = _build_app(
         service,
         AuthorizationUser(
@@ -1923,6 +2039,7 @@ async def test_assistant_route_runs_agent_with_rbac_filtered_tools() -> None:
         authorization_service=_FakeAuthorizationService(
             allowed_tools={"get_current_time"}
         ),
+        coordinator=coordinator,
     )
 
     payload = {
@@ -1943,19 +2060,34 @@ async def test_assistant_route_runs_agent_with_rbac_filtered_tools() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-    assert "I'll check that for you." in response.text
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    await coordinator.wait_for_run(run_id=UUID(str(ack["activeRunId"])), timeout=1)
     assert service.seen_available_tools == {"get_current_time", "update_workflow_todo"}
 
 
-async def test_assistant_route_keeps_user_message_in_streaming_state() -> None:
+async def test_assistant_route_ack_exposes_running_state_via_thread_state() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
     service = _FakeAssistantService(
         owner_user_id=owner_id,
         thread_id=thread_id,
-        runner_text_deltas=["Hello", " world"],
     )
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _slow_run_agent_turn(**kwargs: Any) -> AgentRunnerResult:
+        service.seen_available_tools = set(kwargs["available_tool_names"])
+        started.set()
+        await release.wait()
+        return AgentRunnerResult(messages=[], text_deltas=[])
+
+    service.run_agent_turn = _slow_run_agent_turn  # type: ignore[method-assign]
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
     app = _build_app(
         service,
         AuthorizationUser(
@@ -1967,6 +2099,7 @@ async def test_assistant_route_keeps_user_message_in_streaming_state() -> None:
             tools=[],
         ),
         authorization_service=_FakeAuthorizationService(allowed_tools=set()),
+        coordinator=coordinator,
     )
 
     user_text = "Hi"
@@ -1988,35 +2121,28 @@ async def test_assistant_route_keeps_user_message_in_streaming_state() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    run_id = UUID(str(ack["activeRunId"]))
+    await started.wait()
 
-    state: dict[str, object] = {}
-    saw_running_state = False
-    saw_running_state_with_user_message = False
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        state_response = await client.get(f"/assistant/threads/{thread_id}/state")
 
-    for event in _iter_assistant_transport_events(response.text):
-        if event.get("type") != "update-state":
-            continue
-
-        operations = event.get("operations") or event.get("patches")
-        if isinstance(operations, list):
-            _apply_assistant_stream_patches(state, operations)
-        else:
-            event_state = event.get("state")
-            assert isinstance(event_state, dict)
-            state.clear()
-            state.update(event_state)
-
-        if state.get("isRunning") is True:
-            saw_running_state = True
-            if _state_contains_user_text(state, user_text):
-                saw_running_state_with_user_message = True
-
-    assert saw_running_state
-    assert saw_running_state_with_user_message
+    state = state_response.json()
+    assert state.get("isRunning") is True
+    assert state.get("runStatus") == AssistantRunStatus.RUNNING.value
+    assert _state_contains_user_text(state, user_text)
+    release.set()
+    await coordinator.wait_for_run(run_id=run_id, timeout=1)
 
 
-async def test_assistant_route_streams_assistant_text_incrementally() -> None:
+async def test_assistant_route_ack_creates_run_for_incremental_text_flow() -> None:
     owner_id = uuid4()
     thread_id = uuid4()
     service = _FakeAssistantService(
@@ -2061,50 +2187,13 @@ async def test_assistant_route_streams_assistant_text_incrementally() -> None:
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.post("/assistant", json=payload)
 
-    assert response.status_code == 200
-
-    state: dict[str, object] = {}
-    observed_text_by_event: list[str | None] = []
-
-    def _extract_streaming_text() -> str | None:
-        messages = state.get("messages")
-        if not isinstance(messages, list):
-            return None
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            if message.get("id") != "assistant-streaming":
-                continue
-            parts = message.get("parts")
-            if not isinstance(parts, list) or not parts:
-                return None
-            first = parts[0]
-            if not isinstance(first, dict):
-                return None
-            text = first.get("text")
-            return text if isinstance(text, str) else None
-        return None
-
-    for event in _iter_assistant_transport_events(response.text):
-        if event.get("type") != "update-state":
-            continue
-
-        operations = event.get("operations") or event.get("patches")
-        if not isinstance(operations, list):
-            continue
-        _apply_assistant_stream_patches(state, operations)
-        observed_text_by_event.append(_extract_streaming_text())
-
-    observed = [text for text in observed_text_by_event if isinstance(text, str)]
-    assert observed
-
-    # Ensure the placeholder assistant message is visible before the first token.
-    assert observed[0] == ""
-
-    # Ensure the streaming message grows incrementally.
-    assert observed[-1] == "Hello world"
-    assert "Hello" in observed
-    assert len(set(observed)) >= 3
+    ack = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.STARTING.value,
+        has_active_run_id=True,
+    )
+    assert UUID(str(ack["activeRunId"])) in service.active_runs
 
 
 async def test_assistant_route_rejects_non_user_add_message_role(
