@@ -223,7 +223,7 @@ Use this flow for enabling or disabling a specific VM NIC on an exact node.
 - Enable/disable CHANGE calls are approval-gated and require a recorded non-empty reason.
 - If the selected NIC is already in the requested state, the enable/disable request may return success with `status: "no-op"` and no config mutation.
 - Postflight verification must re-read the VM config and confirm the requested final link state: `up` for enable, `down` for disable.
-- Approval responses should summarize the selected NIC and the link-state transition; digest and verification details belong in the evidence/verification view.
+- Approval responses should summarize the selected NIC and the link-state transition; the assistant narration above the approval card is now rendered from a Proxmox-owned markdown presentation, while digest and verification details still belong in the structured evidence/verification view.
 - Completion responses should summarize the selected NIC and the completed link-state transition; digest and verification details belong in the evidence/verification view.
 
 ### Pool membership move workflow
@@ -254,6 +254,13 @@ Example normalization:
 - Support moving one VM or multiple VMs in the same flow.
 - Ask the user for explicit pool IDs, VMIDs, and email values instead of relying on large cluster-wide discovery endpoints.
 - User-facing results should summarize before/after pool membership for the moved VM set.
-- NOA workflow replies should render the pool membership tables from structured member data with columns `VMID`, `Name`, `Node`, and `Status`.
+- Approval handoff remains backend-owned: the approval card/details payload still comes from structured workflow data, and the new markdown narration above the card is descriptive only.
 - Approval replies should show source pool before and destination pool before; completion replies should show source before/after and destination before/after.
+- Pool-move approval narration now renders a small markdown table derived from the same canonical requested-change facts used by the structured reply/evidence flow. The current columns are `VMID`, `Source pool`, and `Destination pool`.
 - Implementation order is add-to-destination first, then remove-from-source only if the requested VMIDs still remain in the source pool, followed by final-state verification.
+
+## Workflow presentation notes
+- Proxmox CHANGE workflows keep the approval card protocol unchanged: `request_approval` continues to carry structured `replyTemplate`, `beforeState`, and `evidenceSections` data for the UI.
+- Proxmox workflow families may also provide a structured approval narration presentation that the API renders centrally to markdown above the approval card.
+- VM NIC toggle and cloud-init password reset approvals currently use a short paragraph plus key-value bullet lists derived from canonical waiting-on-approval reply facts.
+- Pool membership move approvals currently add a markdown table for the requested VMIDs and pool transition, but the table rows are still derived from the same canonical requested-change facts used for reply details and evidence.

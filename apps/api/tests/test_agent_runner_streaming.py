@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
+from uuid import UUID
 from uuid import uuid4
 
 from noa_api.core.agent.runner import (
@@ -10,7 +11,75 @@ from noa_api.core.agent.runner import (
     LLMTurnResponse,
     OpenAICompatibleLLMClient,
 )
+from noa_api.storage.postgres.lifecycle import ToolRisk
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
+
+
+def _assert_text_has_tokens(text: str, *tokens: str) -> None:
+    normalized = text.lower()
+    for token in tokens:
+        assert token.lower() in normalized
+
+
+def _assert_suspend_success_criteria(text: str) -> None:
+    normalized = text.lower()
+    assert "alice" in normalized
+    assert "web1" in normalized
+    assert "suspend" in normalized
+    assert "state" in normalized or "status" in normalized or "end" in normalized
+
+
+def _assert_suspend_approval_handoff_semantics(
+    *,
+    result,
+    repo,
+    tool_name: str,
+    expected_reason: str,
+    forbidden_text_fragments: tuple[str, ...] = (),
+) -> None:
+    assistant_texts = [
+        cast(str, part["text"])
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict) and part.get("type") == "text"
+    ]
+    assert len(assistant_texts) == 1
+    assert assistant_texts[0].strip()
+    for fragment in forbidden_text_fragments:
+        assert fragment not in assistant_texts[0]
+
+    assert len(repo.action_requests) == 1
+
+    approval_part = next(
+        part
+        for message in result.messages
+        for part in message.parts
+        if isinstance(part, dict)
+        and part.get("type") == "tool-call"
+        and part.get("toolName") == "request_approval"
+    )
+    approval_args = cast(dict[str, object], approval_part["args"])
+    assert approval_args["toolName"] == tool_name
+    assert approval_args["risk"] == ToolRisk.CHANGE.value
+    activity = approval_args.get("activity")
+    assert isinstance(activity, str)
+    assert "suspend" in activity.lower()
+    assert "alice" in activity.lower()
+
+    approval_arguments = cast(dict[str, object], approval_args["arguments"])
+    assert approval_arguments == {
+        "server_ref": "web1",
+        "username": "alice",
+        "reason": expected_reason,
+    }
+
+    reply_template = cast(dict[str, object], approval_args["replyTemplate"])
+    assert reply_template["outcome"] == "info"
+    details = cast(list[dict[str, str]], reply_template["details"])
+    details_by_label = {item["label"]: item["value"] for item in details}
+    _assert_text_has_tokens(details_by_label["Action"], "suspend", "alice", "web1")
+    assert details_by_label["Reason"] == expected_reason
+    _assert_suspend_success_criteria(details_by_label["Success criteria"])
 
 
 async def test_agent_runner_passes_text_delta_callback_to_llm_client() -> None:
@@ -83,7 +152,10 @@ async def test_agent_runner_does_not_stream_provisional_text_for_change_rounds(
     class _ActionRequestStub:
         id: object
 
+    @dataclass
     class _ActionRequestRepository:
+        action_requests: dict[UUID, _ActionRequestStub] = field(default_factory=dict)
+
         async def create_action_request(
             self,
             *,
@@ -94,7 +166,11 @@ async def test_agent_runner_does_not_stream_provisional_text_for_change_rounds(
             requested_by_user_id,
         ) -> _ActionRequestStub:
             _ = thread_id, tool_name, args, risk, requested_by_user_id
-            return _ActionRequestStub(id=uuid4())
+            created = _ActionRequestStub(id=uuid4())
+            self.action_requests[cast(UUID, created.id)] = created
+            return created
+
+    repo = _ActionRequestRepository()
 
     class _StreamingChangeLLM:
         async def run_turn(
@@ -124,9 +200,7 @@ async def test_agent_runner_does_not_stream_provisional_text_for_change_rounds(
 
     runner = AgentRunner(
         llm_client=_StreamingChangeLLM(),
-        action_tool_run_service=ActionToolRunService(
-            repository=cast(Any, _ActionRequestRepository())
-        ),
+        action_tool_run_service=ActionToolRunService(repository=cast(Any, repo)),
         session=cast(Any, object()),
     )
 
@@ -174,17 +248,16 @@ async def test_agent_runner_does_not_stream_provisional_text_for_change_rounds(
         on_text_delta=on_text_delta,
     )
 
-    assistant_texts = [
-        cast(str, part["text"])
-        for message in result.messages
-        for part in message.parts
-        if isinstance(part, dict) and part.get("type") == "text"
-    ]
-
     assert seen == []
-    assert assistant_texts == [
-        "Suspend approval requested. This will suspend 'alice' on 'web1' after approval."
-    ]
+    _assert_suspend_approval_handoff_semantics(
+        result=result,
+        repo=cast(Any, repo),
+        tool_name=tool.name,
+        expected_reason="Ticket #1661262",
+        forbidden_text_fragments=(
+            "I checked the account and can request approval now.",
+        ),
+    )
 
 
 async def test_openai_compatible_llm_client_streams_when_callback_present() -> None:
@@ -504,12 +577,14 @@ async def test_openai_client_includes_tool_calls_and_tool_results_in_messages() 
     msgs = captured.get("messages")
     assert isinstance(msgs, list)
     assert any(
-        isinstance(m, dict) and m.get("role") == "assistant" and m.get("tool_calls")
+        cast(dict[str, Any], m).get("role") == "assistant"
+        and cast(dict[str, Any], m).get("tool_calls")
         for m in msgs
+        if isinstance(m, dict)
     )
     assert any(
-        isinstance(m, dict)
-        and m.get("role") == "tool"
-        and m.get("tool_call_id") == "tc-1"
+        cast(dict[str, Any], m).get("role") == "tool"
+        and cast(dict[str, Any], m).get("tool_call_id") == "tc-1"
         for m in msgs
+        if isinstance(m, dict)
     )

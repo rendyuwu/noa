@@ -84,7 +84,8 @@ def test_prompt_extra_paths_append_in_order(tmp_path: Path) -> None:
 def test_default_prompt_contains_required_policy_lines() -> None:
     prompt = load_system_prompt(_settings()).text
 
-    assert "create a workflow TODO immediately" in prompt
+    assert "Do not create workflow checklists for simple READ questions" in prompt
+    assert "keep narration to meaningful milestones only" in prompt
     assert (
         "Before any WHM CHANGE tool, run the relevant WHM preflight tool(s)" in prompt
     )
@@ -100,6 +101,10 @@ def test_default_prompt_contains_required_policy_lines() -> None:
     )
     assert (
         "Never fabricate tool results, tool arguments, identifiers, or approvals"
+        in prompt
+    )
+    assert (
+        "Do not author the final approval handoff text yourself; the backend will render it"
         in prompt
     )
     assert "workflow-family reply template data is present" in prompt

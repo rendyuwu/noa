@@ -168,5 +168,12 @@ Core pipeline parts implemented:
 - Binary existence checks over SSH
 - Mail log failed-auth username suspect analysis over SSH
 
+## Workflow presentation notes
+- Approval handoff remains backend-owned and approval-card-driven: the approval card/details payload still comes from structured workflow data (`activity`, `replyTemplate`, `beforeState`, `evidenceSections`).
+- WHM CHANGE workflows now also provide a family-owned approval narration presentation that the API renders to markdown above the approval card.
+- For account lifecycle, contact email, and primary-domain changes, that markdown uses a short paragraph plus key-value bullets derived from the same canonical waiting-on-approval reply facts.
+- For firewall batch changes, the markdown uses the same canonical approval details and preflight summaries already used by the structured reply/evidence flow, rather than a separate fact source.
+- Missing-reason handling is unchanged: WHM CHANGE requests still require matching preflight evidence plus a user-provided recorded reason before an approval request is created.
+
 ## Backlog / not yet implemented
 - No separate WHM research backlog has been added to this file yet.

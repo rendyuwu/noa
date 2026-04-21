@@ -34,6 +34,7 @@ from noa_api.core.workflows.registry import (
 from noa_api.core.workflows.types import (
     assistant_is_requesting_reason,
     messages_before_latest_user_if_reason_follow_up,
+    render_workflow_reply_text,
 )
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
@@ -908,10 +909,7 @@ class AgentRunner:
             )
             messages: list[AgentMessage] = []
             if reply_template is not None:
-                reply_text = _render_workflow_milestone_text(
-                    reply_template.title,
-                    reply_template.summary,
-                ).strip()
+                reply_text = render_workflow_reply_text(reply_template).strip()
                 if reply_text:
                     messages.append(
                         AgentMessage(

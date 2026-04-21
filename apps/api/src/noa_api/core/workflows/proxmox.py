@@ -7,6 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
 from noa_api.core.workflows.types import (
+    WorkflowApprovalPresentation,
+    WorkflowApprovalPresentationBlock,
     WorkflowEvidenceItem,
     WorkflowEvidenceSection,
     WorkflowEvidenceTemplate,
@@ -137,18 +139,41 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
         failed_result = _workflow_result_failed(result)
 
         if context.phase == "waiting_on_approval":
+            summary = f"{subject} is currently link {current_state or 'unknown'} and is ready to be moved to link {desired_state}."
+            details = _approval_detail_rows(
+                (
+                    "Action",
+                    f"{_approval_action_label(context.tool_name)} {subject}.",
+                ),
+                (
+                    "Reason",
+                    _approval_reason_detail(
+                        normalized_text(context.args.get("reason"))
+                    ),
+                ),
+                (
+                    "Success criteria",
+                    f"{subject} ends in link state {desired_state}.",
+                ),
+            )
             return WorkflowReplyTemplate(
                 title=f"Approve {_action_verb(context.tool_name)} {title_subject}",
                 outcome="info",
-                summary=(
-                    f"{subject} is currently link {current_state or 'unknown'} and is ready to be moved to link {desired_state}."
+                summary=summary,
+                evidence_summary=(
+                    evidence_summary := _evidence_summary(
+                        tool_name=context.tool_name,
+                        before_state=before_state,
+                        result=result,
+                        postflight_result=postflight,
+                    )
                 ),
-                evidence_summary=_evidence_summary(
-                    tool_name=context.tool_name,
-                    before_state=before_state,
-                    result=result,
-                    postflight_result=postflight,
+                approval_presentation=_approval_presentation_from_reply_data(
+                    paragraph=summary,
+                    details=details,
+                    evidence_summary=evidence_summary,
                 ),
+                details=details,
                 next_step=f"Approve the request to {_action_label(context.tool_name)} {subject}.",
             )
 
@@ -366,6 +391,12 @@ def _action_label(tool_name: str) -> str:
     if tool_name == "proxmox_enable_vm_nic":
         return "enable VM NIC"
     return "disable VM NIC"
+
+
+def _approval_action_label(tool_name: str) -> str:
+    if tool_name == "proxmox_enable_vm_nic":
+        return "Enable VM NIC"
+    return "Disable VM NIC"
 
 
 def _desired_link_state(tool_name: str) -> str:
@@ -872,19 +903,45 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
         failed_result = _workflow_result_failed(result)
 
         if context.phase == "waiting_on_approval":
+            summary = (
+                f"Cloud-init password reset requested for {subject}.\n\n"
+                f"{_cloudinit_approval_summary(before_state=before_state)}"
+            )
+            details = _approval_detail_rows(
+                (
+                    "Action",
+                    f"Reset the cloud-init password for {subject}.",
+                ),
+                (
+                    "Reason",
+                    _approval_reason_detail(
+                        normalized_text(context.args.get("reason"))
+                    ),
+                ),
+                (
+                    "Success criteria",
+                    "The cloud-init password reset completes and the regenerated state "
+                    f"is available for {subject}.",
+                ),
+            )
             return WorkflowReplyTemplate(
                 title="Approve cloud-init password reset",
                 outcome="info",
-                summary=(
-                    f"Cloud-init password reset requested for {subject}.\n\n"
-                    f"{_cloudinit_approval_summary(before_state=before_state)}"
+                summary=summary,
+                evidence_summary=(
+                    evidence_summary := _cloudinit_evidence_summary(
+                        tool_name=context.tool_name,
+                        before_state=before_state,
+                        result=result,
+                        postflight_result=postflight,
+                    )
                 ),
-                evidence_summary=_cloudinit_evidence_summary(
-                    tool_name=context.tool_name,
-                    before_state=before_state,
-                    result=result,
-                    postflight_result=postflight,
+                approval_presentation=_approval_presentation_from_reply_data(
+                    paragraph=f"Cloud-init password reset requested for {subject}.",
+                    details=details,
+                    evidence_summary=evidence_summary,
                 ),
+                details=details,
                 next_step="Approve the request to reset the cloud-init password.",
             )
 
@@ -1194,20 +1251,36 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
         failed_result = _workflow_result_failed(result)
 
         if context.phase == "waiting_on_approval":
+            details = _pool_move_approval_details(context.args)
+            summary_paragraph = f"Pool membership move requested for {subject}."
             return WorkflowReplyTemplate(
                 title="Approve Proxmox pool membership move",
                 outcome="info",
                 summary=(
-                    f"Pool membership move requested for {subject}.\n\n"
+                    f"{summary_paragraph}\n\n"
                     f"{_pool_move_approval_summary(before_state=before_state, args=context.args)}"
                 ),
-                evidence_summary=_pool_move_evidence_summary(
-                    phase=context.phase,
-                    tool_name=context.tool_name,
-                    before_state=before_state,
-                    result=result,
-                    postflight_result=postflight,
+                evidence_summary=(
+                    evidence_summary := _pool_move_evidence_summary(
+                        phase=context.phase,
+                        tool_name=context.tool_name,
+                        before_state=before_state,
+                        result=result,
+                        postflight_result=postflight,
+                    )
                 ),
+                approval_presentation=_approval_presentation_from_reply_data(
+                    paragraph=summary_paragraph,
+                    details=details,
+                    evidence_summary=evidence_summary,
+                    extra_blocks=[
+                        _approval_table_block(
+                            headers=["VMID", "Source pool", "Destination pool"],
+                            rows=_pool_move_requested_change_table_rows(context.args),
+                        )
+                    ],
+                ),
+                details=details,
                 next_step="Approve the request to move the VMIDs between pools.",
             )
 
@@ -1361,28 +1434,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 WorkflowEvidenceSection(
                     key="requested_change",
                     title="Requested change",
-                    items=[
-                        WorkflowEvidenceItem(
-                            label="Source pool",
-                            value=_pool_value(context.args.get("source_pool")),
-                        ),
-                        WorkflowEvidenceItem(
-                            label="Destination pool",
-                            value=_pool_value(context.args.get("destination_pool")),
-                        ),
-                        WorkflowEvidenceItem(
-                            label="VMIDs", value=_vmids_text(context.args.get("vmids"))
-                        ),
-                        WorkflowEvidenceItem(
-                            label="Target user",
-                            value=_pool_value(context.args.get("email")),
-                        ),
-                        WorkflowEvidenceItem(
-                            label="Reason",
-                            value=normalized_text(context.args.get("reason"))
-                            or "none provided",
-                        ),
-                    ],
+                    items=_pool_move_requested_change_items(context.args),
                 ),
                 WorkflowEvidenceSection(
                     key="after_state",
@@ -1619,6 +1671,81 @@ def _pool_move_subject(args: dict[str, object]) -> str:
 
 def _workflow_result_failed(result: dict[str, object] | None) -> bool:
     return isinstance(result, dict) and result.get("ok") is False
+
+
+def _approval_detail_rows(*rows: tuple[str, str | None]) -> list[dict[str, str]]:
+    return [
+        {"label": label, "value": value}
+        for label, value in rows
+        if value is not None and label.strip() and value.strip()
+    ]
+
+
+def _approval_paragraph_block(text: str | None) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(kind="paragraph", text=text)
+
+
+def _approval_key_value_block_from_details(
+    details: list[dict[str, str]] | None,
+) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(
+        kind="key_value_list",
+        evidence_items=[
+            WorkflowEvidenceItem(label=item["label"], value=item["value"])
+            for item in details or []
+            if item.get("label", "").strip() and item.get("value", "").strip()
+        ],
+    )
+
+
+def _approval_bullet_list_block(
+    *items: str | None,
+) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(
+        kind="bullet_list",
+        items=[item for item in items if isinstance(item, str) and item.strip()],
+    )
+
+
+def _approval_table_block(
+    *, headers: list[str], rows: list[list[str]]
+) -> WorkflowApprovalPresentationBlock:
+    return WorkflowApprovalPresentationBlock(
+        kind="table",
+        table_headers=headers,
+        table_rows=rows,
+    )
+
+
+def _approval_presentation(
+    *blocks: WorkflowApprovalPresentationBlock,
+) -> WorkflowApprovalPresentation:
+    return WorkflowApprovalPresentation(
+        blocks=[
+            block
+            for block in blocks
+            if isinstance(block, WorkflowApprovalPresentationBlock)
+        ]
+    )
+
+
+def _approval_presentation_from_reply_data(
+    *,
+    paragraph: str | None,
+    details: list[dict[str, str]] | None,
+    evidence_summary: list[str],
+    extra_blocks: list[WorkflowApprovalPresentationBlock] | None = None,
+) -> WorkflowApprovalPresentation:
+    return _approval_presentation(
+        _approval_paragraph_block(paragraph),
+        *(extra_blocks or []),
+        _approval_key_value_block_from_details(details),
+        _approval_bullet_list_block(*evidence_summary),
+    )
+
+
+def _approval_reason_detail(reason: str | None) -> str:
+    return reason or "none provided"
 
 
 def _vmids_text(value: object) -> str:
@@ -2154,16 +2281,68 @@ def _pool_move_evidence_summary(
     return summary
 
 
+def _pool_move_requested_change_facts(
+    args: dict[str, object],
+) -> dict[str, object]:
+    vmids = _normalized_int_list(args.get("vmids"))
+    return {
+        "source_pool": _pool_value(args.get("source_pool")),
+        "destination_pool": _pool_value(args.get("destination_pool")),
+        "vmids": vmids,
+        "vmids_text": ", ".join(str(vmid) for vmid in vmids)
+        if vmids
+        else "unknown-vmids",
+        "target_user": _pool_value(args.get("email")),
+        "reason": normalized_text(args.get("reason")) or "none provided",
+    }
+
+
+def _pool_move_requested_change_items(
+    args: dict[str, object],
+) -> list[WorkflowEvidenceItem]:
+    facts = _pool_move_requested_change_facts(args)
+    return [
+        WorkflowEvidenceItem(label="Source pool", value=str(facts["source_pool"])),
+        WorkflowEvidenceItem(
+            label="Destination pool", value=str(facts["destination_pool"])
+        ),
+        WorkflowEvidenceItem(label="VMIDs", value=str(facts["vmids_text"])),
+        WorkflowEvidenceItem(label="Target user", value=str(facts["target_user"])),
+        WorkflowEvidenceItem(label="Reason", value=str(facts["reason"])),
+    ]
+
+
+def _pool_move_approval_details(
+    args: dict[str, object],
+) -> list[dict[str, str]]:
+    facts = _pool_move_requested_change_facts(args)
+    vmids_text = str(facts["vmids_text"])
+    source_pool = str(facts["source_pool"])
+    destination_pool = str(facts["destination_pool"])
+    return _approval_detail_rows(
+        (
+            "Action",
+            f"Move VMIDs {vmids_text} from {source_pool} to {destination_pool}.",
+        ),
+        ("Reason", str(facts["reason"])),
+        (
+            "Success criteria",
+            f"VMIDs {vmids_text} are removed from {source_pool} and present in {destination_pool}.",
+        ),
+    )
+
+
 def _pool_move_approval_summary(
     *,
     before_state: dict[str, object] | None,
     args: dict[str, object],
 ) -> str:
-    source_pool = _pool_value(args.get("source_pool"))
-    destination_pool = _pool_value(args.get("destination_pool"))
-    vmids = _vmids_text(args.get("vmids"))
+    facts = _pool_move_requested_change_facts(args)
     lines = [
-        f"Move request for VMIDs {vmids} from {source_pool} to {destination_pool}.",
+        (
+            f"Move request for VMIDs {facts['vmids_text']} from {facts['source_pool']} to "
+            f"{facts['destination_pool']}."
+        ),
     ]
     if isinstance(before_state, dict):
         lines.extend(
@@ -2183,6 +2362,22 @@ def _pool_move_approval_summary(
             ]
         )
     return "\n\n".join(lines)
+
+
+def _pool_move_requested_change_table_rows(
+    args: dict[str, object],
+) -> list[list[str]]:
+    facts = _pool_move_requested_change_facts(args)
+    requested_vmids = facts["vmids"]
+    if not isinstance(requested_vmids, list):
+        return []
+    source_pool = str(facts["source_pool"])
+    destination_pool = str(facts["destination_pool"])
+    return [
+        [str(vmid), source_pool, destination_pool]
+        for vmid in requested_vmids
+        if isinstance(vmid, int) and not isinstance(vmid, bool)
+    ]
 
 
 def _pool_move_completion_summary(
