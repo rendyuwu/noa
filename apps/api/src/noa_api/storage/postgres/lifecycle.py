@@ -18,3 +18,11 @@ class ToolRunStatus(StrEnum):
     STARTED = "STARTED"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
+
+
+class AssistantRunStatus(StrEnum):
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    WAITING_APPROVAL = "WAITING_APPROVAL"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"

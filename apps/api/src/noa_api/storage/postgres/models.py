@@ -20,6 +20,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from noa_api.storage.postgres.base import Base
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
+    AssistantRunStatus,
     ToolRisk,
     ToolRunStatus,
 )
@@ -138,6 +139,51 @@ class Thread(Base):
     is_archived: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default="false"
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class AssistantRun(Base):
+    __tablename__ = "assistant_runs"
+
+    id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    thread_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("threads.id", ondelete="CASCADE"), index=True
+    )
+    owner_user_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    status: Mapped[AssistantRunStatus] = mapped_column(
+        Enum(
+            AssistantRunStatus,
+            name="assistant_run_status",
+            native_enum=False,
+            validate_strings=True,
+        ),
+        nullable=False,
+        index=True,
+    )
+    owner_instance_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    sequence: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    live_snapshot: Mapped[dict[str, object]] = mapped_column(
+        JSONB, nullable=False, server_default="'{}'::jsonb"
+    )
+    blocking_action_request_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("action_requests.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    last_error_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
