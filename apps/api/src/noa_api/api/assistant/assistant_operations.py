@@ -16,11 +16,12 @@ from noa_api.api.assistant.assistant_commands import (
 )
 from noa_api.api.assistant.assistant_streaming import (
     append_fallback_error_message,
+    build_live_run_snapshot,
     coerce_messages,
     controller_is_cancelled,
     flush_controller_state,
-    make_streaming_placeholder,
 )
+from noa_api.api.assistant.assistant_runs import AssistantRunHandle
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
 from noa_api.core.telemetry import TelemetryEvent, TelemetryRecorder
@@ -67,6 +68,10 @@ class AssistantAgentServiceProtocol(Protocol):
         available_tool_names: set[str],
         on_text_delta: Callable[[str], Awaitable[None]] | None = None,
     ) -> Any: ...
+
+
+class AssistantRunPublisherProtocol(Protocol):
+    def publish_snapshot(self, *, snapshot: dict[str, object]) -> object | None: ...
 
 
 @dataclass(slots=True)
@@ -171,6 +176,11 @@ def _apply_canonical_state(
     state["pendingApprovals"] = canonical_state.get("pendingApprovals") or []
     state["actionRequests"] = canonical_state.get("actionRequests") or []
     state["isRunning"] = is_running
+    state["runStatus"] = canonical_state.get("runStatus")
+    state["activeRunId"] = canonical_state.get("activeRunId")
+    state["waitingForApproval"] = bool(canonical_state.get("waitingForApproval", False))
+    state["lastErrorReason"] = canonical_state.get("lastErrorReason")
+    state["live_snapshot"] = None
 
 
 def _record_assistant_failure_telemetry(
@@ -267,24 +277,88 @@ async def run_agent_phase(
     if controller.state is None:
         controller.state = {}
 
+    @dataclass(slots=True)
+    class _ControllerRunHandle:
+        controller: RunController
+
+        def publish_snapshot(self, *, snapshot: dict[str, object]) -> None:
+            self.controller.state = dict(snapshot)
+
+    async def _flush_controller_snapshot(snapshot: dict[str, object]) -> None:
+        _ = snapshot
+        if controller_is_cancelled(controller):
+            raise asyncio.CancelledError
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():
+            raise asyncio.CancelledError
+        await flush_controller_state(controller)
+
+    controller.state = await execute_active_run(
+        run_handle=_ControllerRunHandle(controller),
+        payload=payload,
+        current_user=current_user,
+        assistant_service=assistant_service,
+        authorization_service=authorization_service,
+        canonical_state=canonical_state,
+        command_types=command_types,
+        telemetry=telemetry,
+        on_snapshot=_flush_controller_snapshot,
+    )
+
+
+async def execute_active_run(
+    *,
+    run_handle: AssistantRunHandle | AssistantRunPublisherProtocol,
+    payload: AssistantRequest,
+    current_user: AuthorizationUser,
+    assistant_service: AssistantAgentServiceProtocol,
+    authorization_service: AssistantAuthorizationServiceProtocol,
+    canonical_state: dict[str, object],
+    command_types: list[str],
+    telemetry: TelemetryRecorder | None = None,
+    on_snapshot: Callable[[dict[str, object]], Awaitable[None]] | None = None,
+) -> dict[str, object]:
+    base_messages = coerce_messages(canonical_state.get("messages"))
+    workflow = list(cast(list[object], canonical_state.get("workflow") or []))
+    pending_approvals = list(
+        cast(list[object], canonical_state.get("pendingApprovals") or [])
+    )
+    action_requests = list(
+        cast(list[object], canonical_state.get("actionRequests") or [])
+    )
+    pre_run_status = cast(str | None, canonical_state.get("runStatus"))
+    in_flight_run_status = (
+        "RUNNING"
+        if pre_run_status == "WAITING_APPROVAL"
+        else (pre_run_status or "RUNNING")
+    )
+    in_flight_active_run_id = cast(str | None, canonical_state.get("activeRunId"))
+    latest_snapshot = build_live_run_snapshot(
+        canonical_messages=base_messages,
+        streamed_text="",
+        workflow=workflow,
+        pending_approvals=pending_approvals,
+        action_requests=action_requests,
+        is_running=True,
+        run_status=in_flight_run_status,
+        active_run_id=in_flight_active_run_id,
+        waiting_for_approval=False,
+        last_error_reason=None,
+    )
+
+    async def _publish_snapshot(snapshot: dict[str, object]) -> None:
+        nonlocal latest_snapshot
+        latest_snapshot = dict(snapshot)
+        run_handle.publish_snapshot(snapshot=latest_snapshot)
+        if on_snapshot is not None:
+            await on_snapshot(latest_snapshot)
+
+    await _publish_snapshot(latest_snapshot)
+
     try:
         allowed_tools = await authorization_service.get_allowed_tool_names(current_user)
         allowed_tools &= {tool.name for tool in get_tool_registry()}
-
         allowed_tools.add("update_workflow_todo")
-
-        base_messages = coerce_messages(canonical_state.get("messages"))
-        controller.state["workflow"] = canonical_state.get("workflow") or []
-        controller.state["pendingApprovals"] = (
-            canonical_state.get("pendingApprovals") or []
-        )
-        controller.state["actionRequests"] = canonical_state.get("actionRequests") or []
-        controller.state["messages"] = [
-            *base_messages,
-            make_streaming_placeholder(""),
-        ]
-        controller.state["isRunning"] = True
-        await flush_controller_state(controller)
 
         streamed_text = ""
 
@@ -292,18 +366,25 @@ async def run_agent_phase(
             nonlocal streamed_text
             if not delta:
                 return
-            if controller_is_cancelled(controller):
-                raise asyncio.CancelledError
             task = asyncio.current_task()
             if task is not None and task.cancelling():
                 raise asyncio.CancelledError
 
             streamed_text += delta
-            controller.state["messages"] = [
-                *base_messages,
-                make_streaming_placeholder(streamed_text),
-            ]
-            await flush_controller_state(controller)
+            await _publish_snapshot(
+                build_live_run_snapshot(
+                    canonical_messages=base_messages,
+                    streamed_text=streamed_text,
+                    workflow=workflow,
+                    pending_approvals=pending_approvals,
+                    action_requests=action_requests,
+                    is_running=True,
+                    run_status=in_flight_run_status,
+                    active_run_id=in_flight_active_run_id,
+                    waiting_for_approval=False,
+                    last_error_reason=None,
+                )
+            )
 
         _ = await assistant_service.run_agent_turn(
             owner_user_id=current_user.user_id,
@@ -389,36 +470,42 @@ async def run_agent_phase(
                 report=True,
             )
 
-        controller.state["isRunning"] = False
         try:
-            failed_state = await assistant_service.load_state(
-                owner_user_id=current_user.user_id,
-                thread_id=payload.thread_id,
+            failed_state = dict(
+                await assistant_service.load_state(
+                    owner_user_id=current_user.user_id,
+                    thread_id=payload.thread_id,
+                )
             )
-            _apply_canonical_state(controller.state, failed_state, is_running=False)
-
+            failed_state["isRunning"] = False
             if not persisted_error_message:
-                controller.state["messages"] = append_fallback_error_message(
-                    coerce_messages(controller.state.get("messages")),
+                failed_state["messages"] = append_fallback_error_message(
+                    coerce_messages(failed_state.get("messages")),
                     SAFE_ASSISTANT_ERROR_TEXT,
                 )
+            await _publish_snapshot(failed_state)
+            return failed_state
         except asyncio.CancelledError:
             raise
         except Exception:
-            controller.state["messages"] = append_fallback_error_message(
-                coerce_messages(controller.state.get("messages")),
+            fallback_state = dict(latest_snapshot)
+            fallback_state["isRunning"] = False
+            fallback_state["messages"] = append_fallback_error_message(
+                coerce_messages(fallback_state.get("messages")),
                 SAFE_ASSISTANT_ERROR_TEXT,
             )
-
-        await flush_controller_state(controller)
-        return
+            await _publish_snapshot(fallback_state)
+            return fallback_state
 
     try:
-        updated_state = await assistant_service.load_state(
-            owner_user_id=current_user.user_id,
-            thread_id=payload.thread_id,
+        updated_state = dict(
+            await assistant_service.load_state(
+                owner_user_id=current_user.user_id,
+                thread_id=payload.thread_id,
+            )
         )
-        _apply_canonical_state(controller.state, updated_state, is_running=False)
+        await _publish_snapshot(updated_state)
+        return updated_state
     except asyncio.CancelledError:
         raise
     except Exception as exc:
@@ -440,9 +527,11 @@ async def run_agent_phase(
             error_type=type(exc).__name__,
             report=True,
         )
-        controller.state["isRunning"] = False
-        controller.state["messages"] = append_fallback_error_message(
-            coerce_messages(controller.state.get("messages")),
+        fallback_state = dict(latest_snapshot)
+        fallback_state["isRunning"] = False
+        fallback_state["messages"] = append_fallback_error_message(
+            coerce_messages(fallback_state.get("messages")),
             SAFE_ASSISTANT_ERROR_TEXT,
         )
-        await flush_controller_state(controller)
+        await _publish_snapshot(fallback_state)
+        return fallback_state

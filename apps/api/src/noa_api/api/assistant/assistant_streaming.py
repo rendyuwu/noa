@@ -30,6 +30,10 @@ def build_live_run_snapshot(
     pending_approvals: Sequence[object],
     action_requests: Sequence[object],
     is_running: bool,
+    run_status: str | None,
+    active_run_id: str | None,
+    waiting_for_approval: bool,
+    last_error_reason: str | None,
 ) -> dict[str, object]:
     return {
         "messages": [
@@ -40,6 +44,10 @@ def build_live_run_snapshot(
         "pendingApprovals": list(pending_approvals),
         "actionRequests": list(action_requests),
         "isRunning": is_running,
+        "runStatus": run_status,
+        "activeRunId": active_run_id,
+        "waitingForApproval": waiting_for_approval,
+        "lastErrorReason": last_error_reason,
     }
 
 

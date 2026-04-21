@@ -16,6 +16,7 @@ from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
     ActionRequestStatus,
+    AssistantRunStatus,
     ToolRisk,
     ToolRunStatus,
 )
@@ -122,9 +123,14 @@ class _FakeAssistantRepository:
     audits: list[dict[str, object]] = field(default_factory=list)
     action_requests: list[ActionRequest] = field(default_factory=list)
     action_tool_runs: list[ToolRun] = field(default_factory=list)
+    active_run: object | None = None
 
     async def get_thread(self, *, owner_user_id: UUID, thread_id: UUID):
         return SimpleNamespace(id=thread_id, owner_user_id=owner_user_id)
+
+    async def get_active_run(self, *, thread_id: UUID):
+        _ = thread_id
+        return self.active_run
 
     async def list_messages(self, *, thread_id: UUID):
         _ = thread_id
@@ -509,6 +515,182 @@ async def test_assistant_service_load_state_includes_workflow_and_pending_approv
             "status": "APPROVED",
             "lifecycleStatus": "finished",
         },
+    ]
+    assert state["isRunning"] is False
+    assert state["runStatus"] is None
+    assert state["activeRunId"] is None
+    assert state["waitingForApproval"] is False
+    assert state["lastErrorReason"] is None
+
+
+async def test_assistant_service_load_state_projects_active_run_metadata_without_live_snapshot() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    run_id = uuid4()
+    assistant_repo = _FakeAssistantRepository(
+        listed_messages=[
+            SimpleNamespace(
+                id=uuid4(),
+                role="assistant",
+                content=[{"type": "text", "text": "Canonical message"}],
+            )
+        ],
+        active_run=SimpleNamespace(
+            id=run_id,
+            status=AssistantRunStatus.WAITING_APPROVAL,
+            last_error_reason="waiting on approval",
+            live_snapshot={
+                "messages": [
+                    {
+                        "id": "assistant-streaming",
+                        "role": "assistant",
+                        "parts": [{"type": "text", "text": "Transient"}],
+                    }
+                ]
+            },
+        ),
+    )
+
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        workflow_todo_service=_FakeWorkflowTodoService(),
+        session=_FakeSession(),
+    )
+
+    state = await service.load_state(owner_user_id=owner_id, thread_id=thread_id)
+
+    assert state["messages"] == [
+        {
+            "id": str(assistant_repo.listed_messages[0].id),
+            "role": "assistant",
+            "parts": [{"type": "text", "text": "Canonical message"}],
+        }
+    ]
+    assert state["isRunning"] is False
+    assert state["runStatus"] == AssistantRunStatus.WAITING_APPROVAL.value
+    assert state["activeRunId"] == str(run_id)
+    assert state["waitingForApproval"] is True
+    assert state["lastErrorReason"] == "waiting on approval"
+    assert "live_snapshot" not in state
+
+
+async def test_assistant_service_load_state_marks_starting_run_as_running() -> None:
+    owner_id = uuid4()
+    thread_id = uuid4()
+    assistant_repo = _FakeAssistantRepository(
+        active_run=SimpleNamespace(
+            id=uuid4(),
+            status=AssistantRunStatus.STARTING,
+            last_error_reason=None,
+        )
+    )
+
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        workflow_todo_service=_FakeWorkflowTodoService(),
+        session=_FakeSession(),
+    )
+
+    state = await service.load_state(owner_user_id=owner_id, thread_id=thread_id)
+
+    assert state["isRunning"] is True
+    assert state["waitingForApproval"] is False
+    assert state["runStatus"] == AssistantRunStatus.STARTING.value
+
+
+async def test_assistant_service_add_message_rejects_user_message_while_active_run_exists() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    assistant_repo = _FakeAssistantRepository(
+        active_run=SimpleNamespace(
+            id=uuid4(),
+            status=AssistantRunStatus.RUNNING,
+            last_error_reason=None,
+        )
+    )
+
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        workflow_todo_service=_FakeWorkflowTodoService(),
+        session=_FakeSession(),
+    )
+
+    with pytest.raises(Exception) as exc_info:
+        await service.add_message(
+            owner_user_id=owner_id,
+            thread_id=thread_id,
+            role="user",
+            parts=[{"type": "text", "text": "Hello"}],
+        )
+
+    exc = exc_info.value
+    assert type(exc).__name__ == "AssistantDomainError"
+    assert getattr(exc, "status_code") == 409
+    assert getattr(exc, "detail") == "Thread already has an active assistant run"
+    assert getattr(exc, "error_code") is None
+    assert assistant_repo.messages == []
+
+
+async def test_assistant_service_add_message_allows_assistant_message_while_active_run_exists() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    assistant_repo = _FakeAssistantRepository(
+        active_run=SimpleNamespace(
+            id=uuid4(),
+            status=AssistantRunStatus.RUNNING,
+            last_error_reason=None,
+        )
+    )
+
+    service = AssistantService(
+        assistant_repo,
+        _FakeRunner(),
+        action_tool_run_service=ActionToolRunService(
+            repository=_InMemoryActionToolRunRepository(
+                action_requests={}, tool_runs={}
+            )
+        ),
+        workflow_todo_service=_FakeWorkflowTodoService(),
+        session=_FakeSession(),
+    )
+
+    await service.add_message(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        role="assistant",
+        parts=[{"type": "text", "text": "Assistant error"}],
+    )
+
+    assert assistant_repo.messages == [
+        {
+            "thread_id": thread_id,
+            "role": "assistant",
+            "parts": [{"type": "text", "text": "Assistant error"}],
+        }
     ]
 
 

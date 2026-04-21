@@ -470,6 +470,7 @@ async def test_thread_state_route_hydrates_persisted_state() -> None:
     data = response.json()
     assert _state_contains_text(data, expected_text)
     assert data["isRunning"] is False
+    assert data["waitingForApproval"] is False
 
 
 async def test_thread_state_route_includes_workflow_and_pending_approvals() -> None:

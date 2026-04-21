@@ -29,6 +29,7 @@ from noa_api.api.assistant.assistant_action_operations import (
 )
 from noa_api.api.assistant.assistant_errors import (
     AssistantDomainError,
+    assistant_domain_error,
     assistant_http_error,
     to_assistant_http_error,
 )
@@ -60,7 +61,11 @@ from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
     SQLActionToolRunRepository,
 )
-from noa_api.storage.postgres.lifecycle import ActionRequestStatus, ToolRunStatus
+from noa_api.storage.postgres.lifecycle import (
+    ActionRequestStatus,
+    AssistantRunStatus,
+    ToolRunStatus,
+)
 from noa_api.storage.postgres.models import ActionRequest
 from noa_api.storage.postgres.client import get_session_factory
 from noa_api.storage.postgres.workflow_todos import (
@@ -128,6 +133,10 @@ class AssistantThreadStateResponse(BaseModel):
         alias="actionRequests",
     )
     is_running: bool = Field(alias="isRunning")
+    run_status: str | None = Field(default=None, alias="runStatus")
+    active_run_id: str | None = Field(default=None, alias="activeRunId")
+    waiting_for_approval: bool = Field(default=False, alias="waitingForApproval")
+    last_error_reason: str | None = Field(default=None, alias="lastErrorReason")
 
     model_config = {"populate_by_name": True}
 
@@ -194,6 +203,12 @@ class AssistantService:
         self._workflow_todo_service = workflow_todo_service
         self._session = session
 
+    async def _get_active_run(self, *, thread_id: UUID) -> Any | None:
+        get_active_run = getattr(self._repository, "get_active_run", None)
+        if get_active_run is None:
+            return None
+        return await get_active_run(thread_id=thread_id)
+
     async def load_state(
         self, *, owner_user_id: UUID, thread_id: UUID
     ) -> dict[str, object]:
@@ -228,6 +243,12 @@ class AssistantService:
         pending_action_requests = await self._repository.get_pending_action_requests(
             thread_id=thread_id
         )
+        active_run = await self._get_active_run(thread_id=thread_id)
+        active_run_status = (
+            getattr(active_run.status, "value", active_run.status)
+            if active_run is not None
+            else None
+        )
         return {
             "messages": [
                 {
@@ -251,7 +272,19 @@ class AssistantService:
                 )
                 for request in action_requests
             ],
-            "isRunning": False,
+            "isRunning": active_run_status
+            in {
+                AssistantRunStatus.STARTING.value,
+                AssistantRunStatus.RUNNING.value,
+            },
+            "runStatus": active_run_status,
+            "activeRunId": str(active_run.id) if active_run is not None else None,
+            "waitingForApproval": bool(
+                active_run_status == AssistantRunStatus.WAITING_APPROVAL.value
+            ),
+            "lastErrorReason": (
+                active_run.last_error_reason if active_run is not None else None
+            ),
         }
 
     async def add_message(
@@ -263,6 +296,13 @@ class AssistantService:
         parts: list[dict[str, Any]],
     ) -> None:
         _ = owner_user_id
+        if role == "user":
+            active_run = await self._get_active_run(thread_id=thread_id)
+            if active_run is not None:
+                raise assistant_domain_error(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Thread already has an active assistant run",
+                )
         await self._repository.create_message(
             thread_id=thread_id, role=role, parts=parts
         )

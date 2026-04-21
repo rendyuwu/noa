@@ -16,6 +16,7 @@ from structlog.contextvars import get_contextvars
 from noa_api.api.assistant import assistant_operations
 from noa_api.api.assistant.assistant_commands import AssistantRequest
 from noa_api.api.assistant.assistant_operations import prepare_assistant_transport
+from noa_api.api.assistant.assistant_streaming import build_live_run_snapshot
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging import configure_logging
 from noa_api.core.telemetry import TelemetryEvent
@@ -303,6 +304,16 @@ class _FakeAssistantServiceThatSucceedsAgentRun:
         return self.refreshed_state
 
 
+@dataclass
+class _RecordingRunHandle:
+    snapshots: list[dict[str, object]] = field(default_factory=list)
+
+    def publish_snapshot(self, *, snapshot: dict[str, object]) -> dict[str, object]:
+        recorded = json.loads(json.dumps(snapshot))
+        self.snapshots.append(recorded)
+        return {"type": "delta", "snapshot": recorded}
+
+
 async def test_prepare_assistant_transport_validates_commands_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -385,6 +396,222 @@ async def test_prepare_assistant_transport_binds_command_types_in_log_context() 
     )
 
 
+async def test_prepare_assistant_transport_preserves_approval_flow_during_waiting_run() -> (
+    None
+):
+    thread_id = uuid4()
+    payload = AssistantRequest.model_validate(
+        {
+            "state": {"messages": [], "isRunning": False},
+            "commands": [{"type": "approve-action", "actionRequestId": str(uuid4())}],
+            "threadId": str(thread_id),
+        }
+    )
+
+    @dataclass
+    class _ApprovalService:
+        calls: list[str] = field(default_factory=list)
+
+        async def load_state(
+            self, *, owner_user_id: UUID, thread_id: UUID
+        ) -> dict[str, object]:
+            _ = owner_user_id, thread_id
+            self.calls.append("load_state")
+            return {
+                "messages": [],
+                "workflow": [],
+                "pendingApprovals": [],
+                "actionRequests": [],
+                "isRunning": True,
+                "runStatus": "WAITING_APPROVAL",
+                "activeRunId": str(uuid4()),
+                "waitingForApproval": True,
+                "lastErrorReason": None,
+            }
+
+        async def approve_action(self, **kwargs: Any) -> None:
+            _ = kwargs
+            self.calls.append("approve_action")
+
+    service = _ApprovalService()
+
+    prepared = await prepare_assistant_transport(
+        payload=payload,
+        current_user=_active_user(),
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+    )
+
+    assert service.calls == ["load_state", "approve_action", "load_state"]
+    assert prepared.canonical_state["waitingForApproval"] is True
+
+
+async def test_prepare_assistant_transport_rejects_user_message_during_active_run() -> (
+    None
+):
+    thread_id = uuid4()
+    payload = _payload_with_add_message(thread_id)
+
+    @dataclass
+    class _ConflictService:
+        load_state_calls: int = 0
+
+        async def load_state(
+            self, *, owner_user_id: UUID, thread_id: UUID
+        ) -> dict[str, object]:
+            _ = owner_user_id, thread_id
+            self.load_state_calls += 1
+            return {
+                "messages": [],
+                "workflow": [],
+                "pendingApprovals": [],
+                "actionRequests": [],
+                "isRunning": True,
+                "runStatus": "RUNNING",
+                "activeRunId": str(uuid4()),
+                "waitingForApproval": False,
+                "lastErrorReason": None,
+            }
+
+        async def add_message(
+            self,
+            *,
+            owner_user_id: UUID,
+            thread_id: UUID,
+            role: str,
+            parts: list[dict[str, object]],
+        ) -> None:
+            _ = owner_user_id, thread_id, role, parts
+            from noa_api.api.assistant.assistant_errors import assistant_domain_error
+
+            raise assistant_domain_error(
+                status_code=409,
+                detail="Thread already has an active assistant run",
+            )
+
+    service = _ConflictService()
+
+    with pytest.raises(Exception) as exc_info:
+        await prepare_assistant_transport(
+            payload=payload,
+            current_user=_active_user(),
+            assistant_service=service,
+            authorization_service=_FakeAuthorizationService(),
+        )
+
+    exc = exc_info.value
+    assert type(exc).__name__ == "AssistantDomainError"
+    assert getattr(exc, "status_code") == 409
+    assert getattr(exc, "detail") == "Thread already has an active assistant run"
+    assert service.load_state_calls == 1
+
+
+def test_apply_canonical_state_overwrites_stale_client_state_and_run_metadata() -> None:
+    state = {
+        "messages": [_message_with_text("Stale")],
+        "workflow": [{"content": "Stale workflow", "status": "pending"}],
+        "pendingApprovals": [{"actionRequestId": "stale-approval"}],
+        "actionRequests": [{"actionRequestId": "stale-request"}],
+        "isRunning": True,
+        "runStatus": "FAILED",
+        "activeRunId": "stale-run",
+        "waitingForApproval": True,
+        "lastErrorReason": "stale error",
+        "live_snapshot": {"messages": [{"id": "assistant-streaming"}]},
+        "clientOnly": {"keep": True},
+    }
+    canonical_state = {
+        "messages": [_message_with_text("Fresh")],
+        "workflow": [{"content": "Fresh workflow", "status": "completed"}],
+        "pendingApprovals": [{"actionRequestId": "approval-1"}],
+        "actionRequests": [{"actionRequestId": "request-1"}],
+        "runStatus": "WAITING_APPROVAL",
+        "activeRunId": "run-123",
+        "waitingForApproval": True,
+        "lastErrorReason": "waiting on approval",
+    }
+
+    assistant_operations._apply_canonical_state(
+        state,
+        canonical_state,
+        is_running=False,
+    )
+
+    assert state["messages"] == canonical_state["messages"]
+    assert state["workflow"] == canonical_state["workflow"]
+    assert state["pendingApprovals"] == canonical_state["pendingApprovals"]
+    assert state["actionRequests"] == canonical_state["actionRequests"]
+    assert state["isRunning"] is False
+    assert state["runStatus"] == "WAITING_APPROVAL"
+    assert state["activeRunId"] == "run-123"
+    assert state["waitingForApproval"] is True
+    assert state["lastErrorReason"] == "waiting on approval"
+    assert state["live_snapshot"] is None
+    assert state["clientOnly"] == {"keep": True}
+
+
+def test_apply_canonical_state_is_proxy_safe_for_live_snapshot_cleanup() -> None:
+    fresh_message = _message_with_text("Fresh")
+
+    class _ProxyState(dict[str, object]):
+        def pop(self, key: str, default: object | None = None) -> object | None:
+            raise NotImplementedError("proxy pop is unsupported")
+
+    state: dict[str, object] = _ProxyState(
+        {
+            "messages": [],
+            "live_snapshot": {"messages": [{"id": "assistant-streaming"}]},
+            "clientOnly": {"keep": True},
+        }
+    )
+
+    assistant_operations._apply_canonical_state(
+        state,
+        {
+            "messages": [fresh_message],
+            "workflow": [],
+            "pendingApprovals": [],
+            "actionRequests": [],
+            "runStatus": "RUNNING",
+            "activeRunId": "run-1",
+            "waitingForApproval": False,
+            "lastErrorReason": None,
+        },
+        is_running=True,
+    )
+
+    assert state["messages"] == [fresh_message]
+    assert state["live_snapshot"] is None
+    assert state["runStatus"] == "RUNNING"
+    assert state["activeRunId"] == "run-1"
+    assert state["waitingForApproval"] is False
+    assert state["lastErrorReason"] is None
+    assert state["clientOnly"] == {"keep": True}
+
+
+def test_build_live_run_snapshot_includes_active_run_metadata() -> None:
+    snapshot = build_live_run_snapshot(
+        canonical_messages=[_message_with_text("Hello")],
+        streamed_text="Working",
+        workflow=[{"content": "Plan", "status": "in_progress"}],
+        pending_approvals=[{"actionRequestId": "approval-1"}],
+        action_requests=[{"actionRequestId": "request-1"}],
+        is_running=False,
+        run_status="WAITING_APPROVAL",
+        active_run_id="run-123",
+        waiting_for_approval=True,
+        last_error_reason="waiting on approval",
+    )
+
+    assert snapshot["isRunning"] is False
+    assert snapshot["runStatus"] == "WAITING_APPROVAL"
+    assert snapshot["activeRunId"] == "run-123"
+    assert snapshot["waitingForApproval"] is True
+    assert snapshot["lastErrorReason"] == "waiting on approval"
+    messages = cast(list[dict[str, object]], snapshot["messages"])
+    assert messages[-1]["id"] == "assistant-streaming"
+
+
 async def test_run_agent_phase_persists_safe_error_message_on_failure() -> None:
     error_text = "Assistant run failed. Please try again."
     controller = _FakeController(state={"messages": [], "isRunning": True})
@@ -462,6 +689,172 @@ async def test_run_agent_phase_refreshes_workflow_and_pending_approvals() -> Non
     )
 
     assert controller.state == refreshed_state
+
+
+async def test_execute_active_run_publishes_live_snapshots_via_handle() -> None:
+    refreshed_state = {
+        "messages": [_message_with_text("Final answer", role="assistant")],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": False,
+        "runStatus": None,
+        "activeRunId": None,
+        "waitingForApproval": False,
+        "lastErrorReason": None,
+    }
+
+    @dataclass
+    class _StreamingAssistantService:
+        refreshed_state: dict[str, object]
+
+        async def run_agent_turn(
+            self,
+            *,
+            owner_user_id: UUID,
+            owner_user_email: str | None,
+            thread_id: UUID,
+            available_tool_names: set[str],
+            on_text_delta: Any = None,
+        ) -> None:
+            _ = owner_user_id, owner_user_email, thread_id, available_tool_names
+            assert on_text_delta is not None
+            await on_text_delta("Working")
+            await on_text_delta(" now")
+
+        async def add_message(
+            self,
+            *,
+            owner_user_id: UUID,
+            thread_id: UUID,
+            role: str,
+            parts: list[dict[str, object]],
+        ) -> None:
+            _ = owner_user_id, thread_id, role, parts
+
+        async def load_state(
+            self, *, owner_user_id: UUID, thread_id: UUID
+        ) -> dict[str, object]:
+            _ = owner_user_id, thread_id
+            return self.refreshed_state
+
+    service = _StreamingAssistantService(refreshed_state=refreshed_state)
+    handle = _RecordingRunHandle()
+    active_run_id = str(uuid4())
+
+    final_state = await assistant_operations.execute_active_run(
+        run_handle=handle,
+        payload=_payload_with_user_message(),
+        current_user=_active_user(),
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={
+            "messages": [_message_with_text("Question")],
+            "workflow": [],
+            "pendingApprovals": [],
+            "actionRequests": [],
+            "isRunning": False,
+            "runStatus": "RUNNING",
+            "activeRunId": active_run_id,
+            "waitingForApproval": False,
+            "lastErrorReason": None,
+        },
+        command_types=["add-message"],
+    )
+
+    assert final_state == refreshed_state
+    assert len(handle.snapshots) >= 3
+    assert handle.snapshots[0]["isRunning"] is True
+    assert handle.snapshots[0]["runStatus"] == "RUNNING"
+    assert handle.snapshots[0]["activeRunId"] == active_run_id
+    assert handle.snapshots[0]["waitingForApproval"] is False
+    assert handle.snapshots[0]["lastErrorReason"] is None
+    first_messages = cast(list[dict[str, object]], handle.snapshots[0]["messages"])
+    assert first_messages[-1]["id"] == "assistant-streaming"
+    stream_messages = cast(list[dict[str, object]], handle.snapshots[-2]["messages"])
+    assert stream_messages[-1]["parts"][0]["text"] == "Working now"
+    assert handle.snapshots[-1] == refreshed_state
+
+
+async def test_execute_active_run_resumed_approval_snapshot_switches_to_running_metadata() -> (
+    None
+):
+    refreshed_state = {
+        "messages": [_message_with_text("Final answer", role="assistant")],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": False,
+        "runStatus": None,
+        "activeRunId": None,
+        "waitingForApproval": False,
+        "lastErrorReason": None,
+    }
+
+    @dataclass
+    class _StreamingAssistantService:
+        refreshed_state: dict[str, object]
+
+        async def run_agent_turn(
+            self,
+            *,
+            owner_user_id: UUID,
+            owner_user_email: str | None,
+            thread_id: UUID,
+            available_tool_names: set[str],
+            on_text_delta: Any = None,
+        ) -> None:
+            _ = owner_user_id, owner_user_email, thread_id, available_tool_names
+            assert on_text_delta is not None
+            await on_text_delta("Resuming")
+
+        async def add_message(
+            self,
+            *,
+            owner_user_id: UUID,
+            thread_id: UUID,
+            role: str,
+            parts: list[dict[str, object]],
+        ) -> None:
+            _ = owner_user_id, thread_id, role, parts
+
+        async def load_state(
+            self, *, owner_user_id: UUID, thread_id: UUID
+        ) -> dict[str, object]:
+            _ = owner_user_id, thread_id
+            return self.refreshed_state
+
+    service = _StreamingAssistantService(refreshed_state=refreshed_state)
+    handle = _RecordingRunHandle()
+    active_run_id = str(uuid4())
+
+    await assistant_operations.execute_active_run(
+        run_handle=handle,
+        payload=_payload_with_user_message(),
+        current_user=_active_user(),
+        assistant_service=service,
+        authorization_service=_FakeAuthorizationService(),
+        canonical_state={
+            "messages": [_message_with_text("Approved command")],
+            "workflow": [],
+            "pendingApprovals": [],
+            "actionRequests": [],
+            "isRunning": False,
+            "runStatus": "WAITING_APPROVAL",
+            "activeRunId": active_run_id,
+            "waitingForApproval": True,
+            "lastErrorReason": "approval required",
+        },
+        command_types=["approve-action"],
+    )
+
+    assert len(handle.snapshots) >= 2
+    first_snapshot = handle.snapshots[0]
+    assert first_snapshot["isRunning"] is True
+    assert first_snapshot["runStatus"] == "RUNNING"
+    assert first_snapshot["activeRunId"] == active_run_id
+    assert first_snapshot["waitingForApproval"] is False
+    assert first_snapshot["lastErrorReason"] is None
 
 
 async def test_run_agent_phase_replaces_streamed_placeholder_with_canonical_messages() -> (
