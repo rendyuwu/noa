@@ -183,6 +183,24 @@ def _apply_canonical_state(
     state["live_snapshot"] = None
 
 
+def _resume_waiting_run_state(
+    *, command_types: list[str], canonical_state: dict[str, object]
+) -> dict[str, object]:
+    if "approve-action" not in command_types:
+        return canonical_state
+    if canonical_state.get("runStatus") != "WAITING_APPROVAL":
+        return canonical_state
+    if not isinstance(canonical_state.get("activeRunId"), str):
+        return canonical_state
+
+    resumed_state = dict(canonical_state)
+    resumed_state["isRunning"] = True
+    resumed_state["runStatus"] = "RUNNING"
+    resumed_state["waitingForApproval"] = False
+    resumed_state["lastErrorReason"] = None
+    return resumed_state
+
+
 def _record_assistant_failure_telemetry(
     telemetry: TelemetryRecorder | None,
     *,

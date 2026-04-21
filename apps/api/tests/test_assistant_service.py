@@ -10,6 +10,7 @@ from uuid import UUID, uuid4
 import pytest
 from fastapi import HTTPException
 
+from noa_api.api.assistant.assistant_operations import _resume_waiting_run_state
 from noa_api.api.routes.assistant import AssistantService
 from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.tools.registry import ToolDefinition
@@ -330,6 +331,55 @@ def _assert_assistant_domain_error(
     assert getattr(exc, "status_code") == status_code
     assert getattr(exc, "detail") == detail
     assert getattr(exc, "error_code") == error_code
+
+
+def test_resume_waiting_run_state_marks_approve_action_running() -> None:
+    run_id = str(uuid4())
+    waiting_state = {
+        "messages": [],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": False,
+        "runStatus": AssistantRunStatus.WAITING_APPROVAL.value,
+        "activeRunId": run_id,
+        "waitingForApproval": True,
+        "lastErrorReason": "waiting on approval",
+    }
+
+    resumed_state = _resume_waiting_run_state(
+        command_types=["approve-action"],
+        canonical_state=waiting_state,
+    )
+
+    assert resumed_state["activeRunId"] == run_id
+    assert resumed_state["isRunning"] is True
+    assert resumed_state["runStatus"] == AssistantRunStatus.RUNNING.value
+    assert resumed_state["waitingForApproval"] is False
+    assert resumed_state["lastErrorReason"] is None
+    assert waiting_state["runStatus"] == AssistantRunStatus.WAITING_APPROVAL.value
+
+
+def test_resume_waiting_run_state_keeps_add_tool_result_blocked() -> None:
+    run_id = str(uuid4())
+    waiting_state = {
+        "messages": [],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": False,
+        "runStatus": AssistantRunStatus.WAITING_APPROVAL.value,
+        "activeRunId": run_id,
+        "waitingForApproval": True,
+        "lastErrorReason": "waiting on approval",
+    }
+
+    resumed_state = _resume_waiting_run_state(
+        command_types=["add-tool-result"],
+        canonical_state=waiting_state,
+    )
+
+    assert resumed_state == waiting_state
 
 
 async def test_record_tool_result_rejects_foreign_thread() -> None:

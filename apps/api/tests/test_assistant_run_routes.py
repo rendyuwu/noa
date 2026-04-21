@@ -270,11 +270,146 @@ async def test_assistant_route_reuses_waiting_approval_run_for_approve_action() 
     body = _assert_assistant_ack(
         response,
         thread_id=thread_id,
-        run_status=AssistantRunStatus.WAITING_APPROVAL.value,
+        run_status=AssistantRunStatus.RUNNING.value,
         has_active_run_id=True,
     )
     assert body["activeRunId"] == str(existing_run.id)
     assert coordinator.has_run(run_id=existing_run.id) is True
+
+
+async def test_assistant_route_restarts_still_tracked_waiting_run_for_approve_action() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    existing_run = await service.create_run(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        owner_instance_id="test-api",
+    )
+    await service.mark_run_waiting_approval(
+        run_id=existing_run.id,
+        action_request_id=uuid4(),
+    )
+
+    resumed = asyncio.Event()
+
+    async def _resume_run_agent_turn(**kwargs: object):
+        _ = kwargs
+        resumed.set()
+        return None
+
+    async def _unexpected_create_run(**_: object) -> None:
+        raise AssertionError("create_run should not be called for resume")
+
+    service.run_agent_turn = _resume_run_agent_turn  # type: ignore[method-assign]
+    service.create_run = _unexpected_create_run  # type: ignore[method-assign]
+
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
+
+    pause_gate = asyncio.Event()
+
+    async def _paused_job(handle):
+        handle.publish_snapshot(snapshot={"activeRunId": str(existing_run.id)})
+        await pause_gate.wait()
+        return None
+
+    coordinator.start_detached_run(run_id=existing_run.id, job_factory=_paused_job)
+    await asyncio.sleep(0)
+
+    app = _build_run_routes_app(
+        service=service,
+        current_user=AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        coordinator=coordinator,
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [{"type": "approve-action", "actionRequestId": "ar-1"}],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    body = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.RUNNING.value,
+        has_active_run_id=True,
+    )
+    assert body["activeRunId"] == str(existing_run.id)
+    await asyncio.wait_for(resumed.wait(), timeout=1)
+    pause_gate.set()
+
+
+async def test_assistant_route_keeps_waiting_approval_run_blocked_for_add_tool_result() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    existing_run = await service.create_run(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        owner_instance_id="test-api",
+    )
+    await service.mark_run_waiting_approval(
+        run_id=existing_run.id,
+        action_request_id=uuid4(),
+    )
+
+    async def _unexpected_create_run(**_: object) -> None:
+        raise AssertionError("create_run should not be called for resume")
+
+    service.create_run = _unexpected_create_run  # type: ignore[method-assign]
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
+    app = _build_run_routes_app(
+        service=service,
+        current_user=AuthorizationUser(
+            user_id=owner_id,
+            email="owner@example.com",
+            display_name="Owner",
+            is_active=True,
+            roles=["member"],
+            tools=[],
+        ),
+        coordinator=coordinator,
+    )
+
+    payload = {
+        "state": {"messages": [], "isRunning": False},
+        "commands": [
+            {
+                "type": "add-tool-result",
+                "toolCallId": str(uuid4()),
+                "result": {"ok": True},
+            }
+        ],
+        "threadId": str(thread_id),
+    }
+
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/assistant", json=payload)
+
+    body = _assert_assistant_ack(
+        response,
+        thread_id=thread_id,
+        run_status=AssistantRunStatus.WAITING_APPROVAL.value,
+        has_active_run_id=True,
+    )
+    assert body["activeRunId"] == str(existing_run.id)
+    assert coordinator.has_run(run_id=existing_run.id) is False
 
 
 async def test_assistant_route_restarts_existing_run_when_prior_tracker_finished() -> (
@@ -341,7 +476,7 @@ async def test_assistant_route_restarts_existing_run_when_prior_tracker_finished
     body = _assert_assistant_ack(
         response,
         thread_id=thread_id,
-        run_status=AssistantRunStatus.WAITING_APPROVAL.value,
+        run_status=AssistantRunStatus.RUNNING.value,
         has_active_run_id=True,
     )
     assert body["activeRunId"] == str(existing_run.id)

@@ -36,6 +36,7 @@ from noa_api.api.assistant.assistant_errors import (
 from noa_api.api.assistant.assistant_operations import (
     _record_assistant_failure_telemetry,
     _apply_canonical_state,
+    _resume_waiting_run_state,
     execute_active_run,
     prepare_assistant_transport,
 )
@@ -609,6 +610,14 @@ def _canonical_active_run_id(state: dict[str, object]) -> UUID | None:
         return None
 
 
+def _should_resume_existing_run(
+    *, command_types: list[str], canonical_state: dict[str, object]
+) -> bool:
+    if canonical_state.get("runStatus") != AssistantRunStatus.WAITING_APPROVAL.value:
+        return True
+    return "approve-action" in command_types
+
+
 def _coordinator_task_done(
     *, coordinator: AssistantRunCoordinator, run_id: UUID
 ) -> bool | None:
@@ -919,7 +928,10 @@ async def assistant_transport(
                 authorization_service=authorization_service,
             )
             command_types = prepared.command_types
-            canonical_state = prepared.canonical_state
+            canonical_state = _resume_waiting_run_state(
+                command_types=command_types,
+                canonical_state=prepared.canonical_state,
+            )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -994,13 +1006,16 @@ async def assistant_transport(
 
     existing_run_id = _canonical_active_run_id(canonical_state)
     if existing_run_id is not None:
-        tracked_done = _coordinator_task_done(
-            coordinator=coordinator,
-            run_id=existing_run_id,
-        )
-        if tracked_done is True:
-            coordinator.remove_run(run_id=existing_run_id)
-        if tracked_done is not False:
+        if _should_resume_existing_run(
+            command_types=command_types,
+            canonical_state=canonical_state,
+        ):
+            tracked_done = _coordinator_task_done(
+                coordinator=coordinator,
+                run_id=existing_run_id,
+            )
+            if tracked_done in {True, False}:
+                coordinator.remove_run(run_id=existing_run_id)
             await _run_detached_assistant_turn(
                 request=request,
                 payload=payload,
