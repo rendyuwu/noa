@@ -14,13 +14,56 @@ type AssistantPendingApproval = {
   status: string;
 };
 
+export type AssistantRunStatus = "starting" | "running" | "waiting_approval" | "failed";
+
 export type AssistantState = {
   messages: Array<{ id?: string; role: string; parts: Array<Record<string, unknown>> }>;
   workflow?: WorkflowTodoItem[];
   evidenceSections?: AssistantDetailEvidenceSection[];
   pendingApprovals?: AssistantPendingApproval[];
   actionRequests?: AssistantActionRequest[];
+   runStatus?: AssistantRunStatus | null;
+   activeRunId?: string | null;
+   waitingForApproval?: boolean;
+   lastErrorReason?: string | null;
   isRunning: boolean;
+};
+
+const normalizeRunStatus = (value: unknown): AssistantRunStatus | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case "starting":
+      return "starting";
+    case "running":
+      return "running";
+    case "waiting_approval":
+      return "waiting_approval";
+    case "failed":
+      return "failed";
+    default:
+      return null;
+  }
+};
+
+export const normalizeAssistantState = (state: AssistantState): AssistantState => {
+  const rawRunStatus = typeof state.runStatus === "string" ? state.runStatus.trim().toLowerCase() : null;
+  const runStatus = normalizeRunStatus(state.runStatus);
+  const completedRun = rawRunStatus === "completed";
+
+  return {
+    ...state,
+    runStatus,
+    activeRunId:
+      completedRun || typeof state.activeRunId !== "string" || !state.activeRunId.trim()
+        ? null
+        : state.activeRunId,
+    waitingForApproval: runStatus === "waiting_approval" || Boolean(state.waitingForApproval),
+    lastErrorReason: typeof state.lastErrorReason === "string" ? state.lastErrorReason : null,
+    isRunning: Boolean(state.isRunning) || runStatus === "starting" || runStatus === "running",
+  };
 };
 
 const coerceString = (value: unknown): string | undefined => {
@@ -72,7 +115,17 @@ const dedupeAdjacentAssistantTextMessages = (messages: ThreadMessage[]) => {
 
 const attachCanonicalMetadata = (
   messages: ThreadMessage[],
-  state: Pick<AssistantState, "workflow" | "evidenceSections" | "pendingApprovals" | "actionRequests">,
+  state: Pick<
+    AssistantState,
+    | "workflow"
+    | "evidenceSections"
+    | "pendingApprovals"
+    | "actionRequests"
+    | "runStatus"
+    | "activeRunId"
+    | "waitingForApproval"
+    | "lastErrorReason"
+  >,
 ) => {
   if (!messages.length) {
     return messages;
@@ -96,6 +149,10 @@ const attachCanonicalMetadata = (
         evidenceSections: Array.isArray(state.evidenceSections) ? state.evidenceSections : [],
         pendingApprovals: Array.isArray(state.pendingApprovals) ? state.pendingApprovals : [],
         actionRequests: Array.isArray(state.actionRequests) ? state.actionRequests : [],
+        runStatus: state.runStatus ?? null,
+        activeRunId: state.activeRunId ?? null,
+        waitingForApproval: Boolean(state.waitingForApproval),
+        lastErrorReason: state.lastErrorReason ?? null,
       },
     },
   } as ThreadMessage;
@@ -223,11 +280,12 @@ export function convertAssistantState(
   state: AssistantState,
   connectionMetadata: { pendingCommands: Array<any>; isSending: boolean },
 ) {
-  const transportIsRunning = Boolean(state.isRunning) || connectionMetadata.isSending;
+  const normalizedState = normalizeAssistantState(state);
+  const transportIsRunning = Boolean(normalizedState.isRunning) || connectionMetadata.isSending;
   const mergeableToolCallIds = new Set<string>();
   const toolResultsByCallId = new Map<string, ToolResultData>();
 
-  for (const message of state.messages ?? []) {
+  for (const message of normalizedState.messages ?? []) {
     if (message.role === "tool") {
       continue;
     }
@@ -244,7 +302,7 @@ export function convertAssistantState(
     }
   }
 
-  for (const message of state.messages ?? []) {
+  for (const message of normalizedState.messages ?? []) {
     if (message.role !== "tool") {
       continue;
     }
@@ -283,7 +341,7 @@ export function convertAssistantState(
       ),
     );
 
-  const persistedMessages: ThreadMessage[] = (state.messages ?? [])
+  const persistedMessages: ThreadMessage[] = (normalizedState.messages ?? [])
     .filter((message) => {
       if (message.role !== "tool") {
         return true;
@@ -324,7 +382,7 @@ export function convertAssistantState(
       dedupeAdjacentAssistantTextMessages(
         [...persistedMessages, ...optimisticMessages].filter((message) => !isEmptyAssistantMessage(message)),
       ),
-      state,
+      normalizedState,
     ),
     isRunning: transportIsRunning,
   };

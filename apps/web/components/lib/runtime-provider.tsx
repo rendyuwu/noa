@@ -14,8 +14,9 @@ import {
 import {
   type AssistantState,
   convertAssistantState,
+  normalizeAssistantState,
 } from "@/components/lib/assistant-transport-converter";
-import { getAuthToken } from "@/components/lib/auth-store";
+import { clearAuth, getAuthToken } from "@/components/lib/auth-store";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { fetchWithAuth, getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { ThreadHydrationProvider } from "@/components/lib/thread-hydration";
@@ -29,6 +30,124 @@ function isMissingThreadItemLookupError(error: unknown) {
 
 export function useResetAssistantRuntime() {
   return useContext(ResetAssistantRuntimeContext);
+}
+
+function canReconnectLiveRun(state: AssistantState | null): state is AssistantState & { activeRunId: string } {
+  return Boolean(
+    state?.activeRunId && (state.runStatus === "starting" || state.runStatus === "running"),
+  );
+}
+
+function mergeHydratedThreadState(state: AssistantState): AssistantState {
+  return normalizeAssistantState({
+    ...state,
+    messages: Array.isArray(state.messages) ? state.messages : [],
+    workflow: Array.isArray(state.workflow) ? state.workflow : [],
+    evidenceSections: Array.isArray(state.evidenceSections) ? state.evidenceSections : [],
+    pendingApprovals: Array.isArray(state.pendingApprovals) ? state.pendingApprovals : [],
+    actionRequests: Array.isArray(state.actionRequests) ? state.actionRequests : [],
+    isRunning: Boolean(state.isRunning),
+  });
+}
+
+async function loadPersistedThreadState(remoteId: string): Promise<AssistantState> {
+  const response = await fetchWithAuth(`/assistant/threads/${remoteId}/state`);
+  return mergeHydratedThreadState(await jsonOrThrow<AssistantState>(response));
+}
+
+function readSseEvents(
+  stream: ReadableStream<Uint8Array>,
+  onData: (data: string) => void,
+): Promise<void> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  const flushEvent = (chunk: string) => {
+    const data = chunk
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+
+    if (data) {
+      onData(data);
+    }
+  };
+
+  return (async () => {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          buffer += decoder.decode();
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split(/\r?\n\r?\n/);
+        buffer = events.pop() ?? "";
+
+        for (const eventChunk of events) {
+          flushEvent(eventChunk);
+        }
+      }
+
+      if (buffer.trim()) {
+        flushEvent(buffer);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  })();
+}
+
+async function reconnectLiveRun(
+  runId: string,
+  onSnapshot: (state: AssistantState) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  const token = getAuthToken();
+  const headers = new Headers();
+  if (token) {
+    headers.set("authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${getApiUrl()}/assistant/runs/${runId}/live`, {
+    method: "GET",
+    headers,
+    signal,
+  });
+
+  if (response.status === 401) {
+    clearAuth();
+  }
+
+  if (!response.ok) {
+    throw new Error(`Live reconnect failed (${response.status})`);
+  }
+
+  if (!response.body) {
+    return;
+  }
+
+  await readSseEvents(response.body, (data) => {
+    try {
+      const event = JSON.parse(data) as { type?: unknown; snapshot?: unknown };
+      if (event.type !== "snapshot" && event.type !== "delta") {
+        return;
+      }
+
+      const snapshot = event.snapshot;
+      if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) {
+        return;
+      }
+
+      onSnapshot(mergeHydratedThreadState(snapshot as AssistantState));
+    } catch (error) {
+      console.error("Failed to parse live run snapshot", error);
+    }
+  });
 }
 
 function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
@@ -47,8 +166,10 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
     | null
   >(null);
   const generatedTitles = useRef<Set<string>>(new Set());
+  const reconnectingRunIdRef = useRef<string | null>(null);
+  const hydratedStateRef = useRef<{ remoteId: string; state: AssistantState } | null>(null);
 
-  const shouldHydrate = Boolean(remoteId) && messageCount === 0 && hydratedRemoteId !== remoteId;
+  const shouldHydrate = Boolean(remoteId) && hydratedRemoteId !== remoteId;
 
   const expectsMessages =
     Boolean(remoteId) && hydrationCompleted?.remoteId === remoteId
@@ -69,20 +190,21 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
     void (async () => {
       let nextExpectsMessages = false;
       try {
-        const response = await fetchWithAuth(`/assistant/threads/${remoteId}/state`);
-        const persistedState = await jsonOrThrow<AssistantState>(response);
+        const persistedState = await loadPersistedThreadState(remoteId);
         if (cancelled) return;
 
         nextExpectsMessages = Array.isArray(persistedState.messages) && persistedState.messages.length > 0;
+        hydratedStateRef.current = { remoteId, state: persistedState };
 
         runtime.thread.unstable_loadExternalState(persistedState);
       } catch (error) {
         console.error("Failed to hydrate persisted thread state", error);
       } finally {
-        if (cancelled) return;
-        setHydrationCompleted({ remoteId, expectsMessages: nextExpectsMessages });
-        setHydratedRemoteId(remoteId);
-        setHydrationInFlightRemoteId(null);
+        if (!cancelled) {
+          setHydrationCompleted({ remoteId, expectsMessages: nextExpectsMessages });
+          setHydratedRemoteId(remoteId);
+          setHydrationInFlightRemoteId(null);
+        }
       }
     })();
 
@@ -90,6 +212,62 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
       cancelled = true;
     };
   }, [remoteId, runtime, shouldHydrate]);
+
+  useEffect(() => {
+    if (!remoteId) {
+      reconnectingRunIdRef.current = null;
+      return;
+    }
+    if (hydratedRemoteId !== remoteId) return;
+    if (hydrationInFlightRemoteId === remoteId) return;
+
+    let cancelled = false;
+    const abortController = new AbortController();
+
+    void (async () => {
+      try {
+        const persistedState =
+          hydratedStateRef.current?.remoteId === remoteId
+            ? hydratedStateRef.current.state
+            : await loadPersistedThreadState(remoteId);
+        if (cancelled) return;
+
+        runtime.thread.unstable_loadExternalState(persistedState);
+
+        if (!canReconnectLiveRun(persistedState)) {
+          reconnectingRunIdRef.current = null;
+          return;
+        }
+
+        if (reconnectingRunIdRef.current === persistedState.activeRunId) {
+          return;
+        }
+
+        reconnectingRunIdRef.current = persistedState.activeRunId;
+
+        await reconnectLiveRun(
+          persistedState.activeRunId,
+          (snapshot) => {
+            if (cancelled) return;
+            runtime.thread.unstable_loadExternalState(snapshot);
+          },
+          abortController.signal,
+        );
+      } catch (error) {
+        if (abortController.signal.aborted || cancelled) {
+          return;
+        }
+        reconnectingRunIdRef.current = null;
+        console.error("Failed to reconnect live assistant run", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      abortController.abort();
+      reconnectingRunIdRef.current = null;
+    };
+  }, [hydratedRemoteId, hydrationInFlightRemoteId, remoteId, runtime]);
 
   useEffect(() => {
     if (!remoteId) return;
@@ -228,7 +406,7 @@ function useThreadAwareAssistantTransportRuntime() {
 function RuntimeProviderInstance({ children }: PropsWithChildren) {
   const runtime = useRemoteThreadListRuntime({
     adapter: threadListAdapter,
-    runtimeHook: () => useThreadAwareAssistantTransportRuntime(),
+    runtimeHook: useThreadAwareAssistantTransportRuntime,
   });
 
   return (
