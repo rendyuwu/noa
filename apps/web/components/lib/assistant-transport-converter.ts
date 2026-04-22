@@ -14,7 +14,7 @@ type AssistantPendingApproval = {
   status: string;
 };
 
-export type AssistantRunStatus = "starting" | "running" | "waiting_approval" | "failed";
+export type AssistantRunStatus = "starting" | "running" | "waiting_approval" | "failed" | "completed";
 
 export type AssistantState = {
   messages: Array<{ id?: string; role: string; parts: Array<Record<string, unknown>> }>;
@@ -43,6 +43,8 @@ const normalizeRunStatus = (value: unknown): AssistantRunStatus | null => {
       return "waiting_approval";
     case "failed":
       return "failed";
+    case "completed":
+      return "completed";
     default:
       return null;
   }
@@ -281,7 +283,17 @@ export function convertAssistantState(
   connectionMetadata: { pendingCommands: Array<any>; isSending: boolean },
 ) {
   const normalizedState = normalizeAssistantState(state);
-  const transportIsRunning = Boolean(normalizedState.isRunning) || connectionMetadata.isSending;
+  const hasPendingAddMessageCommand = connectionMetadata.pendingCommands.some(
+    (command) => command?.type === "add-message",
+  );
+  const isTerminalRun =
+    normalizedState.runStatus === "completed" ||
+    normalizedState.runStatus === "failed" ||
+    normalizedState.runStatus === "waiting_approval";
+  const transportIsRunning =
+    isTerminalRun && !hasPendingAddMessageCommand
+      ? false
+      : Boolean(normalizedState.isRunning) || connectionMetadata.isSending;
   const mergeableToolCallIds = new Set<string>();
   const toolResultsByCallId = new Map<string, ToolResultData>();
 

@@ -330,4 +330,103 @@ describe("convertAssistantState", () => {
     expect(toolPart?.args).toEqual({});
     expect(toolPart?.argsText).toBe("{}");
   });
+
+  it("treats completed backend snapshots as non-running even if transport metadata still says sending", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        runStatus: "COMPLETED" as any,
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Done" }],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: true },
+    );
+
+    expect(converted.isRunning).toBe(false);
+    expect((converted.messages[0] as any)?.status).toEqual({ type: "complete", reason: "stop" });
+  });
+
+  it("keeps terminal completed snapshots running when a pending add-message command is in flight", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        runStatus: "completed",
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Done" }],
+          },
+        ],
+      },
+      {
+        pendingCommands: [
+          {
+            type: "add-message",
+            message: { role: "user", parts: [{ type: "text", text: "Follow-up" }] },
+          },
+        ],
+        isSending: true,
+      },
+    );
+
+    expect(converted.isRunning).toBe(true);
+    expect((converted.messages[0] as any)?.status).toEqual({ type: "running" });
+    expect(converted.messages.at(-1)?.role).toBe("user");
+    expect((converted.messages.at(-1) as any)?.content).toEqual([{ type: "text", text: "Follow-up" }]);
+  });
+
+  it("treats terminal completed snapshots as non-running when only a non-add-message command is pending", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        runStatus: "completed",
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Done" }],
+          },
+        ],
+      },
+      {
+        pendingCommands: [
+          {
+            type: "approve-action",
+            actionRequestId: "approval-1",
+          },
+        ],
+        isSending: true,
+      },
+    );
+
+    expect(converted.isRunning).toBe(false);
+    expect((converted.messages[0] as any)?.status).toEqual({ type: "complete", reason: "stop" });
+  });
+
+  it("treats failed backend snapshots as non-running when no pending commands exist", () => {
+    const converted = convertAssistantState(
+      {
+        isRunning: false,
+        runStatus: "failed",
+        lastErrorReason: "Request failed",
+        messages: [
+          {
+            id: "m1",
+            role: "assistant",
+            parts: [{ type: "text", text: "Request failed" }],
+          },
+        ],
+      },
+      { pendingCommands: [], isSending: true },
+    );
+
+    expect(converted.isRunning).toBe(false);
+    expect((converted.messages[0] as any)?.status).toEqual({ type: "complete", reason: "stop" });
+  });
 });

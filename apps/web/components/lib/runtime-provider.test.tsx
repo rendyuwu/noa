@@ -203,6 +203,70 @@ describe("NoaAssistantRuntimeProvider", () => {
     expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "Hi" }]);
   });
 
+  it("does not keep the assistant message running after a completed canonical snapshot", () => {
+    render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    const options = useAssistantTransportRuntime.mock.calls.at(-1)?.[0] as any;
+    const result = options.converter(
+      {
+        messages: [
+          {
+            id: "assistant-terminal",
+            role: "assistant",
+            parts: [{ type: "text", text: "All done" }],
+          },
+        ],
+        isRunning: false,
+        runStatus: "COMPLETED",
+      },
+      { pendingCommands: [], isSending: true },
+    );
+
+    expect(result.isRunning).toBe(false);
+    expect(result.messages.at(-1)?.status).toEqual({ type: "complete", reason: "stop" });
+  });
+
+  it("keeps transport running for a terminal snapshot when a pending add-message command exists", () => {
+    render(
+      <NoaAssistantRuntimeProvider>
+        <div />
+      </NoaAssistantRuntimeProvider>,
+    );
+
+    const options = useAssistantTransportRuntime.mock.calls.at(-1)?.[0] as any;
+    const result = options.converter(
+      {
+        messages: [
+          {
+            id: "assistant-terminal",
+            role: "assistant",
+            parts: [{ type: "text", text: "All done" }],
+          },
+        ],
+        isRunning: false,
+        runStatus: "COMPLETED",
+      },
+      {
+        pendingCommands: [
+          {
+            type: "add-message",
+            message: { role: "user", parts: [{ type: "text", text: "One more thing" }] },
+          },
+        ],
+        isSending: true,
+      },
+    );
+
+    expect(result.isRunning).toBe(true);
+    expect(result.messages[0]?.status).toEqual({ type: "running" });
+    expect(result.messages.at(-1)?.role).toBe("user");
+    expect(result.messages.at(-1)?.content).toEqual([{ type: "text", text: "One more thing" }]);
+  });
+
   it("hydrates persisted thread state into the runtime after remount", async () => {
     assistantState.threadListItem.remoteId = "thread-1";
     syncActiveThreadItem();
