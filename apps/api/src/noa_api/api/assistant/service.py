@@ -6,9 +6,11 @@ from uuid import UUID
 from fastapi import status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.api.assistant.assistant_action_operations import (
+from noa_api.api.assistant.action_requests import (
     approve_action_request as approve_action_request_operation,
     deny_action_request as deny_action_request_operation,
+)
+from noa_api.api.assistant.approved_execution import (
     execute_approved_tool_run,
 )
 from noa_api.api.assistant.assistant_errors import (

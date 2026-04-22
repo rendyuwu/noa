@@ -11,7 +11,7 @@ import pytest
 from fastapi import HTTPException
 
 from noa_api.api.assistant.assistant_operations import _resume_waiting_run_state
-from noa_api.api.routes.assistant import AssistantService
+from noa_api.api.assistant.service import AssistantService
 from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
 from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
@@ -912,7 +912,7 @@ async def test_execute_approved_tool_run_fails_when_tool_definition_missing(
     assistant_repo = _FakeAssistantRepository()
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda _name: None,
     )
 
@@ -993,7 +993,7 @@ async def test_execute_approved_tool_run_fails_on_risk_mismatch(monkeypatch) -> 
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1081,7 +1081,7 @@ async def test_execute_approved_tool_run_sanitizes_execution_errors(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1165,7 +1165,7 @@ async def test_execute_approved_tool_run_completes_and_persists_result(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1251,7 +1251,7 @@ async def test_execute_approved_tool_run_revalidates_required_preflight_before_e
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1349,7 +1349,7 @@ async def test_execute_approved_tool_run_allows_execution_with_matching_prefligh
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1462,7 +1462,7 @@ async def test_execute_approved_tool_run_allows_execution_after_reason_follow_up
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1582,7 +1582,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_account_preflight_re
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1695,7 +1695,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_firewall_preflight_r
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1816,7 +1816,7 @@ async def test_execute_approved_tool_run_allows_matching_server_id_preflight(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1824,7 +1824,7 @@ async def test_execute_approved_tool_run_allows_matching_server_id_preflight(
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations._resolve_requested_server_id",
+        "noa_api.api.assistant.approved_execution._resolve_requested_server_id",
         lambda **kwargs: _async_return("server-1"),
     )
 
@@ -1881,7 +1881,7 @@ async def test_execute_approved_tool_run_allows_matching_server_id_preflight(
 async def test_execute_approved_tool_run_persists_completed_whm_workflow_with_evidence(
     monkeypatch,
 ) -> None:
-    from noa_api.api.assistant.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1941,7 +1941,7 @@ async def test_execute_approved_tool_run_persists_completed_whm_workflow_with_ev
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -1971,7 +1971,7 @@ async def test_execute_approved_tool_run_persists_completed_whm_workflow_with_ev
         _record_replace,
     )
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.fetch_postflight_result",
+        "noa_api.api.assistant.approved_execution.fetch_postflight_result",
         _postflight,
     )
 
@@ -2049,7 +2049,7 @@ async def test_execute_approved_tool_run_persists_completed_whm_workflow_with_ev
 async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execution_errors(
     monkeypatch,
 ) -> None:
-    from noa_api.api.assistant.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -2109,7 +2109,7 @@ async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execu
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -2273,7 +2273,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -2281,7 +2281,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations._resolve_requested_server_id",
+        "noa_api.api.assistant.approved_execution._resolve_requested_server_id",
         lambda **kwargs: _async_return("server-1"),
     )
 
@@ -2421,7 +2421,7 @@ async def test_assistant_service_approve_executes_pending_change_and_writes_audi
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -2502,7 +2502,7 @@ async def test_assistant_service_approve_change_tool_failure_is_persisted_and_do
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -2580,7 +2580,7 @@ async def test_assistant_service_approve_change_tool_timeout_is_sanitized(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -2650,7 +2650,7 @@ async def test_assistant_service_approve_change_tool_invalid_args_is_persisted(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -2779,7 +2779,7 @@ async def test_assistant_service_approve_change_tool_invalid_result_is_persisted
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -2852,7 +2852,7 @@ async def test_assistant_service_approve_change_tool_logs_original_exception(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -3199,7 +3199,7 @@ async def test_assistant_service_add_tool_result_rejects_invalid_result_payload(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -3423,7 +3423,7 @@ async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
 
@@ -3569,7 +3569,7 @@ async def test_deny_action_request_persists_denied_whm_workflow(
 async def test_execute_approved_tool_run_persists_completed_contact_email_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from noa_api.api.assistant.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -3631,7 +3631,7 @@ async def test_execute_approved_tool_run_persists_completed_contact_email_workfl
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -3657,7 +3657,7 @@ async def test_execute_approved_tool_run_persists_completed_contact_email_workfl
         _record_replace,
     )
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.fetch_postflight_result",
+        "noa_api.api.assistant.approved_execution.fetch_postflight_result",
         _postflight,
     )
 
@@ -3745,7 +3745,7 @@ async def test_execute_approved_tool_run_persists_completed_contact_email_workfl
 async def test_execute_approved_tool_run_persists_completed_firewall_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from noa_api.api.assistant.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -3819,7 +3819,7 @@ async def test_execute_approved_tool_run_persists_completed_firewall_workflow(
     )
 
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.get_tool_definition",
+        "noa_api.api.assistant.approved_execution.get_tool_definition",
         lambda name: tool if name == tool.name else None,
     )
     monkeypatch.setattr(
@@ -3869,7 +3869,7 @@ async def test_execute_approved_tool_run_persists_completed_firewall_workflow(
         _record_replace,
     )
     monkeypatch.setattr(
-        "noa_api.api.assistant.assistant_action_operations.fetch_postflight_result",
+        "noa_api.api.assistant.approved_execution.fetch_postflight_result",
         _postflight,
     )
 

@@ -1,6 +1,8 @@
-from noa_api.api.assistant.assistant_action_operations import (
+from noa_api.api.assistant.action_requests import (
     approve_action_request,
     deny_action_request,
+)
+from noa_api.api.assistant.approved_execution import (
     execute_approved_tool_run,
 )
 from noa_api.api.assistant.assistant_commands import (
