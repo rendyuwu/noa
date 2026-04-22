@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from fastapi import FastAPI
@@ -12,6 +14,7 @@ from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.routes.assistant import (
     get_assistant_run_coordinator,
+    get_assistant_run_live,
     get_assistant_service,
     router as assistant_router,
 )
@@ -24,6 +27,10 @@ from test_assistant import (
     _FakeAuthorizationService,
     _assert_assistant_ack,
 )
+
+
+async def _next_chunk(chunks: AsyncIterator[bytes | str | memoryview]) -> object:
+    return await anext(chunks)
 
 
 def _build_run_routes_app(
@@ -664,6 +671,88 @@ async def test_assistant_run_live_route_completes_after_terminal_run_finishes() 
     ]
     assert len(data_lines) == 1
     event = json.loads(data_lines[0])
+    assert event["type"] == "snapshot"
+    assert event["snapshot"]["runStatus"] == AssistantRunStatus.COMPLETED.value
+    assert event["snapshot"]["activeRunId"] == str(run.id)
+
+
+async def test_assistant_run_live_route_completed_snapshot_even_if_task_finishes_later() -> (
+    None
+):
+    owner_id = uuid4()
+    thread_id = uuid4()
+    service = _FakeAssistantService(owner_user_id=owner_id, thread_id=thread_id)
+    run = await service.create_run(
+        owner_user_id=owner_id,
+        thread_id=thread_id,
+        owner_instance_id="test-api",
+    )
+    coordinator = AssistantRunCoordinator(instance_id="test-api")
+    allow_finish = asyncio.Event()
+
+    terminal_snapshot: dict[str, object] = {
+        "messages": [],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": False,
+        "runStatus": AssistantRunStatus.COMPLETED.value,
+        "activeRunId": str(run.id),
+        "waitingForApproval": False,
+        "lastErrorReason": None,
+    }
+
+    async def _job(handle):
+        handle.publish_snapshot(snapshot=terminal_snapshot)
+        await allow_finish.wait()
+        return None
+
+    coordinator.start_detached_run(run_id=run.id, job_factory=_job)
+
+    current_user = AuthorizationUser(
+        user_id=owner_id,
+        email="owner@example.com",
+        display_name="Owner",
+        is_active=True,
+        roles=["member"],
+        tools=[],
+    )
+
+    response = await get_assistant_run_live(
+        run_id=run.id,
+        current_user=current_user,
+        assistant_service=cast(Any, service),
+        coordinator=coordinator,
+    )
+    chunks = aiter(response.body_iterator)
+
+    first_chunk = await asyncio.wait_for(_next_chunk(chunks), timeout=1)
+    assert isinstance(first_chunk, bytes)
+    payload_lines = first_chunk.decode().splitlines()
+
+    assert payload_lines[0] == "event: snapshot"
+    assert payload_lines[2] == ""
+    assert coordinator.has_run(run_id=run.id) is True
+
+    pending_next_chunk = asyncio.create_task(_next_chunk(chunks))
+    try:
+        await asyncio.wait_for(asyncio.shield(pending_next_chunk), timeout=0.05)
+        raise AssertionError("live stream should wait for the run task to finish")
+    except TimeoutError:
+        pass
+
+    allow_finish.set()
+    await coordinator.wait_for_run(run_id=run.id, timeout=1)
+
+    try:
+        await asyncio.wait_for(pending_next_chunk, timeout=1)
+        raise AssertionError("live stream should close without emitting another event")
+    except StopAsyncIteration:
+        pass
+
+    assert coordinator.has_run(run_id=run.id) is False
+
+    event = json.loads(payload_lines[1][len("data: ") :])
     assert event["type"] == "snapshot"
     assert event["snapshot"]["runStatus"] == AssistantRunStatus.COMPLETED.value
     assert event["snapshot"]["activeRunId"] == str(run.id)

@@ -621,6 +621,18 @@ def _should_resume_existing_run(
 def _coordinator_task_done(
     *, coordinator: AssistantRunCoordinator, run_id: UUID
 ) -> bool | None:
+    task = _coordinator_task(coordinator=coordinator, run_id=run_id)
+    if task is None:
+        return None
+    done = getattr(task, "done", None)
+    if not callable(done):
+        return None
+    return bool(done())
+
+
+def _coordinator_task(
+    *, coordinator: AssistantRunCoordinator, run_id: UUID
+) -> asyncio.Task[object] | None:
     tracked_runs = getattr(coordinator, "_tasks", None)
     if not isinstance(tracked_runs, dict):
         return None
@@ -630,10 +642,7 @@ def _coordinator_task_done(
     task = getattr(tracked_run, "task", None)
     if task is None:
         return None
-    done = getattr(task, "done", None)
-    if not callable(done):
-        return None
-    return bool(done())
+    return cast(asyncio.Task[object], task)
 
 
 def _coordinator_sequence(
@@ -714,6 +723,32 @@ def _state_has_current_error_message(
             if part.get("text") == "Assistant run failed. Please try again.":
                 return True
     return False
+
+
+async def _wait_for_tracked_run_completion(
+    *, coordinator: AssistantRunCoordinator, run_id: UUID
+) -> None:
+    task = _coordinator_task(coordinator=coordinator, run_id=run_id)
+    if task is None:
+        if coordinator.has_run(run_id=run_id):
+            coordinator.remove_run(run_id=run_id)
+        return
+
+    if not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "assistant_live_stream_terminal_wait_failed",
+                extra={"run_id": str(run_id)},
+            )
+
+    if task.done() and coordinator.has_run(run_id=run_id):
+        if not task.cancelled():
+            _ = task.exception()
+        coordinator.remove_run(run_id=run_id)
 
 
 async def _persist_terminal_run_state(
@@ -1176,19 +1211,21 @@ async def get_assistant_run_live(
                 cast(Mapping[str, object], snapshot)
             ):
                 continue
-            if snapshot.get("runStatus") == AssistantRunStatus.WAITING_APPROVAL.value:
+            terminal_snapshot = cast(Mapping[str, object], snapshot)
+            if (
+                terminal_snapshot.get("runStatus")
+                == AssistantRunStatus.WAITING_APPROVAL.value
+            ):
                 if (
                     _coordinator_task_done(coordinator=coordinator, run_id=run_id)
                     is True
                 ):
                     coordinator.remove_run(run_id=run_id)
                 break
-            if (
-                _coordinator_task_done(coordinator=coordinator, run_id=run_id)
-                is not True
-            ):
-                continue
-            coordinator.remove_run(run_id=run_id)
-            break
+            await _wait_for_tracked_run_completion(
+                coordinator=coordinator,
+                run_id=run_id,
+            )
+            return
 
     return StreamingResponse(_event_stream(), media_type="text/event-stream")
