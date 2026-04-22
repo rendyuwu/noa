@@ -1127,7 +1127,7 @@ def _build_account_lifecycle_reply_template_impl(
             title=f"{action_title} approval requested",
             outcome="info",
             summary=f"This will {action_label} {subject} after approval.",
-            evidence_summary=evidence,
+            evidence_summary=[],
             approval_presentation=_approval_presentation_from_reply_data(
                 paragraph=f"WHM account lifecycle request for {subject}.",
                 details=details,
@@ -1264,7 +1264,7 @@ def _build_contact_email_reply_template_impl(
             title="Contact email approval requested",
             outcome="info",
             summary=f"This will change the contact email for {subject} to '{requested_email}' after approval.",
-            evidence_summary=evidence,
+            evidence_summary=[],
             approval_presentation=_approval_presentation_from_reply_data(
                 paragraph=f"WHM contact email change for {subject}.",
                 details=details,
@@ -1409,7 +1409,7 @@ def _build_primary_domain_reply_template_impl(
             title="Primary domain approval requested",
             outcome="info",
             summary=f"This will change the primary domain for {subject} to '{requested_domain}' after approval.",
-            evidence_summary=evidence,
+            evidence_summary=[],
             approval_presentation=_approval_presentation_from_reply_data(
                 paragraph=f"WHM primary domain change for {subject}.",
                 details=details,
@@ -2887,7 +2887,7 @@ def _build_firewall_reply_template(
             title="Firewall change approval requested",
             outcome="info",
             summary=f"This will {action_phrase} for {subject} after approval.",
-            evidence_summary=evidence,
+            evidence_summary=[],
             approval_presentation=_approval_presentation_from_reply_data(
                 paragraph=f"WHM firewall change for {subject}.",
                 details=details,

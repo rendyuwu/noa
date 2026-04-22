@@ -567,10 +567,45 @@ def test_whm_account_lifecycle_waiting_on_approval_reply_includes_detail_rows() 
     )
 
     assert reply is not None
+    assert reply.evidence_summary == []
     details = _reply_detail_map(reply)
     assert details["Action"] == "Unsuspend 'alice' on 'web1'."
     assert details["Reason"] == "Ticket #1661262"
     assert details["Success criteria"] == "'alice' on 'web1' ends in active state."
+
+
+def test_whm_account_lifecycle_waiting_on_approval_does_not_repeat_evidence_lines() -> None:
+    reply = build_workflow_reply_template(
+        tool_name="whm_unsuspend_account",
+        workflow_family="whm-account-lifecycle",
+        args={
+            "server_ref": "web2",
+            "username": "rendy",
+            "reason": "Ticket #223344",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "whm_preflight_account",
+                "args": {"server_ref": "web2", "username": "rendy"},
+                "result": {
+                    "ok": True,
+                    "account": {
+                        "user": "rendy",
+                        "domain": "rendy.dev",
+                        "email": "admin@rendy.dev",
+                        "suspended": True,
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    rendered = render_workflow_reply_text(reply)
+    assert rendered.count("Preflight found 'rendy' on 'web2' in suspended state.") == 1
+    assert rendered.count("Recorded reason: Ticket #223344.") == 1
+    assert rendered.count("Success condition: 'rendy' on 'web2' ends in active state.") == 1
 
 
 def test_whm_account_lifecycle_approval_markdown_presentation() -> None:
@@ -635,6 +670,7 @@ def test_whm_contact_email_waiting_on_approval_reply_includes_detail_rows() -> N
     )
 
     assert reply is not None
+    assert reply.evidence_summary == []
     details = _reply_detail_map(reply)
     assert (
         details["Action"]
@@ -727,6 +763,7 @@ def test_whm_primary_domain_waiting_on_approval_reply_includes_detail_rows() -> 
     )
 
     assert reply is not None
+    assert reply.evidence_summary == []
     details = _reply_detail_map(reply)
     assert (
         details["Action"]
@@ -831,16 +868,13 @@ def test_whm_firewall_waiting_on_approval_reply_includes_detail_rows() -> None:
     )
 
     assert reply is not None
+    assert reply.evidence_summary == []
     details = _reply_detail_map(reply)
     assert (
         details["Action"]
         == "Unblock firewall entries for '1.2.3.4', '5.6.7.8' on 'web2'."
     )
     assert details["Reason"] == "Ticket #1661262"
-    assert reply.evidence_summary[:2] == [
-        "1.2.3.4 is currently blocked (CSF, Imunify).",
-        "5.6.7.8 is currently blocked (CSF).",
-    ]
     assert (
         details["Evidence"]
         == "1.2.3.4 is currently blocked (CSF, Imunify); 5.6.7.8 is currently blocked (CSF)."

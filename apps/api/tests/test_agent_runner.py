@@ -2783,6 +2783,85 @@ async def test_agent_runner_renders_family_owned_approval_markdown_above_card(
     assert "approvalPresentation" not in reply_template
 
 
+async def test_agent_runner_waiting_on_approval_text_does_not_duplicate_preflight_lines(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+    tool = get_tool_definition("whm_unsuspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-web2"),
+    )
+
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web2",
+                            "username": "rendy",
+                            "reason": "Ticket #223344",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Check account rendy on whm web2. Unsuspend with reason: Ticket #223344",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web2", "username": "rendy"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-web2",
+                            "account": {"user": "rendy", "suspended": True},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assistant_text = _assistant_texts(result)[0]
+    assert assistant_text.count("Recorded reason: Ticket #223344.") == 1
+
+
 async def test_agent_runner_preserves_detail_fallback_without_approval_presentation(
     monkeypatch,
 ) -> None:
