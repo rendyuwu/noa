@@ -1085,9 +1085,7 @@ def test_proxmox_enable_vm_nic_waiting_on_approval_does_not_duplicate_evidence_i
     assert reply.evidence_summary == []
 
     rendered = render_workflow_reply_text(reply)
-    lead = (
-        "VM 101 NIC net0 on node pve1-node is currently link down and is ready to be moved to link up."
-    )
+    lead = "VM 101 NIC net0 on node pve1-node is currently link down and is ready to be moved to link up."
     assert rendered.count(lead) == 1
     assert rendered.count("Before: link down.") == 1
 
