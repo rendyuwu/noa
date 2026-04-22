@@ -156,22 +156,21 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                     f"{subject} ends in link state {desired_state}.",
                 ),
             )
+            approval_evidence_summary = _evidence_summary(
+                tool_name=context.tool_name,
+                before_state=before_state,
+                result=result,
+                postflight_result=postflight,
+            )
             return WorkflowReplyTemplate(
                 title=f"Approve {_action_verb(context.tool_name)} {title_subject}",
                 outcome="info",
                 summary=summary,
-                evidence_summary=(
-                    evidence_summary := _evidence_summary(
-                        tool_name=context.tool_name,
-                        before_state=before_state,
-                        result=result,
-                        postflight_result=postflight,
-                    )
-                ),
+                evidence_summary=[],
                 approval_presentation=_approval_presentation_from_reply_data(
                     paragraph=summary,
                     details=details,
-                    evidence_summary=evidence_summary,
+                    evidence_summary=approval_evidence_summary,
                 ),
                 details=details,
                 next_step=f"Approve the request to {_action_label(context.tool_name)} {subject}.",
@@ -924,22 +923,21 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                     f"is available for {subject}.",
                 ),
             )
+            approval_evidence_summary = _cloudinit_evidence_summary(
+                tool_name=context.tool_name,
+                before_state=before_state,
+                result=result,
+                postflight_result=postflight,
+            )
             return WorkflowReplyTemplate(
                 title="Approve cloud-init password reset",
                 outcome="info",
                 summary=summary,
-                evidence_summary=(
-                    evidence_summary := _cloudinit_evidence_summary(
-                        tool_name=context.tool_name,
-                        before_state=before_state,
-                        result=result,
-                        postflight_result=postflight,
-                    )
-                ),
+                evidence_summary=[],
                 approval_presentation=_approval_presentation_from_reply_data(
                     paragraph=f"Cloud-init password reset requested for {subject}.",
                     details=details,
-                    evidence_summary=evidence_summary,
+                    evidence_summary=approval_evidence_summary,
                 ),
                 details=details,
                 next_step="Approve the request to reset the cloud-init password.",

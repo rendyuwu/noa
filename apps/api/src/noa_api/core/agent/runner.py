@@ -1887,7 +1887,9 @@ def _preflight_retry_guidance(tool_result_part: dict[str, object]) -> str | None
     error_code = _normalized_text(result.get("error_code"))
     if error_code not in {"preflight_required", "preflight_mismatch"}:
         return None
-    tool_name = _normalized_text(tool_result_part.get("toolName")) or "the requested change"
+    tool_name = (
+        _normalized_text(tool_result_part.get("toolName")) or "the requested change"
+    )
     return (
         f"The previous attempt to run {tool_name} is blocked by stale or missing preflight evidence. "
         "Run a fresh matching preflight now, review the current state, then decide whether to retry the change. "
@@ -1908,7 +1910,9 @@ def _preflight_user_retry_reply(
         else None
     )
     activity = describe_workflow_activity(tool_name=tool_name, args=args or {})
-    normalized_activity = activity[:1].lower() + activity[1:] if activity else "that change"
+    normalized_activity = (
+        activity[:1].lower() + activity[1:] if activity else "that change"
+    )
     return (
         "I need to run a fresh matching preflight before I can continue with "
         f"{normalized_activity}. I need to re-check the current state first, then decide whether to retry the change."

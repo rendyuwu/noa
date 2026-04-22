@@ -574,7 +574,9 @@ def test_whm_account_lifecycle_waiting_on_approval_reply_includes_detail_rows() 
     assert details["Success criteria"] == "'alice' on 'web1' ends in active state."
 
 
-def test_whm_account_lifecycle_waiting_on_approval_does_not_repeat_evidence_lines() -> None:
+def test_whm_account_lifecycle_waiting_on_approval_does_not_repeat_evidence_lines() -> (
+    None
+):
     reply = build_workflow_reply_template(
         tool_name="whm_unsuspend_account",
         workflow_family="whm-account-lifecycle",
@@ -605,7 +607,10 @@ def test_whm_account_lifecycle_waiting_on_approval_does_not_repeat_evidence_line
     rendered = render_workflow_reply_text(reply)
     assert rendered.count("Preflight found 'rendy' on 'web2' in suspended state.") == 1
     assert rendered.count("Recorded reason: Ticket #223344.") == 1
-    assert rendered.count("Success condition: 'rendy' on 'web2' ends in active state.") == 1
+    assert (
+        rendered.count("Success condition: 'rendy' on 'web2' ends in active state.")
+        == 1
+    )
 
 
 def test_whm_account_lifecycle_approval_markdown_presentation() -> None:

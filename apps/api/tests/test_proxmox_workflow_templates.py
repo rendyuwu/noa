@@ -10,6 +10,7 @@ from noa_api.core.workflows.registry import (
     require_matching_preflight,
 )
 from noa_api.core.workflows.types import (
+    render_workflow_reply_text,
     render_workflow_approval_markdown,
     workflow_evidence_template_payload,
 )
@@ -1069,6 +1070,24 @@ def test_proxmox_enable_vm_nic_waiting_on_approval_reply_includes_detail_rows() 
     }
 
 
+def test_proxmox_enable_vm_nic_waiting_on_approval_does_not_duplicate_evidence_in_narration() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_enable_vm_nic",
+        workflow_family="proxmox-vm-nic-connectivity",
+        args=_enable_vm_nic_args(),
+        phase="waiting_on_approval",
+        preflight_evidence=_enable_vm_nic_preflight_evidence(),
+    )
+
+    assert reply is not None
+    assert reply.evidence_summary == []
+
+    rendered = render_workflow_reply_text(reply)
+    assert rendered.count("Before: link down.") == 1
+
+
 def test_proxmox_enable_vm_nic_approval_markdown_presentation_uses_paragraph_and_key_values() -> (
     None
 ):
@@ -1129,6 +1148,47 @@ def test_proxmox_reset_vm_cloudinit_password_waiting_on_approval_reply_includes_
         "Reason": "customer request",
         "Success criteria": "The cloud-init password reset completes and the regenerated state is available for VM 101 on node pve1-node.",
     }
+
+
+def test_proxmox_reset_vm_cloudinit_password_waiting_on_approval_does_not_duplicate_evidence_in_narration() -> (
+    None
+):
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+    assert reply.evidence_summary == []
+
+    rendered = render_workflow_reply_text(reply)
+    assert rendered.count("Before: VM 101 on pve1-node.") == 1
 
 
 def test_proxmox_reset_vm_cloudinit_password_approval_markdown_presentation_uses_paragraph_and_key_values() -> (
