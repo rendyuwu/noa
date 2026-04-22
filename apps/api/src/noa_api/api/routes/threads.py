@@ -1,330 +1,40 @@
 from __future__ import annotations
 
 from collections.abc import AsyncGenerator
-from datetime import datetime
 import logging
-from typing import Literal, NoReturn
+from typing import NoReturn
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import delete, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import IntegrityError
 
 from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.error_codes import THREAD_NOT_FOUND, USER_PENDING_APPROVAL
 from noa_api.api.error_handling import ApiHTTPException
-from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.api.route_telemetry import record_route_outcome
+from noa_api.api.threads.schemas import (
+    CreateThreadRequest,
+    GenerateTitleRequest,
+    GenerateTitleResponse,
+    ThreadListResponse,
+    ThreadResponse,
+    UpdateThreadRequest,
+    _to_thread_response,
+)
+from noa_api.api.threads.repository import SQLThreadRepository
+from noa_api.api.threads.title_generation import _message_text_chunks
+from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
 from noa_api.storage.postgres.client import get_session_factory
-from noa_api.storage.postgres.models import Message, Thread
+
+# Re-exports for backward compatibility
+from noa_api.api.threads.service import ThreadService  # noqa: F401
 
 router = APIRouter(tags=["threads"])
 
 logger = logging.getLogger(__name__)
 THREADS_OUTCOMES_TOTAL = "threads.outcomes.total"
-
-
-class ThreadResponse(BaseModel):
-    id: str
-    remote_id: str = Field(alias="remoteId")
-    external_id: str | None = Field(alias="externalId")
-    status: Literal["regular", "archived"]
-    title: str | None
-    is_archived: bool
-    created_at: datetime
-    updated_at: datetime
-
-    model_config = {"populate_by_name": True}
-
-
-class ThreadListResponse(BaseModel):
-    threads: list[ThreadResponse]
-
-
-class CreateThreadRequest(BaseModel):
-    title: str | None = Field(default=None, max_length=255)
-    local_id: str | None = Field(default=None, alias="localId", max_length=255)
-
-    model_config = {"populate_by_name": True}
-
-    @field_validator("title", "local_id", mode="before")
-    @classmethod
-    def _normalize_optional_text(cls, value: object) -> object:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized == "":
-                return None
-            return normalized
-        return value
-
-
-class UpdateThreadRequest(BaseModel):
-    title: str | None = Field(default=None, max_length=255)
-
-    @field_validator("title", mode="before")
-    @classmethod
-    def _normalize_title(cls, value: object) -> object:
-        if value is None:
-            return None
-        if isinstance(value, str):
-            normalized = value.strip()
-            if normalized == "":
-                return None
-            return normalized
-        return value
-
-
-class GenerateTitleRequest(BaseModel):
-    messages: list[dict[str, object]] = Field(default_factory=list)
-
-
-class GenerateTitleResponse(BaseModel):
-    title: str
-
-
-def _extract_text_chunks(value: object) -> list[str]:
-    if isinstance(value, str):
-        normalized = value.strip()
-        return [normalized] if normalized else []
-    if isinstance(value, dict):
-        if value.get("type") == "text":
-            text_value = value.get("text")
-            if isinstance(text_value, str):
-                normalized = text_value.strip()
-                return [normalized] if normalized else []
-        nested_content = value.get("content")
-        if nested_content is not None:
-            return _extract_text_chunks(nested_content)
-        return []
-    if isinstance(value, list):
-        chunks: list[str] = []
-        for item in value:
-            chunks.extend(_extract_text_chunks(item))
-        return chunks
-    return []
-
-
-def _message_text_chunks(message: dict[str, object]) -> list[str]:
-    parts = message.get("parts")
-    if parts is not None:
-        chunks = _extract_text_chunks(parts)
-        if chunks:
-            return chunks
-
-    content = message.get("content")
-    return _extract_text_chunks(content)
-
-
-class SQLThreadRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    async def list_threads(self, *, owner_user_id: UUID) -> list[Thread]:
-        result = await self._session.execute(
-            select(Thread)
-            .where(Thread.owner_user_id == owner_user_id)
-            .order_by(Thread.updated_at.desc(), Thread.created_at.desc())
-        )
-        return list(result.scalars().all())
-
-    async def create_thread(
-        self,
-        *,
-        owner_user_id: UUID,
-        title: str | None = None,
-        external_id: str | None = None,
-    ) -> tuple[Thread, bool]:
-        if external_id is not None:
-            existing = await self.get_thread_by_external_id(
-                owner_user_id=owner_user_id, external_id=external_id
-            )
-            if existing is not None:
-                return existing, False
-
-        thread = Thread(
-            owner_user_id=owner_user_id, title=title, external_id=external_id
-        )
-        self._session.add(thread)
-        try:
-            await self._session.flush()
-        except IntegrityError:
-            await self._session.rollback()
-            if external_id is None:
-                raise
-            existing = await self.get_thread_by_external_id(
-                owner_user_id=owner_user_id, external_id=external_id
-            )
-            if existing is None:
-                raise
-            return existing, False
-        return thread, True
-
-    async def get_thread_by_external_id(
-        self, *, owner_user_id: UUID, external_id: str
-    ) -> Thread | None:
-        result = await self._session.execute(
-            select(Thread).where(
-                Thread.owner_user_id == owner_user_id, Thread.external_id == external_id
-            )
-        )
-        return result.scalar_one_or_none()
-
-    async def get_thread(
-        self, *, owner_user_id: UUID, thread_id: UUID
-    ) -> Thread | None:
-        result = await self._session.execute(
-            select(Thread).where(
-                Thread.id == thread_id, Thread.owner_user_id == owner_user_id
-            )
-        )
-        return result.scalar_one_or_none()
-
-    async def list_messages(
-        self, *, owner_user_id: UUID, thread_id: UUID, limit: int = 50
-    ) -> list[Message]:
-        result = await self._session.execute(
-            select(Message)
-            .join(Thread, Message.thread_id == Thread.id)
-            .where(
-                Message.thread_id == thread_id, Thread.owner_user_id == owner_user_id
-            )
-            .order_by(Message.created_at.asc(), Message.id.asc())
-            .limit(limit)
-        )
-        return list(result.scalars().all())
-
-    async def update_thread_title(
-        self, *, owner_user_id: UUID, thread_id: UUID, title: str | None
-    ) -> Thread | None:
-        thread = await self.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
-        if thread is None:
-            return None
-        thread.title = title
-        await self._session.flush()
-        return thread
-
-    async def set_thread_title_if_missing(
-        self, *, owner_user_id: UUID, thread_id: UUID, title: str
-    ) -> bool:
-        result = await self._session.execute(
-            update(Thread)
-            .where(
-                Thread.id == thread_id,
-                Thread.owner_user_id == owner_user_id,
-                Thread.title.is_(None),
-            )
-            .values(title=title)
-            .returning(Thread.id)
-        )
-        return result.scalar_one_or_none() is not None
-
-    async def set_archived(
-        self, *, owner_user_id: UUID, thread_id: UUID, is_archived: bool
-    ) -> Thread | None:
-        thread = await self.get_thread(owner_user_id=owner_user_id, thread_id=thread_id)
-        if thread is None:
-            return None
-        thread.is_archived = is_archived
-        await self._session.flush()
-        return thread
-
-    async def delete_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
-        result = await self._session.execute(
-            delete(Thread)
-            .where(Thread.id == thread_id, Thread.owner_user_id == owner_user_id)
-            .returning(Thread.id)
-        )
-        return result.scalar_one_or_none() is not None
-
-
-class ThreadService:
-    def __init__(self, repository: SQLThreadRepository) -> None:
-        self._repository = repository
-
-    async def list_threads(self, *, owner_user_id: UUID) -> list[Thread]:
-        return await self._repository.list_threads(owner_user_id=owner_user_id)
-
-    async def create_thread(
-        self,
-        *,
-        owner_user_id: UUID,
-        title: str | None = None,
-        external_id: str | None = None,
-    ) -> tuple[Thread, bool]:
-        return await self._repository.create_thread(
-            owner_user_id=owner_user_id, title=title, external_id=external_id
-        )
-
-    async def get_thread(
-        self, *, owner_user_id: UUID, thread_id: UUID
-    ) -> Thread | None:
-        return await self._repository.get_thread(
-            owner_user_id=owner_user_id, thread_id=thread_id
-        )
-
-    async def list_thread_messages_for_title(
-        self, *, owner_user_id: UUID, thread_id: UUID, limit: int = 50
-    ) -> list[dict[str, object]]:
-        messages = await self._repository.list_messages(
-            owner_user_id=owner_user_id, thread_id=thread_id, limit=limit
-        )
-        return [
-            {
-                "role": message.role,
-                "parts": message.content,
-            }
-            for message in messages
-        ]
-
-    async def update_thread_title(
-        self, *, owner_user_id: UUID, thread_id: UUID, title: str | None
-    ) -> Thread | None:
-        return await self._repository.update_thread_title(
-            owner_user_id=owner_user_id, thread_id=thread_id, title=title
-        )
-
-    async def set_thread_title_if_missing(
-        self, *, owner_user_id: UUID, thread_id: UUID, title: str
-    ) -> bool:
-        return await self._repository.set_thread_title_if_missing(
-            owner_user_id=owner_user_id,
-            thread_id=thread_id,
-            title=title,
-        )
-
-    async def set_archived(
-        self, *, owner_user_id: UUID, thread_id: UUID, is_archived: bool
-    ) -> Thread | None:
-        return await self._repository.set_archived(
-            owner_user_id=owner_user_id,
-            thread_id=thread_id,
-            is_archived=is_archived,
-        )
-
-    async def delete_thread(self, *, owner_user_id: UUID, thread_id: UUID) -> bool:
-        return await self._repository.delete_thread(
-            owner_user_id=owner_user_id, thread_id=thread_id
-        )
-
-
-def _to_thread_response(thread: Thread) -> ThreadResponse:
-    return ThreadResponse(
-        id=str(thread.id),
-        remoteId=str(thread.id),
-        externalId=thread.external_id,
-        status="archived" if thread.is_archived else "regular",
-        title=thread.title,
-        is_archived=thread.is_archived,
-        created_at=thread.created_at,
-        updated_at=thread.updated_at,
-    )
 
 
 def _record_thread_outcome(
