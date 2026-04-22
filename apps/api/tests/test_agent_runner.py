@@ -43,12 +43,33 @@ def _settings(**kwargs: object) -> Settings:
 
 
 def _assistant_texts(result: AgentRunnerResult) -> list[str]:
-    return [
-        cast(str, part["text"])
-        for message in result.messages
-        for part in message.parts
-        if isinstance(part, dict) and part.get("type") == "text"
-    ]
+    texts: list[str] = []
+    for message in result.messages:
+        for part in message.parts:
+            if not isinstance(part, dict):
+                continue
+            if part.get("type") != "text":
+                continue
+            texts.append(cast(str, part["text"]))
+    return texts
+
+
+def _working_message_texts(messages: list[dict[str, object]]) -> list[str]:
+    texts: list[str] = []
+    for message in messages:
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+            part_dict = cast(dict[str, object], part)
+            if part_dict.get("type") != "text":
+                continue
+            text = part_dict.get("text")
+            if isinstance(text, str):
+                texts.append(text)
+    return texts
 
 
 def _request_approval_args(result: AgentRunnerResult) -> dict[str, object]:
@@ -3916,6 +3937,441 @@ async def test_agent_runner_requires_account_preflight_before_change_proposal(
             "Run whm_preflight_account with the same server_ref and username before requesting this change."
         ],
     }
+
+
+async def test_agent_runner_uses_internal_guidance_for_initial_preflight_failure_without_user_facing_error(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _ThreeTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web1",
+                                "username": "alice",
+                                "reason": "requested by customer",
+                            },
+                        )
+                    ],
+                )
+
+            if self.turn == 2:
+                assert any(message.get("role") == "tool" for message in messages)
+                assert not any(
+                    "The tool failed with preflight_required." in text
+                    for text in _working_message_texts(messages)
+                )
+                return LLMTurnResponse(text="", tool_calls=[])
+
+            working_texts = _working_message_texts(messages)
+            assert any(
+                "Run a fresh matching preflight now" in text for text in working_texts
+            )
+            assert not any("preflight_required" in text for text in working_texts)
+            return LLMTurnResponse(
+                text="I'll run the matching preflight first before retrying that change.",
+                tool_calls=[],
+            )
+
+    llm = _ThreeTurnLLM()
+    runner = AgentRunner(
+        llm_client=llm,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]}
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert llm.turn == 3
+    assert _assistant_texts(result) == [
+        "I'll run the matching preflight first before retrying that change."
+    ]
+    assert not any(
+        isinstance(part, dict)
+        and part.get("type") == "text"
+        and "preflight_required" in cast(str, part.get("text", ""))
+        for message in result.messages
+        for part in message.parts
+    )
+
+
+async def test_agent_runner_uses_preflight_error_as_internal_guidance_instead_of_final_user_text(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    class _ThreeTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = tools, on_text_delta
+            self.turn += 1
+            if self.turn == 1:
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web1",
+                                "username": "alice",
+                                "reason": "requested by customer",
+                            },
+                        )
+                    ],
+                )
+
+            if self.turn == 2:
+                assert any(message.get("role") == "tool" for message in messages)
+                return LLMTurnResponse(
+                    text="",
+                    tool_calls=[
+                        LLMToolCall(
+                            name=tool.name,
+                            arguments={
+                                "server_ref": "web1",
+                                "username": "alice",
+                                "reason": "requested by customer",
+                            },
+                        )
+                    ],
+                )
+
+            assert any(
+                "Run a fresh matching preflight now" in text
+                for text in _working_message_texts(messages)
+            )
+            assert not any(
+                "The tool failed with preflight_required." in text
+                for text in _working_message_texts(messages)
+            )
+            return LLMTurnResponse(
+                text="I'll run a fresh matching preflight before proposing that change again.",
+                tool_calls=[],
+            )
+
+    llm = _ThreeTurnLLM()
+    runner = AgentRunner(
+        llm_client=llm,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {"role": "user", "parts": [{"type": "text", "text": "Suspend alice"}]}
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert llm.turn == 3
+    assert _assistant_texts(result) == [
+        "I'll run a fresh matching preflight before proposing that change again."
+    ]
+    assert not any(
+        isinstance(part, dict)
+        and part.get("type") == "text"
+        and "preflight_required" in cast(str, part.get("text", ""))
+        for message in result.messages
+        for part in message.parts
+    )
+
+
+async def test_agent_runner_returns_deterministic_user_reply_after_repeated_preflight_mismatch_retries(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    async def guarded_change(
+        *, server_ref: str, username: str, reason: str
+    ) -> dict[str, object]:
+        raise AssertionError(
+            f"unexpected execution for {server_ref} {username} {reason}"
+        )
+
+    tool = ToolDefinition(
+        name="whm_suspend_account",
+        description="Requires matching account preflight.",
+        risk=ToolRisk.CHANGE,
+        parameters_schema={
+            "type": "object",
+            "properties": {
+                "server_ref": {"type": "string", "minLength": 1},
+                "username": {"type": "string", "minLength": 1},
+                "reason": {"type": "string", "minLength": 1},
+            },
+            "required": ["server_ref", "username", "reason"],
+            "additionalProperties": False,
+        },
+        execute=guarded_change,
+    )
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner.get_tool_definition",
+        lambda name: tool if name == tool.name else None,
+    )
+    monkeypatch.setattr("noa_api.core.agent.runner.get_tool_registry", lambda: (tool,))
+
+    class _ThreeTurnLLM:
+        def __init__(self) -> None:
+            self.turn = 0
+
+        async def run_turn(
+            self,
+            *,
+            messages: list[dict[str, object]],
+            tools: list[dict[str, object]],
+            on_text_delta=None,
+        ) -> LLMTurnResponse:
+            _ = messages, tools, on_text_delta
+            self.turn += 1
+            return LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "requested by customer",
+                        },
+                    )
+                ],
+            )
+
+    llm = _ThreeTurnLLM()
+    runner = AgentRunner(
+        llm_client=llm,
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "args": {"server_ref": "web1", "username": "bob"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-1",
+                        "result": {"ok": True, "account": {"user": "bob"}},
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert llm.turn == 3
+    assert _assistant_texts(result) == [
+        "I need to run a fresh matching preflight before I can continue with suspend account 'alice'. I need to re-check the current state first, then decide whether to retry the change."
+    ]
+    assert not any(
+        isinstance(part, dict)
+        and part.get("type") == "text"
+        and "preflight_mismatch" in cast(str, part.get("text", ""))
+        for message in result.messages
+        for part in message.parts
+    )
+    assert not any(
+        isinstance(part, dict)
+        and part.get("type") == "text"
+        and part.get("text") == "Tool loop exceeded safety limits."
+        for message in result.messages
+        for part in message.parts
+    )
+
+
+async def test_agent_runner_allows_identical_change_retry_after_fresh_matching_preflight(
+    monkeypatch,
+) -> None:
+    repo = _InMemoryActionToolRunRepository(action_requests={}, tool_runs={})
+
+    tool = get_tool_definition("whm_suspend_account")
+    assert tool is not None
+
+    monkeypatch.setattr(
+        "noa_api.core.agent.runner._resolve_requested_server_id",
+        lambda **_kwargs: _async_return("server-1"),
+    )
+
+    runner = AgentRunner(
+        llm_client=_FakeLLMClient(
+            response=LLMTurnResponse(
+                text="",
+                tool_calls=[
+                    LLMToolCall(
+                        name=tool.name,
+                        arguments={
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "requested by customer",
+                        },
+                    )
+                ],
+            )
+        ),
+        action_tool_run_service=ActionToolRunService(repository=repo),
+    )
+
+    result = await runner.run_turn(
+        thread_messages=[
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "type": "text",
+                        "text": "Suspend alice requested by customer.",
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": tool.name,
+                        "toolCallId": "change-1",
+                        "args": {
+                            "server_ref": "web1",
+                            "username": "alice",
+                            "reason": "requested by customer",
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": tool.name,
+                        "toolCallId": "change-1",
+                        "result": {
+                            "error": "Required WHM preflight evidence is missing",
+                            "error_code": "preflight_required",
+                            "details": [
+                                "Run whm_preflight_account with the same server_ref and username before requesting this change."
+                            ],
+                        },
+                        "isError": True,
+                    }
+                ],
+            },
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-refresh-1",
+                        "args": {"server_ref": "web1", "username": "alice"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_account",
+                        "toolCallId": "preflight-refresh-1",
+                        "result": {
+                            "ok": True,
+                            "server_id": "server-1",
+                            "account": {"user": "alice", "suspended": False},
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+        available_tool_names={tool.name},
+        thread_id=uuid4(),
+        requested_by_user_id=uuid4(),
+    )
+
+    assert len(repo.action_requests) == 1
+    approval_args = _request_approval_args(result)
+    assert approval_args["toolName"] == tool.name
+    assert cast(dict[str, object], approval_args["arguments"]) == {
+        "server_ref": "web1",
+        "username": "alice",
+        "reason": "requested by customer",
+    }
+    assert not any(
+        "fresh matching preflight" in text.lower() for text in _assistant_texts(result)
+    )
 
 
 async def test_agent_runner_rejects_account_change_when_preflight_targets_other_account(

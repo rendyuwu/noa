@@ -1274,6 +1274,7 @@ async def test_execute_approved_tool_run_revalidates_required_preflight_before_e
 
     assert repo.tool_runs[started.id].status == ToolRunStatus.FAILED
     assert repo.tool_runs[started.id].error == "preflight_required"
+    assert assistant_repo.messages[-1]["parts"][0]["isError"] is True
     assert assistant_repo.messages[-1]["parts"][0]["result"] == {
         "error": "Required WHM preflight evidence is missing",
         "error_code": "preflight_required",

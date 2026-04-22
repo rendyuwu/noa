@@ -527,6 +527,8 @@ async def execute_approved_tool_run(
         )
         return
 
+    # CHANGE approvals must still validate against current preflight evidence at
+    # execution time so stale thread history cannot silently authorize a mutation.
     preflight_error = await _validate_approved_tool_preflight(
         tool_name=approved_request.tool_name,
         args=decrypt_sensitive_args(approved_request.args),

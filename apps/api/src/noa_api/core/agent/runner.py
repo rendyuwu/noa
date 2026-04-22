@@ -444,6 +444,7 @@ class AgentRunner:
         tool_calls_processed = 0
         hit_safety_limit = False
         internal_guidance_counts: dict[str, int] = {}
+        preflight_guidance_counts: dict[str, int] = {}
         reasoning_chunks: list[str] = []
         while rounds < max_rounds and tool_calls_processed < max_tool_calls:
             rounds += 1
@@ -596,6 +597,67 @@ class AgentRunner:
                     args=tool_call_args,
                 )
                 if duplicate_failed_result is not None:
+                    guidance_text = _preflight_retry_guidance(duplicate_failed_result)
+                    if guidance_text is not None and tool is not None:
+                        requested_server_id = None
+                        if tool.risk == ToolRisk.CHANGE:
+                            requested_server_id = await _resolve_requested_server_id(
+                                args=tool_call_args,
+                                session=self._session,
+                            )
+                        if _has_fresh_matching_preflight_after_failed_tool_result(
+                            tool_name=tool_call.name,
+                            args=tool_call_args,
+                            working_messages=working_messages,
+                            failed_tool_result_part=duplicate_failed_result,
+                            requested_server_id=requested_server_id,
+                        ):
+                            duplicate_failed_result = None
+                if duplicate_failed_result is not None:
+                    guidance_text = _preflight_retry_guidance(duplicate_failed_result)
+                    if guidance_text is not None:
+                        preflight_guidance_key = (
+                            f"{tool_call.name}:{_canonical_tool_args(tool_call_args)}"
+                        )
+                        preflight_guidance_counts[preflight_guidance_key] = (
+                            preflight_guidance_counts.get(preflight_guidance_key, 0) + 1
+                        )
+                        if preflight_guidance_counts[preflight_guidance_key] >= 2:
+                            fallback_text = _assistant_reply_from_tool_result_part(
+                                working_messages=working_messages,
+                                tool_result_part=duplicate_failed_result,
+                            )
+                            if fallback_text is None:
+                                fallback_text = _preflight_user_retry_reply(
+                                    working_messages=working_messages,
+                                    tool_result_part=duplicate_failed_result,
+                                )
+                            fallback_parts: list[dict[str, object]] = [
+                                {"type": "text", "text": fallback_text}
+                            ]
+                            output_messages.append(
+                                AgentMessage(role="assistant", parts=fallback_parts)
+                            )
+                            working_messages.append(
+                                {
+                                    "role": "assistant",
+                                    "parts": fallback_parts,
+                                }
+                            )
+                            text_deltas.extend(_split_text_deltas(fallback_text))
+                            if on_text_delta is not None:
+                                for chunk in _split_text_deltas(fallback_text):
+                                    await on_text_delta(chunk)
+                            saw_internal_guidance_stop = True
+                            break
+                        working_messages.append(
+                            {
+                                "role": "assistant",
+                                "parts": [{"type": "text", "text": guidance_text}],
+                            }
+                        )
+                        continue
+
                     fallback_text = _assistant_reply_from_tool_result_part(
                         working_messages=working_messages,
                         tool_result_part=duplicate_failed_result,
@@ -1706,6 +1768,66 @@ def _canonical_tool_args(args: dict[str, object]) -> str:
     return json.dumps(json_safe(args), sort_keys=True, separators=(",", ":"))
 
 
+def _working_messages_after_part(
+    working_messages: list[dict[str, object]],
+    *,
+    part_to_match: dict[str, object],
+) -> list[dict[str, object]]:
+    for message_index, message in enumerate(working_messages):
+        parts = message.get("parts")
+        if not isinstance(parts, list):
+            continue
+        for part_index, raw_part in enumerate(parts):
+            part_dict = _as_object_dict(raw_part)
+            if part_dict is not part_to_match:
+                continue
+            trailing_parts = parts[part_index + 1 :]
+            trailing_messages: list[dict[str, object]] = []
+            if trailing_parts:
+                trailing_messages.append(
+                    {
+                        "role": message.get("role"),
+                        "parts": trailing_parts,
+                    }
+                )
+            trailing_messages.extend(working_messages[message_index + 1 :])
+            return trailing_messages
+    return []
+
+
+def _has_fresh_matching_preflight_after_failed_tool_result(
+    *,
+    tool_name: str,
+    args: dict[str, object],
+    working_messages: list[dict[str, object]],
+    failed_tool_result_part: dict[str, object],
+    requested_server_id: str | None,
+) -> bool:
+    result = _as_object_dict(failed_tool_result_part.get("result"))
+    if result is None:
+        return False
+    error_code = _normalized_text(result.get("error_code"))
+    if error_code not in {"preflight_required", "preflight_mismatch"}:
+        return False
+
+    trailing_messages = _working_messages_after_part(
+        working_messages,
+        part_to_match=failed_tool_result_part,
+    )
+    if not trailing_messages:
+        return False
+
+    return (
+        _require_matching_preflight(
+            tool_name=tool_name,
+            args=args,
+            working_messages=trailing_messages,
+            requested_server_id=requested_server_id,
+        )
+        is None
+    )
+
+
 def _latest_matching_failed_tool_result_part(
     *,
     working_messages: list[dict[str, object]],
@@ -1746,12 +1868,50 @@ def _post_tool_followup_guidance(
     latest_tool_result = _latest_tool_result_part(working_messages)
     if latest_tool_result is None:
         return None
+    preflight_guidance = _preflight_retry_guidance(latest_tool_result)
+    if preflight_guidance is not None:
+        return preflight_guidance
     return (
         "Using the latest tool result you already have, answer the user directly now. "
         "If the tool succeeded, give the direct answer first and then short supporting evidence. "
         "If the tool failed, explain the error code, likely cause, and next safe step. "
         "If a workflow receipt is already present, keep the narration to 1-2 lines and refer to it. "
         "Do not call another tool unless another fact is strictly required. Reply in the user's language."
+    )
+
+
+def _preflight_retry_guidance(tool_result_part: dict[str, object]) -> str | None:
+    result = _as_object_dict(tool_result_part.get("result"))
+    if result is None:
+        return None
+    error_code = _normalized_text(result.get("error_code"))
+    if error_code not in {"preflight_required", "preflight_mismatch"}:
+        return None
+    tool_name = _normalized_text(tool_result_part.get("toolName")) or "the requested change"
+    return (
+        f"The previous attempt to run {tool_name} is blocked by stale or missing preflight evidence. "
+        "Run a fresh matching preflight now, review the current state, then decide whether to retry the change. "
+        "Do not present the raw preflight error to the user unless the fresh preflight also fails."
+    )
+
+
+def _preflight_user_retry_reply(
+    *,
+    working_messages: list[dict[str, object]],
+    tool_result_part: dict[str, object],
+) -> str:
+    tool_name = _normalized_text(tool_result_part.get("toolName")) or "that change"
+    tool_call_id = _normalized_text(tool_result_part.get("toolCallId"))
+    args = (
+        _tool_call_args_for_id(working_messages, tool_call_id)
+        if tool_call_id is not None
+        else None
+    )
+    activity = describe_workflow_activity(tool_name=tool_name, args=args or {})
+    normalized_activity = activity[:1].lower() + activity[1:] if activity else "that change"
+    return (
+        "I need to run a fresh matching preflight before I can continue with "
+        f"{normalized_activity}. I need to re-check the current state first, then decide whether to retry the change."
     )
 
 
@@ -1897,6 +2057,11 @@ def _assistant_reply_from_tool_result_part(
         error_code = _normalized_text(result_dict.get("error_code"))
         message = _normalized_text(result_dict.get("message"))
         if is_error or result_dict.get("ok") is False:
+            if error_code in {"preflight_required", "preflight_mismatch"}:
+                return _preflight_user_retry_reply(
+                    working_messages=working_messages,
+                    tool_result_part=latest_tool_result,
+                )
             if error_code and message:
                 return f"The tool failed with {error_code}: {message}"
             if message:
