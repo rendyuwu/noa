@@ -36,8 +36,8 @@ from noa_api.core.auth.authorization import (
     UnknownRoleError,
     get_authorization_service,
 )
+from noa_api.api.route_telemetry import record_route_outcome
 from noa_api.core.logging_context import log_context
-from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -133,38 +133,6 @@ class SetUserRolesRequest(BaseModel):
     roles: list[str]
 
 
-def _status_family(status_code: int) -> str:
-    return f"{status_code // 100}xx"
-
-
-def _safe_trace(request: Request, event: TelemetryEvent) -> None:
-    try:
-        get_telemetry_recorder(request.app).trace(event)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "trace",
-                "telemetry_event": event.name,
-            },
-        )
-
-
-def _safe_metric(
-    request: Request, event: TelemetryEvent, *, value: int | float
-) -> None:
-    try:
-        get_telemetry_recorder(request.app).metric(event, value=value)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "metric",
-                "telemetry_event": event.name,
-            },
-        )
-
-
 def _record_admin_outcome(
     request: Request,
     *,
@@ -173,27 +141,13 @@ def _record_admin_outcome(
     trace_attributes: dict[str, str | int | bool],
     error_code: str | None = None,
 ) -> None:
-    event_attributes = dict(trace_attributes)
-    if error_code is not None:
-        event_attributes["error_code"] = error_code
-        event_attributes["status_code"] = status_code
-
-    _safe_trace(
+    record_route_outcome(
         request,
-        TelemetryEvent(name=event_name, attributes=event_attributes),
-    )
-
-    metric_attributes: dict[str, str] = {
-        "event_name": event_name,
-        "status_family": _status_family(status_code),
-    }
-    if error_code is not None:
-        metric_attributes["error_code"] = error_code
-
-    _safe_metric(
-        request,
-        TelemetryEvent(name=ADMIN_OUTCOMES_TOTAL, attributes=metric_attributes),
-        value=1,
+        metric_name=ADMIN_OUTCOMES_TOTAL,
+        event_name=event_name,
+        status_code=status_code,
+        trace_attributes=trace_attributes,
+        error_code=error_code,
     )
 
 
