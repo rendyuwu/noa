@@ -123,6 +123,8 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     ...beforeState,
     ...argumentSummary,
   ].filter((section) => section.items.length > 0);
+  // Canonical workflow evidence wins whenever present; legacy beforeState/argumentSummary
+  // remain a compatibility fallback only and must not be merged back in.
   const sectionsForInline = evidenceSections.length > 0 ? evidenceSections : fallbackSections;
 
   if (lifecycleStatus === "requested") {

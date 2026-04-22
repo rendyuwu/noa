@@ -58,6 +58,41 @@ describe("ClaudeToolFallback", () => {
     expect(screen.getByText(/^alice$/i)).toBeInTheDocument();
   });
 
+  it("does not duplicate legacy fallback sections when canonical evidence sections exist", () => {
+    mockThreadMessages = [];
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-2b",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          evidenceSections: [
+            {
+              title: "Before state",
+              items: [{ label: "Status", value: "Active" }],
+            },
+            {
+              title: "Requested change",
+              items: [{ label: "Reason", value: "Billing" }],
+            },
+          ],
+          beforeState: [{ label: "Status", value: "Legacy Active" }],
+          argumentSummary: [{ label: "Reason", value: "Legacy Billing" }],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /details/i }));
+
+    expect(screen.getAllByText(/^Before state$/i)).toHaveLength(1);
+    expect(screen.getAllByText(/^Requested change$/i)).toHaveLength(1);
+    expect(screen.getByText(/^Active$/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Billing$/i)).toBeInTheDocument();
+    expect(screen.queryByText(/Legacy Active/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Legacy Billing/i)).not.toBeInTheDocument();
+  });
+
   it("falls back to legacy detail sections when evidence sections are absent", () => {
     mockThreadMessages = [];
 
