@@ -23,13 +23,11 @@ from noa_api.api.threads.schemas import (
     _to_thread_response,
 )
 from noa_api.api.threads.repository import SQLThreadRepository
+from noa_api.api.threads.service import ThreadService
 from noa_api.api.threads.title_generation import _message_text_chunks
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
 from noa_api.storage.postgres.client import get_session_factory
-
-# Re-exports for backward compatibility
-from noa_api.api.threads.service import ThreadService  # noqa: F401
 
 router = APIRouter(tags=["threads"])
 

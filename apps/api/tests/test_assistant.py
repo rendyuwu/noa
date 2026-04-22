@@ -20,8 +20,8 @@ pytest.importorskip("assistant_stream")
 from noa_api.api.auth_dependencies import get_current_auth_user
 from noa_api.api.assistant.assistant_errors import assistant_domain_error
 from noa_api.api.error_handling import install_error_handling
+from noa_api.api.assistant.service import AssistantService
 from noa_api.api.routes.assistant import (
-    AssistantService,
     _stream_assistant_text,
     get_assistant_run_coordinator,
     get_assistant_service,

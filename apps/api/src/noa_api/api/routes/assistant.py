@@ -55,7 +55,7 @@ from noa_api.api.assistant.schemas import (
     AssistantRunAckResponse,
     AssistantThreadStateResponse,
 )
-from noa_api.api.assistant.service import AssistantService  # noqa: F401
+from noa_api.api.assistant.service import AssistantService
 from noa_api.core.auth.authorization import (
     AuthorizationService,
     AuthorizationUser,

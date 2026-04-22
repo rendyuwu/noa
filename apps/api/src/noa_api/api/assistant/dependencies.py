@@ -9,10 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from noa_api.api.assistant.assistant_repository import SQLAssistantRepository
 from noa_api.api.assistant.service import AssistantService
 from noa_api.core.agent.runner import AgentRunner, create_default_llm_client
-from noa_api.core.auth.authorization import (
-    AuthorizationService,
-    SQLAuthorizationRepository,
-)
+from noa_api.core.auth.authorization import AuthorizationService
+from noa_api.core.auth.authorization_repository import SQLAuthorizationRepository
 from noa_api.core.config import get_app_settings
 from noa_api.storage.postgres.action_tool_runs import (
     ActionToolRunService,
