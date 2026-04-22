@@ -1085,6 +1085,10 @@ def test_proxmox_enable_vm_nic_waiting_on_approval_does_not_duplicate_evidence_i
     assert reply.evidence_summary == []
 
     rendered = render_workflow_reply_text(reply)
+    lead = (
+        "VM 101 NIC net0 on node pve1-node is currently link down and is ready to be moved to link up."
+    )
+    assert rendered.count(lead) == 1
     assert rendered.count("Before: link down.") == 1
 
 
@@ -1101,9 +1105,7 @@ def test_proxmox_enable_vm_nic_approval_markdown_presentation_uses_paragraph_and
 
     markdown = _assert_approval_markdown_matches_reply(
         reply,
-        expected_paragraphs=[
-            "VM 101 NIC net0 on node pve1-node is currently link down and is ready to be moved to link up."
-        ],
+        expected_paragraphs=[],
     )
 
     assert "Before: link down." in markdown
@@ -1188,6 +1190,8 @@ def test_proxmox_reset_vm_cloudinit_password_waiting_on_approval_does_not_duplic
     assert reply.evidence_summary == []
 
     rendered = render_workflow_reply_text(reply)
+    lead = "Cloud-init password reset requested for VM 101 on node pve1-node."
+    assert rendered.count(lead) == 1
     assert rendered.count("Before: VM 101 on pve1-node.") == 1
 
 
@@ -1227,9 +1231,7 @@ def test_proxmox_reset_vm_cloudinit_password_approval_markdown_presentation_uses
 
     markdown = _assert_approval_markdown_matches_reply(
         reply,
-        expected_paragraphs=[
-            "Cloud-init password reset requested for VM 101 on node pve1-node."
-        ],
+        expected_paragraphs=[],
     )
 
     assert "Before: VM 101 on pve1-node." in markdown

@@ -168,7 +168,7 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
                 summary=summary,
                 evidence_summary=[],
                 approval_presentation=_approval_presentation_from_reply_data(
-                    paragraph=summary,
+                    paragraph=None,
                     details=details,
                     evidence_summary=approval_evidence_summary,
                 ),
@@ -935,7 +935,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
                 summary=summary,
                 evidence_summary=[],
                 approval_presentation=_approval_presentation_from_reply_data(
-                    paragraph=f"Cloud-init password reset requested for {subject}.",
+                    paragraph=None,
                     details=details,
                     evidence_summary=approval_evidence_summary,
                 ),
