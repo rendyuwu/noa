@@ -2771,7 +2771,10 @@ async def test_agent_runner_renders_family_owned_approval_markdown_above_card(
     )
     evidence_summary = reply_template["evidenceSummary"]
     assert isinstance(evidence_summary, list)
-    assert evidence_summary
+    assert evidence_summary == []
+    evidence_sections = approval_args.get("evidenceSections")
+    assert isinstance(evidence_sections, list)
+    assert evidence_sections
     next_step = reply_template["nextStep"]
     assert isinstance(next_step, str)
     _assert_text_has_tokens(next_step, "approve")
