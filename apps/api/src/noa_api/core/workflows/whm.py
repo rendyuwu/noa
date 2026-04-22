@@ -7,9 +7,12 @@ from typing import Any, cast
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.core.tool_error_sanitizer import SanitizedToolError
+from noa_api.core.workflows.approval import (
+    approval_detail_rows as _approval_detail_rows,
+    approval_presentation_from_reply_data as _approval_presentation_from_reply_data,
+    approval_reason_detail as _approval_reason_detail,
+)
 from noa_api.core.workflows.types import (
-    WorkflowApprovalPresentation,
-    WorkflowApprovalPresentationBlock,
     WorkflowEvidenceItem,
     WorkflowEvidenceSection,
     WorkflowEvidenceTemplate,
@@ -983,88 +986,6 @@ def _default_step_statuses(
     if reason is None and phase in {"completed", "denied", "failed"}:
         statuses["reason"] = "cancelled"
     return statuses
-
-
-def _approval_detail_rows(*rows: tuple[str, str | None]) -> list[dict[str, str]]:
-    return [
-        {"label": label, "value": value}
-        for label, value in rows
-        if value is not None and label.strip() and value.strip()
-    ]
-
-
-def _approval_key_value_block_from_details(
-    details: list[dict[str, str]] | None,
-) -> WorkflowApprovalPresentationBlock:
-    return WorkflowApprovalPresentationBlock(
-        kind="key_value_list",
-        evidence_items=_clean_items(
-            [
-                WorkflowEvidenceItem(label=label, value=value)
-                for item in details or []
-                for label in [normalized_text(item.get("label"))]
-                for value in [normalized_text(item.get("value"))]
-                if label is not None and value is not None
-            ]
-        ),
-    )
-
-
-def _approval_reason_detail(reason: str | None) -> str:
-    return reason or "none provided"
-
-
-def _approval_paragraph_block(text: str | None) -> WorkflowApprovalPresentationBlock:
-    return WorkflowApprovalPresentationBlock(kind="paragraph", text=text)
-
-
-def _approval_bullet_list_block(
-    *items: str | None,
-) -> WorkflowApprovalPresentationBlock:
-    return WorkflowApprovalPresentationBlock(
-        kind="bullet_list",
-        items=[item for item in items if isinstance(item, str) and item.strip()],
-    )
-
-
-def _approval_key_value_block(
-    *rows: tuple[str, str | None],
-) -> WorkflowApprovalPresentationBlock:
-    return WorkflowApprovalPresentationBlock(
-        kind="key_value_list",
-        evidence_items=_clean_items(
-            [
-                WorkflowEvidenceItem(label=label, value=value)
-                for label, value in rows
-                if value is not None
-            ]
-        ),
-    )
-
-
-def _approval_presentation(
-    *blocks: WorkflowApprovalPresentationBlock,
-) -> WorkflowApprovalPresentation:
-    return WorkflowApprovalPresentation(
-        blocks=[
-            block
-            for block in blocks
-            if isinstance(block, WorkflowApprovalPresentationBlock)
-        ]
-    )
-
-
-def _approval_presentation_from_reply_data(
-    *,
-    paragraph: str | None,
-    details: list[dict[str, str]] | None,
-    evidence_summary: list[str],
-) -> WorkflowApprovalPresentation:
-    return _approval_presentation(
-        _approval_paragraph_block(paragraph),
-        _approval_key_value_block_from_details(details),
-        _approval_bullet_list_block(*evidence_summary),
-    )
 
 
 def _join_with_and(values: list[str]) -> str:
