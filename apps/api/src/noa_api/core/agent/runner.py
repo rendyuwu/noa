@@ -29,17 +29,18 @@ from noa_api.core.workflows.registry import (
     describe_workflow_activity,
     infer_waiting_on_user_workflow_from_messages,
     persist_workflow_todos,
-    require_matching_preflight,
 )
 from noa_api.core.workflows.types import (
     assistant_is_requesting_reason,
     messages_before_latest_user_if_reason_follow_up,
     render_workflow_reply_text,
 )
+from noa_api.core.workflows.preflight_validation import (
+    resolve_requested_server_id as _resolve_requested_server_id,
+    validate_matching_preflight as _require_matching_preflight,
+)
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
-from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
-from noa_api.whm.server_ref import resolve_whm_server_ref
 
 
 logger = logging.getLogger(__name__)
@@ -1377,21 +1378,6 @@ def _extract_reasoning_summary(
     )
 
 
-def _require_matching_preflight(
-    *,
-    tool_name: str,
-    args: dict[str, object],
-    working_messages: list[dict[str, object]],
-    requested_server_id: str | None = None,
-) -> SanitizedToolError | None:
-    return require_matching_preflight(
-        tool_name=tool_name,
-        args=args,
-        working_messages=working_messages,
-        requested_server_id=requested_server_id,
-    )
-
-
 def _normalized_text(value: object) -> str | None:
     if not isinstance(value, str):
         return None
@@ -1601,22 +1587,6 @@ def _message_has_text(message: dict[str, object], expected_text: str) -> bool:
         if part_dict.get("text") == expected_text:
             return True
     return False
-
-
-async def _resolve_requested_server_id(
-    *, args: dict[str, object], session: AsyncSession | None
-) -> str | None:
-    requested_server_ref = _normalized_text(args.get("server_ref"))
-    if requested_server_ref is None or session is None:
-        return None
-    if not hasattr(session, "execute"):
-        return None
-
-    repo = SQLWHMServerRepository(session)
-    resolution = await resolve_whm_server_ref(requested_server_ref, repo=repo)
-    if not resolution.ok or resolution.server_id is None:
-        return None
-    return str(resolution.server_id)
 
 
 def _build_approval_context(

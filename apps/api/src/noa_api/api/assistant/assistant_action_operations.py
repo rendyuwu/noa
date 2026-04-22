@@ -25,9 +25,9 @@ from noa_api.api.assistant.assistant_tool_result_operations import (
 )
 from noa_api.core.logging_context import log_context
 from noa_api.core.secrets.redaction import redact_sensitive_data
-from noa_api.core.agent.runner import (
-    _require_matching_preflight,
-    _resolve_requested_server_id,
+from noa_api.core.workflows.preflight_validation import (
+    validate_matching_preflight as _require_matching_preflight,
+    resolve_requested_server_id as _resolve_requested_server_id,
 )
 from noa_api.core.tool_error_sanitizer import SanitizedToolError, sanitize_tool_error
 from noa_api.core.tools.argument_validation import validate_tool_arguments
