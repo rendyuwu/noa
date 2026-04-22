@@ -273,14 +273,18 @@ def _firewall_entry_receipt_items(
         if csf_value is None:
             csf_value = _firewall_csf_receipt_value(csf, target=target)
         if csf_value is not None:
-            items.append(WorkflowEvidenceItem(label=f"{target} \u00b7 CSF", value=csf_value))
+            items.append(
+                WorkflowEvidenceItem(label=f"{target} \u00b7 CSF", value=csf_value)
+            )
 
     imunify = entry.get("imunify")
     if isinstance(imunify, dict):
         imunify_value = _firewall_imunify_receipt_value(imunify, target=target)
         if imunify_value is not None:
             items.append(
-                WorkflowEvidenceItem(label=f"{target} \u00b7 Imunify", value=imunify_value)
+                WorkflowEvidenceItem(
+                    label=f"{target} \u00b7 Imunify", value=imunify_value
+                )
             )
 
     if items:

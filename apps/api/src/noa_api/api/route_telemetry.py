@@ -28,9 +28,7 @@ def safe_trace(request: Request, event: TelemetryEvent) -> None:
         )
 
 
-def safe_metric(
-    request: Request, event: TelemetryEvent, *, value: int | float
-) -> None:
+def safe_metric(request: Request, event: TelemetryEvent, *, value: int | float) -> None:
     try:
         get_telemetry_recorder(request.app).metric(event, value=value)
     except Exception:

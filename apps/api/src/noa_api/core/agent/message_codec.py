@@ -103,7 +103,10 @@ def _should_suppress_provisional_assistant_text_this_round(
         return False
 
     for tool_call in tool_calls:
-        if getattr(tool_call, "name", None) in {"request_approval", "update_workflow_todo"}:
+        if getattr(tool_call, "name", None) in {
+            "request_approval",
+            "update_workflow_todo",
+        }:
             return True
         tool = _runner_mod.get_tool_definition(getattr(tool_call, "name", ""))
         if tool is not None and tool.risk == ToolRisk.CHANGE:

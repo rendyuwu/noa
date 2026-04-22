@@ -17,9 +17,7 @@ async def _csf_preflight(server: Any, *, target: str) -> dict[str, object]:
     pkg = _pkg()
     try:
         grep_result = await pkg.run_csf_command(server, args=["-g", target])
-        output = pkg.require_csf_success(
-            grep_result, default_message="CSF grep failed"
-        )
+        output = pkg.require_csf_success(grep_result, default_message="CSF grep failed")
         if not output.strip():
             return {
                 "ok": False,
