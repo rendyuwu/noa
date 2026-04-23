@@ -16,7 +16,7 @@ import {
   convertAssistantState,
   normalizeAssistantState,
 } from "@/components/lib/assistant-transport-converter";
-import { clearAuth, getAuthToken } from "@/components/lib/auth-store";
+import { clearAuth } from "@/components/lib/auth-store";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { fetchWithAuth, getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { ThreadHydrationProvider } from "@/components/lib/thread-hydration";
@@ -107,15 +107,9 @@ async function reconnectLiveRun(
   onSnapshot: (state: AssistantState) => void,
   signal: AbortSignal,
 ): Promise<void> {
-  const token = getAuthToken();
-  const headers = new Headers();
-  if (token) {
-    headers.set("authorization", `Bearer ${token}`);
-  }
-
   const response = await fetch(`${getApiUrl()}/assistant/runs/${runId}/live`, {
     method: "GET",
-    headers,
+    credentials: "include",
     signal,
   });
 
@@ -393,10 +387,7 @@ function useThreadAwareAssistantTransportRuntime() {
     body: async () => ({
       threadId: await ensureThreadId(),
     }),
-    headers: async () => {
-      const token = getAuthToken();
-      return token ? { authorization: `Bearer ${token}` } : {};
-    },
+    headers: async () => ({}),
     onError: (error, { commands }) => {
       console.error("Assistant transport error", error, { commands: commands.length });
     },

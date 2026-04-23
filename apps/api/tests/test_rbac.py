@@ -19,7 +19,7 @@ from noa_api.api.error_codes import (
     INTERNAL_ROLE_FORBIDDEN,
     INVALID_ROLE_NAME,
     INVALID_TOKEN,
-    MISSING_BEARER_TOKEN,
+    MISSING_AUTHENTICATION,
     RESERVED_ROLE,
     SELF_REMOVE_ADMIN_ROLE,
     UNKNOWN_ROLES,
@@ -684,8 +684,8 @@ async def test_admin_route_requires_bearer_token_with_stable_error_code() -> Non
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Missing bearer token"
-    assert body["error_code"] == MISSING_BEARER_TOKEN
+    assert body["detail"] == "Missing authentication"
+    assert body["error_code"] == MISSING_AUTHENTICATION
     assert body["request_id"] == "admin-missing-bearer"
     assert response.headers["x-request-id"] == body["request_id"]
 

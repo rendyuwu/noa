@@ -2,6 +2,7 @@ import logging
 
 from fastapi import APIRouter, Depends, Request, status
 from pydantic import BaseModel
+from starlette.responses import JSONResponse, Response
 
 from noa_api.api.auth_dependencies import get_active_current_auth_user
 from noa_api.api.error_codes import (
@@ -20,6 +21,7 @@ from noa_api.core.auth.errors import (
     AuthPendingApprovalError,
     AuthRateLimitedError,
 )
+from noa_api.core.config import settings
 from noa_api.core.logging_context import log_context
 from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
 
@@ -41,10 +43,7 @@ class LoginUserResponse(BaseModel):
     roles: list[str]
 
 
-class LoginResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    expires_in: int
+class CookieLoginResponse(BaseModel):
     user: LoginUserResponse
 
 
@@ -52,18 +51,27 @@ class MeResponse(BaseModel):
     user: LoginUserResponse
 
 
-def _to_login_response(result: AuthResult) -> LoginResponse:
-    return LoginResponse(
-        access_token=result.access_token,
-        expires_in=result.expires_in,
-        user=LoginUserResponse(
-            id=str(result.user_id),
-            email=result.email,
-            display_name=result.display_name,
-            is_active=result.is_active,
-            roles=result.roles,
-        ),
+def _build_login_response(result: AuthResult) -> JSONResponse:
+    user_data = LoginUserResponse(
+        id=str(result.user_id),
+        email=result.email,
+        display_name=result.display_name,
+        is_active=result.is_active,
+        roles=result.roles,
     )
+    body = CookieLoginResponse(user=user_data)
+    response = JSONResponse(content=body.model_dump())
+    response.set_cookie(
+        key=settings.auth_cookie_name,
+        value=result.access_token,
+        max_age=result.expires_in,
+        path=settings.auth_cookie_path,
+        domain=settings.auth_cookie_domain,
+        secure=settings.auth_cookie_secure,
+        httponly=True,
+        samesite=settings.auth_cookie_samesite,
+    )
+    return response
 
 
 def _to_me_response(user: AuthorizationUser) -> MeResponse:
@@ -226,12 +234,12 @@ def _record_me_succeeded_telemetry(request: Request, user: AuthorizationUser) ->
     _record_auth_metric(request, event_name="auth_me_succeeded")
 
 
-@router.post("/login", response_model=LoginResponse)
+@router.post("/login", response_model=CookieLoginResponse)
 async def login(
     request: Request,
     payload: LoginRequest,
     auth_service: AuthService = Depends(get_auth_service),
-) -> LoginResponse:
+) -> JSONResponse:
     try:
         result = await auth_service.authenticate(
             email=payload.email,
@@ -326,7 +334,21 @@ async def login(
         )
     _record_login_succeeded_telemetry(request, result)
 
-    return _to_login_response(result)
+    return _build_login_response(result)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout() -> Response:
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.delete_cookie(
+        key=settings.auth_cookie_name,
+        path=settings.auth_cookie_path,
+        domain=settings.auth_cookie_domain,
+        secure=settings.auth_cookie_secure,
+        httponly=True,
+        samesite=settings.auth_cookie_samesite,
+    )
+    return response
 
 
 @router.get("/me", response_model=MeResponse)

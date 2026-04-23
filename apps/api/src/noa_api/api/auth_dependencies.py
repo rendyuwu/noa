@@ -7,7 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from noa_api.api.error_codes import (
     INVALID_TOKEN,
-    MISSING_BEARER_TOKEN,
+    MISSING_AUTHENTICATION,
     USER_PENDING_APPROVAL,
 )
 from noa_api.api.error_handling import ApiHTTPException
@@ -16,6 +16,7 @@ from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.auth.deps import get_auth_service, get_jwt_service
 from noa_api.core.auth.errors import AuthInvalidCredentialsError
 from noa_api.core.auth.jwt_service import JWTService
+from noa_api.core.config import settings
 from noa_api.core.logging_context import log_context
 from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
 
@@ -29,6 +30,23 @@ def _invalid_token_error() -> ApiHTTPException:
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Invalid token",
         error_code=INVALID_TOKEN,
+    )
+
+
+def _extract_token(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials | None,
+) -> str:
+    """Cookie-first, Bearer-fallback token extraction."""
+    cookie_token = request.cookies.get(settings.auth_cookie_name)
+    if cookie_token:
+        return cookie_token
+    if credentials:
+        return credentials.credentials
+    raise ApiHTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Missing authentication",
+        error_code=MISSING_AUTHENTICATION,
     )
 
 
@@ -156,26 +174,24 @@ async def require_auth_user(
     jwt_service: JWTService = Depends(get_jwt_service),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthUser:
-    if credentials is None:
+    try:
+        token = _extract_token(request, credentials)
+    except ApiHTTPException:
         _log_current_user_rejected(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            error_code=MISSING_BEARER_TOKEN,
+            error_code=MISSING_AUTHENTICATION,
             failure_stage="credentials",
         )
         _record_current_user_rejected_telemetry(
             request,
             status_code=status.HTTP_401_UNAUTHORIZED,
-            error_code=MISSING_BEARER_TOKEN,
+            error_code=MISSING_AUTHENTICATION,
             failure_stage="credentials",
         )
-        raise ApiHTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing bearer token",
-            error_code=MISSING_BEARER_TOKEN,
-        )
+        raise
 
     try:
-        payload = jwt_service.decode_token(credentials.credentials)
+        payload = jwt_service.decode_token(token)
     except AuthInvalidCredentialsError as exc:
         _log_current_user_rejected(
             status_code=status.HTTP_401_UNAUTHORIZED,

@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     auth_login_rate_limit_block_seconds: int = 600
     auth_bootstrap_admin_emails: set[str] = Field(default_factory=set)
     auth_dev_bypass_ldap: bool = False
+    auth_cookie_name: str = "noa_session"
+    auth_cookie_secure: bool = True
+    auth_cookie_domain: str | None = None
+    auth_cookie_path: str = "/"
+    auth_cookie_samesite: str = "lax"
     api_cors_allowed_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:3000"]
     )
@@ -156,6 +161,9 @@ class Settings(BaseSettings):
             raise ValueError(
                 "auth_dev_bypass_ldap can only be enabled in development/test environments"
             )
+
+        if env in {"development", "dev", "test"}:
+            self.auth_cookie_secure = False
 
         if not secret_value:
             if env in {"development", "dev", "test"}:

@@ -17,7 +17,7 @@ from noa_api.api.error_codes import (
     AUTHENTICATION_SERVICE_UNAVAILABLE,
     INVALID_CREDENTIALS,
     INVALID_TOKEN,
-    MISSING_BEARER_TOKEN,
+    MISSING_AUTHENTICATION,
     USER_PENDING_APPROVAL,
 )
 from noa_api.api.error_handling import install_error_handling
@@ -461,9 +461,9 @@ async def test_login_route_maps_auth_errors_and_success() -> None:
         )
     assert success_response.status_code == 200
     payload = success_response.json()
-    assert payload["access_token"] == "jwt-token"
-    assert payload["token_type"] == "bearer"
     assert payload["user"]["email"] == "user@example.com"
+    # access_token is no longer in the response body
+    assert "access_token" not in payload
 
 
 async def test_auth_routes_emit_structured_auth_boundary_logs() -> None:
@@ -479,6 +479,7 @@ async def test_auth_routes_emit_structured_auth_boundary_logs() -> None:
             login_response = await client.post(
                 "/auth/login", json={"email": "user@example.com", "password": "ok"}
             )
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
             me_response = await client.get(
                 "/auth/me", headers={"Authorization": "Bearer good-token"}
             )
@@ -556,6 +557,7 @@ async def test_auth_routes_record_success_telemetry_with_bounded_metrics() -> No
         login_response = await client.post(
             "/auth/login", json={"email": "user@example.com", "password": "ok"}
         )
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
         me_response = await client.get(
             "/auth/me", headers={"Authorization": "Bearer good-token"}
         )
@@ -982,8 +984,8 @@ async def test_me_route_uses_shared_missing_bearer_token_error_code(
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
     monkeypatch.setattr(
         auth_dependencies,
-        "MISSING_BEARER_TOKEN",
-        "catalog_missing_bearer_token",
+        "MISSING_AUTHENTICATION",
+        "catalog_missing_authentication",
         raising=False,
     )
 
@@ -993,8 +995,8 @@ async def test_me_route_uses_shared_missing_bearer_token_error_code(
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Missing bearer token"
-    assert body["error_code"] == "catalog_missing_bearer_token"
+    assert body["detail"] == "Missing authentication"
+    assert body["error_code"] == "catalog_missing_authentication"
 
 
 async def test_me_route_rejects_missing_bearer_token() -> None:
@@ -1010,8 +1012,8 @@ async def test_me_route_rejects_missing_bearer_token() -> None:
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Missing bearer token"
-    assert body["error_code"] == MISSING_BEARER_TOKEN
+    assert body["detail"] == "Missing authentication"
+    assert body["error_code"] == MISSING_AUTHENTICATION
     assert isinstance(body["request_id"], str)
     assert response.headers["x-request-id"] == body["request_id"]
 
@@ -1100,3 +1102,117 @@ async def test_ldap_service_dev_bypass_authenticates_without_ldap_server() -> No
 
     assert user.email == "user@example.com"
     assert "user@example.com" in user.dn
+
+
+async def test_me_route_accepts_cookie_based_auth() -> None:
+    """GET /auth/me works when the JWT is sent via cookie instead of Bearer header."""
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/auth/me",
+            cookies={"noa_session": "good-token"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user"]["email"] == "user@example.com"
+    assert payload["user"]["roles"] == ["admin"]
+
+
+async def test_me_route_cookie_takes_precedence_over_bearer() -> None:
+    """When both cookie and Bearer header are present, cookie wins."""
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/auth/me",
+            headers={"Authorization": "Bearer bad-token"},
+            cookies={"noa_session": "good-token"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user"]["email"] == "user@example.com"
+
+
+async def test_me_route_rejects_missing_cookie_and_bearer() -> None:
+    """When neither cookie nor Bearer header is present, returns 401."""
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/auth/me")
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Missing authentication"
+    assert body["error_code"] == MISSING_AUTHENTICATION
+
+
+async def test_login_route_sets_httponly_session_cookie() -> None:
+    """POST /auth/login sets an HttpOnly session cookie with the JWT."""
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/auth/login", json={"email": "user@example.com", "password": "ok"}
+        )
+
+    assert response.status_code == 200
+
+    # Check Set-Cookie header
+    set_cookie = response.headers.get("set-cookie")
+    assert set_cookie is not None, "Expected Set-Cookie header"
+    assert "noa_session=jwt-token" in set_cookie
+    assert "httponly" in set_cookie.lower()
+    assert "samesite=lax" in set_cookie.lower()
+    assert "path=/" in set_cookie.lower()
+    assert "max-age=3600" in set_cookie.lower()
+
+    # Response body should have user but NOT access_token
+    payload = response.json()
+    assert "access_token" not in payload
+    assert "token_type" not in payload
+    assert "expires_in" not in payload
+    assert payload["user"]["email"] == "user@example.com"
+    assert payload["user"]["roles"] == ["admin"]
+
+
+async def test_logout_route_clears_session_cookie() -> None:
+    """POST /auth/logout clears the session cookie."""
+    app = _create_auth_app()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post("/auth/logout")
+
+    assert response.status_code == 204
+
+    set_cookie = response.headers.get("set-cookie")
+    assert set_cookie is not None, "Expected Set-Cookie header to clear cookie"
+    assert "noa_session=" in set_cookie
+    assert "max-age=0" in set_cookie.lower()
+
+
+async def test_logout_route_is_idempotent_without_auth() -> None:
+    """POST /auth/logout succeeds even without a session cookie, and is idempotent."""
+    app = _create_auth_app()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        first = await client.post("/auth/logout")
+        second = await client.post("/auth/logout")
+
+    assert first.status_code == 204
+    assert second.status_code == 204

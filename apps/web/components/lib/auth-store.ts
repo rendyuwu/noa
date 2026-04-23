@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-const TOKEN_KEY = "noa.jwt";
 const USER_KEY = "noa.user";
 
 export type AuthUser = {
@@ -13,32 +12,23 @@ export type AuthUser = {
   roles?: string[];
 };
 
-export const getAuthToken = (): string | null => {
-  if (typeof window === "undefined") {
-    return null;
-  }
+export type ClearAuthReason = "session_expired" | "logged_out";
 
-  const sessionToken = window.sessionStorage.getItem(TOKEN_KEY);
-  if (sessionToken) {
-    return sessionToken;
+/**
+ * Sentinel error thrown by `fetchWithAuth` (and helpers) when a 401 triggers
+ * an auth redirect.  Callers that catch generic errors can check for this to
+ * avoid noisy logging / spurious error UI while the redirect is in flight.
+ */
+export class AuthRedirectError extends Error {
+  constructor(reason: ClearAuthReason = "session_expired") {
+    super(`Auth redirect in progress (${reason})`);
+    this.name = "AuthRedirectError";
   }
+}
 
-  const legacyToken = window.localStorage.getItem(TOKEN_KEY);
-  if (!legacyToken) {
-    return null;
-  }
-
-  window.sessionStorage.setItem(TOKEN_KEY, legacyToken);
-  window.localStorage.removeItem(TOKEN_KEY);
-  return legacyToken;
-};
-
-export const setAuthToken = (token: string): void => {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.sessionStorage.setItem(TOKEN_KEY, token);
-  window.localStorage.removeItem(TOKEN_KEY);
+/** Returns `true` when the given value is an `AuthRedirectError`. */
+export const isAuthRedirectError = (error: unknown): error is AuthRedirectError => {
+  return error instanceof AuthRedirectError;
 };
 
 export const setAuthUser = (user: AuthUser | null): void => {
@@ -66,14 +56,71 @@ export const getAuthUser = (): AuthUser | null => {
   }
 };
 
-export const clearAuth = (): void => {
-  if (typeof window === "undefined") {
-    return;
+// ---------------------------------------------------------------------------
+// clearAuth – idempotent logout with cross-tab broadcast
+// ---------------------------------------------------------------------------
+
+let _clearAuthInProgress = false;
+
+export const isClearAuthInProgress = (): boolean => _clearAuthInProgress;
+
+/** Reset the idempotency guard — **test-only**. */
+export const _resetForTesting = (): void => {
+  _clearAuthInProgress = false;
+};
+
+/** Manually wire up the cross-tab listener — **test-only**. */
+export const _initLogoutListenerForTesting = (): void => {
+  initLogoutListener();
+};
+
+function getSafeReturnTo(): string {
+  if (typeof window === "undefined") return "/assistant";
+  const raw = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/login")) {
+    return "/assistant";
   }
-  window.sessionStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(TOKEN_KEY);
+  return raw;
+}
+
+function broadcastLogout(reason?: ClearAuthReason): void {
+  try {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("noa:auth");
+    ch.postMessage({ type: "noa:logout", reason });
+    ch.close();
+  } catch {
+    // BroadcastChannel may not be available in all environments.
+  }
+}
+
+export const clearAuth = (reason?: ClearAuthReason): void => {
+  if (typeof window === "undefined") return;
+
+  // Idempotent: only one redirect per page lifecycle.
+  if (_clearAuthInProgress) return;
+  _clearAuthInProgress = true;
+
+  // Clear server-side cookie (fire-and-forget).
+  fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {
+    // Best-effort — cookie expires naturally if this fails.
+  });
+
   window.localStorage.removeItem(USER_KEY);
-  window.location.href = "/login";
+
+  // Notify other tabs so they redirect to login as well.
+  broadcastLogout(reason);
+
+  const params = new URLSearchParams();
+  if (reason) {
+    params.set("reason", reason);
+  }
+  const returnTo = getSafeReturnTo();
+  if (returnTo !== "/assistant") {
+    params.set("returnTo", returnTo);
+  }
+  const qs = params.toString();
+  window.location.href = qs ? `/login?${qs}` : "/login";
 };
 
 export const useRequireAuth = (): boolean => {
@@ -81,14 +128,15 @@ export const useRequireAuth = (): boolean => {
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
-      const returnTo =
-        typeof window === "undefined"
-          ? "/assistant"
-          : `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      const encoded = encodeURIComponent(returnTo);
-      router.replace(`/login?returnTo=${encoded}`);
+    const user = getAuthUser();
+    if (!user) {
+      const returnTo = getSafeReturnTo();
+      const params = new URLSearchParams();
+      if (returnTo !== "/assistant") {
+        params.set("returnTo", returnTo);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `/login?${qs}` : "/login");
       return;
     }
     setReady(true);
@@ -96,3 +144,31 @@ export const useRequireAuth = (): boolean => {
 
   return ready;
 };
+
+// ---------------------------------------------------------------------------
+// Cross-tab logout listener
+// ---------------------------------------------------------------------------
+
+function initLogoutListener(): void {
+  try {
+    if (typeof BroadcastChannel === "undefined") return;
+    const ch = new BroadcastChannel("noa:auth");
+    ch.onmessage = (event: MessageEvent) => {
+      const data = event.data as { type?: string; reason?: ClearAuthReason } | undefined;
+      if (data?.type !== "noa:logout") return;
+
+      window.localStorage.removeItem(USER_KEY);
+
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+    };
+  } catch {
+    // BroadcastChannel may not be available.
+  }
+}
+
+// Auto-init the listener when the module loads in a browser context.
+if (typeof window !== "undefined") {
+  initLogoutListener();
+}
