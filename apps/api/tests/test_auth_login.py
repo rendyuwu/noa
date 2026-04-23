@@ -17,7 +17,7 @@ from noa_api.api.error_codes import (
     AUTHENTICATION_SERVICE_UNAVAILABLE,
     INVALID_CREDENTIALS,
     INVALID_TOKEN,
-    MISSING_BEARER_TOKEN,
+    MISSING_AUTHENTICATION,
     USER_PENDING_APPROVAL,
 )
 from noa_api.api.error_handling import install_error_handling
@@ -982,8 +982,8 @@ async def test_me_route_uses_shared_missing_bearer_token_error_code(
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
     monkeypatch.setattr(
         auth_dependencies,
-        "MISSING_BEARER_TOKEN",
-        "catalog_missing_bearer_token",
+        "MISSING_AUTHENTICATION",
+        "catalog_missing_authentication",
         raising=False,
     )
 
@@ -993,8 +993,8 @@ async def test_me_route_uses_shared_missing_bearer_token_error_code(
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Missing bearer token"
-    assert body["error_code"] == "catalog_missing_bearer_token"
+    assert body["detail"] == "Missing authentication"
+    assert body["error_code"] == "catalog_missing_authentication"
 
 
 async def test_me_route_rejects_missing_bearer_token() -> None:
@@ -1010,8 +1010,8 @@ async def test_me_route_rejects_missing_bearer_token() -> None:
 
     assert response.status_code == 401
     body = response.json()
-    assert body["detail"] == "Missing bearer token"
-    assert body["error_code"] == MISSING_BEARER_TOKEN
+    assert body["detail"] == "Missing authentication"
+    assert body["error_code"] == MISSING_AUTHENTICATION
     assert isinstance(body["request_id"], str)
     assert response.headers["x-request-id"] == body["request_id"]
 
@@ -1100,3 +1100,57 @@ async def test_ldap_service_dev_bypass_authenticates_without_ldap_server() -> No
 
     assert user.email == "user@example.com"
     assert "user@example.com" in user.dn
+
+
+async def test_me_route_accepts_cookie_based_auth() -> None:
+    """GET /auth/me works when the JWT is sent via cookie instead of Bearer header."""
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/auth/me",
+            cookies={"noa_session": "good-token"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user"]["email"] == "user@example.com"
+    assert payload["user"]["roles"] == ["admin"]
+
+
+async def test_me_route_cookie_takes_precedence_over_bearer() -> None:
+    """When both cookie and Bearer header are present, cookie wins."""
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/auth/me",
+            headers={"Authorization": "Bearer bad-token"},
+            cookies={"noa_session": "good-token"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["user"]["email"] == "user@example.com"
+
+
+async def test_me_route_rejects_missing_cookie_and_bearer() -> None:
+    """When neither cookie nor Bearer header is present, returns 401."""
+    app = _create_auth_app()
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get("/auth/me")
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["detail"] == "Missing authentication"
+    assert body["error_code"] == MISSING_AUTHENTICATION
