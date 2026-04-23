@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
   push: vi.fn(),
-  setAuthToken: vi.fn(),
   setAuthUser: vi.fn(),
 }));
 
@@ -15,7 +14,6 @@ vi.mock("next/navigation", () => ({
 }));
 
 vi.mock("@/components/lib/auth-store", () => ({
-  setAuthToken: (...args: unknown[]) => mocks.setAuthToken(...args),
   setAuthUser: (...args: unknown[]) => mocks.setAuthUser(...args),
 }));
 
@@ -25,7 +23,6 @@ describe("LoginPage", () => {
   beforeEach(() => {
     mocks.fetch.mockReset();
     mocks.push.mockReset();
-    mocks.setAuthToken.mockReset();
     mocks.setAuthUser.mockReset();
     vi.stubGlobal("fetch", mocks.fetch);
     window.history.replaceState({}, "", "/login");
@@ -144,7 +141,7 @@ describe("LoginPage", () => {
     );
 
     mocks.fetch.mockResolvedValue(
-      new Response(JSON.stringify({ access_token: "token", user: null }), {
+      new Response(JSON.stringify({ user: null }), {
         status: 200,
         headers: {
           "content-type": "application/json",

@@ -1,13 +1,22 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const clearAuth = vi.fn();
-const getAuthToken = vi.fn();
+const isClearAuthInProgress = vi.fn().mockReturnValue(false);
 const reportClientError = vi.fn();
 
-vi.mock("@/components/lib/auth-store", () => ({
-  clearAuth: () => clearAuth(),
-  getAuthToken: () => getAuthToken(),
-}));
+vi.mock("@/components/lib/auth-store", () => {
+  class _AuthRedirectError extends Error {
+    constructor(reason = "session_expired") {
+      super(`Auth redirect in progress (${reason})`);
+      this.name = "AuthRedirectError";
+    }
+  }
+  return {
+    clearAuth: (...args: unknown[]) => clearAuth(...args),
+    isClearAuthInProgress: () => isClearAuthInProgress(),
+    AuthRedirectError: _AuthRedirectError,
+  };
+});
 
 vi.mock("@/components/lib/observability/error-reporting", () => ({
   reportClientError: (...args: unknown[]) => reportClientError(...args),
@@ -18,8 +27,7 @@ import { ApiError, fetchWithAuth, jsonOrThrow } from "./fetch-helper";
 describe("fetchWithAuth", () => {
   beforeEach(() => {
     clearAuth.mockReset();
-    getAuthToken.mockReset();
-    getAuthToken.mockReturnValue(null);
+    isClearAuthInProgress.mockReset().mockReturnValue(false);
     reportClientError.mockReset();
     vi.restoreAllMocks();
   });
@@ -53,7 +61,7 @@ describe("fetchWithAuth", () => {
 describe("jsonOrThrow", () => {
   beforeEach(() => {
     clearAuth.mockReset();
-    getAuthToken.mockReset();
+    isClearAuthInProgress.mockReset().mockReturnValue(false);
     reportClientError.mockReset();
     vi.restoreAllMocks();
   });

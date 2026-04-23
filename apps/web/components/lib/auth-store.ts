@@ -102,11 +102,9 @@ export const clearAuth = (reason?: ClearAuthReason): void => {
   _clearAuthInProgress = true;
 
   // Clear server-side cookie (fire-and-forget).
-  try {
-    void fetch("/api/auth/logout", { method: "POST", credentials: "include" });
-  } catch {
+  fetch("/api/auth/logout", { method: "POST", credentials: "include" }).catch(() => {
     // Best-effort — cookie expires naturally if this fails.
-  }
+  });
 
   window.localStorage.removeItem(USER_KEY);
 

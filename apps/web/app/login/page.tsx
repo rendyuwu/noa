@@ -9,10 +9,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toUserMessage } from "@/components/lib/error-message";
 import { getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
-import { setAuthToken, setAuthUser } from "@/components/lib/auth-store";
+import { setAuthUser } from "@/components/lib/auth-store";
 
 type LoginResponse = {
-  access_token: string;
   user?: Parameters<typeof setAuthUser>[0];
 };
 
@@ -89,12 +88,12 @@ export default function LoginPage() {
       const response = await fetch(`${getApiUrl()}/auth/login`, {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "include",
         body: JSON.stringify({ email, password }),
       });
 
       const payload = await jsonOrThrow<LoginResponse>(response);
 
-      setAuthToken(payload.access_token);
       setAuthUser(payload.user ?? null);
       router.push(getSafeReturnTo() ?? "/assistant");
     } catch (error) {

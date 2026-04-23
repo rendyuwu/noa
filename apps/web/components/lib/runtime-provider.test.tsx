@@ -84,7 +84,9 @@ vi.mock("@assistant-ui/react", async () => {
 });
 
 vi.mock("@/components/lib/auth-store", () => ({
-  getAuthToken: () => null,
+  clearAuth: vi.fn(),
+  isAuthRedirectError: () => false,
+  isClearAuthInProgress: () => false,
 }));
 
 vi.mock("@/components/lib/fetch-helper", () => ({
