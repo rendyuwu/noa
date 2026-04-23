@@ -1,25 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
-
 import { AdminShell } from "@/components/admin/admin-shell";
 import { AuditAdminPage } from "@/components/admin/audit-admin-page";
-import { getAuthUser, useRequireAuth } from "@/components/lib/auth-store";
+import { useVerifiedAuth } from "@/components/lib/use-verified-auth";
 
 export default function AdminAuditPage() {
-  const router = useRouter();
-  const ready = useRequireAuth();
-  const user = getAuthUser();
-  const isAdmin = user?.roles?.includes("admin") ?? false;
+  const { ready } = useVerifiedAuth({ requireAdmin: true });
 
-  useEffect(() => {
-    if (!ready) return;
-    if (isAdmin) return;
-    router.replace("/assistant");
-  }, [isAdmin, ready, router]);
-
-  if (!ready || !isAdmin) {
+  if (!ready) {
     return null;
   }
 
