@@ -8,6 +8,7 @@ const inlineAlertVariants = cva(
   {
     variants: {
       variant: {
+        default: "border-border bg-muted/50 text-muted-foreground",
         destructive: "border-destructive/30 bg-destructive/5 text-destructive dark:border-destructive/40 dark:bg-destructive/10",
         success: "border-success/30 bg-success/5 text-success dark:border-success/40 dark:bg-success/10",
         warning: "border-warning/30 bg-warning/5 text-warning-foreground dark:border-warning/40 dark:bg-warning/10",
@@ -20,7 +21,8 @@ const inlineAlertVariants = cva(
   },
 );
 
-const iconMap = {
+const iconMap: Record<string, typeof AlertCircle | typeof Info | typeof CheckCircle | typeof AlertTriangle> = {
+  default: Info,
   destructive: AlertCircle,
   success: CheckCircle,
   warning: AlertTriangle,
@@ -35,7 +37,7 @@ export function InlineAlert({
   ...props
 }: React.HTMLAttributes<HTMLDivElement> &
   VariantProps<typeof inlineAlertVariants> & { showIcon?: boolean }) {
-  const Icon = iconMap[variant ?? "destructive"];
+  const Icon = iconMap[variant ?? "destructive"] ?? Info;
 
   return (
     <div

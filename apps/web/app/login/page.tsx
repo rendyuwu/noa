@@ -66,15 +66,22 @@ export default function LoginPage() {
     });
   };
 
-  const getSafeReturnTo = () => {
-    if (typeof window === "undefined") return null;
+  const getQueryParams = () => {
+    if (typeof window === "undefined") return { returnTo: null, reason: null };
     const url = new URL(window.location.href);
-    const raw = url.searchParams.get("returnTo");
-    if (!raw) return null;
-    if (!raw.startsWith("/")) return null;
-    if (raw.startsWith("//")) return null;
-    return raw;
+
+    const rawReturnTo = url.searchParams.get("returnTo");
+    const returnTo =
+      rawReturnTo && rawReturnTo.startsWith("/") && !rawReturnTo.startsWith("//")
+        ? rawReturnTo
+        : null;
+
+    const reason = url.searchParams.get("reason");
+
+    return { returnTo, reason };
   };
+
+  const getSafeReturnTo = () => getQueryParams().returnTo;
 
   const onSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -123,6 +130,12 @@ export default function LoginPage() {
               <p className="text-sm text-muted-foreground">Assistant and admin console</p>
             </div>
           </div>
+
+          {getQueryParams().reason === "session_expired" && (
+            <InlineAlert variant="default" className="mb-4">
+              Your session has expired. Please sign in again.
+            </InlineAlert>
+          )}
 
           <h1 className="font-serif text-4xl font-semibold leading-tight tracking-[-0.03em] text-foreground">
             Login

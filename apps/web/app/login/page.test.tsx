@@ -133,6 +133,18 @@ describe("LoginPage", () => {
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 
+  it("shows session expired notice when reason=session_expired is in URL", () => {
+    window.history.replaceState({}, "", "/login?reason=session_expired");
+    render(<LoginPage />);
+    expect(screen.getByText("Your session has expired. Please sign in again.")).toBeInTheDocument();
+  });
+
+  it("does not show session expired notice on normal login", () => {
+    window.history.replaceState({}, "", "/login");
+    render(<LoginPage />);
+    expect(screen.queryByText("Your session has expired. Please sign in again.")).not.toBeInTheDocument();
+  });
+
   it("redirects to returnTo after successful login", async () => {
     window.history.replaceState(
       {},

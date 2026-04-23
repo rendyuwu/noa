@@ -1,26 +1,18 @@
 from __future__ import annotations
 
 import asyncio
-import re
 import time
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from noa_api.storage.postgres.whm_servers import SQLWHMServerRepository
-from noa_api.whm.integrations.csf import parse_csf_grep_output, parse_csf_target
+from noa_api.whm.integrations.csf import parse_csf_target
 from noa_api.whm.integrations.csf_cli import (
-    CSFCLIError,
     require_csf_success,
     run_csf_command,
 )
-from noa_api.whm.integrations.imunify import (
-    format_imunify_matches,
-    imunify_entry_to_dict,
-    parse_imunify_ip_list_response,
-)
 from noa_api.whm.integrations.imunify_cli import (
-    ImunifyCLIError,
     check_firewall_binaries,
     command_output_text as imunify_command_output_text,
     parse_imunify_json_output,
@@ -29,261 +21,67 @@ from noa_api.whm.integrations.imunify_cli import (
 from noa_api.whm.server_ref import resolve_whm_server_ref
 from noa_api.whm.tools.read_tools import whm_mail_log_failed_auth_suspects
 
-
-_LFD_AUTH_LINE_RE = re.compile(
-    r"\blfd(?:\[\d+\])?:\s*\((smtpauth|imapd|pop3d)\)",
-    re.IGNORECASE,
+from noa_api.whm.tools.firewall_tools.common import (
+    _LFD_AUTH_LINE_RE,
+    _compute_combined_verdict,
+    _extract_lfd_auth_line,
+    _no_firewall_tools_error,
+    _resolution_error,
+)
+from noa_api.whm.tools.firewall_tools.csf_backend import (
+    _csf_allowlist_add_ttl,
+    _csf_allowlist_remove,
+    _csf_denylist_add_ttl,
+    _csf_preflight,
+    _csf_unblock,
+)
+from noa_api.whm.tools.firewall_tools.imunify_backend import (
+    _imunify_blacklist_add_ttl,
+    _imunify_blacklist_remove,
+    _imunify_preflight,
+    _imunify_whitelist_add_ttl,
+    _imunify_whitelist_remove,
 )
 
-
-def _extract_lfd_auth_line(csf_preflight: object) -> str | None:
-    if not isinstance(csf_preflight, dict):
-        return None
-    if csf_preflight.get("ok") is not True:
-        return None
-
-    matches = csf_preflight.get("matches")
-    if isinstance(matches, list):
-        for item in matches:
-            if isinstance(item, str) and _LFD_AUTH_LINE_RE.search(item):
-                return item
-
-    raw_output = csf_preflight.get("raw_output")
-    if isinstance(raw_output, str):
-        for line in raw_output.splitlines():
-            if _LFD_AUTH_LINE_RE.search(line):
-                return line.strip()
-    return None
-
-
-def _resolution_error(result: Any) -> dict[str, object]:
-    return {
-        "ok": False,
-        "error_code": str(getattr(result, "error_code", None) or "unknown"),
-        "message": str(getattr(result, "message", "")),
-        "choices": list(getattr(result, "choices", []) or []),
-    }
-
-
-def _no_firewall_tools_error() -> dict[str, object]:
-    return {
-        "ok": False,
-        "error_code": "no_firewall_tools",
-        "message": "Neither CSF nor Imunify360 is available on this server",
-    }
-
-
-# ---------------------------------------------------------------------------
-# CSF operations (internal)
-# ---------------------------------------------------------------------------
-
-
-async def _csf_preflight(server: Any, *, target: str) -> dict[str, object]:
-    """Check target status in CSF."""
-    try:
-        grep_result = await run_csf_command(server, args=["-g", target])
-        output = require_csf_success(grep_result, default_message="CSF grep failed")
-        if not output.strip():
-            return {
-                "ok": False,
-                "error_code": "invalid_response",
-                "message": "CSF grep returned an invalid response",
-            }
-        parsed = parse_csf_grep_output(output, target=target)
-        return {
-            "ok": True,
-            "verdict": parsed.verdict,
-            "matches": parsed.matches,
-            "raw_output": output,
-        }
-    except CSFCLIError as exc:
-        return {
-            "ok": False,
-            "error_code": exc.code,
-            "message": exc.message,
-        }
-
-
-async def _csf_unblock(server: Any, *, target: str) -> dict[str, object]:
-    """Remove target from CSF block lists."""
-    try:
-        # Remove from temporary blocks
-        await run_csf_command(server, args=["-tr", target])
-        # Remove from permanent deny list
-        await run_csf_command(server, args=["-dr", target])
-        return {"ok": True, "status": "changed"}
-    except CSFCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-async def _csf_allowlist_add_ttl(
-    server: Any, *, target: str, duration_seconds: int, reason: str
-) -> dict[str, object]:
-    """Add target to CSF temporary allowlist."""
-    try:
-        await run_csf_command(
-            server, args=["-ta", target, str(duration_seconds), reason]
-        )
-        return {"ok": True, "status": "changed"}
-    except CSFCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-async def _csf_allowlist_remove(server: Any, *, target: str) -> dict[str, object]:
-    """Remove target from CSF allowlist."""
-    try:
-        # Remove from temporary allows
-        await run_csf_command(server, args=["-tra", target])
-        # Remove from permanent allow list
-        await run_csf_command(server, args=["-ar", target])
-        return {"ok": True, "status": "changed"}
-    except CSFCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-async def _csf_denylist_add_ttl(
-    server: Any, *, target: str, duration_seconds: int, reason: str
-) -> dict[str, object]:
-    """Add target to CSF temporary denylist."""
-    try:
-        await run_csf_command(
-            server, args=["-td", target, str(duration_seconds), reason]
-        )
-        return {"ok": True, "status": "changed"}
-    except CSFCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-# ---------------------------------------------------------------------------
-# Imunify operations (internal)
-# ---------------------------------------------------------------------------
-
-
-async def _imunify_preflight(server: Any, *, target: str) -> dict[str, object]:
-    """Check target status in Imunify."""
-    try:
-        result = await run_imunify_command(
-            server, args=["ip-list", "local", "list", "--by-ip", target, "--json"]
-        )
-        raw_output = imunify_command_output_text(result)
-        data = parse_imunify_json_output(result)
-        parsed = parse_imunify_ip_list_response(data, target)
-        return {
-            "ok": True,
-            "verdict": parsed.verdict,
-            "entries": [imunify_entry_to_dict(e) for e in parsed.entries],
-            "matches": format_imunify_matches(parsed.entries),
-            "raw_data": data,
-            "raw_output": raw_output,
-        }
-    except ImunifyCLIError as exc:
-        return {
-            "ok": False,
-            "error_code": exc.code,
-            "message": exc.message,
-        }
-
-
-async def _imunify_blacklist_remove(server: Any, *, target: str) -> dict[str, object]:
-    """Remove target from Imunify blacklist."""
-    try:
-        result = await run_imunify_command(
-            server,
-            args=["ip-list", "local", "delete", "--purpose", "drop", target, "--json"],
-        )
-        # Parse to verify success
-        parse_imunify_json_output(result)
-        return {"ok": True, "status": "changed"}
-    except ImunifyCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-async def _imunify_whitelist_add_ttl(
-    server: Any, *, target: str, expiration_epoch: int, reason: str
-) -> dict[str, object]:
-    """Add target to Imunify whitelist with expiration."""
-    try:
-        result = await run_imunify_command(
-            server,
-            args=[
-                "ip-list",
-                "local",
-                "add",
-                "--purpose",
-                "white",
-                target,
-                "--comment",
-                reason,
-                "--expiration",
-                str(expiration_epoch),
-                "--json",
-            ],
-        )
-        parse_imunify_json_output(result)
-        return {"ok": True, "status": "changed"}
-    except ImunifyCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-async def _imunify_whitelist_remove(server: Any, *, target: str) -> dict[str, object]:
-    """Remove target from Imunify whitelist."""
-    try:
-        result = await run_imunify_command(
-            server,
-            args=["ip-list", "local", "delete", "--purpose", "white", target, "--json"],
-        )
-        parse_imunify_json_output(result)
-        return {"ok": True, "status": "changed"}
-    except ImunifyCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-async def _imunify_blacklist_add_ttl(
-    server: Any, *, target: str, expiration_epoch: int, reason: str
-) -> dict[str, object]:
-    """Add target to Imunify blacklist with expiration."""
-    try:
-        result = await run_imunify_command(
-            server,
-            args=[
-                "ip-list",
-                "local",
-                "add",
-                "--purpose",
-                "drop",
-                target,
-                "--comment",
-                reason,
-                "--expiration",
-                str(expiration_epoch),
-                "--json",
-            ],
-        )
-        parse_imunify_json_output(result)
-        return {"ok": True, "status": "changed"}
-    except ImunifyCLIError as exc:
-        return {"ok": False, "error_code": exc.code, "message": exc.message}
-
-
-# ---------------------------------------------------------------------------
-# Combined verdict logic
-# ---------------------------------------------------------------------------
-
-
-def _compute_combined_verdict(
-    csf_verdict: str | None,
-    imunify_verdict: str | None,
-) -> str:
-    """
-    Compute combined verdict from CSF and Imunify results.
-
-    Priority: blocked > allowlisted/whitelisted > not_found
-    """
-    if csf_verdict == "blocked" or imunify_verdict == "blacklisted":
-        return "blocked"
-    if csf_verdict == "allowlisted" or imunify_verdict == "whitelisted":
-        return "allowlisted"
-    return "not_found"
+# Re-export everything for backward compatibility and monkeypatch support.
+# Tests monkeypatch attributes on this module (e.g. firewall_tools.run_csf_command),
+# and the backend sub-modules look up these names via sys.modules at call time.
+__all__ = [
+    # Public tool handlers
+    "whm_preflight_firewall_entries",
+    "whm_firewall_unblock",
+    "whm_firewall_allowlist_add_ttl",
+    "whm_firewall_allowlist_remove",
+    "whm_firewall_denylist_add_ttl",
+    # Common helpers (re-exported for backward compat)
+    "_LFD_AUTH_LINE_RE",
+    "_extract_lfd_auth_line",
+    "_resolution_error",
+    "_no_firewall_tools_error",
+    "_compute_combined_verdict",
+    # CSF backend (re-exported for backward compat / monkeypatch)
+    "_csf_preflight",
+    "_csf_unblock",
+    "_csf_allowlist_add_ttl",
+    "_csf_allowlist_remove",
+    "_csf_denylist_add_ttl",
+    # Imunify backend (re-exported for backward compat / monkeypatch)
+    "_imunify_preflight",
+    "_imunify_blacklist_remove",
+    "_imunify_whitelist_add_ttl",
+    "_imunify_whitelist_remove",
+    "_imunify_blacklist_add_ttl",
+    # External deps (re-exported so monkeypatching on this module works)
+    "SQLWHMServerRepository",
+    "resolve_whm_server_ref",
+    "check_firewall_binaries",
+    "run_csf_command",
+    "require_csf_success",
+    "run_imunify_command",
+    "imunify_command_output_text",
+    "parse_imunify_json_output",
+    "whm_mail_log_failed_auth_suspects",
+]
 
 
 # ---------------------------------------------------------------------------

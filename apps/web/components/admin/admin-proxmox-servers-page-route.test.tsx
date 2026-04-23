@@ -7,18 +7,13 @@ const mocks = vi.hoisted(() => ({
   isAdmin: true,
 }));
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({
-    replace: () => {},
-  }),
-}));
-
-vi.mock("@/components/lib/auth-store", () => ({
-  useRequireAuth: () => mocks.authReady,
-  getAuthUser: () => ({
-    id: "1",
-    email: "admin@example.com",
-    roles: mocks.isAdmin ? ["admin"] : ["member"],
+vi.mock("@/components/lib/use-verified-auth", () => ({
+  useVerifiedAuth: () => ({
+    ready: mocks.authReady && mocks.isAdmin,
+    user: mocks.isAdmin
+      ? { id: "1", email: "admin@example.com", display_name: null, is_active: true, roles: ["admin"] }
+      : { id: "1", email: "user@example.com", display_name: null, is_active: true, roles: ["member"] },
+    isAdmin: mocks.isAdmin,
   }),
 }));
 
