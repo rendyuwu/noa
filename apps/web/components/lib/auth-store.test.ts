@@ -73,65 +73,51 @@ describe("isTokenExpired", () => {
 
 describe("getAuthToken with expired tokens", () => {
   const TOKEN_KEY = "noa.jwt";
+  let originalLocation: Location;
 
   beforeEach(() => {
-    vi.resetModules();
     window.sessionStorage.clear();
     window.localStorage.clear();
+    originalLocation = window.location;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: originalLocation,
+    });
   });
 
   it("returns null and calls clearAuth('session_expired') when sessionStorage token is expired", async () => {
-    // Stub window.location to prevent jsdom navigation error
-    const originalLocation = window.location;
     const locationSpy = { ...originalLocation, href: "http://localhost/assistant" };
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: locationSpy,
-    });
+    Object.defineProperty(window, "location", { writable: true, value: locationSpy });
 
-    try {
-      window.sessionStorage.setItem(TOKEN_KEY, EXPIRED_TOKEN);
+    window.sessionStorage.setItem(TOKEN_KEY, EXPIRED_TOKEN);
 
-      const { getAuthToken } = await import("./auth-store");
-      const result = getAuthToken();
+    const { getAuthToken, _resetForTesting } = await import("./auth-store");
+    _resetForTesting();
+    const result = getAuthToken();
 
-      expect(result).toBeNull();
-      expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
-      // Verify clearAuth was called with the correct reason by checking the redirect URL
-      expect(locationSpy.href).toContain("/login");
-      expect(locationSpy.href).toContain("reason=session_expired");
-    } finally {
-      Object.defineProperty(window, "location", {
-        writable: true,
-        value: originalLocation,
-      });
-    }
+    expect(result).toBeNull();
+    expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(locationSpy.href).toContain("/login");
+    expect(locationSpy.href).toContain("reason=session_expired");
   });
 
   it("returns null and calls clearAuth('session_expired') when legacy localStorage token is expired", async () => {
-    const originalLocation = window.location;
     const locationSpy = { ...originalLocation, href: "http://localhost/assistant" };
-    Object.defineProperty(window, "location", {
-      writable: true,
-      value: locationSpy,
-    });
+    Object.defineProperty(window, "location", { writable: true, value: locationSpy });
 
-    try {
-      window.localStorage.setItem(TOKEN_KEY, EXPIRED_TOKEN);
+    window.localStorage.setItem(TOKEN_KEY, EXPIRED_TOKEN);
 
-      const { getAuthToken } = await import("./auth-store");
-      const result = getAuthToken();
+    const { getAuthToken, _resetForTesting } = await import("./auth-store");
+    _resetForTesting();
+    const result = getAuthToken();
 
-      expect(result).toBeNull();
-      expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
-      expect(locationSpy.href).toContain("/login");
-      expect(locationSpy.href).toContain("reason=session_expired");
-    } finally {
-      Object.defineProperty(window, "location", {
-        writable: true,
-        value: originalLocation,
-      });
-    }
+    expect(result).toBeNull();
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(locationSpy.href).toContain("/login");
+    expect(locationSpy.href).toContain("reason=session_expired");
   });
 
   it("returns a valid token from sessionStorage without clearing", async () => {
@@ -152,5 +138,119 @@ describe("getAuthToken with expired tokens", () => {
     expect(result).toBe(FUTURE_TOKEN);
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBe(FUTURE_TOKEN);
     expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
+  });
+});
+
+describe("cross-tab logout sync", () => {
+  const TOKEN_KEY = "noa.jwt";
+  const USER_KEY = "noa.user";
+
+  let originalLocation: Location;
+
+  beforeEach(() => {
+    vi.resetModules();
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+
+    originalLocation = window.location;
+  });
+
+  afterEach(() => {
+    Object.defineProperty(window, "location", {
+      writable: true,
+      value: originalLocation,
+    });
+    // Clean up any BroadcastChannel stub
+    if ("BroadcastChannel" in globalThis) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (globalThis as any).BroadcastChannel;
+    }
+  });
+
+  it("clearAuth broadcasts a logout message", async () => {
+    const locationSpy = { ...originalLocation, href: "http://localhost/assistant" };
+    Object.defineProperty(window, "location", { writable: true, value: locationSpy });
+
+    const postMessageSpy = vi.fn();
+    const closeSpy = vi.fn();
+
+    // Stub BroadcastChannel BEFORE importing the module
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).BroadcastChannel = vi.fn().mockImplementation(() => ({
+      postMessage: postMessageSpy,
+      close: closeSpy,
+      onmessage: null,
+    }));
+
+    const mod = await import("./auth-store");
+    mod._resetForTesting();
+    mod.clearAuth("logged_out");
+
+    expect(postMessageSpy).toHaveBeenCalledWith({ type: "noa:logout", reason: "logged_out" });
+    expect(closeSpy).toHaveBeenCalled();
+  });
+
+  it("broadcasts session_expired reason when clearAuth is called with that reason", async () => {
+    const locationSpy = { ...originalLocation, href: "http://localhost/assistant" };
+    Object.defineProperty(window, "location", { writable: true, value: locationSpy });
+
+    const postMessageSpy = vi.fn();
+    const closeSpy = vi.fn();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).BroadcastChannel = vi.fn().mockImplementation(() => ({
+      postMessage: postMessageSpy,
+      close: closeSpy,
+      onmessage: null,
+    }));
+
+    const mod = await import("./auth-store");
+    mod._resetForTesting();
+    mod.clearAuth("session_expired");
+
+    expect(postMessageSpy).toHaveBeenCalledWith({ type: "noa:logout", reason: "session_expired" });
+  });
+
+  it("receiving a logout broadcast clears storage", async () => {
+    // Seed storage so we can verify it gets cleared
+    window.sessionStorage.setItem(TOKEN_KEY, "some-token");
+    window.localStorage.setItem(TOKEN_KEY, "some-legacy-token");
+    window.localStorage.setItem(USER_KEY, JSON.stringify({ id: "1", email: "a@b.com" }));
+
+    // Capture the onmessage handler set by listenForLogoutBroadcast()
+    let capturedOnMessage: ((event: MessageEvent) => void) | null = null;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (globalThis as any).BroadcastChannel = vi.fn().mockImplementation(() => {
+      const instance = {
+        postMessage: vi.fn(),
+        close: vi.fn(),
+        _onmessage: null as ((event: MessageEvent) => void) | null,
+        get onmessage() {
+          return this._onmessage;
+        },
+        set onmessage(handler: ((event: MessageEvent) => void) | null) {
+          this._onmessage = handler;
+          if (handler) capturedOnMessage = handler;
+        },
+      };
+      return instance;
+    });
+
+    // Import and explicitly initialize the listener (module-level init may have
+    // already run before BroadcastChannel was stubbed).
+    const mod = await import("./auth-store");
+    mod._initLogoutListenerForTesting();
+
+    expect(capturedOnMessage).not.toBeNull();
+
+    // Simulate receiving a logout message from another tab
+    capturedOnMessage!({ data: { type: "noa:logout", reason: "session_expired" } } as MessageEvent);
+
+    // Verify storage was cleared (redirect is tested via clearAuth broadcast tests;
+    // jsdom's window.location cannot be reliably stubbed for handler-level redirects).
+    expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(window.localStorage.getItem(USER_KEY)).toBeNull();
   });
 });

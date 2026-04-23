@@ -133,6 +133,18 @@ let _clearAuthInProgress = false;
  */
 export const isClearAuthInProgress = (): boolean => _clearAuthInProgress;
 
+/** @internal Reset module-scoped flags for testing only. */
+export const _resetForTesting = (): void => {
+  _clearAuthInProgress = false;
+  _logoutListenerInitialized = false;
+};
+
+/** @internal Re-initialize the logout broadcast listener for testing. */
+export const _initLogoutListenerForTesting = (): void => {
+  _logoutListenerInitialized = false;
+  listenForLogoutBroadcast();
+};
+
 function getSafeReturnTo(): string {
   if (typeof window === "undefined") return "/assistant";
   const raw = `${window.location.pathname}${window.location.search}${window.location.hash}`;
@@ -153,6 +165,9 @@ export const clearAuth = (reason?: ClearAuthReason): void => {
   window.sessionStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
+
+  // Notify other tabs so they redirect to login as well.
+  broadcastLogout(reason);
 
   const params = new URLSearchParams();
   if (reason) {
@@ -187,3 +202,61 @@ export const useRequireAuth = (): boolean => {
 
   return ready;
 };
+
+// ---------------------------------------------------------------------------
+// Cross-tab logout sync via BroadcastChannel
+// ---------------------------------------------------------------------------
+
+const LOGOUT_CHANNEL_NAME = "noa:auth";
+const LOGOUT_MESSAGE_TYPE = "noa:logout";
+
+let _logoutListenerInitialized = false;
+
+function broadcastLogout(reason?: ClearAuthReason): void {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+  try {
+    const channel = new BroadcastChannel(LOGOUT_CHANNEL_NAME);
+    channel.postMessage({ type: LOGOUT_MESSAGE_TYPE, reason: reason ?? null });
+    channel.close();
+  } catch {
+    // BroadcastChannel not supported or blocked — silent fallback.
+  }
+}
+
+function listenForLogoutBroadcast(): void {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return;
+  // Singleton guard: only one listener per module lifecycle.
+  if (_logoutListenerInitialized) return;
+  _logoutListenerInitialized = true;
+
+  try {
+    const channel = new BroadcastChannel(LOGOUT_CHANNEL_NAME);
+    channel.onmessage = (event: MessageEvent) => {
+      try {
+        const data = event.data as { type?: string; reason?: string } | undefined;
+        if (data?.type !== LOGOUT_MESSAGE_TYPE) return;
+
+        // Another tab logged out — clear local state and redirect.
+        // Use raw storage clear + redirect instead of clearAuth()
+        // to avoid re-broadcasting and to bypass the idempotency guard
+        // (which may already be set in this tab's lifecycle).
+        window.sessionStorage.removeItem(TOKEN_KEY);
+        window.localStorage.removeItem(TOKEN_KEY);
+        window.localStorage.removeItem(USER_KEY);
+
+        const reason = data.reason === "session_expired" ? "session_expired" : undefined;
+        const params = new URLSearchParams();
+        if (reason) params.set("reason", reason);
+        const qs = params.toString();
+        window.location.href = qs ? `/login?${qs}` : "/login";
+      } catch {
+        // Swallow handler errors to avoid breaking the event loop.
+      }
+    };
+  } catch {
+    // Silent fallback.
+  }
+}
+
+// Initialize listener on module load (client-side only).
+listenForLogoutBroadcast();
