@@ -15,7 +15,10 @@ from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
 
 def _normalize_proxmox_userid(email: str) -> str:
-    return f"{email.strip()}@pve"
+    normalized = email.strip()
+    if normalized.endswith("@pve"):
+        return normalized
+    return f"{normalized}@pve"
 
 
 def _pool_members(result: dict[str, object]) -> list[dict[str, object]]:
@@ -56,6 +59,9 @@ def _validated_pool_vmids(result: dict[str, object]) -> set[int] | None:
         return None
 
 
+_REQUIRED_POOL_PERMISSIONS = {"VM.Allocate", "Pool.Allocate", "Pool.Audit"}
+
+
 def _meaningful_permission_entries(
     result: dict[str, object], path: str
 ) -> dict[str, object] | None:
@@ -64,6 +70,9 @@ def _meaningful_permission_entries(
         return None
     permissions = data.get(path)
     if not isinstance(permissions, dict) or not permissions:
+        return None
+    granted = {key for key, value in permissions.items() if value == 1 or value is True}
+    if not granted.intersection(_REQUIRED_POOL_PERMISSIONS):
         return None
     return permissions
 
@@ -243,6 +252,28 @@ async def proxmox_move_vms_between_pools(
     client, server_id = resolved
     normalized_source_pool = source_pool.strip()
     normalized_destination_pool = destination_pool.strip()
+
+    # Re-verify source pool membership immediately before mutation (TOCTOU mitigation)
+    source_pool_check = await client.get_pool(normalized_source_pool)
+    if source_pool_check.get("ok") is not True:
+        return _upstream_error(
+            source_pool_check,
+            fallback_message="Unable to re-verify source pool before mutation",
+        )
+    try:
+        current_source_vmids = _pool_result_vmids(source_pool_check)
+    except ValueError:
+        return {
+            "ok": False,
+            "error_code": "invalid_response",
+            "message": "Proxmox returned an unexpected pool payload",
+        }
+    if not all(vmid in current_source_vmids for vmid in vmids):
+        return {
+            "ok": False,
+            "error_code": "source_pool_changed",
+            "message": "One or more VMIDs are no longer in the source pool. Run preflight again.",
+        }
 
     add_result = await client.add_vms_to_pool(normalized_destination_pool, vmids)
     if add_result.get("ok") is not True:

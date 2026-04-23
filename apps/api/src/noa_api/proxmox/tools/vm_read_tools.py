@@ -12,6 +12,7 @@ from noa_api.proxmox.tools._shared import (
     resolution_error as _resolution_error,
     sanitize_proxmox_payload as _sanitize_payload,
     upstream_error as _upstream_error,
+    validate_vmid as _validate_vmid,
 )
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
@@ -91,6 +92,9 @@ async def proxmox_get_vm_status_current(
     node: str,
     vmid: int,
 ) -> dict[str, object]:
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     return await _fetch_vm_read_data(
         session=session,
         server_ref=server_ref,
@@ -108,6 +112,9 @@ async def proxmox_get_vm_config(
     node: str,
     vmid: int,
 ) -> dict[str, object]:
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     return await _fetch_vm_config(
         session=session, server_ref=server_ref, node=node, vmid=vmid
     )
@@ -120,6 +127,9 @@ async def proxmox_get_vm_pending(
     node: str,
     vmid: int,
 ) -> dict[str, object]:
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     return await _fetch_vm_read_data(
         session=session,
         server_ref=server_ref,

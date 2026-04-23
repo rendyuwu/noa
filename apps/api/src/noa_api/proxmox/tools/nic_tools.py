@@ -12,6 +12,7 @@ from noa_api.proxmox.tools._shared import (
     client_for_server as _client_for_server,
     normalized_text as _normalized_text,
     resolution_error as _resolution_error,
+    validate_vmid as _validate_vmid,
 )
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
@@ -143,23 +144,15 @@ def _select_nic(
     }
 
 
-async def _fetch_vm_nic_state(
+async def _fetch_vm_nic_state_with_client(
     *,
-    session: AsyncSession,
-    server_ref: str,
+    client: ProxmoxClient,
+    server_id: str,
     node: str,
     vmid: int,
     net: str | None,
 ) -> dict[str, object]:
-    repo = SQLProxmoxServerRepository(session)
-    resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
-    if not resolution.ok:
-        return _resolution_error(resolution)
-
-    server = resolution.server
-    assert server is not None
-
-    client = _client_for_server(server)
+    node = node.strip()
     config_result = await client.get_qemu_config(node, vmid)
     if config_result.get("ok") is not True:
         return {
@@ -185,7 +178,7 @@ async def _fetch_vm_nic_state(
     if selection_error is not None:
         return {
             **selection_error,
-            "server_id": str(resolution.server_id),
+            "server_id": server_id,
             "node": node,
             "vmid": vmid,
             "digest": digest,
@@ -199,7 +192,7 @@ async def _fetch_vm_nic_state(
 
     return {
         "ok": True,
-        "server_id": str(resolution.server_id),
+        "server_id": server_id,
         "node": node,
         "vmid": vmid,
         "digest": digest,
@@ -209,6 +202,31 @@ async def _fetch_vm_nic_state(
         "auto_selected_net": net is None and len(nets) == 1,
         "nets": nets,
     }
+
+
+async def _fetch_vm_nic_state(
+    *,
+    session: AsyncSession,
+    server_ref: str,
+    node: str,
+    vmid: int,
+    net: str | None,
+) -> dict[str, object]:
+    repo = SQLProxmoxServerRepository(session)
+    resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
+    if not resolution.ok:
+        return _resolution_error(resolution)
+
+    server = resolution.server
+    assert server is not None
+    client = _client_for_server(server)
+    return await _fetch_vm_nic_state_with_client(
+        client=client,
+        server_id=str(resolution.server_id),
+        node=node,
+        vmid=vmid,
+        net=net,
+    )
 
 
 def _is_terminal_task_status(
@@ -252,6 +270,9 @@ async def proxmox_preflight_vm_nic_toggle(
     vmid: int,
     net: str | None = None,
 ) -> dict[str, object]:
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     return await _fetch_vm_nic_state(
         session=session,
         server_ref=server_ref,
@@ -280,9 +301,20 @@ async def _change_vm_nic_link_state(
             "message": "Digest is required",
         }
 
-    state = await _fetch_vm_nic_state(
-        session=session,
-        server_ref=server_ref,
+    # Resolve server once
+    repo = SQLProxmoxServerRepository(session)
+    resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
+    if not resolution.ok:
+        return _resolution_error(resolution)
+
+    server = resolution.server
+    assert server is not None
+    client = _client_for_server(server)
+    server_id = str(resolution.server_id)
+
+    state = await _fetch_vm_nic_state_with_client(
+        client=client,
+        server_id=server_id,
         node=normalized_node,
         vmid=vmid,
         net=net,
@@ -293,13 +325,7 @@ async def _change_vm_nic_link_state(
     current_digest = _normalized_text(state.get("digest"))
     selected_net = _normalized_text(state.get("net"))
     before_net = _normalized_text(state.get("before_net"))
-    server_id = _normalized_text(state.get("server_id"))
-    if (
-        current_digest is None
-        or selected_net is None
-        or before_net is None
-        or server_id is None
-    ):
+    if current_digest is None or selected_net is None or before_net is None:
         return {
             "ok": False,
             "error_code": "invalid_response",
@@ -335,15 +361,6 @@ async def _change_vm_nic_link_state(
             "task_status": None,
             "task_exit_status": None,
         }
-
-    repo = SQLProxmoxServerRepository(session)
-    resolution = await resolve_proxmox_server_ref(server_ref, repo=repo)
-    if not resolution.ok:
-        return _resolution_error(resolution)
-
-    server = resolution.server
-    assert server is not None
-    client = _client_for_server(server)
 
     after_net_requested = _set_link_down(before_net, disabled=disabled)
     mutation_result = await client.update_qemu_config(
@@ -473,6 +490,9 @@ async def proxmox_disable_vm_nic(
     reason: str,
 ) -> dict[str, object]:
     _ = reason
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     return await _change_vm_nic_link_state(
         session=session,
         server_ref=server_ref,
@@ -495,6 +515,9 @@ async def proxmox_enable_vm_nic(
     reason: str,
 ) -> dict[str, object]:
     _ = reason
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     return await _change_vm_nic_link_state(
         session=session,
         server_ref=server_ref,

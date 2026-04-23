@@ -17,6 +17,7 @@ from noa_api.proxmox.tools._shared import (
     resolution_error as _resolution_error,
     sanitize_proxmox_payload as _sanitize_payload,
     upstream_error as _upstream_error,
+    validate_vmid as _validate_vmid,
 )
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
@@ -99,6 +100,9 @@ async def proxmox_preflight_vm_cloudinit_password_reset(
     node: str,
     vmid: int,
 ) -> dict[str, object]:
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     normalized_node = node.strip()
     resolved = await _resolve_client(session=session, server_ref=server_ref)
     if isinstance(resolved, dict):
@@ -228,6 +232,9 @@ async def proxmox_reset_vm_cloudinit_password(
     reason: str,
 ) -> dict[str, object]:
     _ = reason
+    vmid_error = _validate_vmid(vmid)
+    if vmid_error is not None:
+        return vmid_error
     normalized_node = node.strip()
     resolved = await _resolve_client(session=session, server_ref=server_ref)
     if isinstance(resolved, dict):
@@ -262,6 +269,9 @@ async def proxmox_reset_vm_cloudinit_password(
             fallback_message="Proxmox cloud-init regeneration failed",
         )
 
+    # Security note: new_password is held in memory during the polling loop
+    # (up to ~2.5s) because crypt verification requires the plaintext.
+    # This is unavoidable for the current verification approach.
     verification_result = await _wait_for_cloudinit_verification(
         client=client,
         node=normalized_node,
