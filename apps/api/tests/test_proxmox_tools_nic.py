@@ -122,6 +122,9 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
                 "data": {},
             }
 
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(nic_tools, "ProxmoxClient", _Client)
     monkeypatch.setattr(nic_tools, "_TASK_POLL_DELAY_SECONDS", 0)
 

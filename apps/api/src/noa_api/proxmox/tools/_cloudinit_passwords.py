@@ -7,13 +7,14 @@ from threading import Lock
 
 
 _CRYPT_LOCK = Lock()
-_CRYPT_LIB = None
+_NOT_LOADED: object = object()
+_CRYPT_LIB: CDLL | None | object = _NOT_LOADED
 
 
 def _load_crypt_lib() -> CDLL | None:
     global _CRYPT_LIB
-    if _CRYPT_LIB is not None:
-        return _CRYPT_LIB
+    if _CRYPT_LIB is not _NOT_LOADED:
+        return _CRYPT_LIB  # type: ignore[return-value]
 
     for candidate in (
         find_library("crypt"),

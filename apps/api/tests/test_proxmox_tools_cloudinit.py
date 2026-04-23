@@ -158,6 +158,9 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
                 "data": {},
             }
 
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "_TASK_POLL_DELAY_SECONDS", 0)
     monkeypatch.setattr(cloudinit_tools, "_VERIFICATION_POLL_DELAY_SECONDS", 0)
@@ -576,6 +579,9 @@ async def test_proxmox_reset_vm_cloudinit_password_retries_verification_until_co
         "SQLProxmoxServerRepository",
         lambda session: _Repo([server]),
     )
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "_TASK_POLL_DELAY_SECONDS", 0)
     monkeypatch.setattr(cloudinit_tools, "_VERIFICATION_POLL_DELAY_SECONDS", 0)
@@ -659,6 +665,9 @@ async def test_proxmox_reset_vm_cloudinit_password_times_out_when_verification_n
         "SQLProxmoxServerRepository",
         lambda session: _Repo([server]),
     )
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "ProxmoxClient", _Client)
     monkeypatch.setattr(cloudinit_tools, "_TASK_POLL_DELAY_SECONDS", 0)
 

@@ -5,78 +5,25 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.core.secrets.crypto import maybe_decrypt_text
-from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.proxmox.integrations.client import ProxmoxClient
 from noa_api.proxmox.server_ref import resolve_proxmox_server_ref
-from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 from noa_api.proxmox.tools._cloudinit_passwords import (
     cloudinit_dump_matches_password,
     sanitize_cloudinit_dump_user,
 )
+from noa_api.proxmox.tools._shared import (
+    client_for_server as _client_for_server,
+    normalized_text as _normalized_text,
+    resolution_error as _resolution_error,
+    sanitize_proxmox_payload as _sanitize_payload,
+    upstream_error as _upstream_error,
+)
+from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
 _TASK_POLL_ATTEMPTS = 5
 _TASK_POLL_DELAY_SECONDS = 0.1
 _VERIFICATION_POLL_ATTEMPTS = 10
 _VERIFICATION_POLL_DELAY_SECONDS = 0.25
-
-
-def _normalized_text(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
-
-
-def _resolution_error(result: Any) -> dict[str, object]:
-    return {
-        "ok": False,
-        "error_code": str(getattr(result, "error_code", None) or "unknown"),
-        "message": str(getattr(result, "message", "")),
-        "choices": list(getattr(result, "choices", []) or []),
-    }
-
-
-def _client_for_server(server: Any) -> ProxmoxClient:
-    return ProxmoxClient(
-        base_url=str(getattr(server, "base_url")),
-        api_token_id=str(getattr(server, "api_token_id")),
-        api_token_secret=maybe_decrypt_text(str(getattr(server, "api_token_secret"))),
-        verify_ssl=bool(getattr(server, "verify_ssl")),
-    )
-
-
-def _upstream_error(
-    result: dict[str, object], *, fallback_message: str
-) -> dict[str, object]:
-    return {
-        "ok": False,
-        "error_code": str(result.get("error_code") or "unknown"),
-        "message": str(result.get("message") or fallback_message),
-    }
-
-
-def _sanitize_payload(payload: object) -> object:
-    if isinstance(payload, list):
-        return [_sanitize_payload(item) for item in payload]
-    if isinstance(payload, dict):
-        lowered_key = payload.get("key")
-        if isinstance(lowered_key, str) and lowered_key.strip().lower() == "cipassword":
-            return {
-                str(key): (
-                    "[redacted]"
-                    if str(key).strip().lower() == "value"
-                    else _sanitize_payload(item)
-                )
-                for key, item in payload.items()
-            }
-        return {
-            str(key): _sanitize_payload(item)
-            if isinstance(item, (dict, list))
-            else ("[redacted]" if str(key).strip().lower() == "cipassword" else item)
-            for key, item in payload.items()
-        }
-    return redact_sensitive_data(payload)
 
 
 def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:

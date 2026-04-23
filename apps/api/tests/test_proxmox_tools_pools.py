@@ -152,16 +152,24 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
             state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
             return state.remove_vms_from_pool_result
 
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
 
 
 def _install_scripted_client(monkeypatch, state: _ScriptedClientState) -> None:
     from noa_api.proxmox.tools import pool_tools
+    from noa_api.proxmox.tools import _shared
 
+    def _factory(**kwargs: Any) -> _ScriptedPoolClient:
+        return _ScriptedPoolClient(state, **kwargs)
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _factory)
     monkeypatch.setattr(
         pool_tools,
         "ProxmoxClient",
-        lambda **kwargs: _ScriptedPoolClient(state, **kwargs),
+        _factory,
     )
 
 

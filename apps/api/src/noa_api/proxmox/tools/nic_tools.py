@@ -6,9 +6,13 @@ from typing import cast
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.core.secrets.crypto import maybe_decrypt_text
 from noa_api.proxmox.integrations.client import ProxmoxClient
 from noa_api.proxmox.server_ref import resolve_proxmox_server_ref
+from noa_api.proxmox.tools._shared import (
+    client_for_server as _client_for_server,
+    normalized_text as _normalized_text,
+    resolution_error as _resolution_error,
+)
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
 _NET_KEY_RE = re.compile(r"^net\d+$")
@@ -16,35 +20,10 @@ _TASK_POLL_ATTEMPTS = 5
 _TASK_POLL_DELAY_SECONDS = 0.1
 
 
-def _normalized_text(value: object) -> str | None:
-    if not isinstance(value, str):
-        return None
-    normalized = value.strip()
-    return normalized or None
-
-
 def _object_dict(value: object) -> dict[str, object] | None:
     if not isinstance(value, dict):
         return None
     return cast(dict[str, object], value)
-
-
-def _resolution_error(result: object) -> dict[str, object]:
-    return {
-        "ok": False,
-        "error_code": str(getattr(result, "error_code", None) or "unknown"),
-        "message": str(getattr(result, "message", "")),
-        "choices": list(getattr(result, "choices", []) or []),
-    }
-
-
-def _client_for_server(server: object) -> ProxmoxClient:
-    return ProxmoxClient(
-        base_url=str(getattr(server, "base_url")),
-        api_token_id=str(getattr(server, "api_token_id")),
-        api_token_secret=maybe_decrypt_text(str(getattr(server, "api_token_secret"))),
-        verify_ssl=bool(getattr(server, "verify_ssl")),
-    )
 
 
 def _parse_net_segments(net_value: str) -> list[tuple[str, str | None]]:
