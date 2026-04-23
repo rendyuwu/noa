@@ -171,6 +171,10 @@ async function fetchCanonicalState(request: NextRequest, threadId: string) {
   return response.json();
 }
 
+function isUpstreamResponse(value: unknown): value is Response {
+  return value instanceof Response;
+}
+
 export async function POST(request: NextRequest) {
   const requestBody = await request.text();
   const upstreamResponse = await fetch(
@@ -187,47 +191,80 @@ export async function POST(request: NextRequest) {
   }
 
   const ack = (await upstreamResponse.json()) as AssistantRunAckResponse;
-  const canonicalState = await fetchCanonicalState(request, ack.threadId);
+
+  // Fetch canonical state *before* opening the SSE stream so that auth
+  // failures (e.g. 401) are returned as a proper HTTP error to the client
+  // instead of being swallowed inside a ReadableStream.
+  let canonicalState: unknown;
+  try {
+    canonicalState = await fetchCanonicalState(request, ack.threadId);
+  } catch (error) {
+    if (isUpstreamResponse(error)) {
+      return new Response(error.body, {
+        status: error.status,
+        statusText: error.statusText,
+        headers: error.headers,
+      });
+    }
+    throw error;
+  }
+
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
-      controller.enqueue(encoder.encode(createUpdateStateEvent(canonicalState)));
+      try {
+        controller.enqueue(encoder.encode(createUpdateStateEvent(canonicalState)));
 
-      if (typeof ack.activeRunId === "string" && ack.activeRunId.trim()) {
-        const liveResponse = await fetch(
-          buildBackendUrl(`/assistant/runs/${ack.activeRunId}/live`).toString(),
-          createBackendInit(request, { method: "GET" }),
-        );
+        if (typeof ack.activeRunId === "string" && ack.activeRunId.trim()) {
+          const liveResponse = await fetch(
+            buildBackendUrl(`/assistant/runs/${ack.activeRunId}/live`).toString(),
+            createBackendInit(request, { method: "GET" }),
+          );
 
-        if (!liveResponse.ok) {
-          throw new Error(`Live stream failed (${liveResponse.status})`);
-        }
+          if (!liveResponse.ok) {
+            // Controlled failure: close the stream cleanly instead of
+            // throwing an unhandled error that becomes an opaque 500.
+            controller.enqueue(encoder.encode(encodeSseData("[DONE]")));
+            controller.close();
+            return;
+          }
 
-        if (liveResponse.body) {
-          for await (const eventChunk of readSseEvents(liveResponse.body)) {
-            const data = getEventData(eventChunk);
-            if (!data) {
-              continue;
+          if (liveResponse.body) {
+            for await (const eventChunk of readSseEvents(liveResponse.body)) {
+              const data = getEventData(eventChunk);
+              if (!data) {
+                continue;
+              }
+
+              const event = JSON.parse(data) as AssistantLiveEvent;
+              if (event.type !== "snapshot" && event.type !== "delta") {
+                continue;
+              }
+
+              const snapshot = asObject(event.snapshot);
+              if (!snapshot) {
+                continue;
+              }
+
+              controller.enqueue(encoder.encode(createUpdateStateEvent(snapshot)));
             }
-
-            const event = JSON.parse(data) as AssistantLiveEvent;
-            if (event.type !== "snapshot" && event.type !== "delta") {
-              continue;
-            }
-
-            const snapshot = asObject(event.snapshot);
-            if (!snapshot) {
-              continue;
-            }
-
-            controller.enqueue(encoder.encode(createUpdateStateEvent(snapshot)));
           }
         }
-      }
 
-      controller.enqueue(encoder.encode(encodeSseData("[DONE]")));
-      controller.close();
+        controller.enqueue(encoder.encode(encodeSseData("[DONE]")));
+        controller.close();
+      } catch {
+        // If anything fails mid-stream (network error, parse error, etc.),
+        // close the stream gracefully so the client sees a clean end rather
+        // than a broken connection.
+        try {
+          controller.enqueue(encoder.encode(encodeSseData("[DONE]")));
+          controller.close();
+        } catch {
+          // Stream may already be closed/errored — nothing more we can do.
+        }
+      }
     },
     cancel() {
       request.signal.throwIfAborted?.();

@@ -16,7 +16,12 @@ import {
   convertAssistantState,
   normalizeAssistantState,
 } from "@/components/lib/assistant-transport-converter";
-import { clearAuth, getAuthToken } from "@/components/lib/auth-store";
+import {
+  clearAuth,
+  getAuthToken,
+  isAuthRedirectError,
+  isClearAuthInProgress,
+} from "@/components/lib/auth-store";
 import { getActiveThreadListItem } from "@/components/lib/assistant-thread-state";
 import { fetchWithAuth, getApiUrl, jsonOrThrow } from "@/components/lib/fetch-helper";
 import { ThreadHydrationProvider } from "@/components/lib/thread-hydration";
@@ -120,7 +125,8 @@ async function reconnectLiveRun(
   });
 
   if (response.status === 401) {
-    clearAuth();
+    clearAuth("session_expired");
+    return;
   }
 
   if (!response.ok) {
@@ -198,7 +204,9 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
 
         runtime.thread.unstable_loadExternalState(persistedState);
       } catch (error) {
-        console.error("Failed to hydrate persisted thread state", error);
+        if (!isAuthRedirectError(error)) {
+          console.error("Failed to hydrate persisted thread state", error);
+        }
       } finally {
         if (!cancelled) {
           setHydrationCompleted({ remoteId, expectsMessages: nextExpectsMessages });
@@ -254,7 +262,7 @@ function ThreadMaintenanceProvider({ children }: PropsWithChildren) {
           abortController.signal,
         );
       } catch (error) {
-        if (abortController.signal.aborted || cancelled) {
+        if (abortController.signal.aborted || cancelled || isAuthRedirectError(error)) {
           return;
         }
         reconnectingRunIdRef.current = null;
@@ -398,6 +406,25 @@ function useThreadAwareAssistantTransportRuntime() {
       return token ? { authorization: `Bearer ${token}` } : {};
     },
     onError: (error, { commands }) => {
+      // If the transport received a 401 or the auth redirect is already in
+      // flight, trigger logout instead of leaving the chat in a broken state.
+      if (isAuthRedirectError(error) || isClearAuthInProgress()) {
+        return;
+      }
+
+      const errorObj = typeof error === "object" && error !== null ? error : null;
+      const isUnauthorized =
+        (errorObj instanceof Error && /\b401\b/.test(errorObj.message)) ||
+        (errorObj !== null &&
+          "status" in errorObj &&
+          typeof (errorObj as Record<string, unknown>).status === "number" &&
+          (errorObj as Record<string, unknown>).status === 401);
+
+      if (isUnauthorized) {
+        clearAuth("session_expired");
+        return;
+      }
+
       console.error("Assistant transport error", error, { commands: commands.length });
     },
   });

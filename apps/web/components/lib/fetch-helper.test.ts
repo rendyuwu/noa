@@ -2,11 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const clearAuth = vi.fn();
 const getAuthToken = vi.fn();
+const isClearAuthInProgress = vi.fn();
 const reportClientError = vi.fn();
 
 vi.mock("@/components/lib/auth-store", () => ({
-  clearAuth: () => clearAuth(),
+  clearAuth: (...args: unknown[]) => clearAuth(...args),
   getAuthToken: () => getAuthToken(),
+  isClearAuthInProgress: () => isClearAuthInProgress(),
+  AuthRedirectError: class AuthRedirectError extends Error {
+    constructor(reason = "session_expired") {
+      super(`Auth redirect in progress (${reason})`);
+      this.name = "AuthRedirectError";
+    }
+  },
+  isAuthRedirectError: (error: unknown) => error instanceof Error && error.name === "AuthRedirectError",
 }));
 
 vi.mock("@/components/lib/observability/error-reporting", () => ({
@@ -20,6 +29,8 @@ describe("fetchWithAuth", () => {
     clearAuth.mockReset();
     getAuthToken.mockReset();
     getAuthToken.mockReturnValue(null);
+    isClearAuthInProgress.mockReset();
+    isClearAuthInProgress.mockReturnValue(false);
     reportClientError.mockReset();
     vi.restoreAllMocks();
   });
@@ -46,6 +57,23 @@ describe("fetchWithAuth", () => {
     await expect(fetchWithAuth("/api/threads")).rejects.toBe(networkError);
 
     expect(reportClientError).toHaveBeenCalledWith(networkError);
+    expect(clearAuth).not.toHaveBeenCalled();
+  });
+
+  it("calls clearAuth and throws AuthRedirectError on 401 response", async () => {
+    isClearAuthInProgress.mockReturnValue(false);
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(JSON.stringify({ detail: "Invalid token" }), { status: 401 }),
+    );
+
+    await expect(fetchWithAuth("/api/threads")).rejects.toThrow("Auth redirect in progress");
+    expect(clearAuth).toHaveBeenCalledWith("session_expired");
+  });
+
+  it("short-circuits with AuthRedirectError when clearAuth is already in progress", async () => {
+    isClearAuthInProgress.mockReturnValue(true);
+
+    await expect(fetchWithAuth("/api/threads")).rejects.toThrow("Auth redirect in progress");
     expect(clearAuth).not.toHaveBeenCalled();
   });
 });

@@ -1,6 +1,11 @@
 "use client";
 
-import { getAuthToken, clearAuth } from "@/components/lib/auth-store";
+import {
+  AuthRedirectError,
+  clearAuth,
+  getAuthToken,
+  isClearAuthInProgress,
+} from "@/components/lib/auth-store";
 
 import { reportClientError } from "@/components/lib/observability/error-reporting";
 
@@ -54,6 +59,11 @@ export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promi
     );
   }
 
+  // If a logout redirect is already in flight, short-circuit immediately.
+  if (isClearAuthInProgress()) {
+    throw new AuthRedirectError();
+  }
+
   const token = getAuthToken();
   const headers = new Headers(init.headers ?? {});
   if (token) {
@@ -81,7 +91,8 @@ export const fetchWithAuth = async (path: string, init: RequestInit = {}): Promi
   }
 
   if (response.status === 401) {
-    clearAuth();
+    clearAuth("session_expired");
+    throw new AuthRedirectError("session_expired");
   }
 
   return response;

@@ -13,6 +13,25 @@ export type AuthUser = {
   roles?: string[];
 };
 
+export type ClearAuthReason = "session_expired" | "logged_out";
+
+/**
+ * Sentinel error thrown by `fetchWithAuth` (and helpers) when a 401 triggers
+ * an auth redirect.  Callers that catch generic errors can check for this to
+ * avoid noisy logging / spurious error UI while the redirect is in flight.
+ */
+export class AuthRedirectError extends Error {
+  constructor(reason: ClearAuthReason = "session_expired") {
+    super(`Auth redirect in progress (${reason})`);
+    this.name = "AuthRedirectError";
+  }
+}
+
+/** Returns `true` when the given value is an `AuthRedirectError`. */
+export const isAuthRedirectError = (error: unknown): error is AuthRedirectError => {
+  return error instanceof AuthRedirectError;
+};
+
 export const getAuthToken = (): string | null => {
   if (typeof window === "undefined") {
     return null;
@@ -66,14 +85,49 @@ export const getAuthUser = (): AuthUser | null => {
   }
 };
 
-export const clearAuth = (): void => {
-  if (typeof window === "undefined") {
-    return;
-  }
+// ---------------------------------------------------------------------------
+// Idempotent auth-clearing with reason + returnTo
+// ---------------------------------------------------------------------------
+
+let _clearAuthInProgress = false;
+
+/**
+ * Returns `true` when a `clearAuth` redirect is already in flight.
+ * Useful for callers that want to suppress secondary error handling.
+ */
+export const isClearAuthInProgress = (): boolean => _clearAuthInProgress;
+
+function getSafeReturnTo(): string {
+  if (typeof window === "undefined") return "/assistant";
+  const raw = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  // Only allow relative paths that don't escape to a different origin.
+  if (!raw.startsWith("/") || raw.startsWith("//")) return "/assistant";
+  // Don't return to the login page itself.
+  if (raw === "/login" || raw.startsWith("/login?") || raw.startsWith("/login/")) return "/assistant";
+  return raw;
+}
+
+export const clearAuth = (reason?: ClearAuthReason): void => {
+  if (typeof window === "undefined") return;
+
+  // Idempotent: only one redirect per page lifecycle.
+  if (_clearAuthInProgress) return;
+  _clearAuthInProgress = true;
+
   window.sessionStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
-  window.location.href = "/login";
+
+  const params = new URLSearchParams();
+  if (reason) {
+    params.set("reason", reason);
+  }
+  const returnTo = getSafeReturnTo();
+  if (returnTo !== "/assistant") {
+    params.set("returnTo", returnTo);
+  }
+  const qs = params.toString();
+  window.location.href = qs ? `/login?${qs}` : "/login";
 };
 
 export const useRequireAuth = (): boolean => {
@@ -83,12 +137,13 @@ export const useRequireAuth = (): boolean => {
   useEffect(() => {
     const token = getAuthToken();
     if (!token) {
-      const returnTo =
-        typeof window === "undefined"
-          ? "/assistant"
-          : `${window.location.pathname}${window.location.search}${window.location.hash}`;
-      const encoded = encodeURIComponent(returnTo);
-      router.replace(`/login?returnTo=${encoded}`);
+      const returnTo = getSafeReturnTo();
+      const params = new URLSearchParams();
+      if (returnTo !== "/assistant") {
+        params.set("returnTo", returnTo);
+      }
+      const qs = params.toString();
+      router.replace(qs ? `/login?${qs}` : "/login");
       return;
     }
     setReady(true);

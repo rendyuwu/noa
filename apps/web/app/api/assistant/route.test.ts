@@ -102,6 +102,70 @@ describe("/api/assistant route wrapper", () => {
     expect(body).toContain("data: [DONE]");
   });
 
+  it("passes through upstream 401 from canonical state fetch", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "http://backend.test/assistant") {
+        return new Response(JSON.stringify({ threadId: "thread-123", activeRunId: "run-456" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url === "http://backend.test/assistant/threads/thread-123/state") {
+        return new Response(JSON.stringify({ detail: "Invalid token" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const request = new Request("http://example.test/api/assistant", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ threadId: "thread-123", commands: [] }),
+    });
+
+    const response = await POST(request as any);
+    expect(response.status).toBe(401);
+  });
+
+  it("closes stream gracefully when live endpoint returns non-OK", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+      const url = String(input);
+      if (url === "http://backend.test/assistant") {
+        return new Response(JSON.stringify({ threadId: "thread-123", activeRunId: "run-456" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url === "http://backend.test/assistant/threads/thread-123/state") {
+        return new Response(JSON.stringify({ messages: [], isRunning: true }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url === "http://backend.test/assistant/runs/run-456/live") {
+        return new Response(JSON.stringify({ detail: "Invalid token" }), {
+          status: 401,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+
+    const request = new Request("http://example.test/api/assistant", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ threadId: "thread-123", commands: [] }),
+    });
+
+    const response = await POST(request as any);
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toContain("data: [DONE]");
+  });
+
   it("closes the wrapper stream after the live route yields a terminal snapshot", async () => {
     const liveStream = new ReadableStream<Uint8Array>({
       start(controller) {
