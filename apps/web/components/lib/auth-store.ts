@@ -64,28 +64,17 @@ export const getAuthToken = (): string | null => {
     return null;
   }
 
-  const sessionToken = window.sessionStorage.getItem(TOKEN_KEY);
-  if (sessionToken) {
-    if (isTokenExpired(sessionToken)) {
-      clearAuth("session_expired");
-      return null;
-    }
-    return sessionToken;
-  }
-
-  const legacyToken = window.localStorage.getItem(TOKEN_KEY);
-  if (!legacyToken) {
+  const token = window.sessionStorage.getItem(TOKEN_KEY);
+  if (!token) {
     return null;
   }
 
-  if (isTokenExpired(legacyToken)) {
+  if (isTokenExpired(token)) {
     clearAuth("session_expired");
     return null;
   }
 
-  window.sessionStorage.setItem(TOKEN_KEY, legacyToken);
-  window.localStorage.removeItem(TOKEN_KEY);
-  return legacyToken;
+  return token;
 };
 
 export const setAuthToken = (token: string): void => {
@@ -93,7 +82,6 @@ export const setAuthToken = (token: string): void => {
     return;
   }
   window.sessionStorage.setItem(TOKEN_KEY, token);
-  window.localStorage.removeItem(TOKEN_KEY);
 };
 
 export const setAuthUser = (user: AuthUser | null): void => {
@@ -163,7 +151,6 @@ export const clearAuth = (reason?: ClearAuthReason): void => {
   _clearAuthInProgress = true;
 
   window.sessionStorage.removeItem(TOKEN_KEY);
-  window.localStorage.removeItem(TOKEN_KEY);
   window.localStorage.removeItem(USER_KEY);
 
   // Notify other tabs so they redirect to login as well.
@@ -241,7 +228,6 @@ function listenForLogoutBroadcast(): void {
         // to avoid re-broadcasting and to bypass the idempotency guard
         // (which may already be set in this tab's lifecycle).
         window.sessionStorage.removeItem(TOKEN_KEY);
-        window.localStorage.removeItem(TOKEN_KEY);
         window.localStorage.removeItem(USER_KEY);
 
         const reason = data.reason === "session_expired" ? "session_expired" : undefined;

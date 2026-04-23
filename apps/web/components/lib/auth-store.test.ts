@@ -104,21 +104,7 @@ describe("getAuthToken with expired tokens", () => {
     expect(locationSpy.href).toContain("reason=session_expired");
   });
 
-  it("returns null and calls clearAuth('session_expired') when legacy localStorage token is expired", async () => {
-    const locationSpy = { ...originalLocation, href: "http://localhost/assistant" };
-    Object.defineProperty(window, "location", { writable: true, value: locationSpy });
-
-    window.localStorage.setItem(TOKEN_KEY, EXPIRED_TOKEN);
-
-    const { getAuthToken, _resetForTesting } = await import("./auth-store");
-    _resetForTesting();
-    const result = getAuthToken();
-
-    expect(result).toBeNull();
-    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(locationSpy.href).toContain("/login");
-    expect(locationSpy.href).toContain("reason=session_expired");
-  });
+  // Legacy localStorage token migration was removed — getAuthToken only reads sessionStorage.
 
   it("returns a valid token from sessionStorage without clearing", async () => {
     window.sessionStorage.setItem(TOKEN_KEY, FUTURE_TOKEN);
@@ -129,15 +115,12 @@ describe("getAuthToken with expired tokens", () => {
     expect(result).toBe(FUTURE_TOKEN);
   });
 
-  it("migrates a valid legacy token from localStorage to sessionStorage", async () => {
+  it("does not read tokens from localStorage", async () => {
     window.localStorage.setItem(TOKEN_KEY, FUTURE_TOKEN);
+    window.sessionStorage.clear();
 
     const { getAuthToken } = await import("./auth-store");
-    const result = getAuthToken();
-
-    expect(result).toBe(FUTURE_TOKEN);
-    expect(window.sessionStorage.getItem(TOKEN_KEY)).toBe(FUTURE_TOKEN);
-    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
+    expect(getAuthToken()).toBeNull();
   });
 });
 
@@ -214,7 +197,6 @@ describe("cross-tab logout sync", () => {
   it("receiving a logout broadcast clears storage", async () => {
     // Seed storage so we can verify it gets cleared
     window.sessionStorage.setItem(TOKEN_KEY, "some-token");
-    window.localStorage.setItem(TOKEN_KEY, "some-legacy-token");
     window.localStorage.setItem(USER_KEY, JSON.stringify({ id: "1", email: "a@b.com" }));
 
     // Capture the onmessage handler set by listenForLogoutBroadcast()
@@ -250,7 +232,6 @@ describe("cross-tab logout sync", () => {
     // Verify storage was cleared (redirect is tested via clearAuth broadcast tests;
     // jsdom's window.location cannot be reliably stubbed for handler-level redirects).
     expect(window.sessionStorage.getItem(TOKEN_KEY)).toBeNull();
-    expect(window.localStorage.getItem(TOKEN_KEY)).toBeNull();
     expect(window.localStorage.getItem(USER_KEY)).toBeNull();
   });
 });
