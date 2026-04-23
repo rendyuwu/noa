@@ -23,40 +23,61 @@ def _normalized_int_list(value: object) -> list[int]:
     return vmids
 
 
+_NIC_ACTION_LABELS: dict[str, dict[str, str]] = {
+    "proxmox_enable_vm_nic": {
+        "action": "enable VM NIC",
+        "approval": "Enable VM NIC",
+        "desired_state": "up",
+        "verb": "enable",
+        "completed": "Enabled",
+        "adjective": "enabled",
+    },
+    "proxmox_disable_vm_nic": {
+        "action": "disable VM NIC",
+        "approval": "Disable VM NIC",
+        "desired_state": "down",
+        "verb": "disable",
+        "completed": "Disabled",
+        "adjective": "disabled",
+    },
+}
+
+_NIC_DEFAULTS: dict[str, str] = {
+    "action": "change VM NIC",
+    "approval": "Change VM NIC",
+    "desired_state": "unknown",
+    "verb": "change",
+    "completed": "Changed",
+    "adjective": "changed",
+}
+
+
+def _nic_label(tool_name: str, key: str) -> str:
+    return _NIC_ACTION_LABELS.get(tool_name, _NIC_DEFAULTS).get(key, _NIC_DEFAULTS[key])
+
+
 def _action_label(tool_name: str) -> str:
-    if tool_name == "proxmox_enable_vm_nic":
-        return "enable VM NIC"
-    return "disable VM NIC"
+    return _nic_label(tool_name, "action")
 
 
 def _approval_action_label(tool_name: str) -> str:
-    if tool_name == "proxmox_enable_vm_nic":
-        return "Enable VM NIC"
-    return "Disable VM NIC"
+    return _nic_label(tool_name, "approval")
 
 
 def _desired_link_state(tool_name: str) -> str:
-    if tool_name == "proxmox_enable_vm_nic":
-        return "up"
-    return "down"
+    return _nic_label(tool_name, "desired_state")
 
 
 def _action_verb(tool_name: str) -> str:
-    if tool_name == "proxmox_enable_vm_nic":
-        return "enable"
-    return "disable"
+    return _nic_label(tool_name, "verb")
 
 
 def _action_completed_label(tool_name: str) -> str:
-    if tool_name == "proxmox_enable_vm_nic":
-        return "Enabled"
-    return "Disabled"
+    return _nic_label(tool_name, "completed")
 
 
 def _action_outcome_adjective(tool_name: str) -> str:
-    if tool_name == "proxmox_enable_vm_nic":
-        return "enabled"
-    return "disabled"
+    return _nic_label(tool_name, "adjective")
 
 
 def _subject(args: dict[str, object]) -> str:
@@ -110,10 +131,9 @@ def _reason_step_content(
     if reason is None:
         if missing_reason_text is not None:
             return missing_reason_text
-        gerund = "enabling" if action_verb == "enable" else "disabling"
         return (
-            "Ask the user for a reason—an osTicket/reference number or a brief "
-            f"description—before {gerund} the VM NIC."
+            "Ask the user for a reason\u2014an osTicket/reference number or a brief "
+            f"description\u2014before proceeding with the {action_label} change."
         )
     return f"Reason captured for the {action_label} change: {reason}."
 

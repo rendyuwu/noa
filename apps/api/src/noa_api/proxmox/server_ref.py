@@ -50,6 +50,9 @@ async def resolve_proxmox_server_ref(
             choices=[],
         )
 
+    # UUID lookup takes priority over hostname lookup. If a hostname happens
+    # to be a valid UUID string, it will be treated as a server ID. This is
+    # the correct precedence — UUIDs are unambiguous identifiers.
     try:
         server_id = UUID(ref)
     except ValueError:
