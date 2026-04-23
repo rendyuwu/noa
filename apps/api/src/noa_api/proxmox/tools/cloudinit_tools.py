@@ -297,21 +297,16 @@ async def proxmox_reset_vm_cloudinit_password(
             fallback_message="Proxmox cloud-init password update failed",
         )
 
-    set_upid = _normalized_text(set_result.get("data"))
-    if set_upid is None:
-        return {
-            "ok": False,
-            "error_code": "invalid_response",
-            "message": "Proxmox returned an unexpected task identifier",
-        }
-
-    task_error = await _wait_for_terminal_task(
-        client=client,
-        node=normalized_node,
-        upid=set_upid,
-    )
-    if task_error is not None:
-        return task_error
+    # Handle synchronous success (no UPID)
+    set_upid = _normalized_text(set_result.get("upid"))
+    if set_upid is not None:
+        task_error = await _wait_for_terminal_task(
+            client=client,
+            node=normalized_node,
+            upid=set_upid,
+        )
+        if task_error is not None:
+            return task_error
 
     regenerate_result = await client.regenerate_qemu_cloudinit(normalized_node, vmid)
     if regenerate_result.get("ok") is not True:

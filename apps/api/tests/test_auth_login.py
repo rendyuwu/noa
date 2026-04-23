@@ -1107,7 +1107,9 @@ async def test_ldap_service_dev_bypass_authenticates_without_ldap_server() -> No
 async def test_me_route_accepts_cookie_based_auth() -> None:
     """GET /auth/me works when the JWT is sent via cookie instead of Bearer header."""
     app = _create_auth_app()
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
 
     transport = ASGITransport(app=app)
@@ -1126,7 +1128,9 @@ async def test_me_route_accepts_cookie_based_auth() -> None:
 async def test_me_route_cookie_takes_precedence_over_bearer() -> None:
     """When both cookie and Bearer header are present, cookie wins."""
     app = _create_auth_app()
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
 
     transport = ASGITransport(app=app)
@@ -1145,7 +1149,9 @@ async def test_me_route_cookie_takes_precedence_over_bearer() -> None:
 async def test_me_route_rejects_missing_cookie_and_bearer() -> None:
     """When neither cookie nor Bearer header is present, returns 401."""
     app = _create_auth_app()
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
     app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
 
     transport = ASGITransport(app=app)
@@ -1161,7 +1167,9 @@ async def test_me_route_rejects_missing_cookie_and_bearer() -> None:
 async def test_login_route_sets_httponly_session_cookie() -> None:
     """POST /auth/login sets an HttpOnly session cookie with the JWT."""
     app = _create_auth_app()
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(mode="ok")
+    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
+        mode="ok"
+    )
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

@@ -105,6 +105,7 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
                 "ok": True,
                 "message": "ok",
                 "upid": "UPID:pve1:00000001:task",
+                "synchronous": False,
             }
 
         async def get_task_status(self, node: str, upid: str) -> dict[str, object]:

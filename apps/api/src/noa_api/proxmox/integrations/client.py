@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 
 import httpx
@@ -111,6 +112,7 @@ class ProxmoxClient:
         verify_ssl: bool,
         timeout_seconds: float = 20.0,
         transport: httpx.AsyncBaseTransport | None = None,
+        max_concurrent_requests: int = 5,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._api_token_id = api_token_id
@@ -118,6 +120,22 @@ class ProxmoxClient:
         self._verify_ssl = verify_ssl
         self._timeout_seconds = timeout_seconds
         self._transport = transport
+        self._client: httpx.AsyncClient | None = None
+        self._semaphore = asyncio.Semaphore(max_concurrent_requests)
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                verify=self._verify_ssl,
+                timeout=self._timeout_seconds,
+                transport=self._transport,
+            )
+        return self._client
+
+    async def close(self) -> None:
+        if self._client is not None and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
     def _headers(self) -> dict[str, str]:
         return {
@@ -134,20 +152,20 @@ class ProxmoxClient:
         *,
         form_data: Mapping[str, object] | None = None,
         query_params: Mapping[str, object] | None = None,
+        timeout: float | None = None,
     ) -> dict[str, object]:
         url = f"{self._base_url}/{path.lstrip('/')}"
+        effective_timeout = timeout if timeout is not None else self._timeout_seconds
         try:
-            async with httpx.AsyncClient(
-                verify=self._verify_ssl,
-                timeout=self._timeout_seconds,
-                transport=self._transport,
-            ) as client:
+            async with self._semaphore:
+                client = self._get_client()
                 response = await client.request(
                     method,
                     url,
                     headers=self._headers(),
                     data=dict(form_data or {}),
                     params=dict(query_params or {}),
+                    timeout=effective_timeout,
                 )
         except httpx.TimeoutException:
             return {
@@ -208,6 +226,33 @@ class ProxmoxClient:
             "data": payload.get("data"),
         }
 
+    async def _request_json_task(
+        self,
+        method: str,
+        path: str,
+        *,
+        form_data: Mapping[str, object] | None = None,
+        query_params: Mapping[str, object] | None = None,
+        timeout: float | None = None,
+    ) -> dict[str, object]:
+        result = await self._request_json(
+            method,
+            path,
+            form_data=form_data,
+            query_params=query_params,
+            timeout=timeout,
+        )
+        if result.get("ok") is not True:
+            return result
+
+        upid = _normalized_text(result.get("data"))
+        return {
+            "ok": True,
+            "message": "ok",
+            "upid": upid,
+            "synchronous": upid is None,
+        }
+
     async def get_version(self) -> dict[str, object]:
         return await self._request_json("GET", "/api2/json/version")
 
@@ -241,7 +286,7 @@ class ProxmoxClient:
     async def set_qemu_cloudinit_password(
         self, node: str, vmid: int, new_password: str
     ) -> dict[str, object]:
-        return await self._request_json(
+        return await self._request_json_task(
             "POST",
             f"/api2/json/nodes/{node}/qemu/{vmid}/config",
             form_data={"cipassword": new_password},
@@ -253,6 +298,7 @@ class ProxmoxClient:
         return await self._request_json(
             "PUT",
             f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit",
+            timeout=30.0,
         )
 
     async def get_user(self, userid: str) -> dict[str, object]:
@@ -286,6 +332,7 @@ class ProxmoxClient:
                 "vms": ",".join(str(vmid) for vmid in vmids),
                 "allow-move": 1,
             },
+            timeout=30.0,
         )
 
     async def remove_vms_from_pool(
@@ -299,6 +346,7 @@ class ProxmoxClient:
                 "vms": ",".join(str(vmid) for vmid in vmids),
                 "delete": 1,
             },
+            timeout=30.0,
         )
 
     async def get_qemu_config(self, node: str, vmid: int) -> dict[str, object]:
@@ -341,7 +389,7 @@ class ProxmoxClient:
         net_key: str,
         net_value: str,
     ) -> dict[str, object]:
-        result = await self._request_json(
+        return await self._request_json_task(
             "POST",
             f"/api2/json/nodes/{node}/qemu/{vmid}/config",
             form_data={
@@ -349,22 +397,6 @@ class ProxmoxClient:
                 net_key: net_value,
             },
         )
-        if result.get("ok") is not True:
-            return result
-
-        upid = _normalized_text(result.get("data"))
-        if upid is None:
-            return {
-                "ok": False,
-                "error_code": "invalid_response",
-                "message": "Proxmox returned an unexpected task identifier",
-            }
-
-        return {
-            "ok": True,
-            "message": "ok",
-            "upid": upid,
-        }
 
     async def get_task_status(self, node: str, upid: str) -> dict[str, object]:
         result = await self._request_json(

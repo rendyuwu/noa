@@ -128,7 +128,8 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
             return {
                 "ok": True,
                 "message": "ok",
-                "data": "UPID:pve1:00000001:set-password",
+                "upid": "UPID:pve1:00000001:set-password",
+                "synchronous": False,
             }
 
         async def regenerate_qemu_cloudinit(
@@ -314,7 +315,8 @@ async def test_proxmox_reset_vm_cloudinit_password_returns_exact_upstream_payloa
         "set_password_task": {
             "ok": True,
             "message": "ok",
-            "data": "UPID:pve1:00000001:set-password",
+            "upid": "UPID:pve1:00000001:set-password",
+            "synchronous": False,
         },
         "regenerate_cloudinit": {
             "ok": True,
@@ -517,7 +519,8 @@ async def test_proxmox_reset_vm_cloudinit_password_retries_verification_until_co
             return {
                 "ok": True,
                 "message": "ok",
-                "data": "UPID:pve1:00000001:set-password",
+                "upid": "UPID:pve1:00000001:set-password",
+                "synchronous": False,
             }
 
         async def regenerate_qemu_cloudinit(
@@ -614,7 +617,8 @@ async def test_proxmox_reset_vm_cloudinit_password_times_out_when_verification_n
             return {
                 "ok": True,
                 "message": "ok",
-                "data": "UPID:pve1:00000001:set-password",
+                "upid": "UPID:pve1:00000001:set-password",
+                "synchronous": False,
             }
 
         async def regenerate_qemu_cloudinit(

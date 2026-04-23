@@ -384,45 +384,45 @@ async def _change_vm_nic_link_state(
         }
 
     upid = _normalized_text(mutation_result.get("upid"))
-    if upid is None:
-        return {
-            "ok": False,
-            "error_code": "invalid_response",
-            "message": "Proxmox returned an unexpected task identifier",
-        }
-
-    task_result, reached_terminal = await _poll_task_status(
-        client=client,
-        node=normalized_node,
-        upid=upid,
-    )
-    if not reached_terminal:
-        if isinstance(task_result, dict) and task_result.get("ok") is not True:
+    if upid is not None:
+        task_result, reached_terminal = await _poll_task_status(
+            client=client,
+            node=normalized_node,
+            upid=upid,
+        )
+        if not reached_terminal:
+            if isinstance(task_result, dict) and task_result.get("ok") is not True:
+                return {
+                    "ok": False,
+                    "error_code": str(task_result.get("error_code") or "unknown"),
+                    "message": str(
+                        task_result.get("message")
+                        or "Unable to check Proxmox task status"
+                    ),
+                }
             return {
                 "ok": False,
-                "error_code": str(task_result.get("error_code") or "unknown"),
-                "message": str(
-                    task_result.get("message") or "Unable to check Proxmox task status"
-                ),
+                "error_code": "task_timeout",
+                "message": "Proxmox task did not reach a terminal state before verification timed out",
             }
-        return {
-            "ok": False,
-            "error_code": "task_timeout",
-            "message": "Proxmox task did not reach a terminal state before verification timed out",
-        }
 
-    task_status = _normalized_text(
-        task_result.get("task_status") if isinstance(task_result, dict) else None
-    )
-    task_exit_status = _normalized_text(
-        task_result.get("task_exit_status") if isinstance(task_result, dict) else None
-    )
-    if task_status == "stopped" and task_exit_status not in {None, "OK"}:
-        return {
-            "ok": False,
-            "error_code": "task_failed",
-            "message": f"Proxmox task finished with exit status '{task_exit_status}'",
-        }
+        task_status = _normalized_text(
+            task_result.get("task_status") if isinstance(task_result, dict) else None
+        )
+        task_exit_status = _normalized_text(
+            task_result.get("task_exit_status")
+            if isinstance(task_result, dict)
+            else None
+        )
+        if task_status == "stopped" and task_exit_status not in {None, "OK"}:
+            return {
+                "ok": False,
+                "error_code": "task_failed",
+                "message": f"Proxmox task finished with exit status '{task_exit_status}'",
+            }
+    else:
+        task_status = None
+        task_exit_status = None
 
     postflight = await client.get_qemu_config(normalized_node, vmid)
     if postflight.get("ok") is not True:

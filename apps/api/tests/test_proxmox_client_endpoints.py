@@ -143,7 +143,12 @@ async def test_proxmox_client_set_qemu_cloudinit_password_posts_config_form_body
 
     result = await client.set_qemu_cloudinit_password("pve1", 101, "s3cret!")
 
-    assert result == {"ok": True, "message": "ok", "data": "UPID:pve1:task"}
+    assert result == {
+        "ok": True,
+        "message": "ok",
+        "upid": "UPID:pve1:task",
+        "synchronous": False,
+    }
 
 
 async def test_proxmox_client_regenerate_qemu_cloudinit_uses_put() -> None:
@@ -307,3 +312,126 @@ async def test_proxmox_client_remove_vms_from_pool_posts_delete_form() -> None:
     result = await client.remove_vms_from_pool("pool_a", [1057, 1058])
 
     assert result == {"ok": True, "message": "ok", "data": None}
+
+
+async def test_proxmox_client_reuses_underlying_httpx_client() -> None:
+    from noa_api.proxmox.integrations.client import ProxmoxClient
+
+    call_count = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        return httpx.Response(
+            status_code=200, json={"data": {"version": "8.0"}}, request=request
+        )
+
+    client = ProxmoxClient(
+        base_url="https://proxmox.example.com:8006",
+        api_token_id="root@pam!token",
+        api_token_secret="SECRET",
+        verify_ssl=True,
+        transport=httpx.MockTransport(handler),
+    )
+
+    await client.get_version()
+    await client.get_version()
+
+    assert call_count == 2
+    internal = client._get_client()
+    assert internal is client._get_client()
+
+
+async def test_proxmox_client_close_releases_underlying_client() -> None:
+    from noa_api.proxmox.integrations.client import ProxmoxClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200, json={"data": {"version": "8.0"}}, request=request
+        )
+
+    client = ProxmoxClient(
+        base_url="https://proxmox.example.com:8006",
+        api_token_id="root@pam!token",
+        api_token_secret="SECRET",
+        verify_ssl=True,
+        transport=httpx.MockTransport(handler),
+    )
+
+    await client.get_version()
+    first_internal = client._get_client()
+    await client.close()
+    assert first_internal.is_closed
+    # After close, a new internal client is created on next call
+    await client.get_version()
+    second_internal = client._get_client()
+    assert second_internal is not first_internal
+
+
+async def test_proxmox_client_set_cloudinit_password_handles_null_upid() -> None:
+    from noa_api.proxmox.integrations.client import ProxmoxClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=200, json={"data": None}, request=request)
+
+    client = ProxmoxClient(
+        base_url="https://proxmox.example.com:8006",
+        api_token_id="root@pam!token",
+        api_token_secret="SECRET",
+        verify_ssl=True,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.set_qemu_cloudinit_password("pve1", 101, "s3cret!")
+
+    assert result["ok"] is True
+    assert result["upid"] is None
+    assert result["synchronous"] is True
+
+
+async def test_proxmox_client_set_cloudinit_password_returns_upid_when_present() -> (
+    None
+):
+    from noa_api.proxmox.integrations.client import ProxmoxClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            status_code=200, json={"data": "UPID:pve1:task"}, request=request
+        )
+
+    client = ProxmoxClient(
+        base_url="https://proxmox.example.com:8006",
+        api_token_id="root@pam!token",
+        api_token_secret="SECRET",
+        verify_ssl=True,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.set_qemu_cloudinit_password("pve1", 101, "s3cret!")
+
+    assert result["ok"] is True
+    assert result["upid"] == "UPID:pve1:task"
+    assert result["synchronous"] is False
+
+
+async def test_proxmox_client_update_qemu_config_handles_null_upid() -> None:
+    from noa_api.proxmox.integrations.client import ProxmoxClient
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code=200, json={"data": None}, request=request)
+
+    client = ProxmoxClient(
+        base_url="https://proxmox.example.com:8006",
+        api_token_id="root@pam!token",
+        api_token_secret="SECRET",
+        verify_ssl=True,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = await client.update_qemu_config(
+        "pve1", 101, digest="abc", net_key="net0", net_value="virtio=AA:BB:CC"
+    )
+
+    assert result["ok"] is True
+    assert result["upid"] is None
+    assert result["synchronous"] is True
