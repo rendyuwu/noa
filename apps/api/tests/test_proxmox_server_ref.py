@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -57,3 +58,84 @@ async def test_resolve_proxmox_server_ref_ambiguous_name_returns_choices() -> No
     assert result.ok is False
     assert result.error_code == "host_ambiguous"
     assert len(result.choices) == 2
+
+
+# ---------------------------------------------------------------------------
+# Preflight: resolve_requested_server_id – Proxmox fallback
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resolve_requested_server_id_returns_proxmox_server_id(
+    monkeypatch,
+) -> None:
+    from noa_api.core.workflows import preflight_validation
+
+    proxmox_server_id = uuid4()
+
+    # WHM resolution fails
+    whm_resolution = MagicMock()
+    whm_resolution.ok = False
+    whm_resolution.server_id = None
+
+    mock_whm_resolve = AsyncMock(return_value=whm_resolution)
+    monkeypatch.setattr(
+        preflight_validation, "resolve_whm_server_ref", mock_whm_resolve
+    )
+
+    # Proxmox resolution succeeds
+    proxmox_resolution = MagicMock()
+    proxmox_resolution.ok = True
+    proxmox_resolution.server_id = proxmox_server_id
+
+    mock_proxmox_resolve = AsyncMock(return_value=proxmox_resolution)
+    monkeypatch.setattr(
+        "noa_api.proxmox.server_ref.resolve_proxmox_server_ref",
+        mock_proxmox_resolve,
+    )
+
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock()
+
+    result = await preflight_validation.resolve_requested_server_id(
+        args={"server_ref": "pve1"},
+        session=mock_session,
+    )
+
+    assert result == str(proxmox_server_id)
+
+
+@pytest.mark.asyncio
+async def test_resolve_requested_server_id_prefers_whm_over_proxmox(
+    monkeypatch,
+) -> None:
+    from noa_api.core.workflows import preflight_validation
+
+    whm_server_id = uuid4()
+
+    whm_resolution = MagicMock()
+    whm_resolution.ok = True
+    whm_resolution.server_id = whm_server_id
+
+    mock_whm_resolve = AsyncMock(return_value=whm_resolution)
+    monkeypatch.setattr(
+        preflight_validation, "resolve_whm_server_ref", mock_whm_resolve
+    )
+
+    # Proxmox resolution should NOT be called when WHM succeeds
+    mock_proxmox_resolve = AsyncMock()
+    monkeypatch.setattr(
+        "noa_api.proxmox.server_ref.resolve_proxmox_server_ref",
+        mock_proxmox_resolve,
+    )
+
+    mock_session = MagicMock()
+    mock_session.execute = AsyncMock()
+
+    result = await preflight_validation.resolve_requested_server_id(
+        args={"server_ref": "whm1"},
+        session=mock_session,
+    )
+
+    assert result == str(whm_server_id)
+    mock_proxmox_resolve.assert_not_awaited()

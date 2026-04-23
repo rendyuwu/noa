@@ -39,8 +39,21 @@ async def resolve_requested_server_id(
     if not hasattr(session, "execute"):
         return None
 
+    # Try WHM first (existing behavior)
     repo = SQLWHMServerRepository(session)
     resolution = await resolve_whm_server_ref(requested_server_ref, repo=repo)
-    if not resolution.ok or resolution.server_id is None:
-        return None
-    return str(resolution.server_id)
+    if resolution.ok and resolution.server_id is not None:
+        return str(resolution.server_id)
+
+    # Try Proxmox (inline imports to avoid circular dependencies)
+    from noa_api.proxmox.server_ref import resolve_proxmox_server_ref
+    from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
+
+    proxmox_repo = SQLProxmoxServerRepository(session)
+    proxmox_resolution = await resolve_proxmox_server_ref(
+        requested_server_ref, repo=proxmox_repo
+    )
+    if proxmox_resolution.ok and proxmox_resolution.server_id is not None:
+        return str(proxmox_resolution.server_id)
+
+    return None
