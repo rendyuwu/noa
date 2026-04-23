@@ -32,6 +32,33 @@ export const isAuthRedirectError = (error: unknown): error is AuthRedirectError 
   return error instanceof AuthRedirectError;
 };
 
+/**
+ * Lightweight client-side JWT expiry check.
+ *
+ * Decodes the payload (base64url → JSON) and checks whether the `exp` claim
+ * is in the past.  A 30-second grace window avoids false positives from minor
+ * clock skew.
+ *
+ * **Fail-open**: returns `false` on any parse error so that the server remains
+ * the ultimate authority on token validity.
+ */
+export const isTokenExpired = (token: string): boolean => {
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    // JWT payload is base64url-encoded (no padding).  Restore standard base64.
+    let base64 = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
+    const pad = base64.length % 4;
+    if (pad === 2) base64 += "==";
+    else if (pad === 3) base64 += "=";
+    const payload = JSON.parse(atob(base64)) as { exp?: unknown };
+    if (typeof payload.exp !== "number") return false;
+    return payload.exp < Date.now() / 1000 - 30;
+  } catch {
+    return false;
+  }
+};
+
 export const getAuthToken = (): string | null => {
   if (typeof window === "undefined") {
     return null;
@@ -39,11 +66,20 @@ export const getAuthToken = (): string | null => {
 
   const sessionToken = window.sessionStorage.getItem(TOKEN_KEY);
   if (sessionToken) {
+    if (isTokenExpired(sessionToken)) {
+      clearAuth("session_expired");
+      return null;
+    }
     return sessionToken;
   }
 
   const legacyToken = window.localStorage.getItem(TOKEN_KEY);
   if (!legacyToken) {
+    return null;
+  }
+
+  if (isTokenExpired(legacyToken)) {
+    clearAuth("session_expired");
     return null;
   }
 
