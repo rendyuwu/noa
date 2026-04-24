@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from noa_api.core.auth.role_repository import RoleRepositoryMixin
 from noa_api.storage.postgres.models import (
     AuditLog,
     Role,
@@ -14,7 +15,7 @@ from noa_api.storage.postgres.models import (
 )
 
 
-class SQLAuthorizationRepository:
+class SQLAuthorizationRepository(RoleRepositoryMixin):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -142,40 +143,6 @@ class SQLAuthorizationRepository:
         await self._session.delete(user)
         await self._session.flush()
         return user
-
-    async def get_role_names(self, user_id: UUID) -> list[str]:
-        result = await self._session.execute(
-            select(Role.name)
-            .join(UserRole, UserRole.role_id == Role.id)
-            .where(UserRole.user_id == user_id)
-        )
-        return sorted({str(name) for name in result.scalars().all()})
-
-    async def ensure_role(self, name: str) -> str:
-        result = await self._session.execute(select(Role).where(Role.name == name))
-        role = result.scalar_one_or_none()
-        if role is None:
-            role = Role(name=name)
-            self._session.add(role)
-            await self._session.flush()
-        return role.name
-
-    async def assign_role(self, user_id: UUID, role_name: str) -> None:
-        role_result = await self._session.execute(
-            select(Role).where(Role.name == role_name)
-        )
-        role = role_result.scalar_one_or_none()
-        if role is None:
-            return
-
-        existing = await self._session.execute(
-            select(UserRole).where(
-                UserRole.user_id == user_id, UserRole.role_id == role.id
-            )
-        )
-        if existing.scalar_one_or_none() is None:
-            self._session.add(UserRole(user_id=user_id, role_id=role.id))
-            await self._session.flush()
 
     async def replace_role_tool_permissions(
         self, role_name: str, tool_names: list[str]
