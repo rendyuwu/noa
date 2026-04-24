@@ -12,6 +12,7 @@ from noa_api.core.auth.authorization_errors import (
     ReservedRoleError,
     SelfDeactivateAdminError,
     SelfDeleteAdminError,
+    SelfDeleteError,
     SelfRemoveAdminRoleError,
     UnknownRoleError,
     UnknownToolError,
@@ -185,7 +186,9 @@ class AuthorizationService:
         )
         is_admin_user = "admin" in roles
         if actor_user_id is not None and actor_user_id == user_id:
-            raise SelfDeleteAdminError("Admins cannot delete their own account")
+            if is_admin_user:
+                raise SelfDeleteAdminError("Admins cannot delete their own account")
+            raise SelfDeleteError("Cannot delete your own account")
         if user.is_active and is_admin_user:
             if await self._repository.count_active_admin_users() <= 1:
                 raise LastActiveAdminError("Cannot delete the last active admin")

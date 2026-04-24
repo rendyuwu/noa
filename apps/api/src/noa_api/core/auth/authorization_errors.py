@@ -17,7 +17,11 @@ class SelfDeactivateAdminError(Exception):
     pass
 
 
-class SelfDeleteAdminError(Exception):
+class SelfDeleteError(Exception):
+    pass
+
+
+class SelfDeleteAdminError(SelfDeleteError):
     pass
 
 

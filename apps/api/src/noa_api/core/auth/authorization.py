@@ -7,6 +7,7 @@ from noa_api.core.auth.authorization_errors import (  # noqa: F401
     RoleNotFoundError,
     SelfDeactivateAdminError,
     SelfDeleteAdminError,
+    SelfDeleteError,
     SelfRemoveAdminRoleError,
     UnknownRoleError,
     UnknownToolError,

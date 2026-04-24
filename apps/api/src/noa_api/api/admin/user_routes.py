@@ -10,6 +10,7 @@ from noa_api.api.error_codes import (
     INVALID_ROLE_NAME,
     LAST_ACTIVE_ADMIN,
     SELF_DEACTIVATE_ADMIN,
+    SELF_DELETE,
     SELF_DELETE_ADMIN,
     SELF_REMOVE_ADMIN_ROLE,
     UNKNOWN_ROLES,
@@ -23,6 +24,7 @@ from noa_api.core.auth.authorization import (
     LastActiveAdminError,
     SelfDeactivateAdminError,
     SelfDeleteAdminError,
+    SelfDeleteError,
     SelfRemoveAdminRoleError,
     UnknownRoleError,
     get_authorization_service,
@@ -197,6 +199,23 @@ async def delete_user(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=str(exc),
                 error_code=SELF_DELETE_ADMIN,
+            ) from exc
+        except SelfDeleteError as exc:
+            logger.info("self_delete_conflict")
+            _record_admin_outcome(
+                request,
+                event_name="self_delete_conflict",
+                status_code=status.HTTP_409_CONFLICT,
+                trace_attributes={
+                    "target_user_id": str(id),
+                    "user_id": str(admin_user.user_id),
+                },
+                error_code=SELF_DELETE,
+            )
+            raise ApiHTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=str(exc),
+                error_code=SELF_DELETE,
             ) from exc
         if deleted_user is None:
             logger.info("admin_user_not_found")

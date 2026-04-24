@@ -33,6 +33,7 @@ from noa_api.core.auth.authorization import (
     AuthorizationUser,
     LastActiveAdminError,
     SelfDeleteAdminError,
+    SelfDeleteError,
     SelfDeactivateAdminError,
     UnknownToolError,
     get_authorization_service,
@@ -1093,6 +1094,47 @@ async def test_admin_route_blocks_self_delete_with_409() -> None:
     assert body["error_code"] == "self_delete_admin"
     assert body["request_id"] == "admin-self-delete"
     assert response.headers["x-request-id"] == body["request_id"]
+
+
+async def test_admin_route_non_admin_self_delete_returns_generic_error() -> None:
+    """Non-admin self-delete returns generic error, not admin message (V58)."""
+    app = _create_admin_app()
+
+    class _NonAdminSelfDeleteService(_FakeAuthorizationService):
+        async def delete_user(
+            self,
+            user_id: UUID,
+            *,
+            actor_email: str | None = None,
+            actor_user_id: UUID | None = None,
+        ) -> AuthorizationUser | None:
+            raise SelfDeleteError("Cannot delete your own account")
+
+    service = _NonAdminSelfDeleteService()
+    app.dependency_overrides[get_authorization_service] = lambda: service
+    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+        user_id=service.target_user_id,
+        email="user@example.com",
+        display_name="User",
+        is_active=True,
+        roles=["admin"],
+        tools=[],
+        direct_tools=[],
+    )
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/admin/users/{service.target_user_id}",
+            headers={"x-request-id": "non-admin-self-delete"},
+        )
+
+    assert response.status_code == 409
+    body = response.json()
+    assert body["detail"] == "Cannot delete your own account"
+    assert body["error_code"] == "self_delete"
+    assert "admin" not in body["detail"].lower()
+    assert body["request_id"] == "non-admin-self-delete"
 
 
 async def test_admin_route_disables_direct_tool_grants_with_410() -> None:
