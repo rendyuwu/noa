@@ -339,6 +339,43 @@ async def test_action_tool_run_service_protects_sensitive_args_at_rest_and_suppo
     )
 
 
+async def test_decrypt_sensitive_args_ignores_non_sensitive_keys(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Non-sensitive strings are never passed through maybe_decrypt_text (V55)."""
+    from noa_api.storage.postgres import action_tool_runs
+
+    calls: list[str] = []
+
+    def _tracking_maybe_decrypt(value: str) -> str:
+        calls.append(value)
+        return value.removeprefix("enc::") if value.startswith("enc::") else value
+
+    monkeypatch.setattr(action_tool_runs, "maybe_decrypt_text", _tracking_maybe_decrypt)
+
+    args = {
+        "server_ref": "enc::looks-like-encrypted",
+        "node": "pve1-node",
+        "vmid": 101,
+        "new_password": "enc::actual-secret",
+        "reason": "Ticket #1661262",
+    }
+
+    result = action_tool_runs.decrypt_sensitive_args(args)
+
+    # Non-sensitive keys preserved verbatim even if they look encrypted.
+    assert result["server_ref"] == "enc::looks-like-encrypted"
+    assert result["node"] == "pve1-node"
+    assert result["reason"] == "Ticket #1661262"
+    assert result["vmid"] == 101
+
+    # Sensitive key was decrypted.
+    assert result["new_password"] == "actual-secret"
+
+    # Only sensitive key was passed through maybe_decrypt_text.
+    assert calls == ["enc::actual-secret"]
+
+
 async def test_action_tool_run_service_rejects_invalid_tool_result_shape(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

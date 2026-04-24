@@ -206,7 +206,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T13 | . | Type `AssistantService` repository/runner via Protocol; remove all `getattr(self._repository, "method_name", None)` dispatch in `service.py:99-182` | V51,B5 |
 | T14 | . | Add public query methods to `AssistantRunCoordinator` (`get_task_done`, `get_sequence`); remove `getattr` on `_tasks`/`_sequences` in `run_lifecycle.py:82-104` | V52 |
 | T15 | . | Encrypt WHM server secrets (`api_token`, `ssh_password`, `ssh_private_key`, `ssh_private_key_passphrase`) and Proxmox server secrets (`api_token_secret`) at rest via Fernet | V53,C7 |
-| T16 | . | Fix `_decrypt_sensitive_args` to only decrypt values where `is_sensitive_key(key)` is True; make symmetric with `_encrypt_sensitive_args` | V55,B2 |
+| T16 | x | Fix `_decrypt_sensitive_args` to only decrypt values where `is_sensitive_key(key)` is True; make symmetric with `_encrypt_sensitive_args` | V55,B2 |
 | T17 | . | Audit and remove dead `api/routes/assistant_*.py` files (8 files) that duplicate `api/assistant/` modules after refactor | V49 |
 | T18 | . | Remove god-module re-exports from `core/agent/runner.py` (~70 lines of `# noqa: F401`); update callers to import from submodules directly | V49 |
 | T19 | . | Remove dead code branch in `runner.py:958` (`execute_kwargs is not args` always True since `dict(args)` creates new object) | V49 |
