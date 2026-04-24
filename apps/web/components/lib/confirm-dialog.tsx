@@ -80,7 +80,7 @@ export function ConfirmDialog({
     const maybePromise = onConfirm();
     const isPromise = maybePromise && typeof (maybePromise as Promise<unknown>).then === "function";
 
-    let outcome: void | boolean = undefined;
+    let outcome: void | boolean;
 
     if (isPromise) {
       if (!busyProp) setLocalBusy(true);
