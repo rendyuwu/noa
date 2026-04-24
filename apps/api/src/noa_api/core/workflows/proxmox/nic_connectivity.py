@@ -375,7 +375,6 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
     ) -> dict[str, object] | None:
         import noa_api.core.workflows.proxmox as _pkg
 
-        _ = tool_name
         server_ref = normalized_text(args.get("server_ref"))
         node = normalized_text(args.get("node"))
         net = normalized_text(args.get("net"))
@@ -389,7 +388,17 @@ class ProxmoxVMNicConnectivityTemplate(WorkflowTemplate):
             vmid=vmid,
             net=net,
         )
-        return result if isinstance(result, dict) else None
+        if not isinstance(result, dict):
+            return None
+        if result.get("ok") is not True:
+            return result
+        # Normalize to verification-shaped payload: check link_state matches
+        # desired state so callers can rely on postflight_result["verified"]
+        # consistently across all Proxmox workflows.
+        desired_state = _desired_link_state(tool_name)
+        actual_state = _link_state(result)
+        verified = actual_state == desired_state
+        return {**result, "verified": verified}
 
 
 def _preflight_content(*, subject: str, before_state: dict[str, object] | None) -> str:

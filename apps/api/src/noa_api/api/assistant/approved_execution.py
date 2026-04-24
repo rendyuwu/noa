@@ -275,12 +275,28 @@ async def execute_approved_tool_run(
         )
         postflight_result: dict[str, object] | None = None
         if tool.workflow_family is not None:
-            postflight_result = await fetch_postflight_result(
-                tool_name=approved_request.tool_name,
-                workflow_family=tool.workflow_family,
-                args=execution_args,
-                session=session,
-            )
+            try:
+                postflight_result = await fetch_postflight_result(
+                    tool_name=approved_request.tool_name,
+                    workflow_family=tool.workflow_family,
+                    args=execution_args,
+                    session=session,
+                )
+            except Exception:
+                logger.exception(
+                    "assistant_postflight_degraded",
+                    extra={
+                        "action_request_id": str(approved_request.id),
+                        "thread_id": str(thread_id),
+                        "tool_name": approved_request.tool_name,
+                        "tool_run_id": str(started_tool_run.id),
+                    },
+                )
+                postflight_result = {
+                    "ok": False,
+                    "error_code": "postflight_error",
+                    "message": "Postflight verification encountered an unexpected error",
+                }
             completed_todos = build_workflow_todos(
                 tool_name=approved_request.tool_name,
                 workflow_family=tool.workflow_family,

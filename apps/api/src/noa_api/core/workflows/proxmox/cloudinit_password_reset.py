@@ -41,7 +41,6 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             context.preflight_evidence, context.args
         )
         reason = normalized_text(context.args.get("reason"))
-        failed_result = _workflow_result_failed(context.result)
 
         preflight_status = "completed" if before_state is not None else "in_progress"
         reason_status = "completed" if reason is not None else "pending"
@@ -60,18 +59,14 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
         elif context.phase == "completed":
             reason_status = "completed"
             approval_status = "completed"
-            if failed_result:
-                execute_status = "completed"
-                verify_status = (
-                    "completed"
-                    if _postflight_verified(
-                        context.tool_name, context.postflight_result
-                    )
-                    else "cancelled"
+            execute_status = "completed"
+            verify_status = (
+                "completed"
+                if _cloudinit_verified(
+                    context.tool_name, context.result, context.postflight_result
                 )
-            else:
-                execute_status = "completed"
-                verify_status = "completed"
+                else "cancelled"
+            )
         elif context.phase == "denied":
             approval_status = "cancelled"
             execute_status = "cancelled"
@@ -181,7 +176,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             )
 
         if context.phase == "completed" and failed_result:
-            if _postflight_verified(context.tool_name, postflight):
+            if _cloudinit_verified(context.tool_name, result, postflight):
                 return WorkflowReplyTemplate(
                     title="Cloud-init password reset partially completed",
                     outcome="partial",
@@ -437,9 +432,9 @@ def _cloudinit_preflight_content(
 
 
 def _cloudinit_verification_content(context: WorkflowTemplateContext) -> str:
-    result = context.result if isinstance(context.result, dict) else {}
-    verified = result.get("verified") is True
-    if context.phase == "completed" and verified:
+    if context.phase == "completed" and _cloudinit_verified(
+        context.tool_name, context.result, context.postflight_result
+    ):
         return "Verify that the cloud-init password reset completed and the regenerated state is available."
     return "Poll the task and verify the cloud-init password reset after the change."
 
@@ -498,9 +493,8 @@ def _cloudinit_after_state_items(
         WorkflowEvidenceItem(
             label="Cloud-init verified",
             value="yes"
-            if result.get("verified") is True
-            or _postflight_verified(
-                "proxmox_reset_vm_cloudinit_password", postflight_result
+            if _cloudinit_verified(
+                "proxmox_reset_vm_cloudinit_password", result, postflight_result
             )
             else "no",
         ),
@@ -515,8 +509,7 @@ def _cloudinit_verification_items(
             label="Verified",
             value=(
                 "yes"
-                if result.get("verified") is True
-                or _postflight_verified(tool_name, postflight_result)
+                if _cloudinit_verified(tool_name, result, postflight_result)
                 else "no"
             ),
         ),
@@ -555,6 +548,22 @@ def _cloudinit_verification_items(
     return items
 
 
+def _cloudinit_verified(
+    tool_name: str,
+    result: dict[str, object] | None,
+    postflight_result: dict[str, object] | None,
+) -> bool:
+    """Consistent verification: postflight disagreement downgrades inline success."""
+    postflight = postflight_result if isinstance(postflight_result, dict) else {}
+    r = result if isinstance(result, dict) else {}
+    # If postflight ran and explicitly failed, downgrade even if inline said verified
+    if postflight and postflight.get("ok") is False:
+        return False
+    if _postflight_verified(tool_name, postflight_result):
+        return True
+    return r.get("verified") is True and not postflight
+
+
 def _cloudinit_evidence_summary(
     *,
     tool_name: str,
@@ -568,8 +577,9 @@ def _cloudinit_evidence_summary(
         summary.append(
             f"Before: VM {str(vmid) if isinstance(vmid, int) and not isinstance(vmid, bool) else 'unknown'} on {normalized_text(before_state.get('node')) or 'unknown-node'}."
         )
-    if result.get("verified") is True:
-        summary.append("Verification succeeded.")
-    elif _postflight_verified(tool_name, postflight_result):
-        summary.append("Postflight verification succeeded.")
+    if _cloudinit_verified(tool_name, result, postflight_result):
+        if result.get("verified") is True:
+            summary.append("Verification succeeded.")
+        else:
+            summary.append("Postflight verification succeeded.")
     return summary

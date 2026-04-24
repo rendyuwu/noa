@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +16,7 @@ from noa_api.proxmox.tools._cloudinit_passwords import (
     cloudinit_dump_matches_password,
     sanitize_cloudinit_dump_user,
 )
+from noa_api.proxmox.tools._shared import sanitize_proxmox_payload
 from noa_api.storage.postgres.proxmox_servers import SQLProxmoxServerRepository
 
 
@@ -32,6 +34,7 @@ async def _resolve_proxmox_client(
             "ok": False,
             "error_code": str(resolution.error_code or "unknown"),
             "message": str(resolution.message or "Proxmox server lookup failed"),
+            "choices": list(getattr(resolution, "choices", []) or []),
         }
 
     server = resolution.server
@@ -60,7 +63,7 @@ async def _cloudinit_postflight_result(
         return verification_result
     return {
         "ok": True,
-        "cloudinit": verification_result["cloudinit"],
+        "cloudinit": sanitize_proxmox_payload(verification_result["cloudinit"]),
         "cloudinit_dump_user": verification_result["cloudinit_dump_user"],
         "verified": True,
     }
@@ -72,7 +75,13 @@ async def _pool_postflight_result(
     source_pool: str,
     destination_pool: str,
     vmids: list[int],
-) -> dict[str, object] | None:
+) -> dict[str, object]:
+    if not vmids:
+        return {
+            "ok": False,
+            "error_code": "invalid_request",
+            "message": "At least one VMID is required for pool move verification",
+        }
     source_pool_after = await client.get_pool(source_pool)
     if source_pool_after.get("ok") is not True:
         return _upstream_error(
@@ -86,8 +95,8 @@ async def _pool_postflight_result(
             fallback_message="Unable to fetch the destination pool after the move",
         )
     try:
-        source_vmids_after = _pool_result_vmids(source_pool_after)
-        destination_vmids_after = _pool_result_vmids(destination_pool_after)
+        source_vmids_after = _pool_result_vmids_strict(source_pool_after)
+        destination_vmids_after = _pool_result_vmids_strict(destination_pool_after)
     except ValueError:
         return {
             "ok": False,
@@ -112,6 +121,10 @@ async def _pool_postflight_result(
     }
 
 
+_POSTFLIGHT_POLL_ATTEMPTS = 3
+_POSTFLIGHT_POLL_DELAY_SECONDS = 0.5
+
+
 async def _wait_for_cloudinit_verification(
     *,
     client: ProxmoxClient,
@@ -119,50 +132,68 @@ async def _wait_for_cloudinit_verification(
     vmid: int,
     new_password: str | None,
 ) -> dict[str, object]:
-    cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
-    if cloudinit_result.get("ok") is not True:
-        return _upstream_error(
-            cloudinit_result,
-            fallback_message="Unable to verify Proxmox cloud-init values",
+    for attempt in range(_POSTFLIGHT_POLL_ATTEMPTS):
+        cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
+        if cloudinit_result.get("ok") is not True:
+            return _upstream_error(
+                cloudinit_result,
+                fallback_message="Unable to verify Proxmox cloud-init values",
+            )
+
+        dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
+        if dump_result.get("ok") is not True:
+            return _upstream_error(
+                dump_result,
+                fallback_message="Unable to verify Proxmox cloud-init user dump",
+            )
+
+        sanitized_dump, confirmed = sanitize_cloudinit_dump_user(
+            dump_result.get("data")
         )
+        if not confirmed or sanitized_dump is None:
+            if attempt < _POSTFLIGHT_POLL_ATTEMPTS - 1:
+                await asyncio.sleep(_POSTFLIGHT_POLL_DELAY_SECONDS)
+                continue
+            return {
+                "ok": False,
+                "error_code": "postflight_failed",
+                "message": "Proxmox cloud-init verification did not confirm the password reset",
+            }
 
-    dump_result = await client.get_qemu_cloudinit_dump_user(node, vmid)
-    if dump_result.get("ok") is not True:
-        return _upstream_error(
-            dump_result,
-            fallback_message="Unable to verify Proxmox cloud-init user dump",
-        )
+        if not _cloudinit_confirms_password_reset(cloudinit_result):
+            if attempt < _POSTFLIGHT_POLL_ATTEMPTS - 1:
+                await asyncio.sleep(_POSTFLIGHT_POLL_DELAY_SECONDS)
+                continue
+            return {
+                "ok": False,
+                "error_code": "postflight_failed",
+                "message": "Proxmox cloud-init verification did not confirm the password reset",
+            }
 
-    sanitized_dump, confirmed = sanitize_cloudinit_dump_user(dump_result.get("data"))
-    if not confirmed or sanitized_dump is None:
+        # Only check password hash match if we have the plaintext password
+        if new_password is not None and not cloudinit_dump_matches_password(
+            dump_result.get("data"), new_password
+        ):
+            if attempt < _POSTFLIGHT_POLL_ATTEMPTS - 1:
+                await asyncio.sleep(_POSTFLIGHT_POLL_DELAY_SECONDS)
+                continue
+            return {
+                "ok": False,
+                "error_code": "postflight_failed",
+                "message": "Proxmox cloud-init verification did not confirm the password reset",
+            }
+
         return {
-            "ok": False,
-            "error_code": "postflight_failed",
-            "message": "Proxmox cloud-init verification did not confirm the password reset",
-        }
-
-    if not _cloudinit_confirms_password_reset(cloudinit_result):
-        return {
-            "ok": False,
-            "error_code": "postflight_failed",
-            "message": "Proxmox cloud-init verification did not confirm the password reset",
-        }
-
-    # Only check password hash match if we have the plaintext password
-    if new_password is not None and not cloudinit_dump_matches_password(
-        dump_result.get("data"), new_password
-    ):
-        return {
-            "ok": False,
-            "error_code": "postflight_failed",
-            "message": "Proxmox cloud-init verification did not confirm the password reset",
+            "ok": True,
+            "cloudinit": cloudinit_result,
+            "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
+            "verified": True,
         }
 
     return {
-        "ok": True,
-        "cloudinit": cloudinit_result,
-        "cloudinit_dump_user": {**dump_result, "data": sanitized_dump},
-        "verified": True,
+        "ok": False,
+        "error_code": "postflight_failed",
+        "message": "Proxmox cloud-init verification did not confirm the password reset",
     }
 
 
@@ -182,7 +213,39 @@ def _cloudinit_confirms_password_reset(result: dict[str, object]) -> bool:
     return False
 
 
+def _pool_result_vmids_strict(result: dict[str, object]) -> set[int]:
+    """Strict VMID extraction for verification — raises ValueError on malformed data."""
+    vmids: set[int] = set()
+    for member in _pool_members_strict(result):
+        vmid = member.get("vmid")
+        if isinstance(vmid, int) and not isinstance(vmid, bool):
+            vmids.add(vmid)
+        elif vmid is not None:
+            raise ValueError("invalid pool member vmid")
+    return vmids
+
+
+def _pool_members_strict(result: dict[str, object]) -> list[dict[str, object]]:
+    """Strict pool member extraction — raises ValueError on malformed payloads."""
+    data = result.get("data")
+    if not isinstance(data, list):
+        raise ValueError("invalid pool payload")
+    members: list[dict[str, object]] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            raise ValueError("invalid pool payload")
+        entry_members = entry.get("members")
+        if not isinstance(entry_members, list):
+            raise ValueError("invalid pool payload")
+        for member in entry_members:
+            if not isinstance(member, dict):
+                raise ValueError("invalid pool payload")
+            members.append(member)
+    return members
+
+
 def _pool_result_vmids(result: dict[str, object]) -> set[int]:
+    """Display-tolerant VMID extraction — skips malformed entries."""
     vmids: set[int] = set()
     for member in _pool_members_from_result(result):
         vmid = member.get("vmid")
@@ -194,6 +257,7 @@ def _pool_result_vmids(result: dict[str, object]) -> set[int]:
 def _pool_members_from_result(
     result: dict[str, object] | None,
 ) -> list[dict[str, object]]:
+    """Display-tolerant member extraction — returns empty list on malformed data."""
     if not isinstance(result, dict):
         return []
     data = result.get("data")
@@ -209,7 +273,7 @@ def _pool_members_from_result(
                 if isinstance(member, dict):
                     members.append(member)
         return members
-    members = result.get("members")
-    if isinstance(members, list):
-        return [member for member in members if isinstance(member, dict)]
+    raw_members = result.get("members")
+    if isinstance(raw_members, list):
+        return [member for member in raw_members if isinstance(member, dict)]
     return []

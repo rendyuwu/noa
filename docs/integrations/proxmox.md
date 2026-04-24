@@ -153,8 +153,8 @@ curl -k \
 - Proxmox server inventory CRUD in NOA admin UI/API
 - Proxmox server connectivity validation
 - QEMU VM NIC preflight
-- Disable VM network interface with approval, recorded reason, and evidence capture
-- Enable VM network interface with approval, recorded reason, and evidence capture
+- Disable VM network interface with approval, recorded reason, exact preflight matching, and postflight verification
+- Enable VM network interface with approval, recorded reason, exact preflight matching, and postflight verification
 - Exact-node QEMU VM runtime status, config, and pending-change reads
 - QEMU cloud-init password reset with approval, recorded reason, exact preflight matching, and postflight verification
 - Pool membership move with approval, recorded reason, exact preflight matching, and postflight verification
