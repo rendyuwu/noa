@@ -110,7 +110,23 @@ class Settings(BaseSettings):
         if value is None:
             return []
         if isinstance(value, str):
-            return [item.strip() for item in value.split(",") if item.strip()]
+            raw = value.strip()
+            if not raw:
+                return []
+            if raw.startswith("["):
+                try:
+                    value = json.loads(raw)
+                except json.JSONDecodeError:
+                    value = raw
+                else:
+                    if not isinstance(value, list):
+                        return []
+            if isinstance(value, str):
+                return [item.strip() for item in value.split(",") if item.strip()]
+        if isinstance(value, (list, tuple, set)):
+            return [
+                item.strip() for item in value if isinstance(item, str) and item.strip()
+            ]
         return value
 
     @field_validator("llm_system_prompt", "llm_system_prompt_path", mode="before")
