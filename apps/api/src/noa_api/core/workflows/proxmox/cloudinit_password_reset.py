@@ -176,7 +176,7 @@ class ProxmoxVMCloudinitPasswordResetTemplate(WorkflowTemplate):
             )
 
         if context.phase == "completed" and failed_result:
-            if _postflight_verified(context.tool_name, postflight):
+            if _cloudinit_verified(context.tool_name, result, postflight):
                 return WorkflowReplyTemplate(
                     title="Cloud-init password reset partially completed",
                     outcome="partial",
