@@ -124,7 +124,7 @@ function humanizeToolName(value: string): string {
   const raw = value.trim();
   const withoutPrefix = raw.startsWith("whm_") ? raw.slice("whm_".length) : raw;
   const words = withoutPrefix
-    .split(/[_\-]+/)
+    .split(/[_-]+/)
     .filter(Boolean)
     .map((word) => {
       const lower = word.toLowerCase();

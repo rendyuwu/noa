@@ -380,6 +380,7 @@ export function WorkflowRunDetailsBody({
 export const WorkflowTodoToolUI = makeAssistantToolUI({
   toolName: "update_workflow_todo",
   render: ({ args, result }: { args: Record<string, unknown>; result?: unknown }) => {
+    // eslint-disable-next-line react-hooks/rules-of-hooks -- render callback is a component
     const threadMessages = useAssistantState(({ thread }: any) => thread?.messages);
     const argsTodos = coerceTodos(args.todos);
     const resultTodos =

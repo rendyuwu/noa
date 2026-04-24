@@ -174,18 +174,53 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - V47. `json_safe` converts datetime, date, UUID, enum, sets to JSON-serializable types.
 - V48. Auth metrics never include `user_email` or `user_id` (cardinality control). 503 auth failures reported as reporting candidates.
 
+### Code Quality (added 2026-04-24 review)
+
+- V49. Telemetry helpers (`_safe_trace`/`_safe_metric`/`_safe_report`) single shared implementation in `api/route_telemetry.py` or similar. No per-module copy-paste.
+- V50. Admin guard (`_require_admin`) single shared implementation in `api/admin/guards.py`. WHM/Proxmox admin routes reuse it; no local copies.
+- V51. `AssistantService` repository and runner typed via Protocol (not `Any`). No `getattr(self._repository, "method_name", None)` dispatch pattern.
+- V52. `AssistantRunCoordinator` internals accessed only via public methods. No `getattr` on private `_tasks`/`_sequences` from outside the class.
+- V53. WHM/Proxmox server secrets (api_token, ssh_password, ssh_private_key, api_token_secret) encrypted at rest via Fernet, same as tool args in `action_requests`/`tool_runs`.
+- V54. `_require_active_user` dependency single shared implementation with consistent telemetry. Thread and assistant routes reuse `get_active_current_auth_user` from `auth_dependencies.py`.
+- V55. `_decrypt_sensitive_args` only decrypts values whose key matches `is_sensitive_key()`, symmetric with `_encrypt_sensitive_args`. Non-sensitive strings never passed through `maybe_decrypt_text`.
+- V56. `AuthPendingApprovalError` carries `error_code = "user_pending_approval"` attribute so `deps.py` commit-on-pending-approval path works correctly.
+- V57. CORS origins validator handles JSON array strings (e.g. `["http://localhost:3000"]`) per C9, same as `llm_system_prompt_extra_paths`.
+- V58. `delete_user` self-delete guard only fires when target user is admin. Non-admin self-delete → generic error, not "Admins cannot delete their own account".
+
 ## §T Tasks
 
 | id | status | task | cites |
 |---|---|---|---|
-| T1 | . | Add ESLint config for apps/web | C2 |
+| T1 | x | Add ESLint config for apps/web | C2 |
 | T2 | . | Add dedicated web test runner (Vitest configured but no lint scripts) | C2 |
 | T3 | . | Migrate legacy `integrations/whm/` to `whm/integrations/` (refactoring-map.md) | I.tools |
 | T4 | . | Implement OpenTelemetry backend observability (traces + metrics, currently NoOp default) | I.ext |
 | T5 | . | ? Add Proxmox postflight verification for pool-move and NIC-toggle workflows | V39,V40 |
 | T6 | . | ? Evaluate removing Bearer token auth path (cookie-only migration complete?) | V3,C4 |
+| T7 | . | Extract shared telemetry helpers (`_safe_trace`/`_safe_metric`/`_safe_report`) to single module; remove 6+ copy-pasted versions across `error_handling.py`, `routes/auth.py`, `auth_dependencies.py`, `routes/whm_admin.py`, `routes/proxmox_admin.py`, `assistant/assistant_operations.py` | V49 |
+| T8 | . | Consolidate `_require_admin` into `api/admin/guards.py`; remove duplicate implementations in `routes/whm_admin.py:288-316` and `routes/proxmox_admin.py:243-271` | V50 |
+| T9 | . | Consolidate `_require_active_user` into `auth_dependencies.get_active_current_auth_user`; remove local copies in `routes/threads.py:89-108` and `routes/assistant.py:91-104` | V54 |
+| T10 | . | Extract shared server name validation (`_validate_server_name`) and base URL normalization (`_normalize_*_base_url`) for WHM+Proxmox admin routes into shared module; also deduplicate `_status_family` | V49,V50 |
+| T11 | . | Deduplicate `ensure_role`/`assign_role`/`get_role_names` between `SQLAuthRepository` (`auth_service.py:122-154`) and `SQLAuthorizationRepository` (`authorization_repository.py:146-178`); extract to shared base or mixin | V49 |
+| T12 | . | Extract `AuthorizationUser` construction helper in `authorization_service.py`; replace ~8 repeated `AuthorizationUser(user_id=..., tools=[], direct_tools=[])` + `get_allowed_tool_names` + reconstruct patterns | V49 |
+| T13 | . | Type `AssistantService` repository/runner via Protocol; remove all `getattr(self._repository, "method_name", None)` dispatch in `service.py:99-182` | V51,B5 |
+| T14 | . | Add public query methods to `AssistantRunCoordinator` (`get_task_done`, `get_sequence`); remove `getattr` on `_tasks`/`_sequences` in `run_lifecycle.py:82-104` | V52 |
+| T15 | . | Encrypt WHM server secrets (`api_token`, `ssh_password`, `ssh_private_key`, `ssh_private_key_passphrase`) and Proxmox server secrets (`api_token_secret`) at rest via Fernet | V53,C7 |
+| T16 | . | Fix `_decrypt_sensitive_args` to only decrypt values where `is_sensitive_key(key)` is True; make symmetric with `_encrypt_sensitive_args` | V55,B2 |
+| T17 | . | Audit and remove dead `api/routes/assistant_*.py` files (8 files) that duplicate `api/assistant/` modules after refactor | V49 |
+| T18 | . | Remove god-module re-exports from `core/agent/runner.py` (~70 lines of `# noqa: F401`); update callers to import from submodules directly | V49 |
+| T19 | . | Remove dead code branch in `runner.py:958` (`execute_kwargs is not args` always True since `dict(args)` creates new object) | V49 |
+| T20 | . | Add DB connection pool size config (`pool_size`, `max_overflow`) to `Settings`; pass to `create_async_engine` | V46 |
+| T21 | . | Fix `deps.py` pending-approval commit: add `error_code` attribute to `AuthPendingApprovalError`; or change check to `isinstance` | V56,B1 |
+| T22 | . | Fix CORS origins validator `_normalize_cors_origins` to handle JSON array strings per C9 (same pattern as `_normalize_prompt_extra_paths`) | V57,B3 |
+| T23 | . | Fix `delete_user` self-delete guard: move `SelfDeleteAdminError` check inside `if is_admin_user` block; use generic error for non-admin self-delete | V58,B4 |
 
 ## §B Bugs
 
 | id | date | cause | fix |
 |---|---|---|---|
+| B1 | 2026-04-24 | `AuthPendingApprovalError` has no `error_code` attr; `deps.py:41` `getattr(exc, "error_code", None)` always `None`; pending-approval branch never commits → first-time user insert rolled back | V56,T21 |
+| B2 | 2026-04-24 | `_decrypt_sensitive_args` calls `maybe_decrypt_text` on ALL string values regardless of key; `_encrypt_sensitive_args` only encrypts `is_sensitive_key()` keys → asymmetric; non-sensitive strings matching `enc:v1:fernet:` prefix would be corrupted | V55,T16 |
+| B3 | 2026-04-24 | `_normalize_cors_origins` splits on comma but doesn't handle JSON array format; env `API_CORS_ALLOWED_ORIGINS=["http://localhost:3000"]` produces `['["http://localhost:3000"]']` with brackets in URL; violates C9 | V57,T22 |
+| B4 | 2026-04-24 | `authorization_service.delete_user:187-188` raises `SelfDeleteAdminError("Admins cannot delete their own account")` before checking `is_admin_user`; non-admin self-delete gets misleading admin error | V58,T23 |
+| B5 | 2026-04-24 | `AssistantService` methods use `getattr(self._repository, "method_name", None)` → typo in method name silently returns `None` instead of raising; no type safety on repository/runner | V51,T13 |
