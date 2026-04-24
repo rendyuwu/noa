@@ -197,10 +197,10 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T4 | . | Implement OpenTelemetry backend observability (traces + metrics, currently NoOp default) | I.ext |
 | T5 | . | ? Add Proxmox postflight verification for pool-move and NIC-toggle workflows | V39,V40 |
 | T6 | . | ? Evaluate removing Bearer token auth path (cookie-only migration complete?) | V3,C4 |
-| T7 | . | Extract shared telemetry helpers (`_safe_trace`/`_safe_metric`/`_safe_report`) to single module; remove 6+ copy-pasted versions across `error_handling.py`, `routes/auth.py`, `auth_dependencies.py`, `routes/whm_admin.py`, `routes/proxmox_admin.py`, `assistant/assistant_operations.py` | V49 |
-| T8 | . | Consolidate `_require_admin` into `api/admin/guards.py`; remove duplicate implementations in `routes/whm_admin.py:288-316` and `routes/proxmox_admin.py:243-271` | V50 |
-| T9 | . | Consolidate `_require_active_user` into `auth_dependencies.get_active_current_auth_user`; remove local copies in `routes/threads.py:89-108` and `routes/assistant.py:91-104` | V54 |
-| T10 | . | Extract shared server name validation (`_validate_server_name`) and base URL normalization (`_normalize_*_base_url`) for WHM+Proxmox admin routes into shared module; also deduplicate `_status_family` | V49,V50 |
+| T7 | x | Extract shared telemetry helpers (`_safe_trace`/`_safe_metric`/`_safe_report`) to single module; remove 6+ copy-pasted versions across `error_handling.py`, `routes/auth.py`, `auth_dependencies.py`, `routes/whm_admin.py`, `routes/proxmox_admin.py`, `assistant/assistant_operations.py` | V49 |
+| T8 | x | Consolidate `_require_admin` into `api/admin/guards.py`; remove duplicate implementations in `routes/whm_admin.py:288-316` and `routes/proxmox_admin.py:243-271` | V50 |
+| T9 | x | Consolidate `_require_active_user` into `auth_dependencies.get_active_current_auth_user`; remove local copies in `routes/threads.py:89-108` and `routes/assistant.py:91-104` | V54 |
+| T10 | x | Extract shared server name validation (`_validate_server_name`) and base URL normalization (`_normalize_*_base_url`) for WHM+Proxmox admin routes into shared module; also deduplicate `_status_family` | V49,V50 |
 | T11 | . | Deduplicate `ensure_role`/`assign_role`/`get_role_names` between `SQLAuthRepository` (`auth_service.py:122-154`) and `SQLAuthorizationRepository` (`authorization_repository.py:146-178`); extract to shared base or mixin | V49 |
 | T12 | . | Extract `AuthorizationUser` construction helper in `authorization_service.py`; replace ~8 repeated `AuthorizationUser(user_id=..., tools=[], direct_tools=[])` + `get_allowed_tool_names` + reconstruct patterns | V49 |
 | T13 | x | Type `AssistantService` repository/runner via Protocol; remove all `getattr(self._repository, "method_name", None)` dispatch in `service.py:99-182` | V51,B5 |

@@ -17,7 +17,7 @@ from httpx import ASGITransport, AsyncClient
 
 pytest.importorskip("assistant_stream")
 
-from noa_api.api.auth_dependencies import get_current_auth_user
+from noa_api.api.auth_dependencies import get_active_current_auth_user
 from noa_api.api.assistant.assistant_errors import assistant_domain_error
 from noa_api.api.error_handling import install_error_handling
 from noa_api.api.assistant.service import AssistantService
@@ -558,7 +558,7 @@ def _build_app(
     install_error_handling(app)
     app.include_router(assistant_router)
     app.dependency_overrides[get_assistant_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: current_user
+    app.dependency_overrides[get_active_current_auth_user] = lambda: current_user
     app.dependency_overrides[get_authorization_service] = lambda: (
         authorization_service or _FakeAuthorizationService()
     )

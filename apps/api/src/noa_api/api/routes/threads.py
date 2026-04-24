@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 
-from noa_api.api.auth_dependencies import get_current_auth_user
-from noa_api.api.error_codes import THREAD_NOT_FOUND, USER_PENDING_APPROVAL
+from noa_api.api.auth_dependencies import get_active_current_auth_user
+from noa_api.api.error_codes import THREAD_NOT_FOUND
 from noa_api.api.error_handling import ApiHTTPException
 from noa_api.api.route_telemetry import record_route_outcome
 from noa_api.api.threads.schemas import (
@@ -86,32 +86,10 @@ async def get_thread_service() -> AsyncGenerator[ThreadService, None]:
             raise
 
 
-async def _require_active_user(
-    request: Request,
-    current_user: AuthorizationUser = Depends(get_current_auth_user),
-) -> AuthorizationUser:
-    if not current_user.is_active:
-        with log_context(user_id=str(current_user.user_id)):
-            logger.info("threads_access_denied_inactive_user")
-        _record_thread_outcome(
-            request,
-            event_name="threads_access_denied_inactive_user",
-            status_code=status.HTTP_403_FORBIDDEN,
-            trace_attributes={"user_id": str(current_user.user_id)},
-            error_code=USER_PENDING_APPROVAL,
-        )
-        raise ApiHTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User pending approval",
-            error_code=USER_PENDING_APPROVAL,
-        )
-    return current_user
-
-
 @router.get("/threads", response_model=ThreadListResponse)
 async def list_threads(
     request: Request,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadListResponse:
     threads = await thread_service.list_threads(owner_user_id=current_user.user_id)
@@ -135,7 +113,7 @@ async def list_threads(
 async def create_thread(
     request: Request,
     payload: CreateThreadRequest | None = None,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse | Response:
     thread, created = await thread_service.create_thread(
@@ -171,7 +149,7 @@ async def create_thread(
 async def get_thread(
     request: Request,
     id: UUID,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
     with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
@@ -202,7 +180,7 @@ async def patch_thread(
     request: Request,
     id: UUID,
     payload: UpdateThreadRequest,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
     with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
@@ -232,7 +210,7 @@ async def patch_thread(
 async def archive_thread(
     request: Request,
     id: UUID,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
     with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
@@ -262,7 +240,7 @@ async def archive_thread(
 async def unarchive_thread(
     request: Request,
     id: UUID,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> ThreadResponse:
     with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
@@ -292,7 +270,7 @@ async def unarchive_thread(
 async def delete_thread(
     request: Request,
     id: UUID,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> Response:
     with log_context(user_id=str(current_user.user_id), thread_id=str(id)):
@@ -323,7 +301,7 @@ async def generate_thread_title(
     request: Request,
     id: UUID,
     payload: GenerateTitleRequest,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     thread_service: ThreadService = Depends(get_thread_service),
 ) -> GenerateTitleResponse:
     with log_context(user_id=str(current_user.user_id), thread_id=str(id)):

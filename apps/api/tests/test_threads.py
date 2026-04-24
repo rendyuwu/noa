@@ -13,8 +13,9 @@ from uuid import UUID, uuid4
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from noa_api.api.auth_dependencies import get_current_auth_user
-from noa_api.api.error_handling import install_error_handling
+from noa_api.api.auth_dependencies import get_active_current_auth_user
+from noa_api.api.error_codes import USER_PENDING_APPROVAL
+from noa_api.api.error_handling import ApiHTTPException, install_error_handling
 from noa_api.api.routes.threads import get_thread_service, router as threads_router
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging import configure_logging
@@ -206,7 +207,7 @@ async def test_threads_routes_enforce_owner_scoping() -> None:
         tools=[],
     )
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: current_user
+    app.dependency_overrides[get_active_current_auth_user] = lambda: current_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -252,7 +253,7 @@ async def test_threads_routes_archive_unarchive_and_delete() -> None:
         tools=[],
     )
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: current_user
+    app.dependency_overrides[get_active_current_auth_user] = lambda: current_user
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -283,19 +284,20 @@ async def test_threads_routes_archive_unarchive_and_delete() -> None:
         assert get_response.status_code == 404
 
 
+def _inactive_user_dependency() -> AuthorizationUser:
+    raise ApiHTTPException(
+        status_code=403,
+        detail="User pending approval",
+        error_code=USER_PENDING_APPROVAL,
+    )
+
+
 async def test_threads_routes_deny_inactive_user() -> None:
     app = _create_threads_app()
 
     service = _FakeThreadService()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
-        user_id=uuid4(),
-        email="inactive@example.com",
-        display_name="Inactive",
-        is_active=False,
-        roles=["member"],
-        tools=[],
-    )
+    app.dependency_overrides[get_active_current_auth_user] = _inactive_user_dependency
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
@@ -319,7 +321,7 @@ async def test_threads_routes_initialize_is_idempotent_per_user_local_id() -> No
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -359,7 +361,7 @@ async def test_threads_routes_emit_structured_success_logs() -> None:
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -475,7 +477,7 @@ async def test_threads_routes_record_route_outcome_telemetry() -> None:
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -576,7 +578,7 @@ async def test_threads_routes_reject_oversized_title() -> None:
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -609,7 +611,7 @@ async def test_threads_title_endpoint_generates_title_for_owner_thread() -> None
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -651,7 +653,7 @@ async def test_threads_title_endpoint_persists_generated_title_for_later_list_fe
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -689,7 +691,7 @@ async def test_threads_title_endpoint_does_not_overwrite_title_set_via_patch_str
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -787,7 +789,7 @@ async def test_threads_title_endpoint_returns_stored_title_when_set_during_gener
     service = _RaceyThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -840,7 +842,7 @@ async def test_threads_title_endpoint_returns_404_for_missing_thread() -> None:
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -869,7 +871,7 @@ async def test_threads_title_endpoint_supports_parts_message_shape() -> None:
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",
@@ -909,7 +911,7 @@ async def test_threads_title_endpoint_supports_string_content_shape() -> None:
     service = _FakeThreadService()
     owner_id = uuid4()
     app.dependency_overrides[get_thread_service] = lambda: service
-    app.dependency_overrides[get_current_auth_user] = lambda: AuthorizationUser(
+    app.dependency_overrides[get_active_current_auth_user] = lambda: AuthorizationUser(
         user_id=owner_id,
         email="owner@example.com",
         display_name="Owner",

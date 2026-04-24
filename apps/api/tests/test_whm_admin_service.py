@@ -239,4 +239,6 @@ async def test_update_server_encrypts_whm_and_ssh_secrets(monkeypatch) -> None:
     assert repo.last_update_kwargs["api_token"] == "enc::NEW_TOKEN"
     assert repo.last_update_kwargs["ssh_password"] == "enc::NEW_SSH_PASSWORD"
     assert repo.last_update_kwargs["ssh_private_key"] == "enc::NEW_PRIVATE_KEY"
-    assert repo.last_update_kwargs["ssh_private_key_passphrase"] == "enc::NEW_PASSPHRASE"
+    assert (
+        repo.last_update_kwargs["ssh_private_key_passphrase"] == "enc::NEW_PASSPHRASE"
+    )

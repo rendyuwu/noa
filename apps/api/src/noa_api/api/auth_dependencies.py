@@ -18,7 +18,8 @@ from noa_api.core.auth.errors import AuthInvalidCredentialsError
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.config import settings
 from noa_api.core.logging_context import log_context
-from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
+from noa_api.api.route_telemetry import safe_metric, safe_trace
+from noa_api.core.telemetry import TelemetryEvent
 
 _bearer_scheme = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
@@ -74,38 +75,10 @@ def _log_current_user_resolved(user: AuthorizationUser) -> None:
         )
 
 
-def _safe_trace(request: Request, event: TelemetryEvent) -> None:
-    try:
-        get_telemetry_recorder(request.app).trace(event)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "trace",
-                "telemetry_event": event.name,
-            },
-        )
-
-
-def _safe_metric(
-    request: Request, event: TelemetryEvent, *, value: int | float
-) -> None:
-    try:
-        get_telemetry_recorder(request.app).metric(event, value=value)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "metric",
-                "telemetry_event": event.name,
-            },
-        )
-
-
 def _record_current_user_resolved_telemetry(
     request: Request, user: AuthorizationUser
 ) -> None:
-    _safe_trace(
+    safe_trace(
         request,
         TelemetryEvent(
             name="auth_current_user_resolved",
@@ -134,14 +107,14 @@ def _record_current_user_rejected_telemetry(
         trace_attributes["user_id"] = str(user.user_id)
         trace_attributes["user_email"] = user.email
 
-    _safe_trace(
+    safe_trace(
         request,
         TelemetryEvent(
             name="auth_current_user_rejected",
             attributes=trace_attributes,
         ),
     )
-    _safe_metric(
+    safe_metric(
         request,
         TelemetryEvent(
             name=AUTH_OUTCOMES_TOTAL,

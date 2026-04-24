@@ -44,7 +44,9 @@ def _decrypt_sensitive_args(args: Mapping[str, object]) -> dict[str, object]:
     decrypted: dict[str, object] = {}
     for key, value in args.items():
         if isinstance(key, str) and is_sensitive_key(key):
-            decrypted[key] = maybe_decrypt_text(value) if isinstance(value, str) else value
+            decrypted[key] = (
+                maybe_decrypt_text(value) if isinstance(value, str) else value
+            )
         elif isinstance(value, Mapping):
             decrypted[key] = _decrypt_sensitive_args(value)
         else:

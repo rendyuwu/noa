@@ -11,10 +11,9 @@ from sqlalchemy.exc import IntegrityError
 from starlette.responses import StreamingResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from noa_api.api.auth_dependencies import get_current_auth_user
+from noa_api.api.auth_dependencies import get_active_current_auth_user
 from noa_api.api.error_codes import (
     THREAD_NOT_FOUND,
-    USER_PENDING_APPROVAL,
 )
 from noa_api.api.assistant.assistant_commands import (
     AssistantRequest,
@@ -88,29 +87,13 @@ def get_assistant_run_coordinator() -> AssistantRunCoordinator:
     return _RUN_COORDINATOR
 
 
-async def _require_active_user(
-    current_user: AuthorizationUser = Depends(get_current_auth_user),
-) -> AuthorizationUser:
-    if not current_user.is_active:
-        logger.info(
-            "assistant_access_denied_inactive_user",
-            extra={"user_id": str(current_user.user_id)},
-        )
-        raise assistant_http_error(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="User pending approval",
-            error_code=USER_PENDING_APPROVAL,
-        )
-    return current_user
-
-
 @router.get(
     "/assistant/threads/{thread_id}/state",
     response_model=AssistantThreadStateResponse,
 )
 async def get_thread_state(
     thread_id: UUID,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     assistant_service: AssistantService = Depends(get_assistant_service),
 ) -> AssistantThreadStateResponse:
     state = await assistant_service.load_state(
@@ -124,7 +107,7 @@ async def get_thread_state(
 async def assistant_transport(
     request: Request,
     payload: AssistantRequest,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     assistant_service: AssistantService = Depends(get_assistant_service),
     authorization_service: AuthorizationService = Depends(get_authorization_service),
     coordinator: AssistantRunCoordinator = Depends(get_assistant_run_coordinator),
@@ -331,7 +314,7 @@ async def assistant_transport(
 @router.get("/assistant/runs/{run_id}/live")
 async def get_assistant_run_live(
     run_id: UUID,
-    current_user: AuthorizationUser = Depends(_require_active_user),
+    current_user: AuthorizationUser = Depends(get_active_current_auth_user),
     assistant_service: AssistantService = Depends(get_assistant_service),
     coordinator: AssistantRunCoordinator = Depends(get_assistant_run_coordinator),
 ) -> StreamingResponse:

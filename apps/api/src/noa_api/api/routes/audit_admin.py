@@ -12,11 +12,10 @@ from pydantic import BaseModel, Field
 from sqlalchemy import Select, and_, desc, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from noa_api.api.auth_dependencies import get_current_auth_user
+from noa_api.api.admin.guards import _require_admin
 from noa_api.api.error_codes import (
     ACTION_RECEIPT_NOT_FOUND,
     ACTION_REQUEST_NOT_FOUND,
-    ADMIN_ACCESS_REQUIRED,
     REQUEST_VALIDATION_ERROR,
 )
 from noa_api.api.error_handling import ApiHTTPException
@@ -146,27 +145,6 @@ def _decode_cursor(cursor: str) -> tuple[datetime, UUID]:
         ) from exc
 
     return created_at, action_request_id
-
-
-async def _require_admin(
-    request: Request,
-    current_user: AuthorizationUser = Depends(get_current_auth_user),
-) -> AuthorizationUser:
-    if not current_user.is_active or "admin" not in current_user.roles:
-        logger.info(
-            "audit_admin_access_denied",
-            extra={
-                "is_active": current_user.is_active,
-                "roles": current_user.roles,
-                "user_id": str(current_user.user_id),
-            },
-        )
-        raise ApiHTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-            error_code=ADMIN_ACCESS_REQUIRED,
-        )
-    return current_user
 
 
 class SQLAuditRepository:

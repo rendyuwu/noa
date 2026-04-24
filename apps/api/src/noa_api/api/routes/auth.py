@@ -23,7 +23,8 @@ from noa_api.core.auth.errors import (
 )
 from noa_api.core.config import settings
 from noa_api.core.logging_context import log_context
-from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
+from noa_api.api.route_telemetry import safe_metric, safe_report, safe_trace
+from noa_api.core.telemetry import TelemetryEvent
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
@@ -100,47 +101,6 @@ def _log_login_rejected(
         )
 
 
-def _safe_trace(request: Request, event: TelemetryEvent) -> None:
-    try:
-        get_telemetry_recorder(request.app).trace(event)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "trace",
-                "telemetry_event": event.name,
-            },
-        )
-
-
-def _safe_metric(
-    request: Request, event: TelemetryEvent, *, value: int | float
-) -> None:
-    try:
-        get_telemetry_recorder(request.app).metric(event, value=value)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "metric",
-                "telemetry_event": event.name,
-            },
-        )
-
-
-def _safe_report(request: Request, event: TelemetryEvent) -> None:
-    try:
-        get_telemetry_recorder(request.app).report(event)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "report",
-                "telemetry_event": event.name,
-            },
-        )
-
-
 def _record_auth_metric(
     request: Request,
     *,
@@ -157,7 +117,7 @@ def _record_auth_metric(
     if failure_stage is not None:
         attributes["failure_stage"] = failure_stage
 
-    _safe_metric(
+    safe_metric(
         request,
         TelemetryEvent(name=AUTH_OUTCOMES_TOTAL, attributes=attributes),
         value=1,
@@ -172,7 +132,7 @@ def _record_login_rejected_telemetry(
     error_code: str,
     failure_stage: str,
 ) -> None:
-    _safe_trace(
+    safe_trace(
         request,
         TelemetryEvent(
             name="auth_login_rejected",
@@ -193,7 +153,7 @@ def _record_login_rejected_telemetry(
     )
 
     if error_code == AUTHENTICATION_SERVICE_UNAVAILABLE:
-        _safe_report(
+        safe_report(
             request,
             TelemetryEvent(
                 name="auth_login_rejected",
@@ -207,7 +167,7 @@ def _record_login_rejected_telemetry(
 
 
 def _record_login_succeeded_telemetry(request: Request, result: AuthResult) -> None:
-    _safe_trace(
+    safe_trace(
         request,
         TelemetryEvent(
             name="auth_login_succeeded",
@@ -221,7 +181,7 @@ def _record_login_succeeded_telemetry(request: Request, result: AuthResult) -> N
 
 
 def _record_me_succeeded_telemetry(request: Request, user: AuthorizationUser) -> None:
-    _safe_trace(
+    safe_trace(
         request,
         TelemetryEvent(
             name="auth_me_succeeded",

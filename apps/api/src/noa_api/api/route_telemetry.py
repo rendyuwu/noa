@@ -1,23 +1,62 @@
-"""Shared telemetry helpers for API route modules."""
+"""Shared telemetry helpers for API route modules.
+
+Single implementation of safe_trace / safe_metric / safe_report (V49).
+Accepts Request, FastAPI app, or TelemetryRecorder|None as source.
+"""
 
 from __future__ import annotations
 
 import logging
+from typing import Union
 
-from fastapi import Request
+from fastapi import FastAPI, Request
 
-from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
+from noa_api.core.telemetry import (
+    TelemetryEvent,
+    TelemetryRecorder,
+    get_telemetry_recorder,
+)
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Telemetry source resolution
+# ---------------------------------------------------------------------------
+
+TelemetrySource = Union[Request, FastAPI, TelemetryRecorder, None]
+
+
+def _resolve_recorder(source: TelemetrySource) -> TelemetryRecorder | None:
+    if source is None:
+        return None
+    if isinstance(source, Request):
+        return get_telemetry_recorder(source.app)  # type: ignore[arg-type]
+    if isinstance(source, FastAPI):
+        return get_telemetry_recorder(source)  # type: ignore[arg-type]
+    # Already a TelemetryRecorder
+    return source  # type: ignore[return-value]
+
+
+# ---------------------------------------------------------------------------
+# status_family
+# ---------------------------------------------------------------------------
 
 
 def status_family(status_code: int) -> str:
     return f"{status_code // 100}xx"
 
 
-def safe_trace(request: Request, event: TelemetryEvent) -> None:
+# ---------------------------------------------------------------------------
+# safe_trace / safe_metric / safe_report
+# ---------------------------------------------------------------------------
+
+
+def safe_trace(source: TelemetrySource, event: TelemetryEvent) -> None:
+    recorder = _resolve_recorder(source)
+    if recorder is None:
+        return
     try:
-        get_telemetry_recorder(request.app).trace(event)
+        recorder.trace(event)
     except Exception:
         logger.exception(
             "api_telemetry_failed",
@@ -28,9 +67,14 @@ def safe_trace(request: Request, event: TelemetryEvent) -> None:
         )
 
 
-def safe_metric(request: Request, event: TelemetryEvent, *, value: int | float) -> None:
+def safe_metric(
+    source: TelemetrySource, event: TelemetryEvent, *, value: int | float
+) -> None:
+    recorder = _resolve_recorder(source)
+    if recorder is None:
+        return
     try:
-        get_telemetry_recorder(request.app).metric(event, value=value)
+        recorder.metric(event, value=value)
     except Exception:
         logger.exception(
             "api_telemetry_failed",
@@ -39,6 +83,27 @@ def safe_metric(request: Request, event: TelemetryEvent, *, value: int | float) 
                 "telemetry_event": event.name,
             },
         )
+
+
+def safe_report(source: TelemetrySource, event: TelemetryEvent) -> None:
+    recorder = _resolve_recorder(source)
+    if recorder is None:
+        return
+    try:
+        recorder.report(event)
+    except Exception:
+        logger.exception(
+            "api_telemetry_failed",
+            extra={
+                "telemetry_operation": "report",
+                "telemetry_event": event.name,
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# record_route_outcome — convenience for route-level trace + metric
+# ---------------------------------------------------------------------------
 
 
 def record_route_outcome(

@@ -24,6 +24,7 @@ from noa_api.api.assistant.assistant_streaming import (
 from noa_api.api.assistant.assistant_runs import AssistantRunHandle
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
+from noa_api.api.route_telemetry import safe_metric, safe_report, safe_trace
 from noa_api.core.telemetry import TelemetryEvent, TelemetryRecorder
 from noa_api.core.tools.registry import get_tool_registry
 
@@ -118,53 +119,6 @@ def _assistant_failure_attributes(
     return attributes
 
 
-def _safe_trace(telemetry: TelemetryRecorder | None, event: TelemetryEvent) -> None:
-    if telemetry is None:
-        return
-    try:
-        telemetry.trace(event)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "trace",
-                "telemetry_event": event.name,
-            },
-        )
-
-
-def _safe_metric(
-    telemetry: TelemetryRecorder | None, event: TelemetryEvent, *, value: int | float
-) -> None:
-    if telemetry is None:
-        return
-    try:
-        telemetry.metric(event, value=value)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "metric",
-                "telemetry_event": event.name,
-            },
-        )
-
-
-def _safe_report(telemetry: TelemetryRecorder | None, event: TelemetryEvent) -> None:
-    if telemetry is None:
-        return
-    try:
-        telemetry.report(event)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "report",
-                "telemetry_event": event.name,
-            },
-        )
-
-
 def _apply_canonical_state(
     state: dict[str, object],
     canonical_state: dict[str, object],
@@ -224,20 +178,20 @@ def _record_assistant_failure_telemetry(
             error_type=error_type,
         ),
     )
-    _safe_trace(telemetry, trace_event)
+    safe_trace(telemetry, trace_event)
     metric_attributes = _assistant_failure_attributes(
         command_types=command_types,
         status_code=status_code,
         error_code=error_code,
         error_type=error_type,
     )
-    _safe_metric(
+    safe_metric(
         telemetry,
         TelemetryEvent(name=ASSISTANT_FAILURES_TOTAL, attributes=metric_attributes),
         value=1,
     )
     if report:
-        _safe_report(telemetry, trace_event)
+        safe_report(telemetry, trace_event)
 
 
 async def prepare_assistant_transport(

@@ -4,7 +4,6 @@ from datetime import datetime
 import logging
 from typing import Any
 import re
-from urllib.parse import urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request, Response, status
@@ -12,13 +11,16 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
-from noa_api.api.auth_dependencies import get_current_auth_user
+from noa_api.api.admin.guards import _require_admin
 from noa_api.api.error_codes import (
-    ADMIN_ACCESS_REQUIRED,
     WHM_SERVER_NAME_EXISTS,
     WHM_SERVER_NOT_FOUND,
 )
 from noa_api.api.error_handling import ApiHTTPException
+from noa_api.api.routes.server_validation import (
+    normalize_https_base_url,
+    validate_server_name,
+)
 from noa_api.api.whm_admin.schemas import ValidateWHMServerResponse
 from noa_api.api.whm_admin.service import (
     WHMServerNameExistsError,
@@ -28,13 +30,13 @@ from noa_api.api.whm_admin.service import (
 )
 from noa_api.core.auth.authorization import AuthorizationUser
 from noa_api.core.logging_context import log_context
-from noa_api.core.telemetry import TelemetryEvent, get_telemetry_recorder
+from noa_api.api.route_telemetry import safe_metric, safe_trace, status_family
+from noa_api.core.telemetry import TelemetryEvent
 
 router = APIRouter(prefix="/admin/whm/servers", tags=["admin"])
 
 logger = logging.getLogger(__name__)
 WHM_OUTCOMES_TOTAL = "whm.outcomes.total"
-_WHM_SERVER_NAME_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 _WHM_API_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
 
@@ -90,12 +92,12 @@ class CreateWHMServerRequest(BaseModel):
     @field_validator("name")
     @classmethod
     def _validate_name(cls, value: str) -> str:
-        return _validate_server_name(value)
+        return validate_server_name(value, label="WHM")
 
     @field_validator("base_url")
     @classmethod
     def _validate_base_url(cls, value: str) -> str:
-        return _normalize_whm_base_url(value)
+        return normalize_https_base_url(value, label="WHM")
 
     @field_validator("api_username")
     @classmethod
@@ -153,14 +155,14 @@ class UpdateWHMServerRequest(BaseModel):
     def _validate_name(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _validate_server_name(value)
+        return validate_server_name(value, label="WHM")
 
     @field_validator("base_url")
     @classmethod
     def _validate_base_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        return _normalize_whm_base_url(value)
+        return normalize_https_base_url(value, label="WHM")
 
     @field_validator("api_username")
     @classmethod
@@ -178,76 +180,15 @@ class DeleteWHMServerResponse(BaseModel):
     ok: bool
 
 
-def _validate_server_name(value: str) -> str:
-    if not _WHM_SERVER_NAME_RE.fullmatch(value):
-        raise ValueError("String should be a valid WHM server name")
-    return value
-
-
 def _validate_api_username(value: str) -> str:
     if not _WHM_API_USERNAME_RE.fullmatch(value):
         raise ValueError("String should be a valid WHM API username")
     return value
 
 
-def _normalize_whm_base_url(value: str) -> str:
-    parsed = urlsplit(value)
-    if parsed.scheme != "https":
-        raise ValueError("String should be a valid HTTPS WHM base URL")
-    if not parsed.hostname:
-        raise ValueError("String should be a valid HTTPS WHM base URL")
-    if parsed.username or parsed.password:
-        raise ValueError("String should be a valid HTTPS WHM base URL")
-    if parsed.path not in {"", "/"}:
-        raise ValueError("String should be a valid HTTPS WHM base URL")
-    if parsed.query or parsed.fragment:
-        raise ValueError("String should be a valid HTTPS WHM base URL")
-
-    hostname = parsed.hostname
-    assert hostname is not None
-    try:
-        port_value = parsed.port
-    except ValueError as exc:
-        raise ValueError("String should be a valid HTTPS WHM base URL") from exc
-    port = f":{port_value}" if port_value is not None else ""
-    return f"https://{hostname}{port}"
-
-
 def _to_server_response(server: Any) -> WHMServerResponse:
     safe = server.to_safe_dict()
     return WHMServerResponse.model_validate(safe)
-
-
-def _status_family(status_code: int) -> str:
-    return f"{status_code // 100}xx"
-
-
-def _safe_trace(request: Request, event: TelemetryEvent) -> None:
-    try:
-        get_telemetry_recorder(request.app).trace(event)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "trace",
-                "telemetry_event": event.name,
-            },
-        )
-
-
-def _safe_metric(
-    request: Request, event: TelemetryEvent, *, value: int | float
-) -> None:
-    try:
-        get_telemetry_recorder(request.app).metric(event, value=value)
-    except Exception:
-        logger.exception(
-            "api_telemetry_failed",
-            extra={
-                "telemetry_operation": "metric",
-                "telemetry_event": event.name,
-            },
-        )
 
 
 def _record_whm_outcome(
@@ -264,56 +205,25 @@ def _record_whm_outcome(
         event_attributes["error_code"] = error_code
         event_attributes["status_code"] = status_code
 
-    _safe_trace(
+    safe_trace(
         request,
         TelemetryEvent(name=event_name, attributes=event_attributes),
     )
 
     bounded_metric_attributes: dict[str, str | bool] = {
         "event_name": event_name,
-        "status_family": _status_family(status_code),
+        "status_family": status_family(status_code),
     }
     if error_code is not None:
         bounded_metric_attributes["error_code"] = error_code
     if metric_attributes is not None:
         bounded_metric_attributes.update(metric_attributes)
 
-    _safe_metric(
+    safe_metric(
         request,
         TelemetryEvent(name=WHM_OUTCOMES_TOTAL, attributes=bounded_metric_attributes),
         value=1,
     )
-
-
-async def _require_admin(
-    request: Request,
-    current_user: AuthorizationUser = Depends(get_current_auth_user),
-) -> AuthorizationUser:
-    if not current_user.is_active or "admin" not in current_user.roles:
-        logger.info(
-            "whm_admin_access_denied",
-            extra={
-                "is_active": current_user.is_active,
-                "roles": current_user.roles,
-                "user_id": str(current_user.user_id),
-            },
-        )
-        _record_whm_outcome(
-            request,
-            event_name="whm_admin_access_denied",
-            status_code=status.HTTP_403_FORBIDDEN,
-            trace_attributes={
-                "is_active": current_user.is_active,
-                "user_id": str(current_user.user_id),
-            },
-            error_code=ADMIN_ACCESS_REQUIRED,
-        )
-        raise ApiHTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin access required",
-            error_code=ADMIN_ACCESS_REQUIRED,
-        )
-    return current_user
 
 
 @router.get("", response_model=WHMServerListResponse)

@@ -83,7 +83,11 @@ class _FullRepo:
 
     async def create(self, **kwargs: Any) -> _FullServer:
         self.last_create_kwargs = kwargs
-        return self.server if self.server is not None else _FullServer(id=uuid4(), **kwargs)
+        return (
+            self.server
+            if self.server is not None
+            else _FullServer(id=uuid4(), **kwargs)
+        )
 
     async def update(self, *, server_id: UUID, **kwargs: Any) -> _FullServer | None:
         self.last_update_kwargs = {"server_id": server_id, **kwargs}
@@ -150,7 +154,14 @@ async def test_validate_server_decrypts_api_token_secret(monkeypatch) -> None:
     captured_secret: list[str] = []
 
     class _FakeClient:
-        def __init__(self, *, base_url: str, api_token_id: str, api_token_secret: str, verify_ssl: bool):
+        def __init__(
+            self,
+            *,
+            base_url: str,
+            api_token_id: str,
+            api_token_secret: str,
+            verify_ssl: bool,
+        ):
             captured_secret.append(api_token_secret)
 
         async def get_version(self) -> dict[str, object]:
