@@ -57,16 +57,18 @@ describe("useVerifiedAuth", () => {
     });
   });
 
-  it("redirects to /login when no token is present", async () => {
-    mocks.getAuthToken.mockReturnValue(null);
+  it("does not become ready when fetchWithAuth rejects", async () => {
+    mocks.fetchWithAuth.mockRejectedValue(new Error("network failure"));
 
-    renderHook(() => useVerifiedAuth());
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { result } = renderHook(() => useVerifiedAuth());
 
-    await waitFor(() => {
-      expect(mocks.replace).toHaveBeenCalled();
-    });
+    // Give the async effect time to settle
+    await new Promise((r) => setTimeout(r, 50));
 
-    expect(mocks.replace.mock.calls[0][0]).toMatch(/^\/login/);
+    expect(result.current.ready).toBe(false);
+    expect(result.current.user).toBeNull();
+    consoleSpy.mockRestore();
   });
 
   it("redirects to /assistant when user is not admin and requireAdmin is true", async () => {

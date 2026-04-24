@@ -192,7 +192,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | id | status | task | cites |
 |---|---|---|---|
 | T1 | x | Add ESLint config for apps/web | C2 |
-| T2 | . | Add dedicated web test runner (Vitest configured but no lint scripts) | C2 |
+| T2 | x | Add dedicated web test runner (Vitest configured but no lint scripts) | C2 |
 | T3 | . | Migrate legacy `integrations/whm/` to `whm/integrations/` (refactoring-map.md) | I.tools |
 | T4 | . | Implement OpenTelemetry backend observability (traces + metrics, currently NoOp default) | I.ext |
 | T5 | . | ? Add Proxmox postflight verification for pool-move and NIC-toggle workflows | V39,V40 |

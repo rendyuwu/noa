@@ -264,7 +264,8 @@ describe("UsersAdminPage", () => {
     render(<UsersAdminPage />);
 
     const table = await screen.findByRole("table");
-    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
+    const row = (await within(table).findByText("casey@example.com")).closest("tr")!;
+    fireEvent.click(row);
 
     expect(screen.getByLabelText("Role assignment").closest(".editorial-subpanel")).not.toBeNull();
 
@@ -336,7 +337,8 @@ describe("UsersAdminPage", () => {
     render(<UsersAdminPage />);
 
     const table = await screen.findByRole("table");
-    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
+    const row = (await within(table).findByText("casey@example.com")).closest("tr")!;
+    fireEvent.click(row);
 
     expect(await screen.findByText("Legacy direct grants")).toBeInTheDocument();
     expect(screen.getByText("legacy_tool")).toBeInTheDocument();
@@ -414,7 +416,8 @@ describe("UsersAdminPage", () => {
     render(<UsersAdminPage />);
 
     const table = await screen.findByRole("table");
-    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
+    const row = (await within(table).findByText("casey@example.com")).closest("tr")!;
+    fireEvent.click(row);
 
     const disableButton = await screen.findByRole("button", { name: "Disable" });
     fireEvent.click(disableButton);
@@ -505,7 +508,8 @@ describe("UsersAdminPage", () => {
     render(<UsersAdminPage />);
 
     const table = await screen.findByRole("table");
-    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
+    const row = (await within(table).findByText("casey@example.com")).closest("tr")!;
+    fireEvent.click(row);
 
     const disableButton = await screen.findByRole("button", { name: "Disable" });
     fireEvent.click(disableButton);
@@ -603,7 +607,8 @@ describe("UsersAdminPage", () => {
     render(<UsersAdminPage />);
 
     const table = await screen.findByRole("table");
-    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
+    const caseyRow = (await within(table).findByText("casey@example.com")).closest("tr")!;
+    fireEvent.click(caseyRow);
 
     const disableButton = await screen.findByRole("button", { name: "Disable" });
     fireEvent.click(disableButton);
@@ -619,7 +624,8 @@ describe("UsersAdminPage", () => {
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    fireEvent.click(await within(table).findByRole("button", { name: /riley@example.com/i }));
+    const rileyRow = (await within(table).findByText("riley@example.com")).closest("tr")!;
+    fireEvent.click(rileyRow);
 
     const dialog = await screen.findByRole("dialog");
     expect(within(dialog).getByText("riley@example.com")).toBeInTheDocument();
@@ -705,7 +711,8 @@ describe("UsersAdminPage", () => {
     render(<UsersAdminPage />);
 
     const table = await screen.findByRole("table");
-    fireEvent.click(await within(table).findByRole("button", { name: /casey@example.com/i }));
+    const row = (await within(table).findByText("casey@example.com")).closest("tr")!;
+    fireEvent.click(row);
 
     fireEvent.click(await screen.findByRole("button", { name: "Delete user" }));
 
