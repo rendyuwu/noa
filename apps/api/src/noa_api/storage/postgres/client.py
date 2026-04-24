@@ -13,7 +13,12 @@ from noa_api.core.config import settings
 
 
 def create_engine() -> AsyncEngine:
-    return create_async_engine(str(settings.postgres_url), pool_pre_ping=True)
+    return create_async_engine(
+        str(settings.postgres_url),
+        pool_pre_ping=True,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+    )
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:

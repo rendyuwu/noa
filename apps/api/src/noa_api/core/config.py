@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     llm_system_prompt_extra_paths: Annotated[list[str], NoDecode] = Field(
         default_factory=list
     )
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
 
     @field_validator("telemetry_otlp_headers", mode="before")
     @classmethod
