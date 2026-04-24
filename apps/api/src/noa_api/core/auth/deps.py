@@ -1,6 +1,7 @@
 from collections.abc import AsyncGenerator
 
 from noa_api.core.auth.auth_service import AuthService, SQLAuthRepository
+from noa_api.core.auth.errors import AuthPendingApprovalError
 from noa_api.core.auth.jwt_service import JWTService
 from noa_api.core.auth.ldap_service import LDAPService
 from noa_api.core.auth.login_rate_limiter import LoginRateLimiter
@@ -38,7 +39,10 @@ async def get_auth_service() -> AsyncGenerator[AuthService, None]:
             # First-time logins intentionally create an inactive user and then
             # return a 403 (pending approval). That error is expected and should
             # not roll back the user insert.
-            if getattr(exc, "error_code", None) == _PENDING_APPROVAL_ERROR_CODE:
+            is_pending = isinstance(
+                exc, AuthPendingApprovalError
+            ) or getattr(exc, "error_code", None) == _PENDING_APPROVAL_ERROR_CODE
+            if is_pending:
                 await session.commit()
             else:
                 await session.rollback()

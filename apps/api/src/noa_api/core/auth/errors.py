@@ -7,7 +7,7 @@ class AuthInvalidCredentialsError(AuthError):
 
 
 class AuthPendingApprovalError(AuthError):
-    pass
+    error_code: str = "user_pending_approval"
 
 
 class AuthRateLimitedError(AuthError):

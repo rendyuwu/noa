@@ -61,6 +61,34 @@ async def test_get_auth_service_commits_on_pending_approval_http_exception(
 
 
 @pytest.mark.asyncio
+async def test_get_auth_service_commits_on_raw_pending_approval_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """AuthPendingApprovalError carries error_code and triggers commit (V56)."""
+    session = _FakeSession()
+
+    def _fake_session_factory():
+        def _maker() -> _FakeSessionContextManager:
+            return _FakeSessionContextManager(session)
+
+        return _maker
+
+    monkeypatch.setattr(auth_deps, "get_session_factory", _fake_session_factory)
+
+    from noa_api.core.auth.errors import AuthPendingApprovalError
+
+    agen = auth_deps.get_auth_service()
+    await anext(agen)
+
+    exc = AuthPendingApprovalError("User pending approval")
+    with pytest.raises(AuthPendingApprovalError):
+        await agen.athrow(exc)
+
+    assert session.commits == 1
+    assert session.rollbacks == 0
+
+
+@pytest.mark.asyncio
 async def test_get_auth_service_rolls_back_on_other_exceptions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
