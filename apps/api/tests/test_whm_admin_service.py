@@ -205,3 +205,38 @@ async def test_update_server_forwards_clear_ssh_configuration(monkeypatch) -> No
     assert repo.last_update_kwargs is not None
     assert repo.last_update_kwargs["clear_ssh_configuration"] is True
     assert repo.last_update_kwargs["clear_ssh_host_key_fingerprint"] is True
+
+
+@pytest.mark.asyncio
+async def test_update_server_encrypts_whm_and_ssh_secrets(monkeypatch) -> None:
+    from noa_api.api.whm_admin.service import WHMServerService
+
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="enc::OLD_TOKEN",
+        verify_ssl=True,
+    )
+    repo = _Repo(server)
+    service = WHMServerService(repo)
+
+    monkeypatch.setattr(
+        "noa_api.api.whm_admin.service.encrypt_text",
+        lambda value: f"enc::{value}",
+    )
+
+    await service.update_server(
+        server_id=server.id,
+        api_token="NEW_TOKEN",
+        ssh_password="NEW_SSH_PASSWORD",
+        ssh_private_key="NEW_PRIVATE_KEY",
+        ssh_private_key_passphrase="NEW_PASSPHRASE",
+    )
+
+    assert repo.last_update_kwargs is not None
+    assert repo.last_update_kwargs["api_token"] == "enc::NEW_TOKEN"
+    assert repo.last_update_kwargs["ssh_password"] == "enc::NEW_SSH_PASSWORD"
+    assert repo.last_update_kwargs["ssh_private_key"] == "enc::NEW_PRIVATE_KEY"
+    assert repo.last_update_kwargs["ssh_private_key_passphrase"] == "enc::NEW_PASSPHRASE"
