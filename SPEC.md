@@ -195,7 +195,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T2 | x | Add dedicated web test runner (Vitest configured but no lint scripts) | C2 |
 | T3 | x | Migrate legacy `integrations/whm/` to `whm/integrations/` (refactoring-map.md) | I.tools |
 | T4 | x | Implement OpenTelemetry backend observability (traces + metrics, currently NoOp default) | I.ext |
-| T5 | . | ? Add Proxmox postflight verification for pool-move and NIC-toggle workflows | V39,V40 |
+| T5 | x | Add Proxmox postflight verification for pool-move and NIC-toggle workflows | V39,V40 |
 | T6 | . | ? Evaluate removing Bearer token auth path (cookie-only migration complete?) | V3,C4 |
 | T7 | x | Extract shared telemetry helpers (`_safe_trace`/`_safe_metric`/`_safe_report`) to single module; remove 6+ copy-pasted versions across `error_handling.py`, `routes/auth.py`, `auth_dependencies.py`, `routes/whm_admin.py`, `routes/proxmox_admin.py`, `assistant/assistant_operations.py` | V49 |
 | T8 | x | Consolidate `_require_admin` into `api/admin/guards.py`; remove duplicate implementations in `routes/whm_admin.py:288-316` and `routes/proxmox_admin.py:243-271` | V50 |
