@@ -20,6 +20,28 @@ class AuthorizationUser:
     created_at: datetime | None = None
     last_login_at: datetime | None = None
 
+    @classmethod
+    def from_db_user(
+        cls,
+        user: User,
+        *,
+        roles: list[str],
+        tools: list[str] | None = None,
+        direct_tools: list[str] | None = None,
+    ) -> AuthorizationUser:
+        """Build from a DB ``User`` row, avoiding repeated field-by-field construction."""
+        return cls(
+            user_id=user.id,
+            email=user.email,
+            display_name=user.display_name,
+            is_active=user.is_active,
+            roles=roles,
+            tools=tools or [],
+            direct_tools=direct_tools or [],
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+        )
+
 
 class AuthorizationRepositoryProtocol(Protocol):
     async def get_role_tool_names(self, role_names: list[str]) -> list[str]: ...

@@ -25,6 +25,7 @@ from noa_api.core.auth.authorization_types import (
 )
 from noa_api.core.tools.catalog import get_tool_catalog
 from noa_api.storage.postgres.client import get_session_factory
+from noa_api.storage.postgres.models import User
 
 
 class AuthorizationService:
@@ -53,6 +54,23 @@ class AuthorizationService:
         role_tools = await self._repository.get_role_tool_names(user.roles)
         return {name for name in role_tools if name in self._known_tools}
 
+    async def _build_user_with_effective_tools(
+        self,
+        user: User,
+        roles: list[str],
+        *,
+        direct_tools: list[str] | None = None,
+    ) -> AuthorizationUser:
+        """Resolve effective tools and build a complete ``AuthorizationUser``."""
+        stub = AuthorizationUser.from_db_user(user, roles=roles)
+        effective_tools = sorted(await self.get_allowed_tool_names(stub))
+        return AuthorizationUser.from_db_user(
+            user,
+            roles=roles,
+            tools=effective_tools,
+            direct_tools=direct_tools or [],
+        )
+
     async def authorize_tool_access(
         self, user: AuthorizationUser, tool_name: str
     ) -> bool:
@@ -69,30 +87,9 @@ class AuthorizationService:
         for user in users:
             roles = await self._repository.get_role_names(user.id)
             direct_tools = await self._repository.get_user_allowlist_tools(user.id)
-            effective_tools = sorted(
-                await self.get_allowed_tool_names(
-                    AuthorizationUser(
-                        user_id=user.id,
-                        email=user.email,
-                        display_name=user.display_name,
-                        is_active=user.is_active,
-                        roles=roles,
-                        tools=[],
-                        direct_tools=[],
-                    )
-                )
-            )
             result.append(
-                AuthorizationUser(
-                    user_id=user.id,
-                    email=user.email,
-                    display_name=user.display_name,
-                    is_active=user.is_active,
-                    roles=roles,
-                    tools=effective_tools,
-                    direct_tools=direct_tools,
-                    created_at=user.created_at,
-                    last_login_at=user.last_login_at,
+                await self._build_user_with_effective_tools(
+                    user, roles, direct_tools=direct_tools
                 )
             )
         return result
@@ -124,35 +121,14 @@ class AuthorizationService:
             return None
 
         direct_tools = await self._repository.get_user_allowlist_tools(user.id)
-        effective_tools = sorted(
-            await self.get_allowed_tool_names(
-                AuthorizationUser(
-                    user_id=user.id,
-                    email=user.email,
-                    display_name=user.display_name,
-                    is_active=user.is_active,
-                    roles=roles,
-                    tools=[],
-                    direct_tools=[],
-                )
-            )
-        )
         await self._repository.create_audit_log(
             event_type="admin_user_status_updated",
             actor_email=actor_email,
             tool_name=None,
             metadata={"target_user_id": str(user.id), "is_active": is_active},
         )
-        return AuthorizationUser(
-            user_id=user.id,
-            email=user.email,
-            display_name=user.display_name,
-            is_active=user.is_active,
-            roles=roles,
-            tools=effective_tools,
-            direct_tools=direct_tools,
-            created_at=user.created_at,
-            last_login_at=user.last_login_at,
+        return await self._build_user_with_effective_tools(
+            user, roles, direct_tools=direct_tools
         )
 
     async def list_tools(self) -> list[str]:
@@ -171,18 +147,8 @@ class AuthorizationService:
 
         roles = await self._repository.get_role_names(user.id)
         direct_tools = await self._repository.get_user_allowlist_tools(user.id)
-        effective_tools = sorted(
-            await self.get_allowed_tool_names(
-                AuthorizationUser(
-                    user_id=user.id,
-                    email=user.email,
-                    display_name=user.display_name,
-                    is_active=user.is_active,
-                    roles=roles,
-                    tools=[],
-                    direct_tools=[],
-                )
-            )
+        snapshot = await self._build_user_with_effective_tools(
+            user, roles, direct_tools=direct_tools
         )
         is_admin_user = "admin" in roles
         if actor_user_id is not None and actor_user_id == user_id:
@@ -203,17 +169,7 @@ class AuthorizationService:
             tool_name=None,
             metadata={"target_user_id": str(user.id), "email": user.email},
         )
-        return AuthorizationUser(
-            user_id=user.id,
-            email=user.email,
-            display_name=user.display_name,
-            is_active=user.is_active,
-            roles=roles,
-            tools=effective_tools,
-            direct_tools=direct_tools,
-            created_at=user.created_at,
-            last_login_at=user.last_login_at,
-        )
+        return snapshot
 
     async def migrate_legacy_direct_grants(
         self, *, actor_email: str | None = None
@@ -373,35 +329,14 @@ class AuthorizationService:
 
         roles = await self._repository.get_role_names(user.id)
         direct_tools = await self._repository.get_user_allowlist_tools(user.id)
-        effective_tools = sorted(
-            await self.get_allowed_tool_names(
-                AuthorizationUser(
-                    user_id=user.id,
-                    email=user.email,
-                    display_name=user.display_name,
-                    is_active=user.is_active,
-                    roles=roles,
-                    tools=[],
-                    direct_tools=[],
-                )
-            )
-        )
         await self._repository.create_audit_log(
             event_type="admin_user_roles_updated",
             actor_email=actor_email,
             tool_name=None,
             metadata={"target_user_id": str(user.id), "roles": roles},
         )
-        return AuthorizationUser(
-            user_id=user.id,
-            email=user.email,
-            display_name=user.display_name,
-            is_active=user.is_active,
-            roles=roles,
-            tools=effective_tools,
-            direct_tools=direct_tools,
-            created_at=user.created_at,
-            last_login_at=user.last_login_at,
+        return await self._build_user_with_effective_tools(
+            user, roles, direct_tools=direct_tools
         )
 
 

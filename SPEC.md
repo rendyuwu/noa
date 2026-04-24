@@ -201,8 +201,8 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T8 | x | Consolidate `_require_admin` into `api/admin/guards.py`; remove duplicate implementations in `routes/whm_admin.py:288-316` and `routes/proxmox_admin.py:243-271` | V50 |
 | T9 | x | Consolidate `_require_active_user` into `auth_dependencies.get_active_current_auth_user`; remove local copies in `routes/threads.py:89-108` and `routes/assistant.py:91-104` | V54 |
 | T10 | x | Extract shared server name validation (`_validate_server_name`) and base URL normalization (`_normalize_*_base_url`) for WHM+Proxmox admin routes into shared module; also deduplicate `_status_family` | V49,V50 |
-| T11 | . | Deduplicate `ensure_role`/`assign_role`/`get_role_names` between `SQLAuthRepository` (`auth_service.py:122-154`) and `SQLAuthorizationRepository` (`authorization_repository.py:146-178`); extract to shared base or mixin | V49 |
-| T12 | . | Extract `AuthorizationUser` construction helper in `authorization_service.py`; replace ~8 repeated `AuthorizationUser(user_id=..., tools=[], direct_tools=[])` + `get_allowed_tool_names` + reconstruct patterns | V49 |
+| T11 | x | Deduplicate `ensure_role`/`assign_role`/`get_role_names` between `SQLAuthRepository` (`auth_service.py:122-154`) and `SQLAuthorizationRepository` (`authorization_repository.py:146-178`); extract to shared base or mixin | V49 |
+| T12 | x | Extract `AuthorizationUser` construction helper in `authorization_service.py`; replace ~8 repeated `AuthorizationUser(user_id=..., tools=[], direct_tools=[])` + `get_allowed_tool_names` + reconstruct patterns | V49 |
 | T13 | x | Type `AssistantService` repository/runner via Protocol; remove all `getattr(self._repository, "method_name", None)` dispatch in `service.py:99-182` | V51,B5 |
 | T14 | x | Add public query methods to `AssistantRunCoordinator` (`get_task_done`, `get_sequence`); remove `getattr` on `_tasks`/`_sequences` in `run_lifecycle.py:82-104` | V52 |
 | T15 | x | Encrypt WHM server secrets (`api_token`, `ssh_password`, `ssh_private_key`, `ssh_private_key_passphrase`) and Proxmox server secrets (`api_token_secret`) at rest via Fernet | V53,C7 |
