@@ -708,9 +708,9 @@ async def test_admin_route_rejects_invalid_bearer_token_with_error_code() -> Non
         response = await client.get(
             "/admin/users",
             headers={
-                "Authorization": "Bearer bad-token",
                 "x-request-id": "admin-invalid-token",
             },
+            cookies={"noa_session": "bad-token"},
         )
 
     assert response.status_code == 401
@@ -736,9 +736,9 @@ async def test_admin_route_uses_admin_access_contract_for_inactive_user() -> Non
         response = await client.get(
             "/admin/users",
             headers={
-                "Authorization": "Bearer good-token",
                 "x-request-id": "admin-inactive-user",
             },
+            cookies={"noa_session": "good-token"},
         )
 
     assert response.status_code == 403
@@ -768,14 +768,14 @@ async def test_admin_routes_record_current_user_telemetry_for_protected_requests
             _FakeProtectedRouteJWTService()
         )
         success_response = await client.get(
-            "/admin/users", headers={"Authorization": "Bearer good-token"}
+            "/admin/users", cookies={"noa_session": "good-token"}
         )
 
         app.dependency_overrides[get_jwt_service] = lambda: (
             _FakeProtectedRouteJWTService(invalid=True)
         )
         invalid_response = await client.get(
-            "/admin/users", headers={"Authorization": "Bearer bad-token"}
+            "/admin/users", cookies={"noa_session": "bad-token"}
         )
 
     assert success_response.status_code == 200

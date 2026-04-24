@@ -101,7 +101,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 - V1. New LDAP users auto-provisioned `is_active=False` (pending approval). Bootstrap admin emails auto-activated with `admin` role.
 - V2. Login sets httpOnly `noa_session` cookie (SameSite=Lax, Path=/, max-age=3600). Logout clears with max-age=0. Logout idempotent without auth.
-- V3. `/auth/me` accepts Bearer OR cookie. Cookie takes precedence when both present. Missing both → 401 `missing_authentication`. Invalid token → 401 `invalid_token`. Inactive user → 403 `user_pending_approval`.
+- V3. `/auth/me` accepts cookie only (`noa_session` httpOnly cookie). Missing cookie → 401 `missing_authentication`. Invalid token → 401 `invalid_token`. Inactive user → 403 `user_pending_approval`. Bearer token auth path removed.
 - V4. Passwords and access tokens never appear in structured logs.
 - V5. JWT secret required in production (auto-generated ≥32 chars in dev). Insecure LDAP transport (`ldap://`) rejected in production unless `ldap_allow_insecure_transport=True` (explicit override). `auth_dev_bypass_ldap=True` rejected in production.
 - V6. Rate limiter blocks after configured max failures within window. Resets after window expires. Successful login clears buckets. Rate-limited → 429 with `Retry-After` header.
@@ -203,7 +203,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T3 | x | Migrate legacy `integrations/whm/` to `whm/integrations/` (refactoring-map.md) | I.tools |
 | T4 | x | Implement OpenTelemetry backend observability (traces + metrics, currently NoOp default) | I.ext |
 | T5 | x | Add Proxmox postflight verification for pool-move and NIC-toggle workflows | V39,V40 |
-| T6 | . | ? Evaluate removing Bearer token auth path (cookie-only migration complete?) | V3,C4 |
+| T6 | x | Remove Bearer token auth path (cookie-only) | V3,C4 |
 | T7 | x | Extract shared telemetry helpers (`_safe_trace`/`_safe_metric`/`_safe_report`) to single module; remove 6+ copy-pasted versions across `error_handling.py`, `routes/auth.py`, `auth_dependencies.py`, `routes/whm_admin.py`, `routes/proxmox_admin.py`, `assistant/assistant_operations.py` | V49 |
 | T8 | x | Consolidate `_require_admin` into `api/admin/guards.py`; remove duplicate implementations in `routes/whm_admin.py:288-316` and `routes/proxmox_admin.py:243-271` | V50 |
 | T9 | x | Consolidate `_require_active_user` into `auth_dependencies.get_active_current_auth_user`; remove local copies in `routes/threads.py:89-108` and `routes/assistant.py:91-104` | V54 |

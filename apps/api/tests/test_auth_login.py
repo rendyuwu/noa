@@ -481,10 +481,10 @@ async def test_auth_routes_emit_structured_auth_boundary_logs() -> None:
             )
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             me_response = await client.get(
-                "/auth/me", headers={"Authorization": "Bearer good-token"}
+                "/auth/me", cookies={"noa_session": "good-token"}
             )
             invalid_response = await client.get(
-                "/auth/me", headers={"Authorization": "Bearer bad-token"}
+                "/auth/me", cookies={"noa_session": "bad-token"}
             )
 
     assert login_response.status_code == 200
@@ -559,7 +559,7 @@ async def test_auth_routes_record_success_telemetry_with_bounded_metrics() -> No
         )
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         me_response = await client.get(
-            "/auth/me", headers={"Authorization": "Bearer good-token"}
+            "/auth/me", cookies={"noa_session": "good-token"}
         )
 
     assert login_response.status_code == 200
@@ -635,7 +635,7 @@ async def test_auth_routes_record_rejection_telemetry_and_report_auth_outages() 
         )
         app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
         invalid_token_response = await client.get(
-            "/auth/me", headers={"Authorization": "Bearer bad-token"}
+            "/auth/me", cookies={"noa_session": "bad-token"}
         )
 
     assert invalid_login_response.status_code == 401
@@ -785,7 +785,7 @@ async def test_me_route_emits_auth_boundary_rejection_log_for_inactive_user() ->
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get(
-                "/auth/me", headers={"Authorization": "Bearer inactive-token"}
+                "/auth/me", cookies={"noa_session": "inactive-token"}
             )
 
     assert response.status_code == 403
@@ -909,7 +909,7 @@ async def test_login_route_maps_auth_service_failure_to_503() -> None:
     assert response.headers["x-request-id"] == body["request_id"]
 
 
-async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
+async def test_me_route_returns_user_payload_for_valid_cookie_token() -> None:
     app = _create_auth_app()
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="ok"
@@ -919,7 +919,7 @@ async def test_me_route_returns_user_payload_for_valid_bearer_token() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/auth/me", headers={"Authorization": "Bearer good-token"}
+            "/auth/me", cookies={"noa_session": "good-token"}
         )
 
     assert response.status_code == 200
@@ -938,7 +938,7 @@ async def test_me_route_rejects_invalid_token() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/auth/me", headers={"Authorization": "Bearer bad-token"}
+            "/auth/me", cookies={"noa_session": "bad-token"}
         )
 
     assert response.status_code == 401
@@ -965,7 +965,7 @@ async def test_me_route_uses_shared_invalid_token_error_code(monkeypatch) -> Non
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/auth/me", headers={"Authorization": "Bearer bad-token"}
+            "/auth/me", cookies={"noa_session": "bad-token"}
         )
 
     assert response.status_code == 401
@@ -974,7 +974,7 @@ async def test_me_route_uses_shared_invalid_token_error_code(monkeypatch) -> Non
     assert body["error_code"] == "catalog_invalid_token"
 
 
-async def test_me_route_uses_shared_missing_bearer_token_error_code(
+async def test_me_route_uses_shared_missing_authentication_error_code(
     monkeypatch,
 ) -> None:
     app = _create_auth_app()
@@ -999,7 +999,7 @@ async def test_me_route_uses_shared_missing_bearer_token_error_code(
     assert body["error_code"] == "catalog_missing_authentication"
 
 
-async def test_me_route_rejects_missing_bearer_token() -> None:
+async def test_me_route_rejects_missing_cookie() -> None:
     app = _create_auth_app()
     app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
         mode="ok"
@@ -1028,7 +1028,7 @@ async def test_me_route_rejects_inactive_user() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         response = await client.get(
-            "/auth/me", headers={"Authorization": "Bearer inactive-token"}
+            "/auth/me", cookies={"noa_session": "inactive-token"}
         )
 
     assert response.status_code == 403
@@ -1123,45 +1123,6 @@ async def test_me_route_accepts_cookie_based_auth() -> None:
     payload = response.json()
     assert payload["user"]["email"] == "user@example.com"
     assert payload["user"]["roles"] == ["admin"]
-
-
-async def test_me_route_cookie_takes_precedence_over_bearer() -> None:
-    """When both cookie and Bearer header are present, cookie wins."""
-    app = _create_auth_app()
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
-        mode="ok"
-    )
-    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get(
-            "/auth/me",
-            headers={"Authorization": "Bearer bad-token"},
-            cookies={"noa_session": "good-token"},
-        )
-
-    assert response.status_code == 200
-    payload = response.json()
-    assert payload["user"]["email"] == "user@example.com"
-
-
-async def test_me_route_rejects_missing_cookie_and_bearer() -> None:
-    """When neither cookie nor Bearer header is present, returns 401."""
-    app = _create_auth_app()
-    app.dependency_overrides[get_auth_service] = lambda: _FakeRouteAuthService(
-        mode="ok"
-    )
-    app.dependency_overrides[get_jwt_service] = lambda: _FakeJWTService()
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.get("/auth/me")
-
-    assert response.status_code == 401
-    body = response.json()
-    assert body["detail"] == "Missing authentication"
-    assert body["error_code"] == MISSING_AUTHENTICATION
 
 
 async def test_login_route_sets_httponly_session_cookie() -> None:

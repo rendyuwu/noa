@@ -54,7 +54,7 @@ Core entities:
   - New users default to `is_active=false` unless email is in `AUTH_BOOTSTRAP_ADMIN_EMAILS`
 
 - Session
-  - JWT is returned by login and used by the web app in an `Authorization: Bearer <token>` header
+  - JWT is set by login as an httpOnly `noa_session` cookie; web app authenticates via cookie (no Bearer header)
   - User `is_active` is re-checked server-side per request (disable takes effect immediately)
 
 - RBAC

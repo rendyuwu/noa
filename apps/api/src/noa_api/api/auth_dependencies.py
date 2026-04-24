@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from fastapi import Depends, Request, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from noa_api.api.error_codes import (
     INVALID_TOKEN,
@@ -21,7 +20,6 @@ from noa_api.core.logging_context import log_context
 from noa_api.api.route_telemetry import safe_metric, safe_trace
 from noa_api.core.telemetry import TelemetryEvent
 
-_bearer_scheme = HTTPBearer(auto_error=False)
 logger = logging.getLogger(__name__)
 AUTH_OUTCOMES_TOTAL = "auth.outcomes.total"
 
@@ -34,16 +32,11 @@ def _invalid_token_error() -> ApiHTTPException:
     )
 
 
-def _extract_token(
-    request: Request,
-    credentials: HTTPAuthorizationCredentials | None,
-) -> str:
-    """Cookie-first, Bearer-fallback token extraction."""
+def _extract_token(request: Request) -> str:
+    """Extract JWT from httpOnly session cookie."""
     cookie_token = request.cookies.get(settings.auth_cookie_name)
     if cookie_token:
         return cookie_token
-    if credentials:
-        return credentials.credentials
     raise ApiHTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Missing authentication",
@@ -143,12 +136,11 @@ def _to_authorization_user(user: AuthUser) -> AuthorizationUser:
 
 async def require_auth_user(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None = Depends(_bearer_scheme),
     jwt_service: JWTService = Depends(get_jwt_service),
     auth_service: AuthService = Depends(get_auth_service),
 ) -> AuthUser:
     try:
-        token = _extract_token(request, credentials)
+        token = _extract_token(request)
     except ApiHTTPException:
         _log_current_user_rejected(
             status_code=status.HTTP_401_UNAUTHORIZED,

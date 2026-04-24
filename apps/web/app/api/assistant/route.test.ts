@@ -76,8 +76,7 @@ describe("/api/assistant route wrapper", () => {
     const request = new Request("http://example.test/api/assistant", {
       method: "POST",
       headers: {
-        authorization: "Bearer token",
-        cookie: "session=abc",
+        cookie: "noa_session=jwt-token",
         "content-type": "application/json",
       },
       body: JSON.stringify({ threadId: "thread-123", commands: [] }),
