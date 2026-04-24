@@ -663,3 +663,372 @@ async def test_request_still_succeeds_when_otel_export_raises(
     assert getattr(failure_record, "telemetry_operation") == "trace"
     assert getattr(failure_record, "telemetry_event") == "api_request_completed"
     assert "otel export boom" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# T4: Auto-instrumentation and trace context propagation tests
+# ---------------------------------------------------------------------------
+
+
+def test_auto_instrumentation_installed_when_telemetry_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When telemetry is enabled with an endpoint, auto-instrumentors are installed."""
+    module = _telemetry_otel_module()
+    caplog.set_level(logging.INFO, logger="noa_api.core.telemetry_opentelemetry")
+
+    installed: list[str] = []
+
+    class FakeTracerProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def add_span_processor(self, processor: object) -> None:
+            pass
+
+        def get_tracer(self, name: str) -> object:
+            return object()
+
+    def fake_exporter(*args: object, **kwargs: object) -> object:
+        return object()
+
+    class FakeFastAPIInstrumentor:
+        @staticmethod
+        def instrument(**kwargs: object) -> None:
+            installed.append("fastapi")
+
+        @staticmethod
+        def uninstrument() -> None:
+            pass
+
+    class FakeSQLAlchemyInstrumentor:
+        def instrument(self, **kwargs: object) -> None:
+            installed.append("sqlalchemy")
+
+        def uninstrument(self) -> None:
+            pass
+
+    class FakeHTTPXInstrumentor:
+        def instrument(self, **kwargs: object) -> None:
+            installed.append("httpx")
+
+        def uninstrument(self) -> None:
+            pass
+
+    monkeypatch.setattr(module, "OTLPSpanExporter", fake_exporter)
+    monkeypatch.setattr(module, "BatchSpanProcessor", lambda exporter: object())
+    monkeypatch.setattr(module, "TracerProvider", FakeTracerProvider)
+    monkeypatch.setattr(module, "OTLPMetricExporter", fake_exporter)
+    monkeypatch.setattr(
+        module, "PeriodicExportingMetricReader", lambda exporter: object()
+    )
+
+    class FakeMeterProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def get_meter(self, name: str) -> object:
+            return object()
+
+    monkeypatch.setattr(module, "MeterProvider", FakeMeterProvider)
+
+    # Patch the auto-instrumentor imports inside _install_auto_instrumentation
+    import opentelemetry.instrumentation.fastapi as fastapi_mod
+    import opentelemetry.instrumentation.sqlalchemy as sqlalchemy_mod
+    import opentelemetry.instrumentation.httpx as httpx_mod
+
+    monkeypatch.setattr(fastapi_mod, "FastAPIInstrumentor", FakeFastAPIInstrumentor)
+    monkeypatch.setattr(
+        sqlalchemy_mod, "SQLAlchemyInstrumentor", FakeSQLAlchemyInstrumentor
+    )
+    monkeypatch.setattr(httpx_mod, "HTTPXClientInstrumentor", FakeHTTPXInstrumentor)
+
+    # Prevent setting global providers in test
+    monkeypatch.setattr(module.trace, "set_tracer_provider", lambda tp: None)
+    monkeypatch.setattr(module.otel_metrics, "set_meter_provider", lambda mp: None)
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+        )
+    )
+
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+    assert "fastapi" in installed
+    assert "sqlalchemy" in installed
+    assert "httpx" in installed
+
+    info_messages = [
+        r.getMessage() for r in caplog.records if r.levelno == logging.INFO
+    ]
+    assert "telemetry_auto_instrumentation_installed" in info_messages
+
+
+def test_auto_instrumentation_uninstrument_hooks_called_on_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shutdown calls uninstrument hooks for each installed instrumentor."""
+    module = _telemetry_otel_module()
+    recorder_class = getattr(module, "OpenTelemetryRecorder")
+
+    uninstrumented: list[str] = []
+
+    recorder = recorder_class(
+        tracer=None,
+        meter=None,
+        tracer_provider=None,
+        meter_provider=None,
+        uninstrument_hooks=[
+            lambda: uninstrumented.append("fastapi"),
+            lambda: uninstrumented.append("sqlalchemy"),
+            lambda: uninstrumented.append("httpx"),
+        ],
+    )
+
+    recorder.shutdown()
+
+    assert uninstrumented == ["fastapi", "sqlalchemy", "httpx"]
+
+
+def test_auto_instrumentation_uninstrument_hook_failure_does_not_block_shutdown(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A failing uninstrument hook logs warning but doesn't prevent other hooks or provider shutdown."""
+    module = _telemetry_otel_module()
+    recorder_class = getattr(module, "OpenTelemetryRecorder")
+    caplog.set_level(logging.WARNING, logger="noa_api.core.telemetry_opentelemetry")
+
+    uninstrumented: list[str] = []
+
+    def failing_hook() -> None:
+        raise RuntimeError("uninstrument boom")
+
+    recorder = recorder_class(
+        tracer=None,
+        meter=None,
+        tracer_provider=None,
+        meter_provider=None,
+        uninstrument_hooks=[
+            failing_hook,
+            lambda: uninstrumented.append("sqlalchemy"),
+        ],
+    )
+
+    recorder.shutdown()
+
+    assert uninstrumented == ["sqlalchemy"]
+    assert any(
+        r.getMessage() == "telemetry_uninstrument_failed" for r in caplog.records
+    )
+
+
+def test_auto_instrumentation_graceful_when_instrumentor_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """If one auto-instrumentor fails, others still install."""
+    module = _telemetry_otel_module()
+    caplog.set_level(logging.WARNING, logger="noa_api.core.telemetry_opentelemetry")
+
+    installed: list[str] = []
+
+    class FakeTracerProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def add_span_processor(self, processor: object) -> None:
+            pass
+
+        def get_tracer(self, name: str) -> object:
+            return object()
+
+    def fake_exporter(*args: object, **kwargs: object) -> object:
+        return object()
+
+    class FailingFastAPIInstrumentor:
+        @staticmethod
+        def instrument(**kwargs: object) -> None:
+            raise RuntimeError("fastapi instrument boom")
+
+        @staticmethod
+        def uninstrument() -> None:
+            pass
+
+    class FakeHTTPXInstrumentor:
+        def instrument(self, **kwargs: object) -> None:
+            installed.append("httpx")
+
+        def uninstrument(self) -> None:
+            pass
+
+    class FakeSQLAlchemyInstrumentor:
+        def instrument(self, **kwargs: object) -> None:
+            installed.append("sqlalchemy")
+
+        def uninstrument(self) -> None:
+            pass
+
+    monkeypatch.setattr(module, "OTLPSpanExporter", fake_exporter)
+    monkeypatch.setattr(module, "BatchSpanProcessor", lambda exporter: object())
+    monkeypatch.setattr(module, "TracerProvider", FakeTracerProvider)
+    monkeypatch.setattr(module, "OTLPMetricExporter", fake_exporter)
+    monkeypatch.setattr(
+        module, "PeriodicExportingMetricReader", lambda exporter: object()
+    )
+
+    class FakeMeterProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def get_meter(self, name: str) -> object:
+            return object()
+
+    monkeypatch.setattr(module, "MeterProvider", FakeMeterProvider)
+
+    import opentelemetry.instrumentation.fastapi as fastapi_mod
+    import opentelemetry.instrumentation.sqlalchemy as sqlalchemy_mod
+    import opentelemetry.instrumentation.httpx as httpx_mod
+
+    monkeypatch.setattr(fastapi_mod, "FastAPIInstrumentor", FailingFastAPIInstrumentor)
+    monkeypatch.setattr(
+        sqlalchemy_mod, "SQLAlchemyInstrumentor", FakeSQLAlchemyInstrumentor
+    )
+    monkeypatch.setattr(httpx_mod, "HTTPXClientInstrumentor", FakeHTTPXInstrumentor)
+    monkeypatch.setattr(module.trace, "set_tracer_provider", lambda tp: None)
+    monkeypatch.setattr(module.otel_metrics, "set_meter_provider", lambda mp: None)
+
+    recorder = _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+        )
+    )
+
+    assert recorder.__class__.__name__ == "OpenTelemetryRecorder"
+    assert "sqlalchemy" in installed
+    assert "httpx" in installed
+
+    warning_records = [
+        r
+        for r in caplog.records
+        if r.getMessage() == "telemetry_auto_instrumentation_failed"
+    ]
+    assert len(warning_records) == 1
+    assert getattr(warning_records[0], "lib") == "fastapi"
+
+
+def test_global_tracer_provider_set_when_telemetry_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """TracerProvider is set as global OTel provider when telemetry is enabled."""
+    module = _telemetry_otel_module()
+
+    set_tracer_calls: list[object] = []
+    set_meter_calls: list[object] = []
+
+    class FakeTracerProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def add_span_processor(self, processor: object) -> None:
+            pass
+
+        def get_tracer(self, name: str) -> object:
+            return object()
+
+    class FakeMeterProvider:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def get_meter(self, name: str) -> object:
+            return object()
+
+    def fake_exporter(*args: object, **kwargs: object) -> object:
+        return object()
+
+    monkeypatch.setattr(module, "OTLPSpanExporter", fake_exporter)
+    monkeypatch.setattr(module, "BatchSpanProcessor", lambda exporter: object())
+    monkeypatch.setattr(module, "TracerProvider", FakeTracerProvider)
+    monkeypatch.setattr(module, "OTLPMetricExporter", fake_exporter)
+    monkeypatch.setattr(
+        module, "PeriodicExportingMetricReader", lambda exporter: object()
+    )
+    monkeypatch.setattr(module, "MeterProvider", FakeMeterProvider)
+
+    # Patch _install_auto_instrumentation to avoid side effects
+    monkeypatch.setattr(module, "_install_auto_instrumentation", lambda tp: [])
+
+    monkeypatch.setattr(
+        module.trace, "set_tracer_provider", lambda tp: set_tracer_calls.append(tp)
+    )
+    monkeypatch.setattr(
+        module.otel_metrics, "set_meter_provider", lambda mp: set_meter_calls.append(mp)
+    )
+
+    _create_telemetry_recorder_for_test(
+        _settings(
+            environment="test",
+            telemetry_enabled=True,
+            telemetry_otlp_endpoint="http://collector:4318",
+        )
+    )
+
+    assert len(set_tracer_calls) == 1
+    assert len(set_meter_calls) == 1
+
+
+async def test_request_id_linked_to_otel_span(
+    create_test_app,
+) -> None:
+    """RequestContextMiddleware sets app.request_id attribute on active OTel span."""
+    from opentelemetry.sdk.trace import TracerProvider as SDKTracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
+        InMemorySpanExporter,
+    )
+
+    span_exporter = InMemorySpanExporter()
+    test_tracer_provider = SDKTracerProvider()
+    test_tracer_provider.add_span_processor(SimpleSpanProcessor(span_exporter))
+
+    app = create_test_app()
+    recorder = RecordingTelemetryRecorder()
+    app.state.telemetry = recorder
+
+    @app.get("/_tests/trace-check")
+    async def trace_check_route() -> dict[str, str]:
+        return {"status": "ok"}
+
+    transport = ASGITransport(app=app)
+
+    # Use the test tracer to wrap the request in a span
+    tracer = test_tracer_provider.get_tracer("test")
+    with tracer.start_as_current_span("test-request"):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.get(
+                "/_tests/trace-check",
+                headers={"x-request-id": "req-trace-test-123"},
+            )
+
+    assert response.status_code == 200
+
+    finished_spans = span_exporter.get_finished_spans()
+    test_span = next(s for s in finished_spans if s.name == "test-request")
+
+    # The middleware should have set app.request_id on the active span
+    assert test_span.attributes.get("app.request_id") == "req-trace-test-123"
+
+
+def test_no_auto_instrumentation_when_tracer_provider_is_none() -> None:
+    """_install_auto_instrumentation returns empty list when tracer_provider is None."""
+    module = _telemetry_otel_module()
+    install_fn = getattr(module, "_install_auto_instrumentation")
+
+    hooks = install_fn(None)
+
+    assert hooks == []

@@ -8,6 +8,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from opentelemetry import trace
 from starlette.datastructures import Headers, MutableHeaders
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -55,6 +56,13 @@ class RequestContextMiddleware:
         request_path = scope.get("path")
         scope.setdefault("state", {})["request_id"] = request_id
         token = set_request_id(request_id)
+
+        # Link request_id to the active OTel span (created by FastAPI
+        # auto-instrumentor or any upstream middleware).
+        otel_span = trace.get_current_span()
+        if otel_span.is_recording():
+            otel_span.set_attribute("app.request_id", request_id)
+
         started_at = perf_counter()
         response_status_code = 500
 
