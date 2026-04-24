@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from noa_api.api.routes.assistant_streaming import (
+from noa_api.api.assistant.assistant_streaming import (
     append_fallback_error_message,
     remove_streaming_placeholder,
 )

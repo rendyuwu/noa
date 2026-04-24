@@ -8,16 +8,15 @@ from uuid import UUID, uuid4
 import pytest
 from pydantic import SecretStr
 
-from noa_api.core.agent.runner import (
-    _build_approval_context,
-    _to_openai_chat_messages,
-    AgentRunner,
-    AgentRunnerResult,
-    create_default_llm_client,
+from noa_api.core.agent.llm_client import (
     LLMToolCall,
     LLMTurnResponse,
     OpenAICompatibleLLMClient,
+    create_default_llm_client,
 )
+from noa_api.core.agent.message_codec import AgentRunnerResult, _to_openai_chat_messages
+from noa_api.core.agent.runner import AgentRunner
+from noa_api.core.agent.tool_schemas import _build_approval_context
 from noa_api.core.config import Settings
 from noa_api.core.tools.registry import ToolDefinition, get_tool_definition
 from noa_api.core.workflows.types import WorkflowReplyTemplate

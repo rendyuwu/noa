@@ -12,7 +12,7 @@ from fastapi import HTTPException
 
 from noa_api.api.assistant.assistant_operations import _resume_waiting_run_state
 from noa_api.api.assistant.service import AssistantService
-from noa_api.api.routes.assistant_tool_execution import build_tool_result_part
+from noa_api.api.assistant.assistant_tool_execution import build_tool_result_part
 from noa_api.core.tools.registry import ToolDefinition
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
@@ -49,7 +49,7 @@ class _FakeRunner:
 class _ProposalRunner:
     async def run_turn(self, **kwargs):
         _ = kwargs
-        from noa_api.core.agent.runner import AgentMessage, AgentRunnerResult
+        from noa_api.core.agent.message_codec import AgentMessage, AgentRunnerResult
 
         return AgentRunnerResult(
             messages=[
@@ -430,7 +430,7 @@ def test_resume_waiting_run_state_keeps_add_tool_result_blocked() -> None:
 
 
 async def test_record_tool_result_rejects_foreign_thread() -> None:
-    from noa_api.api.routes.assistant_tool_result_operations import (
+    from noa_api.api.assistant.assistant_tool_result_operations import (
         record_tool_result,
     )
 
@@ -792,7 +792,7 @@ async def test_assistant_service_add_message_allows_assistant_message_while_acti
 
 
 async def test_record_tool_result_rejects_stale_tool_run() -> None:
-    from noa_api.api.routes.assistant_tool_result_operations import (
+    from noa_api.api.assistant.assistant_tool_result_operations import (
         record_tool_result,
     )
 
@@ -832,7 +832,7 @@ async def test_record_tool_result_rejects_stale_tool_run() -> None:
 
 
 async def test_approve_action_starts_tool_run_before_execution() -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.action_requests import (
         approve_action_request,
     )
 
@@ -888,7 +888,7 @@ async def test_approve_action_starts_tool_run_before_execution() -> None:
 
 
 async def test_approve_action_rejects_change_request_without_recorded_reason() -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.action_requests import (
         approve_action_request,
     )
 
@@ -934,7 +934,7 @@ async def test_approve_action_rejects_change_request_without_recorded_reason() -
 async def test_execute_approved_tool_run_fails_when_tool_definition_missing(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1003,7 +1003,7 @@ async def test_execute_approved_tool_run_fails_when_tool_definition_missing(
 
 
 async def test_execute_approved_tool_run_fails_on_risk_mismatch(monkeypatch) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1087,7 +1087,7 @@ async def test_execute_approved_tool_run_sanitizes_execution_errors(
     monkeypatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1171,7 +1171,7 @@ async def test_execute_approved_tool_run_sanitizes_execution_errors(
 async def test_execute_approved_tool_run_completes_and_persists_result(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1254,7 +1254,7 @@ async def test_execute_approved_tool_run_completes_and_persists_result(
 async def test_execute_approved_tool_run_revalidates_required_preflight_before_execution(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1346,7 +1346,7 @@ async def test_execute_approved_tool_run_revalidates_required_preflight_before_e
 async def test_execute_approved_tool_run_allows_execution_with_matching_preflight(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1454,7 +1454,7 @@ async def test_execute_approved_tool_run_allows_execution_with_matching_prefligh
 async def test_execute_approved_tool_run_allows_execution_after_reason_follow_up(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1585,7 +1585,7 @@ async def test_execute_approved_tool_run_allows_execution_after_reason_follow_up
 async def test_execute_approved_tool_run_rejects_mismatched_account_preflight_result(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1694,7 +1694,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_account_preflight_re
 async def test_execute_approved_tool_run_rejects_mismatched_firewall_preflight_result(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -1813,7 +1813,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_firewall_preflight_r
 async def test_execute_approved_tool_run_allows_matching_server_id_preflight(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -2276,7 +2276,7 @@ async def test_execute_approved_tool_run_persists_failed_whm_workflow_when_execu
 async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(
     monkeypatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import (
+    from noa_api.api.assistant.approved_execution import (
         execute_approved_tool_run,
     )
 
@@ -2384,7 +2384,7 @@ async def test_execute_approved_tool_run_rejects_mismatched_server_id_preflight(
 
 
 async def test_deny_action_request_writes_message_and_audit_metadata() -> None:
-    from noa_api.api.routes.assistant_action_operations import deny_action_request
+    from noa_api.api.assistant.action_requests import deny_action_request
 
     owner_id = uuid4()
     thread_id = uuid4()
@@ -3501,7 +3501,7 @@ async def test_assistant_service_sanitizes_tool_result_messages_for_change_tools
 async def test_deny_action_request_persists_denied_whm_workflow(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from noa_api.api.routes.assistant_action_operations import deny_action_request
+    from noa_api.api.assistant.action_requests import deny_action_request
 
     owner_id = uuid4()
     thread_id = uuid4()

@@ -9,7 +9,7 @@ import pytest
 pytest.importorskip("assistant_stream")
 
 from noa_api.api.error_handling import ApiHTTPException
-from noa_api.api.routes.assistant_commands import (
+from noa_api.api.assistant.assistant_commands import (
     AddMessageCommand,
     AddToolResultCommand,
     ApproveActionCommand,

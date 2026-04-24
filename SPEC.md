@@ -207,9 +207,9 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T14 | x | Add public query methods to `AssistantRunCoordinator` (`get_task_done`, `get_sequence`); remove `getattr` on `_tasks`/`_sequences` in `run_lifecycle.py:82-104` | V52 |
 | T15 | x | Encrypt WHM server secrets (`api_token`, `ssh_password`, `ssh_private_key`, `ssh_private_key_passphrase`) and Proxmox server secrets (`api_token_secret`) at rest via Fernet | V53,C7 |
 | T16 | x | Fix `_decrypt_sensitive_args` to only decrypt values where `is_sensitive_key(key)` is True; make symmetric with `_encrypt_sensitive_args` | V55,B2 |
-| T17 | . | Audit and remove dead `api/routes/assistant_*.py` files (8 files) that duplicate `api/assistant/` modules after refactor | V49 |
-| T18 | . | Remove god-module re-exports from `core/agent/runner.py` (~70 lines of `# noqa: F401`); update callers to import from submodules directly | V49 |
-| T19 | . | Remove dead code branch in `runner.py:958` (`execute_kwargs is not args` always True since `dict(args)` creates new object) | V49 |
+| T17 | x | Audit and remove dead `api/routes/assistant_*.py` files (8 files) that duplicate `api/assistant/` modules after refactor | V49 |
+| T18 | x | Remove god-module re-exports from `core/agent/runner.py` (~70 lines of `# noqa: F401`); update callers to import from submodules directly | V49 |
+| T19 | x | Remove dead code branch in `runner.py:958` (`execute_kwargs is not args` always True since `dict(args)` creates new object) | V49 |
 | T20 | . | Add DB connection pool size config (`pool_size`, `max_overflow`) to `Settings`; pass to `create_async_engine` | V46 |
 | T21 | x | Fix `deps.py` pending-approval commit: add `error_code` attribute to `AuthPendingApprovalError`; or change check to `isinstance` | V56,B1 |
 | T22 | x | Fix CORS origins validator `_normalize_cors_origins` to handle JSON array strings per C9 (same pattern as `_normalize_prompt_extra_paths`) | V57,B3 |

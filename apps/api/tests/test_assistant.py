@@ -27,7 +27,7 @@ from noa_api.api.routes.assistant import (
     get_assistant_service,
 )
 from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
-from noa_api.core.agent.runner import AgentMessage, AgentRunnerResult
+from noa_api.core.agent.message_codec import AgentMessage, AgentRunnerResult
 from noa_api.api.routes.assistant import router as assistant_router
 from noa_api.core.auth.authorization import (
     AuthorizationUser,
@@ -1687,7 +1687,7 @@ async def test_assistant_route_returns_http_error_for_pre_stream_domain_failure(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    from noa_api.api.routes.assistant_errors import AssistantDomainError
+    from noa_api.api.assistant.assistant_errors import AssistantDomainError
 
     owner_id = uuid4()
     thread_id = uuid4()

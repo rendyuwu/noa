@@ -14,7 +14,7 @@ from noa_api.api.assistant.assistant_run_stream import (
 )
 from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
 from noa_api.api.assistant.service import AssistantService
-from noa_api.core.agent.runner import AgentRunnerResult
+from noa_api.core.agent.message_codec import AgentRunnerResult
 from noa_api.core.auth.authorization import AuthorizationService, AuthorizationUser
 from noa_api.core.config import get_app_settings
 from noa_api.core.telemetry import get_telemetry_recorder

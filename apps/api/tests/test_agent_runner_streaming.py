@@ -5,12 +5,12 @@ from typing import Any, cast
 from uuid import UUID
 from uuid import uuid4
 
-from noa_api.core.agent.runner import (
-    AgentRunner,
+from noa_api.core.agent.llm_client import (
     LLMToolCall,
     LLMTurnResponse,
     OpenAICompatibleLLMClient,
 )
+from noa_api.core.agent.runner import AgentRunner
 from noa_api.storage.postgres.lifecycle import ToolRisk
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 

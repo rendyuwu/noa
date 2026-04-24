@@ -33,40 +33,25 @@ from noa_api.core.workflows.preflight_validation import (
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import ToolRisk
 
-# Re-exports for backward compatibility
-from noa_api.core.agent.llm_client import (  # noqa: F401
+from noa_api.core.agent.llm_client import (
     LLMClientProtocol,
-    LLMToolCall,
-    LLMTurnResponse,
-    OpenAICompatibleLLMClient,
-    create_default_llm_client,
     _split_text_deltas,
 )
-from noa_api.core.agent.message_codec import (  # noqa: F401
+from noa_api.core.agent.message_codec import (
     AgentMessage,
     AgentRunnerResult,
     ProcessedToolCall,
-    _as_object_dict,
-    _assistant_message_parts,
     _append_assistant_text_to_working_messages,
     _append_assistant_text_to_output_messages,
     _should_persist_assistant_text_this_round,
     _should_suppress_provisional_assistant_text_this_round,
-    _message_visible_text,
-    _render_workflow_milestone_text,
     _finalize_turn_messages,
-    _prompt_replay_parts,
-    _to_openai_chat_messages,
-    _safe_json_object,
-    _extract_reasoning_summary,
 )
-from noa_api.core.agent.tool_schemas import (  # noqa: F401
+from noa_api.core.agent.tool_schemas import (
     _to_openai_tool_schema,
-    _llm_tool_description,
-    _tool_risk_note,
     _build_approval_context,
 )
-from noa_api.core.agent.guidance import (  # noqa: F401
+from noa_api.core.agent.guidance import (
     _tool_error_messages,
     _assistant_guidance_for_change_validation_error,
     _internal_tool_guidance,
@@ -78,29 +63,19 @@ from noa_api.core.agent.guidance import (  # noqa: F401
     _render_firewall_preflight_raw_output,
     _append_firewall_preflight_raw_output,
 )
-from noa_api.core.agent.fallbacks import (  # noqa: F401
-    _latest_tool_result_part,
-    _tool_call_args_for_id,
+from noa_api.core.agent.fallbacks import (
     _canonical_tool_args,
-    _working_messages_after_part,
     _has_fresh_matching_preflight_after_failed_tool_result,
     _latest_matching_failed_tool_result_part,
     _fallback_assistant_reply_from_recent_tool_result,
     _assistant_reply_from_tool_result_part,
-    _generic_read_success_fallback,
-    _generic_read_result_count,
     _infer_waiting_on_user_workflow_from_messages,
 )
-from noa_api.core.agent.change_validation import (  # noqa: F401
+from noa_api.core.agent.change_validation import (
     _normalized_text,
-    _reason_provenance_tokens,
-    _reason_tokens_are_explicit_in_latest_user_turn,
     _is_reason_provenance_error,
-    _latest_user_message_text,
     _validate_change_reason_provenance,
     _canonicalize_reason_follow_up_args,
-    _matches_reason_follow_up_workflow_action,
-    _tool_args_without_reason,
     _message_has_text,
 )
 
@@ -955,6 +930,4 @@ class AgentRunner:
         if "requested_by_user_id" in execute_parameters:
             execute_kwargs["requested_by_user_id"] = requested_by_user_id
 
-        if execute_kwargs is not args:
-            return await tool.execute(**execute_kwargs)
-        return await tool.execute(**args)
+        return await tool.execute(**execute_kwargs)

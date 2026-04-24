@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from noa_api.api.routes.assistant_repository import SQLAssistantRepository
+from noa_api.api.assistant.assistant_repository import SQLAssistantRepository
 
 
 @dataclass

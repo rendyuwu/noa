@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, cast
 
-from noa_api.core.agent.runner import _to_openai_tool_schema
+from noa_api.core.agent.tool_schemas import _to_openai_tool_schema
 from noa_api.core.tools import catalog
 from noa_api.core.tools.catalog import get_tool_catalog
 from noa_api.core.tools import registry as tool_registry_module

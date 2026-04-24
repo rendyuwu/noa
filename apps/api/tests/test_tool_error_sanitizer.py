@@ -8,7 +8,8 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from noa_api.core.agent.runner import AgentRunner, LLMToolCall, LLMTurnResponse
+from noa_api.core.agent.llm_client import LLMToolCall, LLMTurnResponse
+from noa_api.core.agent.runner import AgentRunner
 from noa_api.core.tools.registry import ToolDefinition
 from noa_api.core.tools.result_validation import ToolResultValidationError
 from noa_api.core.tool_error_sanitizer import sanitize_tool_error

@@ -20,7 +20,7 @@ from noa_api.api.assistant.assistant_errors import (
 )
 from noa_api.api.assistant.assistant_tool_result_operations import record_tool_result
 from noa_api.api.error_codes import THREAD_NOT_FOUND
-from noa_api.core.agent.runner import AgentRunnerResult
+from noa_api.core.agent.message_codec import AgentRunnerResult
 from noa_api.core.secrets.redaction import redact_sensitive_data
 from noa_api.storage.postgres.action_tool_runs import ActionToolRunService
 from noa_api.storage.postgres.lifecycle import (
