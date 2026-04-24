@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, cast
+from collections.abc import Mapping
+from typing import Any, Awaitable, Callable, Protocol, cast, runtime_checkable
 from uuid import UUID
 
 from fastapi import status
@@ -27,8 +28,97 @@ from noa_api.storage.postgres.lifecycle import (
     AssistantRunStatus,
     ToolRunStatus,
 )
-from noa_api.storage.postgres.models import ActionRequest
+from noa_api.storage.postgres.models import (
+    ActionRequest,
+    AssistantRun,
+    Message,
+    Thread,
+    ToolRun,
+)
 from noa_api.storage.postgres.workflow_todos import WorkflowTodoService
+
+
+@runtime_checkable
+class AssistantRepositoryProtocol(Protocol):
+    """Typed protocol for the assistant repository (V51)."""
+
+    async def get_thread(
+        self, *, owner_user_id: UUID, thread_id: UUID
+    ) -> Thread | None: ...
+
+    async def list_messages(self, *, thread_id: UUID) -> list[Message]: ...
+
+    async def get_pending_action_requests(
+        self, *, thread_id: UUID
+    ) -> list[ActionRequest]: ...
+
+    async def list_action_requests(self, *, thread_id: UUID) -> list[ActionRequest]: ...
+
+    async def list_action_tool_runs(self, *, thread_id: UUID) -> list[ToolRun]: ...
+
+    async def create_assistant_run(
+        self,
+        *,
+        thread_id: UUID,
+        owner_user_id: UUID,
+        owner_instance_id: str,
+    ) -> AssistantRun: ...
+
+    async def get_assistant_run(self, *, run_id: UUID) -> AssistantRun | None: ...
+
+    async def get_active_run(self, *, thread_id: UUID) -> AssistantRun | None: ...
+
+    async def mark_run_running(self, *, run_id: UUID) -> AssistantRun | None: ...
+
+    async def mark_run_waiting_approval(
+        self, *, run_id: UUID, action_request_id: UUID
+    ) -> AssistantRun | None: ...
+
+    async def append_run_snapshot(
+        self, *, run_id: UUID, snapshot: Mapping[str, object]
+    ) -> AssistantRun | None: ...
+
+    async def mark_run_completed(self, *, run_id: UUID) -> AssistantRun | None: ...
+
+    async def mark_run_failed(
+        self, *, run_id: UUID, reason: str
+    ) -> AssistantRun | None: ...
+
+    async def fail_run_if_owner_matches(
+        self,
+        *,
+        run_id: UUID,
+        owner_instance_id: str,
+        reason: str,
+    ) -> AssistantRun | None: ...
+
+    async def create_message(
+        self, *, thread_id: UUID, role: str, parts: list[dict[str, object]]
+    ) -> Message: ...
+
+    async def create_audit_log(
+        self,
+        *,
+        event_type: str,
+        actor_email: str | None,
+        tool_name: str | None,
+        metadata: dict[str, object],
+    ) -> None: ...
+
+
+@runtime_checkable
+class AgentRunnerProtocol(Protocol):
+    """Typed protocol for the agent runner (V51)."""
+
+    async def run_turn(
+        self,
+        *,
+        thread_messages: list[dict[str, object]],
+        available_tool_names: set[str],
+        thread_id: UUID,
+        requested_by_user_id: UUID,
+        on_text_delta: Callable[[str], Awaitable[None]] | None = None,
+    ) -> AgentRunnerResult: ...
 
 
 def _serialize_pending_approval(request: ActionRequest) -> dict[str, object]:
@@ -83,8 +173,8 @@ _ACTIVE_RUN_CONFLICT_DETAIL = "Thread already has an active assistant run"
 class AssistantService:
     def __init__(
         self,
-        repository: Any,
-        runner: Any,
+        repository: AssistantRepositoryProtocol,
+        runner: AgentRunnerProtocol,
         *,
         action_tool_run_service: ActionToolRunService,
         workflow_todo_service: WorkflowTodoService | None = None,
@@ -96,11 +186,8 @@ class AssistantService:
         self._workflow_todo_service = workflow_todo_service
         self._session = session
 
-    async def _get_active_run(self, *, thread_id: UUID) -> Any | None:
-        get_active_run = getattr(self._repository, "get_active_run", None)
-        if get_active_run is None:
-            return None
-        return await get_active_run(thread_id=thread_id)
+    async def _get_active_run(self, *, thread_id: UUID) -> AssistantRun | None:
+        return await self._repository.get_active_run(thread_id=thread_id)
 
     async def create_run(
         self,
@@ -108,60 +195,41 @@ class AssistantService:
         owner_user_id: UUID,
         thread_id: UUID,
         owner_instance_id: str,
-    ) -> Any:
-        create_assistant_run = getattr(self._repository, "create_assistant_run", None)
-        if create_assistant_run is None:
-            raise RuntimeError("Assistant run persistence is unavailable")
-        return await create_assistant_run(
+    ) -> AssistantRun:
+        return await self._repository.create_assistant_run(
             thread_id=thread_id,
             owner_user_id=owner_user_id,
             owner_instance_id=owner_instance_id,
         )
 
-    async def get_run(self, *, run_id: UUID) -> Any | None:
-        get_assistant_run = getattr(self._repository, "get_assistant_run", None)
-        if get_assistant_run is None:
-            return None
-        return await get_assistant_run(run_id=run_id)
+    async def get_run(self, *, run_id: UUID) -> AssistantRun | None:
+        return await self._repository.get_assistant_run(run_id=run_id)
 
-    async def mark_run_running(self, *, run_id: UUID) -> Any | None:
-        mark_run_running = getattr(self._repository, "mark_run_running", None)
-        if mark_run_running is None:
-            return None
-        return await mark_run_running(run_id=run_id)
+    async def mark_run_running(self, *, run_id: UUID) -> AssistantRun | None:
+        return await self._repository.mark_run_running(run_id=run_id)
 
     async def mark_run_waiting_approval(
         self, *, run_id: UUID, action_request_id: UUID
-    ) -> Any | None:
-        mark_run_waiting_approval = getattr(
-            self._repository, "mark_run_waiting_approval", None
-        )
-        if mark_run_waiting_approval is None:
-            return None
-        return await mark_run_waiting_approval(
+    ) -> AssistantRun | None:
+        return await self._repository.mark_run_waiting_approval(
             run_id=run_id,
             action_request_id=action_request_id,
         )
 
     async def append_run_snapshot(
         self, *, run_id: UUID, snapshot: dict[str, object]
-    ) -> Any | None:
-        append_run_snapshot = getattr(self._repository, "append_run_snapshot", None)
-        if append_run_snapshot is None:
-            return None
-        return await append_run_snapshot(run_id=run_id, snapshot=snapshot)
+    ) -> AssistantRun | None:
+        return await self._repository.append_run_snapshot(
+            run_id=run_id, snapshot=snapshot
+        )
 
-    async def mark_run_completed(self, *, run_id: UUID) -> Any | None:
-        mark_run_completed = getattr(self._repository, "mark_run_completed", None)
-        if mark_run_completed is None:
-            return None
-        return await mark_run_completed(run_id=run_id)
+    async def mark_run_completed(self, *, run_id: UUID) -> AssistantRun | None:
+        return await self._repository.mark_run_completed(run_id=run_id)
 
-    async def mark_run_failed(self, *, run_id: UUID, reason: str) -> Any | None:
-        mark_run_failed = getattr(self._repository, "mark_run_failed", None)
-        if mark_run_failed is None:
-            return None
-        return await mark_run_failed(run_id=run_id, reason=reason)
+    async def mark_run_failed(
+        self, *, run_id: UUID, reason: str
+    ) -> AssistantRun | None:
+        return await self._repository.mark_run_failed(run_id=run_id, reason=reason)
 
     async def fail_run_if_owner_matches(
         self,
@@ -169,13 +237,8 @@ class AssistantService:
         run_id: UUID,
         owner_instance_id: str,
         reason: str,
-    ) -> Any | None:
-        fail_run_if_owner_matches = getattr(
-            self._repository, "fail_run_if_owner_matches", None
-        )
-        if fail_run_if_owner_matches is None:
-            return None
-        return await fail_run_if_owner_matches(
+    ) -> AssistantRun | None:
+        return await self._repository.fail_run_if_owner_matches(
             run_id=run_id,
             owner_instance_id=owner_instance_id,
             reason=reason,
@@ -216,11 +279,7 @@ class AssistantService:
             thread_id=thread_id
         )
         active_run = await self._get_active_run(thread_id=thread_id)
-        active_run_status = (
-            getattr(active_run.status, "value", active_run.status)
-            if active_run is not None
-            else None
-        )
+        active_run_status = active_run.status.value if active_run is not None else None
         return {
             "messages": [
                 {

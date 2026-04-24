@@ -1515,3 +1515,102 @@ async def test_assistant_run_coordinator_subscribe_after_teardown_closes_immedia
     finally:
         with pytest.raises(asyncio.CancelledError):
             await handle.task
+
+
+@pytest.mark.asyncio
+async def test_assistant_run_coordinator_get_task_done_returns_none_for_unknown_run() -> (
+    None
+):
+    from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
+
+    coordinator = AssistantRunCoordinator(instance_id="api-1")
+    assert coordinator.get_task_done(run_id=uuid4()) is None
+
+
+@pytest.mark.asyncio
+async def test_assistant_run_coordinator_get_task_done_tracks_completion() -> None:
+    from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
+
+    coordinator = AssistantRunCoordinator(instance_id="api-1")
+    run_id = uuid4()
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def _job_factory(_handle) -> str:
+        started.set()
+        await release.wait()
+        return "done"
+
+    _ = coordinator.start_detached_run(run_id=run_id, job_factory=_job_factory)
+    await asyncio.wait_for(started.wait(), 1)
+
+    assert coordinator.get_task_done(run_id=run_id) is False
+
+    release.set()
+    await coordinator.wait_for_run(run_id=run_id, timeout=1)
+
+    assert coordinator.get_task_done(run_id=run_id) is True
+
+
+@pytest.mark.asyncio
+async def test_assistant_run_coordinator_get_task_returns_none_for_unknown_run() -> (
+    None
+):
+    from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
+
+    coordinator = AssistantRunCoordinator(instance_id="api-1")
+    assert coordinator.get_task(run_id=uuid4()) is None
+
+
+@pytest.mark.asyncio
+async def test_assistant_run_coordinator_get_task_returns_asyncio_task() -> None:
+    from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
+
+    coordinator = AssistantRunCoordinator(instance_id="api-1")
+    run_id = uuid4()
+
+    async def _job_factory(_handle) -> str:
+        return "done"
+
+    _ = coordinator.start_detached_run(run_id=run_id, job_factory=_job_factory)
+    task = coordinator.get_task(run_id=run_id)
+
+    assert task is not None
+    assert isinstance(task, asyncio.Task)
+    await asyncio.wait_for(task, 1)
+    assert task.done() is True
+
+
+@pytest.mark.asyncio
+async def test_assistant_run_coordinator_get_sequence_returns_none_for_unknown_run() -> (
+    None
+):
+    from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
+
+    coordinator = AssistantRunCoordinator(instance_id="api-1")
+    assert coordinator.get_sequence(run_id=uuid4()) is None
+
+
+@pytest.mark.asyncio
+async def test_assistant_run_coordinator_get_sequence_tracks_publishes() -> None:
+    from noa_api.api.assistant.assistant_runs import AssistantRunCoordinator
+
+    coordinator = AssistantRunCoordinator(instance_id="api-1")
+    run_id = uuid4()
+    snapshot = {
+        "messages": [],
+        "workflow": [],
+        "pendingApprovals": [],
+        "actionRequests": [],
+        "isRunning": True,
+    }
+
+    async def _job_factory(handle) -> str:
+        handle.publish_snapshot(snapshot=snapshot)
+        handle.publish_snapshot(snapshot=snapshot)
+        return "done"
+
+    _ = coordinator.start_detached_run(run_id=run_id, job_factory=_job_factory)
+    await coordinator.wait_for_run(run_id=run_id, timeout=1)
+
+    assert coordinator.get_sequence(run_id=run_id) == 2

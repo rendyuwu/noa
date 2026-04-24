@@ -454,6 +454,45 @@ class _RouteAssistantRepository:
         _ = thread_id
         return []
 
+    async def get_active_run(self, *, thread_id: UUID):
+        _ = thread_id
+        return None
+
+    async def create_assistant_run(
+        self, *, thread_id: UUID, owner_user_id: UUID, owner_instance_id: str
+    ):
+        raise AssertionError("create_assistant_run should not be called")
+
+    async def get_assistant_run(self, *, run_id: UUID):
+        _ = run_id
+        return None
+
+    async def mark_run_running(self, *, run_id: UUID):
+        _ = run_id
+        return None
+
+    async def mark_run_waiting_approval(self, *, run_id: UUID, action_request_id: UUID):
+        _ = run_id, action_request_id
+        return None
+
+    async def append_run_snapshot(self, *, run_id: UUID, snapshot):
+        _ = run_id, snapshot
+        return None
+
+    async def mark_run_completed(self, *, run_id: UUID):
+        _ = run_id
+        return None
+
+    async def mark_run_failed(self, *, run_id: UUID, reason: str):
+        _ = run_id, reason
+        return None
+
+    async def fail_run_if_owner_matches(
+        self, *, run_id: UUID, owner_instance_id: str, reason: str
+    ):
+        _ = run_id, owner_instance_id, reason
+        return None
+
     async def create_message(self, **kwargs):
         raise AssertionError(f"create_message should not be called: {kwargs}")
 

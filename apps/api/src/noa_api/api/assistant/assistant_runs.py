@@ -77,6 +77,28 @@ class AssistantRunCoordinator:
         self._tasks[run_id] = _TrackedRun(token=owner_token, task=task)
         return handle
 
+    def get_task_done(self, *, run_id: UUID) -> bool | None:
+        """Return whether the tracked task for *run_id* is done.
+
+        Returns ``None`` when *run_id* is not tracked (V52).
+        """
+        tracked_run = self._tasks.get(run_id)
+        if tracked_run is None:
+            return None
+        return tracked_run.task.done()
+
+    def get_task(self, *, run_id: UUID) -> asyncio.Task[object] | None:
+        """Return the asyncio task for *run_id*, or ``None`` if not tracked (V52)."""
+        tracked_run = self._tasks.get(run_id)
+        if tracked_run is None:
+            return None
+        return tracked_run.task
+
+    def get_sequence(self, *, run_id: UUID) -> int | None:
+        """Return the current sequence number for *run_id*, or ``None`` (V52)."""
+        sequence = self._sequences.get(run_id)
+        return sequence if isinstance(sequence, int) else None
+
     def get_snapshot(self, *, run_id: UUID) -> RunSnapshot | None:
         snapshot = self._snapshots.get(run_id)
         return None if snapshot is None else deepcopy(snapshot)

@@ -133,6 +133,53 @@ class _FakeAssistantRepository:
         _ = thread_id
         return self.active_run
 
+    async def create_assistant_run(
+        self, *, thread_id: UUID, owner_user_id: UUID, owner_instance_id: str
+    ):
+        run = SimpleNamespace(
+            id=uuid4(),
+            thread_id=thread_id,
+            owner_user_id=owner_user_id,
+            owner_instance_id=owner_instance_id,
+            status=AssistantRunStatus.STARTING,
+        )
+        self.active_run = run
+        return run
+
+    async def get_assistant_run(self, *, run_id: UUID):
+        if (
+            self.active_run is not None
+            and getattr(self.active_run, "id", None) == run_id
+        ):
+            return self.active_run
+        return None
+
+    async def mark_run_running(self, *, run_id: UUID):
+        _ = run_id
+        return self.active_run
+
+    async def mark_run_waiting_approval(self, *, run_id: UUID, action_request_id: UUID):
+        _ = run_id, action_request_id
+        return self.active_run
+
+    async def append_run_snapshot(self, *, run_id: UUID, snapshot):
+        _ = run_id, snapshot
+        return self.active_run
+
+    async def mark_run_completed(self, *, run_id: UUID):
+        _ = run_id
+        return self.active_run
+
+    async def mark_run_failed(self, *, run_id: UUID, reason: str):
+        _ = run_id, reason
+        return self.active_run
+
+    async def fail_run_if_owner_matches(
+        self, *, run_id: UUID, owner_instance_id: str, reason: str
+    ):
+        _ = run_id, owner_instance_id, reason
+        return self.active_run
+
     async def list_messages(self, *, thread_id: UUID):
         _ = thread_id
         return self.listed_messages

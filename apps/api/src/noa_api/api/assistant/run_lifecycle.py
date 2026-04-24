@@ -70,38 +70,19 @@ def _should_resume_existing_run(
 def _coordinator_task_done(
     *, coordinator: AssistantRunCoordinator, run_id: UUID
 ) -> bool | None:
-    task = _coordinator_task(coordinator=coordinator, run_id=run_id)
-    if task is None:
-        return None
-    done = getattr(task, "done", None)
-    if not callable(done):
-        return None
-    return bool(done())
+    return coordinator.get_task_done(run_id=run_id)
 
 
 def _coordinator_task(
     *, coordinator: AssistantRunCoordinator, run_id: UUID
 ) -> asyncio.Task[object] | None:
-    tracked_runs = getattr(coordinator, "_tasks", None)
-    if not isinstance(tracked_runs, dict):
-        return None
-    tracked_run = tracked_runs.get(run_id)
-    if tracked_run is None:
-        return None
-    task = getattr(tracked_run, "task", None)
-    if task is None:
-        return None
-    return cast(asyncio.Task[object], task)
+    return coordinator.get_task(run_id=run_id)
 
 
 def _coordinator_sequence(
     *, coordinator: AssistantRunCoordinator, run_id: UUID
 ) -> int | None:
-    sequences = getattr(coordinator, "_sequences", None)
-    if not isinstance(sequences, dict):
-        return None
-    sequence = sequences.get(run_id)
-    return sequence if isinstance(sequence, int) else None
+    return coordinator.get_sequence(run_id=run_id)
 
 
 def _snapshot_is_terminal(snapshot: Mapping[str, object]) -> bool:
