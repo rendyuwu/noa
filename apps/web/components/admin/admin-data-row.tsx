@@ -10,6 +10,7 @@ type AdminDataRowProps = {
   lastLoginCell: ReactNode;
   selected?: boolean;
   className?: string;
+  onClick?: () => void;
 };
 
 export function AdminDataRow({
@@ -20,6 +21,7 @@ export function AdminDataRow({
   lastLoginCell,
   selected = false,
   className,
+  onClick,
 }: AdminDataRowProps) {
   return (
     <tr
@@ -27,8 +29,10 @@ export function AdminDataRow({
       className={cn(
         "border-b border-border/80 transition-colors last:border-b-0",
         selected ? "bg-accent/35 hover:bg-accent/35" : "bg-card/80 hover:bg-card/90",
+        onClick && "cursor-pointer",
         className,
       )}
+      onClick={onClick}
     >
       <th scope="row" className="px-4 py-3 align-top text-left font-normal">{primaryAction}</th>
       <td className="px-4 py-3 align-top">{statusCell}</td>

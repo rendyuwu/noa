@@ -400,17 +400,14 @@ export function UsersAdminPage() {
                     <AdminDataRow
                       key={user.id}
                       selected={selectedUserId === user.id}
+                      onClick={() => openPanelForUser(user)}
                       primaryAction={
-                        <button
-                          type="button"
-                          className="group block rounded-md text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                          onClick={() => openPanelForUser(user)}
-                        >
-                          <span className="block text-sm font-medium text-foreground group-hover:underline">
+                        <div>
+                          <span className="block text-sm font-medium text-foreground">
                             {user.email}
                           </span>
                           {subtitle ? <span className="mt-1 block text-sm text-muted-foreground">{subtitle}</span> : null}
-                        </button>
+                        </div>
                       }
                       statusCell={<StatusBadge user={user} />}
                       roleCell={
