@@ -3926,7 +3926,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verifie
     )
 
 
-def test_proxmox_pool_membership_move_completed_todos_keep_verified_outcome_when_postflight_verification_disagrees() -> (
+def test_proxmox_pool_membership_move_completed_todos_downgrade_verification_when_postflight_disagrees() -> (
     None
 ):
     workflow_todos = build_workflow_todos(
@@ -3946,14 +3946,11 @@ def test_proxmox_pool_membership_move_completed_todos_keep_verified_outcome_when
     )
 
     assert workflow_todos is not None
-    assert workflow_todos[4]["status"] == "completed"
-    assert (
-        "Verify that the VMIDs were removed from the source pool"
-        in workflow_todos[4]["content"]
-    )
+    # Postflight disagreement downgrades verification even if inline said verified
+    assert workflow_todos[4]["status"] == "cancelled"
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postflight_refetch_degraded_when_verified() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_downgrades_when_postflight_refetch_fails() -> (
     None
 ):
     reply = build_workflow_reply_template(
@@ -3988,18 +3985,17 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postf
         postflight_result=_pool_move_postflight_refetch_failed_result(),
     )
 
+    # Postflight disagreement downgrades verification
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Verification succeeded." in reply.summary
-    assert "Postflight refetch was degraded." in reply.summary
-    assert "Postflight refetch was degraded." in reply.evidence_summary
+    assert "Verification not confirmed." in reply.summary
 
     assert evidence is not None
     verification = next(
         section for section in evidence.sections if section.key == "verification"
     )
     assert any(
-        item.label == "Verified" and item.value == "yes" for item in verification.items
+        item.label == "Verified" and item.value == "no" for item in verification.items
     )
     assert any(
         item.label == "Postflight" and item.value == "degraded"
@@ -4007,7 +4003,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postf
     )
 
 
-def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postflight_verification_disagreement_when_verified() -> (
+def test_proxmox_pool_membership_move_completed_reply_and_evidence_downgrades_when_postflight_verification_disagrees() -> (
     None
 ):
     reply = build_workflow_reply_template(
@@ -4042,20 +4038,18 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_reports_postf
         postflight_result=_pool_move_postflight_verification_failed_result(),
     )
 
+    # Postflight disagreement downgrades verification
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Verification succeeded." in reply.summary
-    assert "Postflight verification disagreed with the result." in reply.summary
-    assert (
-        "Postflight verification disagreed with the result." in reply.evidence_summary
-    )
+    assert "Verification not confirmed." in reply.summary
+    assert "Postflight verification failed." in reply.summary
 
     assert evidence is not None
     verification = next(
         section for section in evidence.sections if section.key == "verification"
     )
     assert any(
-        item.label == "Verified" and item.value == "yes" for item in verification.items
+        item.label == "Verified" and item.value == "no" for item in verification.items
     )
     assert any(
         item.label == "Postflight" and item.value == "failed"
@@ -4854,3 +4848,244 @@ async def test_cloudinit_postflight_skips_hash_check_when_password_is_none() -> 
     assert result is not None
     assert result["ok"] is True
     assert result["verified"] is True
+
+
+# --- Edge case tests added for T5 audit fixes ---
+
+
+@pytest.mark.asyncio
+async def test_proxmox_pool_postflight_rejects_empty_vmids() -> None:
+    from noa_api.core.workflows.proxmox import postflight
+
+    class _Client:
+        async def get_pool(self, poolid: str):
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [{"poolid": poolid, "members": []}],
+            }
+
+    result = await postflight._pool_postflight_result(
+        client=_Client(),  # type: ignore[arg-type]
+        source_pool="pool-a",
+        destination_pool="pool-b",
+        vmids=[],
+    )
+
+    assert result is not None
+    assert result["ok"] is False
+    assert result["error_code"] == "invalid_request"
+
+
+@pytest.mark.asyncio
+async def test_proxmox_pool_postflight_rejects_malformed_source_payload() -> None:
+    from noa_api.core.workflows.proxmox import postflight
+
+    class _Client:
+        async def get_pool(self, poolid: str):
+            if poolid == "pool-a":
+                # Malformed: data is not a list
+                return {"ok": True, "message": "ok", "data": "not-a-list"}
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [{"poolid": "pool-b", "members": [{"vmid": 101}]}],
+            }
+
+    result = await postflight._pool_postflight_result(
+        client=_Client(),  # type: ignore[arg-type]
+        source_pool="pool-a",
+        destination_pool="pool-b",
+        vmids=[101],
+    )
+
+    assert result is not None
+    assert result["ok"] is False
+    assert result["error_code"] == "invalid_response"
+
+
+@pytest.mark.asyncio
+async def test_proxmox_nic_postflight_returns_verified_false_when_link_state_wrong() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+    from noa_api.core.workflows.proxmox.nic_connectivity import (
+        ProxmoxVMNicConnectivityTemplate,
+    )
+
+    async def _fake_preflight(*, session, server_ref, node, vmid, net):
+        return {
+            "ok": True,
+            "server_id": "srv-1",
+            "node": node,
+            "vmid": vmid,
+            "digest": "digest-2",
+            "net": net,
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0,link_down=1",
+            "link_state": "down",
+            "auto_selected_net": False,
+            "nets": [],
+        }
+
+    original = proxmox_workflows.proxmox_preflight_vm_nic_toggle
+    proxmox_workflows.proxmox_preflight_vm_nic_toggle = _fake_preflight
+    try:
+        template = ProxmoxVMNicConnectivityTemplate()
+        result = await template.fetch_postflight_result(
+            tool_name="proxmox_enable_vm_nic",
+            args={
+                "server_ref": "pve1",
+                "node": "pve1-node",
+                "vmid": 101,
+                "net": "net0",
+            },
+            session=_FakeSession(),  # type: ignore[arg-type]
+        )
+    finally:
+        proxmox_workflows.proxmox_preflight_vm_nic_toggle = original
+
+    assert result is not None
+    assert result["ok"] is True
+    # NIC is still down but we wanted up → verified should be False
+    assert result["verified"] is False
+
+
+@pytest.mark.asyncio
+async def test_proxmox_nic_postflight_returns_verified_true_when_link_state_matches() -> (
+    None
+):
+    from noa_api.core.workflows import proxmox as proxmox_workflows
+    from noa_api.core.workflows.proxmox.nic_connectivity import (
+        ProxmoxVMNicConnectivityTemplate,
+    )
+
+    async def _fake_preflight(*, session, server_ref, node, vmid, net):
+        return {
+            "ok": True,
+            "server_id": "srv-1",
+            "node": node,
+            "vmid": vmid,
+            "digest": "digest-2",
+            "net": net,
+            "before_net": "virtio=AA:BB:CC,bridge=vmbr0",
+            "link_state": "up",
+            "auto_selected_net": False,
+            "nets": [],
+        }
+
+    original = proxmox_workflows.proxmox_preflight_vm_nic_toggle
+    proxmox_workflows.proxmox_preflight_vm_nic_toggle = _fake_preflight
+    try:
+        template = ProxmoxVMNicConnectivityTemplate()
+        result = await template.fetch_postflight_result(
+            tool_name="proxmox_enable_vm_nic",
+            args={
+                "server_ref": "pve1",
+                "node": "pve1-node",
+                "vmid": 101,
+                "net": "net0",
+            },
+            session=_FakeSession(),  # type: ignore[arg-type]
+        )
+    finally:
+        proxmox_workflows.proxmox_preflight_vm_nic_toggle = original
+
+    assert result is not None
+    assert result["ok"] is True
+    assert result["verified"] is True
+
+
+def test_proxmox_cloudinit_completed_todos_downgrade_when_postflight_disagrees() -> (
+    None
+):
+    workflow_todos = build_workflow_todos(
+        tool_name="proxmox_reset_vm_cloudinit_password",
+        workflow_family="proxmox-vm-cloudinit-password-reset",
+        args={
+            "server_ref": "pve1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "new_password": "secret",
+            "reason": "customer request",
+        },
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_vm_cloudinit_password_reset",
+                "args": {"server_ref": "pve1", "node": "pve1-node", "vmid": 101},
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "node": "pve1-node",
+                    "vmid": 101,
+                    "config": {"digest": "digest-1"},
+                    "cloudinit": {
+                        "ok": True,
+                        "message": "ok",
+                        "data": [{"key": "cipassword", "value": "[redacted]"}],
+                    },
+                },
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "server_id": "srv-1",
+            "node": "pve1-node",
+            "vmid": 101,
+            "set_password_task": {"ok": True, "data": "UPID:SET"},
+            "regenerate_cloudinit": {"ok": True},
+            "cloudinit": {"ok": True},
+            "cloudinit_dump_user": {"ok": True, "data": {"password": "secret"}},
+            "verified": True,
+        },
+        postflight_result={
+            "ok": False,
+            "error_code": "postflight_failed",
+            "message": "Proxmox cloud-init verification did not confirm the password reset",
+        },
+    )
+
+    assert workflow_todos is not None
+    # Postflight disagreement downgrades verification
+    assert workflow_todos[4]["status"] == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_proxmox_cloudinit_postflight_sanitizes_cipassword() -> None:
+    from noa_api.core.workflows.proxmox import postflight
+
+    class _Client:
+        async def get_qemu_cloudinit(self, node: str, vmid: int):
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "actual-secret-hash"}],
+            }
+
+        async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int):
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": f"password: {_SHA512_PASSWORD_HASH}\n",
+            }
+
+    result = await postflight._cloudinit_postflight_result(
+        client=_Client(),  # type: ignore[arg-type]
+        node="pve1",
+        vmid=101,
+        new_password="secret",
+    )
+
+    assert result is not None
+    assert result["ok"] is True
+    assert result["verified"] is True
+    # cipassword value should be redacted in the sanitized cloudinit payload
+    cloudinit = result["cloudinit"]
+    assert isinstance(cloudinit, dict)
+    data = cloudinit.get("data")
+    assert isinstance(data, list)
+    for entry in data:
+        if isinstance(entry, dict) and entry.get("key") == "cipassword":
+            assert entry["value"] == "[redacted]"

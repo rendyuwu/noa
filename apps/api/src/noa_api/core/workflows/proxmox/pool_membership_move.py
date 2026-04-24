@@ -475,18 +475,19 @@ def _pool_move_before_state_items(
 def _pool_move_after_state_items(
     result: dict[str, object], postflight_result: dict[str, object]
 ) -> list[WorkflowEvidenceItem]:
+    # Prefer postflight (fresher) over inline result (stale) for after-state display
     source_after = (
-        result.get("source_pool_after")
-        if isinstance(result.get("source_pool_after"), dict)
-        else postflight_result.get("source_pool_after")
+        postflight_result.get("source_pool_after")
         if isinstance(postflight_result.get("source_pool_after"), dict)
+        else result.get("source_pool_after")
+        if isinstance(result.get("source_pool_after"), dict)
         else {}
     )
     destination_after = (
-        result.get("destination_pool_after")
-        if isinstance(result.get("destination_pool_after"), dict)
-        else postflight_result.get("destination_pool_after")
+        postflight_result.get("destination_pool_after")
         if isinstance(postflight_result.get("destination_pool_after"), dict)
+        else result.get("destination_pool_after")
+        if isinstance(result.get("destination_pool_after"), dict)
         else {}
     )
     return [
@@ -515,8 +516,9 @@ def _pool_move_after_state_items(
         WorkflowEvidenceItem(
             label="Move verified",
             value="yes"
-            if result.get("verified") is True
-            or _postflight_verified("proxmox_move_vms_between_pools", postflight_result)
+            if _pool_move_verified(
+                "proxmox_move_vms_between_pools", result, postflight_result
+            )
             else "no",
         ),
     ]
@@ -709,18 +711,19 @@ def _pool_move_completion_summary(
         if isinstance(result.get("destination_pool_before"), dict)
         else None
     )
+    # Prefer postflight (fresher) over inline result (stale) for after-state display
     source_after = (
-        result.get("source_pool_after")
-        if isinstance(result.get("source_pool_after"), dict)
-        else postflight.get("source_pool_after")
+        postflight.get("source_pool_after")
         if isinstance(postflight.get("source_pool_after"), dict)
+        else result.get("source_pool_after")
+        if isinstance(result.get("source_pool_after"), dict)
         else None
     )
     destination_after = (
-        result.get("destination_pool_after")
-        if isinstance(result.get("destination_pool_after"), dict)
-        else postflight.get("destination_pool_after")
+        postflight.get("destination_pool_after")
         if isinstance(postflight.get("destination_pool_after"), dict)
+        else result.get("destination_pool_after")
+        if isinstance(result.get("destination_pool_after"), dict)
         else None
     )
     return "\n\n".join(
@@ -744,9 +747,13 @@ def _pool_move_verified(
     result: dict[str, object],
     postflight_result: dict[str, object] | None,
 ) -> bool:
-    return result.get("verified") is True or _postflight_verified(
-        tool_name, postflight_result
-    )
+    postflight = postflight_result if isinstance(postflight_result, dict) else {}
+    # If postflight ran and explicitly failed, downgrade even if inline said verified
+    if postflight and postflight.get("ok") is False:
+        return False
+    if _postflight_verified(tool_name, postflight_result):
+        return True
+    return result.get("verified") is True and not postflight
 
 
 def _pool_move_verification_summary_lines(
@@ -756,16 +763,18 @@ def _pool_move_verification_summary_lines(
     postflight_result: dict[str, object] | None,
 ) -> list[str]:
     postflight_state = _pool_move_postflight_state(tool_name, postflight_result)
-    if result.get("verified") is True:
-        summary = ["Verification succeeded."]
+    verified = _pool_move_verified(tool_name, result, postflight_result)
+    if verified:
+        if result.get("verified") is True:
+            summary = ["Verification succeeded."]
+        else:
+            summary = ["Postflight verification succeeded."]
         postflight_summary = _pool_move_postflight_summary_line(
             verified=True, postflight_state=postflight_state
         )
         if postflight_summary is not None:
             summary.append(postflight_summary)
         return summary
-    if postflight_state == "verified":
-        return ["Postflight verification succeeded."]
     summary = ["Verification not confirmed."]
     if postflight_state is None:
         return summary
