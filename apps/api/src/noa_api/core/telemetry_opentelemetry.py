@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
+from opentelemetry import metrics as otel_metrics
 from opentelemetry import trace
 from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -49,11 +50,13 @@ class OpenTelemetryRecorder:
         meter: Meter | None,
         tracer_provider: TracerProvider | None,
         meter_provider: MeterProvider | None,
+        uninstrument_hooks: list[Callable[[], None]] | None = None,
     ) -> None:
         self._tracer = tracer
         self._meter = meter
         self._tracer_provider = tracer_provider
         self._meter_provider = meter_provider
+        self._uninstrument_hooks = uninstrument_hooks or []
         self._counters: dict[str, object] = {}
         self._histograms: dict[str, object] = {}
 
@@ -115,6 +118,11 @@ class OpenTelemetryRecorder:
             span.add_event(event.name, attributes=attributes)
 
     def shutdown(self) -> None:
+        for hook in self._uninstrument_hooks:
+            try:
+                hook()
+            except Exception as exc:
+                logger.warning("telemetry_uninstrument_failed", exc_info=exc)
         _shutdown_provider("traces", self._tracer_provider)
         _shutdown_provider("metrics", self._meter_provider)
 
@@ -140,6 +148,13 @@ def create_open_telemetry_recorder(app_settings: Settings) -> TelemetryRecorder:
     if tracer_provider is None and meter_provider is None:
         return NoOpTelemetryRecorder()
 
+    # Set as global providers so auto-instrumentors and trace.get_current_span()
+    # work across the entire application.
+    if tracer_provider is not None:
+        trace.set_tracer_provider(tracer_provider)
+    if meter_provider is not None:
+        otel_metrics.set_meter_provider(meter_provider)
+
     tracer = (
         tracer_provider.get_tracer("noa_api.core.telemetry")
         if tracer_provider is not None
@@ -151,11 +166,14 @@ def create_open_telemetry_recorder(app_settings: Settings) -> TelemetryRecorder:
         else None
     )
 
+    uninstrument_hooks = _install_auto_instrumentation(tracer_provider)
+
     return OpenTelemetryRecorder(
         tracer=tracer,
         meter=meter,
         tracer_provider=tracer_provider,
         meter_provider=meter_provider,
+        uninstrument_hooks=uninstrument_hooks,
     )
 
 
@@ -287,3 +305,71 @@ def _meter_provider(
         return None
 
     return meter_provider
+
+
+# ---------------------------------------------------------------------------
+# Auto-instrumentation
+# ---------------------------------------------------------------------------
+
+
+def _install_auto_instrumentation(
+    tracer_provider: TracerProvider | None,
+) -> list[Callable[[], None]]:
+    """Install OTel auto-instrumentors for FastAPI, SQLAlchemy, and httpx.
+
+    Returns a list of uninstrument callbacks for clean shutdown.
+    Each instrumentor is installed independently; failure in one does not
+    block the others.
+    """
+    if tracer_provider is None:
+        return []
+
+    hooks: list[Callable[[], None]] = []
+
+    # FastAPI (ASGI) auto-instrumentation — creates per-request spans.
+    try:
+        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+        FastAPIInstrumentor.instrument(tracer_provider=tracer_provider)
+        hooks.append(FastAPIInstrumentor.uninstrument)
+        logger.info(
+            "telemetry_auto_instrumentation_installed", extra={"lib": "fastapi"}
+        )
+    except Exception as exc:
+        logger.warning(
+            "telemetry_auto_instrumentation_failed",
+            exc_info=exc,
+            extra={"lib": "fastapi"},
+        )
+
+    # SQLAlchemy auto-instrumentation — traces DB queries.
+    try:
+        from opentelemetry.instrumentation.sqlalchemy import SQLAlchemyInstrumentor
+
+        SQLAlchemyInstrumentor().instrument(tracer_provider=tracer_provider)
+        hooks.append(SQLAlchemyInstrumentor().uninstrument)
+        logger.info(
+            "telemetry_auto_instrumentation_installed", extra={"lib": "sqlalchemy"}
+        )
+    except Exception as exc:
+        logger.warning(
+            "telemetry_auto_instrumentation_failed",
+            exc_info=exc,
+            extra={"lib": "sqlalchemy"},
+        )
+
+    # httpx auto-instrumentation — traces outbound HTTP (WHM, Proxmox, LLM).
+    try:
+        from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+        HTTPXClientInstrumentor().instrument(tracer_provider=tracer_provider)
+        hooks.append(HTTPXClientInstrumentor().uninstrument)
+        logger.info("telemetry_auto_instrumentation_installed", extra={"lib": "httpx"})
+    except Exception as exc:
+        logger.warning(
+            "telemetry_auto_instrumentation_failed",
+            exc_info=exc,
+            extra={"lib": "httpx"},
+        )
+
+    return hooks
