@@ -39,10 +39,15 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | `/admin/users` | GET | List users (admin) |
 | `/admin/users/{id}` | PATCH/DELETE | Enable/disable/delete user (admin) |
 | `/admin/users/{id}/roles` | PUT | Replace user roles (admin) |
+| `/admin/users/{id}/tools` | PUT | Direct tool grants (disabled, 410) (admin) |
+| `/admin/tools` | GET | List all registered tools (admin) |
 | `/admin/roles` | GET/POST | List/create roles (admin) |
-| `/admin/roles/{id}` | DELETE | Delete role (admin) |
-| `/admin/roles/{id}/tools` | PUT | Set tool permissions (admin) |
-| `/admin/audit` | GET | Query audit log (admin) |
+| `/admin/roles/{name}` | DELETE | Delete role (admin) |
+| `/admin/roles/{name}/tools` | GET/PUT | Get/set tool permissions (admin) |
+| `/admin/migrations/direct-grants` | POST | Migrate legacy direct grants to roles (admin) |
+| `/admin/audit/action-requests` | GET | Query audit action requests (admin) |
+| `/admin/audit/action-requests/{id}` | GET | Action request detail (admin) |
+| `/admin/audit/action-requests/{id}/receipt` | GET | Action receipt payload (admin) |
 | `/admin/whm/servers` | GET/POST | List/create WHM servers (admin) |
 | `/admin/whm/servers/{id}` | PATCH/DELETE | Update/delete WHM server (admin) |
 | `/admin/whm/servers/{id}/validate` | POST | Validate WHM server (admin) |
@@ -54,8 +59,10 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 | Surface | Purpose |
 |---|---|
+| `/` | Redirect → `/assistant` |
 | `/login` | Login form (email/password) |
 | `/assistant/[[...threadId]]` | Chat workspace (thread list + thread + tool UIs) |
+| `/admin` | Redirect → `/admin/users` |
 | `/admin/users` | User management |
 | `/admin/roles` | Role management |
 | `/admin/audit` | Audit log viewer |
@@ -69,11 +76,11 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 **Common (3):** `get_current_time` (READ), `get_current_date` (READ), `update_workflow_todo` (READ).
 
-**WHM (15):** `whm_list_servers` (R), `whm_validate_server` (R), `whm_check_binary_exists` (R), `whm_mail_log_failed_auth_suspects` (R), `whm_list_accounts` (R), `whm_search_accounts` (R), `whm_preflight_account` (R), `whm_preflight_primary_domain_change` (R), `whm_preflight_firewall_entries` (R), `whm_suspend_account` (C), `whm_unsuspend_account` (C), `whm_change_contact_email` (C), `whm_change_primary_domain` (C), `whm_firewall_unblock` (C), `whm_firewall_allowlist_add_ttl` (C), `whm_firewall_allowlist_remove` (C), `whm_firewall_denylist_add_ttl` (C).
+**WHM (17):** `whm_list_servers` (R), `whm_validate_server` (R), `whm_check_binary_exists` (R), `whm_mail_log_failed_auth_suspects` (R), `whm_list_accounts` (R), `whm_search_accounts` (R), `whm_preflight_account` (R), `whm_preflight_primary_domain_change` (R), `whm_preflight_firewall_entries` (R), `whm_suspend_account` (C), `whm_unsuspend_account` (C), `whm_change_contact_email` (C), `whm_change_primary_domain` (C), `whm_firewall_unblock` (C), `whm_firewall_allowlist_add_ttl` (C), `whm_firewall_allowlist_remove` (C), `whm_firewall_denylist_add_ttl` (C).
 
 **Proxmox (13):** `proxmox_list_servers` (R), `proxmox_validate_server` (R), `proxmox_get_vm_status_current` (R), `proxmox_get_vm_config` (R), `proxmox_get_vm_pending` (R), `proxmox_get_user_by_email` (R), `proxmox_preflight_vm_cloudinit_password_reset` (R), `proxmox_preflight_move_vms_between_pools` (R), `proxmox_preflight_vm_nic_toggle` (R), `proxmox_reset_vm_cloudinit_password` (C), `proxmox_move_vms_between_pools` (C), `proxmox_disable_vm_nic` (C), `proxmox_enable_vm_nic` (C).
 
-### I.db — Postgres Schema (14 tables)
+### I.db — Postgres Schema (15 tables)
 
 `users`, `roles`, `user_roles`, `role_tool_permissions`, `audit_log`, `threads`, `messages`, `assistant_runs`, `workflow_todos`, `action_requests`, `tool_runs`, `action_receipts`, `whm_servers`, `proxmox_servers`, `login_rate_limits`.
 
@@ -96,7 +103,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - V2. Login sets httpOnly `noa_session` cookie (SameSite=Lax, Path=/, max-age=3600). Logout clears with max-age=0. Logout idempotent without auth.
 - V3. `/auth/me` accepts Bearer OR cookie. Cookie takes precedence when both present. Missing both → 401 `missing_authentication`. Invalid token → 401 `invalid_token`. Inactive user → 403 `user_pending_approval`.
 - V4. Passwords and access tokens never appear in structured logs.
-- V5. JWT secret required in production (auto-generated ≥32 chars in dev). Insecure LDAP transport (`ldap://`) rejected in production. `auth_dev_bypass_ldap=True` rejected in production.
+- V5. JWT secret required in production (auto-generated ≥32 chars in dev). Insecure LDAP transport (`ldap://`) rejected in production unless `ldap_allow_insecure_transport=True` (explicit override). `auth_dev_bypass_ldap=True` rejected in production.
 - V6. Rate limiter blocks after configured max failures within window. Resets after window expires. Successful login clears buckets. Rate-limited → 429 with `Retry-After` header.
 - V7. `get_auth_service` commits on pending-approval exception (user was created), rolls back on all other exceptions.
 - V8. All error responses include `request_id` in body and `x-request-id` header.
@@ -119,7 +126,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 ### Assistant Transport
 
-- V19. Missing `threadId` → 422. Missing thread → 404 `thread_not_found`. No-op request → JSON ack with `runStatus=null`, `activeRunId=null`.
+- V19. Missing `threadId` → 422. Missing thread → 404 `thread_not_found`. No-op request → JSON ack with current `runStatus` and `activeRunId` from canonical thread state (may be non-null if run active).
 - V20. `add-message` with non-null `sourceId` → 400 `message_edit_not_supported`. Only `role=user` allowed. Client `system`/`tools` overrides ignored (logged as warning).
 - V21. User message during active run → 409. Assistant messages allowed during active run (error persistence).
 - V22. Thread state includes: `messages`, `workflow`, `pendingApprovals`, `actionRequests`, `isRunning`, `runStatus`, `activeRunId`, `waitingForApproval`, `lastErrorReason`. Active run metadata projected without `live_snapshot` leaking.
@@ -157,7 +164,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 - V40. Workflow templates produce todos, reply templates, evidence templates, approval context. Approval context includes `activity`, `beforeState`, `evidenceSections`, `argumentSummary`, `replyTemplate`.
 - V41. `update_workflow_todo`: only one item `in_progress` at a time. Invalid status rejected with valid status list. `waiting_on_user` and `waiting_on_approval` are valid blocked statuses. Empty list clears thread state.
-- V42. 8 registered workflow families: 5 WHM (`whm-account-lifecycle`, `whm-account-contact-email`, `whm-account-primary-domain`, `whm-firewall-batch-change`) + 3 Proxmox (`proxmox-vm-cloudinit-password-reset`, `proxmox-pool-membership-move`, `proxmox-vm-nic-connectivity`).
+- V42. 7 registered workflow families: 4 WHM (`whm-account-lifecycle`, `whm-account-contact-email`, `whm-account-primary-domain`, `whm-firewall-batch-change`) + 3 Proxmox (`proxmox-vm-cloudinit-password-reset`, `proxmox-pool-membership-move`, `proxmox-vm-nic-connectivity`).
 
 ### Agent
 

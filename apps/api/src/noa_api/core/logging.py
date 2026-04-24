@@ -7,6 +7,21 @@ import structlog
 from structlog.contextvars import merge_contextvars
 
 from noa_api.core.request_context import get_request_id
+from noa_api.core.secrets.redaction import redact_sensitive_data
+
+
+def _redact_event_dict(
+    logger: Any, method_name: str, event_dict: dict[str, Any]
+) -> dict[str, Any]:
+    """Structlog processor: redact values whose key matches sensitive patterns.
+
+    Delegates to the shared ``redact_sensitive_data`` helper so the key-set
+    and recursion logic stay in one place.
+    """
+    _ = logger, method_name
+    redacted = redact_sensitive_data(event_dict)
+    assert isinstance(redacted, dict)
+    return redacted
 
 
 def configure_logging() -> None:
@@ -14,6 +29,7 @@ def configure_logging() -> None:
         merge_contextvars,
         _add_request_context,
         structlog.stdlib.ExtraAdder(),
+        _redact_event_dict,
         structlog.stdlib.add_log_level,
         structlog.processors.TimeStamper(fmt="iso", utc=True),
         structlog.processors.StackInfoRenderer(),
