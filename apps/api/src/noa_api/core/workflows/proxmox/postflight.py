@@ -54,7 +54,7 @@ async def _cloudinit_postflight_result(
         client=client,
         node=node,
         vmid=vmid,
-        new_password=new_password or "",
+        new_password=new_password,
     )
     if verification_result.get("ok") is not True:
         return verification_result
@@ -117,7 +117,7 @@ async def _wait_for_cloudinit_verification(
     client: ProxmoxClient,
     node: str,
     vmid: int,
-    new_password: str,
+    new_password: str | None,
 ) -> dict[str, object]:
     cloudinit_result = await client.get_qemu_cloudinit(node, vmid)
     if cloudinit_result.get("ok") is not True:
@@ -148,7 +148,10 @@ async def _wait_for_cloudinit_verification(
             "message": "Proxmox cloud-init verification did not confirm the password reset",
         }
 
-    if not cloudinit_dump_matches_password(dump_result.get("data"), new_password):
+    # Only check password hash match if we have the plaintext password
+    if new_password is not None and not cloudinit_dump_matches_password(
+        dump_result.get("data"), new_password
+    ):
         return {
             "ok": False,
             "error_code": "postflight_failed",

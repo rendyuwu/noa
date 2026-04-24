@@ -4819,3 +4819,38 @@ def test_proxmox_workflow_completed_reply_handles_nic_no_op_branch() -> None:
 
     assert failed_todos is not None
     assert failed_todos[1]["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_cloudinit_postflight_skips_hash_check_when_password_is_none() -> None:
+    """When new_password is None, postflight should still succeed if cloud-init
+    confirms the password reset — it just skips the hash match check."""
+    from noa_api.core.workflows.proxmox import postflight
+
+    class _Client:
+        async def get_qemu_cloudinit(self, node: str, vmid: int) -> dict[str, object]:
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": [{"key": "cipassword", "value": "$6$rounds=5000$salt$hash"}],
+            }
+
+        async def get_qemu_cloudinit_dump_user(
+            self, node: str, vmid: int
+        ) -> dict[str, object]:
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": "password: $6$rounds=5000$salt$hash\n",
+            }
+
+    result = await postflight._cloudinit_postflight_result(
+        client=_Client(),  # type: ignore[arg-type]
+        node="pve1",
+        vmid=101,
+        new_password=None,
+    )
+
+    assert result is not None
+    assert result["ok"] is True
+    assert result["verified"] is True

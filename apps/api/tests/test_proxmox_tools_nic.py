@@ -105,6 +105,7 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
                 "ok": True,
                 "message": "ok",
                 "upid": "UPID:pve1:00000001:task",
+                "synchronous": False,
             }
 
         async def get_task_status(self, node: str, upid: str) -> dict[str, object]:
@@ -121,6 +122,9 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
                 "data": {},
             }
 
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(nic_tools, "ProxmoxClient", _Client)
     monkeypatch.setattr(nic_tools, "_TASK_POLL_DELAY_SECONDS", 0)
 

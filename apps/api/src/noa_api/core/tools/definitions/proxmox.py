@@ -175,6 +175,7 @@ PROXMOX_TOOLS: tuple[ToolDefinition, ...] = (
         execute=proxmox_reset_vm_cloudinit_password,
         prompt_hints=(
             "Run `proxmox_preflight_vm_cloudinit_password_reset` first and reuse the same server_ref, node, and vmid.",
+            "Generate a strong random password (16+ chars, mixed case, digits, symbols) unless the user provides a specific password.",
             "Idempotent result contract: returns `status` `changed` only after postflight confirms the cloud-init password reset.",
         ),
         result_schema=PROXMOX_CLOUDINIT_PASSWORD_RESET_RESULT_SCHEMA,

@@ -152,17 +152,39 @@ def _install_client(monkeypatch, state: _ClientState) -> None:
             state.calls.append(("remove_vms_from_pool", (poolid, vmids)))
             return state.remove_vms_from_pool_result
 
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
 
 
 def _install_scripted_client(monkeypatch, state: _ScriptedClientState) -> None:
     from noa_api.proxmox.tools import pool_tools
+    from noa_api.proxmox.tools import _shared
 
+    def _factory(**kwargs: Any) -> _ScriptedPoolClient:
+        return _ScriptedPoolClient(state, **kwargs)
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _factory)
     monkeypatch.setattr(
         pool_tools,
         "ProxmoxClient",
-        lambda **kwargs: _ScriptedPoolClient(state, **kwargs),
+        _factory,
     )
+
+
+def test_normalize_proxmox_userid_appends_pve_realm() -> None:
+    from noa_api.proxmox.tools.pool_tools import _normalize_proxmox_userid
+
+    assert _normalize_proxmox_userid("alice@example.com") == "alice@example.com@pve"
+    assert _normalize_proxmox_userid("  alice@example.com  ") == "alice@example.com@pve"
+
+
+def test_normalize_proxmox_userid_does_not_double_append_pve() -> None:
+    from noa_api.proxmox.tools.pool_tools import _normalize_proxmox_userid
+
+    assert _normalize_proxmox_userid("alice@example.com@pve") == "alice@example.com@pve"
+    assert _normalize_proxmox_userid("alice@pve") == "alice@pve"
 
 
 @pytest.mark.asyncio
@@ -226,7 +248,7 @@ async def test_proxmox_preflight_move_vms_between_pools_returns_wrapped_payloads
     permission_result = {
         "ok": True,
         "message": "ok",
-        "data": {"/pool/pool_b": {"VM.Console": 1}},
+        "data": {"/pool/pool_b": {"VM.Allocate": 1}},
     }
     state = _ClientState(
         get_pool_results={
@@ -275,6 +297,76 @@ async def test_proxmox_preflight_move_vms_between_pools_returns_wrapped_payloads
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
     ]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_move_vms_between_pools_fails_when_source_pool_changed_before_mutation(
+    monkeypatch,
+) -> None:
+    """TOCTOU: if a VMID disappears from the source pool between preflight and
+    mutation, the move must fail with ``source_pool_changed``."""
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    # Scripted pool results:
+    #   pool_a call 1 (preflight): vmid 1057 present
+    #   pool_a call 2 (TOCTOU re-verify): vmid 1057 GONE
+    scripted_state = _ScriptedClientState(
+        get_pool_results={
+            "pool_a": [
+                _pool_payload(
+                    "pool_a",
+                    [
+                        {
+                            "vmid": 1057,
+                            "name": "vm1",
+                            "node": "pve1",
+                            "status": "running",
+                        }
+                    ],
+                ),
+                _pool_payload("pool_a", []),  # TOCTOU: vmid gone
+            ],
+            "pool_b": [
+                _pool_payload("pool_b", []),
+            ],
+        },
+        get_user_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"email": "alice@example.com"},
+        },
+        get_effective_permissions_result={
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
+        },
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": None},
+        remove_vms_from_pool_result={"ok": True, "message": "ok", "data": None},
+    )
+
+    _install_scripted_client(monkeypatch, scripted_state)
+
+    result = await pool_tools.proxmox_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        email="alice@example.com",
+        reason="Ticket #123",
+    )
+
+    assert result["ok"] is False
+    assert result["error_code"] == "source_pool_changed"
+    # Mutation (add_vms_to_pool) should NOT have been called
+    assert not any(call[0] == "add_vms_to_pool" for call in scripted_state.calls)
 
 
 @pytest.mark.asyncio
@@ -417,7 +509,7 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_missing_source_v
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": None},
         remove_vms_from_pool_result={"ok": True, "message": "ok", "data": None},
@@ -465,7 +557,7 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_malformed_source
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": None},
         remove_vms_from_pool_result={"ok": True, "message": "ok", "data": None},
@@ -517,7 +609,7 @@ async def test_proxmox_move_vms_between_pools_fails_when_postflight_does_not_con
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
         remove_vms_from_pool_result={
@@ -534,7 +626,7 @@ async def test_proxmox_move_vms_between_pools_fails_when_postflight_does_not_con
 
     scripted_state = _ScriptedClientState(
         get_pool_results={
-            "pool_a": [source_pool_before, source_pool_after],
+            "pool_a": [source_pool_before, source_pool_before, source_pool_after],
             "pool_b": [destination_pool_before, destination_pool_after],
         },
         get_user_result=state.get_user_result,
@@ -564,6 +656,7 @@ async def test_proxmox_move_vms_between_pools_fails_when_postflight_does_not_con
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("get_pool", "pool_a"),
         ("add_vms_to_pool", ("pool_b", [1057])),
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
@@ -592,10 +685,12 @@ async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_
     from noa_api.proxmox.tools import pool_tools
 
     server = _server()
+    source_pool_before = _pool_payload("pool_a", [{"vmid": 1057}])
     state = _ScriptedClientState(
         get_pool_results={
             "pool_a": [
-                _pool_payload("pool_a", [{"vmid": 1057}]),
+                source_pool_before,
+                source_pool_before,
                 source_pool_after_add,
             ],
             "pool_b": [
@@ -611,7 +706,7 @@ async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
         remove_vms_from_pool_result={
@@ -647,6 +742,7 @@ async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("get_pool", "pool_a"),
         ("add_vms_to_pool", ("pool_b", [1057])),
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
@@ -677,7 +773,7 @@ async def test_proxmox_move_vms_between_pools_skips_remove_when_add_already_move
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
         remove_vms_from_pool_result={
@@ -694,7 +790,7 @@ async def test_proxmox_move_vms_between_pools_skips_remove_when_add_already_move
 
     scripted_state = _ScriptedClientState(
         get_pool_results={
-            "pool_a": [source_pool_before, source_pool_after_add],
+            "pool_a": [source_pool_before, source_pool_before, source_pool_after_add],
             "pool_b": [destination_pool_before, destination_pool_after_add],
         },
         get_user_result=state.get_user_result,
@@ -733,6 +829,7 @@ async def test_proxmox_move_vms_between_pools_skips_remove_when_add_already_move
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("get_pool", "pool_a"),
         ("add_vms_to_pool", ("pool_b", [1057])),
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
@@ -784,7 +881,7 @@ async def test_proxmox_move_vms_between_pools_adds_before_removing_and_refetches
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
         remove_vms_from_pool_result={
@@ -801,7 +898,12 @@ async def test_proxmox_move_vms_between_pools_adds_before_removing_and_refetches
 
     scripted_state = _ScriptedClientState(
         get_pool_results={
-            "pool_a": [source_pool_before, source_pool_after_add, source_pool_after],
+            "pool_a": [
+                source_pool_before,
+                source_pool_before,
+                source_pool_after_add,
+                source_pool_after,
+            ],
             "pool_b": [
                 destination_pool_before,
                 destination_pool_after,
@@ -852,6 +954,7 @@ async def test_proxmox_move_vms_between_pools_adds_before_removing_and_refetches
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("get_pool", "pool_a"),
         ("add_vms_to_pool", ("pool_b", [1057])),
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
@@ -881,7 +984,7 @@ async def test_proxmox_move_vms_between_pools_fails_closed_on_add_failure(
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={
             "ok": False,
@@ -917,6 +1020,7 @@ async def test_proxmox_move_vms_between_pools_fails_closed_on_add_failure(
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("get_pool", "pool_a"),
         ("add_vms_to_pool", ("pool_b", [1057])),
     ]
 
@@ -945,7 +1049,7 @@ async def test_proxmox_move_vms_between_pools_fails_when_remove_step_fails(
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
         remove_vms_from_pool_result={
@@ -962,7 +1066,7 @@ async def test_proxmox_move_vms_between_pools_fails_when_remove_step_fails(
 
     scripted_state = _ScriptedClientState(
         get_pool_results={
-            "pool_a": [source_pool_before, source_pool_after_add],
+            "pool_a": [source_pool_before, source_pool_before, source_pool_after_add],
             "pool_b": [destination_pool_before, destination_pool_after_add],
         },
         get_user_result=state.get_user_result,
@@ -992,6 +1096,7 @@ async def test_proxmox_move_vms_between_pools_fails_when_remove_step_fails(
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("get_pool", "pool_a"),
         ("add_vms_to_pool", ("pool_b", [1057])),
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
@@ -1038,7 +1143,7 @@ async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_
         get_effective_permissions_result={
             "ok": True,
             "message": "ok",
-            "data": {"/pool/pool_b": {"VM.Console": 1}},
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
         },
         add_vms_to_pool_result={"ok": True, "message": "ok", "data": "UPID:ADD"},
         remove_vms_from_pool_result={
@@ -1056,6 +1161,7 @@ async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_
     scripted_state = _ScriptedClientState(
         get_pool_results={
             "pool_a": [
+                source_pool_before,
                 source_pool_before,
                 source_pool_after_add,
                 source_pool_after_move,
@@ -1093,6 +1199,7 @@ async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_
         ("get_pool", "pool_b"),
         ("get_user", "l1@biznetgio.com@pve"),
         ("get_effective_permissions", ("l1@biznetgio.com@pve", "/pool/pool_b")),
+        ("get_pool", "pool_a"),
         ("add_vms_to_pool", ("pool_b", [1057])),
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),

@@ -75,6 +75,9 @@ def _install_client(monkeypatch, responses: dict[str, dict[str, object]]) -> Non
             _ = (node, vmid)
             return responses["pending"]
 
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
     monkeypatch.setattr(vm_read_tools, "ProxmoxClient", _Client)
 
 

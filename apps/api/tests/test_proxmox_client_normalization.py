@@ -89,4 +89,5 @@ async def test_proxmox_client_update_qemu_config_posts_form_encoded_body() -> No
         "ok": True,
         "message": "ok",
         "upid": "UPID:pve1:00000001:task",
+        "synchronous": False,
     }
