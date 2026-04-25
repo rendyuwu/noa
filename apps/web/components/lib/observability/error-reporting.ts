@@ -8,7 +8,7 @@ export type ReportContext = Record<string, ReportExtraValue | null | undefined>;
 
 const HANDLED_API_ERROR_CODES = new Set([
   "invalid_credentials",
-  "missing_bearer_token",
+  "missing_authentication",
   "invalid_token",
   "user_pending_approval",
   "admin_access_required",
