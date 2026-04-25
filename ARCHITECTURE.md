@@ -26,7 +26,7 @@ This document describes the implemented MVP architecture: a Next.js + assistant-
 Core entities:
 
 - Auth / RBAC / audit
-  - `users` (email, ldap_dn, is_active, last_login_at)
+  - `users` (email, display_name, ldap_dn, is_active, last_login_at)
   - `roles`, `user_roles`
   - `role_tool_permissions` (allowlist of tool names)
   - `audit_log` (append-only events)
@@ -170,9 +170,21 @@ Note: auth events (login success/failure) are recorded via telemetry/logging, no
   - captures the remote host key fingerprint
   - overwrites the pinned fingerprint on the WHM server record (TOFU refresh behavior)
   - runs a harmless SSH command to verify command execution
-- CSF/firewall tools use the SSH execution path rather than the WHM API token path
+- CSF and Imunify firewall tools use the SSH execution path rather than the WHM API token path; the firewall tools auto-detect which backend (CSF, Imunify, or both) is available on the target server
 - Normal SSH-backed tools require a pinned fingerprint to be present and fail closed if it is missing or does not match
 - See `docs/integrations/whm.md` for the exact current admin endpoints, upstream WHM calls, and SSH commands used by the implementation
+
+## Additional Subsystems
+
+- **Workflow template registry** (`core/workflows/`): Template-driven approval workflows with preflight validation, approval context, todo helpers, and postflight verification. Registry at `core/workflows/registry.py`, base types at `core/workflows/types.py`, with WHM and Proxmox family implementations.
+- **System prompt loader** (`core/prompts/loader.py`): Loads the bundled system prompt with env-var overrides (`LLM_SYSTEM_PROMPT`, `LLM_SYSTEM_PROMPT_PATH`, `LLM_SYSTEM_PROMPT_EXTRA_PATHS`).
+- **Tool error sanitizer** (`core/tool_error_sanitizer.py`): Sanitizes tool execution errors before exposing to the LLM — redacts raw exceptions, maps to safe error codes.
+- **Route telemetry** (`api/route_telemetry.py`): Shared telemetry helpers (`_safe_trace`, `_safe_metric`, `_safe_report`) used across all route modules.
+- **OpenTelemetry** (`core/telemetry.py`, `core/telemetry_opentelemetry.py`): Optional OTLP-based tracing and metrics export, disabled by default.
+- **Sentry frontend** (`@sentry/nextjs`): Optional frontend error reporting, disabled by default. Adapter at `components/lib/observability/`.
+- **Thread service layer** (`api/threads/`): Repository, service, title generation, and schemas for thread operations.
+- **Server admin service layers** (`api/whm_admin/`, `api/proxmox_admin/`): Service and schema modules for WHM and Proxmox server admin operations.
+- **Imunify firewall integration** (`whm/integrations/imunify.py`, `whm/integrations/imunify_cli.py`): Dual CSF+Imunify firewall backend with auto-detection.
 
 ## What’s Next (Short List)
 

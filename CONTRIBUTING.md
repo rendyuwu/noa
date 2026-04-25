@@ -86,7 +86,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/).
 
 ### Scopes
 
-`ui`, `auth`, `api`, `db`, `agent`, `whm`, `proxmox`, `admin`, `ci`
+`ui`, `auth`, `api`, `db`, `agent`, `whm`, `proxmox`, `admin`, `ci`, `web`, `crypto`, `config`
 
 ### Rules
 
@@ -145,8 +145,8 @@ npm run test
 ### TypeScript (apps/web)
 
 - Linter: ESLint (flat config in `eslint.config.mjs`)
-- TypeScript strict mode
-- 2-space indentation, single quotes, semicolons
+- TypeScript (strict mode is not currently enabled)
+- 2-space indentation
 - `@/*` path aliases for imports
 - Named exports preferred
 - Server Components by default (Next.js App Router)
@@ -155,9 +155,9 @@ npm run test
 
 UI changes must follow `DESIGN.md`:
 
-- Grayscale palette with warm undertones (no chromatic colors except blue focus ring)
-- Border radius: 12px or 9999px (pill)
-- Zero shadows (ring-based elevation)
+- Warm neutral palette with warm undertones (Terracotta brand accent, Focus Blue for accessibility)
+- Border radius follows DESIGN.md scale (base 8px, standard 12px, generous 16px)
+- Prefers ring-based elevation (`0px 0px 0px 1px`); standard drop shadows used sparingly
 - Font weights: 400 or 500 only
 
 ## Testing
@@ -173,7 +173,7 @@ UI changes must follow `DESIGN.md`:
 ### Web
 
 - Framework: Vitest + Testing Library
-- Location: `apps/web/src/**/__tests__/`
+- Location: colocated as `*.test.ts`/`*.test.tsx` files alongside source in `apps/web/app/`, `apps/web/components/`, `apps/web/lib/`
 - Run: `npm run test`
 - New features need happy-path + edge-case tests
 - Bug fixes need regression tests
@@ -216,6 +216,6 @@ Key security rules:
 - Never commit secrets or credentials
 - Auth middleware changes require extra review
 - Input sanitization must not be weakened
-- Use parameterized queries only (SQLAlchemy / Prisma)
+- Use parameterized queries only (SQLAlchemy)
 - SSRF protection must not be bypassed
 - CHANGE tools must always require `reason` parameter

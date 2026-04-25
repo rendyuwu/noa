@@ -33,7 +33,7 @@ describe("error reporting", () => {
 
   const handledApiErrorCases = [
     { label: "invalid credentials", status: 401, detail: "Invalid credentials", errorCode: "invalid_credentials", requestId: "req-401-invalid-credentials" },
-    { label: "missing bearer token", status: 401, detail: "Missing bearer token", errorCode: "missing_bearer_token", requestId: "req-401-missing-bearer" },
+    { label: "missing authentication", status: 401, detail: "Missing authentication", errorCode: "missing_authentication", requestId: "req-401-missing-auth" },
     { label: "invalid token", status: 401, detail: "Invalid token", errorCode: "invalid_token", requestId: "req-401-invalid-token" },
     { label: "approval gating", status: 403, detail: "Pending", errorCode: "user_pending_approval", requestId: "req-403-pending" },
     { label: "request validation", status: 422, detail: "Validation failed", errorCode: "request_validation_error", requestId: "req-422" },

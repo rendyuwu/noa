@@ -3,7 +3,6 @@ from __future__ import annotations
 INVALID_CREDENTIALS = "invalid_credentials"
 AUTHENTICATION_SERVICE_UNAVAILABLE = "authentication_service_unavailable"
 LOGIN_RATE_LIMITED = "login_rate_limited"
-MISSING_BEARER_TOKEN = "missing_bearer_token"
 MISSING_AUTHENTICATION = "missing_authentication"
 INVALID_TOKEN = "invalid_token"
 USER_PENDING_APPROVAL = "user_pending_approval"

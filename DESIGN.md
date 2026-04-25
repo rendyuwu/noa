@@ -4,11 +4,17 @@ This is the canonical UI and styling reference for the NOA web app.
 Update this file when intentionally changing the visual system, component styling conventions,
 or interaction design language.
 
+> **Note**: NOA's design is inspired by Claude's warm editorial aesthetic but uses different
+> fonts and has its own implementation details. The actual fonts are **Newsreader** (serif),
+> **Geist** (sans), and **Geist Mono** (monospace) — loaded via `next/font/google` in `layout.tsx`.
+> Some sections below describe the aspirational design language; always verify against
+> `globals.css` and component source for the actual implementation.
+
 ## 1. Visual Theme & Atmosphere
 
 Claude's interface is a literary salon reimagined as a product page — warm, unhurried, and quietly intellectual. The entire experience is built on a parchment-toned canvas (`#f5f4ed`) that deliberately evokes the feeling of high-quality paper rather than a digital surface. Where most AI product pages lean into cold, futuristic aesthetics, Claude's design radiates human warmth, as if the AI itself has good taste in interior design.
 
-The signature move is the custom Anthropic Serif typeface — a medium-weight serif with generous proportions that gives every headline the gravitas of a book title. Combined with organic, hand-drawn-feeling illustrations in terracotta (`#c96442`), black, and muted green, the visual language says "thoughtful companion" rather than "powerful tool." The serif headlines breathe at tight-but-comfortable line-heights (1.10–1.30), creating a cadence that feels more like reading an essay than scanning a product page.
+The signature move is the custom Newsreader typeface — a medium-weight serif with generous proportions that gives every headline the gravitas of a book title. Combined with organic, hand-drawn-feeling illustrations in terracotta (`#c96442`), black, and muted green, the visual language says "thoughtful companion" rather than "powerful tool." The serif headlines breathe at tight-but-comfortable line-heights (1.10–1.30), creating a cadence that feels more like reading an essay than scanning a product page.
 
 What makes Claude's design truly distinctive is its warm neutral palette. Every gray has a yellow-brown undertone (`#5e5d59`, `#87867f`, `#4d4c48`) — there are no cool blue-grays anywhere. Borders are cream-tinted (`#f0eee6`, `#e8e6dc`), shadows use warm transparent blacks, and even the darkest surfaces (`#141413`, `#30302e`) carry a barely perceptible olive warmth. This chromatic consistency creates a space that feels lived-in and trustworthy.
 
@@ -52,7 +58,7 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 - **Border Warm** (`#e8e6dc`): Prominent borders, section dividers, and emphasized containment on light surfaces.
 - **Border Dark** (`#30302e`): Standard border on dark surfaces — maintains the warm tone.
 - **Ring Warm** (`#d1cfc5`): Shadow ring color for button hover/focus states.
-- **Ring Subtle** (`#dedc01`): Secondary ring variant for lighter interactive surfaces.
+- **Ring Subtle** (`#dedcd2`): Secondary ring variant for lighter interactive surfaces.
 - **Ring Deep** (`#c2c0b6`): Deeper ring for active/pressed states.
 
 ### Gradient System
@@ -61,36 +67,36 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 ## 3. Typography Rules
 
 ### Font Family
-- **Headline**: `Anthropic Serif`, with fallback: `Georgia`
-- **Body / UI**: `Anthropic Sans`, with fallback: `Arial`
-- **Code**: `Anthropic Mono`, with fallback: `Arial`
+- **Headline**: Newsreader (serif), with fallback: `ui-serif, Georgia`
+- **Body / UI**: Geist (sans), with fallback: `ui-sans-serif, system-ui`
+- **Code**: Geist Mono, with fallback: `ui-monospace, SFMono-Regular`
 
-*Note: These are custom typefaces. For external implementations, Georgia serves as the serif substitute and system-ui/Inter as the sans substitute.*
+*Note: Fonts are loaded via `next/font/google` in `apps/web/app/layout.tsx`. CSS variables: `--font-serif`, `--font-sans`, `--font-mono` defined in `globals.css`.*
 
 ### Hierarchy
 
 | Role | Font | Size | Weight | Line Height | Letter Spacing | Notes |
 |------|------|------|--------|-------------|----------------|-------|
-| Display / Hero | Anthropic Serif | 64px (4rem) | 500 | 1.10 (tight) | normal | Maximum impact, book-title presence |
-| Section Heading | Anthropic Serif | 52px (3.25rem) | 500 | 1.20 (tight) | normal | Feature section anchors |
-| Sub-heading Large | Anthropic Serif | 36–36.8px (~2.3rem) | 500 | 1.30 | normal | Secondary section markers |
-| Sub-heading | Anthropic Serif | 32px (2rem) | 500 | 1.10 (tight) | normal | Card titles, feature names |
-| Sub-heading Small | Anthropic Serif | 25–25.6px (~1.6rem) | 500 | 1.20 | normal | Smaller section titles |
-| Feature Title | Anthropic Serif | 20.8px (1.3rem) | 500 | 1.20 | normal | Small feature headings |
-| Body Serif | Anthropic Serif | 17px (1.06rem) | 400 | 1.60 (relaxed) | normal | Serif body text (editorial passages) |
-| Body Large | Anthropic Sans | 20px (1.25rem) | 400 | 1.60 (relaxed) | normal | Intro paragraphs |
-| Body / Nav | Anthropic Sans | 17px (1.06rem) | 400–500 | 1.00–1.60 | normal | Navigation links, UI text |
-| Body Standard | Anthropic Sans | 16px (1rem) | 400–500 | 1.25–1.60 | normal | Standard body, button text |
-| Body Small | Anthropic Sans | 15px (0.94rem) | 400–500 | 1.00–1.60 | normal | Compact body text |
-| Caption | Anthropic Sans | 14px (0.88rem) | 400 | 1.43 | normal | Metadata, descriptions |
-| Label | Anthropic Sans | 12px (0.75rem) | 400–500 | 1.25–1.60 | 0.12px | Badges, small labels |
-| Overline | Anthropic Sans | 10px (0.63rem) | 400 | 1.60 | 0.5px | Uppercase overline labels |
-| Micro | Anthropic Sans | 9.6px (0.6rem) | 400 | 1.60 | 0.096px | Smallest text |
-| Code | Anthropic Mono | 15px (0.94rem) | 400 | 1.60 | -0.32px | Inline code, terminal |
+| Display / Hero | Newsreader | 64px (4rem) | 500 | 1.10 (tight) | normal | Maximum impact, book-title presence |
+| Section Heading | Newsreader | 52px (3.25rem) | 500 | 1.20 (tight) | normal | Feature section anchors |
+| Sub-heading Large | Newsreader | 36–36.8px (~2.3rem) | 500 | 1.30 | normal | Secondary section markers |
+| Sub-heading | Newsreader | 32px (2rem) | 500 | 1.10 (tight) | normal | Card titles, feature names |
+| Sub-heading Small | Newsreader | 25–25.6px (~1.6rem) | 500 | 1.20 | normal | Smaller section titles |
+| Feature Title | Newsreader | 20.8px (1.3rem) | 500 | 1.20 | normal | Small feature headings |
+| Body Serif | Newsreader | 17px (1.06rem) | 400 | 1.60 (relaxed) | normal | Serif body text (editorial passages) |
+| Body Large | Geist | 20px (1.25rem) | 400 | 1.60 (relaxed) | normal | Intro paragraphs |
+| Body / Nav | Geist | 17px (1.06rem) | 400–500 | 1.00–1.60 | normal | Navigation links, UI text |
+| Body Standard | Geist | 16px (1rem) | 400–500 | 1.25–1.60 | normal | Standard body, button text |
+| Body Small | Geist | 15px (0.94rem) | 400–500 | 1.00–1.60 | normal | Compact body text |
+| Caption | Geist | 14px (0.88rem) | 400 | 1.43 | normal | Metadata, descriptions |
+| Label | Geist | 12px (0.75rem) | 400–500 | 1.25–1.60 | 0.12px | Badges, small labels |
+| Overline | Geist | 10px (0.63rem) | 400 | 1.60 | 0.5px | Uppercase overline labels |
+| Micro | Geist | 9.6px (0.6rem) | 400 | 1.60 | 0.096px | Smallest text |
+| Code | Geist Mono | 15px (0.94rem) | 400 | 1.60 | -0.32px | Inline code, terminal |
 
 ### Principles
-- **Serif for authority, sans for utility**: Anthropic Serif carries all headline content with medium weight (500), giving every heading the gravitas of a published title. Anthropic Sans handles all functional UI text — buttons, labels, navigation — with quiet efficiency.
-- **Single weight for serifs**: All Anthropic Serif headings use weight 500 — no bold, no light. This creates a consistent "voice" across all headline sizes, as if the same author wrote every heading.
+- **Serif for authority, sans for utility**: Newsreader carries all headline content with medium weight (500), giving every heading the gravitas of a published title. Geist handles all functional UI text — buttons, labels, navigation — with quiet efficiency.
+- **Single weight for serifs**: All Newsreader headings use weight 500 — no bold, no light. This creates a consistent "voice" across all headline sizes, as if the same author wrote every heading.
 - **Relaxed body line-height**: Most body text uses 1.60 line-height — significantly more generous than typical tech sites (1.4–1.5). This creates a reading experience closer to a book than a dashboard.
 - **Tight-but-not-compressed headings**: Line-heights of 1.10–1.30 for headings are tight but never claustrophobic. The serif letterforms need breathing room that sans-serif fonts don't.
 - **Micro letter-spacing on labels**: Small sans text (12px and below) uses deliberate letter-spacing (0.12px–0.5px) to maintain readability at tiny sizes.
@@ -102,32 +108,29 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 **Warm Sand (Secondary)**
 - Background: Warm Sand (`#e8e6dc`)
 - Text: Charcoal Warm (`#4d4c48`)
-- Padding: 0px 12px 0px 8px (asymmetric — icon-first layout)
-- Radius: comfortably rounded (8px)
-- Shadow: ring-based (`#e8e6dc 0px 0px 0px 0px, #d1cfc5 0px 0px 0px 1px`)
+- Radius: generously rounded (12px) — all button variants use 12px (`rounded-xl`)
+- Shadow: ring-based (`0px 0px 0px 1px var(--ring-warm)`)
 - The workhorse button — warm, unassuming, clearly interactive
 
 **White Surface**
 - Background: Pure White (`#ffffff`)
 - Text: Anthropic Near Black (`#141413`)
-- Padding: 8px 16px 8px 12px
 - Radius: generously rounded (12px)
 - Hover: shifts to secondary background color
 - Clean, elevated button for light surfaces
 
 **Dark Charcoal**
-- Background: Dark Surface (`#30302e`)
-- Text: Ivory (`#faf9f5`)
-- Padding: 0px 12px 0px 8px
-- Radius: comfortably rounded (8px)
-- Shadow: ring-based (`#30302e 0px 0px 0px 0px, ring 0px 0px 0px 1px`)
+- Background: Dark Warm (`#3d3d3a`)
+- Text: Card surface (Ivory in light mode)
+- Radius: generously rounded (12px)
+- Shadow: ring-based (`0px 0px 0px 1px var(--ring-warm)`)
 - The inverted variant for dark-on-light emphasis
 
 **Brand Terracotta**
 - Background: Terracotta Brand (`#c96442`)
-- Text: Ivory (`#faf9f5`)
-- Radius: 8–12px
-- Shadow: ring-based (`#c96442 0px 0px 0px 0px, #c96442 0px 0px 0px 1px`)
+- Text: Primary Foreground (Ivory)
+- Radius: generously rounded (12px)
+- Shadow: ring-based (`0px 0px 0px 1px var(--primary)`)
 - The primary CTA — the only button with chromatic color
 
 **Dark Primary**
@@ -225,7 +228,7 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 | Whisper (Level 3) | `rgba(0,0,0,0.05) 0px 4px 24px` | Elevated feature cards, product screenshots |
 | Inset (Level 4) | `inset 0px 0px 0px 1px` at 15% opacity | Active/pressed button states |
 
-**Shadow Philosophy**: Claude communicates depth through **warm-toned ring shadows** rather than traditional drop shadows. The signature `0px 0px 0px 1px` pattern creates a border-like halo that's softer than an actual border — it's a shadow pretending to be a border, or a border that's technically a shadow. When drop shadows do appear, they're extremely soft (0.05 opacity, 24px blur) — barely visible lifts that suggest floating rather than casting.
+**Shadow Philosophy**: NOA's primary depth mechanism is **warm-toned ring shadows** (`0px 0px 0px 1px`) creating border-like depth without visible borders. Standard Tailwind drop shadows (`shadow-sm`, `shadow-md`, `shadow-lg`, `shadow-xl`) are also used throughout the codebase for cards, modals, docks, and elevated content. The ring shadows handle interactive states (buttons, hover); drop shadows handle structural elevation (modals, floating panels, approval docks).
 
 ### Decorative Depth
 - **Light/Dark alternation**: The most dramatic depth effect comes from alternating between Parchment (`#f5f4ed`) and Near Black (`#141413`) sections — entire sections shift elevation by changing the ambient light level.
@@ -235,7 +238,7 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 
 ### Do
 - Use Parchment (`#f5f4ed`) as the primary light background — the warm cream tone IS the Claude personality
-- Use Anthropic Serif at weight 500 for all headlines — the single-weight consistency is intentional
+- Use Newsreader at weight 500 for all headlines — the single-weight consistency is intentional
 - Use Terracotta Brand (`#c96442`) only for primary CTAs and the highest-signal brand moments
 - Keep all neutrals warm-toned — every gray should have a yellow-brown undertone
 - Use ring shadows (`0px 0px 0px 1px`) for interactive element states instead of drop shadows
@@ -246,26 +249,31 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 
 ### Don't
 - Don't use cool blue-grays anywhere — the palette is exclusively warm-toned
-- Don't use bold (700+) weight on Anthropic Serif — weight 500 is the ceiling for serifs
+- Don't use bold (700+) weight on Newsreader — weight 500 is the ceiling for serifs
 - Don't introduce saturated colors beyond Terracotta — the palette is deliberately muted
 - Don't use sharp corners (< 6px radius) on buttons or cards — softness is core to the identity
 - Don't apply heavy drop shadows — depth comes from ring shadows and background color shifts
 - Don't use pure white (`#ffffff`) as a page background — Parchment (`#f5f4ed`) or Ivory (`#faf9f5`) are always warmer
 - Don't use geometric/tech-style illustrations — Claude's illustrations are organic and hand-drawn-feeling
 - Don't reduce body line-height below 1.40 — the generous spacing supports the editorial personality
-- Don't use monospace fonts for non-code content — Anthropic Mono is strictly for code
+- Don't use monospace fonts for non-code content — Geist Mono is strictly for code
 - Don't mix in sans-serif for headlines — the serif/sans split is the typographic identity
 
 ## 8. Responsive Behavior
 
 ### Breakpoints
-| Name | Width | Key Changes |
-|------|-------|-------------|
-| Small Mobile | <479px | Minimum layout, stacked everything, compact typography |
-| Mobile | 479–640px | Single column, hamburger nav, reduced heading sizes |
-| Large Mobile | 640–767px | Slightly wider content area |
-| Tablet | 768–991px | 2-column grids begin, condensed nav |
-| Desktop | 992px+ | Full multi-column layout, expanded nav, maximum hero typography (64px) |
+
+NOA uses Tailwind v4 default breakpoints:
+
+| Name | Width | Tailwind Class | Key Changes |
+|------|-------|----------------|-------------|
+| Small Mobile | <640px | (default) | Minimum layout, stacked everything, compact typography |
+| Mobile | 640px+ | `sm:` | Single column, slightly wider content area |
+| Tablet | 768px+ | `md:` | 2-column grids begin, condensed nav |
+| Desktop | 1024px+ | `lg:` | Full multi-column layout, expanded nav |
+| Wide | 1280px+ | `xl:` | Maximum content width |
+
+Custom: `@media (max-width: 900px)` for `.assistant-grid` layout override.
 
 ### Touch Targets
 - Buttons use generous padding (8–16px vertical minimum)
@@ -300,17 +308,17 @@ What makes Claude's design truly distinctive is its warm neutral palette. Every 
 - Dark Surface: "Dark Surface (#30302e)"
 
 ### Example Component Prompts
-- "Create a hero section on Parchment (#f5f4ed) with a headline at 64px Anthropic Serif weight 500, line-height 1.10. Use Anthropic Near Black (#141413) text. Add a subtitle in Olive Gray (#5e5d59) at 20px Anthropic Sans with 1.60 line-height. Place a Terracotta Brand (#c96442) CTA button with Ivory text, 12px radius."
-- "Design a feature card on Ivory (#faf9f5) with a 1px solid Border Cream (#f0eee6) border and comfortably rounded corners (8px). Title in Anthropic Serif at 25px weight 500, description in Olive Gray (#5e5d59) at 16px Anthropic Sans. Add a whisper shadow (rgba(0,0,0,0.05) 0px 4px 24px)."
-- "Build a dark section on Anthropic Near Black (#141413) with Ivory (#faf9f5) headline text in Anthropic Serif at 52px weight 500. Use Warm Silver (#b0aea5) for body text. Borders in Dark Surface (#30302e)."
+- "Create a hero section on Parchment (#f5f4ed) with a headline at 64px Newsreader weight 500, line-height 1.10. Use Anthropic Near Black (#141413) text. Add a subtitle in Olive Gray (#5e5d59) at 20px Geist with 1.60 line-height. Place a Terracotta Brand (#c96442) CTA button with Ivory text, 12px radius."
+- "Design a feature card on Ivory (#faf9f5) with a 1px solid Border Cream (#f0eee6) border and comfortably rounded corners (8px). Title in Newsreader at 25px weight 500, description in Olive Gray (#5e5d59) at 16px Geist. Add a whisper shadow (rgba(0,0,0,0.05) 0px 4px 24px)."
+- "Build a dark section on Anthropic Near Black (#141413) with Ivory (#faf9f5) headline text in Newsreader at 52px weight 500. Use Warm Silver (#b0aea5) for body text. Borders in Dark Surface (#30302e)."
 - "Create a button in Warm Sand (#e8e6dc) with Charcoal Warm (#4d4c48) text, 8px radius, and a ring shadow (0px 0px 0px 1px #d1cfc5). Padding: 0px 12px 0px 8px."
-- "Design a model comparison grid with three cards on Ivory surfaces. Each card gets a Border Warm (#e8e6dc) top border, model name in Anthropic Serif at 25px, and description in Olive Gray at 15px Anthropic Sans."
+- "Design a model comparison grid with three cards on Ivory surfaces. Each card gets a Border Warm (#e8e6dc) top border, model name in Newsreader at 25px, and description in Olive Gray at 15px Geist."
 
 ### Iteration Guide
 1. Focus on ONE component at a time
 2. Reference specific color names — "use Olive Gray (#5e5d59)" not "make it gray"
 3. Always specify warm-toned variants — no cool grays
-4. Describe serif vs sans usage explicitly — "Anthropic Serif for the heading, Anthropic Sans for the label"
+4. Describe serif vs sans usage explicitly — "Newsreader for the heading, Geist for the label"
 5. For shadows, use "ring shadow (0px 0px 0px 1px)" or "whisper shadow" — never generic "drop shadow"
 6. Specify the warm background — "on Parchment (#f5f4ed)" or "on Near Black (#141413)"
 7. Keep illustrations organic and conceptual — describe "hand-drawn-feeling" style

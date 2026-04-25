@@ -39,7 +39,7 @@ paste logs here
 - **OS:** (e.g., macOS 15, Ubuntu 24.04)
 - **Node.js version:** (e.g., 20.x)
 - **Python version:** (e.g., 3.12)
-- **NOA version/commit:** (e.g., `main@abc1234`)
+- **NOA version/commit:** (e.g., `master@abc1234`)
 
 ## Additional Context
 
