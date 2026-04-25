@@ -174,8 +174,6 @@ Note: auth events (login success/failure) are recorded via telemetry/logging, no
 - Normal SSH-backed tools require a pinned fingerprint to be present and fail closed if it is missing or does not match
 - See `docs/integrations/whm.md` for the exact current admin endpoints, upstream WHM calls, and SSH commands used by the implementation
 
-## What’s Next (Short List)
-
 ## Additional Subsystems
 
 - **Workflow template registry** (`core/workflows/`): Template-driven approval workflows with preflight validation, approval context, todo helpers, and postflight verification. Registry at `core/workflows/registry.py`, base types at `core/workflows/types.py`, with WHM and Proxmox family implementations.
