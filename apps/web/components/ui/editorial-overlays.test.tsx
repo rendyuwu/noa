@@ -98,7 +98,7 @@ describe("editorial overlays", () => {
 
     expect(sheetContent).not.toBeNull();
     expect(sheetContent).toHaveClass("bg-card/95");
-    expect(sheetContent).toHaveClass("shadow-[0_24px_60px_-32px_rgba(15,23,42,0.3)]");
+    expect(sheetContent).toHaveClass("shadow-[0_0_0_1px_var(--ring-warm),0_24px_60px_-32px_rgba(20,20,19,0.3)]");
     expect(sheetContent).toHaveClass("inset-y-0");
     expect(sheetContent).toHaveClass("right-0");
     expect(sheetContent).toHaveClass("w-3/4");
@@ -169,7 +169,7 @@ describe("editorial overlays", () => {
     expect(menuContent).not.toBeNull();
     expect(menuContent).toHaveClass("rounded-2xl");
     expect(menuContent).toHaveClass("bg-popover/95");
-    expect(menuContent).toHaveClass("shadow-[0_16px_40px_-24px_rgba(15,23,42,0.25)]");
+    expect(menuContent).toHaveClass("shadow-[0_0_0_1px_var(--ring-warm),0_16px_40px_-24px_rgba(20,20,19,0.25)]");
   });
 
   it("uses the softer scrollbar tone in both implementations", () => {

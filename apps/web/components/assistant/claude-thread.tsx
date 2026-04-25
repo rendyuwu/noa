@@ -154,7 +154,7 @@ function EmptyLanding() {
       </div>
 
       <div className="noa-landing-anim-2 mt-8 w-full max-w-2xl">
-        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-[1.75rem] border border-border/70 bg-card/95 p-1 shadow-[0_18px_60px_-38px_rgba(15,23,42,0.45)] ring-1 ring-border/25 backdrop-blur-md">
+        <ComposerPrimitive.Root className="flex w-full max-w-2xl flex-col rounded-[1.75rem] border border-border/70 bg-card/95 p-1 shadow-[0_0_0_1px_var(--ring-warm),0_18px_60px_-38px_rgba(20,20,19,0.45)] ring-1 ring-border/25 backdrop-blur-md">
           <div className="m-4 flex flex-col gap-3.5">
             <ScrollArea
               className="w-full"
@@ -288,7 +288,7 @@ export const ClaudeThread: FC<{
           ) : null}
 
 
-          <ComposerPrimitive.Root className="flex w-full flex-col rounded-[1.75rem] border border-border/70 bg-card/95 p-1 shadow-[0_18px_60px_-40px_rgba(15,23,42,0.42)] transition-shadow duration-200 hover:shadow-[0_22px_70px_-44px_rgba(15,23,42,0.5)] focus-within:shadow-[0_22px_70px_-44px_rgba(15,23,42,0.5)]">
+          <ComposerPrimitive.Root className="flex w-full flex-col rounded-[1.75rem] border border-border/70 bg-card/95 p-1 shadow-[0_0_0_1px_var(--ring-warm),0_18px_60px_-40px_rgba(20,20,19,0.42)] transition-shadow duration-200 hover:shadow-[0_0_0_1px_var(--ring-warm),0_22px_70px_-44px_rgba(20,20,19,0.5)] focus-within:shadow-[0_0_0_1px_var(--ring-warm),0_22px_70px_-44px_rgba(20,20,19,0.5)]">
             <div className="m-3.5 flex flex-col gap-3.5">
               <div className="relative">
                 <ScrollArea className="w-full" viewportClassName="wrap-break-word max-h-96">

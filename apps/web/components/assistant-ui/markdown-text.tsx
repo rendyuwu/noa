@@ -44,7 +44,7 @@ export const MarkdownText = (_props: any) => {
         table: ({ className, node: _node, ...props }: any) => (
           <ScrollArea
             data-testid="md-table-scroll"
-            className="my-2 w-full rounded-xl border border-border bg-card/60 shadow-sm backdrop-blur-sm"
+            className="my-2 w-full rounded-xl border border-border bg-card/60 shadow-[0_0_0_1px_var(--ring-warm)] backdrop-blur-sm"
           >
             <table
               {...props}

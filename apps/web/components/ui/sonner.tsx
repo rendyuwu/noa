@@ -17,7 +17,7 @@ export function Toaster({ ...props }: ToasterProps) {
       toastOptions={{
         classNames: {
           toast:
-            "group toast rounded-2xl border border-border bg-card/95 text-card-foreground shadow-[0_12px_30px_-18px_rgba(15,23,42,0.35)] group-[.toaster]:bg-card/95 group-[.toaster]:text-card-foreground group-[.toaster]:border-border group-[.toaster]:shadow-[0_12px_30px_-18px_rgba(15,23,42,0.35)]",
+            "group toast rounded-2xl border border-border bg-card/95 text-card-foreground shadow-[0_0_0_1px_var(--ring-warm),0_12px_30px_-18px_rgba(20,20,19,0.35)] group-[.toaster]:bg-card/95 group-[.toaster]:text-card-foreground group-[.toaster]:border-border group-[.toaster]:shadow-[0_0_0_1px_var(--ring-warm),0_12px_30px_-18px_rgba(20,20,19,0.35)]",
           description: "group-[.toast]:text-muted-foreground",
           actionButton:
             "group-[.toast]:rounded-full group-[.toast]:bg-primary group-[.toast]:text-primary-foreground",

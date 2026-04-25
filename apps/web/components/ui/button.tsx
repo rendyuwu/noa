@@ -9,13 +9,21 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground shadow-sm hover:bg-primary/90",
+        /* Brand Terracotta — DESIGN.md §4: primary CTA, only chromatic button */
+        default: "bg-primary text-primary-foreground shadow-[0_0_0_1px_var(--primary)] hover:bg-primary/90",
         destructive:
-          "bg-destructive text-white shadow-sm hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-white shadow-[0_0_0_1px_var(--destructive)] hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+        /* Warm Sand — DESIGN.md §4: workhorse secondary button */
         outline:
-          "border border-border bg-card/80 text-foreground shadow-sm hover:bg-accent/60 hover:text-foreground dark:bg-card/20 dark:hover:bg-card/30",
+          "border border-border bg-secondary text-charcoal-warm shadow-[0_0_0_1px_var(--ring-warm)] hover:bg-secondary/80 dark:bg-card/20 dark:text-foreground dark:hover:bg-card/30",
         secondary:
-          "bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/90",
+          "bg-secondary text-secondary-foreground shadow-[0_0_0_1px_var(--ring-warm)] hover:bg-secondary/90",
+        /* White Surface — DESIGN.md §4: clean elevated button */
+        "white-surface":
+          "bg-white text-foreground shadow-[0_0_0_1px_var(--ring-warm)] rounded-xl hover:bg-secondary dark:bg-card dark:text-card-foreground dark:hover:bg-accent",
+        /* Dark Charcoal — DESIGN.md §4: inverted variant */
+        "dark-charcoal":
+          "bg-dark-warm text-card shadow-[0_0_0_1px_var(--ring-deep)] hover:bg-dark-warm/90 dark:bg-card dark:text-card-foreground",
         ghost:
           "hover:bg-accent/60 hover:text-accent-foreground dark:hover:bg-accent/40",
         link: "text-primary underline-offset-4 hover:underline",
