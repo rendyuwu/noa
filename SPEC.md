@@ -221,7 +221,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T21 | x | Fix `deps.py` pending-approval commit: add `error_code` attribute to `AuthPendingApprovalError`; or change check to `isinstance` | V56,B1 |
 | T22 | x | Fix CORS origins validator `_normalize_cors_origins` to handle JSON array strings per C9 (same pattern as `_normalize_prompt_extra_paths`) | V57,B3 |
 | T23 | x | Fix `delete_user` self-delete guard: move `SelfDeleteAdminError` check inside `if is_admin_user` block; use generic error for non-admin self-delete | V58,B4 |
-| T24 | | Rewrite DESIGN.md to match actual NOA console (OKLCH tokens, sidebar layout, Newsreader/Geist fonts, shadcn button variants, actual component inventory). Current doc describes a Claude marketing page, not the implemented app. | C2 |
+| T24 | x | Align codebase with DESIGN.md (canonical source: `getdesign claude`). Fixed all oklch color values to match DESIGN.md hex targets, replaced cool-slate shadows with warm ring-based system, added missing design tokens (coral-accent, charcoal-warm, olive-gray, stone-gray, dark-warm, warm-silver, ring-warm, ring-deep, focus-blue, border-warm), added button variants (white-surface, dark-charcoal), added font-serif to DialogTitle/SheetTitle. | C2 |
 
 ## §B Bugs
 
