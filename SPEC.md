@@ -204,7 +204,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - V61. PR template includes: summary, changes list, testing checklist (unit, lint, build, manual), security checklist (no secrets, no auth bypass, no raw SQL), related issues (`Closes #`).
 - V62. CONTRIBUTING.md documents: prerequisites, dev setup, branch naming (`feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`), Conventional Commits format, PR process, code style per app, testing requirements.
 - V63. CODE_OF_CONDUCT.md uses Contributor Covenant v2.1. Enforcement contact matches C14.
-- V64. SECURITY.md documents: supported versions (latest `main`), reporting channel (email + GitHub private advisory), response timeline (ack 48h, assessment 5 business days), severity-based fix timeline.
+- V64. SECURITY.md documents: supported versions (latest `master`), reporting channel (email + GitHub private advisory), response timeline (ack 48h, assessment 5 business days), severity-based fix timeline.
 - V65. Web CI workflow triggers on `apps/web/**` changes. Steps: checkout, setup Node 20, install deps, lint (`npm run lint`), typecheck (`npm run typecheck`), test (`npm run test`).
 - V66. API CI workflow triggers on `apps/api/**` changes. Steps: checkout, setup Python 3.12, setup uv, sync, lint (`uv run ruff check`), test (`uv run pytest -q`).
 - V67. Issue template config (`config.yml`) disables blank issues, provides external links to discussions/docs if applicable.
