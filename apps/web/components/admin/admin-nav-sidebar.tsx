@@ -96,7 +96,7 @@ export function AdminNavSidebar({
 
   if (variant === "collapsed") {
     return (
-      <nav className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar/95 py-3 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
+      <nav className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar/95 py-3 shadow-[inset_-1px_0_0_var(--ring-warm)]">
         <div className="flex flex-1 flex-col items-center gap-1">
           {onExpand ? (
             <RailItem label="Expand sidebar">
@@ -161,7 +161,7 @@ export function AdminNavSidebar({
     <nav
       className={[
         "flex h-full flex-col",
-        inDrawer ? "" : "border-r border-sidebar-border/80 bg-sidebar/95 shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]",
+        inDrawer ? "" : "border-r border-sidebar-border/80 bg-sidebar/95 shadow-[inset_-1px_0_0_var(--ring-warm)]",
       ].join(" ")}
     >
       <div className="pt-3 font-sans">

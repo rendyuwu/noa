@@ -60,7 +60,7 @@ function SheetContent({
       <SheetPrimitive.Content
         data-slot="sheet-content"
         className={cn(
-          "fixed z-50 flex flex-col gap-4 overflow-hidden border border-border/70 bg-card/95 shadow-[0_24px_60px_-32px_rgba(15,23,42,0.3)] transition ease-in-out backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
+          "fixed z-50 flex flex-col gap-4 overflow-hidden border border-border/70 bg-card/95 shadow-[0_0_0_1px_var(--ring-warm),0_24px_60px_-32px_rgba(20,20,19,0.3)] transition ease-in-out backdrop-blur-sm data-[state=closed]:animate-out data-[state=closed]:duration-300 data-[state=open]:animate-in data-[state=open]:duration-500",
           side === "right" &&
             "inset-y-0 right-0 h-full w-3/4 rounded-l-[28px] border-l sm:max-w-sm data-[state=closed]:slide-out-to-right data-[state=open]:slide-in-from-right",
           side === "left" &&
@@ -112,7 +112,7 @@ function SheetTitle({
   return (
     <SheetPrimitive.Title
       data-slot="sheet-title"
-      className={cn("text-lg font-semibold tracking-[-0.01em] text-foreground", className)}
+      className={cn("font-serif text-lg font-semibold tracking-[-0.01em] text-foreground", className)}
       {...props}
     />
   )

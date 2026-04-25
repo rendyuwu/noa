@@ -391,7 +391,7 @@ export function ClaudeThreadList({
   const closeActionLabel = onCollapseSidebar ? "Collapse sidebar" : "Close sidebar";
 
   return (
-    <ThreadListPrimitive.Root className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]">
+    <ThreadListPrimitive.Root className="flex h-full flex-col border-r border-sidebar-border/80 bg-sidebar shadow-[inset_-1px_0_0_var(--ring-warm)]">
       <div className="pt-4 font-sans">
         <div className="flex items-start justify-between gap-3 px-4">
           <div className="min-w-0">

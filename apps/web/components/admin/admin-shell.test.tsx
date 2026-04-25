@@ -115,7 +115,7 @@ describe("AdminShell", () => {
     expect(container.querySelector("aside")).not.toHaveClass(
       "border-r",
       "bg-sidebar/95",
-      "shadow-[inset_-1px_0_0_rgba(148,163,184,0.12)]",
+      "shadow-[inset_-1px_0_0_var(--ring-warm)]",
     );
     expect(screen.getByTestId("admin-nav-sidebar")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-variant")).toHaveTextContent("expanded");

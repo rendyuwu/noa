@@ -32,18 +32,18 @@ describe("editorial shared controls", () => {
 
     expect(defaultContainer.firstElementChild).toHaveClass("rounded-xl");
     expect(defaultContainer.firstElementChild).toHaveClass("bg-primary");
-    expect(defaultContainer.firstElementChild).toHaveClass("shadow-sm");
+    expect(defaultContainer.firstElementChild).toHaveClass("shadow-[0_0_0_1px_var(--primary)]");
 
     expect(secondaryContainer.firstElementChild).toHaveClass("rounded-xl");
     expect(secondaryContainer.firstElementChild).toHaveClass("bg-secondary");
-    expect(secondaryContainer.firstElementChild).toHaveClass("shadow-sm");
+    expect(secondaryContainer.firstElementChild).toHaveClass("shadow-[0_0_0_1px_var(--ring-warm)]");
 
     expect(outlineContainer.firstElementChild).toHaveClass("rounded-xl");
-    expect(outlineContainer.firstElementChild).toHaveClass("bg-card/80");
-    expect(outlineContainer.firstElementChild).toHaveClass("border-border");
+    expect(outlineContainer.firstElementChild).toHaveClass("bg-secondary");
+    expect(outlineContainer.firstElementChild).toHaveClass("text-charcoal-warm");
 
-    expect(ghostContainer.firstElementChild).not.toHaveClass("shadow-sm");
-    expect(linkContainer.firstElementChild).not.toHaveClass("shadow-sm");
+    expect(ghostContainer.firstElementChild).not.toHaveClass("shadow-[0_0_0_1px_var(--ring-warm)]");
+    expect(linkContainer.firstElementChild).not.toHaveClass("shadow-[0_0_0_1px_var(--ring-warm)]");
   });
 
   it("uses the editorial contained input surface", () => {

@@ -61,7 +61,7 @@ describe("globals.css", () => {
     expect(getOklchLightness(darkBlock, "sidebar")).toBeGreaterThanOrEqual(0.14);
     expect(getOklchLightness(darkBlock, "card")).toBeGreaterThanOrEqual(0.19);
     expect(getOklchLightness(darkBlock, "border")).toBeGreaterThanOrEqual(0.29);
-    expect(getOklchLightness(darkBlock, "foreground")).toBeLessThanOrEqual(0.92);
+    expect(getOklchLightness(darkBlock, "foreground")).toBeLessThanOrEqual(0.99);
   });
 
   it("adds dark-only typography tweaks", () => {
@@ -77,12 +77,14 @@ describe("globals.css", () => {
     expect(css).toMatch(
       /--font-serif:\s*var\(--font-newsreader\),\s*ui-serif,\s*Georgia,\s*"Iowan Old Style",\s*"Palatino Linotype",\s*Palatino,\s*"Times New Roman",\s*Times,\s*serif;/,
     );
-    expect(css).toMatch(/:root\s*\{[\s\S]*--background:\s*oklch\(0\.985\s+0\.006\s+78\);/);
-    expect(css).toMatch(/:root\s*\{[\s\S]*--card:\s*oklch\(0\.996\s+0\.003\s+78\);/);
-    expect(css).toMatch(/:root\s*\{[\s\S]*--primary:\s*oklch\(0\.360\s+0\.075\s+46\);/);
-    expect(css).toMatch(/\.dark\s*\{[\s\S]*--background:\s*oklch\(0\.170\s+0\.010\s+50\);/);
-    expect(css).toMatch(/\.dark\s*\{[\s\S]*--card:\s*oklch\(0\.235\s+0\.012\s+50\);/);
-    expect(css).toMatch(/\.dark\s*\{[\s\S]*--primary:\s*oklch\(0\.880\s+0\.018\s+90\);/);
+    /* DESIGN.md §2: Parchment #f5f4ed, Ivory #faf9f5, Terracotta #c96442 */
+    expect(css).toMatch(/:root\s*\{[\s\S]*--background:\s*oklch\(0\.966\s+0\.009\s+100\.0\);/);
+    expect(css).toMatch(/:root\s*\{[\s\S]*--card:\s*oklch\(0\.982\s+0\.005\s+95\.1\);/);
+    expect(css).toMatch(/:root\s*\{[\s\S]*--primary:\s*oklch\(0\.617\s+0\.138\s+39\.0\);/);
+    /* DESIGN.md §2 dark: Near Black #141413, Dark Surface #30302e, Coral Accent #d97757 */
+    expect(css).toMatch(/\.dark\s*\{[\s\S]*--background:\s*oklch\(0\.191\s+0\.002\s+106\.6\);/);
+    expect(css).toMatch(/\.dark\s*\{[\s\S]*--card:\s*oklch\(0\.308\s+0\.004\s+106\.6\);/);
+    expect(css).toMatch(/\.dark\s*\{[\s\S]*--primary:\s*oklch\(0\.672\s+0\.131\s+38\.8\);/);
     expect(css).toMatch(/\.input\s*\{/);
     expect(css).toMatch(/\.input\s*\{[\s\S]*rounded-xl/);
     expect(css).toMatch(/\.input\s*\{[\s\S]*bg-card\/80/);
