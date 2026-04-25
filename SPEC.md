@@ -17,6 +17,9 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - C9. Env vars for list/set configs use JSON arrays.
 - C10. No secrets in git (`.env*` gitignored except `.env.example`).
 - C11. Caveman communication style per AGENTS.md.
+- C12. GitHub community health files follow GitHub's community standards. Issue/PR templates use YAML front matter. Conventional Commits enforced in contributing guide.
+- C13. CI runs on every push/PR for both apps. Web: lint + typecheck + test. API: lint + test. Matrix strategy where applicable.
+- C14. Security contact: `github@rendy.dev`. Coordinated disclosure policy.
 
 ## §I Interfaces
 
@@ -194,6 +197,18 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - V57. CORS origins validator handles JSON array strings (e.g. `["http://localhost:3000"]`) per C9, same as `llm_system_prompt_extra_paths`.
 - V58. `delete_user` self-delete guard only fires when target user is admin. Non-admin self-delete → generic error, not "Admins cannot delete their own account".
 
+### GitHub Workflow
+
+- V59. Bug report template requires: description, steps to reproduce, expected vs actual behavior, environment (browser, OS, Node/Python version). Auto-labels `bug`.
+- V60. Feature request template requires: problem statement, proposed solution, alternatives considered. Auto-labels `feature`.
+- V61. PR template includes: summary, changes list, testing checklist (unit, lint, build, manual), security checklist (no secrets, no auth bypass, no raw SQL), related issues (`Closes #`).
+- V62. CONTRIBUTING.md documents: prerequisites, dev setup, branch naming (`feat/`, `fix/`, `docs/`, `refactor/`, `test/`, `chore/`), Conventional Commits format, PR process, code style per app, testing requirements.
+- V63. CODE_OF_CONDUCT.md uses Contributor Covenant v2.1. Enforcement contact matches C14.
+- V64. SECURITY.md documents: supported versions (latest `master`), reporting channel (email + GitHub private advisory), response timeline (ack 48h, assessment 5 business days), severity-based fix timeline.
+- V65. Web CI workflow triggers on `apps/web/**` changes. Steps: checkout, setup Node 20, install deps, lint (`npm run lint`), typecheck (`npm run typecheck`), test (`npm run test`).
+- V66. API CI workflow triggers on `apps/api/**` changes. Steps: checkout, setup Python 3.12, setup uv, sync, lint (`uv run ruff check`), test (`uv run pytest -q`).
+- V67. Issue template config (`config.yml`) disables blank issues, provides external links to discussions/docs if applicable.
+
 ## §T Tasks
 
 | id | status | task | cites |
@@ -222,6 +237,16 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T22 | x | Fix CORS origins validator `_normalize_cors_origins` to handle JSON array strings per C9 (same pattern as `_normalize_prompt_extra_paths`) | V57,B3 |
 | T23 | x | Fix `delete_user` self-delete guard: move `SelfDeleteAdminError` check inside `if is_admin_user` block; use generic error for non-admin self-delete | V58,B4 |
 | T24 | x | Align codebase with DESIGN.md (canonical source: `getdesign claude`). Fixed all oklch color values to match DESIGN.md hex targets, replaced cool-slate shadows with warm ring-based system, added missing design tokens (coral-accent, charcoal-warm, olive-gray, stone-gray, dark-warm, warm-silver, ring-warm, ring-deep, focus-blue, border-warm), added button variants (white-surface, dark-charcoal), added font-serif to DialogTitle/SheetTitle. | C2 |
+| T25 | x | Create `.github/ISSUE_TEMPLATE/bug_report.md` — YAML front matter, auto-label `bug`, title prefix `bug: `, sections: description, steps to reproduce, expected/actual behavior, environment | V59,C12 |
+| T26 | x | Create `.github/ISSUE_TEMPLATE/feature_request.md` — YAML front matter, auto-label `feature`, title prefix `feat: `, sections: problem statement, proposed solution, alternatives, design considerations | V60,C12 |
+| T27 | x | Create `.github/ISSUE_TEMPLATE/config.yml` — disable blank issues, add external link to README | V67,C12 |
+| T28 | x | Create `.github/pull_request_template.md` — summary, changes, testing checklist, security checklist, related issues | V61,C12 |
+| T29 | x | Create `CONTRIBUTING.md` — prerequisites, dev setup (Docker/Postgres/API/Web), branch naming, Conventional Commits, PR process, code style (Python ruff + TS ESLint), testing (pytest + vitest) | V62,C12 |
+| T30 | x | Create `CODE_OF_CONDUCT.md` — Contributor Covenant v2.1, enforcement contact `github@rendy.dev` | V63,C14 |
+| T31 | x | Create `.github/SECURITY.md` — supported versions, reporting (email + private advisory), response timeline, severity tiers, security architecture summary | V64,C14 |
+| T32 | x | Create `.github/workflows/web-ci.yml` — trigger on `apps/web/**`, Node 20, install, lint, typecheck, test | V65,C13 |
+| T33 | x | Enhance `.github/workflows/api-scaffold-verify.yml` — add ruff lint step before pytest | V66,C13 |
+| T34 | x | Update `README.md` — add badges (CI status), contributing link, code of conduct link, security link, license placeholder | V62 |
 
 ## §B Bugs
 

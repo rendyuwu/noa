@@ -1,5 +1,8 @@
 # Project NOA
 
+[![API CI](https://github.com/rendyuwu/noa/actions/workflows/api-scaffold-verify.yml/badge.svg)](https://github.com/rendyuwu/noa/actions/workflows/api-scaffold-verify.yml)
+[![Web CI](https://github.com/rendyuwu/noa/actions/workflows/web-ci.yml/badge.svg)](https://github.com/rendyuwu/noa/actions/workflows/web-ci.yml)
+
 AI operations workspace: chat UI + controlled tools.
 
 The goal is a natural-language control center for infrastructure and operations.
@@ -115,3 +118,15 @@ Approval-oriented tool families use workflow templates on the API side to drive 
 - LLM streaming uses buffered provider chunks (not true token-level streaming to the client)
 - No multi-tenant orgs or shared threads (threads are owner-scoped)
 - The assistant workspace is intentionally styled as a Claude-like UI; some controls are visible-but-disabled ("Coming soon") for layout parity: attachments, tools menu, extended thinking toggle, model selector
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, coding standards, and PR process.
+
+## Code of Conduct
+
+This project follows the [Contributor Covenant v2.1](CODE_OF_CONDUCT.md).
+
+## Security
+
+To report a vulnerability, see [SECURITY.md](.github/SECURITY.md).

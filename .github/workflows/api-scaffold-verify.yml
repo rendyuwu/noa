@@ -13,12 +13,29 @@ on:
 jobs:
   api-checks:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: noa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     defaults:
       run:
         working-directory: apps/api
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libldap2-dev libsasl2-dev libssl-dev
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -30,6 +47,9 @@ jobs:
 
       - name: Sync dependencies
         run: uv sync
+
+      - name: Lint
+        run: uv run ruff check
 
       - name: Run tests
         run: uv run pytest -q
