@@ -46,7 +46,7 @@ Field rules:
 - `apps/web/components/lib/fetch-helper.ts`: remain the API error normalization boundary; only normalized unexpected failures become report candidates
 - `apps/web/app/error.tsx`: report route-level render failures once, then preserve the current user-facing fallback UI
 - global browser listeners: install one provider mounted from `apps/web/app/layout.tsx` to capture `error` and `unhandledrejection`
-- local adapter module: centralize enablement checks, filtering, deduping, and provider calls so app code does not depend on a specific reporting SDK
+- local adapter module: centralize enablement checks, filtering, deduping, and provider calls in `apps/web/components/lib/observability/error-reporting.ts` and `apps/web/components/lib/observability/error-reporting-provider.tsx` so app code does not depend on a specific reporting SDK (re-export shims exist at the parent `components/lib/` level)
 
 ## Config and Environment Expectations
 

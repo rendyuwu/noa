@@ -59,6 +59,9 @@ Notes:
 - `AUTH_BOOTSTRAP_ADMIN_EMAILS` must be a JSON array. `API_CORS_ALLOWED_ORIGINS` accepts either a JSON array or comma-separated string.
 - `NOA_DB_SECRET_KEY` is required for encrypted database-backed secrets (WHM API tokens, SSH credentials, Proxmox API tokens). Use a valid Fernet key. Generate one with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 - `NOA_DB_SECRET_KEY` must be exported in the shell environment (not just present in `.env`) for Alembic migrations that encrypt secrets.
+- `LLM_API_KEY` is required for the assistant runtime; there is no demo fallback path. Optionally set `LLM_MODEL` and `LLM_BASE_URL` to use a different OpenAI-compatible endpoint.
+- `POSTGRES_URL` defaults to `postgresql+asyncpg://postgres:postgres@localhost:5432/noa`. Override if your Postgres credentials differ.
+- `AUTH_JWT_SECRET` is auto-generated in dev but required in production (≥32 chars).
 - `python-ldap` may require OS packages to build (Ubuntu example: `sudo apt-get install -y libldap2-dev libsasl2-dev libssl-dev`).
 
 ### 3) Configure + run web
@@ -68,7 +71,7 @@ Create `./.env` from the repo-root `.env.example`.
 Notes:
 - The browser never calls the FastAPI backend directly. The web app calls same-origin `/api/...`, and a Next route handler proxies those requests server-side.
 - Configure the proxy with `NOA_API_URL=http://localhost:8000` (server-side; used by Next). `NEXT_PUBLIC_API_URL` is a legacy fallback; prefer `NOA_API_URL`.
-- `LLM_API_KEY` is required for the assistant runtime; there is no demo fallback path.
+- Optional: set `NEXT_PUBLIC_ERROR_REPORTING_ENABLED=true` with `NEXT_PUBLIC_ERROR_REPORTING_DSN` for Sentry error reporting.
 
 ```bash
 cp .env.example .env
@@ -91,7 +94,7 @@ Open: http://localhost:3000
 - LDAP-backed auth + JWT session (with optional dev bypass via `AUTH_DEV_BYPASS_LDAP`); new users default to pending approval
 - Admin RBAC: enable/disable users, role-based tool allowlists
 - Thread persistence (list/create/rename/archive/delete) backed by Postgres
-- Assistant Transport: `POST /assistant` (JSON ack), `GET /assistant/runs/{run_id}/live` (SSE stream), frontend `/api/assistant` wraps both into assistant-ui-compatible SSE
+- Assistant Transport: `POST /assistant` (JSON ack), `GET /assistant/threads/{thread_id}/state` (canonical state), `GET /assistant/runs/{run_id}/live` (SSE stream), frontend `/api/assistant` wraps both into assistant-ui-compatible SSE
 - Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools plus recorded reasons
 - Workflow template registry for approval-oriented tool families, with WHM as the reference implementation and reason/evidence capture
 - WHM server inventory with encrypted stored API tokens for WHM API-backed tools
@@ -117,7 +120,7 @@ Approval-oriented tool families use workflow templates on the API side to drive 
 - SSH trust is pinned per WHM server record; admins must run server validation after SSH credentials are added or rotated
 - LLM streaming uses buffered provider chunks (not true token-level streaming to the client)
 - No multi-tenant orgs or shared threads (threads are owner-scoped)
-- The assistant workspace is intentionally styled as a Claude-like UI; some controls are visible-but-disabled ("Coming soon") for layout parity: attachments, tools menu, extended thinking toggle, model selector
+- The assistant workspace is intentionally styled as a Claude-like UI; some controls are visible-but-disabled ("Coming soon") for layout parity: attachments, tools menu, extended thinking toggle, model selector, search
 
 ## Contributing
 

@@ -22,7 +22,7 @@ Date: 2026-03-16
 - Metric: `auth.outcomes.total`
 - Trace/report events: `auth_login_succeeded`, `auth_login_rejected`, `auth_current_user_resolved`, `auth_current_user_rejected`, `auth_me_succeeded`
 - Break down by bounded fields already emitted: `event_name`, `status_code`, `error_code`, `failure_stage`
-- Watch for: login rejection mix, bearer-token rejection spikes, `authentication_service_unavailable`
+- Watch for: login rejection mix, missing-authentication rejection spikes, `authentication_service_unavailable`
 
 ### Assistant
 
@@ -61,7 +61,7 @@ The canonical initial alert baseline is exactly the alerts listed in the table b
 Dashboard-only at first:
 
 - `request_validation_error`
-- `invalid_credentials`, `missing_bearer_token`, `invalid_token`
+- `invalid_credentials`, `missing_authentication`, `invalid_token`
 - `user_pending_approval`
 - expected 404/409/400 admin, threads, and WHM outcomes
 - normal thread/admin/WHM success counters and low-volume single-event anomalies

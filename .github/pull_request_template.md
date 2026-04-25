@@ -31,17 +31,17 @@
 
 <!-- For UI changes only — delete this section if not applicable -->
 
-- [ ] Uses grayscale palette with warm undertones (see `DESIGN.md`)
-- [ ] Border radius: 12px or 9999px (pill)
-- [ ] Zero shadows (ring-based elevation only)
+- [ ] Uses warm neutral palette with warm undertones (see `DESIGN.md`)
+- [ ] Border radius follows DESIGN.md scale (base 8px, standard 12px, generous 16px)
+- [ ] Prefers ring-based elevation; drop shadows only where DESIGN.md allows
 - [ ] Font weights: 400 or 500 only
 
 ## Security Checklist
 
 - [ ] No secrets or credentials committed
-- [ ] No auth middleware changes without review
+- [ ] No auth bypass introduced
 - [ ] No weakening of input sanitization
-- [ ] No raw SQL (Prisma/SQLAlchemy parameterized queries only)
+- [ ] No raw SQL (SQLAlchemy parameterized queries only)
 
 ## Related Issues
 
