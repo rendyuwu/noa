@@ -6,15 +6,15 @@ This document describes the implemented MVP architecture: a Next.js + assistant-
 
 - `apps/web` (Next.js)
   - UI built with `@assistant-ui/react` primitives
-  - Multi-thread UX via `unstable_useRemoteThreadListRuntime`
+  - Multi-thread UX via `useRemoteThreadListRuntime`
   - Per-thread runtime via `useAssistantTransportRuntime`
   - Custom tool UI for `request_approval` (Approve/Deny)
 
 - `apps/api` (FastAPI)
-  - LDAP authentication (python-ldap) + JWT
-  - RBAC: admin/user, per-user tool allowlists
+  - LDAP authentication (python-ldap) + JWT (with optional dev bypass via `AUTH_DEV_BYPASS_LDAP`)
+  - RBAC: role-based tool allowlists (tools assigned to roles, not directly to users)
   - Postgres persistence (SQLAlchemy async + Alembic)
-  - Assistant Transport endpoint: `POST /assistant` (assistant-stream)
+  - Assistant Transport: `POST /assistant` returns JSON run ack; `GET /assistant/runs/{run_id}/live` streams SSE state updates; frontend `/api/assistant` wraps both into an assistant-ui-compatible SSE stream
   - Tool registry + tool execution engine
   - Approval gate for CHANGE tools, with recorded reasons for each approved action
 
@@ -32,17 +32,24 @@ Core entities:
   - `audit_log` (append-only events)
 
 - Conversations
-  - `threads` (owner_user_id, title, archived)
+  - `threads` (owner_user_id, title, is_archived)
   - `messages` (thread_id, role, `content` JSON holding `{type, ...}` parts)
+  - `assistant_runs` (thread_id, run_id, status, active-run metadata)
 
 - Approvals + tool runs
   - `action_requests` (thread_id, tool_name, args, risk, status)
+  - `action_receipts` (action_request_id, receipt data for completed/denied actions)
   - `tool_runs` (thread_id, tool_name, args, status, result/error, optional `action_request_id`)
+  - `workflow_todos` (thread_id, canonical workflow step tracking)
 
-- WHM inventory
+- Server inventories
   - `whm_servers` (name, base_url, API auth, SSL verification)
-  - WHM secrets at rest are application-encrypted in Postgres using `NOA_DB_SECRET_KEY`
-  - Optional SSH settings are stored per WHM server (username, port, encrypted password/private key/passphrase, pinned host key fingerprint)
+  - `proxmox_servers` (name, base_url, API token auth, SSL verification)
+  - Server secrets at rest are application-encrypted in Postgres using `NOA_DB_SECRET_KEY`
+  - Optional WHM SSH settings are stored per WHM server (username, port, encrypted password/private key/passphrase, pinned host key fingerprint)
+
+- Auth rate limiting
+  - `login_rate_limits` (per-user login attempt tracking)
 
 ## Auth & RBAC
 
@@ -59,7 +66,7 @@ Core entities:
 
 - RBAC
   - Admin endpoints require `admin` role
-  - Tool access is an allowlist; admin can assign tool allowlists per user (implemented via a dedicated role)
+  - Tool access is role-based: admins assign tool allowlists to roles, and users inherit tool access through their assigned roles (direct per-user tool grants are disabled)
 
 ## Tool System & Safety
 
@@ -101,17 +108,21 @@ Core entities:
 
 ## Assistant Transport: Web <-> API
 
-Endpoint:
-- `POST /assistant`
+Endpoints:
+- `POST /assistant` — accepts commands, returns a JSON `AssistantRunAckResponse` (run ID + thread ID), and starts a background agent run
+- `GET /assistant/threads/{thread_id}/state` — returns canonical thread state (messages, workflow todos, pending approvals, action requests)
+- `GET /assistant/runs/{run_id}/live` — SSE stream of live state updates for an in-progress run
 
-Request body (simplified):
+Request body (simplified, `POST /assistant`):
 - `state`: previous client-visible state
 - `commands`: e.g. `add-message`, `add-tool-result`, plus custom commands `approve-action` / `deny-action`
 - `threadId`: the current thread remote id (required)
 
-Streaming:
-- Backend returns an `assistant-stream` data stream (state updates)
-- Frontend uses assistant-ui’s `useAssistantTransportRuntime` to decode and update UI state.
+Streaming architecture:
+- Backend `POST /assistant` returns JSON ack (not a stream). The agent run executes in a background task.
+- Backend `GET /assistant/runs/{run_id}/live` streams SSE state updates as the agent progresses.
+- Frontend `/api/assistant` (Next.js route handler) orchestrates: it calls `POST /assistant`, loads canonical state via the state endpoint, then connects to the live SSE endpoint and emits `update-state` events in the assistant-ui protocol format.
+- Frontend uses assistant-ui's `useAssistantTransportRuntime` to decode and update UI state.
 
 Important implementation detail:
 - A new thread may not have a `remoteId` yet.
@@ -125,12 +136,11 @@ Important implementation detail:
   - Streamed placeholder text is provisional and may be replaced by a smaller canonical transcript after state refresh.
 
 - The transport channel streams **state updates** to the UI.
-- LLM token streaming is not implemented yet.
-  The backend currently chunks the final assistant text into small deltas and streams those deltas.
+- The LLM client requests streamed completions (`stream=True`) and collects provider chunks. The runner buffers those chunks and publishes them as live state updates after each model call completes.
 
 ## Thread List Persistence
 
-The frontend uses `unstable_useRemoteThreadListRuntime` with a custom adapter (`apps/web/components/lib/thread-list-adapter.ts`) backed by API endpoints:
+The frontend uses `useRemoteThreadListRuntime` with a custom adapter (`apps/web/components/lib/thread-list-adapter.ts`) backed by API endpoints:
 
 - `GET /threads`
 - `POST /threads` (idempotent by `localId`)
@@ -144,10 +154,11 @@ The frontend uses `unstable_useRemoteThreadListRuntime` with a custom adapter (`
 ## Auditability
 
 The backend writes audit events for:
-- auth events
-- admin changes (user enable/disable, tool allowlist updates)
+- admin changes (user enable/disable, role tool allowlist updates)
 - action requested/approved/denied
 - tool started/completed/failed
+
+Note: auth events (login success/failure) are recorded via telemetry/logging, not as `audit_log` rows.
 
 ## WHM Validation + SSH Trust
 
@@ -165,8 +176,7 @@ The backend writes audit events for:
 
 ## What’s Next (Short List)
 
-- Extend the shared SSH-backed server pattern to additional integrations (Proxmox/DNS/etc.) via new tool packages
-- True LLM token streaming (server-side streaming completions)
+- Extend the shared SSH-backed server pattern to additional integrations (DNS/monitoring/etc.) via new tool packages
 - Org/tenant model, shared threads, and finer-grained RBAC
 - Stronger UX around approval previews, diffs, and reversibility
 - See `docs/integrations/proxmox.md` for the current implemented Proxmox surface area and backlog research

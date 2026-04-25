@@ -8,7 +8,7 @@ Update this file whenever WHM-backed features, validation behavior, upstream cal
 execution paths change.
 
 ## Connection base
-- WHM API base: `https://<whm-host>:2087`
+- WHM API base: `https://<whm-host>:<port>` (commonly port 2087; any HTTPS host+port accepted, path/query/fragment rejected during validation)
 - WHM auth for examples: `-H 'Authorization: whm <whm-user>:<api-token>'`
 
 ## Implemented in NOA today
@@ -87,7 +87,14 @@ curl -k \
   'https://<whm-host>:2087/json-api/uapi_cpanel?api.version=1&cpanel.user=<cpanel-user>&cpanel.module=DomainInfo&cpanel.function=list_domains'
 ```
 
-##### Legacy CSF-over-WHM-token path still present in client
+##### List DNS zones
+```bash
+curl -k \
+  -H 'Authorization: whm <whm-user>:<api-token>' \
+  'https://<whm-host>:2087/json-api/listzones?api.version=1'
+```
+
+##### Legacy CSF-over-WHM-token path (unused; client methods exist but no active tool/route calls them)
 ```bash
 curl -k \
   -H 'Authorization: whm <whm-user>:<api-token>' \
@@ -156,15 +163,40 @@ Core pipeline parts implemented:
 - `awk ...`
 - `sort | uniq -c | sort -nr`
 
+## Registered WHM assistant tools
+
+| Tool name | Risk | Description |
+|-----------|------|-------------|
+| `whm_list_servers` | READ | List configured WHM servers |
+| `whm_validate_server` | READ | Validate WHM server connectivity |
+| `whm_check_binary_exists` | READ | Check if a binary exists on a WHM server via SSH |
+| `whm_mail_log_failed_auth_suspects` | READ | Analyze mail log for failed-auth suspects via SSH |
+| `whm_list_accounts` | READ | List cPanel accounts on a WHM server |
+| `whm_search_accounts` | READ | Search cPanel accounts by username/domain/email |
+| `whm_preflight_account` | READ | Preflight check for account operations |
+| `whm_preflight_primary_domain_change` | READ | Preflight check for primary domain change |
+| `whm_suspend_account` | CHANGE | Suspend a cPanel account |
+| `whm_unsuspend_account` | CHANGE | Unsuspend a cPanel account |
+| `whm_change_contact_email` | CHANGE | Change account contact email |
+| `whm_change_primary_domain` | CHANGE | Change account primary domain |
+| `whm_preflight_firewall_entries` | READ | Preflight check for firewall operations |
+| `whm_firewall_unblock` | CHANGE | Unblock an IP in CSF/Imunify |
+| `whm_firewall_allowlist_add_ttl` | CHANGE | Add IP to allowlist with TTL |
+| `whm_firewall_allowlist_remove` | CHANGE | Remove IP from allowlist |
+| `whm_firewall_denylist_add_ttl` | CHANGE | Add IP to denylist with TTL |
+
+Tool definitions: `apps/api/src/noa_api/core/tools/definitions/whm.py`
+
 ## Current WHM features actually implemented
 - WHM server inventory CRUD in NOA admin UI/API
-- WHM server validation
+- WHM server validation (WHM API + optional SSH host-key trust bootstrap)
+- Account list and search
 - Account suspend / unsuspend
 - Contact email change
-- Primary domain change
-- Domain owner lookup
-- Domain list lookup via WHM UAPI bridge
-- Firewall/IP operations via SSH using CSF and Imunify360
+- Primary domain change (with DNS zone postflight verification)
+- Domain owner lookup (internal helper for primary-domain preflight, not a standalone tool)
+- Domain list lookup via WHM UAPI bridge (internal helper, not a standalone tool)
+- Firewall/IP operations via SSH using CSF and Imunify360 (IPv4 only; no CIDR, hostname, or IPv6)
 - Binary existence checks over SSH
 - Mail log failed-auth username suspect analysis over SSH
 

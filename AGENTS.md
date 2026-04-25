@@ -84,16 +84,23 @@ npm run typecheck
 npm run start
 ```
 
+Lint/test:
+
+```bash
+npm run lint
+npm test
+npm run test:watch
+```
+
 Notes:
-- No web lint/test scripts configured yet (no ESLint/Jest/Vitest/Playwright config found).
 - `npm run typecheck` runs `next build` (same as `npm run build`).
+- ESLint config: `apps/web/eslint.config.mjs`. Vitest config: `apps/web/vitest.config.ts`.
 
 ## Repo gotchas
 
 - No secrets in commits: `.env`, `.env.local`, `.env.*` gitignored (except `.env.example`).
-- API list/set env vars = JSON arrays; examples:
-  - `AUTH_BOOTSTRAP_ADMIN_EMAILS=["admin@example.com"]`
-  - `API_CORS_ALLOWED_ORIGINS=["http://localhost:3000"]`
+- `AUTH_BOOTSTRAP_ADMIN_EMAILS` requires JSON array: `["admin@example.com"]`
+- `API_CORS_ALLOWED_ORIGINS` accepts JSON array or comma-separated: `["http://localhost:3000"]` or `http://localhost:3000,http://localhost:3001`
 - Browser code never calls FastAPI direct; use same-origin `/api/...`.
   - `apps/web/app/api/[...path]/route.ts` proxies to `NOA_API_URL` server-side.
 
@@ -121,13 +128,13 @@ Imports/formatting:
 - Use type hints everywhere; prefer `X | None` unions (Python 3.11+).
 
 Pydantic / request+response models:
-- Define request/response shapes as `BaseModel` in route modules.
+- Define request/response shapes as `BaseModel` in dedicated schema modules (e.g. `api/threads/schemas.py`, `api/assistant/schemas.py`, `api/admin/schemas.py`).
 - When API JSON uses camelCase, use `Field(alias="...")` and set `model_config = {"populate_by_name": True}`.
 - Normalize optional strings with `@field_validator(..., mode="before")` + `.strip()`; treat empty strings as `None`.
 
 Error handling:
 - Keep domain/service errors as typed exceptions; translate to HTTP in route layer.
-- When mapping errors, use `raise HTTPException(status_code=..., detail="...") from exc`.
+- When mapping errors, use `raise ApiHTTPException(status_code=..., detail="...", error_code="...") from exc` or `assistant_http_error(...)` for assistant routes.
 - Status codes: `401` invalid credentials/token; `403` inactive/pending approval; `404` missing resource; `409` conflict.
 
 DB / SQLAlchemy async:
@@ -136,14 +143,14 @@ DB / SQLAlchemy async:
 - On `IntegrityError`, rollback first; only "recover" when operation intended to be idempotent.
 
 Tools + approval gate:
-- Tool metadata lives in `noa_api.core.tools.registry`.
+- Tool metadata lives in `noa_api.core.tools.definitions` (per-domain modules: `common.py`, `whm.py`, `proxmox.py`); `noa_api.core.tools.registry` is a thin accessor.
 - Every tool classified as `ToolRisk.READ` or `ToolRisk.CHANGE`.
 - Any mutating behavior must be `CHANGE` and go through persisted approval flow (`request_approval` -> approve/deny), with recorded reason such as `Ticket #1661262` or brief description.
 
 Assistant workflows:
 - Approval-oriented tool families register workflow templates in `apps/api/src/noa_api/core/workflows/registry.py`; avoid adding new family-specific branches in `apps/api/src/noa_api/core/agent/runner.py` when template hook can own behavior.
 - Shared workflow contract lives in `apps/api/src/noa_api/core/workflows/types.py`.
-- WHM = reference implementation in `apps/api/src/noa_api/core/workflows/whm.py`.
+- WHM = reference implementation in `apps/api/src/noa_api/core/workflows/whm/` (package with `account_lifecycle.py`, `contact_email.py`, `primary_domain.py`, `firewall.py`, etc.).
 - Keep family-specific operational presentation in workflow templates: `build_reply_template(...)` owns conversational outcome wording, and `build_evidence_template(...)` owns structured before/after, verification, batch-outcome evidence.
 - Treat `build_before_state(...)` as compatibility shim; new workflow families should prefer `build_evidence_template(...)` and let registry derive approval `beforeState` from `before_state` evidence section.
 - When adding new workflow family, set `ToolDefinition.workflow_family`, implement template module, register it, keep existing web workflow UI generic unless user explicitly asks for new surface.
@@ -161,7 +168,8 @@ Client/server boundaries:
 
 API calls + errors:
 - From browser, call same-origin paths (`/api/...`) only.
-- Use `fetchWithAuth()` + `jsonOrThrow()` (`apps/web/components/lib/fetch-helper.ts`) for authenticated requests.
+- Use `fetchWithAuth()` + `jsonOrThrow()` (`apps/web/components/lib/fetch-helper.ts`) for authenticated JSON requests.
+- Exception: SSE/streaming endpoints (e.g. `runtime-provider.tsx` live run stream) use raw `fetch` because they consume streams, not JSON.
 - Handle auth expiry via existing pattern (401 triggers `clearAuth()` and redirects to `/login`).
 
 Naming:

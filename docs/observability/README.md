@@ -13,7 +13,7 @@ Date: 2026-03-16
 
 ## What is done in repo
 
-- Backend request, auth, assistant, admin, threads, and WHM telemetry is implemented and exporter-backed.
+- Backend request, auth, assistant, admin, threads, WHM, and Proxmox telemetry is implemented and exporter-backed.
 - The backend event vocabulary and bounded metric dimensions are defined and should now be treated as stable for operational rollout.
 - Frontend reporting policy, adapter/provider wiring, route-level crash reporting, and selective API/network failure reporting are implemented.
 - The remaining work is not another repo implementation pass by default.

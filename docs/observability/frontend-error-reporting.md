@@ -15,7 +15,7 @@ Report these client failures:
 - uncaught render failures that reach `apps/web/app/error.tsx`
 - uncaught browser `error` events
 - unhandled promise rejections
-- unexpected API failures after normalization in `apps/web/components/lib/fetch-helper.ts`, especially rejected fetch/network failures, same-origin proxy failures, and 5xx responses
+- unexpected API failures from `apps/web/components/lib/fetch-helper.ts`, including rejected fetch/network failures (reported as raw errors before `ApiError` normalization), same-origin proxy failures, and 5xx responses
 
 Ignore these failures:
 

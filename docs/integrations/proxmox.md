@@ -8,7 +8,7 @@ The backlog sections below capture candidate future work and related API researc
 Update this file whenever the implemented Proxmox surface area or supporting API calls change.
 
 ## Connection base
-- API base: `https://<pve-host>:8006/api2/json`
+- Configured base URL: `https://<pve-host>:8006` (any HTTPS host+port accepted; path/query/fragment rejected during validation; client appends `/api2/json/...` internally)
 - Auth for examples: `-H 'Authorization: PVEAPIToken=<user>@<realm>!<tokenid>=<secret>'`
 
 ## Implemented in NOA today
@@ -149,6 +149,26 @@ curl -k \
   'https://<pve-host>:8006/api2/json/nodes/<node>/qemu/<vmid>/pending'
 ```
 
+## Registered Proxmox assistant tools
+
+| Tool name | Risk | Description |
+|-----------|------|-------------|
+| `proxmox_list_servers` | READ | List configured Proxmox servers |
+| `proxmox_validate_server` | READ | Validate Proxmox server connectivity |
+| `proxmox_get_vm_status_current` | READ | Get VM runtime status on exact node |
+| `proxmox_get_vm_config` | READ | Get VM configuration on exact node |
+| `proxmox_get_vm_pending` | READ | Get VM pending config changes on exact node |
+| `proxmox_get_user_by_email` | READ | Look up Proxmox user by email-derived userid |
+| `proxmox_preflight_vm_nic_toggle` | READ | Preflight check for NIC enable/disable |
+| `proxmox_disable_vm_nic` | CHANGE | Disable a VM network interface |
+| `proxmox_enable_vm_nic` | CHANGE | Enable a VM network interface |
+| `proxmox_preflight_vm_cloudinit_password_reset` | READ | Preflight check for cloud-init password reset |
+| `proxmox_reset_vm_cloudinit_password` | CHANGE | Reset VM cloud-init password |
+| `proxmox_preflight_move_vms_between_pools` | READ | Preflight check for pool membership move |
+| `proxmox_move_vms_between_pools` | CHANGE | Move VMs between pools |
+
+Tool definitions: `apps/api/src/noa_api/core/tools/definitions/proxmox.py`
+
 ## Current Proxmox features actually implemented
 - Proxmox server inventory CRUD in NOA admin UI/API
 - Proxmox server connectivity validation
@@ -233,7 +253,7 @@ Important:
 - Do not mutate Proxmox user email fields.
 - Do not add or remove ACL entries as part of this flow.
 - Ask the user directly for the source pool, destination pool, one or more VMIDs, and a bare email address.
-- Do not pass an already-suffixed Proxmox userid here; the implementation appends `@pve`.
+- Do not pass an already-suffixed Proxmox userid here; the implementation conditionally appends `@pve` (if input already ends with `@pve`, it is returned unchanged).
 
 ### Read one user by email-derived userid
 - Do not call `GET /access/users`; require the email from the user.

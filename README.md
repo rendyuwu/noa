@@ -53,8 +53,9 @@ uv run uvicorn noa_api.main:app --reload --port 8000
 ```
 
 Notes:
-- `AUTH_BOOTSTRAP_ADMIN_EMAILS` and `API_CORS_ALLOWED_ORIGINS` must be JSON arrays (see examples).
-- `NOA_DB_SECRET_KEY` is required for encrypted database-backed secrets such as WHM API tokens and SSH credentials. CSF/firewall execution uses the SSH credentials, not the WHM API token. Use a valid Fernet key.
+- `AUTH_BOOTSTRAP_ADMIN_EMAILS` must be a JSON array. `API_CORS_ALLOWED_ORIGINS` accepts either a JSON array or comma-separated string.
+- `NOA_DB_SECRET_KEY` is required for encrypted database-backed secrets (WHM API tokens, SSH credentials, Proxmox API tokens). Use a valid Fernet key. Generate one with: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- `NOA_DB_SECRET_KEY` must be exported in the shell environment (not just present in `.env`) for Alembic migrations that encrypt secrets.
 - `python-ldap` may require OS packages to build (Ubuntu example: `sudo apt-get install -y libldap2-dev libsasl2-dev libssl-dev`).
 
 ### 3) Configure + run web
@@ -84,15 +85,17 @@ Open: http://localhost:3000
 
 ## What’s Implemented (MVP)
 
-- LDAP-only auth + JWT session; new users default to pending approval
-- Admin RBAC: enable/disable users, assign tool allowlists
+- LDAP-backed auth + JWT session (with optional dev bypass via `AUTH_DEV_BYPASS_LDAP`); new users default to pending approval
+- Admin RBAC: enable/disable users, role-based tool allowlists
 - Thread persistence (list/create/rename/archive/delete) backed by Postgres
-- Assistant Transport streaming endpoint (`POST /assistant`)
+- Assistant Transport: `POST /assistant` (JSON ack), `GET /assistant/runs/{run_id}/live` (SSE stream), frontend `/api/assistant` wraps both into assistant-ui-compatible SSE
 - Tool registry with READ vs CHANGE risk and explicit approval gate for CHANGE tools plus recorded reasons
 - Workflow template registry for approval-oriented tool families, with WHM as the reference implementation and reason/evidence capture
 - WHM server inventory with encrypted stored API tokens for WHM API-backed tools
 - Optional WHM SSH credentials with DB-pinned host fingerprints captured during validation
-- CSF/firewall WHM tools now execute over SSH/bash instead of the WHM API token path
+- CSF/firewall WHM tools execute over SSH/bash instead of the WHM API token path
+- Proxmox server inventory with encrypted API token storage
+- Proxmox VM NIC enable/disable, cloud-init password reset, and VM pool membership move workflows with approval, preflight/postflight verification, and recorded reasons
 - Shared SSH execution layer for future server-backed READ/CHANGE tools
 - READ-only WHM SSH binary checker tool (`whm_check_binary_exists`)
 
@@ -102,30 +105,13 @@ Approval-oriented tool families use workflow templates on the API side to drive 
 
 - Shared contract: `apps/api/src/noa_api/core/workflows/types.py`
 - Registry: `apps/api/src/noa_api/core/workflows/registry.py`
-- WHM family implementation: `apps/api/src/noa_api/core/workflows/whm.py`
+- WHM family implementation: `apps/api/src/noa_api/core/workflows/whm/` (package with per-family modules)
 - Extension guide: `docs/assistant/workflow-templates.md`
 
 ## Known Limitations
 
-- WHM is currently the most complete server integration; Proxmox server inventory,
-  validation, and VM NIC enable/disable flows are also implemented
+- WHM is currently the most complete server integration; Proxmox server inventory, validation, VM NIC enable/disable, cloud-init password reset, and VM pool membership move flows are also implemented
 - SSH trust is pinned per WHM server record; admins must run server validation after SSH credentials are added or rotated
-- LLM token streaming is not implemented; assistant text is chunked after completion
+- LLM streaming uses buffered provider chunks (not true token-level streaming to the client)
 - No multi-tenant orgs or shared threads (threads are owner-scoped)
-- The assistant workspace is intentionally styled as a Claude-like UI; some controls are visible-but-disabled ("Coming soon") for layout parity: Edit/Reload, attachments, tools menu, extended thinking toggle, model selector, feedback.
-
-```bash
-cd apps/api
-uv sync
-uv run uvicorn noa_api.main:app --reload --port 8000
-```
-
-#### Terminal 2: Web
-
-```bash
-cd apps/web
-npm install
-npm run dev
-```
-
-Open: http://localhost:3000
+- The assistant workspace is intentionally styled as a Claude-like UI; some controls are visible-but-disabled ("Coming soon") for layout parity: attachments, tools menu, extended thinking toggle, model selector

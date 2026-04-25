@@ -221,6 +221,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T21 | x | Fix `deps.py` pending-approval commit: add `error_code` attribute to `AuthPendingApprovalError`; or change check to `isinstance` | V56,B1 |
 | T22 | x | Fix CORS origins validator `_normalize_cors_origins` to handle JSON array strings per C9 (same pattern as `_normalize_prompt_extra_paths`) | V57,B3 |
 | T23 | x | Fix `delete_user` self-delete guard: move `SelfDeleteAdminError` check inside `if is_admin_user` block; use generic error for non-admin self-delete | V58,B4 |
+| T24 | | Rewrite DESIGN.md to match actual NOA console (OKLCH tokens, sidebar layout, Newsreader/Geist fonts, shadcn button variants, actual component inventory). Current doc describes a Claude marketing page, not the implemented app. | C2 |
 
 ## §B Bugs
 

@@ -14,7 +14,7 @@ Date: 2026-03-16
 
 - Metrics: `api.requests.total`, `api.request.duration_ms`
 - Trace/report events: `api_request_completed`, `api_unhandled_exception`
-- Break down by bounded fields already emitted: `request_method`, normalized `request_path`, `status_code`
+- Break down by bounded fields already emitted: `request_method`, `status_code` (note: trace events use raw `request_path`; only metrics normalize the route path)
 - Watch for: traffic drops, 5xx share, latency regression, unhandled exception bursts
 
 ### Auth
@@ -33,12 +33,13 @@ Date: 2026-03-16
 
 ### Admin and management
 
-- Operational grouping only: this groups existing admin, threads, and WHM telemetry without inventing new event names.
-- Metrics: `admin.outcomes.total`, `threads.outcomes.total`, `whm.outcomes.total`
+- Operational grouping only: this groups existing admin, threads, WHM, and Proxmox telemetry without inventing new event names.
+- Metrics: `admin.outcomes.total`, `threads.outcomes.total`, `whm.outcomes.total`, `proxmox.outcomes.total`
 - Trace events to watch as examples:
-  - Admin: `admin_access_denied`, `admin_users_list_succeeded`, `admin_user_status_updated`, `admin_user_tools_updated`, `admin_last_active_admin_conflict`, `admin_self_deactivate_conflict`, `admin_user_not_found`, `admin_unknown_tools`
-  - Threads: `threads_access_denied_inactive_user`, `threads_list_succeeded`, `thread_created`, `thread_reused`, `thread_retrieved`, `thread_title_updated`, `thread_archived`, `thread_unarchived`, `thread_deleted`, `thread_not_found`, `thread_title_generated`, `thread_title_returned_existing`, `thread_title_returned_refreshed`
-  - WHM: `whm_admin_access_denied`, `whm_servers_list_succeeded`, `whm_server_created`, `whm_server_updated`, `whm_server_deleted`, `whm_server_validated`, `whm_server_not_found`, `whm_server_name_conflict`
+  - Admin: `admin_access_denied`, `admin_users_list_succeeded`, `admin_user_status_updated`, `admin_direct_tool_grants_disabled`, `admin_role_tools_updated`, `admin_last_active_admin_conflict`, `admin_self_deactivate_conflict`, `admin_user_not_found`, `admin_unknown_tools`
+  - Threads: `threads_list_succeeded`, `thread_created`, `thread_reused`, `thread_retrieved`, `thread_title_updated`, `thread_archived`, `thread_unarchived`, `thread_deleted`, `thread_not_found`, `thread_title_generated`, `thread_title_returned_existing`, `thread_title_returned_refreshed` (inactive-user denial recorded as `auth_current_user_rejected` via auth telemetry)
+  - WHM: `whm_servers_list_succeeded`, `whm_server_created`, `whm_server_updated`, `whm_server_deleted`, `whm_server_validated`, `whm_server_not_found`, `whm_server_name_conflict` (admin access denial recorded as `admin_access_denied` via shared admin guard)
+  - Proxmox: `proxmox_servers_list_succeeded`, `proxmox_server_created`, `proxmox_server_updated`, `proxmox_server_deleted`, `proxmox_server_validated`, `proxmox_server_not_found`, `proxmox_server_name_conflict`
 - Watch for: unexpected changes in outcome mix, conflict/not-found spikes after deploys, WHM validation failure concentration by `validation_ok`
 
 ## Alert Baseline
@@ -84,5 +85,5 @@ The rule is simple: expected product-state outcomes stay on dashboards; system-h
   - API: `api_request_completed`, `api_unhandled_exception`, `api.requests.total`, `api.request.duration_ms`
   - Auth: `auth_login_succeeded`, `auth_login_rejected`, `auth_current_user_resolved`, `auth_current_user_rejected`, `auth_me_succeeded`, `auth.outcomes.total`
   - Assistant: `assistant_run_failed_pre_agent`, `assistant_run_failed_agent`, `assistant_error_message_persist_failed`, `assistant_state_refresh_failed`, `assistant.failures.total`
-  - Admin/management: `admin.outcomes.total`, `threads.outcomes.total`, `whm.outcomes.total` plus the route trace events listed above
+  - Admin/management: `admin.outcomes.total`, `threads.outcomes.total`, `whm.outcomes.total`, `proxmox.outcomes.total` plus the route trace events listed above
 - Roll out dashboards before paging alerts, then tune thresholds from observed baseline behavior instead of guessing from docs alone.
