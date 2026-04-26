@@ -260,14 +260,16 @@ def _matching_pool_move_preflight(
     requested_source_pool = normalized_text(args.get("source_pool"))
     requested_destination_pool = normalized_text(args.get("destination_pool"))
     requested_vmids = _normalized_int_list(args.get("vmids"))
-    requested_email = normalized_text(args.get("email"))
+    requested_old_email = normalized_text(args.get("old_email"))
+    requested_new_email = normalized_text(args.get("new_email"))
 
     if (
         requested_server_ref is None
         or requested_source_pool is None
         or requested_destination_pool is None
         or not requested_vmids
-        or requested_email is None
+        or requested_old_email is None
+        or requested_new_email is None
     ):
         return None
 
@@ -296,7 +298,9 @@ def _matching_pool_move_preflight(
             continue
         if _normalized_int_list(item_args.get("vmids")) != requested_vmids:
             continue
-        if normalized_text(item_args.get("email")) != requested_email:
+        if normalized_text(item_args.get("old_email")) != requested_old_email:
+            continue
+        if normalized_text(item_args.get("new_email")) != requested_new_email:
             continue
         return result
 
@@ -313,13 +317,15 @@ def _require_pool_move_preflight(
     requested_source_pool = normalized_text(args.get("source_pool"))
     requested_destination_pool = normalized_text(args.get("destination_pool"))
     requested_vmids = _normalized_int_list(args.get("vmids"))
-    requested_email = normalized_text(args.get("email"))
+    requested_old_email = normalized_text(args.get("old_email"))
+    requested_new_email = normalized_text(args.get("new_email"))
     if (
         requested_server_ref is None
         or requested_source_pool is None
         or requested_destination_pool is None
         or not requested_vmids
-        or requested_email is None
+        or requested_old_email is None
+        or requested_new_email is None
     ):
         return None
 
@@ -335,7 +341,7 @@ def _require_pool_move_preflight(
             error="Required Proxmox preflight evidence is missing",
             error_code="preflight_required",
             details=(
-                "Run proxmox_preflight_move_vms_between_pools with the same server_ref, source_pool, destination_pool, vmids, and email before requesting this change.",
+                "Run proxmox_preflight_move_vms_between_pools with the same server_ref, source_pool, destination_pool, vmids, old_email, and new_email before requesting this change.",
             ),
         )
 
@@ -360,7 +366,9 @@ def _require_pool_move_preflight(
             continue
         if _normalized_int_list(item_args.get("vmids")) != requested_vmids:
             continue
-        if normalized_text(item_args.get("email")) != requested_email:
+        if normalized_text(item_args.get("old_email")) != requested_old_email:
+            continue
+        if normalized_text(item_args.get("new_email")) != requested_new_email:
             continue
         return None
 
@@ -368,6 +376,6 @@ def _require_pool_move_preflight(
         error="Required Proxmox preflight evidence does not match this change request",
         error_code="preflight_mismatch",
         details=(
-            f"No successful proxmox_preflight_move_vms_between_pools was found for server_ref '{requested_server_ref}', source_pool '{requested_source_pool}', destination_pool '{requested_destination_pool}', vmids '{requested_vmids}', and email '{requested_email}' in the current turn.",
+            f"No successful proxmox_preflight_move_vms_between_pools was found for server_ref '{requested_server_ref}', source_pool '{requested_source_pool}', destination_pool '{requested_destination_pool}', vmids '{requested_vmids}', old_email '{requested_old_email}', and new_email '{requested_new_email}' in the current turn.",
         ),
     )

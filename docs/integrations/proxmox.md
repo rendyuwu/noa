@@ -246,14 +246,16 @@ Use this flow for enabling or disabling a specific VM NIC on an exact node.
 - Approval responses should summarize the selected NIC and the link-state transition; the assistant narration above the approval card is now rendered from a Proxmox-owned markdown presentation, while digest and verification details still belong in the structured evidence/verification view.
 - Completion responses should summarize the selected NIC and the completed link-state transition; digest and verification details belong in the evidence/verification view.
 
-### Pool membership move workflow
+### Pool membership move workflow (Change Email PIC)
 
 Important:
-- In this workflow, “change email” / “change PIC” means moving one or more VMs from one pool to another.
+- In this workflow, "change email" / "change PIC" / "change email PIC" means moving one or more VMs from one pool to another.
 - Do not mutate Proxmox user email fields.
 - Do not add or remove ACL entries as part of this flow.
-- Ask the user directly for the source pool, destination pool, one or more VMIDs, and a bare email address.
+- Ask the user directly for the source pool, destination pool, one or more VMIDs, the old email (current PIC who owns the source pool), and the new email (new PIC who owns the destination pool).
+- Both emails are validated against their respective pools: `old_email` must have permissions on `source_pool`, `new_email` must have permissions on `destination_pool`. This cross-validation prevents typo-based customer mismatch.
 - Do not pass an already-suffixed Proxmox userid here; the implementation conditionally appends `@pve` (if input already ends with `@pve`, it is returned unchanged).
+- The user should NOT be asked for "the email of the user performing the move." Instead, ask for old email (current owner) and new email (new owner).
 
 ### Read one user by email-derived userid
 - Do not call `GET /access/users`; require the email from the user.
@@ -272,7 +274,7 @@ Example normalization:
 ### Operational notes
 - Preflight and postflight verification are required.
 - Support moving one VM or multiple VMs in the same flow.
-- Ask the user for explicit pool IDs, VMIDs, and email values instead of relying on large cluster-wide discovery endpoints.
+- Ask the user for explicit pool IDs, VMIDs, old email, and new email values instead of relying on large cluster-wide discovery endpoints.
 - User-facing results should summarize before/after pool membership for the moved VM set.
 - Approval handoff remains backend-owned: the approval card/details payload still comes from structured workflow data, and the new markdown narration above the card is descriptive only.
 - Approval replies should show source pool before and destination pool before; completion replies should show source before/after and destination before/after.

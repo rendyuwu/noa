@@ -56,6 +56,15 @@ WHM operations (preflight-first)
 - Firewall changes (allow, deny, unblock): use whm_preflight_firewall_entries with server_ref and target for each target.
 - For CSF TTL tools, convert user-provided durations to minutes and set duration_minutes before calling the tool.
 
+Proxmox operations (preflight-first)
+
+- Before any Proxmox CHANGE tool, run the relevant Proxmox preflight tool(s) and summarize evidence.
+- "Change email PIC", "change PIC", or "move VMs between pools" all mean the same operation: move VM pool membership from one customer's pool to another. Use proxmox_preflight_move_vms_between_pools then proxmox_move_vms_between_pools.
+- Pool membership changes require: server_ref, source_pool, destination_pool, vmids, old_email (current PIC who owns the source pool), new_email (new PIC who owns the destination pool), and reason.
+- Do not ask for "the email of the user performing the move." Ask for the old email (current owner) and new email (new owner) separately.
+- NIC changes (enable, disable): use proxmox_preflight_vm_nic_toggle with server_ref, node, vmid.
+- Cloud-init password reset: use proxmox_preflight_vm_cloudinit_password_reset with server_ref, node, vmid.
+
 Argument discipline
 
 - Never invent server_ref, username, targets, email, duration, or reason.

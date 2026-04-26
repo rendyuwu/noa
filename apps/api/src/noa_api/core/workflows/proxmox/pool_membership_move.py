@@ -347,7 +347,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
         self, *, tool_name: str, args: dict[str, object]
     ) -> str | None:
         _ = tool_name
-        return f"Move pool membership for {_pool_move_subject(args)}"
+        return f"Change Email PIC: move {_pool_move_subject(args)}"
 
     def require_preflight(
         self,
@@ -598,7 +598,8 @@ def _pool_move_requested_change_facts(
         "vmids_text": ", ".join(str(vmid) for vmid in vmids)
         if vmids
         else "unknown-vmids",
-        "target_user": _pool_value(args.get("email")),
+        "old_email": _pool_value(args.get("old_email")),
+        "new_email": _pool_value(args.get("new_email")),
         "reason": normalized_text(args.get("reason")) or "none provided",
     }
 
@@ -613,7 +614,8 @@ def _pool_move_requested_change_items(
             label="Destination pool", value=str(facts["destination_pool"])
         ),
         WorkflowEvidenceItem(label="VMIDs", value=str(facts["vmids_text"])),
-        WorkflowEvidenceItem(label="Target user", value=str(facts["target_user"])),
+        WorkflowEvidenceItem(label="Old email (current PIC)", value=str(facts["old_email"])),
+        WorkflowEvidenceItem(label="New email (new PIC)", value=str(facts["new_email"])),
         WorkflowEvidenceItem(label="Reason", value=str(facts["reason"])),
     ]
 

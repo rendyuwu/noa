@@ -159,7 +159,8 @@ def _pool_move_args() -> dict[str, object]:
         "source_pool": "pool-a",
         "destination_pool": "pool-b",
         "vmids": [101],
-        "email": "l1@example.com",
+        "old_email": "l1@example.com",
+        "new_email": "l2@example.com",
         "reason": "customer request",
     }
 
@@ -170,10 +171,13 @@ def _pool_move_preflight_result() -> dict[str, object]:
         "server_id": "srv-1",
         "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
         "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-        "target_user": {"data": {"userid": "l1@example.com@pve"}},
+        "old_user": {"data": {"userid": "l1@example.com@pve"}},
+        "new_user": {"data": {"userid": "l2@example.com@pve"}},
+        "source_permission": {"data": {"/pool/pool-a": {"VM.Allocate": 1}}},
         "destination_permission": {"data": {"/pool/pool-b": {"VM.Console": 1}}},
         "requested_vmids": [101],
-        "normalized_userid": "l1@example.com@pve",
+        "normalized_old_userid": "l1@example.com@pve",
+        "normalized_new_userid": "l2@example.com@pve",
     }
 
 
@@ -671,7 +675,8 @@ async def test_proxmox_pool_membership_move_fetch_postflight_result_returns_runt
                 "source_pool": "pool-a",
                 "destination_pool": "pool-b",
                 "vmids": [101],
-                "email": "l1@example.com",
+                "old_email": "l1@example.com",
+                "new_email": "l2@example.com",
             },
             session=_FakeSession(),
         )
@@ -983,7 +988,8 @@ def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_ta
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101, 102],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="waiting_on_approval",
@@ -995,7 +1001,8 @@ def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_ta
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101, 102],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
@@ -1036,12 +1043,14 @@ def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_ta
                             }
                         ]
                     },
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101, 102],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -1246,7 +1255,8 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_reply_includes_detai
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101, 102],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="waiting_on_approval",
@@ -1258,7 +1268,8 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_reply_includes_detai
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101, 102],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
@@ -1299,12 +1310,14 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_reply_includes_detai
                             }
                         ]
                     },
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101, 102],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -1328,7 +1341,8 @@ def test_proxmox_move_vms_between_pools_approval_markdown_presentation_includes_
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101, 102],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="waiting_on_approval",
@@ -1340,7 +1354,8 @@ def test_proxmox_move_vms_between_pools_approval_markdown_presentation_includes_
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101, 102],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
@@ -1381,12 +1396,14 @@ def test_proxmox_move_vms_between_pools_approval_markdown_presentation_includes_
                             }
                         ]
                     },
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101, 102],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -1415,7 +1432,8 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_markdown_matches_req
         "source_pool": "pool-a",
         "destination_pool": "pool-b",
         "vmids": [102, 101],
-        "email": "l1@example.com",
+        "old_email": "l1@example.com",
+        "new_email": "l2@example.com",
         "reason": "customer request",
     }
     preflight_evidence = [
@@ -1426,17 +1444,21 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_markdown_matches_req
                 "source_pool": "pool-a",
                 "destination_pool": "pool-b",
                 "vmids": [101, 102],
-                "email": "l1@example.com",
+                "old_email": "l1@example.com",
+                "new_email": "l2@example.com",
             },
             "result": {
                 "ok": True,
                 "server_id": "srv-1",
                 "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                 "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                "new_user": {"data": {"userid": "l2@example.com@pve"}},
+                "source_permission": {"data": {"/pool/pool-a": {"VM.Allocate": 1}}},
                 "destination_permission": {"data": {"/pool/pool-b": {"VM.Console": 1}}},
                 "requested_vmids": [101, 102],
-                "normalized_userid": "l1@example.com@pve",
+                "normalized_old_userid": "l1@example.com@pve",
+                "normalized_new_userid": "l2@example.com@pve",
             },
         }
     ]
@@ -1477,7 +1499,8 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_markdown_matches_req
         "Source pool": "pool-a",
         "Destination pool": "pool-b",
         "VMIDs": "102, 101",
-        "Target user": "l1@example.com",
+        "Old email (current PIC)": "l1@example.com",
+        "New email (new PIC)": "l2@example.com",
         "Reason": "customer request",
     }
     details = _reply_detail_map(reply)
@@ -1511,7 +1534,8 @@ def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101, 102],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
         },
         phase="waiting_on_user",
         preflight_evidence=[
@@ -1522,7 +1546,8 @@ def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101, 102],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
@@ -1550,12 +1575,14 @@ def test_proxmox_pool_membership_move_waiting_on_user_todos_use_action_specific_
                             }
                         ]
                     },
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101, 102],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -1574,7 +1601,8 @@ def test_proxmox_pool_membership_move_completed_reply_handles_failure_result() -
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -1586,19 +1614,22 @@ def test_proxmox_pool_membership_move_completed_reply_handles_failure_result() -
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -1626,7 +1657,8 @@ def test_proxmox_pool_membership_move_denied_reply_does_not_report_verification(
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="denied",
@@ -1655,7 +1687,8 @@ def test_proxmox_pool_membership_move_failed_reply_does_not_report_verification(
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="failed",
@@ -1709,7 +1742,8 @@ async def test_proxmox_pool_membership_move_fetch_postflight_result_returns_runt
                 "source_pool": "pool-a",
                 "destination_pool": "pool-b",
                 "vmids": [101],
-                "email": "l1@example.com",
+                "old_email": "l1@example.com",
+                "new_email": "l2@example.com",
             },
             session=_FakeSession(),
         )
@@ -1781,7 +1815,8 @@ async def test_proxmox_pool_membership_move_fetch_postflight_result_rejects_unve
                 "source_pool": "pool-a",
                 "destination_pool": "pool-b",
                 "vmids": [101],
-                "email": "l1@example.com",
+                "old_email": "l1@example.com",
+                "new_email": "l2@example.com",
             },
             session=_FakeSession(),
         )
@@ -1804,7 +1839,8 @@ def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_a
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -1816,7 +1852,8 @@ def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_a
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
@@ -1851,12 +1888,14 @@ def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_a
                             }
                         ]
                     },
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -2019,7 +2058,8 @@ def test_proxmox_pool_membership_move_require_matching_preflight_matches_new_fam
                         "source_pool": "pool-a",
                         "destination_pool": "pool-b",
                         "vmids": [101],
-                        "email": "l1@example.com",
+                        "old_email": "l1@example.com",
+                        "new_email": "l2@example.com",
                     },
                 },
                 {
@@ -2033,12 +2073,17 @@ def test_proxmox_pool_membership_move_require_matching_preflight_matches_new_fam
                         "destination_pool": {
                             "data": [{"poolid": "pool-b", "members": []}]
                         },
-                        "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                        "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                        "new_user": {"data": {"userid": "l2@example.com@pve"}},
+                        "source_permission": {
+                            "data": {"/pool/pool-a": {"VM.Allocate": 1}}
+                        },
                         "destination_permission": {
                             "data": {"/pool/pool-b": {"VM.Console": 1}}
                         },
                         "requested_vmids": [101],
-                        "normalized_userid": "l1@example.com@pve",
+                        "normalized_old_userid": "l1@example.com@pve",
+                        "normalized_new_userid": "l2@example.com@pve",
                     },
                 },
             ],
@@ -2053,7 +2098,8 @@ def test_proxmox_pool_membership_move_require_matching_preflight_matches_new_fam
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
         },
         working_messages=working_messages,
         requested_server_id="srv-1",
@@ -2073,7 +2119,8 @@ def test_proxmox_pool_membership_move_completed_evidence_serializes_null_wrapper
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -2085,7 +2132,8 @@ def test_proxmox_pool_membership_move_completed_evidence_serializes_null_wrapper
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
@@ -2113,12 +2161,14 @@ def test_proxmox_pool_membership_move_completed_evidence_serializes_null_wrapper
                             }
                         ]
                     },
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -3733,7 +3783,8 @@ def test_proxmox_pool_membership_move_completed_reply_matches_server_id_alias_pr
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -3745,19 +3796,22 @@ def test_proxmox_pool_membership_move_completed_reply_matches_server_id_alias_pr
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "11111111-1111-1111-1111-111111111111",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -3806,7 +3860,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verifie
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -3818,19 +3873,22 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verifie
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -3866,7 +3924,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verifie
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -3878,19 +3937,22 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verifie
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -4121,7 +4183,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_missing_
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -4133,19 +4196,22 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_missing_
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -4176,7 +4242,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_missing_
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -4188,19 +4255,22 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_missing_
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -4249,7 +4319,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -4261,19 +4332,22 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -4314,7 +4388,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -4326,19 +4401,22 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],
@@ -4379,7 +4457,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
             "source_pool": "pool-a",
             "destination_pool": "pool-b",
             "vmids": [101],
-            "email": "l1@example.com",
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
             "reason": "customer request",
         },
         phase="completed",
@@ -4391,19 +4470,22 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
                     "source_pool": "pool-a",
                     "destination_pool": "pool-b",
                     "vmids": [101],
-                    "email": "l1@example.com",
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
                 },
                 "result": {
                     "ok": True,
                     "server_id": "srv-1",
                     "source_pool": {"data": [{"poolid": "pool-a", "members": []}]},
                     "destination_pool": {"data": [{"poolid": "pool-b", "members": []}]},
-                    "target_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
                     "destination_permission": {
                         "data": {"/pool/pool-b": {"VM.Console": 1}}
                     },
                     "requested_vmids": [101],
-                    "normalized_userid": "l1@example.com@pve",
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
                 },
             }
         ],

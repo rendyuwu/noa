@@ -79,7 +79,8 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
         "source_pool",
         "destination_pool",
         "vmids",
-        "email",
+        "old_email",
+        "new_email",
         "reason",
     ]
     assert proxmox_move_schema["properties"]["vmids"]["minItems"] == 1
