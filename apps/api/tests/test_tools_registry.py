@@ -71,7 +71,7 @@ async def test_tool_registry_exposes_machine_readable_parameter_schemas() -> Non
     assert by_name["proxmox_disable_vm_nic"].result_schema is not None
 
     proxmox_user_schema = by_name["proxmox_get_user_by_email"].parameters_schema
-    assert proxmox_user_schema["properties"]["email"]["format"] == "email"
+    assert proxmox_user_schema["properties"]["email"]["format"] == "proxmox-email"
 
     proxmox_move_schema = by_name["proxmox_move_vms_between_pools"].parameters_schema
     assert proxmox_move_schema["required"] == [

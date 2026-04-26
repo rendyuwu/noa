@@ -278,3 +278,89 @@ def test_validate_tool_arguments_rejects_non_positive_pool_move_vmids(
         "error_code": "invalid_tool_arguments",
         "details": ["vmids[0] must be greater than or equal to 1"],
     }
+
+
+def test_validate_tool_arguments_accepts_proxmox_email_with_pve_realm() -> None:
+    """V70: Proxmox email params accept ``user@domain.com@pve`` userid format."""
+    tool = get_tool_definition("proxmox_get_user_by_email")
+
+    assert tool is not None
+
+    # Should not raise — @pve suffix is valid for Proxmox emails
+    validate_tool_arguments(
+        tool=tool,
+        args={"server_ref": "pve1", "email": "l1@biznetgio.com@pve"},
+    )
+
+
+def test_validate_tool_arguments_accepts_proxmox_email_without_pve_realm() -> None:
+    """V70: Proxmox email params also accept plain email without @pve."""
+    tool = get_tool_definition("proxmox_get_user_by_email")
+
+    assert tool is not None
+
+    validate_tool_arguments(
+        tool=tool,
+        args={"server_ref": "pve1", "email": "l1@biznetgio.com"},
+    )
+
+
+def test_validate_tool_arguments_rejects_invalid_proxmox_email() -> None:
+    """V70: Proxmox email params still reject truly invalid emails."""
+    tool = get_tool_definition("proxmox_get_user_by_email")
+
+    assert tool is not None
+
+    with pytest.raises(ToolArgumentValidationError) as exc_info:
+        validate_tool_arguments(
+            tool=tool,
+            args={"server_ref": "pve1", "email": "not-an-email"},
+        )
+
+    assert "email must be a valid email address" in exc_info.value.as_result()["details"]
+
+
+def test_validate_tool_arguments_accepts_pool_move_emails_with_pve_realm() -> None:
+    """V70: old_email and new_email accept @pve suffix in pool move."""
+    tool = get_tool_definition("proxmox_preflight_move_vms_between_pools")
+
+    assert tool is not None
+
+    validate_tool_arguments(
+        tool=tool,
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool_a",
+            "destination_pool": "pool_b",
+            "vmids": [1040],
+            "old_email": "l1@biznetgio.com@pve",
+            "new_email": "l2@biznetgio.com@pve",
+        },
+    )
+
+
+@pytest.mark.parametrize(
+    "email",
+    [
+        "@pve",
+        "@@pve",
+        "user@@pve",
+        "not-an-email@pve",
+    ],
+)
+def test_validate_tool_arguments_rejects_proxmox_email_edge_cases(
+    email: str,
+) -> None:
+    """V70: @pve suffix stripping must still reject malformed underlying email."""
+    tool = get_tool_definition("proxmox_get_user_by_email")
+
+    assert tool is not None
+
+    with pytest.raises(ToolArgumentValidationError) as exc_info:
+        validate_tool_arguments(
+            tool=tool,
+            args={"server_ref": "pve1", "email": email},
+        )
+
+    details = exc_info.value.as_result()["details"]
+    assert any("email must be" in d for d in details)

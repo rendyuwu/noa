@@ -162,7 +162,9 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 - V38. WHM CHANGE tools without matching preflight evidence → `FAILED` with `preflight_required`. Matching preflight allows execution. Mismatched account in preflight → blocked.
 - V39. All Proxmox CHANGE tools expose preflight guidance in description. Proxmox CHANGE tools have `workflow_family` metadata.
-- V69. Pool membership move (Change Email PIC) ! require `old_email` + `new_email` (not single `email`). `old_email` ! have permissions on `source_pool`, `new_email` ! have permissions on `destination_pool`. `old_email` ≠ `new_email` (same PIC → `invalid_request`). Cross-validation prevents typo-based customer mismatch. System prompt ! map "change email PIC" / "change PIC" → pool membership move workflow.
+- V69. Pool membership move (Change Email PIC) ! require `old_email` + `new_email` (not single `email`). `old_email` ! exist on `source_pool` ACL, `new_email` ! exist on `destination_pool` ACL. `old_email` ≠ `new_email` (same PIC → `invalid_request`). Cross-validation prevents typo-based customer mismatch. System prompt ! map "change email PIC" / "change PIC" → pool membership move workflow.
+- V70. Proxmox email params (`old_email`, `new_email`, `email`) ! accept both plain email (`user@domain.com`) and Proxmox userid (`user@domain.com@pve`). `_normalize_proxmox_userid` strips/appends realm as needed. Argument validation ! not reject `@pve` realm suffix as invalid email format.
+- V71. Pool membership preflight ! check user **exists on pool ACL** (any role/permission entry), not specific privileges. `PVEConsoleUser`, `PVEVMAdmin`, any custom role — all valid pool association. `_has_any_pool_permission` ! return non-None when user has any ACL entry on pool path, regardless of which permissions granted.
 
 ### Workflows
 
@@ -254,6 +256,8 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T34 | x | Update `README.md` — add badges (CI status), contributing link, code of conduct link, security link, license placeholder | V62 |
 | T35 | x | Restrict `whm_firewall_unblock` & `whm_firewall_allowlist_remove` to IPv4-only targets; reject CIDR/IPv6/hostname same as `_add_ttl` tools. Update `docs/integrations/whm.md:199` to match | V68 |
 | T36 | x | Reframe pool membership move as "Change Email PIC": replace single `email` → `old_email` + `new_email`; validate both against respective pools; update tool defs, prompt_hints, system prompt, workflow templates, matching, evidence, tests, docs | V69 |
+| T37 | x | Fix Proxmox email param validation: strip `@pve` realm suffix before `_EMAIL_RE` check in `argument_validation.py`, or use custom format for Proxmox email params (not `"email"`). Update preflight error msgs to show normalized userid for clarity | V70,B7 |
+| T38 | x | Fix pool membership preflight: replace `_REQUIRED_POOL_PERMISSIONS` intersection check with any-ACL-entry check. `_has_any_pool_permission` ! return non-None when user has any permission entry on pool path (any role counts as pool association). Update tests | V71,B8 |
 
 ## §B Bugs
 
@@ -265,3 +269,5 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | B4 | 2026-04-24 | `authorization_service.delete_user:187-188` raises `SelfDeleteAdminError("Admins cannot delete their own account")` before checking `is_admin_user`; non-admin self-delete gets misleading admin error | V58,T23 |
 | B5 | 2026-04-24 | `AssistantService` methods use `getattr(self._repository, "method_name", None)` → typo in method name silently returns `None` instead of raising; no type safety on repository/runner | V51,T13 |
 | B6 | 2026-04-26 | `whm_firewall_unblock` & `whm_firewall_allowlist_remove` accept CIDR/IPv6/hostname targets; `_add_ttl` tools correctly reject non-IPv4. Doc `whm.md:199` says "IPv4 only" for all ops but code only enforces on add. Drift both directions: doc imprecise, code too permissive | V68,T35 |
+| B7 | 2026-04-26 | `_EMAIL_RE` (`^[^@\s]+@[^@\s]+\.[^@\s]+$`) in `argument_validation.py:10` rejects Proxmox userids containing `@pve` realm suffix (two `@` symbols). LM sees `user@domain.com@pve` in Proxmox data, echoes it back → argument validation blocks tool call with "not valid email". Without `@pve` tool works (code appends internally) but LM behavior unpredictable — sometimes includes realm from upstream data | V70,T37 |
+| B8 | 2026-04-26 | `_meaningful_permission_entries` in `pool_tools.py:65` checks intersection with `_REQUIRED_POOL_PERMISSIONS` (`VM.Allocate`, `Pool.Allocate`, `Pool.Audit`). User with `PVEConsoleUser` role (grants `VM.Console`, `VM.PowerMgmt`, etc.) has valid ACL entry on pool but zero overlap with required set → preflight rejects as "does not have permissions". Change PIC only needs to confirm user exists on pool ACL, not specific privileges | V71,T38 |

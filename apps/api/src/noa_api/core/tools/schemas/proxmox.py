@@ -49,18 +49,18 @@ PROXMOX_DIGEST_PARAM = _string_param(
 )
 
 PROXMOX_EMAIL_PARAM = _string_param(
-    "Exact email address used to identify the Proxmox user account.",
-    format_name="email",
+    "Email address or Proxmox userid (e.g. user@domain.com or user@domain.com@pve) to identify the Proxmox user account.",
+    format_name="proxmox-email",
 )
 
 PROXMOX_OLD_EMAIL_PARAM = _string_param(
-    "Exact email address of the current (old) PIC who owns the source pool.",
-    format_name="email",
+    "Email address or Proxmox userid of the current (old) PIC who owns the source pool.",
+    format_name="proxmox-email",
 )
 
 PROXMOX_NEW_EMAIL_PARAM = _string_param(
-    "Exact email address of the new PIC who owns the destination pool.",
-    format_name="email",
+    "Email address or Proxmox userid of the new PIC who owns the destination pool.",
+    format_name="proxmox-email",
 )
 
 PROXMOX_POOL_PARAM = _string_param(
