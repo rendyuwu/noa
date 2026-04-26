@@ -148,6 +148,13 @@ async def proxmox_preflight_move_vms_between_pools(
             "message": "Source and destination pools must be different",
         }
 
+    if normalized_old_userid == normalized_new_userid:
+        return {
+            "ok": False,
+            "error_code": "invalid_request",
+            "message": "Old email and new email must be different for a PIC change",
+        }
+
     source_pool_result = await client.get_pool(normalized_source_pool)
     if source_pool_result.get("ok") is not True:
         return _upstream_error(

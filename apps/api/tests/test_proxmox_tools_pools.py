@@ -460,7 +460,7 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_vmids(
 
 
 @pytest.mark.asyncio
-async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_destination_permission(
+async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_source_permission(
     monkeypatch,
 ) -> None:
     from noa_api.proxmox.tools import pool_tools
@@ -502,6 +502,110 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_destinatio
         "error_code": "permission_required",
         "message": "Old email does not have permissions on the source pool",
     }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_destination_permission(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+
+    call_count = {"get_effective_permissions": 0}
+    source_permission_ok = {
+        "ok": True,
+        "message": "ok",
+        "data": {"/pool/pool_a": {"VM.Allocate": 1}},
+    }
+    destination_permission_empty = {"ok": True, "message": "ok", "data": {}}
+
+    class _Client:
+        def __init__(self, **kwargs):
+            pass
+
+        async def get_pool(self, poolid):
+            return _pool_payload(poolid, [{"vmid": 1057}] if poolid == "pool_a" else [])
+
+        async def get_user(self, userid):
+            return {"ok": True, "message": "ok", "data": {"userid": userid, "enable": 1}}
+
+        async def get_effective_permissions(self, userid, path):
+            call_count["get_effective_permissions"] += 1
+            if call_count["get_effective_permissions"] == 1:
+                return source_permission_ok
+            return destination_permission_empty
+
+        async def add_vms_to_pool(self, poolid, vmids):
+            return {"ok": True, "message": "ok", "data": None}
+
+        async def remove_vms_from_pool(self, poolid, vmids):
+            return {"ok": True, "message": "ok", "data": None}
+
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
+    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    result = await pool_tools.proxmox_preflight_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        old_email="l1@biznetgio.com",
+        new_email="l2@biznetgio.com",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "permission_required",
+        "message": "New email does not have permissions on the destination pool",
+    }
+
+
+@pytest.mark.asyncio
+async def test_proxmox_preflight_move_vms_between_pools_rejects_same_old_and_new_email(
+    monkeypatch,
+) -> None:
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    state = _ClientState(
+        get_pool_results={},
+        get_user_result={"ok": True, "message": "ok", "data": {}},
+        get_effective_permissions_result={"ok": True, "message": "ok", "data": {}},
+        add_vms_to_pool_result={"ok": True, "message": "ok", "data": None},
+        remove_vms_from_pool_result={"ok": True, "message": "ok", "data": None},
+    )
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+    _install_client(monkeypatch, state)
+
+    result = await pool_tools.proxmox_preflight_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1057],
+        old_email="l1@biznetgio.com",
+        new_email="l1@biznetgio.com",
+    )
+
+    assert result == {
+        "ok": False,
+        "error_code": "invalid_request",
+        "message": "Old email and new email must be different for a PIC change",
+    }
+    assert state.calls == []
 
 
 @pytest.mark.asyncio
