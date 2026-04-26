@@ -169,6 +169,10 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - V41. `update_workflow_todo`: only one item `in_progress` at a time. Invalid status rejected with valid status list. `waiting_on_user` and `waiting_on_approval` are valid blocked statuses. Empty list clears thread state.
 - V42. 7 registered workflow families: 4 WHM (`whm-account-lifecycle`, `whm-account-contact-email`, `whm-account-primary-domain`, `whm-firewall-batch-change`) + 3 Proxmox (`proxmox-vm-cloudinit-password-reset`, `proxmox-pool-membership-move`, `proxmox-vm-nic-connectivity`).
 
+### Firewall
+
+- V68. ∀ WHM firewall CHANGE tools (`whm_firewall_unblock`, `whm_firewall_allowlist_add_ttl`, `whm_firewall_allowlist_remove`, `whm_firewall_denylist_add_ttl`) ! reject non-IPv4 targets (CIDR, IPv6, hostname). `whm_preflight_firewall_entries` (READ) may accept all types for inspection.
+
 ### Agent
 
 - V43. Multi-round tool-calling loop: max 6 rounds, max 8 tool calls per turn. Temperature 0, tool_choice "auto".
@@ -247,6 +251,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T32 | x | Create `.github/workflows/web-ci.yml` — trigger on `apps/web/**`, Node 20, install, lint, typecheck, test | V65,C13 |
 | T33 | x | Enhance `.github/workflows/api-scaffold-verify.yml` — add ruff lint step before pytest | V66,C13 |
 | T34 | x | Update `README.md` — add badges (CI status), contributing link, code of conduct link, security link, license placeholder | V62 |
+| T35 | x | Restrict `whm_firewall_unblock` & `whm_firewall_allowlist_remove` to IPv4-only targets; reject CIDR/IPv6/hostname same as `_add_ttl` tools. Update `docs/integrations/whm.md:199` to match | V68 |
 
 ## §B Bugs
 
@@ -257,3 +262,4 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | B3 | 2026-04-24 | `_normalize_cors_origins` splits on comma but doesn't handle JSON array format; env `API_CORS_ALLOWED_ORIGINS=["http://localhost:3000"]` produces `['["http://localhost:3000"]']` with brackets in URL; violates C9 | V57,T22 |
 | B4 | 2026-04-24 | `authorization_service.delete_user:187-188` raises `SelfDeleteAdminError("Admins cannot delete their own account")` before checking `is_admin_user`; non-admin self-delete gets misleading admin error | V58,T23 |
 | B5 | 2026-04-24 | `AssistantService` methods use `getattr(self._repository, "method_name", None)` → typo in method name silently returns `None` instead of raising; no type safety on repository/runner | V51,T13 |
+| B6 | 2026-04-26 | `whm_firewall_unblock` & `whm_firewall_allowlist_remove` accept CIDR/IPv6/hostname targets; `_add_ttl` tools correctly reject non-IPv4. Doc `whm.md:199` says "IPv4 only" for all ops but code only enforces on add. Drift both directions: doc imprecise, code too permissive | V68,T35 |

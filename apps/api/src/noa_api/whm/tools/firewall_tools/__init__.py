@@ -226,6 +226,21 @@ async def whm_firewall_unblock(
             )
             continue
 
+        # Validate IPv4 only for mutation operations
+        parsed_target = parse_csf_target(target)
+        if parsed_target.kind != "ip":
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "invalid_target",
+                    "message": "Firewall unblock only supports IPv4 addresses",
+                }
+            )
+            continue
+
         # Preflight check
         preflight_tasks: dict[str, Any] = {}
         if available["csf"]:
@@ -587,6 +602,21 @@ async def whm_firewall_allowlist_remove(
                     "status": "error",
                     "error_code": "invalid_target",
                     "message": "Target is required",
+                }
+            )
+            continue
+
+        # Validate IPv4 only for mutation operations
+        parsed_target = parse_csf_target(target)
+        if parsed_target.kind != "ip":
+            overall_ok = False
+            results.append(
+                {
+                    "target": target,
+                    "ok": False,
+                    "status": "error",
+                    "error_code": "invalid_target",
+                    "message": "Allowlist remove only supports IPv4 addresses",
                 }
             )
             continue
