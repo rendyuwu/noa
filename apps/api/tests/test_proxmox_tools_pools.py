@@ -423,9 +423,17 @@ async def test_proxmox_move_vms_between_pools_fails_when_source_pool_changed_bef
     assert result["error_code"] == "source_pool_changed"
     # Mutation (add_vms_to_pool) should NOT have been called
     assert not any(call[0] == "add_vms_to_pool" for call in scripted_state.calls)
-    # Verify both users were looked up and both permissions checked
+    # Verify both users were looked up and correct permission paths checked
     assert ("get_user", "alice@example.com@pve") in scripted_state.calls
     assert ("get_user", "bob@example.com@pve") in scripted_state.calls
+    assert (
+        "get_effective_permissions",
+        ("alice@example.com@pve", "/pool/pool_a"),
+    ) in scripted_state.calls
+    assert (
+        "get_effective_permissions",
+        ("bob@example.com@pve", "/pool/pool_b"),
+    ) in scripted_state.calls
 
 
 @pytest.mark.asyncio
