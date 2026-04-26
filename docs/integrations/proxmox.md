@@ -253,8 +253,8 @@ Important:
 - Do not mutate Proxmox user email fields.
 - Do not add or remove ACL entries as part of this flow.
 - Ask the user directly for the source pool, destination pool, one or more VMIDs, the old email (current PIC who owns the source pool), and the new email (new PIC who owns the destination pool).
-- Both emails are validated against their respective pools: `old_email` must have permissions on `source_pool`, `new_email` must have permissions on `destination_pool`. This cross-validation prevents typo-based customer mismatch.
-- Do not pass an already-suffixed Proxmox userid here; the implementation conditionally appends `@pve` (if input already ends with `@pve`, it is returned unchanged).
+- Both emails are validated against their respective pools: `old_email` must exist on `source_pool` ACL, `new_email` must exist on `destination_pool` ACL (any role counts — `PVEConsoleUser`, `PVEVMAdmin`, custom roles all valid). This cross-validation prevents typo-based customer mismatch.
+- Accepts both plain email (`user@domain.com`) and Proxmox userid (`user@domain.com@pve`). The implementation conditionally appends `@pve` (if input already ends with `@pve`, it is returned unchanged).
 - The user should NOT be asked for "the email of the user performing the move." Instead, ask for old email (current owner) and new email (new owner).
 
 ### Read one user by email-derived userid

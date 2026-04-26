@@ -588,7 +588,7 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_source_per
     assert result == {
         "ok": False,
         "error_code": "permission_required",
-        "message": "Old email does not have permissions on the source pool",
+        "message": "Old email (l1@biznetgio.com@pve) does not have any ACL entry on the source pool",
     }
 
 
@@ -666,7 +666,7 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_destinatio
     assert result == {
         "ok": False,
         "error_code": "permission_required",
-        "message": "New email does not have permissions on the destination pool",
+        "message": "New email (l2@biznetgio.com@pve) does not have any ACL entry on the destination pool",
     }
 
 
@@ -1477,3 +1477,83 @@ async def test_proxmox_move_vms_between_pools_rejects_malformed_refetch_payload_
         ("get_pool", "pool_a"),
         ("get_pool", "pool_b"),
     ]
+
+
+@pytest.mark.asyncio
+async def test_proxmox_preflight_accepts_pve_console_user_role(
+    monkeypatch,
+) -> None:
+    """V71/B8: PVEConsoleUser has no VM.Allocate/Pool.Allocate/Pool.Audit but
+    is a valid pool ACL entry — preflight must accept it."""
+    from noa_api.proxmox.tools import pool_tools
+
+    server = _server()
+    # PVEConsoleUser grants VM.Console + VM.PowerMgmt, not VM.Allocate
+    source_permission_result = {
+        "ok": True,
+        "message": "ok",
+        "data": {"/pool/pool_a": {"VM.Console": 1, "VM.PowerMgmt": 1}},
+    }
+    destination_permission_result = {
+        "ok": True,
+        "message": "ok",
+        "data": {"/pool/pool_b": {"VM.Console": 1, "VM.PowerMgmt": 1}},
+    }
+
+    class _Client:
+        def __init__(self, **kwargs: Any) -> None:
+            _ = kwargs
+
+        async def get_pool(self, poolid: str) -> dict[str, object]:
+            return _pool_payload(
+                poolid, [{"vmid": 1040}] if poolid == "pool_a" else []
+            )
+
+        async def get_user(self, userid: str) -> dict[str, object]:
+            return {
+                "ok": True,
+                "message": "ok",
+                "data": {"userid": userid, "enable": 1},
+            }
+
+        async def get_effective_permissions(
+            self, userid: str, path: str
+        ) -> dict[str, object]:
+            return {
+                ("l1@biznetgio.com@pve", "/pool/pool_a"): source_permission_result,
+                ("l2@biznetgio.com@pve", "/pool/pool_b"): destination_permission_result,
+            }[(userid, path)]
+
+        async def add_vms_to_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            return {"ok": True, "message": "ok", "data": None}
+
+        async def remove_vms_from_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
+            return {"ok": True, "message": "ok", "data": None}
+
+    from noa_api.proxmox.tools import _shared
+
+    monkeypatch.setattr(_shared, "ProxmoxClient", _Client)
+    monkeypatch.setattr(pool_tools, "ProxmoxClient", _Client)
+    monkeypatch.setattr(
+        pool_tools,
+        "SQLProxmoxServerRepository",
+        lambda session: _Repo([server]),
+    )
+
+    result = await pool_tools.proxmox_preflight_move_vms_between_pools(
+        session=_Session(),
+        server_ref="pve1",
+        source_pool="pool_a",
+        destination_pool="pool_b",
+        vmids=[1040],
+        old_email="l1@biznetgio.com",
+        new_email="l2@biznetgio.com",
+    )
+
+    assert result["ok"] is True
+    assert result["source_permission"] is source_permission_result
+    assert result["destination_permission"] is destination_permission_result

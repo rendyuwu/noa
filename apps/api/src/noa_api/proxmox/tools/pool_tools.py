@@ -59,20 +59,23 @@ def _validated_pool_vmids(result: dict[str, object]) -> set[int] | None:
         return None
 
 
-_REQUIRED_POOL_PERMISSIONS = {"VM.Allocate", "Pool.Allocate", "Pool.Audit"}
-
-
-def _meaningful_permission_entries(
+def _has_any_pool_permission(
     result: dict[str, object], path: str
 ) -> dict[str, object] | None:
+    """Return permission entries if user has *any* ACL entry on *path*.
+
+    Change-PIC preflight only needs to confirm the user exists on the pool
+    ACL — any role (``PVEConsoleUser``, ``PVEVMAdmin``, custom, …) counts
+    as valid pool association.  See §V.71.
+    """
     data = result.get("data")
     if not isinstance(data, dict):
         return None
     permissions = data.get(path)
     if not isinstance(permissions, dict) or not permissions:
         return None
-    granted = {key for key, value in permissions.items() if value == 1 or value is True}
-    if not granted.intersection(_REQUIRED_POOL_PERMISSIONS):
+    has_any = any(value == 1 or value is True for value in permissions.values())
+    if not has_any:
         return None
     return permissions
 
@@ -211,7 +214,7 @@ async def proxmox_preflight_move_vms_between_pools(
         )
 
     if (
-        _meaningful_permission_entries(
+        _has_any_pool_permission(
             source_permission_result, f"/pool/{normalized_source_pool}"
         )
         is None
@@ -219,7 +222,7 @@ async def proxmox_preflight_move_vms_between_pools(
         return {
             "ok": False,
             "error_code": "permission_required",
-            "message": "Old email does not have permissions on the source pool",
+            "message": f"Old email ({normalized_old_userid}) does not have any ACL entry on the source pool",
         }
 
     # Validate new email has permissions on destination pool
@@ -234,7 +237,7 @@ async def proxmox_preflight_move_vms_between_pools(
         )
 
     if (
-        _meaningful_permission_entries(
+        _has_any_pool_permission(
             destination_permission_result, f"/pool/{normalized_destination_pool}"
         )
         is None
@@ -242,7 +245,7 @@ async def proxmox_preflight_move_vms_between_pools(
         return {
             "ok": False,
             "error_code": "permission_required",
-            "message": "New email does not have permissions on the destination pool",
+            "message": f"New email ({normalized_new_userid}) does not have any ACL entry on the destination pool",
         }
 
     if not all(vmid in source_pool_vmids for vmid in vmids):

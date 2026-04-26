@@ -8,6 +8,7 @@ if TYPE_CHECKING:
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_PVE_REALM_SUFFIX = "@pve"
 _SERVER_REF_RE = re.compile(r"^[A-Za-z0-9._:-]+$")
 _WHM_USERNAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$")
 
@@ -138,6 +139,15 @@ def _validate_string(schema: dict[str, Any], *, value: object, path: str) -> lis
 
     if schema.get("format") == "email" and not _EMAIL_RE.match(normalized):
         problems.append(f"{_format_path(path)} must be a valid email address")
+
+    if schema.get("format") == "proxmox-email":
+        email_part = (
+            normalized[: -len(_PVE_REALM_SUFFIX)]
+            if normalized.endswith(_PVE_REALM_SUFFIX)
+            else normalized
+        )
+        if not _EMAIL_RE.match(email_part):
+            problems.append(f"{_format_path(path)} must be a valid email address")
 
     pattern = schema.get("pattern")
     if isinstance(pattern, str) and not re.fullmatch(pattern, normalized):
