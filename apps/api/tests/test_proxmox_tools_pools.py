@@ -513,21 +513,27 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_source_per
     from noa_api.proxmox.tools import pool_tools
 
     server = _server()
-    source_permission_empty = {"ok": True, "message": "ok", "data": {}}
-    destination_permission_ok = {
-        "ok": True,
-        "message": "ok",
-        "data": {"/pool/pool_b": {"VM.Allocate": 1}},
+    permissions: dict[tuple[str, str], dict[str, object]] = {
+        ("l1@biznetgio.com@pve", "/pool/pool_a"): {
+            "ok": True,
+            "message": "ok",
+            "data": {},
+        },
+        ("l2@biznetgio.com@pve", "/pool/pool_b"): {
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_b": {"VM.Allocate": 1}},
+        },
     }
-
-    call_count = {"get_effective_permissions": 0}
 
     class _Client:
         def __init__(self, **kwargs: Any) -> None:
             _ = kwargs
 
         async def get_pool(self, poolid: str) -> dict[str, object]:
-            return _pool_payload(poolid, [{"vmid": 1057}] if poolid == "pool_a" else [])
+            return _pool_payload(
+                poolid, [{"vmid": 1057}] if poolid == "pool_a" else []
+            )
 
         async def get_user(self, userid: str) -> dict[str, object]:
             return {
@@ -539,10 +545,7 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_source_per
         async def get_effective_permissions(
             self, userid: str, path: str
         ) -> dict[str, object]:
-            call_count["get_effective_permissions"] += 1
-            if call_count["get_effective_permissions"] == 1:
-                return source_permission_empty
-            return destination_permission_ok
+            return permissions[(userid, path)]
 
         async def add_vms_to_pool(
             self, poolid: str, vmids: list[int]
@@ -588,39 +591,48 @@ async def test_proxmox_preflight_move_vms_between_pools_rejects_empty_destinatio
     from noa_api.proxmox.tools import pool_tools
 
     server = _server()
-
-    call_count = {"get_effective_permissions": 0}
-    source_permission_ok = {
-        "ok": True,
-        "message": "ok",
-        "data": {"/pool/pool_a": {"VM.Allocate": 1}},
+    permissions: dict[tuple[str, str], dict[str, object]] = {
+        ("l1@biznetgio.com@pve", "/pool/pool_a"): {
+            "ok": True,
+            "message": "ok",
+            "data": {"/pool/pool_a": {"VM.Allocate": 1}},
+        },
+        ("l2@biznetgio.com@pve", "/pool/pool_b"): {
+            "ok": True,
+            "message": "ok",
+            "data": {},
+        },
     }
-    destination_permission_empty = {"ok": True, "message": "ok", "data": {}}
 
     class _Client:
-        def __init__(self, **kwargs):
-            pass
+        def __init__(self, **kwargs: Any) -> None:
+            _ = kwargs
 
-        async def get_pool(self, poolid):
-            return _pool_payload(poolid, [{"vmid": 1057}] if poolid == "pool_a" else [])
+        async def get_pool(self, poolid: str) -> dict[str, object]:
+            return _pool_payload(
+                poolid, [{"vmid": 1057}] if poolid == "pool_a" else []
+            )
 
-        async def get_user(self, userid):
+        async def get_user(self, userid: str) -> dict[str, object]:
             return {
                 "ok": True,
                 "message": "ok",
                 "data": {"userid": userid, "enable": 1},
             }
 
-        async def get_effective_permissions(self, userid, path):
-            call_count["get_effective_permissions"] += 1
-            if call_count["get_effective_permissions"] == 1:
-                return source_permission_ok
-            return destination_permission_empty
+        async def get_effective_permissions(
+            self, userid: str, path: str
+        ) -> dict[str, object]:
+            return permissions[(userid, path)]
 
-        async def add_vms_to_pool(self, poolid, vmids):
+        async def add_vms_to_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
             return {"ok": True, "message": "ok", "data": None}
 
-        async def remove_vms_from_pool(self, poolid, vmids):
+        async def remove_vms_from_pool(
+            self, poolid: str, vmids: list[int]
+        ) -> dict[str, object]:
             return {"ok": True, "message": "ok", "data": None}
 
     from noa_api.proxmox.tools import _shared
