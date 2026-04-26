@@ -121,7 +121,8 @@ async def proxmox_preflight_move_vms_between_pools(
     source_pool: str,
     destination_pool: str,
     vmids: list[int],
-    email: str,
+    old_email: str,
+    new_email: str,
 ) -> dict[str, object]:
     resolved = await _resolve_client(session=session, server_ref=server_ref)
     if isinstance(resolved, dict):
@@ -130,7 +131,8 @@ async def proxmox_preflight_move_vms_between_pools(
     client, server_id = resolved
     normalized_source_pool = source_pool.strip()
     normalized_destination_pool = destination_pool.strip()
-    normalized_userid = _normalize_proxmox_userid(email)
+    normalized_old_userid = _normalize_proxmox_userid(old_email)
+    normalized_new_userid = _normalize_proxmox_userid(new_email)
 
     if len(vmids) == 0:
         return {
@@ -176,32 +178,64 @@ async def proxmox_preflight_move_vms_between_pools(
             "message": "Proxmox returned an unexpected pool payload",
         }
 
-    target_user_result = await client.get_user(normalized_userid)
-    if target_user_result.get("ok") is not True:
+    # Validate old email (current PIC) user exists
+    old_user_result = await client.get_user(normalized_old_userid)
+    if old_user_result.get("ok") is not True:
         return _upstream_error(
-            target_user_result, fallback_message="Proxmox user lookup failed"
+            old_user_result, fallback_message="Proxmox old email user lookup failed"
         )
 
-    permission_result = await client.get_effective_permissions(
-        normalized_userid,
-        f"/pool/{normalized_destination_pool}",
-    )
-    if permission_result.get("ok") is not True:
+    # Validate new email (new PIC) user exists
+    new_user_result = await client.get_user(normalized_new_userid)
+    if new_user_result.get("ok") is not True:
         return _upstream_error(
-            permission_result,
-            fallback_message="Proxmox destination permission lookup failed",
+            new_user_result, fallback_message="Proxmox new email user lookup failed"
+        )
+
+    # Validate old email has permissions on source pool
+    source_permission_result = await client.get_effective_permissions(
+        normalized_old_userid,
+        f"/pool/{normalized_source_pool}",
+    )
+    if source_permission_result.get("ok") is not True:
+        return _upstream_error(
+            source_permission_result,
+            fallback_message="Proxmox source pool permission lookup failed",
         )
 
     if (
         _meaningful_permission_entries(
-            permission_result, f"/pool/{normalized_destination_pool}"
+            source_permission_result, f"/pool/{normalized_source_pool}"
         )
         is None
     ):
         return {
             "ok": False,
             "error_code": "permission_required",
-            "message": "Proxmox destination pool permissions are required before moving VMs",
+            "message": "Old email does not have permissions on the source pool",
+        }
+
+    # Validate new email has permissions on destination pool
+    destination_permission_result = await client.get_effective_permissions(
+        normalized_new_userid,
+        f"/pool/{normalized_destination_pool}",
+    )
+    if destination_permission_result.get("ok") is not True:
+        return _upstream_error(
+            destination_permission_result,
+            fallback_message="Proxmox destination pool permission lookup failed",
+        )
+
+    if (
+        _meaningful_permission_entries(
+            destination_permission_result, f"/pool/{normalized_destination_pool}"
+        )
+        is None
+    ):
+        return {
+            "ok": False,
+            "error_code": "permission_required",
+            "message": "New email does not have permissions on the destination pool",
         }
 
     if not all(vmid in source_pool_vmids for vmid in vmids):
@@ -217,10 +251,13 @@ async def proxmox_preflight_move_vms_between_pools(
         "server_id": server_id,
         "source_pool": source_pool_result,
         "destination_pool": destination_pool_result,
-        "target_user": target_user_result,
-        "destination_permission": permission_result,
+        "old_user": old_user_result,
+        "new_user": new_user_result,
+        "source_permission": source_permission_result,
+        "destination_permission": destination_permission_result,
         "requested_vmids": vmids,
-        "normalized_userid": normalized_userid,
+        "normalized_old_userid": normalized_old_userid,
+        "normalized_new_userid": normalized_new_userid,
     }
 
 
@@ -231,7 +268,8 @@ async def proxmox_move_vms_between_pools(
     source_pool: str,
     destination_pool: str,
     vmids: list[int],
-    email: str,
+    old_email: str,
+    new_email: str,
     reason: str,
 ) -> dict[str, object]:
     preflight = await proxmox_preflight_move_vms_between_pools(
@@ -240,7 +278,8 @@ async def proxmox_move_vms_between_pools(
         source_pool=source_pool,
         destination_pool=destination_pool,
         vmids=vmids,
-        email=email,
+        old_email=old_email,
+        new_email=new_email,
     )
     if preflight.get("ok") is not True:
         return preflight

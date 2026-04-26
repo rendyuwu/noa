@@ -162,6 +162,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 - V38. WHM CHANGE tools without matching preflight evidence → `FAILED` with `preflight_required`. Matching preflight allows execution. Mismatched account in preflight → blocked.
 - V39. All Proxmox CHANGE tools expose preflight guidance in description. Proxmox CHANGE tools have `workflow_family` metadata.
+- V69. Pool membership move (Change Email PIC) ! require `old_email` + `new_email` (not single `email`). `old_email` ! have permissions on `source_pool`, `new_email` ! have permissions on `destination_pool`. Cross-validation prevents typo-based customer mismatch. System prompt ! map "change email PIC" / "change PIC" → pool membership move workflow.
 
 ### Workflows
 
@@ -252,6 +253,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T33 | x | Enhance `.github/workflows/api-scaffold-verify.yml` — add ruff lint step before pytest | V66,C13 |
 | T34 | x | Update `README.md` — add badges (CI status), contributing link, code of conduct link, security link, license placeholder | V62 |
 | T35 | x | Restrict `whm_firewall_unblock` & `whm_firewall_allowlist_remove` to IPv4-only targets; reject CIDR/IPv6/hostname same as `_add_ttl` tools. Update `docs/integrations/whm.md:199` to match | V68 |
+| T36 | ~ | Reframe pool membership move as "Change Email PIC": replace single `email` → `old_email` + `new_email`; validate both against respective pools; update tool defs, prompt_hints, system prompt, workflow templates, matching, evidence, tests, docs | V69 |
 
 ## §B Bugs
 

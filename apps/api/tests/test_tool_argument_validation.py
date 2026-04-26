@@ -238,7 +238,8 @@ def test_validate_tool_arguments_rejects_duplicate_vmids_for_pool_move() -> None
                 "source_pool": "source",
                 "destination_pool": "dest",
                 "vmids": [100, 100],
-                "email": "owner@example.com",
+                "old_email": "owner@example.com",
+                "new_email": "newowner@example.com",
                 "reason": "move pool membership",
             },
         )
@@ -266,7 +267,8 @@ def test_validate_tool_arguments_rejects_non_positive_pool_move_vmids(
                 "source_pool": "source",
                 "destination_pool": "dest",
                 "vmids": vmids,
-                "email": "owner@example.com",
+                "old_email": "owner@example.com",
+                "new_email": "newowner@example.com",
                 "reason": "move pool membership",
             },
         )

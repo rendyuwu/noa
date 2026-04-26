@@ -53,6 +53,16 @@ PROXMOX_EMAIL_PARAM = _string_param(
     format_name="email",
 )
 
+PROXMOX_OLD_EMAIL_PARAM = _string_param(
+    "Exact email address of the current (old) PIC who owns the source pool.",
+    format_name="email",
+)
+
+PROXMOX_NEW_EMAIL_PARAM = _string_param(
+    "Exact email address of the new PIC who owns the destination pool.",
+    format_name="email",
+)
+
 PROXMOX_POOL_PARAM = _string_param(
     "Exact Proxmox pool name.",
 )
@@ -231,10 +241,13 @@ PROXMOX_PREFLIGHT_POOL_MOVE_RESULT_SCHEMA = _result_any_of(
             "server_id": _result_string_schema(),
             "source_pool": _result_json_object_schema(),
             "destination_pool": _result_json_object_schema(),
-            "target_user": _result_json_object_schema(),
+            "old_user": _result_json_object_schema(),
+            "new_user": _result_json_object_schema(),
+            "source_permission": _result_json_object_schema(),
             "destination_permission": _result_json_object_schema(),
             "requested_vmids": _result_array_schema(items=_result_integer_schema()),
-            "normalized_userid": _result_string_schema(),
+            "normalized_old_userid": _result_string_schema(),
+            "normalized_new_userid": _result_string_schema(),
         },
         required=[
             "ok",
@@ -242,10 +255,13 @@ PROXMOX_PREFLIGHT_POOL_MOVE_RESULT_SCHEMA = _result_any_of(
             "server_id",
             "source_pool",
             "destination_pool",
-            "target_user",
+            "old_user",
+            "new_user",
+            "source_permission",
             "destination_permission",
             "requested_vmids",
-            "normalized_userid",
+            "normalized_old_userid",
+            "normalized_new_userid",
         ],
     ),
     PROXMOX_RESULT_ERROR_SCHEMA,
