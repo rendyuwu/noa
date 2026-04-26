@@ -196,7 +196,7 @@ Tool definitions: `apps/api/src/noa_api/core/tools/definitions/whm.py`
 - Primary domain change (with DNS zone postflight verification)
 - Domain owner lookup (internal helper for primary-domain preflight, not a standalone tool)
 - Domain list lookup via WHM UAPI bridge (internal helper, not a standalone tool)
-- Firewall/IP operations via SSH using CSF and Imunify360 (IPv4 only; no CIDR, hostname, or IPv6)
+- Firewall/IP operations via SSH using CSF and Imunify360 (all CHANGE tools IPv4 only; preflight accepts IPv4, IPv6, CIDR, and hostnames for inspection)
 - Binary existence checks over SSH
 - Mail log failed-auth username suspect analysis over SSH
 

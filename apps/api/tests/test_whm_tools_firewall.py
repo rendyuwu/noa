@@ -341,3 +341,106 @@ async def test_whm_firewall_unblock_auto_adds_failed_auth_suspects(monkeypatch) 
     assert captured["server_ref"] == "web1"
     assert captured["lfd_log_line"] == lfd_line
     assert captured["include_raw_output"] is False
+
+
+# ---------------------------------------------------------------------------
+# §V.68 — all firewall CHANGE tools reject non-IPv4 targets
+# ---------------------------------------------------------------------------
+
+_NON_IPV4_TARGETS = [
+    ("192.168.1.0/24", "cidr"),
+    ("2001:db8::1", "ipv6"),
+    ("2001:db8::/32", "ipv6 cidr"),
+    ("mail.example.com", "hostname"),
+]
+
+
+def _setup_resolve_and_binaries(monkeypatch, firewall_tools, server):
+    """Wire up monkeypatches shared by all non-IPv4 rejection tests."""
+    monkeypatch.setattr(
+        firewall_tools, "SQLWHMServerRepository", lambda session: object()
+    )
+
+    async def _resolve(server_ref: str, *, repo) -> SimpleNamespace:
+        _ = server_ref, repo
+        return SimpleNamespace(ok=True, server=server, server_id=server.id)
+
+    async def _check_firewall_binaries(server_obj) -> dict[str, bool]:
+        _ = server_obj
+        return {"csf": True, "imunify": True}
+
+    async def _should_not_run(*args, **kwargs):
+        raise AssertionError("firewall commands should not run for non-IPv4 targets")
+
+    monkeypatch.setattr(firewall_tools, "resolve_whm_server_ref", _resolve)
+    monkeypatch.setattr(
+        firewall_tools, "check_firewall_binaries", _check_firewall_binaries
+    )
+    monkeypatch.setattr(firewall_tools, "run_csf_command", _should_not_run)
+    monkeypatch.setattr(firewall_tools, "run_imunify_command", _should_not_run)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target,kind", _NON_IPV4_TARGETS)
+async def test_whm_firewall_unblock_rejects_non_ipv4(
+    monkeypatch, target: str, kind: str
+) -> None:
+    from noa_api.whm.tools import firewall_tools
+
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    _setup_resolve_and_binaries(monkeypatch, firewall_tools, server)
+
+    result = await firewall_tools.whm_firewall_unblock(
+        session=object(),
+        server_ref="web1",
+        targets=[target],
+        reason="test",
+    )
+
+    assert result["ok"] is False
+    entry = result["results"][0]
+    assert entry["ok"] is False
+    assert entry["error_code"] == "invalid_target"
+    assert "IPv4" in entry["message"], f"expected IPv4 mention for {kind} target"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target,kind", _NON_IPV4_TARGETS)
+async def test_whm_firewall_allowlist_remove_rejects_non_ipv4(
+    monkeypatch, target: str, kind: str
+) -> None:
+    from noa_api.whm.tools import firewall_tools
+
+    server = _Server(
+        id=uuid4(),
+        name="web1",
+        base_url="https://whm.example.com:2087",
+        api_username="root",
+        api_token="SECRET",
+        verify_ssl=True,
+        created_at=datetime.now(UTC),
+        updated_at=datetime.now(UTC),
+    )
+    _setup_resolve_and_binaries(monkeypatch, firewall_tools, server)
+
+    result = await firewall_tools.whm_firewall_allowlist_remove(
+        session=object(),
+        server_ref="web1",
+        targets=[target],
+        reason="test",
+    )
+
+    assert result["ok"] is False
+    entry = result["results"][0]
+    assert entry["ok"] is False
+    assert entry["error_code"] == "invalid_target"
+    assert "IPv4" in entry["message"], f"expected IPv4 mention for {kind} target"
