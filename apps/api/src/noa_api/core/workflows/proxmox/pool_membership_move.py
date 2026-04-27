@@ -150,19 +150,19 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     f"{summary_paragraph}\n\n"
                     f"{_pool_move_approval_summary(before_state=before_state, args=context.args)}"
                 ),
-                evidence_summary=(
-                    evidence_summary := _pool_move_evidence_summary(
-                        phase=context.phase,
-                        tool_name=context.tool_name,
-                        before_state=before_state,
-                        result=result,
-                        postflight_result=postflight,
-                    )
-                ),
+                evidence_summary=[],
                 approval_presentation=_approval_presentation_from_reply_data(
                     paragraph=summary_paragraph,
                     details=details,
-                    evidence_summary=evidence_summary,
+                    evidence_summary=(
+                        _pool_move_evidence_summary(
+                            phase=context.phase,
+                            tool_name=context.tool_name,
+                            before_state=before_state,
+                            result=result,
+                            postflight_result=postflight,
+                        )
+                    ),
                     extra_blocks=[
                         _approval_table_block(
                             headers=["VMID", "Source pool", "Destination pool"],

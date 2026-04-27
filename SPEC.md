@@ -219,6 +219,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 ### Approval UX
 
 - V72. Approve/Deny buttons on approval-request card ! show confirmation dialog before dispatch. Dialog ! display action summary (activity, subject, reason). Single-click on Approve/Deny ! ⊥ trigger action directly.
+- V73. Approval reply text ! show each fact exactly once. Action, reason, success criteria, preflight evidence — ⊥ duplicated across `summary`/`evidence_summary`/`approval_presentation`. `render_workflow_reply_text` output ! structured: title → preflight evidence (bullets) → key-value details (action, reason, success criteria each 1x) → next step.
 
 ## §T Tasks
 
@@ -263,6 +264,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T37 | x | Fix Proxmox email param validation: strip `@pve` realm suffix before `_EMAIL_RE` check in `argument_validation.py`, or use custom format for Proxmox email params (not `"email"`). Update preflight error msgs to show normalized userid for clarity | V70,B7 |
 | T38 | x | Fix pool membership preflight: replace `_REQUIRED_POOL_PERMISSIONS` intersection check with any-ACL-entry check. `_has_any_pool_permission` ! return non-None when user has any permission entry on pool path (any role counts as pool association). Update tests | V71,B8 |
 | T39 | x | Add confirmation dialog to approval-request card Approve/Deny buttons. Dialog shows activity, subject, reason. Requires explicit confirm before dispatch | V72 |
+| T40 | ~ | Deduplicate approval reply text across all 7 workflow families. Refactor `build_reply_template` (approval phase) → structured sections, each fact 1x. Update `render_workflow_reply_text` if needed. Add regression tests | V73,B9 |
 
 ## §B Bugs
 
@@ -276,3 +278,4 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | B6 | 2026-04-26 | `whm_firewall_unblock` & `whm_firewall_allowlist_remove` accept CIDR/IPv6/hostname targets; `_add_ttl` tools correctly reject non-IPv4. Doc `whm.md:199` says "IPv4 only" for all ops but code only enforces on add. Drift both directions: doc imprecise, code too permissive | V68,T35 |
 | B7 | 2026-04-26 | `_EMAIL_RE` (`^[^@\s]+@[^@\s]+\.[^@\s]+$`) in `argument_validation.py:10` rejects Proxmox userids containing `@pve` realm suffix (two `@` symbols). LM sees `user@domain.com@pve` in Proxmox data, echoes it back → argument validation blocks tool call with "not valid email". Without `@pve` tool works (code appends internally) but LM behavior unpredictable — sometimes includes realm from upstream data | V70,T37 |
 | B8 | 2026-04-26 | `_meaningful_permission_entries` in `pool_tools.py:65` checks intersection with `_REQUIRED_POOL_PERMISSIONS` (`VM.Allocate`, `Pool.Allocate`, `Pool.Audit`). User with `PVEConsoleUser` role (grants `VM.Console`, `VM.PowerMgmt`, etc.) has valid ACL entry on pool but zero overlap with required set → preflight rejects as "does not have permissions". Change PIC only needs to confirm user exists on pool ACL, not specific privileges | V71,T38 |
+| B9 | 2026-04-27 | `build_reply_template` (approval phase) passes same data to `details`, `approval_presentation.details`, & `approval_presentation.evidence_summary` → `render_workflow_reply_text` concatenates all → action 3x, reason 2x, success criteria 2x. `evidence` list includes `"Success condition: ..."` & `"Recorded reason: ..."` duplicating `details` rows. ∀ 7 workflow families | V73,T40 |

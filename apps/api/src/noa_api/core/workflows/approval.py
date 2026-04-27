@@ -93,6 +93,6 @@ def approval_presentation_from_reply_data(
     return approval_presentation(
         approval_paragraph_block(paragraph),
         *(extra_blocks or []),
-        approval_key_value_block_from_details(details),
         approval_bullet_list_block(*evidence_summary),
+        approval_key_value_block_from_details(details),
     )

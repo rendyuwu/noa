@@ -2861,7 +2861,9 @@ async def test_agent_runner_waiting_on_approval_text_does_not_duplicate_prefligh
     )
 
     assistant_text = _assistant_texts(result)[0]
-    assert assistant_text.count("Recorded reason: Ticket #223344.") == 1
+    # "Recorded reason" bullet removed; reason appears only in key-value block
+    assert "Recorded reason:" not in assistant_text
+    assert assistant_text.count("Ticket #223344") == 1
 
 
 async def test_agent_runner_preserves_detail_fallback_without_approval_presentation(
