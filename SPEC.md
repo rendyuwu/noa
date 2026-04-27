@@ -266,7 +266,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T37 | x | Fix Proxmox email param validation: strip `@pve` realm suffix before `_EMAIL_RE` check in `argument_validation.py`, or use custom format for Proxmox email params (not `"email"`). Update preflight error msgs to show normalized userid for clarity | V70,B7 |
 | T38 | x | Fix pool membership preflight: replace `_REQUIRED_POOL_PERMISSIONS` intersection check with any-ACL-entry check. `_has_any_pool_permission` ! return non-None when user has any permission entry on pool path (any role counts as pool association). Update tests | V71,B8 |
 | T39 | x | Add confirmation dialog to approval-request card Approve/Deny buttons. Dialog shows activity, subject, reason. Requires explicit confirm before dispatch | V72 |
-| T40 | ~ | Deduplicate approval reply text across all 7 workflow families. Refactor `build_reply_template` (approval phase) → structured sections, each fact 1x. Update `render_workflow_reply_text` if needed. Add regression tests | V73,B9 |
+| T40 | x | Deduplicate approval reply text across all 7 workflow families. Refactor `build_reply_template` (approval phase) → structured sections, each fact 1x. Update `render_workflow_reply_text` if needed. Add regression tests | V73,B9 |
 | T41 | x | Fix firewall approval card: (1) subtitle use `argumentSummary` only in `request-approval-tool-ui.tsx:81-84`; (2) before-state drop raw iptables dump — remove `include_full_csf_raw_output=True` from `firewall.py:637` or pass `False` for before-state section | V74,V75,B10 |
 
 ## §B Bugs
