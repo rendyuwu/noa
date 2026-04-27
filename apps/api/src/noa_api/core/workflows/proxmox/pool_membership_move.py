@@ -247,7 +247,11 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                     result=result,
                     postflight_result=postflight,
                 ),
-                next_step="Review both pools and confirm the moved VMIDs now appear in the destination pool.",
+                next_step=(
+                    "Move verified. Both pools confirmed."
+                    if _pool_move_verified(context.tool_name, result, postflight)
+                    else "Review both pools and confirm the moved VMIDs now appear in the destination pool."
+                ),
             )
 
         return None
@@ -419,6 +423,48 @@ def _pool_move_verification_content(
     return "Poll the task and verify the source and destination pool memberships after the move."
 
 
+_VM_DETAIL_CAP = 4
+
+
+def _pool_vm_detail_items(
+    label_prefix: str,
+    pool_data: dict[str, object] | None,
+) -> list[WorkflowEvidenceItem]:
+    """Emit per-VM evidence items (VMID, name, node, status), capped at _VM_DETAIL_CAP."""
+    members = _pool_members_from_result(pool_data)
+    if not members:
+        return [WorkflowEvidenceItem(label=label_prefix, value="0 members")]
+
+    items: list[WorkflowEvidenceItem] = []
+    for member in members[:_VM_DETAIL_CAP]:
+        vmid = member.get("vmid")
+        vmid_text = (
+            str(vmid)
+            if isinstance(vmid, int) and not isinstance(vmid, bool)
+            else "unknown"
+        )
+        name = _pool_value(member.get("name"))
+        node = _pool_value(member.get("node"))
+        status = _pool_value(member.get("status"))
+        items.append(
+            WorkflowEvidenceItem(
+                label=f"{label_prefix} VM {vmid_text}",
+                value=f"{name} on {node} ({status})",
+            )
+        )
+
+    overflow = len(members) - _VM_DETAIL_CAP
+    if overflow > 0:
+        items.append(
+            WorkflowEvidenceItem(
+                label=label_prefix,
+                value=f"+{overflow} more",
+            )
+        )
+
+    return items
+
+
 def _pool_move_before_state_items(
     before_state: dict[str, object] | None,
 ) -> list[WorkflowEvidenceItem]:
@@ -454,14 +500,8 @@ def _pool_move_before_state_items(
                 and _pool_name(before_state.get("destination_pool"))
             ),
         ),
-        WorkflowEvidenceItem(
-            label="Source members",
-            value=str(len(_pool_members_from_result(source_pool))),
-        ),
-        WorkflowEvidenceItem(
-            label="Destination members",
-            value=str(len(_pool_members_from_result(destination_pool))),
-        ),
+        *_pool_vm_detail_items("Source", source_pool),
+        *_pool_vm_detail_items("Destination", destination_pool),
     ]
 
 
@@ -484,27 +524,13 @@ def _pool_move_after_state_items(
         else {}
     )
     return [
-        WorkflowEvidenceItem(
-            label="Source members after",
-            value=str(
-                len(
-                    _pool_members_from_result(
-                        source_after if isinstance(source_after, dict) else None
-                    )
-                )
-            ),
+        *_pool_vm_detail_items(
+            "Source after",
+            source_after if isinstance(source_after, dict) else None,
         ),
-        WorkflowEvidenceItem(
-            label="Destination members after",
-            value=str(
-                len(
-                    _pool_members_from_result(
-                        destination_after
-                        if isinstance(destination_after, dict)
-                        else None
-                    )
-                )
-            ),
+        *_pool_vm_detail_items(
+            "Dest after",
+            destination_after if isinstance(destination_after, dict) else None,
         ),
         WorkflowEvidenceItem(
             label="Move verified",

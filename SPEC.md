@@ -225,6 +225,11 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - V76. `describe_activity()` ∀ workflow families ! return short label (≤60 chars). ⊥ include VMIDs, pool names, usernames, or tool args in activity string. Detail belongs in `argumentSummary` / `evidenceSections`.
 - V77. `WorkflowReplyTemplate.summary` ! plain text only. ⊥ markdown tables, pipe-delimited rows, or fenced blocks. Structured data (before/after state tables) ! go in `evidenceSections` only. Receipt UI renders summary as plain text without markdown parser.
 
+### Receipt Evidence
+
+- V78. Pool move receipt before-state & after-state evidence items ! show VM list (VMID, name, node, status) per pool, capped ≤4 VMs with "+N more" overflow. ⊥ counts-only.
+- V79. Pool move receipt `next_step` ! reflect postflight result. Postflight `verified=True` → "Move verified. Both pools confirmed." Postflight failed/missing → actionable review step.
+
 ## §T Tasks
 
 | id | status | task | cites |
@@ -272,6 +277,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T41 | x | Fix firewall approval card: (1) subtitle use `argumentSummary` only in `request-approval-tool-ui.tsx:81-84`; (2) before-state drop raw iptables dump — remove `include_full_csf_raw_output=True` from `firewall.py:637` or pass `False` for before-state section | V74,V75,B10 |
 | T42 | x | Fix pool move: (1) `describe_activity` → return `"Change Email PIC"` only, ⊥ include `_pool_move_subject`; (2) `_pool_move_completion_summary` → plain text summary line, move tables to `evidenceSections`; (3) verify receipt UI renders clean | V76,V77,B11 |
 | T43 | x | Fix pool move approval duplication: `pool_membership_move.py:143-172` passes `summary_paragraph` & `details` to both top-level `WorkflowReplyTemplate` fields AND `_approval_presentation_from_reply_data` → frontend payload contains same data 2x. Stop passing `details=details` to top-level when `approval_presentation` already has key-value block; set `summary` to minimal fallback (not same as `paragraph`). Verify `workflow_reply_template_payload` output has zero repeated facts. Add regression test | V73,B12 |
+| T44 | x | Fix pool move receipt: (1) `_pool_move_before_state_items` & `_pool_move_after_state_items` → emit VM detail items (VMID, name, node, status) capped ≤4 per pool with "+N more"; (2) `next_step` in `build_reply_template` completed phase → conditional on postflight verified flag; use NIC toggle / cloudinit as reference for richer evidence | V78,V79,B13 |
 
 ## §B Bugs
 
@@ -289,3 +295,4 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | B10 | 2026-04-27 | Firewall approval card 2 readability bugs: (a) `summarySourceItems` in `request-approval-tool-ui.tsx:81-84` prefers `evidenceSections` over `argumentSummary` → subtitle shows raw iptables/csf dump instead of action summary; (b) `firewall.py:637` passes `include_full_csf_raw_output=context.phase == "waiting_on_approval"` → before-state gets full iptables table dump instead of just `csf.deny`/`csf.allow` log line. After-state already clean (uses summary) | V74,V75,T41 |
 | B11 | 2026-04-27 | `describe_activity` in `pool_membership_move.py:350` returns `f"Change Email PIC: move {_pool_move_subject(args)}"` → title includes VMIDs + pool names, wraps on card. `_pool_move_completion_summary` generates markdown tables in `summary` field → receipt UI renders pipe chars/dashes as plain text. Other workflows (`contact_email`, `primary_domain`) already short titles | V76,V77,T42 |
 | B12 | 2026-04-27 | `pool_membership_move.py:143-172` approval phase passes `summary_paragraph` to both `WorkflowReplyTemplate.summary` (L149) & `approval_presentation.paragraph` (L152); passes `details` to both `WorkflowReplyTemplate.details` (L170) & `approval_key_value_block_from_details` inside `_approval_presentation_from_reply_data` (L97 approval.py). `workflow_reply_template_payload` serializes all top-level fields to frontend; approval_presentation blocks contain same data → summary 2x, details (action/reason/success criteria) 2x in payload. T40 fix (729470d) addressed `render_workflow_reply_text` concatenation but missed `workflow_reply_template_payload` dual-path | V73,T43 |
+| B13 | 2026-04-27 | `_pool_move_after_state_items` (L486-507) & `_pool_move_before_state_items` (L442-464) call `len(_pool_members_from_result(...))` → evidence shows only member counts ("Source members: 1", "Destination members after: 2"). Postflight result contains full pool data with `{vmid, name, node, status}` per member but ⊥ extracted into evidence items. `_pool_table()` (L370) already formats VM details but only used in reply text, ⊥ evidence. `next_step` (L250) hardcoded "Review both pools and confirm..." even when postflight already verified move (`verified=True`) | V78,V79,T44 |
