@@ -634,7 +634,6 @@ def _build_firewall_evidence_template(
             items=(
                 _firewall_entries_items(
                     before_entries,
-                    include_full_csf_raw_output=context.phase == "waiting_on_approval",
                 )
                 or [
                     WorkflowEvidenceItem(

@@ -79,10 +79,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
   const baseId = useId();
   const toggleId = `${baseId}-approval-details-toggle`;
   const panelId = `${baseId}-approval-details-panel`;
-  const summarySourceItems =
-    evidenceSections.length > 0
-      ? evidenceSections.flatMap((section) => section.items)
-      : [...argumentSummary, ...beforeState].flatMap((section) => section.items);
+  const summarySourceItems = argumentSummary.flatMap((section) => section.items);
   const summaryText = useMemo(
     () => summarizeDetails(summarySourceItems),
     [summarySourceItems],
