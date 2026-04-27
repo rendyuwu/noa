@@ -146,7 +146,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             return WorkflowReplyTemplate(
                 title="Approve Proxmox pool membership move",
                 outcome="info",
-                summary=summary_paragraph,
+                summary="Pool membership move pending approval.",
                 evidence_summary=[],
                 approval_presentation=_approval_presentation_from_reply_data(
                     paragraph=summary_paragraph,
@@ -167,7 +167,6 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                         )
                     ],
                 ),
-                details=details,
                 next_step="Approve the request to move the VMIDs between pools.",
             )
 
