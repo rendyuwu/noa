@@ -118,7 +118,6 @@ def test_render_workflow_reply_text_uses_approval_presentation_when_present() ->
 
     assert render_workflow_reply_text(reply) == (
         "Approval needed\n\n"
-        "Review the proposed change before execution.\n\n"
         "- **Action:** Unsuspend alice\n"
         "- **Reason:** Ticket #1661262\n\n"
         "- Current account state collected."
@@ -606,11 +605,12 @@ def test_whm_account_lifecycle_waiting_on_approval_does_not_repeat_evidence_line
     assert reply is not None
     rendered = render_workflow_reply_text(reply)
     assert rendered.count("Preflight found 'rendy' on 'web2' in suspended state.") == 1
-    assert rendered.count("Recorded reason: Ticket #223344.") == 1
-    assert (
-        rendered.count("Success condition: 'rendy' on 'web2' ends in active state.")
-        == 1
-    )
+    # "Recorded reason" and "Success condition" bullets removed;
+    # reason and success criteria appear only in key-value block
+    assert "Recorded reason:" not in rendered
+    assert "Success condition:" not in rendered
+    assert rendered.count("Ticket #223344") == 1
+    assert rendered.count("ends in active state") == 1
 
 
 def test_whm_account_lifecycle_approval_markdown_presentation() -> None:
@@ -645,7 +645,8 @@ def test_whm_account_lifecycle_approval_markdown_presentation() -> None:
         expected_paragraph="WHM account lifecycle request for 'alice' on 'web1'.",
     )
     assert "- Preflight found 'alice' on 'web1' in suspended state." in markdown
-    assert "- Success condition: 'alice' on 'web1' ends in active state." in markdown
+    assert "Success condition:" not in markdown
+    assert "**Success criteria:**" in markdown
 
 
 def test_whm_contact_email_waiting_on_approval_reply_includes_detail_rows() -> None:
@@ -724,8 +725,9 @@ def test_whm_contact_email_approval_markdown_presentation() -> None:
     )
     assert (
         "- Success condition: The contact email changes from 'old@example.com' to 'new@example.com'."
-        in markdown
+        not in markdown
     )
+    assert "**Success criteria:**" in markdown
 
 
 def test_whm_primary_domain_waiting_on_approval_reply_includes_detail_rows() -> None:
@@ -832,8 +834,9 @@ def test_whm_primary_domain_approval_markdown_presentation() -> None:
     )
     assert (
         "- Success condition: The primary domain changes to 'new.example.com' and the DNS zone exists."
-        in markdown
+        not in markdown
     )
+    assert "**Success criteria:**" in markdown
 
 
 def test_whm_firewall_waiting_on_approval_reply_includes_detail_rows() -> None:
@@ -935,8 +938,9 @@ def test_whm_firewall_approval_markdown_presentation() -> None:
     assert "- 5.6.7.8 is currently blocked (CSF)." in markdown
     assert (
         "- Success condition: Postflight reflects the requested firewall state for '1.2.3.4', '5.6.7.8'."
-        in markdown
+        not in markdown
     )
+    assert "**Success criteria:**" in markdown
 
 
 def test_whm_primary_domain_completed_reply_template_requires_dns_zone() -> None:

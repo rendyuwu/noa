@@ -264,10 +264,7 @@ def _build_primary_domain_reply_template_impl(
                 if owner is not None
                 else f"Server ownership check: '{requested_domain}' is not owned by another account."
             ),
-            f"Success condition: {success_criteria}",
         ]
-        if reason is not None:
-            evidence.append(f"Recorded reason: {reason}.")
         return WorkflowReplyTemplate(
             title="Primary domain approval requested",
             outcome="info",

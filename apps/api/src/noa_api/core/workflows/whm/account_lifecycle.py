@@ -223,10 +223,7 @@ def _build_account_lifecycle_reply_template_impl(
         )
         evidence = [
             f"Preflight found {subject} in {before_state} state.",
-            f"Success condition: {success_criteria}",
         ]
-        if reason is not None:
-            evidence.append(f"Recorded reason: {reason}.")
         return WorkflowReplyTemplate(
             title=f"{action_title} approval requested",
             outcome="info",

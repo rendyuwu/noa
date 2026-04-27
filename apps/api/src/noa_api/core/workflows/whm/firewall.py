@@ -480,9 +480,6 @@ def _build_firewall_reply_template(
         evidence = list(preflight_evidence)
         if duration_minutes is not None:
             evidence.append(f"Requested TTL: {duration_minutes} minute(s).")
-        if reason is not None:
-            evidence.append(f"Recorded reason: {reason}.")
-        evidence.append(f"Success condition: {success_criteria}")
         return WorkflowReplyTemplate(
             title="Firewall change approval requested",
             outcome="info",

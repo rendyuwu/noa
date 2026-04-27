@@ -202,10 +202,7 @@ def _build_contact_email_reply_template_impl(
         )
         evidence = [
             f"Preflight found the current contact email as '{before_email}'.",
-            f"Success condition: {success_criteria}",
         ]
-        if reason is not None:
-            evidence.append(f"Recorded reason: {reason}.")
         return WorkflowReplyTemplate(
             title="Contact email approval requested",
             outcome="info",
