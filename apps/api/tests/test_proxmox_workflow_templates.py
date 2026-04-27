@@ -13,6 +13,7 @@ from noa_api.core.workflows.types import (
     render_workflow_reply_text,
     render_workflow_approval_markdown,
     workflow_evidence_template_payload,
+    workflow_reply_template_payload,
 )
 
 
@@ -34,14 +35,14 @@ def _assert_approval_markdown_matches_reply(
 ) -> str:
     assert reply is not None
     assert reply.approval_presentation is not None
-    assert reply.details is not None
 
     markdown = render_workflow_approval_markdown(reply.approval_presentation)
 
     for paragraph in expected_paragraphs:
         assert paragraph in markdown
-    for item in reply.details:
-        assert f"- **{item['label']}:** {item['value']}" in markdown
+    if reply.details is not None:
+        for item in reply.details:
+            assert f"- **{item['label']}:** {item['value']}" in markdown
     for item in reply.evidence_summary:
         assert f"- {item}" in markdown
     for row in expected_table_rows or []:
@@ -1058,7 +1059,7 @@ def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_ta
 
     assert reply is not None
     assert reply.outcome == "info"
-    assert reply.summary == "Pool membership move requested for VMIDs 101, 102 from pool-a to pool-b."
+    assert reply.summary == "Pool membership move pending approval."
     assert "|" not in reply.summary
 
 
@@ -1342,11 +1343,16 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_reply_includes_detai
         ],
     )
 
-    assert _reply_detail_map(reply) == {
-        "Action": "Move VMIDs 101, 102 from pool-a to pool-b.",
-        "Reason": "customer request",
-        "Success criteria": "VMIDs 101, 102 are removed from pool-a and present in pool-b.",
-    }
+    assert reply is not None
+    assert reply.details is None  # details only in approval_presentation (§V.73)
+    assert reply.approval_presentation is not None
+    markdown = render_workflow_approval_markdown(reply.approval_presentation)
+    assert "- **Action:** Move VMIDs 101, 102 from pool-a to pool-b." in markdown
+    assert "- **Reason:** customer request" in markdown
+    assert (
+        "- **Success criteria:** VMIDs 101, 102 are removed from pool-a and present in pool-b."
+        in markdown
+    )
 
 
 def test_proxmox_move_vms_between_pools_approval_markdown_presentation_includes_table() -> (
@@ -1522,15 +1528,17 @@ def test_proxmox_move_vms_between_pools_waiting_on_approval_markdown_matches_req
         "New email (new PIC)": "l2@example.com",
         "Reason": "customer request",
     }
-    details = _reply_detail_map(reply)
-    assert details["Action"] == (
-        f"Move VMIDs {requested_change_map['VMIDs']} from {requested_change_map['Source pool']} "
+    assert reply.details is None  # details only in approval_presentation (§V.73)
+    assert (
+        f"- **Action:** Move VMIDs {requested_change_map['VMIDs']} from {requested_change_map['Source pool']} "
         f"to {requested_change_map['Destination pool']}."
+        in markdown
     )
-    assert details["Reason"] == requested_change_map["Reason"]
-    assert details["Success criteria"] == (
-        f"VMIDs {requested_change_map['VMIDs']} are removed from {requested_change_map['Source pool']} "
+    assert f"- **Reason:** {requested_change_map['Reason']}" in markdown
+    assert (
+        f"- **Success criteria:** VMIDs {requested_change_map['VMIDs']} are removed from {requested_change_map['Source pool']} "
         f"and present in {requested_change_map['Destination pool']}."
+        in markdown
     )
     assert (
         f"| {requested_change_map['VMIDs'].split(', ')[0]} | pool-a | pool-b |"
@@ -5189,3 +5197,80 @@ async def test_proxmox_cloudinit_postflight_sanitizes_cipassword() -> None:
     for entry in data:
         if isinstance(entry, dict) and entry.get("key") == "cipassword":
             assert entry["value"] == "[redacted]"
+
+
+def test_pool_move_approval_reply_no_duplicate_facts() -> None:
+    """§V.73 regression: approval reply must show each fact exactly once."""
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args={
+            "server_ref": "pve1",
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101, 102],
+            "old_email": "l1@example.com",
+            "new_email": "l2@example.com",
+            "reason": "customer request",
+        },
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": {
+                    "server_ref": "pve1",
+                    "source_pool": "pool-a",
+                    "destination_pool": "pool-b",
+                    "vmids": [101, 102],
+                    "old_email": "l1@example.com",
+                    "new_email": "l2@example.com",
+                },
+                "result": {
+                    "ok": True,
+                    "server_id": "srv-1",
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {"vmid": 101, "name": "alpha", "node": "pve1", "status": "running"},
+                                    {"vmid": 102, "name": "beta", "node": "pve2", "status": "stopped"},
+                                ],
+                            }
+                        ]
+                    },
+                    "destination_pool": {
+                        "data": [{"poolid": "pool-b", "members": []}]
+                    },
+                    "old_user": {"data": {"userid": "l1@example.com@pve"}},
+                    "new_user": {"data": {"userid": "l2@example.com@pve"}},
+                    "destination_permission": {
+                        "data": {"/pool/pool-b": {"VM.Console": 1}}
+                    },
+                    "requested_vmids": [101, 102],
+                    "normalized_old_userid": "l1@example.com@pve",
+                    "normalized_new_userid": "l2@example.com@pve",
+                },
+            }
+        ],
+    )
+
+    assert reply is not None
+
+    # Top-level details must be None — approval_presentation is single source
+    assert reply.details is None
+
+    # summary must NOT duplicate approval_presentation paragraph
+    assert reply.approval_presentation is not None
+    approval_md = render_workflow_approval_markdown(reply.approval_presentation)
+    assert reply.summary not in approval_md
+
+    # Rendered text: each key phrase appears at most once
+    rendered = render_workflow_reply_text(reply)
+    assert rendered.count("Move VMIDs 101, 102 from pool-a to pool-b") <= 1
+    assert rendered.count("customer request") <= 1
+    assert rendered.count("Success criteria") <= 1
+
+    # Payload: details key absent or None
+    payload = workflow_reply_template_payload(reply)
+    assert payload.get("details") is None
