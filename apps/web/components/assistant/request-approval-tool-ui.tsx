@@ -108,14 +108,6 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     }
   }, [lifecycleStatus]);
 
-  if (!actionRequestId) {
-    return (
-      <div className="mt-2 rounded-lg border border-border bg-card/70 p-3 text-sm text-muted-foreground">
-        Missing action request id.
-      </div>
-    );
-  }
-
   const canAct = lifecycleStatus === "requested" && !pendingDecision;
 
   // Build key-value summary for confirmation dialog (V72: activity, subject, reason)
@@ -137,6 +129,15 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     sendCommand({ type: commandType, actionRequestId });
     setConfirmAction(null);
   }, [confirmAction, canAct, sendCommand, actionRequestId]);
+
+  if (!actionRequestId) {
+    return (
+      <div className="mt-2 rounded-lg border border-border bg-card/70 p-3 text-sm text-muted-foreground">
+        Missing action request id.
+      </div>
+    );
+  }
+
   const receiptLabel = pendingDecision
     ? pendingDecision === "approving"
       ? "Approving"
