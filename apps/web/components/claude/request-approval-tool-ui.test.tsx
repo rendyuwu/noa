@@ -1,7 +1,8 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 let mockThreadMessages: any[] = [];
+const mockSendCommand = vi.fn();
 
 vi.mock("@assistant-ui/react", () => ({
   makeAssistantToolUI: ({ render }: { render: (props: any) => unknown }) => render,
@@ -10,7 +11,7 @@ vi.mock("@assistant-ui/react", () => ({
       messages: mockThreadMessages,
     },
   }),
-  useAssistantTransportSendCommand: () => vi.fn(),
+  useAssistantTransportSendCommand: () => mockSendCommand,
 }));
 
 import {
@@ -251,5 +252,175 @@ describe("ClaudeToolFallback", () => {
 
     expect(screen.queryByText("Suspend cPanel account")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /approve/i })).not.toBeInTheDocument();
+  });
+
+  // V72: Confirmation dialog tests
+  it("clicking Approve opens confirmation dialog instead of dispatching (V72)", () => {
+    mockThreadMessages = [];
+    mockSendCommand.mockClear();
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-v72-1",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          argumentSummary: [
+            { label: "Subject", value: "alice" },
+            { label: "Reason", value: "Billing overdue" },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+
+    // Dialog must open with title and confirm button
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: /confirm approve/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: /confirm approve/i })).toBeInTheDocument();
+    // sendCommand must NOT have been called yet
+    expect(mockSendCommand).not.toHaveBeenCalled();
+  });
+
+  it("clicking Deny opens confirmation dialog instead of dispatching (V72)", () => {
+    mockThreadMessages = [];
+    mockSendCommand.mockClear();
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-v72-2",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          argumentSummary: [
+            { label: "Subject", value: "alice" },
+            { label: "Reason", value: "Billing overdue" },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^deny$/i }));
+
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: /confirm deny/i })).toBeInTheDocument();
+    expect(mockSendCommand).not.toHaveBeenCalled();
+  });
+
+  it("confirmation dialog shows activity, subject, and reason (V72)", () => {
+    mockThreadMessages = [];
+    mockSendCommand.mockClear();
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-v72-3",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          argumentSummary: [
+            { label: "Subject", value: "alice" },
+            { label: "Reason", value: "Billing overdue" },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+
+    const dialog = screen.getByRole("dialog");
+    // Activity shown as both dialog description and in summary list
+    const activityDd = within(dialog).getAllByText("Suspend account");
+    expect(activityDd.length).toBeGreaterThanOrEqual(1);
+    // Subject and Reason in key-value list
+    expect(within(dialog).getByText("Subject:")).toBeInTheDocument();
+    expect(within(dialog).getByText("alice")).toBeInTheDocument();
+    expect(within(dialog).getByText("Reason:")).toBeInTheDocument();
+    expect(within(dialog).getByText("Billing overdue")).toBeInTheDocument();
+  });
+
+  it("confirming in dialog dispatches approve command (V72)", () => {
+    mockThreadMessages = [];
+    mockSendCommand.mockClear();
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-v72-4",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          argumentSummary: [
+            { label: "Subject", value: "alice" },
+            { label: "Reason", value: "Billing overdue" },
+          ],
+        }}
+      />,
+    );
+
+    // Open dialog
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    expect(mockSendCommand).not.toHaveBeenCalled();
+
+    // Confirm in dialog
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /confirm approve/i }));
+
+    expect(mockSendCommand).toHaveBeenCalledWith({
+      type: "approve-action",
+      actionRequestId: "approval-v72-4",
+    });
+  });
+
+  it("confirming in dialog dispatches deny command (V72)", () => {
+    mockThreadMessages = [];
+    mockSendCommand.mockClear();
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-v72-5",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          argumentSummary: [
+            { label: "Subject", value: "alice" },
+            { label: "Reason", value: "Billing overdue" },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^deny$/i }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /confirm deny/i }));
+
+    expect(mockSendCommand).toHaveBeenCalledWith({
+      type: "deny-action",
+      actionRequestId: "approval-v72-5",
+    });
+  });
+
+  it("canceling dialog does not dispatch any command (V72)", () => {
+    mockThreadMessages = [];
+    mockSendCommand.mockClear();
+
+    render(
+      <RequestApprovalToolUI
+        args={{
+          actionRequestId: "approval-v72-6",
+          toolName: "whm_suspend_account",
+          activity: "Suspend account",
+          argumentSummary: [
+            { label: "Subject", value: "alice" },
+            { label: "Reason", value: "Billing overdue" },
+          ],
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^approve$/i }));
+    const dialog = screen.getByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /cancel/i }));
+
+    expect(mockSendCommand).not.toHaveBeenCalled();
   });
 });

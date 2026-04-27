@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 
 import {
   makeAssistantToolUI,
@@ -16,6 +16,7 @@ import {
   coerceDetailEvidenceSections,
   extractLatestCanonicalActionRequests,
 } from "@/components/assistant/approval-state";
+import { ConfirmDialog } from "@/components/lib/confirm-dialog";
 
 function coerceString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
@@ -30,6 +31,7 @@ function prettifyToolName(value: string): string {
 }
 
 type DecisionState = "approving" | "denying";
+type ConfirmAction = "approve" | "deny";
 
 function summarizeDetails(items: { label: string; value: string }[]): string | null {
   const preview = items
@@ -72,6 +74,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
     )?.lifecycleStatus ?? "requested";
   const copy = getApprovalLifecyclePresentation(lifecycleStatus);
   const [pendingDecision, setPendingDecision] = useState<DecisionState | null>(null);
+  const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const baseId = useId();
   const toggleId = `${baseId}-approval-details-toggle`;
@@ -95,6 +98,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
   useEffect(() => {
     if (lifecycleStatus !== "requested") {
       setPendingDecision(null);
+      setConfirmAction(null);
     }
   }, [lifecycleStatus]);
 
@@ -113,6 +117,26 @@ function Actions({ args }: { args: Record<string, unknown> }) {
   }
 
   const canAct = lifecycleStatus === "requested" && !pendingDecision;
+
+  // Build key-value summary for confirmation dialog (V72: activity, subject, reason)
+  const dialogSummaryItems = useMemo(() => {
+    const argItems = (argumentSummary ?? []).flatMap((section) => section.items);
+    const items: { label: string; value: string }[] = [];
+    items.push({ label: "Activity", value: activity });
+    for (const item of argItems) {
+      items.push({ label: item.label, value: item.value });
+    }
+    return items;
+  }, [activity, argumentSummary]);
+
+  const handleConfirm = useCallback(() => {
+    if (!confirmAction || !canAct) return;
+    const decision: DecisionState = confirmAction === "approve" ? "approving" : "denying";
+    const commandType = confirmAction === "approve" ? "approve-action" : "deny-action";
+    setPendingDecision(decision);
+    sendCommand({ type: commandType, actionRequestId });
+    setConfirmAction(null);
+  }, [confirmAction, canAct, sendCommand, actionRequestId]);
   const receiptLabel = pendingDecision
     ? pendingDecision === "approving"
       ? "Approving"
@@ -155,10 +179,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           <button
             type="button"
             disabled={!canAct}
-            onClick={() => {
-              setPendingDecision("approving");
-              sendCommand({ type: "approve-action", actionRequestId });
-            }}
+            onClick={() => setConfirmAction("approve")}
             className="inline-flex h-9 items-center justify-center rounded-xl bg-primary px-3.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pendingDecision === "approving" ? "Approving..." : "Approve"}
@@ -166,10 +187,7 @@ function Actions({ args }: { args: Record<string, unknown> }) {
           <button
             type="button"
             disabled={!canAct}
-            onClick={() => {
-              setPendingDecision("denying");
-              sendCommand({ type: "deny-action", actionRequestId });
-            }}
+            onClick={() => setConfirmAction("deny")}
             className="inline-flex h-9 items-center justify-center rounded-xl border border-border bg-transparent px-3.5 text-xs font-medium text-foreground transition-all hover:bg-accent active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60"
           >
             {pendingDecision === "denying" ? "Denying..." : "Deny"}
@@ -207,6 +225,29 @@ function Actions({ args }: { args: Record<string, unknown> }) {
             </div>
           ) : null}
         </section>
+
+        <ConfirmDialog
+          open={confirmAction !== null}
+          onOpenChange={(open) => {
+            if (!open) setConfirmAction(null);
+          }}
+          title={confirmAction === "approve" ? "Confirm Approve" : "Confirm Deny"}
+          description={activity}
+          confirmLabel={confirmAction === "approve" ? "Confirm Approve" : "Confirm Deny"}
+          confirmBusyLabel={confirmAction === "approve" ? "Approving..." : "Denying..."}
+          confirmVariant={confirmAction === "approve" ? "primary" : "secondary"}
+          onConfirm={handleConfirm}
+          closeOnConfirm
+        >
+          <dl className="mt-1 space-y-2 text-sm">
+            {dialogSummaryItems.map((item) => (
+              <div key={item.label} className="flex gap-2">
+                <dt className="shrink-0 font-medium text-muted-foreground">{item.label}:</dt>
+                <dd className="text-foreground">{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </ConfirmDialog>
       </section>
     );
   }
