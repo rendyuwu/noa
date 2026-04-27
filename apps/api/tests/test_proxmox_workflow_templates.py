@@ -5274,3 +5274,263 @@ def test_pool_move_approval_reply_no_duplicate_facts() -> None:
     # Payload: details key absent or None
     payload = workflow_reply_template_payload(reply)
     assert payload.get("details") is None
+
+
+# ---------------------------------------------------------------------------
+# T44 — Pool move receipt: VM details in evidence + conditional next_step
+# ---------------------------------------------------------------------------
+
+
+def test_proxmox_pool_move_before_state_evidence_shows_vm_details() -> None:
+    """V78: before-state evidence items show VM details, not just counts."""
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": {
+                    **_pool_move_preflight_result(),
+                    "source_pool": {
+                        "data": [
+                            {
+                                "poolid": "pool-a",
+                                "members": [
+                                    {"vmid": 101, "name": "alpha", "node": "pve1", "status": "running"},
+                                    {"vmid": 102, "name": "beta", "node": "pve2", "status": "stopped"},
+                                ],
+                            }
+                        ]
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    before_state = next(
+        s for s in payload["evidenceSections"] if s["key"] == "before_state"
+    )
+    labels = [item["label"] for item in before_state["items"]]
+    values = [item["value"] for item in before_state["items"]]
+
+    # VM detail items present
+    assert "Source VM 101" in labels
+    assert "Source VM 102" in labels
+    assert any("alpha" in v and "pve1" in v for v in values)
+    assert any("beta" in v and "pve2" in v for v in values)
+
+    # No count-only items
+    assert "Source members" not in labels
+
+
+def test_proxmox_pool_move_after_state_evidence_shows_vm_details_from_postflight() -> (
+    None
+):
+    """V78: after-state evidence items show VM details from postflight data."""
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=True),
+        postflight_result={
+            "ok": True,
+            "message": "ok",
+            "verified": True,
+            "source_pool_after": {"data": [{"poolid": "pool-a", "members": []}]},
+            "destination_pool_after": {
+                "data": [
+                    {
+                        "poolid": "pool-b",
+                        "members": [
+                            {"vmid": 101, "name": "alpha", "node": "pve1", "status": "running"},
+                        ],
+                    }
+                ]
+            },
+        },
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    after_state = next(
+        s for s in payload["evidenceSections"] if s["key"] == "after_state"
+    )
+    labels = [item["label"] for item in after_state["items"]]
+    values = [item["value"] for item in after_state["items"]]
+
+    # Source after empty
+    assert "Source after" in labels
+    assert any("0 members" in v for v in values)
+
+    # Destination after has VM detail
+    assert "Dest after VM 101" in labels
+    assert any("alpha" in v and "pve1" in v for v in values)
+
+    # No count-only items
+    assert "Source members after" not in labels
+    assert "Destination members after" not in labels
+
+
+def test_proxmox_pool_move_before_state_evidence_caps_at_4_vms() -> None:
+    """V78: VM detail items capped at 4 per pool with '+N more' overflow."""
+    members = [
+        {"vmid": i, "name": f"vm-{i}", "node": "pve1", "status": "running"}
+        for i in range(101, 107)  # 6 VMs
+    ]
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="waiting_on_approval",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": {
+                    **_pool_move_preflight_result(),
+                    "source_pool": {
+                        "data": [{"poolid": "pool-a", "members": members}]
+                    },
+                },
+            }
+        ],
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    before_state = next(
+        s for s in payload["evidenceSections"] if s["key"] == "before_state"
+    )
+    source_items = [
+        item for item in before_state["items"] if item["label"].startswith("Source")
+    ]
+
+    # 4 VM detail items + 1 overflow
+    vm_items = [item for item in source_items if "VM" in item["label"]]
+    overflow_items = [item for item in source_items if "+2 more" in item["value"]]
+    assert len(vm_items) == 4
+    assert len(overflow_items) == 1
+
+
+def test_proxmox_pool_move_completed_next_step_reflects_verified_postflight() -> None:
+    """V79: next_step says 'Move verified' when postflight confirmed."""
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=True),
+        postflight_result=_pool_move_postflight_verified_result(),
+    )
+
+    assert reply is not None
+    assert reply.next_step == "Move verified. Both pools confirmed."
+
+
+def test_proxmox_pool_move_completed_next_step_suggests_review_when_not_verified() -> (
+    None
+):
+    """V79: next_step suggests manual review when postflight not available."""
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result={
+            **_pool_move_result(verified=False),
+            "verified": False,
+        },
+    )
+
+    assert reply is not None
+    assert (
+        reply.next_step
+        == "Review both pools and confirm the moved VMIDs now appear in the destination pool."
+    )
+
+
+def test_proxmox_pool_move_completed_next_step_review_when_inline_verified_no_postflight() -> (
+    None
+):
+    """V79: inline verified=True without postflight still suggests review."""
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=True),
+        # No postflight_result — inline says verified but postflight didn't run
+    )
+
+    assert reply is not None
+    assert (
+        reply.next_step
+        == "Review both pools and confirm the moved VMIDs now appear in the destination pool."
+    )
+
+
+def test_proxmox_pool_move_evidence_shows_unavailable_when_pool_data_missing() -> None:
+    """V78: missing pool data shows 'membership unavailable', not '0 members'."""
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "verified": True,
+            # source_pool_after and destination_pool_after missing
+        },
+        # No postflight either
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    after_state = next(
+        s for s in payload["evidenceSections"] if s["key"] == "after_state"
+    )
+    values = [item["value"] for item in after_state["items"]]
+    assert any("membership unavailable" in v for v in values)
