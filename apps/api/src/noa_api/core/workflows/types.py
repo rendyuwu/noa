@@ -280,14 +280,16 @@ def workflow_evidence_template_payload(
 
 def render_workflow_reply_text(template: WorkflowReplyTemplate) -> str:
     sections: list[str] = [template.title]
-    if template.approval_presentation is None:
-        sections.append(template.summary)
     if template.approval_presentation is not None:
         approval_markdown = render_workflow_approval_markdown(
             template.approval_presentation
         )
         if approval_markdown.strip():
             sections.append(approval_markdown)
+        else:
+            sections.append(template.summary)
+    else:
+        sections.append(template.summary)
     if template.evidence_summary:
         sections.append(
             "\n".join(f"- {item}" for item in template.evidence_summary if item.strip())
