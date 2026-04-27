@@ -216,6 +216,10 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 - V66. API CI workflow triggers on `apps/api/**` changes. Steps: checkout, setup Python 3.12, setup uv, sync, lint (`uv run ruff check`), test (`uv run pytest -q`).
 - V67. Issue template config (`config.yml`) disables blank issues, provides external links to discussions/docs if applicable.
 
+### Approval UX
+
+- V72. Approve/Deny buttons on approval-request card ! show confirmation dialog before dispatch. Dialog ! display action summary (activity, subject, reason). Single-click on Approve/Deny ! ⊥ trigger action directly.
+
 ## §T Tasks
 
 | id | status | task | cites |
@@ -258,6 +262,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T36 | x | Reframe pool membership move as "Change Email PIC": replace single `email` → `old_email` + `new_email`; validate both against respective pools; update tool defs, prompt_hints, system prompt, workflow templates, matching, evidence, tests, docs | V69 |
 | T37 | x | Fix Proxmox email param validation: strip `@pve` realm suffix before `_EMAIL_RE` check in `argument_validation.py`, or use custom format for Proxmox email params (not `"email"`). Update preflight error msgs to show normalized userid for clarity | V70,B7 |
 | T38 | x | Fix pool membership preflight: replace `_REQUIRED_POOL_PERMISSIONS` intersection check with any-ACL-entry check. `_has_any_pool_permission` ! return non-None when user has any permission entry on pool path (any role counts as pool association). Update tests | V71,B8 |
+| T39 | x | Add confirmation dialog to approval-request card Approve/Deny buttons. Dialog shows activity, subject, reason. Requires explicit confirm before dispatch | V72 |
 
 ## §B Bugs
 
