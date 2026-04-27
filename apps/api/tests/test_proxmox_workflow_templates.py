@@ -1058,9 +1058,26 @@ def test_proxmox_pool_membership_move_waiting_on_approval_reply_includes_full_ta
 
     assert reply is not None
     assert reply.outcome == "info"
-    assert "| VMID | Name | Node | Status |" in reply.summary
-    assert reply.summary.count("| 101 | alpha | pve1 | running |") == 1
-    assert "pool membership" in reply.summary.lower()
+    assert reply.summary == "Pool membership move requested for VMIDs 101, 102 from pool-a to pool-b."
+    assert "|" not in reply.summary
+
+
+def test_proxmox_pool_membership_move_describe_activity_returns_short_label() -> None:
+    from noa_api.core.workflows.proxmox.pool_membership_move import (
+        ProxmoxPoolMembershipMoveTemplate,
+    )
+
+    template = ProxmoxPoolMembershipMoveTemplate()
+    activity = template.describe_activity(
+        tool_name="proxmox_move_vms_between_pools",
+        args={
+            "source_pool": "pool-a",
+            "destination_pool": "pool-b",
+            "vmids": [101, 102],
+        },
+    )
+    assert activity == "Change Email PIC"
+    assert len(activity) <= 60
 
 
 def test_proxmox_enable_vm_nic_waiting_on_approval_reply_includes_detail_rows() -> None:
@@ -1990,9 +2007,8 @@ def test_proxmox_pool_membership_move_completed_reply_includes_full_before_and_a
 
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Source pool before" in reply.summary
-    assert "| 101 | alpha | pve1 | running |" in reply.summary
-    assert "Source pool after" in reply.summary
+    assert reply.summary == "Pool membership move completed for VMIDs 101 from pool-a to pool-b."
+    assert "|" not in reply.summary
 
 
 def test_proxmox_cloudinit_password_reset_require_matching_preflight_matches_new_family() -> (
@@ -3847,8 +3863,8 @@ def test_proxmox_pool_membership_move_completed_reply_matches_server_id_alias_pr
     )
 
     assert reply is not None
-    assert "Source pool before" in reply.summary
-    assert "Moved VMIDs: 101." in reply.summary
+    assert reply.summary == "Pool membership move completed for VMIDs 101 from pool-a to pool-b."
+    assert "|" not in reply.summary
 
 
 def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verified_when_postflight_success_verifies_state() -> (
@@ -3915,7 +3931,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_marks_verifie
 
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Verification succeeded." in reply.summary
+    assert "|" not in reply.summary
     assert "Verification succeeded." in reply.evidence_summary
 
     evidence = build_workflow_evidence_template(
@@ -4052,7 +4068,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_downgrades_wh
     # Postflight disagreement downgrades verification
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Verification not confirmed." in reply.summary
+    assert "|" not in reply.summary
 
     assert evidence is not None
     verification = next(
@@ -4105,8 +4121,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_downgrades_wh
     # Postflight disagreement downgrades verification
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Verification not confirmed." in reply.summary
-    assert "Postflight verification failed." in reply.summary
+    assert "|" not in reply.summary
+    assert "Postflight verification failed." in reply.evidence_summary
 
     assert evidence is not None
     verification = next(
@@ -4158,8 +4174,8 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_are_explicit_
 
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Verification not confirmed." in reply.summary
-    assert "Postflight refetch was degraded." in reply.summary
+    assert "|" not in reply.summary
+    assert "Postflight refetch was degraded." in reply.evidence_summary
 
     assert evidence is not None
     verification = next(
@@ -4297,7 +4313,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_keep_missing_
 
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Verification succeeded." in reply.summary
+    assert "|" not in reply.summary
     assert "Verification succeeded." in reply.evidence_summary
 
     assert evidence is not None
@@ -4522,7 +4538,7 @@ def test_proxmox_pool_membership_move_completed_reply_and_evidence_rescue_verifi
 
     assert reply is not None
     assert reply.outcome == "changed"
-    assert "Postflight verification succeeded." in reply.summary
+    assert "Postflight verification succeeded." in reply.evidence_summary
 
     assert evidence is not None
     verification = next(

@@ -146,10 +146,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             return WorkflowReplyTemplate(
                 title="Approve Proxmox pool membership move",
                 outcome="info",
-                summary=(
-                    f"{summary_paragraph}\n\n"
-                    f"{_pool_move_approval_summary(before_state=before_state, args=context.args)}"
-                ),
+                summary=summary_paragraph,
                 evidence_summary=[],
                 approval_presentation=_approval_presentation_from_reply_data(
                     paragraph=summary_paragraph,
@@ -243,10 +240,7 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
             return WorkflowReplyTemplate(
                 title="Proxmox pool membership move completed",
                 outcome="changed",
-                summary=(
-                    f"Pool membership move completed for {subject}.\n\n"
-                    f"{_pool_move_completion_summary(tool_name=context.tool_name, before_state=before_state, result=result, postflight_result=postflight, args=context.args)}"
-                ),
+                summary=f"Pool membership move completed for {subject}.",
                 evidence_summary=_pool_move_evidence_summary(
                     phase=context.phase,
                     tool_name=context.tool_name,
@@ -346,8 +340,8 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
     def describe_activity(
         self, *, tool_name: str, args: dict[str, object]
     ) -> str | None:
-        _ = tool_name
-        return f"Change Email PIC: move {_pool_move_subject(args)}"
+        _ = tool_name, args
+        return "Change Email PIC"
 
     def require_preflight(
         self,
