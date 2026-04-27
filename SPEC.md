@@ -30,7 +30,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | `/health` | GET | Health check → `{"status":"ok"}` |
 | `/auth/login` | POST | LDAP auth → JWT in httpOnly cookie |
 | `/auth/logout` | POST | Clear session cookie |
-| `/auth/me` | GET | Current user (cookie or Bearer) |
+| `/auth/me` | GET | Current user (cookie-only) |
 | `/threads` | GET/POST | List/create threads (owner-scoped) |
 | `/threads/{id}` | GET/PATCH/DELETE | Get/rename/delete thread |
 | `/threads/{id}/archive` | POST | Archive thread |
