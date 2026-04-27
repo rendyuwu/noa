@@ -5474,3 +5474,63 @@ def test_proxmox_pool_move_completed_next_step_suggests_review_when_not_verified
         reply.next_step
         == "Review both pools and confirm the moved VMIDs now appear in the destination pool."
     )
+
+
+def test_proxmox_pool_move_completed_next_step_review_when_inline_verified_no_postflight() -> (
+    None
+):
+    """V79: inline verified=True without postflight still suggests review."""
+    reply = build_workflow_reply_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result=_pool_move_result(verified=True),
+        # No postflight_result — inline says verified but postflight didn't run
+    )
+
+    assert reply is not None
+    assert (
+        reply.next_step
+        == "Review both pools and confirm the moved VMIDs now appear in the destination pool."
+    )
+
+
+def test_proxmox_pool_move_evidence_shows_unavailable_when_pool_data_missing() -> None:
+    """V78: missing pool data shows 'membership unavailable', not '0 members'."""
+    evidence = build_workflow_evidence_template(
+        tool_name="proxmox_move_vms_between_pools",
+        workflow_family="proxmox-pool-membership-move",
+        args=_pool_move_args(),
+        phase="completed",
+        preflight_evidence=[
+            {
+                "toolName": "proxmox_preflight_move_vms_between_pools",
+                "args": _pool_move_args(),
+                "result": _pool_move_preflight_result(),
+            }
+        ],
+        result={
+            "ok": True,
+            "message": "ok",
+            "status": "changed",
+            "verified": True,
+            # source_pool_after and destination_pool_after missing
+        },
+        # No postflight either
+    )
+
+    assert evidence is not None
+    payload = workflow_evidence_template_payload(evidence)
+    after_state = next(
+        s for s in payload["evidenceSections"] if s["key"] == "after_state"
+    )
+    values = [item["value"] for item in after_state["items"]]
+    assert any("membership unavailable" in v for v in values)

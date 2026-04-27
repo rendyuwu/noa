@@ -249,7 +249,8 @@ class ProxmoxPoolMembershipMoveTemplate(WorkflowTemplate):
                 ),
                 next_step=(
                     "Move verified. Both pools confirmed."
-                    if _pool_move_verified(context.tool_name, result, postflight)
+                    if isinstance(postflight, dict)
+                    and postflight.get("verified") is True
                     else "Review both pools and confirm the moved VMIDs now appear in the destination pool."
                 ),
             )
@@ -431,6 +432,11 @@ def _pool_vm_detail_items(
     pool_data: dict[str, object] | None,
 ) -> list[WorkflowEvidenceItem]:
     """Emit per-VM evidence items (VMID, name, node, status), capped at _VM_DETAIL_CAP."""
+    if not pool_data:
+        return [
+            WorkflowEvidenceItem(label=label_prefix, value="membership unavailable")
+        ]
+
     members = _pool_members_from_result(pool_data)
     if not members:
         return [WorkflowEvidenceItem(label=label_prefix, value="0 members")]
