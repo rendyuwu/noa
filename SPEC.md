@@ -220,6 +220,8 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 
 - V72. Approve/Deny buttons on approval-request card ! show confirmation dialog before dispatch. Dialog ! display action summary (activity, subject, reason). Single-click on Approve/Deny ! ⊥ trigger action directly.
 - V73. Approval reply text ! show each fact exactly once. Action, reason, success criteria, preflight evidence — ⊥ duplicated across `summary`/`evidence_summary`/`approval_presentation`. `render_workflow_reply_text` output ! structured: title → preflight evidence (bullets) → key-value details (action, reason, success criteria each 1x) → next step.
+- V74. Approval card subtitle ! derive from `argumentSummary` items only. Evidence sections (before-state, raw CSF/iptables) ⊥ leak into subtitle preview. `summarizeDetails` in `request-approval-tool-ui.tsx` ! receive `argumentSummary` items, ⊥ `evidenceSections` items.
+- V75. Firewall approval before-state ! show only `csf.deny`/`csf.allow` log line (human-readable block reason). Raw iptables table dump (filter DENYIN/DENYOUT rules, ip6tables) ⊥ in before-state. `_firewall_entry_receipt_items` ! ⊥ pass `include_full_csf_raw_output=True` for approval before-state; use `_firewall_csf_receipt_value` (extracts last meaningful line) instead.
 
 ## §T Tasks
 
@@ -265,6 +267,7 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | T38 | x | Fix pool membership preflight: replace `_REQUIRED_POOL_PERMISSIONS` intersection check with any-ACL-entry check. `_has_any_pool_permission` ! return non-None when user has any permission entry on pool path (any role counts as pool association). Update tests | V71,B8 |
 | T39 | x | Add confirmation dialog to approval-request card Approve/Deny buttons. Dialog shows activity, subject, reason. Requires explicit confirm before dispatch | V72 |
 | T40 | ~ | Deduplicate approval reply text across all 7 workflow families. Refactor `build_reply_template` (approval phase) → structured sections, each fact 1x. Update `render_workflow_reply_text` if needed. Add regression tests | V73,B9 |
+| T41 | x | Fix firewall approval card: (1) subtitle use `argumentSummary` only in `request-approval-tool-ui.tsx:81-84`; (2) before-state drop raw iptables dump — remove `include_full_csf_raw_output=True` from `firewall.py:637` or pass `False` for before-state section | V74,V75,B10 |
 
 ## §B Bugs
 
@@ -279,3 +282,4 @@ NOA: operational assistant for hosting infrastructure. Monorepo (FastAPI backend
 | B7 | 2026-04-26 | `_EMAIL_RE` (`^[^@\s]+@[^@\s]+\.[^@\s]+$`) in `argument_validation.py:10` rejects Proxmox userids containing `@pve` realm suffix (two `@` symbols). LM sees `user@domain.com@pve` in Proxmox data, echoes it back → argument validation blocks tool call with "not valid email". Without `@pve` tool works (code appends internally) but LM behavior unpredictable — sometimes includes realm from upstream data | V70,T37 |
 | B8 | 2026-04-26 | `_meaningful_permission_entries` in `pool_tools.py:65` checks intersection with `_REQUIRED_POOL_PERMISSIONS` (`VM.Allocate`, `Pool.Allocate`, `Pool.Audit`). User with `PVEConsoleUser` role (grants `VM.Console`, `VM.PowerMgmt`, etc.) has valid ACL entry on pool but zero overlap with required set → preflight rejects as "does not have permissions". Change PIC only needs to confirm user exists on pool ACL, not specific privileges | V71,T38 |
 | B9 | 2026-04-27 | `build_reply_template` (approval phase) passes same data to `details`, `approval_presentation.details`, & `approval_presentation.evidence_summary` → `render_workflow_reply_text` concatenates all → action 3x, reason 2x, success criteria 2x. `evidence` list includes `"Success condition: ..."` & `"Recorded reason: ..."` duplicating `details` rows. ∀ 7 workflow families | V73,T40 |
+| B10 | 2026-04-27 | Firewall approval card 2 readability bugs: (a) `summarySourceItems` in `request-approval-tool-ui.tsx:81-84` prefers `evidenceSections` over `argumentSummary` → subtitle shows raw iptables/csf dump instead of action summary; (b) `firewall.py:637` passes `include_full_csf_raw_output=context.phase == "waiting_on_approval"` → before-state gets full iptables table dump instead of just `csf.deny`/`csf.allow` log line. After-state already clean (uses summary) | V74,V75,T41 |

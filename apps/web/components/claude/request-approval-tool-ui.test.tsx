@@ -21,7 +21,7 @@ import {
 } from "@/components/claude/request-approval-tool-ui";
 
 describe("ClaudeToolFallback", () => {
-  it("prefers evidence sections for preview and details", () => {
+  it("subtitle uses argumentSummary only, not evidence sections (V74)", () => {
     mockThreadMessages = [];
 
     const { container } = render(
@@ -40,7 +40,7 @@ describe("ClaudeToolFallback", () => {
             },
           ],
           beforeState: [{ label: "Status", value: "Active" }],
-          argumentSummary: [{ label: "Reason", value: "Should not be used" }],
+          argumentSummary: [{ label: "Action", value: "Suspend alice" }],
         }}
       />,
     );
@@ -49,7 +49,10 @@ describe("ClaudeToolFallback", () => {
     expect(card).toHaveClass("rounded-2xl");
     expect(card).toHaveClass("bg-card/80");
 
-    expect(screen.getByText("Account: alice · Reason: Billing")).toBeInTheDocument();
+    // V74: subtitle must derive from argumentSummary, not evidenceSections
+    expect(screen.getByText("Action: Suspend alice")).toBeInTheDocument();
+    // Evidence section items must NOT appear in subtitle
+    expect(screen.queryByText(/Account: alice · Reason: Billing/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
@@ -79,19 +82,22 @@ describe("ClaudeToolFallback", () => {
             },
           ],
           beforeState: [{ label: "Status", value: "Legacy Active" }],
-          argumentSummary: [{ label: "Reason", value: "Legacy Billing" }],
+          argumentSummary: [{ label: "Reason", value: "Billing summary" }],
         }}
       />,
     );
 
+    // V74: subtitle uses argumentSummary
+    expect(screen.getByText("Reason: Billing summary")).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: /details/i }));
 
+    // Detail sections: canonical evidence sections used, legacy sections not duplicated
     expect(screen.getAllByText(/^Before state$/i)).toHaveLength(1);
     expect(screen.getAllByText(/^Requested change$/i)).toHaveLength(1);
     expect(screen.getByText(/^Active$/i)).toBeInTheDocument();
     expect(screen.getByText(/^Billing$/i)).toBeInTheDocument();
     expect(screen.queryByText(/Legacy Active/i)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Legacy Billing/i)).not.toBeInTheDocument();
   });
 
   it("falls back to legacy detail sections when evidence sections are absent", () => {

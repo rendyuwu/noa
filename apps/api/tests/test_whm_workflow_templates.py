@@ -1534,3 +1534,93 @@ def test_build_approval_context_includes_evidence_sections_and_compat_before_sta
     assert "evidenceSections" in context
     assert isinstance(context["evidenceSections"], list)
     assert context["beforeState"]
+
+
+# ---------------------------------------------------------------------------
+# §V.75 — firewall before-state shows csf.deny log line, not raw iptables dump
+# ---------------------------------------------------------------------------
+
+
+def test_whm_firewall_before_state_excludes_raw_iptables_dump() -> None:
+    """V75: approval before-state must show only csf.deny/csf.allow log line,
+    not full iptables table output."""
+    raw_iptables_dump = (
+        "Table  Chain            num   pkts bytes target     prot opt in     out     source               destination\n"
+        "filter DENYIN           72       0     0 DROP       all  --  ens192 *       63.177.226.29        0.0.0.0/0\n"
+        "filter DENYOUT          72       0     0 LOGDROPOUT all  --  *      ens192  0.0.0.0/0            63.177.226.29\n"
+        "ip6tables: No matches found\n"
+        "csf.deny: 63.177.226.29 # lfd: (cpanel) Failed cPanel login from 63.177.226.29 (DE/Germany/...): 5 in the last 3600 secs - Thu Apr 23 16:05:16 2026"
+    )
+
+    context = build_approval_context(
+        tool_name="whm_firewall_unblock",
+        workflow_family="whm-firewall-batch-change",
+        args={
+            "server_ref": "web2",
+            "targets": ["63.177.226.29"],
+            "reason": "customer request",
+        },
+        working_messages=[
+            {
+                "role": "assistant",
+                "parts": [
+                    {
+                        "type": "tool-call",
+                        "toolName": "whm_preflight_firewall_entries",
+                        "toolCallId": "preflight-fw-1",
+                        "args": {"server_ref": "web2", "target": "63.177.226.29"},
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "parts": [
+                    {
+                        "type": "tool-result",
+                        "toolName": "whm_preflight_firewall_entries",
+                        "toolCallId": "preflight-fw-1",
+                        "result": {
+                            "ok": True,
+                            "target": "63.177.226.29",
+                            "combined_verdict": "blocked",
+                            "csf": {
+                                "verdict": "blocked",
+                                "raw_output": raw_iptables_dump,
+                            },
+                        },
+                        "isError": False,
+                    }
+                ],
+            },
+        ],
+    )
+
+    # Find before-state section in evidenceSections
+    evidence_sections = context.get("evidenceSections", [])
+    before_state_section = next(
+        (s for s in evidence_sections if s.get("title") == "Before state"),
+        None,
+    )
+    assert before_state_section is not None, "Before state section must exist"
+
+    before_items = before_state_section.get("items", [])
+    all_values = " ".join(item.get("value", "") for item in before_items)
+
+    # V75: must contain csf.deny log line
+    assert "csf.deny:" in all_values or "lfd:" in all_values, (
+        "Before-state must contain csf.deny/csf.allow log line"
+    )
+
+    # V75: must NOT contain raw iptables table headers/rules
+    assert "Table  Chain" not in all_values, (
+        "Before-state must not contain raw iptables table dump"
+    )
+    assert "DENYIN" not in all_values, (
+        "Before-state must not contain iptables DENYIN rules"
+    )
+    assert "DENYOUT" not in all_values, (
+        "Before-state must not contain iptables DENYOUT rules"
+    )
+    assert "ip6tables" not in all_values, (
+        "Before-state must not contain ip6tables output"
+    )

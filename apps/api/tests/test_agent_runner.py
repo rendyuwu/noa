@@ -3463,7 +3463,7 @@ async def test_agent_runner_appends_firewall_preflight_raw_output_to_followup_te
     assert any(
         isinstance(item, dict)
         and cast(dict[str, object], item).get("label") == "103.103.11.123 · CSF"
-        and cast(dict[str, object], item).get("value") == raw_output
+        and cast(dict[str, object], item).get("value") == "ALLOWOUT 103.103.11.123 # allow"
         for item in items
     )
 
