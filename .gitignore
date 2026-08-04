@@ -1,0 +1,52 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+*.egg-info/
+build/
+
+# --- Node / Next.js ---
+node_modules/
+.next/
+next-env.d.ts
+out/
+dist/
+.turbo/
+.pnpm-store/
+*.tsbuildinfo
+playwright-report/
+test-results/
+.playwright-cli/
+
+# --- Env (C11: no secrets in git) ---
+.env
+.env.*
+!.env.example
+
+# --- Logs ---
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# --- IDE / editor ---
+.vscode/
+.idea/
+*.swp
+.mcp.json
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Scratch / local artifacts ---
+tmp/
+.artifacts/
