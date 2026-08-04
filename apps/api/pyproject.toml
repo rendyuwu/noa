@@ -1,0 +1,60 @@
+[project]
+name = "noa-api"
+version = "0.1.0"
+description = "NOA API — FastAPI admin routes + FastMCP server"
+# C1: pgpy 0.6.0 (last release) imports stdlib `imghdr` at import time; removed in
+# 3.13. On 3.13+ that crashes tool-registry import, not only the reset tool.
+requires-python = ">=3.11,<3.13"
+# Exact pins throughout. Bump = deliberate, with re-verification (C2 discipline
+# applied to Python; C23 for the MCP stack specifically).
+dependencies = [
+  "noa-core",
+  # MCP server. Handshake era 2025-06-18 per C23 — NOT fastmcp 4.x, which is
+  # beta-only, drops the 3.x shims, and relocates `fastmcp.server.auth.*`
+  # (breaking the T11 TokenVerifier) for zero gain against LibreChat's SDK v1.x.
+  "fastmcp==3.4.5",
+  # Web layer
+  "fastapi==0.141.1",
+  "uvicorn[standard]==0.52.1",
+  "pydantic==2.13.4",
+  "pydantic-settings==2.14.2",
+  # Persistence (C3)
+  "sqlalchemy[asyncio]==2.0.51",
+  "asyncpg==0.31.0",
+  "alembic==1.18.5",
+  # Logging / serialization
+  "structlog==26.1.0",
+  "orjson==3.11.9",
+  # Crypto + auth (C7)
+  "cryptography==50.0.0",
+  "PyJWT==2.13.0",
+  "python-ldap==3.4.7",
+  "pgpy==0.6.0",
+  # Remote execution + HTTP clients
+  "asyncssh==2.24.0",
+  "httpx==0.28.1",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.16.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/noa_api"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.uv.sources]
+noa-core = { workspace = true }
