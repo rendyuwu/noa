@@ -242,7 +242,7 @@ T2|x|scaffold monorepo structure: `apps/api/`, `apps/admin-web/`, `apps/web-embe
 T3|x|`apps/api/` scaffold: FastAPI + FastMCP skeleton, `pyproject.toml` deps pinned exact: `fastmcp==3.4.5` (⊥ 4.x per C23), fastapi, uvicorn, sqlalchemy[asyncio], asyncpg, alembic, pydantic, pydantic-settings, structlog, orjson, cryptography, PyJWT, python-ldap, `pgpy>=0.6.0`, asyncssh, httpx. `requires-python = ">=3.11,<3.13"`|C1,C3,C7,C23
 T4|x|Postgres schema v1: `users`, `roles`, `user_roles`, `role_tool_permissions`, `mcp_tokens`, `whm_servers`, `proxmox_servers`, `pmg_servers`. Alembic initial migration|C3,V1,V2,V3,V11
 T5|x|`core/config.py`: pydantic-settings, all env vars (DB, LDAP, Fernet key, JWT secret, yopass, token TTL, LDAP revalidate interval, per-user concurrency cap, pending TTL, etc.)|C9,C7
-T6|.|LDAP auth service: `LDAPService` with service-account bind + search. `user_exists_and_enabled(email)`. Dev bypass mode|C4,V7
+T6|x|LDAP auth service: `LDAPService` with service-account bind + search. `user_exists_and_enabled(email)`. Dev bypass mode|C4,V7
 T7|.|JWT service: mint, verify, httpOnly cookie set/clear. SameSite=Lax, `Domain=.noa.internal`|V6,V8
 T8|.|Login flow: `POST /auth/login` → LDAP auth → JWT cookie. `POST /auth/logout` → clear. `GET /auth/me`. Rate limiter|V6,V7,V8,V9
 T9|.|RBAC engine: `role_tool_permissions` CRUD, `get_permitted_tools(user_id)`, admin bypass for known tools, disabled-user zero-permissions|V10,V11,V12,V13,V14

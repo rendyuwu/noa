@@ -309,6 +309,11 @@ class Settings(BaseSettings):
         return self.noa_secret_encryption_key.get_secret_value()
 
     @property
+    def ldap_bind_password_value(self) -> str:
+        """Service-account password, unwrapped at the call site only (V8)."""
+        return self.ldap_bind_password.get_secret_value()
+
+    @property
     def jwt_secret(self) -> str:
         """The resolved JWT signing secret. Non-empty after validation (V53)."""
         if self.auth_jwt_secret is None:  # pragma: no cover - validator guarantees
