@@ -1,0 +1,54 @@
+# Workspace root. Also the `noa-core` package: shared code lives in `core/`
+# (C12 — one shared core, one Alembic, three deploy artifacts).
+[project]
+name = "noa-core"
+version = "0.1.0"
+description = "NOA shared core — config, auth, remote_exec, secrets, integrations"
+# Upper bound per C1: pgpy 0.6.0 (last release) imports stdlib `imghdr` at import
+# time; removed in 3.13. On 3.13+ that crashes tool-registry import, not only the
+# password-reset path. Hold <3.13 until pgpy ships a 3.13-compatible release.
+requires-python = ">=3.11,<3.13"
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["core"]
+
+[tool.uv.workspace]
+members = ["apps/api"]
+
+[tool.uv.sources]
+noa-core = { workspace = true }
+
+[dependency-groups]
+dev = [
+  "pytest==9.1.1",
+  "pytest-asyncio==1.4.0",
+  "ruff==0.16.1",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["apps/api/tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "apps/admin-web", "apps/web-embed"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF"]
+ignore = ["S101"]  # assert OK in tests
+
+[tool.ruff.lint.per-file-ignores]
+# S105/S106: hardcoded token & password literals are fixtures in tests.
+"**/tests/**" = ["S105", "S106"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "noa_api"]
