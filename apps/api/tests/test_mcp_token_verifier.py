@@ -22,18 +22,15 @@ directory are doubles — the adapter's own code path is real.
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator, Iterator
-from contextlib import asynccontextmanager, contextmanager
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
-from typing import Any, cast
+from typing import Any
 
 import pytest
 from fastapi import status
 from fastapi.testclient import TestClient
 from fastmcp import FastMCP
-from fastmcp.server.http import set_http_request
-from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.requests import Request
 from structlog.testing import capture_logs
 
 from core.auth.mcp_auth_errors import (
@@ -50,12 +47,15 @@ from core.auth.mcp_identity import LIBRECHAT_USER_HEADER
 from core.auth.mcp_token_service import generate_mcp_token, hash_mcp_token
 from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
 from noa_api.mcp_auth import LOG_DENIED, NoaTokenVerifier
+from noa_api.mcp_request_auth import McpAuthContext
 from support.mcp_identity import (
     EMAIL,
     LIBRECHAT_USER,
     OTHER_LIBRECHAT_USER,
     FakeDirectory,
     FakeMcpIdentityRepository,
+    build_auth_context,
+    http_request_context,
     stale_check,
 )
 
@@ -79,31 +79,15 @@ INITIALIZE_BODY: dict[str, Any] = {
 MCP_ACCEPT = "application/json, text/event-stream"
 
 
-class FakeSession:
-    """Stands in for `AsyncSession`. The repository double never touches it."""
-
-
 @contextmanager
 def http_context(headers: dict[str, str] | None = None) -> Iterator[None]:
-    """Run a block inside the request contextvar `RequestContextMiddleware` sets.
+    """This file's spelling of `support.mcp_identity.http_request_context` (V66).
 
-    Built from a raw ASGI scope rather than a `TestClient` round trip so a unit test can
-    name the exact headers on the wire, including their absence.
+    Shared with `test_mcp_request_auth.py` rather than copied: both files need a request
+    whose headers they chose, and two copies of an ASGI scope literal is two places for
+    "what a live request looks like" to drift.
     """
-    raw = [(key.lower().encode(), value.encode()) for key, value in (headers or {}).items()]
-    scope = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "POST",
-        "path": MCP_PATH,
-        "raw_path": MCP_PATH.encode(),
-        "query_string": b"",
-        "headers": raw,
-        "client": ("127.0.0.1", 12345),
-        "scheme": "http",
-        "server": ("noa.internal", 80),
-    }
-    with set_http_request(Request(scope)):
+    with http_request_context(headers, path=MCP_PATH):
         yield
 
 
@@ -113,17 +97,13 @@ def build_verifier(
     directory: FakeDirectory | None = None,
     ldap_revalidate_seconds: int = 900,
 ) -> NoaTokenVerifier:
-    """The production verifier over a session that does nothing and a fake repository."""
-
-    @asynccontextmanager
-    async def session_factory() -> AsyncIterator[AsyncSession]:
-        yield cast("AsyncSession", FakeSession())
-
+    """The production verifier over a session that does nothing and fake repositories."""
     return NoaTokenVerifier(
-        session_factory=session_factory,
-        directory=directory or FakeDirectory(),
-        ldap_revalidate_seconds=ldap_revalidate_seconds,
-        repository_factory=lambda _session: repository,
+        context=build_auth_context(
+            repository=repository,
+            directory=directory,
+            ldap_revalidate_seconds=ldap_revalidate_seconds,
+        )
     )
 
 
@@ -370,16 +350,17 @@ async def test_a_departed_operator_loses_every_token_through_the_verifier() -> N
 
 
 async def test_the_verifier_holds_no_repository_of_its_own() -> None:
-    """V5: the adapter carries a factory, not a query. Policy lives in the resolver.
+    """V5: the adapter carries a context, not a query. Policy lives elsewhere.
 
     Asserted structurally rather than by behaviour because the invariant is about where
-    code may live: an adapter that grew its own lookup would still pass every behavioural
-    test above while making "auth mechanism swap = one file" false.
+    code may live: an adapter that grew its own lookup, session or header read would still
+    pass every behavioural test above while making "auth mechanism swap = one file" false.
     """
     verifier = build_verifier(repository=FakeMcpIdentityRepository())
 
-    assert not hasattr(verifier, "_repository")
-    assert callable(verifier._repository_factory)
+    assert isinstance(verifier._context, McpAuthContext)
+    for forbidden in ("_repository", "_repository_factory", "_session_factory", "_directory"):
+        assert not hasattr(verifier, forbidden), forbidden
 
 
 # --- V8: what a refusal writes down ---

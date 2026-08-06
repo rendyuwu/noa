@@ -54,7 +54,7 @@ authorization failure is a different question entirely.
 
 from __future__ import annotations
 
-from core.errors import NoaError
+from core.errors import NoaError, RetryAfterMixin
 
 
 class AuthError(NoaError):
@@ -151,12 +151,15 @@ class LdapUnavailableError(AuthError):
     message: str = "Cannot reach the company directory right now. Try again in a few moments."
 
 
-class AuthRateLimitedError(AuthError):
+class AuthRateLimitedError(RetryAfterMixin, AuthError):
     """Login blocked: too many failed attempts in the window (V9).
 
     Says nothing about whether the address exists or the password was close — the
     limiter counts attempts, not outcomes, so this text stays as uninformative as
     `AuthInvalidCredentialsError`.
+
+    `RetryAfterMixin` is what makes the shared handler emit `Retry-After`; the MCP path's
+    `McpAuthRateLimitedError` carries the same marker (T12).
     """
 
     error_code: str = "login_rate_limited"

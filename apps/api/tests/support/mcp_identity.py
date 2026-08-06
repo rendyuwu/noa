@@ -18,17 +18,31 @@ surface for invariants a value-only double could not express:
 `FakeDirectory` can answer, deny, or raise `LdapUnavailableError`, which is the three-way
 split V4 rests on. It records the emails it was asked about so a test can prove the call
 did not happen rather than inferring it from the result.
+
+`build_auth_context` (T12) is the same doubles behind an `McpAuthContext`, so the verifier
+and the HTTP request path are exercised over one set of fakes. Its session is a stub that
+nothing touches: both repository doubles ignore it, which is what lets the R4 header check
+run in the suite that always runs rather than only where Postgres is up.
 """
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator, Iterator, Mapping
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 from uuid import UUID, uuid4
+
+from fastmcp.server.http import set_http_request
+from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.requests import Request
 
 from core.auth.errors import LdapUnavailableError
 from core.auth.mcp_identity import McpIdentityResolver
 from core.auth.mcp_token_service import generate_mcp_token, hash_mcp_token
+from noa_api.mcp_request_auth import McpAuthContext
+from support.auth import FakeRateLimitRepository
 
 # Fixed clock, so staleness and expiry assertions are equalities rather than tolerances.
 NOW = datetime(2026, 8, 6, 12, 0, tzinfo=UTC)
@@ -41,6 +55,12 @@ LIBRECHAT_USER = "librechat-user-1"
 OTHER_LIBRECHAT_USER = "librechat-user-2"
 
 REVALIDATE_SECONDS = 900
+
+# Rate-limit policy for T12's tests. Deliberately tighter than the shipped default (5) so a
+# test reaches a block in three lines instead of five.
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_MAX_ATTEMPTS = 3
+RATE_LIMIT_BLOCK_SECONDS = 600
 
 
 @dataclass
@@ -229,18 +249,96 @@ def stale_check(*, seconds: int = REVALIDATE_SECONDS) -> datetime:
     return NOW - timedelta(seconds=seconds)
 
 
+class StubSession:
+    """Stands in for `AsyncSession`. Both repository doubles ignore it."""
+
+
+@contextmanager
+def http_request_context(
+    headers: Mapping[str, str] | None = None,
+    *,
+    path: str = "/mcp",
+    user: Any = None,
+) -> Iterator[Request]:
+    """Run a block inside the request contextvar `RequestContextMiddleware` sets (R4).
+
+    Built from a raw ASGI scope rather than a `TestClient` round trip so a unit test can
+    name the exact headers on the wire, including their absence. The `Request` is yielded so
+    a test can read back what production wrote onto the scope — T12 stashes its refusal
+    there.
+
+    `user` fills `scope["user"]`, which is where `get_access_token()` looks first; pass an
+    `AuthenticatedUser` to stand in for a request the auth middleware already accepted.
+    """
+    raw = [(key.lower().encode(), value.encode()) for key, value in (headers or {}).items()]
+    scope: dict[str, Any] = {
+        "type": "http",
+        "http_version": "1.1",
+        "method": "POST",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "headers": raw,
+        "client": ("127.0.0.1", 12345),
+        "scheme": "http",
+        "server": ("noa.internal", 80),
+    }
+    if user is not None:
+        scope["user"] = user
+
+    with set_http_request(Request(scope)) as request:
+        yield request
+
+
+def build_auth_context(
+    *,
+    repository: FakeMcpIdentityRepository,
+    directory: FakeDirectory | None = None,
+    rate_limits: FakeRateLimitRepository | None = None,
+    ldap_revalidate_seconds: int = REVALIDATE_SECONDS,
+    max_attempts: int = RATE_LIMIT_MAX_ATTEMPTS,
+) -> McpAuthContext:
+    """An `McpAuthContext` over in-memory doubles (T12).
+
+    The context is the production value object and `resolve_mcp_identity` is the production
+    function; only the session, the two repositories and the directory are faked.
+    """
+
+    @asynccontextmanager
+    async def session_factory() -> AsyncIterator[AsyncSession]:
+        yield cast("AsyncSession", StubSession())
+
+    limits = rate_limits if rate_limits is not None else FakeRateLimitRepository()
+    return McpAuthContext(
+        session_factory=session_factory,
+        directory=directory or FakeDirectory(),
+        ldap_revalidate_seconds=ldap_revalidate_seconds,
+        rate_limit_window_seconds=RATE_LIMIT_WINDOW_SECONDS,
+        rate_limit_max_attempts=max_attempts,
+        rate_limit_block_seconds=RATE_LIMIT_BLOCK_SECONDS,
+        identity_repository_factory=lambda _session: repository,
+        rate_limit_repository_factory=lambda _session: limits,
+    )
+
+
 __all__ = [
     "DISPLAY_NAME",
     "EMAIL",
     "LIBRECHAT_USER",
     "NOW",
     "OTHER_LIBRECHAT_USER",
+    "RATE_LIMIT_BLOCK_SECONDS",
+    "RATE_LIMIT_MAX_ATTEMPTS",
+    "RATE_LIMIT_WINDOW_SECONDS",
     "REVALIDATE_SECONDS",
     "FakeAuthRow",
     "FakeDirectory",
     "FakeMcpIdentityRepository",
     "IdentityFixture",
     "StoredAuthToken",
+    "StubSession",
+    "build_auth_context",
     "build_resolver",
+    "http_request_context",
     "stale_check",
 ]

@@ -53,6 +53,7 @@ from core.auth.mcp_auth_errors import (
     LibreChatUserHeaderMissingError,
     LibreChatUserMismatchError,
     McpAuthError,
+    McpAuthRateLimitedError,
     McpTokenExpiredError,
     McpTokenInvalidError,
     McpTokenMissingError,
@@ -64,7 +65,7 @@ from core.auth.mcp_token_errors import (
     McpTokenError,
     McpTokenNotFoundError,
 )
-from core.errors import NoaError
+from core.errors import NoaError, RetryAfterMixin
 
 # Lookup is by exact class with an MRO walk below, so ordering here is for reading only.
 STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
@@ -116,13 +117,13 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # Bare `McpTokenError`: a request problem, not an infrastructure answer. Same
     # subclass-tree test as above guards this from becoming the default.
     McpTokenError: status.HTTP_400_BAD_REQUEST,
-    # --- MCP request-path authentication (T11) ---
+    # --- MCP request-path authentication (T11, T12) ---
     # The credential did not authenticate the caller. 401 across all four: absent,
     # unknown, expired and wrong-binding share a remedy (present a valid token of your
     # own), and splitting them by status would let a caller probe which tokens are real.
-    # `verify_token` returns `None` for every one of these today (R2 gives it no body
-    # hook) — T12 is the row that renders them, and these mappings are what it renders
-    # with (V3).
+    # `verify_token` returns `None` for every one of these (R2 gives it no body hook);
+    # `noa_api.mcp_request_auth.McpAuthErrorMiddleware` is what renders them, and these
+    # mappings are what it renders with (V3).
     McpTokenMissingError: status.HTTP_401_UNAUTHORIZED,
     McpTokenInvalidError: status.HTTP_401_UNAUTHORIZED,
     McpTokenExpiredError: status.HTTP_401_UNAUTHORIZED,
@@ -132,6 +133,9 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # a disabled operator needs an admin, and one the directory dropped needs IT.
     McpUserInactiveError: status.HTTP_403_FORBIDDEN,
     McpUserNotInDirectoryError: status.HTTP_403_FORBIDDEN,
+    # Not a verdict about the credential at all: too many failed attempts for this
+    # LibreChat account or this token (V9, T12). Carries `Retry-After` below.
+    McpAuthRateLimitedError: status.HTTP_429_TOO_MANY_REQUESTS,
     # Bare `McpAuthError`: a request problem, not "NOA is down". Same subclass-tree test
     # guards this from becoming the default for a class added later.
     McpAuthError: status.HTTP_400_BAD_REQUEST,
@@ -161,6 +165,24 @@ def error_body(error: NoaError) -> dict[str, str]:
     return {"error_code": error.error_code, "message": error.message}
 
 
+def error_headers(error: NoaError) -> dict[str, str]:
+    """Response headers an error carries beyond the body.
+
+    Only `Retry-After` today, keyed on `RetryAfterMixin` rather than on a list of classes:
+    V9 requires a 429 to say when to retry, and the previous `isinstance(...,
+    AuthRateLimitedError)` test would have silently dropped the header for T12's
+    `McpAuthRateLimitedError`.
+
+    A function beside `error_body` because the FastAPI handler is no longer the only thing
+    that renders a `NoaError`: `noa_api.mcp_request_auth.McpAuthErrorMiddleware` writes a
+    raw ASGI response for the mounted MCP app, which has no exception-handler graph, and it
+    must not shape one differently (V73).
+    """
+    if isinstance(error, RetryAfterMixin):
+        return {"Retry-After": str(error.retry_after_seconds)}
+    return {}
+
+
 def install_error_handler(app: FastAPI) -> None:
     """Register the `NoaError` handler on `app`.
 
@@ -175,15 +197,10 @@ def install_error_handler(app: FastAPI) -> None:
         # narrower class.
         error = exc if isinstance(exc, NoaError) else NoaError(str(exc))
 
-        headers: dict[str, str] = {}
-        if isinstance(error, AuthRateLimitedError):
-            # V9: a 429 without this leaves the client guessing when to retry.
-            headers["Retry-After"] = str(error.retry_after_seconds)
-
         return JSONResponse(
             status_code=status_for(error),
             content=error_body(error),
-            headers=headers or None,
+            headers=error_headers(error) or None,
         )
 
 
@@ -191,6 +208,7 @@ __all__ = [
     "FALLBACK_STATUS",
     "STATUS_BY_ERROR",
     "error_body",
+    "error_headers",
     "install_error_handler",
     "status_for",
 ]

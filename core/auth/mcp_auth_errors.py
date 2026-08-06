@@ -27,21 +27,22 @@ would be two classes for one condition (V66).
 
 Statuses live in `noa_api.api.errors`. 401 for "this credential does not authenticate you",
 403 for "it does, and you still may not act" — re-presenting the token changes nothing for
-a disabled operator or one the directory has dropped.
+a disabled operator or one the directory has dropped — and 429 for "stop asking", the one
+answer that is about the caller's rate rather than their credential (T12, V9).
 
 V2/V8 throughout: no message and no `detail` in this module carries a token plaintext, a
 digest, or a prefix. `detail` names ids and reasons, and stays in the logs.
 
-Who raises what: `core.auth.mcp_identity.McpIdentityResolver`, in gate order. Who renders
-it: nobody yet — `verify_token` (T11) turns every one of these into `None`, because the
-fastmcp/SDK contract has no body hook (R2). T12's `resolve_mcp_identity` is the row that
-puts these codes in a 401 body; the classes exist now so the causes are already
-distinguishable rather than collapsed at the point they are decided.
+Who raises what: `core.auth.mcp_identity.McpIdentityResolver`, in gate order, plus
+`McpAuthRateLimitedError` from `core.auth.mcp_auth_rate_limiter` before the gates run.
+`verify_token` (T11) turns every one of these into `None`, because the fastmcp/SDK contract
+has no body hook (R2); `noa_api.mcp_request_auth.McpAuthErrorMiddleware` (T12) is what puts
+the code in the response body.
 """
 
 from __future__ import annotations
 
-from core.errors import NoaError
+from core.errors import NoaError, RetryAfterMixin
 
 
 class McpAuthError(NoaError):
@@ -150,10 +151,39 @@ class McpUserNotInDirectoryError(McpAuthError):
     )
 
 
+class McpAuthRateLimitedError(RetryAfterMixin, McpAuthError):
+    """Too many failed MCP authentications for this client or token (V9, T12).
+
+    429, and the only class here that is not a verdict about the credential: the token
+    presented may well be fine, and the caller is being told to stop asking for a while.
+    Distinct from `AuthRateLimitedError` because that one's message sends the reader to a
+    sign-in form, and an MCP client has no sign-in form to visit.
+
+    Says nothing about which bucket blocked, or whether any token was ever valid — the
+    limiter counts attempts, not outcomes, so this text cannot become a probe. `detail`
+    names the scope, for the logs.
+
+    `retry_after_seconds` is what the shared handler turns into a `Retry-After` header
+    (`RetryAfterMixin`); a 429 without it leaves the client guessing.
+    """
+
+    error_code: str = "mcp_auth_rate_limited"
+    message: str = (
+        "Too many failed NOA MCP authentication attempts. Wait a few minutes and try again."
+    )
+
+    def __init__(self, retry_after_seconds: int, detail: str | None = None) -> None:
+        # Floored at 1 for the reason `AuthRateLimitedError` floors it: `Retry-After: 0`
+        # tells the client to retry immediately, which is the opposite of a block.
+        self.retry_after_seconds = max(1, int(retry_after_seconds))
+        super().__init__(detail)
+
+
 __all__ = [
     "LibreChatUserHeaderMissingError",
     "LibreChatUserMismatchError",
     "McpAuthError",
+    "McpAuthRateLimitedError",
     "McpTokenExpiredError",
     "McpTokenInvalidError",
     "McpTokenMissingError",

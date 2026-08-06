@@ -169,17 +169,25 @@ class McpToken(Base):
 
 
 class LoginRateLimit(Base):
-    """One rate-limit bucket for the login path (V9, T8).
+    """One rate-limit bucket for any auth surface (V9, T8, T12).
 
-    Two rows accumulate per failed login — one keyed by source IP, one by the
-    submitted email — because either alone leaves a hole: IP-only lets a botnet
-    spread guesses against one account, email-only lets one host spray a whole
-    directory. `assert_allowed` denies when *either* bucket is blocked.
+    Named for the login path it was built for, and now shared: `scope` says which surface
+    a row belongs to. Login writes `ip` and `email` (T8); failed MCP authentication writes
+    `mcp_client` and `mcp_token` (T12, `core.auth.mcp_auth_rate_limiter`). One generic
+    (scope, key) counter rather than a second identical table plus a second SQL repository
+    (V66) — the name is the cost of that, and renaming it would be a migration for
+    cosmetics.
 
-    `scope_key` holds the IP or the normalized email, so a row is created per
-    distinct value an attacker supplies. Bounded only by `String(255)`; pruning
-    stale buckets is deliberately not here, because the sweep belongs with T39's
-    background sweeper rather than in a table definition.
+    Two rows accumulate per failed attempt, on both surfaces, because either key alone
+    leaves a hole: for login, IP-only lets a botnet spread guesses against one account and
+    email-only lets one host spray a whole directory. `assert_allowed` denies when *either*
+    bucket is blocked.
+
+    `scope_key` holds whatever identifies the attempt on that surface — an IP, a
+    normalized email, a LibreChat account id, or a token digest (never a plaintext
+    credential, V2/V8) — so a row is created per distinct value a caller supplies. Bounded
+    only by `String(255)`; pruning stale buckets is deliberately not here, because the
+    sweep belongs with T39's background sweeper rather than in a table definition.
 
     No `created_at`: `window_started_at` already carries the only creation time that
     means anything for a bucket, and a second timestamp would invite reading the

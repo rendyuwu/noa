@@ -38,4 +38,24 @@ class NoaError(Exception):
         super().__init__(self.detail)
 
 
-__all__ = ["NoaError"]
+class RetryAfterMixin:
+    """Marker for a refusal that owes the client a `Retry-After` header.
+
+    A mixin rather than a `NoaError` subclass because the two errors that carry it live in
+    different taxonomies — `AuthRateLimitedError` under `AuthError` (login, T8) and
+    `McpAuthRateLimitedError` under `McpAuthError` (the MCP request path, T12) — and neither
+    tree may absorb the other (see `core.auth.mcp_auth_errors`).
+
+    It exists so the shared handler branches on a declared property instead of listing
+    classes: `noa_api.api.errors` used to test `isinstance(error, AuthRateLimitedError)`,
+    which silently drops the header for any second rate-limited class. A 429 without
+    `Retry-After` leaves the client guessing when to retry (V9).
+
+    Implementors set `retry_after_seconds` in `__init__`, floored at 1 — `Retry-After: 0`
+    tells the client to retry immediately, the opposite of a block.
+    """
+
+    retry_after_seconds: int
+
+
+__all__ = ["NoaError", "RetryAfterMixin"]

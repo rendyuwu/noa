@@ -139,6 +139,13 @@ class Settings(BaseSettings):
     # None -> non-expiring until revoked (V2: revoke = delete row).
     mcp_token_ttl_seconds: int | None = Field(default=None, ge=60)
 
+    # Failed-MCP-auth rate limiting (V9, T12). Same numbers as login: the buckets are
+    # keyed per LibreChat account and per presented token, never per source address
+    # (in-cluster it identifies nothing), so a block costs one account, not the fleet.
+    mcp_auth_rate_limit_window_seconds: int = Field(default=60, ge=1)
+    mcp_auth_rate_limit_max_attempts: int = Field(default=5, ge=1)
+    mcp_auth_rate_limit_block_seconds: int = Field(default=600, ge=1)
+
     # --- Approval gate (V31, V32) ---
     approval_max_inflight_per_user: int = Field(default=1, ge=1)
     approval_pending_ttl_seconds: int = Field(default=3600, ge=60)
