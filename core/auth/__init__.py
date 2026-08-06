@@ -13,7 +13,8 @@ Two credentials live in this package and never mix:
 
 - session JWT in the `noa_session` cookie — admin panel + embed, LDAP-backed,
   short-lived (V6). `JWTService` owns mint, verify, and the cookie itself.
-- MCP bearer token — opaque, hashed at rest, no JWT (C5, V2). T10-T12.
+- MCP bearer token — opaque, hashed at rest, no JWT (C5, V2). `McpTokenService` owns mint,
+  list and revoke (T10); T11-T12 add the verify path on top of `hash_mcp_token`.
 
 `AuthService` is where the mechanisms meet: it authenticates against the directory,
 applies NOA's activation gate (V7), rate limits attempts (V9), and re-reads
@@ -74,6 +75,20 @@ from core.auth.login_rate_limiter import (
     LoginRateLimiter,
     LoginRateLimitRepository,
 )
+from core.auth.mcp_token_errors import (
+    InvalidTokenLabelError,
+    McpTokenError,
+    McpTokenNotFoundError,
+)
+from core.auth.mcp_token_repository import SQLMcpTokenRepository
+from core.auth.mcp_token_service import (
+    McpTokenRepository,
+    McpTokenService,
+    McpTokenView,
+    MintedMcpToken,
+    generate_mcp_token,
+    hash_mcp_token,
+)
 from core.auth.tool_catalog import NEVER_IMPLEMENT_TOOLS, TOOL_CATALOG, is_known_tool
 
 __all__ = [
@@ -101,6 +116,7 @@ __all__ = [
     "DirectoryAuthenticator",
     "InternalRoleError",
     "InvalidRoleNameError",
+    "InvalidTokenLabelError",
     "IssuedToken",
     "JWTService",
     "LDAPService",
@@ -110,11 +126,18 @@ __all__ = [
     "LoginRateLimitBucket",
     "LoginRateLimitRepository",
     "LoginRateLimiter",
+    "McpTokenError",
+    "McpTokenNotFoundError",
+    "McpTokenRepository",
+    "McpTokenService",
+    "McpTokenView",
+    "MintedMcpToken",
     "ReservedRoleError",
     "RoleNotFoundError",
     "SQLAuthRepository",
     "SQLAuthorizationRepository",
     "SQLLoginRateLimitRepository",
+    "SQLMcpTokenRepository",
     "SelfDeactivateAdminError",
     "SelfDeleteAdminError",
     "SelfDeleteError",
@@ -124,5 +147,7 @@ __all__ = [
     "UnknownRoleError",
     "UnknownToolError",
     "UserNotFoundError",
+    "generate_mcp_token",
+    "hash_mcp_token",
     "is_known_tool",
 ]

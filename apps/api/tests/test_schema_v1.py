@@ -15,7 +15,6 @@ from core.db import Base
 from core.db.models import (
     ADMIN_ROLE_NAME,
     INTERNAL_ROLE_PREFIX,
-    McpToken,
     PMGServer,
     ProxmoxServer,
     WHMServer,
@@ -125,24 +124,6 @@ def test_admin_and_internal_role_names() -> None:
     assert is_internal_role("user:alice@example.com") is True
     assert is_internal_role("noc-operator") is False
     assert is_internal_role(ADMIN_ROLE_NAME) is False
-
-
-def test_mcp_token_safe_dict_hides_hash() -> None:
-    """V2, V8: neither the hash nor any plaintext reaches an API response."""
-    token = McpToken(
-        id=uuid4(),
-        user_id=uuid4(),
-        token_hash="a" * 64,
-        token_prefix="noa_abcd",
-        label="laptop",
-        created_at=datetime.now(UTC),
-    )
-
-    safe = token.to_safe_dict()
-
-    assert "token_hash" not in safe
-    assert "a" * 64 not in str(safe)
-    assert safe["token_prefix"] == "noa_abcd"
 
 
 @pytest.mark.parametrize(

@@ -138,6 +138,11 @@ class McpToken(Base):
     call carrying `X-Noa-LibreChat-User`, then pinned; later calls must present a
     matching header or get 401. `last_ldap_check_at` drives revalidation staleness,
     where LDAP being unreachable fails closed (V4).
+
+    No `to_safe_dict()` here, unlike the server models below: T10's `McpTokenView`
+    (`core.auth.mcp_token_service`) is the read shape for this table, and it omits
+    `token_hash` by not having a field for it. Two safe views of one table is one too
+    many — a route could pick the weaker (V66).
     """
 
     __tablename__ = "mcp_tokens"
@@ -161,20 +166,6 @@ class McpToken(Base):
     # NULL = no expiry; revocation is a row delete (V2).
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = created_at()
-
-    def to_safe_dict(self) -> dict[str, Any]:
-        """Admin/self-service view. Carries no hash and no plaintext (V2, V8)."""
-        return {
-            "id": str(self.id),
-            "user_id": str(self.user_id),
-            "token_prefix": self.token_prefix,
-            "label": self.label,
-            "librechat_user_id": self.librechat_user_id,
-            "last_used_at": self.last_used_at,
-            "last_ldap_check_at": self.last_ldap_check_at,
-            "expires_at": self.expires_at,
-            "created_at": self.created_at,
-        }
 
 
 class LoginRateLimit(Base):

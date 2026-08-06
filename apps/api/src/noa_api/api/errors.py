@@ -1,10 +1,11 @@
-"""One exception handler for every NOA error (T8, T9).
+"""One exception handler for every NOA error (T8, T9, T10).
 
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
-`core.errors`, `core.auth.errors`, `core.auth.authorization_errors`), so routes raise and
-this decides the status code. Routes that build their own `HTTPException` per failure are
-how two callers end up returning different codes for the same condition — `noa-old`'s
-admin routes did exactly that, in ~40 lines per endpoint.
+`core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
+`core.auth.mcp_token_errors`), so routes raise and this decides the status code. Routes
+that build their own `HTTPException` per failure are how two callers end up returning
+different codes for the same condition — `noa-old`'s admin routes did exactly that, in
+~40 lines per endpoint.
 
 V8: the response body carries `error_code` + `message` only. `detail` is the internal
 diagnostic — it names configuration faults, directory internals and the ids of rows that
@@ -46,6 +47,11 @@ from core.auth.errors import (
     AuthSessionExpiredError,
     AuthSessionInvalidError,
     LdapUnavailableError,
+)
+from core.auth.mcp_token_errors import (
+    InvalidTokenLabelError,
+    McpTokenError,
+    McpTokenNotFoundError,
 )
 from core.errors import NoaError
 
@@ -89,6 +95,16 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # test asserts every subclass is mapped above, so reaching this line means a new class
     # arrived without a decision.
     AuthorizationError: status.HTTP_403_FORBIDDEN,
+    # --- MCP tokens (T10) ---
+    # 404 for a token that is absent *or* another user's: the lookup is scoped by user id,
+    # so the two cases answer identically and the response is not an enumeration oracle
+    # (V2, and the V27/V76 principle).
+    McpTokenNotFoundError: status.HTTP_404_NOT_FOUND,
+    # The label is longer than the column holds — a malformed request, not a server fault.
+    InvalidTokenLabelError: status.HTTP_400_BAD_REQUEST,
+    # Bare `McpTokenError`: a request problem, not an infrastructure answer. Same
+    # subclass-tree test as above guards this from becoming the default.
+    McpTokenError: status.HTTP_400_BAD_REQUEST,
 }
 
 # Bare `AuthError` means "authentication failed and we did not classify why", which is an

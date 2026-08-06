@@ -37,6 +37,14 @@ EVENT_USER_STATUS_UPDATED = "admin_user_status_updated"
 EVENT_USER_DELETED = "admin_user_deleted"
 EVENT_USER_ROLES_UPDATED = "admin_user_roles_updated"
 
+# T10. No `noa-old` equivalent — it had no per-user MCP credential to mint. Issuing and
+# revoking one is a change to what a bearer can reach, so it belongs in the same trail as
+# a role edit (V14). The payload carries the token id, the display prefix and the label;
+# never the plaintext, never the digest (V2, V8).
+# S105: these are log event names, not credentials — `token` in the name trips the check.
+EVENT_MCP_TOKEN_MINTED = "admin_mcp_token_minted"  # noqa: S105
+EVENT_MCP_TOKEN_REVOKED = "admin_mcp_token_revoked"  # noqa: S105
+
 # The log event name every sink writes under, so a query filters on one key and reads
 # `event_type` for the specific change.
 LOG_EVENT = "admin_audit"
@@ -99,6 +107,8 @@ class StructlogAdminAuditSink:
 
 
 __all__ = [
+    "EVENT_MCP_TOKEN_MINTED",
+    "EVENT_MCP_TOKEN_REVOKED",
     "EVENT_ROLE_CREATED",
     "EVENT_ROLE_DELETED",
     "EVENT_ROLE_TOOLS_UPDATED",
