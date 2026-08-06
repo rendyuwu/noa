@@ -12,7 +12,9 @@ Per-request objects — the DB session, the repositories, the rate limiter, `Aut
 
 `require_session_user` is the important export. Every session-authenticated route in
 this app depends on it, so the `users.is_active` re-read V6 demands happens once,
-centrally, and a new route cannot forget it.
+centrally, and a new route cannot forget it. `require_admin` (T9) layers on top of it, so
+the role check always happens *after* that re-read — a disabled admin loses the panel on
+their next request, not at cookie expiry.
 """
 
 from __future__ import annotations
@@ -23,13 +25,18 @@ from typing import Annotated, Final, TypeVar, cast
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.audit.admin_events import StructlogAdminAuditSink
 from core.auth.auth_repository import SQLAuthRepository, SQLLoginRateLimitRepository
 from core.auth.auth_service import AuthService, SessionUser
+from core.auth.authorization_errors import AdminAccessRequiredError
+from core.auth.authorization_repository import SQLAuthorizationRepository
+from core.auth.authorization_service import AuthorizationService
 from core.auth.errors import AuthSessionInvalidError
 from core.auth.jwt_service import JWTService
 from core.auth.ldap_service import LDAPService
 from core.auth.login_rate_limiter import LoginRateLimiter
 from core.config import Settings
+from core.db.models import ADMIN_ROLE_NAME
 
 # `app.state` keys, written by the lifespan in `noa_api.main`.
 STATE_SETTINGS: Final = "settings"
@@ -161,18 +168,63 @@ async def require_session_user(
 SessionUserDep = Annotated[SessionUser, Depends(require_session_user)]
 
 
+def get_authorization_service(session: SessionDep) -> AuthorizationService:
+    """The RBAC engine wired to this request's session (T9).
+
+    Built per request, like `AuthService`, so a role change and its audit event share one
+    transaction. The audit sink is constructed here rather than kept on `app.state` because
+    `StructlogAdminAuditSink` holds only a logger; when a database-backed sink lands it will
+    need this request's session anyway.
+
+    The tool catalog is left at its default (`core.auth.tool_catalog.TOOL_CATALOG`, V10).
+    T13 replaces that default with the live FastMCP registry.
+    """
+    return AuthorizationService(
+        repository=SQLAuthorizationRepository(session),
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+AuthorizationServiceDep = Annotated[AuthorizationService, Depends(get_authorization_service)]
+
+
+async def require_admin(current_user: SessionUserDep) -> SessionUser:
+    """Gate every `/admin` route on the `admin` role (V13).
+
+    Depends on `require_session_user`, so the V6 row re-read runs first and the roles
+    checked here are the ones in the database, never the cookie's claims — the session JWT
+    carries no role claim precisely so this cannot be spoofed by an old cookie.
+
+    403, not 404: hiding the admin surface from an authenticated operator buys nothing (the
+    routes are in the OpenAPI schema) and would make a permission problem look like a
+    broken deployment.
+    """
+    if ADMIN_ROLE_NAME not in current_user.roles:
+        raise AdminAccessRequiredError(
+            f"`{current_user.email}` holds roles {current_user.roles!r}, not `{ADMIN_ROLE_NAME}`"
+        )
+    return current_user
+
+
+AdminUserDep = Annotated[SessionUser, Depends(require_admin)]
+
+
 __all__ = [
+    "AdminUserDep",
     "AuthServiceDep",
+    "AuthorizationServiceDep",
     "JWTServiceDep",
     "LDAPServiceDep",
     "SessionDep",
     "SessionUserDep",
     "SettingsDep",
     "get_auth_service",
+    "get_authorization_service",
     "get_db_session",
     "get_jwt_service",
     "get_ldap_service",
     "get_session_factory",
     "get_settings_dep",
+    "require_admin",
     "require_session_user",
 ]

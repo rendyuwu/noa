@@ -32,9 +32,11 @@ API_DIR = Path(__file__).resolve().parents[2]
 # Same URL resolution the app and Alembic use (T5).
 DEV_URL = get_settings().postgres_url_str
 
-# Tables the auth tests write to, truncated between tests. `CASCADE` reaches
+# Tables the auth and RBAC tests write to, truncated between tests. `CASCADE` reaches
 # `user_roles`, which has a foreign key into both `users` and `roles`.
-MUTATED_TABLES = ("users", "roles", "login_rate_limits")
+# `role_tool_permissions` is named explicitly rather than left to the cascade from `roles`:
+# a T9 test that grants tools without creating a user must still start empty.
+MUTATED_TABLES = ("users", "roles", "role_tool_permissions", "login_rate_limits")
 
 
 def swap_database(url: str, database: str) -> str:

@@ -39,7 +39,7 @@ from noa_api.api.deps import (
     STATE_SESSION_FACTORY,
     STATE_SETTINGS,
 )
-from noa_api.api.errors import install_auth_error_handler
+from noa_api.api.errors import install_error_handler
 from noa_api.api.routes.auth import router as auth_router
 
 TITLE = "NOA API"
@@ -74,7 +74,7 @@ def create_app() -> FastAPI:
     """
     app = FastAPI(title=TITLE, version=__version__, lifespan=lifespan)
 
-    install_auth_error_handler(app)
+    install_error_handler(app)
     app.include_router(auth_router)
 
     @app.get("/health")

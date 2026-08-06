@@ -22,7 +22,7 @@ Two settings choices worth knowing:
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -45,7 +45,7 @@ from noa_api.api.deps import (
     STATE_SETTINGS,
     get_auth_service,
 )
-from noa_api.api.errors import install_auth_error_handler
+from noa_api.api.errors import install_error_handler
 from noa_api.api.routes.auth import router as auth_router
 
 OPERATOR_EMAIL = "operator@example.com"
@@ -259,6 +259,44 @@ class FakeRateLimitRepository:
         self.buckets.pop((scope, scope_key), None)
 
 
+# --- Dependency override ---
+
+
+def override_auth_service_factory(
+    *,
+    settings: Settings,
+    repository: FakeAuthRepository,
+    jwt_service: JWTService,
+    directory: FakeDirectory | None = None,
+    rate_limits: FakeRateLimitRepository | None = None,
+) -> Callable[[], AuthService]:
+    """A `get_auth_service` override wired to the doubles passed in.
+
+    Extracted from `auth_harness` so T9's `support.rbac` probe app can put the same real
+    `AuthService` behind `require_admin` without a second copy of this wiring (V66). The
+    limiter policy is read off `settings`, never hardcoded, so a test that narrows the
+    window still exercises the real thresholds.
+    """
+    resolved_directory = directory or FakeDirectory()
+    resolved_rate_limits = rate_limits or FakeRateLimitRepository()
+
+    def override() -> AuthService:
+        return AuthService(
+            repository=repository,
+            directory=resolved_directory,
+            jwt_service=jwt_service,
+            rate_limiter=LoginRateLimiter(
+                resolved_rate_limits,
+                window_seconds=settings.auth_login_rate_limit_window_seconds,
+                max_attempts=settings.auth_login_rate_limit_max_attempts,
+                block_seconds=settings.auth_login_rate_limit_block_seconds,
+            ),
+            bootstrap_admin_emails=settings.auth_bootstrap_admin_emails,
+        )
+
+    return override
+
+
 # --- App builder ---
 
 
@@ -308,7 +346,7 @@ def auth_harness(
     jwt_service = JWTService(resolved_settings)
 
     app = FastAPI()
-    install_auth_error_handler(app)
+    install_error_handler(app)
     app.include_router(auth_router)
 
     # Set directly rather than through a lifespan: these are the same attributes
@@ -318,21 +356,13 @@ def auth_harness(
     setattr(app.state, STATE_LDAP_SERVICE, None)
     setattr(app.state, STATE_SESSION_FACTORY, None)
 
-    def override_auth_service() -> AuthService:
-        return AuthService(
-            repository=resolved_repository,
-            directory=resolved_directory,
-            jwt_service=jwt_service,
-            rate_limiter=LoginRateLimiter(
-                resolved_rate_limits,
-                window_seconds=resolved_settings.auth_login_rate_limit_window_seconds,
-                max_attempts=resolved_settings.auth_login_rate_limit_max_attempts,
-                block_seconds=resolved_settings.auth_login_rate_limit_block_seconds,
-            ),
-            bootstrap_admin_emails=resolved_settings.auth_bootstrap_admin_emails,
-        )
-
-    app.dependency_overrides[get_auth_service] = override_auth_service
+    app.dependency_overrides[get_auth_service] = override_auth_service_factory(
+        settings=resolved_settings,
+        repository=resolved_repository,
+        jwt_service=jwt_service,
+        directory=resolved_directory,
+        rate_limits=resolved_rate_limits,
+    )
 
     with TestClient(app) as client:
         yield AuthHarness(
@@ -360,4 +390,5 @@ __all__ = [
     "FakeUserRow",
     "auth_harness",
     "build_settings",
+    "override_auth_service_factory",
 ]

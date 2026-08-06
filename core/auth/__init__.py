@@ -1,8 +1,13 @@
 """Shared auth building blocks (C12, V66).
 
-`LDAPService` (T6), `JWTService` (T7) and `AuthService` (T8) land first; RBAC (T9) and
-MCP identity resolution (T11-T12) join them here so all three deployables read one
+`LDAPService` (T6), `JWTService` (T7), `AuthService` (T8) and the RBAC engine (T9) live
+here; MCP identity resolution (T11-T12) joins them so all three deployables read one
 implementation.
+
+Authentication and authorization are separate taxonomies on purpose. `AuthError` means "we
+do not know who you are" and its unclassified case is an infrastructure answer (503);
+`AuthorizationError` means "we know, and no". Both derive from `core.errors.NoaError`, so
+one handler shapes both responses (V73).
 
 Two credentials live in this package and never mix:
 
@@ -28,6 +33,29 @@ from core.auth.auth_service import (
     DirectoryAuthenticator,
     SessionUser,
 )
+from core.auth.authorization_errors import (
+    AdminAccessRequiredError,
+    AuthorizationError,
+    InternalRoleError,
+    InvalidRoleNameError,
+    LastActiveAdminError,
+    ReservedRoleError,
+    RoleNotFoundError,
+    SelfDeactivateAdminError,
+    SelfDeleteAdminError,
+    SelfDeleteError,
+    SelfRemoveAdminRoleError,
+    UnknownRoleError,
+    UnknownToolError,
+    UserNotFoundError,
+)
+from core.auth.authorization_repository import SQLAuthorizationRepository
+from core.auth.authorization_service import AuthorizationService
+from core.auth.authorization_types import (
+    AuthorizationRepository,
+    AuthorizationUserRecord,
+    AuthorizedUser,
+)
 from core.auth.errors import (
     AuthAccountDisabledError,
     AuthConfigurationError,
@@ -46,9 +74,13 @@ from core.auth.login_rate_limiter import (
     LoginRateLimiter,
     LoginRateLimitRepository,
 )
+from core.auth.tool_catalog import NEVER_IMPLEMENT_TOOLS, TOOL_CATALOG, is_known_tool
 
 __all__ = [
     "LDAP_AVAILABLE",
+    "NEVER_IMPLEMENT_TOOLS",
+    "TOOL_CATALOG",
+    "AdminAccessRequiredError",
     "AuthAccountDisabledError",
     "AuthConfigurationError",
     "AuthError",
@@ -61,17 +93,36 @@ __all__ = [
     "AuthSessionInvalidError",
     "AuthUserRecord",
     "AuthenticatedSession",
+    "AuthorizationError",
+    "AuthorizationRepository",
+    "AuthorizationService",
+    "AuthorizationUserRecord",
+    "AuthorizedUser",
     "DirectoryAuthenticator",
+    "InternalRoleError",
+    "InvalidRoleNameError",
     "IssuedToken",
     "JWTService",
     "LDAPService",
+    "LastActiveAdminError",
     "LdapUnavailableError",
     "LdapUser",
     "LoginRateLimitBucket",
     "LoginRateLimitRepository",
     "LoginRateLimiter",
+    "ReservedRoleError",
+    "RoleNotFoundError",
     "SQLAuthRepository",
+    "SQLAuthorizationRepository",
     "SQLLoginRateLimitRepository",
+    "SelfDeactivateAdminError",
+    "SelfDeleteAdminError",
+    "SelfDeleteError",
+    "SelfRemoveAdminRoleError",
     "SessionClaims",
     "SessionUser",
+    "UnknownRoleError",
+    "UnknownToolError",
+    "UserNotFoundError",
+    "is_known_tool",
 ]

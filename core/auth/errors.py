@@ -45,12 +45,19 @@ Session-cookie denials (T7), distinct from login denials above:
 
 Both exist because `noa-old` reused `AuthInvalidCredentialsError` for a stale
 cookie, which told operators their password was wrong when it was not.
+
+`AuthError` derives from `core.errors.NoaError` (T9), which owns the three-field
+shape. Authentication keeps its own base so the handler can treat an unclassified
+*authentication* failure as an infrastructure answer (503) while an unclassified
+authorization failure is a different question entirely.
 """
 
 from __future__ import annotations
 
+from core.errors import NoaError
 
-class AuthError(Exception):
+
+class AuthError(NoaError):
     """Base for every auth failure.
 
     Subclasses override `error_code` and `message`. Callers pass `detail` when
@@ -59,10 +66,6 @@ class AuthError(Exception):
 
     error_code: str = "auth_failed"
     message: str = "Sign-in failed. Contact an administrator if this continues."
-
-    def __init__(self, detail: str | None = None) -> None:
-        self.detail = detail or self.message
-        super().__init__(self.detail)
 
 
 class AuthInvalidCredentialsError(AuthError):
