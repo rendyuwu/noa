@@ -1,9 +1,9 @@
-"""One exception handler for every NOA error (T8, T9, T10, T11, T14).
+"""One exception handler for every NOA error (T8, T9, T10, T11, T14, T15).
 
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
-`core.auth.mcp_token_errors`, `core.auth.mcp_auth_errors`), so routes raise and this
-decides the status code. Routes
+`core.auth.mcp_token_errors`, `core.auth.mcp_auth_errors`, `core.secrets.errors`), so routes
+raise and this decides the status code. Routes
 that build their own `HTTPException` per failure are how two callers end up returning
 different codes for the same condition — `noa-old`'s admin routes did exactly that, in
 ~40 lines per endpoint.
@@ -67,6 +67,7 @@ from core.auth.mcp_token_errors import (
 )
 from core.errors import NoaError, RetryAfterMixin
 from core.remote_exec.errors import SSHExecutionError
+from core.secrets.errors import SecretCryptoError, YopassError, YopassNotConfiguredError
 
 # Lookup is by exact class with an MRO walk below, so ordering here is for reading only.
 STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
@@ -148,6 +149,18 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # the specific `error_code`; T54 owns the validate routes and refines per code there
     # (`ssh_timeout` → 504, `ssh_not_configured`/`ssh_host_key_not_validated` → 409).
     SSHExecutionError: status.HTTP_502_BAD_GATEWAY,
+    # --- Secrets (T15) ---
+    # 500: NOA cannot read or write its own ciphertext. The operator's request was fine and
+    # retrying changes nothing — the key is absent, wrong, or the row was never encrypted.
+    # Which of those it is stays in `detail` (V8). Subclasses inherit via the MRO walk.
+    SecretCryptoError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    # 502 for the delivery hop, same reading as `SSHExecutionError`: NOA works, the system it
+    # depends on did not answer usably. C15's deliver-first ordering means nothing was
+    # changed when this is raised.
+    YopassError: status.HTTP_502_BAD_GATEWAY,
+    # ...except when yopass was never configured. That is NOA's own gap, not the upstream's,
+    # so it takes 500 rather than inheriting 502 from `YopassError`.
+    YopassNotConfiguredError: status.HTTP_500_INTERNAL_SERVER_ERROR,
 }
 
 # Bare `AuthError` means "authentication failed and we did not classify why", which is an
