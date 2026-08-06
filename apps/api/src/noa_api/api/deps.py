@@ -177,7 +177,8 @@ def get_authorization_service(session: SessionDep) -> AuthorizationService:
     need this request's session anyway.
 
     The tool catalog is left at its default (`core.auth.tool_catalog.TOOL_CATALOG`, V10).
-    T13 replaces that default with the live FastMCP registry.
+    T13 mounted the FastMCP server but registers no tools, so the live registry is empty;
+    the swap to a registry-derived catalog belongs with T19-T31/T63, when there is one.
     """
     return AuthorizationService(
         repository=SQLAuthorizationRepository(session),

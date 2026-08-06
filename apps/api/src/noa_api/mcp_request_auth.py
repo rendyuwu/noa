@@ -382,6 +382,31 @@ def log_mcp_auth_denial(error: NoaError) -> None:
 # --- Named refusal responses ---
 
 
+def mount_relative_path(scope: Scope) -> str:
+    """The request path as the app this middleware runs in sees it (ASGI `root_path`).
+
+    Starlette's `Mount` does **not** rewrite `scope["path"]`; it extends `root_path` with
+    the matched prefix and leaves the full path in place, and every router below strips
+    `root_path` again when it matches. So under `app.mount("/mcp", mcp_app)` (T13) a request
+    to `/mcp/` arrives here as `path="/mcp/"`, `root_path="/mcp"` — comparing `scope["path"]`
+    to the sub-app's own `/` would never match, the refusal would pass straight through, and
+    V3's named bodies would silently become the SDK's bare `invalid_token` while the status
+    code stayed 401. That failure has no symptom other than the body, which is why it is
+    computed here rather than assumed.
+
+    Deliberately not `starlette._utils.get_route_path`, whose behaviour this mirrors: it is
+    a private module, and this is four lines of ASGI spec.
+    """
+    path: str = scope.get("path", "")
+    root_path: str = scope.get("root_path", "")
+
+    if not root_path or not path.startswith(root_path):
+        return path
+    # A path equal to its mount prefix (`/mcp` exactly) leaves nothing behind; Starlette
+    # answers that with a redirect to the trailing-slash form before any of this runs.
+    return path[len(root_path) :]
+
+
 class McpAuthErrorMiddleware:
     """Replace the SDK's bare 401 with a NOA error envelope (V3, V73).
 
@@ -398,7 +423,9 @@ class McpAuthErrorMiddleware:
     - no stash and no bearer — `BearerAuthBackend` never called the verifier.
 
     `mcp_path` bounds the interception to the MCP endpoint (`http_app(path=...)`), so a
-    public route added to the same sub-app keeps answering for itself.
+    public route added to the same sub-app keeps answering for itself. It is compared
+    against the *mount-relative* path, which is the same value the sub-app's own router
+    matches on — see `mount_relative_path`.
     """
 
     def __init__(self, app: ASGIApp, *, mcp_path: str = "/") -> None:
@@ -406,7 +433,7 @@ class McpAuthErrorMiddleware:
         self._mcp_path = mcp_path
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or scope.get("path") != self._mcp_path:
+        if scope["type"] != "http" or mount_relative_path(scope) != self._mcp_path:
             await self.app(scope, receive, send)
             return
 
@@ -481,6 +508,7 @@ __all__ = [
     "current_mcp_identity",
     "identity_claims",
     "log_mcp_auth_denial",
+    "mount_relative_path",
     "parse_bearer",
     "read_librechat_user",
     "read_presented_bearer",

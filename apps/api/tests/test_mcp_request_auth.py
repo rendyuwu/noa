@@ -624,6 +624,55 @@ async def test_the_middleware_leaves_other_paths_alone() -> None:
     assert sent[0]["status"] == 204
 
 
+@pytest.mark.parametrize(
+    ("root_path", "path", "intercepted"),
+    [
+        pytest.param("", MCP_PATH, True, id="unmounted"),
+        pytest.param(MCP_PATH, f"{MCP_PATH}{MCP_PATH}", True, id="mounted"),
+        pytest.param(MCP_PATH, f"{MCP_PATH}/healthz", False, id="mounted-sibling"),
+    ],
+)
+async def test_the_path_guard_is_mount_relative(
+    root_path: str, path: str, intercepted: bool
+) -> None:
+    """T13 mounts this app; Starlette's Mount rewrites `root_path`, ⊥ `scope["path"]`.
+
+    Guarding on the raw path passes every test that runs the sub-app standalone and then
+    lets every refusal through once it is mounted — the SDK's bare `invalid_token` comes
+    back with the same 401 status, so only the body says anything is wrong (V3).
+    """
+    reached: list[str] = []
+
+    async def inner(scope: Any, receive: Any, send: Any) -> None:
+        reached.append(scope["path"])
+        await send({"type": "http.response.start", "status": 204, "headers": []})
+        await send({"type": "http.response.body", "body": b""})
+
+    async def receive() -> Message:  # pragma: no cover - never awaited
+        return {"type": "http.request"}
+
+    sent: list[Message] = []
+
+    async def send(message: Message) -> None:
+        sent.append(message)
+
+    middleware = McpAuthErrorMiddleware(inner, mcp_path=MCP_PATH)
+    scope: dict[str, Any] = {
+        "type": "http",
+        "path": path,
+        "root_path": root_path,
+        "headers": [],
+    }
+
+    await middleware(scope, receive, send)
+
+    assert (reached == []) is intercepted
+    if intercepted:
+        # No bearer on the scope, so the middleware infers and names the cause itself.
+        assert sent[0]["status"] == status.HTTP_401_UNAUTHORIZED
+        assert json.loads(sent[1]["body"])["error_code"] == "mcp_token_missing"
+
+
 # --- R5: the identity a tool sees ---
 
 

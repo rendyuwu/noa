@@ -19,12 +19,16 @@ def test_create_app_returns_independent_instances() -> None:
     assert create_app() is not create_app()
 
 
-def test_mcp_not_mounted_yet() -> None:
-    """V1: no `/mcp` route until T11 supplies the TokenVerifier.
+def test_mcp_is_mounted_and_authenticated() -> None:
+    """V1: `/mcp` exists as of T13, and it refuses a caller with no credential.
 
-    Guards against mounting an unauthenticated MCP endpoint by accident.
+    On the process-wide `app` — the one uvicorn serves — rather than a test-built instance,
+    because "the shipped app mounts an *authenticated* endpoint" is the claim. The refusal
+    needs no database: a missing bearer is named before any session is opened.
+    `test_mcp_mount.py` covers the mount's behaviour in depth.
     """
     with TestClient(app) as client:
         response = client.post("/mcp", json={})
 
-    assert response.status_code == 404
+    assert response.status_code == 401
+    assert response.json()["error_code"] == "mcp_token_missing"
