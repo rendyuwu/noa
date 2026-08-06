@@ -1,0 +1,281 @@
+"""CSF and Imunify command composition, execution and failure classification
+(T16, V55, V56, V57, V69, V73).
+
+Three things are pinned here, and each one is a production incident in `noa-old`:
+
+- **V55, as a biconditional.** `sudo -n` appears ⟺ the resolved SSH user is not `root`. Both
+  directions are asserted for both backends, because T16 removed the `escalate=` boolean that
+  let a call site get it wrong (deviation (a)) and the replacement only holds if the command
+  builders really do read the config.
+- **`ssh_sudo_required` ≠ "no firewall tools"** (`noa-old` GH #82). A denied `sudo -n` and a
+  missing binary produce different codes, so an operator is told to fix sudoers rather than
+  hunting an install that is already there.
+- **A banner in front of JSON still parses** (`noa-old` GH #83). `core.remote_exec.banner_strip`
+  is the real fix (V56); the raw-decode fallback is what keeps an unrecognised banner variant
+  from turning an approved CHANGE into a parse error.
+
+No host: `ssh_exec` is replaced inside each module's namespace (`support.whm`).
+"""
+
+from __future__ import annotations
+
+import json
+import shlex
+
+import pytest
+from fastapi import status
+
+import core.integrations.whm.csf_cli as csf_cli_mod
+import core.integrations.whm.imunify_cli as imunify_cli_mod
+from core.errors import NoaError
+from core.integrations.whm.csf_cli import (
+    CSF_BINARY,
+    build_csf_command,
+    require_csf_success,
+    run_csf_command,
+)
+from core.integrations.whm.errors import (
+    CSFCLIError,
+    ImunifyCLIError,
+    WHMFirewallCLIError,
+)
+from core.integrations.whm.imunify_cli import (
+    IMUNIFY_BINARY,
+    build_imunify_command,
+    parse_imunify_json_output,
+    run_imunify_command,
+)
+from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
+from support.whm import (
+    SUDO_DENIED_STDERR,
+    SUDO_MISSING_BINARY_STDERR,
+    FakeWHMServer,
+    build_cipher,
+    command_result,
+    install_fake_ssh_exec,
+    ssh_config,
+)
+
+_LVE_BANNER = (
+    "***************************************************************************\n"
+    "*             !!!!  WARNING: YOU ARE INSIDE LVE !!!!                      *\n"
+    "***************************************************************************"
+)
+
+
+# --- V55: prefix ⟺ user ≠ root ---
+
+
+def test_csf_command_escalates_only_for_non_root_user() -> None:
+    as_root = build_csf_command(["-g", "1.2.3.4"], config=ssh_config(username="root"))
+    as_operator = build_csf_command(["-g", "1.2.3.4"], config=ssh_config(username="noa-ops"))
+
+    assert "sudo -n" not in as_root
+    assert as_root == f"TERM=dumb {CSF_BINARY} -g 1.2.3.4"
+    assert as_operator == f"TERM=dumb sudo -n {CSF_BINARY} -g 1.2.3.4"
+
+
+def test_imunify_command_escalates_only_for_non_root_user() -> None:
+    as_root = build_imunify_command(["version"], config=ssh_config(username="root"))
+    as_operator = build_imunify_command(["version"], config=ssh_config(username="noa-ops"))
+
+    assert as_root == f"{IMUNIFY_BINARY} version"
+    assert as_operator == f"sudo -n {IMUNIFY_BINARY} version"
+
+
+def test_csf_command_keeps_term_dumb_ahead_of_sudo() -> None:
+    """`TERM=dumb` is the environment csf sees either way. Inside the escalated command it
+    would apply only when sudo runs, and csf would paint its tables for the root case."""
+    command = build_csf_command(["-g", "1.2.3.4"], config=ssh_config(username="noa-ops"))
+
+    assert command.index("TERM=dumb") < command.index("sudo -n")
+
+
+def test_csf_binary_is_an_absolute_path() -> None:
+    """Under `sudo -n` the PATH is sudoers' `secure_path`, which need not carry /usr/sbin."""
+    assert CSF_BINARY == "/usr/sbin/csf"
+
+
+@pytest.mark.parametrize("hostile", ["1.2.3.4; rm -rf /", "$(id)", "a b", "--flag"])
+def test_arguments_are_quoted_not_interpolated(hostile: str) -> None:
+    """Targets reach here from an LLM tool argument. `command_from_argv` quotes every token,
+    so a `;` or `$(…)` stays one argument to csf instead of becoming shell syntax."""
+    command = build_csf_command(["-g", hostile], config=ssh_config())
+
+    assert shlex.split(command) == ["TERM=dumb", CSF_BINARY, "-g", hostile]
+
+
+# --- V55 / GH #82: denied sudo is not a missing binary ---
+
+
+def test_sudo_rights_failure_raises_ssh_sudo_required_not_command_failed() -> None:
+    result = command_result(exit_code=1, stderr=SUDO_DENIED_STDERR)
+
+    with pytest.raises(CSFCLIError) as exc:
+        require_csf_success(result, default_message="csf failed")
+
+    assert exc.value.error_code == "ssh_sudo_required"
+    assert SUDO_DENIED_STDERR in exc.value.message
+
+
+def test_missing_binary_is_not_reported_as_sudo_rights_failure() -> None:
+    result = command_result(exit_code=127, stderr="sudo: /usr/sbin/csf: command not found")
+
+    with pytest.raises(CSFCLIError) as exc:
+        require_csf_success(result, default_message="csf failed")
+
+    assert exc.value.error_code == "csf_command_failed"
+
+
+def test_require_csf_success_returns_combined_output_on_exit_zero() -> None:
+    result = command_result(exit_code=0, stdout="csf: v14.16", stderr="warning: noisy")
+
+    assert require_csf_success(result, default_message="x") == "csf: v14.16\nwarning: noisy"
+
+
+def test_require_csf_success_falls_back_to_the_default_message_when_silent() -> None:
+    with pytest.raises(CSFCLIError) as exc:
+        require_csf_success(command_result(exit_code=2), default_message="csf refused")
+
+    assert exc.value.message == "csf refused"
+
+
+def test_imunify_sudo_denial_also_reports_ssh_sudo_required() -> None:
+    result = command_result(exit_code=1, stderr=SUDO_DENIED_STDERR)
+
+    with pytest.raises(ImunifyCLIError) as exc:
+        parse_imunify_json_output(result)
+
+    assert exc.value.error_code == "ssh_sudo_required"
+
+
+def test_imunify_missing_binary_reports_command_failed() -> None:
+    result = command_result(exit_code=127, stderr=SUDO_MISSING_BINARY_STDERR)
+
+    with pytest.raises(ImunifyCLIError) as exc:
+        parse_imunify_json_output(result)
+
+    assert exc.value.error_code == "imunify_command_failed"
+
+
+# --- V56 / GH #83: JSON survives a banner the signature gate missed ---
+
+
+def test_imunify_json_parse_recovers_from_leading_banner_fragment() -> None:
+    payload = {"items": [{"ip": "1.2.3.4", "purpose": "drop"}]}
+    result = command_result(exit_code=0, stdout=f"{_LVE_BANNER}\n{json.dumps(payload)}")
+
+    assert parse_imunify_json_output(result) == payload
+
+
+def test_imunify_json_parses_a_clean_document() -> None:
+    result = command_result(exit_code=0, stdout='{"items": []}')
+
+    assert parse_imunify_json_output(result) == {"items": []}
+
+
+def test_imunify_empty_output_is_its_own_code() -> None:
+    with pytest.raises(ImunifyCLIError) as exc:
+        parse_imunify_json_output(command_result(exit_code=0, stdout="   "))
+
+    assert exc.value.error_code == "imunify_empty_response"
+
+
+def test_imunify_json_array_is_not_an_object() -> None:
+    with pytest.raises(ImunifyCLIError) as exc:
+        parse_imunify_json_output(command_result(exit_code=0, stdout="[1, 2, 3]"))
+
+    assert exc.value.error_code == "imunify_invalid_response"
+
+
+def test_imunify_unrecoverable_output_reports_a_parse_error() -> None:
+    with pytest.raises(ImunifyCLIError) as exc:
+        parse_imunify_json_output(command_result(exit_code=0, stdout="not json at all"))
+
+    assert exc.value.error_code == "imunify_json_parse_error"
+
+
+# --- run_*: one exception tree out, and the pin is enforced ---
+
+
+async def test_run_csf_command_sends_the_composed_command_over_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    fake = install_fake_ssh_exec(monkeypatch, csf_cli_mod, lambda _cmd: command_result(stdout="ok"))
+
+    result = await run_csf_command(
+        FakeWHMServer(ssh_username="noa-ops"), args=["-g", "1.2.3.4"], cipher=build_cipher()
+    )
+
+    assert result.stdout == "ok"
+    assert fake.commands == [f"TERM=dumb sudo -n {CSF_BINARY} -g 1.2.3.4"]
+
+
+async def test_run_imunify_command_sends_the_composed_command_over_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    fake = install_fake_ssh_exec(
+        monkeypatch, imunify_cli_mod, lambda _cmd: command_result(stdout="{}")
+    )
+
+    await run_imunify_command(
+        FakeWHMServer(), args=["ip-list", "local", "list"], cipher=build_cipher()
+    )
+
+    assert fake.commands == [f"{IMUNIFY_BINARY} ip-list local list"]
+
+
+async def test_run_csf_command_converts_an_ssh_failure_into_the_csf_error_tree(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    """One exception tree out of the module, so a caller does not catch two."""
+    install_fake_ssh_exec(monkeypatch, csf_cli_mod, lambda _cmd: command_result())
+
+    with pytest.raises(CSFCLIError) as exc:
+        await run_csf_command(
+            FakeWHMServer(ssh_host_key_fingerprint=None), args=["-v"], cipher=build_cipher()
+        )
+
+    assert exc.value.error_code == "ssh_host_key_not_validated"
+
+
+async def test_run_imunify_command_refuses_an_unvalidated_host_before_connecting(
+    monkeypatch,  # type: ignore[no-untyped-def]
+) -> None:
+    fake = install_fake_ssh_exec(monkeypatch, imunify_cli_mod, lambda _cmd: command_result())
+
+    with pytest.raises(ImunifyCLIError):
+        await run_imunify_command(
+            FakeWHMServer(ssh_host_key_fingerprint=None), args=["version"], cipher=build_cipher()
+        )
+
+    assert fake.runs == []
+
+
+# --- V73: one taxonomy, one handler, mapped status ---
+
+
+def test_firewall_error_tree_is_mapped_in_status_by_error() -> None:
+    """Every subclass, walked — a class added later without an entry fails here rather than
+    silently answering the 503 unclassified fallback."""
+    seen: list[type[WHMFirewallCLIError]] = []
+
+    def walk(klass: type[WHMFirewallCLIError]) -> None:
+        seen.append(klass)
+        for child in klass.__subclasses__():
+            walk(child)
+
+    walk(WHMFirewallCLIError)
+
+    assert set(seen) == {WHMFirewallCLIError, CSFCLIError, ImunifyCLIError}
+    for klass in seen:
+        error = klass(code="probe", message="probe")
+        assert status_for(error) == status.HTTP_502_BAD_GATEWAY
+        assert status_for(error) != FALLBACK_STATUS
+    assert STATUS_BY_ERROR[WHMFirewallCLIError] == status.HTTP_502_BAD_GATEWAY
+
+
+def test_firewall_errors_are_noa_errors_and_shape_a_clean_body() -> None:
+    error = CSFCLIError(code="csf_command_failed", message="csf: not running")
+
+    assert isinstance(error, NoaError)
+    assert error_body(error) == {
+        "error_code": "csf_command_failed",
+        "message": "csf: not running",
+    }

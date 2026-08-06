@@ -49,6 +49,10 @@ ignore = ["S101"]  # assert OK in tests
 [tool.ruff.lint.per-file-ignores]
 # S105/S106: hardcoded token & password literals are fixtures in tests.
 "**/tests/**" = ["S105", "S106"]
+# E501: the fixtures are verbatim `csf -g` output. Its iptables table lines are 108 columns
+# wide on a real box; reflowing them to fit would make the parser test assert against text
+# CSF never produces.
+"**/tests/test_whm_csf_parsing.py" = ["S105", "S106", "E501"]
 
 [tool.ruff.lint.isort]
 # `support` = `apps/api/tests/support`, importable because pytest puts the tests
