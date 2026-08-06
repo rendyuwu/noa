@@ -210,6 +210,31 @@ def test_invalid_samesite_rejected() -> None:
         build(auth_session_cookie_samesite="sometimes")
 
 
+def test_samesite_none_without_secure_rejected_in_dev() -> None:
+    """Dev forces `secure=False`, and browsers discard SameSite=None without Secure.
+
+    `none` is exactly what someone reaches for when testing the cross-site embed
+    locally, so the combination must fail loudly instead of setting a cookie the
+    browser throws away and leaving the approval POST unauthenticated.
+    """
+    with pytest.raises(ValidationError, match="requires a Secure cookie"):
+        build(environment="development", auth_session_cookie_samesite="none")
+
+
+def test_samesite_none_allowed_when_secure() -> None:
+    """The attribute itself is legitimate — the embed path may need it (C17, C18)."""
+    settings = build_production(auth_session_cookie_samesite="none")
+
+    assert settings.session_cookie_kwargs()["samesite"] == "none"
+    assert settings.session_cookie_kwargs()["secure"] is True
+
+
+def test_samesite_none_rejected_when_secure_explicitly_disabled() -> None:
+    """Production too: turning Secure off by hand cannot smuggle the combination in."""
+    with pytest.raises(ValidationError, match="requires a Secure cookie"):
+        build_production(auth_session_cookie_samesite="none", auth_session_cookie_secure=False)
+
+
 # --- C11: JSON-array env vars ---
 
 

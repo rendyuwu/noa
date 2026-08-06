@@ -33,6 +33,15 @@ Login denials that operators actually hit, and why each is its own class:
 - `LdapUnavailableError` — directory unreachable. Message invites a retry, because
   unlike the others this one usually clears on its own. Callers fail closed but
   must NOT read it as "user gone" and cascade-revoke tokens (V4).
+
+Session-cookie denials (T7), distinct from login denials above:
+
+- `AuthSessionExpiredError` — routine: the token aged out (V6). Recoverable by
+  signing in again.
+- `AuthSessionInvalidError` — cookie absent, malformed, or badly signed.
+
+Both exist because `noa-old` reused `AuthInvalidCredentialsError` for a stale
+cookie, which told operators their password was wrong when it was not.
 """
 
 from __future__ import annotations
@@ -92,6 +101,28 @@ class AuthPendingApprovalError(AuthError):
     )
 
 
+class AuthSessionExpiredError(AuthError):
+    """Session token past its `exp`. Expected, not a fault — sessions are short (V6).
+
+    Split from `AuthSessionInvalidError` so the UI can say "session ended" without
+    implying tampering, and so logs distinguish routine expiry from a forged cookie.
+    """
+
+    error_code: str = "session_expired"
+    message: str = "Your session has expired. Sign in again."
+
+
+class AuthSessionInvalidError(AuthError):
+    """Session cookie absent, malformed, or badly signed.
+
+    Same 401 and same remedy as expiry, so the message stays vague: a caller
+    presenting a forged cookie learns nothing about why it failed.
+    """
+
+    error_code: str = "session_invalid"
+    message: str = "Your session is no longer valid. Sign in again."
+
+
 class AuthConfigurationError(AuthError):
     """NOA-side misconfiguration — ⊥ the operator's fault, ⊥ their credentials.
 
@@ -120,5 +151,7 @@ __all__ = [
     "AuthError",
     "AuthInvalidCredentialsError",
     "AuthPendingApprovalError",
+    "AuthSessionExpiredError",
+    "AuthSessionInvalidError",
     "LdapUnavailableError",
 ]

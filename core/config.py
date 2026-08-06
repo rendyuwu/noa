@@ -219,10 +219,28 @@ class Settings(BaseSettings):
                 "auth_dev_bypass_ldap is only allowed in development/test environments"
             )
 
+        self._validate_cookie_transport()
         self._resolve_jwt_secret()
         self._resolve_encryption_key()
         self._validate_ldap_transport()
         return self
+
+    def _validate_cookie_transport(self) -> None:
+        """`SameSite=None` without `Secure` is a cookie the browser throws away.
+
+        Runs after the development override above, because that override is what
+        creates the trap: `samesite=none` is the attribute someone reaches for when
+        testing the cross-site embed locally (SameSite=Lax will not ride into a
+        third-party iframe, C17/C18), and development forces `secure=False`. The
+        combination sets a cookie the browser silently drops, so the approval POST
+        arrives unauthenticated with nothing in the logs to say why.
+        """
+        if self.auth_session_cookie_samesite == "none" and not self.auth_session_cookie_secure:
+            raise ValueError(
+                "auth_session_cookie_samesite=none requires a Secure cookie; browsers "
+                "discard SameSite=None without Secure. Use samesite=lax, or serve this "
+                "environment over HTTPS (development forces secure=False)"
+            )
 
     def _resolve_jwt_secret(self) -> None:
         """V53: required in production, ≥32 chars; generated in dev."""
