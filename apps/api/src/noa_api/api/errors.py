@@ -1,4 +1,4 @@
-"""One exception handler for every NOA error (T8, T9, T10, T11).
+"""One exception handler for every NOA error (T8, T9, T10, T11, T14).
 
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
@@ -66,6 +66,7 @@ from core.auth.mcp_token_errors import (
     McpTokenNotFoundError,
 )
 from core.errors import NoaError, RetryAfterMixin
+from core.remote_exec.errors import SSHExecutionError
 
 # Lookup is by exact class with an MRO walk below, so ordering here is for reading only.
 STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
@@ -139,6 +140,14 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # Bare `McpAuthError`: a request problem, not "NOA is down". Same subclass-tree test
     # guards this from becoming the default for a class added later.
     McpAuthError: status.HTTP_400_BAD_REQUEST,
+    # --- Remote execution (T14) ---
+    # 502: a host NOA depends on refused, timed out, or presented an unexpected host key.
+    # Mapped now so it does not take `FALLBACK_STATUS` — 503 reads as "authentication is
+    # unclassified and NOA may be down", which is the wrong answer for a working NOA and a
+    # broken remote. One entry for the whole SSH surface because `SSHExecutionError` carries
+    # the specific `error_code`; T54 owns the validate routes and refines per code there
+    # (`ssh_timeout` → 504, `ssh_not_configured`/`ssh_host_key_not_validated` → 409).
+    SSHExecutionError: status.HTTP_502_BAD_GATEWAY,
 }
 
 # Bare `AuthError` means "authentication failed and we did not classify why", which is an

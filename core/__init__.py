@@ -7,10 +7,10 @@ Shared by all three deployables (C12). Landed:
 - `core.errors`      — `NoaError`, the base every client-visible failure shares (V73)
 - `core.auth`        — LDAP, session JWT, login, RBAC engine (T6-T9)
 - `core.audit`       — admin audit events (T9, V14)
+- `core.remote_exec` — SSH, banner stripping, `sudo -n`, host-key pinning (T14)
 
 Still to come:
 
-- `core.remote_exec` — SSH, banner stripping, `sudo -n`, host-key pinning (T14)
 - `core.secrets`     — Fernet `SecretCipher`, password gen, yopass (T15)
 """
 
