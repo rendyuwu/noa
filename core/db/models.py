@@ -6,10 +6,12 @@ Eight tables, three groups:
 - MCP auth: `mcp_tokens` (C5, V2, V3)
 - Managed infrastructure: `whm_servers`, `proxmox_servers`, `pmg_servers` (C7, V48)
 
+Plus `login_rate_limits` from T8 (V9).
+
 Later tasks add their own tables and migrations: `action_requests` (T34),
-`tool_runs` (T35), `action_receipts` (T36), `login_rate_limits` (T8), `audit_log`
-(T14). Ported from `noa-old` branch `MCP` per C13, minus the chat-presentation
-tables (threads/messages/assistant_runs/workflow_todos) that die with C16.
+`tool_runs` (T35), `action_receipts` (T36), `audit_log` (T14). Ported from
+`noa-old` branch `MCP` per C13, minus the chat-presentation tables
+(threads/messages/assistant_runs/workflow_todos) that die with C16.
 
 Credential columns hold Fernet ciphertext, never plaintext (C7, V48). Each server
 model exposes `to_safe_dict()` returning presence booleans instead of secret
@@ -40,6 +42,7 @@ from core.db.columns import (
     created_at,
     encrypted_secret,
     optional_encrypted_secret,
+    updated_at,
     uuid_pk,
 )
 
@@ -174,6 +177,40 @@ class McpToken(Base):
         }
 
 
+class LoginRateLimit(Base):
+    """One rate-limit bucket for the login path (V9, T8).
+
+    Two rows accumulate per failed login — one keyed by source IP, one by the
+    submitted email — because either alone leaves a hole: IP-only lets a botnet
+    spread guesses against one account, email-only lets one host spray a whole
+    directory. `assert_allowed` denies when *either* bucket is blocked.
+
+    `scope_key` holds the IP or the normalized email, so a row is created per
+    distinct value an attacker supplies. Bounded only by `String(255)`; pruning
+    stale buckets is deliberately not here, because the sweep belongs with T39's
+    background sweeper rather than in a table definition.
+
+    No `created_at`: `window_started_at` already carries the only creation time that
+    means anything for a bucket, and a second timestamp would invite reading the
+    wrong one.
+    """
+
+    __tablename__ = "login_rate_limits"
+    __table_args__ = (
+        # Also the lookup index: every query filters on both columns.
+        UniqueConstraint("scope", "scope_key", name="uq_login_rate_limits_scope_key"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    scope: Mapped[str] = mapped_column(String(20), nullable=False)
+    scope_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
+    window_started_at: Mapped[datetime] = created_at()
+    # NULL = counting but not blocked. Set once `attempt_count` reaches the max.
+    blocked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = updated_at()
+
+
 class SSHCredentialsMixin:
     """SSH connection fields shared by WHM and PMG servers (V66).
 
@@ -284,6 +321,7 @@ class PMGServer(Base, SSHCredentialsMixin, TimestampMixin):
 __all__ = [
     "ADMIN_ROLE_NAME",
     "INTERNAL_ROLE_PREFIX",
+    "LoginRateLimit",
     "McpToken",
     "PMGServer",
     "ProxmoxServer",

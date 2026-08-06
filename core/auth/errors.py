@@ -1,4 +1,4 @@
-"""Auth error taxonomy (T6).
+"""Auth error taxonomy (T6, T8).
 
 Ported from `noa-old` branch `MCP` (`core/auth/errors.py`, C13), plus
 `LdapUnavailableError` and `AuthAccountDisabledError` — new work for V4's
@@ -33,6 +33,9 @@ Login denials that operators actually hit, and why each is its own class:
 - `LdapUnavailableError` — directory unreachable. Message invites a retry, because
   unlike the others this one usually clears on its own. Callers fail closed but
   must NOT read it as "user gone" and cascade-revoke tokens (V4).
+- `AuthRateLimitedError` — too many failed attempts (V9). Carries
+  `retry_after_seconds` because the handler owes the client a `Retry-After` header,
+  and a "try again later" with no number is a client-side guessing game.
 
 Session-cookie denials (T7), distinct from login denials above:
 
@@ -145,12 +148,32 @@ class LdapUnavailableError(AuthError):
     message: str = "Cannot reach the company directory right now. Try again in a few moments."
 
 
+class AuthRateLimitedError(AuthError):
+    """Login blocked: too many failed attempts in the window (V9).
+
+    Says nothing about whether the address exists or the password was close — the
+    limiter counts attempts, not outcomes, so this text stays as uninformative as
+    `AuthInvalidCredentialsError`.
+    """
+
+    error_code: str = "login_rate_limited"
+    message: str = "Too many sign-in attempts. Wait a few minutes and try again."
+
+    def __init__(self, retry_after_seconds: int, detail: str | None = None) -> None:
+        # Floored at 1: a block with under a second left truncates to 0, and
+        # `Retry-After: 0` tells the client to retry immediately — the opposite of
+        # what a rate limit means.
+        self.retry_after_seconds = max(1, int(retry_after_seconds))
+        super().__init__(detail)
+
+
 __all__ = [
     "AuthAccountDisabledError",
     "AuthConfigurationError",
     "AuthError",
     "AuthInvalidCredentialsError",
     "AuthPendingApprovalError",
+    "AuthRateLimitedError",
     "AuthSessionExpiredError",
     "AuthSessionInvalidError",
     "LdapUnavailableError",

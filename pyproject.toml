@@ -51,4 +51,6 @@ ignore = ["S101"]  # assert OK in tests
 "**/tests/**" = ["S105", "S106"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["core", "noa_api"]
+# `support` = `apps/api/tests/support`, importable because pytest puts the tests
+# directory on `sys.path`. Listed so isort groups it with our code, not third-party.
+known-first-party = ["core", "noa_api", "support"]

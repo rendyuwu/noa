@@ -33,6 +33,16 @@ SCHEMA_V1_TABLES = {
     "pmg_servers",
 }
 
+# Added after schema v1 by the task named alongside each.
+LATER_TABLES = {
+    "login_rate_limits": "T8 (V9)",
+}
+
+# Named so the assertion below says what it is guarding against rather than only
+# failing on a set difference: these arrive with T34-T36, and a table appearing early
+# means a migration landed ahead of the task that specifies its columns.
+NOT_YET_TABLES = {"action_requests", "tool_runs", "action_receipts", "audit_log"}
+
 # Columns that hold Fernet ciphertext (C7, V48). None may ever surface in a
 # `to_safe_dict()` payload (V2, V8).
 SECRET_COLUMNS = {
@@ -51,9 +61,19 @@ SECRET_COLUMNS = {
 }
 
 
-def test_schema_v1_declares_exactly_the_eight_tables() -> None:
-    """T4 scope. Action/audit tables belong to T34-T36, not here."""
-    assert set(Base.metadata.tables) == SCHEMA_V1_TABLES
+def test_metadata_declares_schema_v1_plus_only_the_later_tables_landed_so_far() -> None:
+    """Every table is accounted for by the task that added it.
+
+    Schema v1 is T4's eight; `LATER_TABLES` names each addition since. An unlisted
+    table means a migration landed without its task, which is how `Base.metadata` and
+    the migration history start drifting.
+    """
+    assert set(Base.metadata.tables) == SCHEMA_V1_TABLES | set(LATER_TABLES)
+
+
+def test_action_and_audit_tables_have_not_landed_early() -> None:
+    """T34-T36 own these; a column set defined before its task is a guess."""
+    assert set(Base.metadata.tables) & NOT_YET_TABLES == set()
 
 
 def test_users_default_inactive() -> None:
