@@ -483,6 +483,75 @@ async def test_enabling_a_user_is_never_guarded(rbac: RbacFixture) -> None:
     assert updated.is_active is True
 
 
+# --- V4 cascade revoke on disable (T11) ---
+
+
+async def test_disabling_a_user_revokes_their_mcp_tokens(rbac: RbacFixture) -> None:
+    """V4: disable is the admin-side half of cascade revoke, alongside the LDAP path.
+
+    Not what stops them calling tools — V1's per-request `is_active` re-check already
+    does. This is what kills the credential, so a token in a LibreChat config cannot come
+    back to life when the row is re-enabled later.
+    """
+    user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,), mcp_tokens=2)
+
+    await rbac.service.set_user_active(user.id, is_active=False, actor_email=ADMIN_EMAIL)
+
+    assert rbac.repository.mcp_tokens.get(user.id, 0) == 0
+
+
+async def test_the_disable_audit_event_reports_how_many_tokens_went(
+    rbac: RbacFixture,
+) -> None:
+    """V14: "disabled, held none" and "disabled, lost three" are different facts."""
+    user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,), mcp_tokens=3)
+
+    await rbac.service.set_user_active(user.id, is_active=False, actor_email=ADMIN_EMAIL)
+
+    assert rbac.audit.event_types == [EVENT_USER_STATUS_UPDATED]
+    assert rbac.audit.events[0].metadata["revoked_mcp_tokens"] == 3
+
+
+async def test_disabling_a_user_with_no_tokens_reports_zero(rbac: RbacFixture) -> None:
+    user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,))
+
+    await rbac.service.set_user_active(user.id, is_active=False, actor_email=ADMIN_EMAIL)
+
+    assert rbac.audit.events[0].metadata["revoked_mcp_tokens"] == 0
+
+
+async def test_enabling_a_user_revokes_nothing(rbac: RbacFixture) -> None:
+    """Only a True→False transition revokes. Enabling must not delete a fresh token."""
+    user = rbac.repository.add_user(OPERATOR_EMAIL, is_active=False, mcp_tokens=1)
+
+    await rbac.service.set_user_active(user.id, is_active=True, actor_email=ADMIN_EMAIL)
+
+    assert rbac.repository.mcp_tokens[user.id] == 1
+    assert rbac.audit.events[0].metadata["revoked_mcp_tokens"] == 0
+
+
+async def test_redisabling_an_already_disabled_user_revokes_nothing(
+    rbac: RbacFixture,
+) -> None:
+    """No transition, so nothing to revoke — and an audit line claiming otherwise
+    would be false."""
+    user = rbac.repository.add_user(OPERATOR_EMAIL, is_active=False, mcp_tokens=2)
+
+    await rbac.service.set_user_active(user.id, is_active=False, actor_email=ADMIN_EMAIL)
+
+    assert rbac.repository.mcp_tokens[user.id] == 2
+
+
+async def test_a_refused_disable_revokes_nothing(rbac: RbacFixture) -> None:
+    """The revoke runs after the write, so a guard that fires leaves the tokens alive."""
+    admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,), mcp_tokens=2)
+
+    with pytest.raises(LastActiveAdminError):
+        await rbac.service.set_user_active(admin.id, is_active=False, actor_email=None)
+
+    assert rbac.repository.mcp_tokens[admin.id] == 2
+
+
 async def test_admin_self_delete_conflicts(rbac: RbacFixture) -> None:
     """V12: admin self-delete → 409, carried by `SelfDeleteAdminError`."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
@@ -610,7 +679,14 @@ async def test_audit_event_names_the_actor_and_target(rbac: RbacFixture) -> None
     event = rbac.audit.events[-1]
     assert event.actor_email == ADMIN_EMAIL
     assert event.target == str(target.id)
-    assert event.metadata == {"target_user_id": str(target.id), "is_active": True}
+    # `revoked_mcp_tokens` joined the payload with T11's cascade revoke (V4); an enable
+    # never revokes, so it reports zero. Asserted as an exact dict on purpose — a field
+    # appearing here without a decision is what this equality is for.
+    assert event.metadata == {
+        "target_user_id": str(target.id),
+        "is_active": True,
+        "revoked_mcp_tokens": 0,
+    }
 
 
 async def test_refused_mutations_record_no_audit_event(rbac: RbacFixture) -> None:

@@ -1,24 +1,37 @@
-"""SQL behind MCP token management (T10, C5, V2).
+"""SQL behind MCP token management (T10, C5, V2) and verification (T11, C20, V3, V4).
 
 New work — `noa-old` has no `mcp_tokens` table to port from.
 
-Like T9's `SQLAuthorizationRepository`, every method takes the caller's `AsyncSession` and
-flushes rather than commits: the transaction boundary belongs to the request (see
-`noa_api.api.deps`), so a mint and its audit event land together or not at all.
+Two classes, one table. They are separate because their transaction discipline is opposite,
+not because the SQL is unrelated:
 
-Rows are converted to `McpTokenView` here rather than returned as ORM objects, following
+- `SQLMcpTokenRepository` (T10) — the admin CRUD path. Like T9's
+  `SQLAuthorizationRepository`, every method takes the caller's `AsyncSession` and flushes
+  rather than commits: the transaction boundary belongs to the request (see
+  `noa_api.api.deps`), so a mint and its audit event land together or not at all.
+- `SQLMcpIdentityRepository` (T11) — the MCP request path. It runs outside FastAPI's
+  dependency graph, inside `verify_token`, where there is no request transaction to join.
+  It therefore owns its session and exposes `commit()`, which `McpIdentityResolver` calls
+  at the two points a write must become durable.
+
+Keeping both here rather than in two modules is deliberate (V66): every statement that
+touches `mcp_tokens` is in one file, so a column added later cannot be handled on one path
+and forgotten on the other.
+
+Rows are converted to dataclasses here rather than returned as ORM objects, following
 `SQLLoginRateLimitRepository` returning `LoginRateLimitBucket`. Two reasons, and the
-second is the security one: the service never holds an object carrying `token_hash`, and
-the in-memory double in the tests cannot accidentally expose a field the SQL path would
+second is the security one: the callers never hold an object carrying `token_hash`, and
+the in-memory doubles in the tests cannot accidentally expose a field the SQL path would
 have hidden.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.mcp_token_service import McpTokenView
@@ -98,6 +111,131 @@ class SQLMcpTokenRepository:
         return bool(result.rowcount)
 
 
+@dataclass(frozen=True)
+class McpAuthenticationRecord:
+    """One `mcp_tokens ⋈ users` row, as the verify path reads it (T11).
+
+    Frozen and hash-free: `McpIdentityResolver` decides from these fields and writes
+    through the repository, so a mutable row it could edit in place would be a second,
+    divergent source of truth for `is_active`.
+    """
+
+    token_id: UUID
+    user_id: UUID
+    email: str
+    display_name: str | None
+    is_active: bool
+    librechat_user_id: str | None
+    expires_at: datetime | None
+    last_ldap_check_at: datetime | None
+
+
+class SQLMcpIdentityRepository:
+    """`McpIdentityRepository` over one `AsyncSession` owned by the verify path (T11)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def get_by_token_hash(self, token_hash: str) -> McpAuthenticationRecord | None:
+        """The token row joined to its user, in one statement (V1, V2).
+
+        Joined rather than two lookups: `is_active` must describe the same instant the
+        token was found, or a disable landing between the reads would authenticate against
+        a stale row. `token_hash` is the unique lookup key (T4), so this is an index hit
+        and at most one row.
+        """
+        result = await self._session.execute(
+            select(
+                McpToken.id,
+                McpToken.user_id,
+                User.email,
+                User.display_name,
+                User.is_active,
+                McpToken.librechat_user_id,
+                McpToken.expires_at,
+                McpToken.last_ldap_check_at,
+            )
+            .join(User, User.id == McpToken.user_id)
+            .where(McpToken.token_hash == token_hash)
+        )
+        row = result.one_or_none()
+        if row is None:
+            return None
+
+        return McpAuthenticationRecord(
+            token_id=row.id,
+            user_id=row.user_id,
+            email=row.email,
+            display_name=row.display_name,
+            is_active=row.is_active,
+            librechat_user_id=row.librechat_user_id,
+            expires_at=row.expires_at,
+            last_ldap_check_at=row.last_ldap_check_at,
+        )
+
+    async def bind_librechat_user(self, token_id: UUID, librechat_user_id: str) -> str:
+        """Pin an unbound token to `librechat_user_id`; return what the row now holds (C20).
+
+        `WHERE … AND librechat_user_id IS NULL` makes this a compare-and-set, so two first
+        calls racing cannot both bind. The loser updates nothing, and the re-read below
+        hands back the winner's value — which the resolver then treats as an ordinary
+        mismatch (V3). A read-then-write in Python could not close that window.
+
+        `RETURNING` gives the committed value rather than the one we sent, so the caller
+        compares against reality instead of its own optimistic guess.
+        """
+        result = await self._session.execute(
+            update(McpToken)
+            .where(McpToken.id == token_id, McpToken.librechat_user_id.is_(None))
+            .values(librechat_user_id=librechat_user_id)
+            .returning(McpToken.librechat_user_id)
+        )
+        bound = result.scalar_one_or_none()
+        if bound is not None:
+            return str(bound)
+
+        # Lost the race (or the row vanished mid-request). Re-read; a deleted row answers
+        # with the empty string, which no presented header can equal after normalization,
+        # so the caller refuses rather than binding something that is not there.
+        current = await self._session.execute(
+            select(McpToken.librechat_user_id).where(McpToken.id == token_id)
+        )
+        return str(current.scalar_one_or_none() or "")
+
+    async def touch_last_used(self, token_id: UUID, *, now: datetime) -> None:
+        """Stamp `last_used_at`. One UPDATE per authenticated MCP request.
+
+        Worth the write: without it an admin cannot tell a token in daily use from one
+        pasted into a config a year ago and forgotten, which is exactly the token worth
+        revoking.
+        """
+        await self._session.execute(
+            update(McpToken).where(McpToken.id == token_id).values(last_used_at=now)
+        )
+
+    async def touch_ldap_check(self, token_id: UUID, *, now: datetime) -> None:
+        """Stamp `last_ldap_check_at` after the directory vouched for the operator (V4)."""
+        await self._session.execute(
+            update(McpToken).where(McpToken.id == token_id).values(last_ldap_check_at=now)
+        )
+
+    async def delete_tokens_for_user(self, user_id: UUID) -> int:
+        """Cascade-revoke every token this operator holds; return how many (V4).
+
+        Every token, not only the presented one: V4 revokes on the *operator* leaving, and
+        a colleague-facing token left alive would authenticate on the next request.
+        Deletion rather than a flag, matching T10 — revocation is the row's absence, and a
+        status column would be a second source of truth the verify path could disagree
+        with.
+        """
+        result = await self._session.execute(delete(McpToken).where(McpToken.user_id == user_id))
+        return int(result.rowcount or 0)
+
+    async def commit(self) -> None:
+        """Make this path's writes durable. Called by the resolver, never implicitly."""
+        await self._session.commit()
+
+
 def _to_view(record: McpToken) -> McpTokenView:
     """ORM row → `McpTokenView`. `token_hash` has no destination and is dropped (V2)."""
     return McpTokenView(
@@ -113,4 +251,8 @@ def _to_view(record: McpToken) -> McpTokenView:
     )
 
 
-__all__ = ["SQLMcpTokenRepository"]
+__all__ = [
+    "McpAuthenticationRecord",
+    "SQLMcpIdentityRepository",
+    "SQLMcpTokenRepository",
+]

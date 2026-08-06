@@ -101,6 +101,11 @@ class AuthorizationRepository(Protocol):
 
     async def delete_user(self, user_id: UUID) -> bool: ...
 
+    # V4's cascade revoke (T11). On the RBAC repository rather than T10's token repository
+    # because `set_user_active` is what triggers it, and a disable that revoked through a
+    # second repository would need a second transaction to go wrong in.
+    async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int: ...
+
 
 __all__ = [
     "AuthorizationRepository",

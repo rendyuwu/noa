@@ -30,6 +30,7 @@ from core.auth.auth_repository import SQLAuthRepository
 from core.db.models import (
     ADMIN_ROLE_NAME,
     INTERNAL_ROLE_PREFIX,
+    McpToken,
     Role,
     RoleToolPermission,
     User,
@@ -244,6 +245,23 @@ class SQLAuthorizationRepository:
         await self._session.delete(user)
         await self._session.flush()
         return True
+
+    async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int:
+        """Revoke every MCP token this operator holds; return how many (V4, T11).
+
+        Called when an admin disables the account. `is_active=False` already zeroes their
+        permissions (V11) and the verify path already refuses them (V1), so this is not
+        what stops them acting — it is what makes the credential itself dead, so a token
+        pasted into a LibreChat config cannot come back to life the day someone re-enables
+        the row for an unrelated reason.
+
+        A plain `DELETE`, matching T10: revocation is the row's absence (V2). Flushed, not
+        committed — the disable, this revoke and the audit event share the request's
+        transaction, so a failure part-way leaves none of the three.
+        """
+        result = await self._session.execute(delete(McpToken).where(McpToken.user_id == user_id))
+        await self._session.flush()
+        return int(result.rowcount or 0)
 
 
 __all__ = ["SQLAuthorizationRepository"]

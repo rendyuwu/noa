@@ -279,18 +279,33 @@ class AuthorizationService:
         actor_email: str | None = None,
         actor_user_id: UUID | None = None,
     ) -> AuthorizedUser:
-        """Enable or disable a user (V7, V11, V12).
+        """Enable or disable a user (V7, V11, V12), cascade-revoking their tokens (V4).
 
         Disabling is the operation V6 leans on: there is no session revocation, so
         `is_active=False` takes effect through the per-request row re-read in
         `AuthService.resolve_session_user` and through `get_permitted_tools` here. That is
         also why both guards below are refusals rather than warnings — an admin who
         disables themselves cannot undo it from inside the app.
+
+        Disabling also deletes every `mcp_tokens` row the operator holds (V4, T11). Note
+        what that is and is not: it is not what stops them calling tools — V1's per-request
+        `is_active` re-check already does, and it does so without waiting for anything to
+        propagate. It is what makes the credential itself dead, so a token sitting in a
+        LibreChat config cannot start working again the day the row is re-enabled for some
+        unrelated reason. The cost is real and one-way: re-enabling an operator means
+        minting a fresh token and updating their `customUserVars`, because a deleted row
+        cannot be un-deleted (V2 — revocation *is* the absence).
+
+        Runs here rather than in a route so no caller can forget it, and only on a genuine
+        True→False transition: re-disabling an already-disabled account revokes nothing,
+        because there is nothing left to revoke and an audit line claiming otherwise would
+        be false.
         """
         user = await self._require_user(user_id)
         roles = await self._repository.get_role_names(user_id)
+        is_disabling = user.is_active and not is_active
 
-        if user.is_active and not is_active and ADMIN_ROLE_NAME in roles:
+        if is_disabling and ADMIN_ROLE_NAME in roles:
             if actor_user_id is not None and actor_user_id == user_id:
                 raise SelfDeactivateAdminError("actor is the target admin account")
             if await self._repository.count_active_admin_users() <= 1:
@@ -301,12 +316,24 @@ class AuthorizationService:
             # Row vanished between the read above and the write: another admin deleted it.
             raise UserNotFoundError(f"user `{user_id}` disappeared mid-request")
 
+        # After the write, so a refused disable revokes nothing. Same transaction as the
+        # write and the audit event, so the three cannot disagree.
+        revoked_tokens = (
+            await self._repository.delete_mcp_tokens_for_user(user_id) if is_disabling else 0
+        )
+
         authorized = await self._to_authorized_user(updated)
         await self._record(
             EVENT_USER_STATUS_UPDATED,
             actor_email,
             str(user_id),
-            {"target_user_id": str(user_id), "is_active": is_active},
+            {
+                "target_user_id": str(user_id),
+                "is_active": is_active,
+                # Recorded even when zero: "disabled, held no tokens" and "disabled, lost
+                # four" are different facts for whoever reads the trail later (V14).
+                "revoked_mcp_tokens": revoked_tokens,
+            },
         )
         return authorized
 

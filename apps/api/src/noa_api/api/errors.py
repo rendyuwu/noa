@@ -1,8 +1,9 @@
-"""One exception handler for every NOA error (T8, T9, T10).
+"""One exception handler for every NOA error (T8, T9, T10, T11).
 
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
-`core.auth.mcp_token_errors`), so routes raise and this decides the status code. Routes
+`core.auth.mcp_token_errors`, `core.auth.mcp_auth_errors`), so routes raise and this
+decides the status code. Routes
 that build their own `HTTPException` per failure are how two callers end up returning
 different codes for the same condition — `noa-old`'s admin routes did exactly that, in
 ~40 lines per endpoint.
@@ -47,6 +48,16 @@ from core.auth.errors import (
     AuthSessionExpiredError,
     AuthSessionInvalidError,
     LdapUnavailableError,
+)
+from core.auth.mcp_auth_errors import (
+    LibreChatUserHeaderMissingError,
+    LibreChatUserMismatchError,
+    McpAuthError,
+    McpTokenExpiredError,
+    McpTokenInvalidError,
+    McpTokenMissingError,
+    McpUserInactiveError,
+    McpUserNotInDirectoryError,
 )
 from core.auth.mcp_token_errors import (
     InvalidTokenLabelError,
@@ -105,6 +116,25 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # Bare `McpTokenError`: a request problem, not an infrastructure answer. Same
     # subclass-tree test as above guards this from becoming the default.
     McpTokenError: status.HTTP_400_BAD_REQUEST,
+    # --- MCP request-path authentication (T11) ---
+    # The credential did not authenticate the caller. 401 across all four: absent,
+    # unknown, expired and wrong-binding share a remedy (present a valid token of your
+    # own), and splitting them by status would let a caller probe which tokens are real.
+    # `verify_token` returns `None` for every one of these today (R2 gives it no body
+    # hook) — T12 is the row that renders them, and these mappings are what it renders
+    # with (V3).
+    McpTokenMissingError: status.HTTP_401_UNAUTHORIZED,
+    McpTokenInvalidError: status.HTTP_401_UNAUTHORIZED,
+    McpTokenExpiredError: status.HTTP_401_UNAUTHORIZED,
+    LibreChatUserHeaderMissingError: status.HTTP_401_UNAUTHORIZED,
+    LibreChatUserMismatchError: status.HTTP_401_UNAUTHORIZED,
+    # Authenticated, still refused. 403 because re-presenting the token changes nothing:
+    # a disabled operator needs an admin, and one the directory dropped needs IT.
+    McpUserInactiveError: status.HTTP_403_FORBIDDEN,
+    McpUserNotInDirectoryError: status.HTTP_403_FORBIDDEN,
+    # Bare `McpAuthError`: a request problem, not "NOA is down". Same subclass-tree test
+    # guards this from becoming the default for a class added later.
+    McpAuthError: status.HTTP_400_BAD_REQUEST,
 }
 
 # Bare `AuthError` means "authentication failed and we did not classify why", which is an

@@ -96,6 +96,10 @@ class FakeAuthorizationRepository:
         self.roles: set[str] = set()
         self.role_tools: dict[str, set[str]] = {}
         self.user_roles: dict[UUID, set[str]] = {}
+        # How many MCP tokens each user holds (T11, V4). A count rather than rows: the
+        # service only decides *whether* to revoke and reports how many went, and the SQL
+        # that proves the rows really disappear has its own test.
+        self.mcp_tokens: dict[UUID, int] = {}
         # Read counters — see the module docstring (V6, V14).
         self.user_reads = 0
         self.grant_reads = 0
@@ -178,7 +182,14 @@ class FakeAuthorizationRepository:
         if self.users.pop(user_id, None) is None:
             return False
         self.user_roles.pop(user_id, None)
+        self.mcp_tokens.pop(user_id, None)
         return True
+
+    async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int:
+        """V4's cascade revoke (T11). Token *count* per user, since that is all the
+        service asserts on — the SQL that proves rows really go is in
+        `test_rbac_repository.py`."""
+        return self.mcp_tokens.pop(user_id, 0)
 
     # --- Test helpers ---
 
@@ -188,12 +199,15 @@ class FakeAuthorizationRepository:
         *,
         is_active: bool = True,
         roles: tuple[str, ...] = (),
+        mcp_tokens: int = 0,
     ) -> FakeUserRecord:
         user = FakeUserRecord(id=uuid4(), email=email, display_name=email, is_active=is_active)
         self.users[user.id] = user
         for role in roles:
             self.roles.add(role)
             self.user_roles.setdefault(user.id, set()).add(role)
+        if mcp_tokens:
+            self.mcp_tokens[user.id] = mcp_tokens
         return user
 
     def grant(self, role_name: str, *tool_names: str) -> None:

@@ -26,6 +26,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from core.auth.auth_repository import SQLAuthRepository
 from core.auth.authorization_repository import SQLAuthorizationRepository
 from core.auth.authorization_service import AuthorizationService
+from core.auth.mcp_token_repository import SQLMcpTokenRepository
+from core.auth.mcp_token_service import generate_mcp_token, hash_mcp_token
 from core.db.models import ADMIN_ROLE_NAME, INTERNAL_ROLE_PREFIX, User
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.rbac import (
@@ -326,6 +328,67 @@ async def test_delete_user_removes_the_row_and_its_assignments(
 
 async def test_delete_missing_user_returns_false(repository: SQLAuthorizationRepository) -> None:
     assert await repository.delete_user(uuid4()) is False
+
+
+# --- V4 cascade revoke on disable (T11) ---
+
+
+async def test_delete_mcp_tokens_removes_only_that_users_rows(
+    session: AsyncSession, repository: SQLAuthorizationRepository
+) -> None:
+    """V4: disabling one operator must not touch a colleague's credentials."""
+    user = await make_user(session, EMAIL)
+    colleague = await make_user(session, OTHER_EMAIL)
+    token_repository = SQLMcpTokenRepository(session)
+    for owner in (user, user, colleague):
+        await token_repository.insert(
+            user_id=owner.id,
+            token_hash=hash_mcp_token(generate_mcp_token()),
+            token_prefix="noa_abcd1234",
+            label=None,
+            expires_at=None,
+        )
+
+    assert await repository.delete_mcp_tokens_for_user(user.id) == 2
+
+    assert await token_repository.list_for_user(user.id) == []
+    assert len(await token_repository.list_for_user(colleague.id)) == 1
+
+
+async def test_delete_mcp_tokens_for_a_user_with_none_is_zero(
+    session: AsyncSession, repository: SQLAuthorizationRepository
+) -> None:
+    user = await make_user(session, EMAIL)
+
+    assert await repository.delete_mcp_tokens_for_user(user.id) == 0
+
+
+async def test_disabling_a_user_revokes_their_tokens_over_real_sql(
+    session: AsyncSession,
+) -> None:
+    """The whole V4 admin path: `set_user_active(False)` really empties `mcp_tokens`.
+
+    Through the service, not the repository, because the rule is that no caller can
+    forget the revoke — a route calling `update_user_active` directly is the bug this
+    guards.
+    """
+    service = AuthorizationService(
+        repository=SQLAuthorizationRepository(session), audit_sink=RecordingAuditSink()
+    )
+    user = await make_user(session, EMAIL, roles=(ROLE_SUPPORT,))
+    await SQLMcpTokenRepository(session).insert(
+        user_id=user.id,
+        token_hash=hash_mcp_token(generate_mcp_token()),
+        token_prefix="noa_abcd1234",
+        label=None,
+        expires_at=None,
+    )
+
+    updated = await service.set_user_active(user.id, is_active=False, actor_email=ADMIN_EMAIL)
+
+    assert updated.is_active is False
+    count = await session.execute(sa.text("SELECT count(*) FROM mcp_tokens"))
+    assert count.scalar_one() == 0
 
 
 async def test_list_users_is_ordered_by_email(
