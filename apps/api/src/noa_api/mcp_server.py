@@ -1,9 +1,13 @@
 """The FastMCP server and its ASGI app (T13 — I.mcp, V1, V3, R3, R6, R7, R8).
 
-Protocol era = handshake `2025-06-18` (C23). LibreChat is the sole MCP client and declares
-`@modelcontextprotocol/sdk: ^1.29.0`, so `initialize` + `Mcp-Session-Id` are in play, and
-`mcp==1.29.0` serves that era from its `SUPPORTED_PROTOCOL_VERSIONS` (R8). `fastmcp==3.4.5`
-is pinned for it; the pin is a decision, not an accident.
+Protocol era = handshake, negotiated per `initialize` (C23). LibreChat is the sole MCP
+client and locks `@modelcontextprotocol/sdk` at exactly 1.29.0, whose client sends its own
+`LATEST_PROTOCOL_VERSION` — `2025-11-25` (R9) — so that is the era this deployment answers
+with, and `Mcp-Session-Id` is in play. NOA does not choose a digit: `mcp==1.29.0` echoes
+whatever the client asks for when it is in `SUPPORTED_PROTOCOL_VERSIONS` (R8), which is why
+an older client asking `2025-06-18` keeps working. The sessionless `2026-07-28` era is in
+neither SDK's list, so reaching it is an SDK bump rather than a setting. `fastmcp==3.4.5`
+is pinned for this; the pin is a decision, not an accident.
 
 Two functions, because two things need to be separable: what the server *is* (name, auth,
 and from T19-T31/T63 its tools) and how it becomes an ASGI app (`http_app`). Verified
@@ -20,7 +24,7 @@ against the installed `fastmcp==3.4.5` rather than docs:
 - **No `stateless_http`, `json_response`, `host`, `port`, `log_level` on the constructor**
   (R7) — v3 raises `TypeError` for those; they belong on `http_app()` or `FASTMCP_*` env.
   Nothing here passes `stateless_http`, so sessions stay on and `Mcp-Session-Id` is minted
-  per `initialize` (R8), which is what the era C23 pins expects.
+  per `initialize` (R8), which every era C23 admits expects.
 - **The middleware is not optional.** `TokenVerifier.verify_token` has no response hook
   (R2), so without `McpAuthErrorMiddleware` every refusal collapses to the SDK's bare
   `invalid_token` and V3's named bodies — `librechat_user_header_missing` versus

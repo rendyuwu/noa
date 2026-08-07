@@ -63,8 +63,10 @@ SERVER_NAME = "NOA-probe"
 
 MCP_PATH = "/mcp"
 
-# `initialize` at the era C23 pins. The smallest body that gets past auth and produces a
-# protocol answer rather than a parse error.
+# `initialize` at an era C23 admits — an older v1.x client's, kept here deliberately so the
+# probe covers the non-latest branch of negotiation (`test_mcp_mount.py` covers the era
+# LibreChat actually sends). The smallest body that gets past auth and produces a protocol
+# answer rather than a parse error.
 INITIALIZE_BODY: dict[str, Any] = {
     "jsonrpc": "2.0",
     "id": 1,
@@ -475,8 +477,9 @@ def test_mounted_server_accepts_a_bound_token_with_its_header() -> None:
     """R4, live: header + bearer reach `verify_token` through the real middleware stack.
 
     A whole `initialize` completes, so this also re-checks two facts §R records from source
-    reads: the negotiated era is C23's `2025-06-18`, and `Mcp-Session-Id` is minted by
-    default (R8, `stateless_http=False`).
+    reads: the server echoes the era the client asked for when it is supported (R8 — here
+    the older `2025-06-18`), and `Mcp-Session-Id` is minted by default
+    (R8, `stateless_http=False`).
     """
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)

@@ -37,7 +37,9 @@ from support.mcp_identity import (
     build_auth_context,
 )
 from support.mcp_mount import (
+    CLIENT_LATEST_PROTOCOL_VERSION,
     INITIALIZE_BODY,
+    LEGACY_PROTOCOL_VERSION,
     MCP_URL,
     headers_for,
     mounted_app,
@@ -69,9 +71,9 @@ def test_the_mounted_endpoint_refuses_an_unauthenticated_request(
 def test_initialize_completes_through_the_mount(monkeypatch: pytest.MonkeyPatch) -> None:
     """I.mcp end to end: a real token, through the mount, to a completed handshake.
 
-    Asserts the era C23 pins and the session header R8 says is minted by default — if a
-    later fastmcp carried `stateless_http=True` by default, `Mcp-Session-Id` would vanish
-    and this fails rather than LibreChat.
+    Asserts the era LibreChat's own client asks for and the session header R8 says is minted
+    by default — if a later fastmcp carried `stateless_http=True` by default,
+    `Mcp-Session-Id` would vanish and this fails rather than LibreChat.
     """
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)
@@ -81,8 +83,56 @@ def test_initialize_completes_through_the_mount(monkeypatch: pytest.MonkeyPatch)
 
     assert response.status_code == status.HTTP_200_OK
     assert response.headers.get("mcp-session-id")
-    assert '"protocolVersion":"2025-06-18"' in response.text
+    assert f'"protocolVersion":"{CLIENT_LATEST_PROTOCOL_VERSION}"' in response.text
     assert f'"name":"{SERVER_NAME}"' in response.text
+
+
+# --- C23 / R9: which era the deployment actually negotiates ---
+
+
+@pytest.mark.parametrize(
+    ("requested", "expected"),
+    [
+        pytest.param(
+            CLIENT_LATEST_PROTOCOL_VERSION, CLIENT_LATEST_PROTOCOL_VERSION, id="librechat-latest"
+        ),
+        pytest.param(LEGACY_PROTOCOL_VERSION, LEGACY_PROTOCOL_VERSION, id="older-v1-client"),
+        pytest.param("2026-07-28", CLIENT_LATEST_PROTOCOL_VERSION, id="unsupported-falls-back"),
+    ],
+)
+def test_the_mount_answers_the_era_the_client_asks_for(
+    monkeypatch: pytest.MonkeyPatch, requested: str, expected: str
+) -> None:
+    """C23 as corrected by T71: NOA serves a *set* of eras, the client picks one.
+
+    The premise this replaces said the era was `2025-06-18` because a v1.x TS SDK's
+    `LATEST_PROTOCOL_VERSION` was that. Read at tag `v1.29.0` it is `2025-11-25`
+    (`src/types.ts:4`), `Client.connect` sends exactly that (`src/client/index.ts:495`), and
+    LibreChat pins the SDK exact in its lockfile with no override — so the digit the old
+    tests asserted was never the one the deployment would negotiate. They passed only
+    because the harness asked for it.
+
+    Three cases, because three different things can break. The first is what LibreChat
+    sends today. The second is an older client, which must keep working while
+    `SUPPORTED_PROTOCOL_VERSIONS` still lists it. The third is the shape of the fallback:
+    ask for the sessionless `2026-07-28` era (C23's rejected option, absent from both SDKs'
+    supported lists) and the server answers with its own latest rather than failing — and
+    that answer is inside the TS client's supported list (`src/types.ts:6`), so the
+    handshake completes instead of dead-ending at
+    `Server's protocol version is not supported` (`src/client/index.ts:508`).
+    """
+    repository = FakeMcpIdentityRepository()
+    plaintext, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)
+
+    with mounted_app(monkeypatch, repository=repository) as fixture:
+        response = post_initialize(
+            fixture.client, headers_for(plaintext), protocol_version=requested
+        )
+
+    assert response.status_code == status.HTTP_200_OK
+    assert f'"protocolVersion":"{expected}"' in response.text
+    # Every era C23 admits is a handshake era: the session header is minted either way (R8).
+    assert response.headers.get("mcp-session-id")
 
 
 # --- V3: the named refusal survives the mount ---

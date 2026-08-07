@@ -81,7 +81,8 @@ MCP_PATH = "/mcp"
 
 MCP_ACCEPT = "application/json, text/event-stream"
 
-# `initialize` at the era C23 pins — the smallest body that gets past auth.
+# `initialize` at an era C23 admits (an older v1.x client's) — the smallest body that gets
+# past auth. Which era negotiates is `test_mcp_mount.py`'s subject, not this file's.
 INITIALIZE_BODY: dict[str, Any] = {
     "jsonrpc": "2.0",
     "id": 1,

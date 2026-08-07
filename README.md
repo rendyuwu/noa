@@ -41,13 +41,19 @@ decides whether a specific change may run, and LibreChat handles transport and r
 
 ## Protocol pin
 
-MCP handshake era `2025-06-18`, server `fastmcp==3.4.5`.
+MCP handshake era, negotiated per client, server `fastmcp==3.4.5`.
 
-LibreChat is the sole MCP client and declares `@modelcontextprotocol/sdk: ^1.29.0`, whose
-`LATEST_PROTOCOL_VERSION` is `2025-06-18`. Serving the sessionless `2026-07-28` era to a v1.x client
-buys nothing, so the handshake era with `Mcp-Session-Id` stays. FastMCP holds at 3.x because 4.x is
-beta-only, drops the 3.x shims, and relocates `fastmcp.server.auth.*`, which would break token
-verification for no gain. Re-open when LibreChat ships SDK v2. Full rationale: C23, T70.
+NOA does not pin one era. `mcp==1.29.0` answers `initialize` with whatever the client asked for when
+that version is in its `SUPPORTED_PROTOCOL_VERSIONS` — `2024-11-05`, `2025-03-26`, `2025-06-18`,
+`2025-11-25`. LibreChat is the sole MCP client, locks `@modelcontextprotocol/sdk` at exactly 1.29.0,
+and its `Client` sends that SDK's `LATEST_PROTOCOL_VERSION` with no override, so the era this
+deployment actually negotiates is `2025-11-25`. Every one of those is a handshake era, so
+`Mcp-Session-Id` is in play throughout.
+
+The sessionless `2026-07-28` era is in neither SDK's supported list, so moving there is an SDK bump,
+not a setting — and it buys nothing against a client that will not ask for it. FastMCP holds at 3.x
+because 4.x is beta-only, drops the 3.x shims, and relocates `fastmcp.server.auth.*`, which would
+break token verification for no gain. Re-open when LibreChat ships SDK v2. Full rationale: C23, T70.
 
 ## Prerequisites
 

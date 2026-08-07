@@ -9,7 +9,7 @@ requires-python = ">=3.11,<3.13"
 # applied to Python; C23 for the MCP stack specifically).
 dependencies = [
   "noa-core",
-  # MCP server. Handshake era 2025-06-18 per C23 — NOT fastmcp 4.x, which is
+  # MCP server. Handshake era, negotiated per client, per C23 — NOT fastmcp 4.x, which is
   # beta-only, drops the 3.x shims, and relocates `fastmcp.server.auth.*`
   # (breaking the T11 TokenVerifier) for zero gain against LibreChat's SDK v1.x.
   "fastmcp==3.4.5",

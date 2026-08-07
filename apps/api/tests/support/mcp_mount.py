@@ -46,20 +46,36 @@ MCP_ACCEPT = "application/json, text/event-stream"
 
 SESSION_HEADER = "mcp-session-id"
 
-# The era C23 pins (R8).
-PROTOCOL_VERSION = "2025-06-18"
+# What LibreChat actually asks for. Its lockfile resolves `@modelcontextprotocol/sdk` to
+# exactly 1.29.0 at pin `45cc53c4`, `Client.connect` sends that SDK's
+# `LATEST_PROTOCOL_VERSION` (`src/types.ts:4`, `src/client/index.ts:495`), and LibreChat
+# constructs a stock `Client` with no version knob (`packages/api/src/mcp/connection.ts:1276`).
+# So this is the era the deployment negotiates, not a value NOA chooses (T71, R9).
+CLIENT_LATEST_PROTOCOL_VERSION = "2025-11-25"
 
-# `initialize` at that era. The smallest body that gets past auth.
-INITIALIZE_BODY: dict[str, Any] = {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-        "protocolVersion": PROTOCOL_VERSION,
-        "capabilities": {},
-        "clientInfo": {"name": "probe", "version": "0"},
-    },
-}
+# An older v1.x client's era. Still in both SDKs' `SUPPORTED_PROTOCOL_VERSIONS`, so it has to
+# keep negotiating — C23's correction is that NOA serves a *set*, not one digit.
+LEGACY_PROTOCOL_VERSION = "2025-06-18"
+
+# The harness speaks as the real client does; tests wanting another era pass it explicitly.
+PROTOCOL_VERSION = CLIENT_LATEST_PROTOCOL_VERSION
+
+
+def initialize_body(protocol_version: str = PROTOCOL_VERSION) -> dict[str, Any]:
+    """`initialize` at a given era. The smallest body that gets past auth."""
+    return {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "initialize",
+        "params": {
+            "protocolVersion": protocol_version,
+            "capabilities": {},
+            "clientInfo": {"name": "probe", "version": "0"},
+        },
+    }
+
+
+INITIALIZE_BODY: dict[str, Any] = initialize_body()
 
 
 def headers_for(token: str | None, librechat_user: str | None = LIBRECHAT_USER) -> dict[str, str]:
@@ -143,17 +159,22 @@ def mounted_app(
         )
 
 
-def post_initialize(client: TestClient, headers: dict[str, str], url: str = MCP_URL) -> Any:
+def post_initialize(
+    client: TestClient,
+    headers: dict[str, str],
+    url: str = MCP_URL,
+    protocol_version: str = PROTOCOL_VERSION,
+) -> Any:
     """One `initialize` POST, unwrapped — the handshake half of the harness."""
-    return client.post(url, content=json.dumps(INITIALIZE_BODY), headers=headers)
+    return client.post(url, content=json.dumps(initialize_body(protocol_version)), headers=headers)
 
 
 @dataclass
 class McpSession:
     """An initialized MCP session over the mounted endpoint.
 
-    Holds the negotiated `Mcp-Session-Id` and stamps it on every later request, which is
-    what the era C23 pins requires (R8) — without it the transport answers 400 and a test
+    Holds the negotiated `Mcp-Session-Id` and stamps it on every later request, which every
+    handshake era C23 admits requires (R8) — without it the transport answers 400 and a test
     would be asserting against a protocol error rather than a permission decision.
     """
 
@@ -213,7 +234,9 @@ def open_session(
 
 
 __all__ = [
+    "CLIENT_LATEST_PROTOCOL_VERSION",
     "INITIALIZE_BODY",
+    "LEGACY_PROTOCOL_VERSION",
     "MCP_ACCEPT",
     "MCP_URL",
     "PROTOCOL_VERSION",
@@ -221,6 +244,7 @@ __all__ = [
     "McpSession",
     "MountFixture",
     "headers_for",
+    "initialize_body",
     "json_rpc_payload",
     "mounted_app",
     "open_session",
