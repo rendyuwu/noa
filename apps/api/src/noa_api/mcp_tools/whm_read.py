@@ -158,14 +158,15 @@ async def whm_search_accounts(
       answers first; this branch is the one that holds for a direct in-process call (C9, V17)
       and it is what makes the bound a property of the tool rather than of its registration.
 
-    **Truncation is stated, not implied.** `total_matches` and `truncated` ship with the rows
-    because `noa-old` returned the first N silently, and a model reading twenty rows with no
-    other signal tells the operator there are twenty accounts. That is a fabrication the tool
-    handed it (V71).
+    **Truncation is stated, not implied** (V85, and this tool is where that invariant was
+    written). `total_matches` and `truncated` ship with the rows because `noa-old` returned the
+    first N silently, and a model reading twenty rows with no other signal tells the operator
+    there are twenty accounts — a fabrication the tool handed it rather than one the model
+    invented.
 
-    Matches are sorted by username before the cut, so "the first twenty" is reproducible.
-    `listaccts` order is WHM's own and not documented as stable, which would make a truncated
-    answer an arbitrary subset that changes between calls.
+    Matches are sorted by username before the cut, also V85: "the first twenty" has to be
+    reproducible, and `listaccts` order is WHM's own and not documented as stable, which would
+    make a truncated answer an arbitrary subset that changes between calls.
     """
     normalized_query = query.strip().lower()
     if not normalized_query:

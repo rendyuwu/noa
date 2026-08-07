@@ -228,10 +228,14 @@ Three deliberate departures from `noa-old`'s version of this tool:
   query containing a space matched *across* the junction (`"acme sho"` matched user `acme` plus
   domain `shop.example.com`) and returned a row matching nothing the operator typed.
 - **Truncation is stated.** The result carries `total_matches` and `truncated`; returning the
-  first N silently lets the model report "there are twenty accounts" when there are two hundred
-  (§V.71).
+  first N silently lets the model report "there are twenty accounts" when there are two hundred.
 - **Sorted by username before the cut**, because `listaccts` order is WHM's own and not
   documented as stable, which would make a truncated answer an arbitrary subset.
+
+The last two are **§V.85**, generalised out of this tool: any READ that caps rows carries its
+own bound and orders them by a stable key first. §V.85 is not §V.64 — that one offloads a large
+listing whole to a table surface and drops nothing (`whm_list_accounts`, §T.20, §T.59-gated),
+while this one drops rows in-process because the operator asked for a limit.
 
 `limit` is bounded twice: on the tool's JSON schema (`ge`/`le`, which is what refuses a bad call
 over MCP) and inside the tool (`limit_invalid`, which is what holds for an in-process call). A

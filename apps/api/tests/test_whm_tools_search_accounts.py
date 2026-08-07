@@ -173,11 +173,15 @@ async def test_an_account_whm_cannot_name_is_never_offered() -> None:
     assert [account["user"] for account in result["accounts"]] == ["acme2"]
 
 
-# --- Truncation ---
+# --- V85: a capped READ carries its own bound ---
 
 
 async def test_it_truncates_at_the_limit_and_says_so() -> None:
-    """Without `total_matches` and `truncated`, five rows read as "there are five" (§V.71)."""
+    """§V.85, first clause. Without the two fields, five rows read as "there are five".
+
+    This tool is where §V.85 was written, so these three cases are the invariant's only
+    coverage until a second capped READ lands.
+    """
     fixture, _ = search_context(
         accounts=[whm_account(f"acme{index}") for index in range(5)],
     )
@@ -190,7 +194,7 @@ async def test_it_truncates_at_the_limit_and_says_so() -> None:
 
 
 async def test_a_result_exactly_at_the_limit_is_not_truncated() -> None:
-    """Off-by-one guard: five of five is a complete answer."""
+    """Off-by-one guard: five of five is a complete answer (§V.85)."""
     fixture, _ = search_context(accounts=[whm_account(f"acme{index}") for index in range(5)])
 
     result = await search(fixture, query="acme", limit=5)
@@ -200,9 +204,10 @@ async def test_a_result_exactly_at_the_limit_is_not_truncated() -> None:
 
 
 async def test_matches_are_sorted_by_username_before_the_cut() -> None:
-    """`listaccts` order is WHM's own and undocumented, so an unsorted cut is arbitrary.
+    """§V.85, second clause. `listaccts` order is WHM's own and undocumented.
 
-    Sorting first makes "the first two" reproducible across calls.
+    Sorting first makes "the first two" reproducible across calls; an unsorted cut is an
+    arbitrary subset that can differ between two identical searches.
     """
     fixture, _ = search_context(
         accounts=[whm_account("acme-zeta"), whm_account("acme-beta"), whm_account("acme-alpha")]
