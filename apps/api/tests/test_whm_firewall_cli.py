@@ -14,7 +14,7 @@ Three things are pinned here, and each one is a production incident in `noa-old`
   is the real fix (V56); the raw-decode fallback is what keeps an unrecognised banner variant
   from turning an approved CHANGE into a parse error.
 
-No host: `ssh_exec` is replaced inside each module's namespace (`support.whm`).
+No host: `ssh_exec` is replaced inside each module's namespace (`support.remote_exec`).
 """
 
 from __future__ import annotations
@@ -46,15 +46,15 @@ from core.integrations.whm.imunify_cli import (
     run_imunify_command,
 )
 from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
-from support.whm import (
+from support.remote_exec import (
     SUDO_DENIED_STDERR,
     SUDO_MISSING_BINARY_STDERR,
-    FakeWHMServer,
-    build_cipher,
     command_result,
     install_fake_ssh_exec,
     ssh_config,
 )
+from support.secrets import build_cipher
+from support.whm import FakeWHMServer
 
 _LVE_BANNER = (
     "***************************************************************************\n"

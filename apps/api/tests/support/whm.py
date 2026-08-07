@@ -8,7 +8,10 @@ tests reach for is shared, and lives where its name is honest (V66, the same rea
 - the SSH transport doubles (`ssh_config`, `command_result`, `FakeSSH`, `install_fake_ssh_exec`,
   the fingerprint/password/sudo constants) → `support/remote_exec.py`, once T18 needed them.
 
-Both are re-exported below, because four test files already import them from this name.
+Both moves left a re-export here so the WHM test files could stay untouched; T72 removed them
+and pointed those files at the real homes, so this module is not an alias hub. The two
+constants imported below are used, not forwarded — `FakeWHMServer` takes them as field
+defaults. `test_support_layout.py` holds that line.
 
 No live host and no live WHM: `FakeWHMServer` satisfies the `WHMServerSecretLike` protocol
 structurally, and `install_fake_ssh_exec` replaces the transport at the module boundary. The
@@ -20,18 +23,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from support.remote_exec import (
-    PINNED_FINGERPRINT,
-    SSH_PASSWORD,
-    SUDO_DENIED_STDERR,
-    SUDO_MISSING_BINARY_STDERR,
-    FakeSSH,
-    RecordedRun,
-    command_result,
-    install_fake_ssh_exec,
-    ssh_config,
-)
-from support.secrets import build_cipher
+from support.remote_exec import PINNED_FINGERPRINT, SSH_PASSWORD
 
 
 @dataclass
@@ -54,16 +46,4 @@ class FakeWHMServer:
     ssh_host_key_fingerprint: str | None = PINNED_FINGERPRINT
 
 
-__all__ = [
-    "PINNED_FINGERPRINT",
-    "SSH_PASSWORD",
-    "SUDO_DENIED_STDERR",
-    "SUDO_MISSING_BINARY_STDERR",
-    "FakeSSH",
-    "FakeWHMServer",
-    "RecordedRun",
-    "build_cipher",
-    "command_result",
-    "install_fake_ssh_exec",
-    "ssh_config",
-]
+__all__ = ["FakeWHMServer"]

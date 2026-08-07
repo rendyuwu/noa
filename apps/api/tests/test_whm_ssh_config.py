@@ -21,7 +21,9 @@ from core.integrations.whm.ssh import (
 )
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.sudo import requires_escalation
-from support.whm import PINNED_FINGERPRINT, SSH_PASSWORD, FakeWHMServer, build_cipher
+from support.remote_exec import PINNED_FINGERPRINT, SSH_PASSWORD
+from support.secrets import build_cipher
+from support.whm import FakeWHMServer
 
 
 def _resolve(server: FakeWHMServer, *, require_host_key_fingerprint: bool = True):  # type: ignore[no-untyped-def]

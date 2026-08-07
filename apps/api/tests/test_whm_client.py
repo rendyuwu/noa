@@ -17,7 +17,7 @@ import httpx
 import pytest
 
 from core.integrations.whm.client import WHMClient, build_whm_client_from_creds
-from support.whm import build_cipher
+from support.secrets import build_cipher
 
 BASE_URL = "https://whm.example.com:2087"
 

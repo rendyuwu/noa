@@ -3,8 +3,8 @@
 These started in `support/whm.py` (T16). None of them is WHM-specific — they are about
 `core/remote_exec`: a resolved `SSHConnectionConfig`, a `CommandResult`, and a stand-in for
 `ssh_exec`. PMG (T18) is the second caller and T54's validate routes will be the third, so they
-live here and `support/whm.py` re-exports them under the names four test files already import
-(V66, exactly the move `support/secrets.py` made for `build_cipher` at T17).
+live here (V66, exactly the move `support/secrets.py` made for `build_cipher` at T17). This is
+their one home — the re-export `support/whm.py` carried through T18 is gone as of T72.
 
 No live host: the layers under test are command composition, output parsing and failure
 classification — none of which needs a socket.

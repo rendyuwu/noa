@@ -31,13 +31,13 @@ from core.integrations.whm.availability import (
 )
 from core.integrations.whm.csf_cli import CSF_BINARY
 from core.integrations.whm.imunify_cli import IMUNIFY_BINARY
-from support.whm import (
+from support.remote_exec import (
     SUDO_DENIED_STDERR,
-    FakeWHMServer,
-    build_cipher,
     command_result,
     install_fake_ssh_exec,
 )
+from support.secrets import build_cipher
+from support.whm import FakeWHMServer
 
 
 def _present(command: str):  # type: ignore[no-untyped-def]
