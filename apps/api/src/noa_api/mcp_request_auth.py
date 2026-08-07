@@ -88,6 +88,7 @@ from core.auth.mcp_token_service import hash_mcp_token
 from core.config import Settings
 from core.errors import NoaError
 from noa_api.api.errors import error_body, error_headers, status_for
+from noa_api.api.request_context import REQUEST_ID_HEADER, request_id_for
 
 # One structured event for every refusal, so a query on this name shows the whole denial
 # stream and `error_code` says which gate closed (V8: nothing else in the payload).
@@ -442,7 +443,9 @@ class McpAuthErrorMiddleware:
             await self.app(scope, receive, send)
             return
 
-        await self._send_error(send, error or self._infer_cause(scope))
+        await self._send_error(
+            send, error or self._infer_cause(scope), request_id=request_id_for(scope)
+        )
 
     # --- Internals ---
 
@@ -464,20 +467,27 @@ class McpAuthErrorMiddleware:
         return error
 
     @staticmethod
-    async def _send_error(send: Send, error: NoaError) -> None:
+    async def _send_error(send: Send, error: NoaError, *, request_id: str) -> None:
         """Write the envelope the FastAPI handler would have written (V73).
 
         Raw ASGI because the mounted MCP app is a Starlette app with no NOA exception
         handler on it; `status_for`/`error_body`/`error_headers` are shared with
         `noa_api.api.errors` so the two surfaces cannot drift. `detail` stays out of the
-        body (V8).
+        body (V8), and `request_id` is in it for the same reason it is in every other error
+        body: it is what an operator quotes, and it names the log line this refusal wrote.
+
+        The header is written here too, not left to `RequestContextMiddleware`. That
+        middleware does cover this response in the mounted app, but this method is the thing
+        that promises the envelope, and a promise that depends on a middleware two apps up
+        is one that a future standalone mount breaks silently.
         """
         status_code = status_for(error)
-        body = json.dumps(error_body(error)).encode()
+        body = json.dumps(error_body(error, request_id=request_id)).encode()
 
         headers: list[tuple[bytes, bytes]] = [
             (b"content-type", b"application/json"),
             (b"content-length", str(len(body)).encode()),
+            (REQUEST_ID_HEADER.encode(), request_id.encode()),
         ]
         headers.extend(
             (name.lower().encode(), value.encode()) for name, value in error_headers(error).items()

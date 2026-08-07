@@ -45,7 +45,7 @@ from noa_api.api.deps import (
     STATE_SETTINGS,
     get_auth_service,
 )
-from noa_api.api.errors import install_error_handler
+from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.auth import router as auth_router
 
 OPERATOR_EMAIL = "operator@example.com"
@@ -346,7 +346,7 @@ def auth_harness(
     jwt_service = JWTService(resolved_settings)
 
     app = FastAPI()
-    install_error_handler(app)
+    install_error_handling(app)
     app.include_router(auth_router)
 
     # Set directly rather than through a lifespan: these are the same attributes

@@ -1,4 +1,4 @@
-"""One exception handler for every NOA error (T8, T9, T10, T11, T14, T15, T16, T18).
+"""One error envelope for every failure the API answers with (T8-T18, T64 — V8, V73).
 
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
@@ -9,21 +9,40 @@ that build their own `HTTPException` per failure are how two callers end up retu
 different codes for the same condition — `noa-old`'s admin routes did exactly that, in
 ~40 lines per endpoint.
 
-V8: the response body carries `error_code` + `message` only. `detail` is the internal
-diagnostic — it names configuration faults, directory internals and the ids of rows that
-vanished mid-request — and stays in the logs. A test asserts it never appears in a body.
+V8: the response body carries `error_code`, `message` and `request_id` only. `detail` is the
+internal diagnostic — it names configuration faults, directory internals and the ids of rows
+that vanished mid-request — and stays in the logs. A test asserts it never appears in a body.
 
-T64 extends *this* handler with `request_id` in the body and `x-request-id` on the response
-(V73). It is deliberately the single place that shapes an error response, so that stays a
-one-file change and cannot drift per route.
+**T64 (V73): every error response, not only the ones NOA raises.** A `NoaError` handler
+alone leaves three surfaces answering in Starlette's default shape — no `error_code`, no
+`request_id`:
+
+- `StarletteHTTPException` — the 404 for an unrouted path and the 405 for a wrong method.
+  Registered on Starlette's class, which catches FastAPI's `HTTPException` too through
+  Starlette's MRO lookup.
+- `RequestValidationError` — a 422 for a malformed body. **The pydantic errors are not
+  echoed.** `noa-old` returned `exc.errors()` whole, and every entry carries the value that
+  failed: on `POST /auth/login` that is the submitted password, in the response body. V8
+  forbids it. Only `loc` and `type` reach the log, for the same reason.
+- `Exception` — the 500 for a bug. Registered here, but note it runs in Starlette's
+  `ServerErrorMiddleware`, which sits *outside* the user middleware stack: its response
+  never passes through `RequestContextMiddleware`'s `send` wrapper, so this file sets
+  `x-request-id` on every error response itself rather than relying on that wrapper.
+
+`install_error_handling` is the one seam that installs all of it — `noa_api.main` and both
+test harnesses call it, so no surface can end up with a different envelope (V66, V73).
 """
 
 from __future__ import annotations
 
-from typing import Final
+from collections.abc import Mapping
+from typing import Any, Final
 
+import structlog
 from fastapi import FastAPI, Request, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.auth.authorization_errors import (
     AdminAccessRequiredError,
@@ -71,6 +90,13 @@ from core.integrations.pmg.errors import PMGSHCLIError
 from core.integrations.whm.errors import WHMFirewallCLIError
 from core.remote_exec.errors import SSHExecutionError
 from core.secrets.errors import SecretCryptoError, YopassError, YopassNotConfiguredError
+from noa_api.api.request_context import (
+    REQUEST_ID_HEADER,
+    RequestContextMiddleware,
+    request_id_for,
+)
+
+logger = structlog.get_logger(__name__)
 
 # Lookup is by exact class with an MRO walk below, so ordering here is for reading only.
 STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
@@ -183,6 +209,36 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
 # own password. Reached only by `NoaError` subclasses with no mapping at all.
 FALLBACK_STATUS: Final = status.HTTP_503_SERVICE_UNAVAILABLE
 
+# --- Shapes for the failures NOA does not raise (T64) ---
+#
+# `(error_code, message)` per status, rather than echoing `StarletteHTTPException.detail`.
+# Nothing in this repo builds an `HTTPException` (see the module docstring), so the only
+# ones that reach the handler are Starlette's own routing failures — and a fixed shape means
+# a future raiser cannot put internal text in a body by accident (V8).
+HTTP_ERROR_SHAPES: Final[dict[int, tuple[str, str]]] = {
+    status.HTTP_404_NOT_FOUND: ("not_found", "That endpoint does not exist."),
+    status.HTTP_405_METHOD_NOT_ALLOWED: (
+        "method_not_allowed",
+        "That method is not allowed on this endpoint.",
+    ),
+}
+FALLBACK_HTTP_SHAPE: Final[tuple[str, str]] = (
+    "http_error",
+    "The request could not be completed.",
+)
+
+VALIDATION_SHAPE: Final[tuple[str, str]] = (
+    "request_validation_error",
+    "The request body or parameters are invalid.",
+)
+
+# The 500 answers exactly as a bare `NoaError` would. Same two strings, read off the class
+# rather than retyped, so the two paths cannot drift (V66).
+INTERNAL_SHAPE: Final[tuple[str, str]] = (NoaError.error_code, NoaError.message)
+
+LOG_VALIDATION_FAILED: Final = "request_validation_failed"
+LOG_UNHANDLED: Final = "api_unhandled_exception"
+
 
 def status_for(error: NoaError) -> int:
     """HTTP status for `error`, falling back for unmapped subclasses.
@@ -197,9 +253,51 @@ def status_for(error: NoaError) -> int:
     return FALLBACK_STATUS
 
 
-def error_body(error: NoaError) -> dict[str, str]:
-    """Response body. `error_code` is what clients branch on; `message` is for humans."""
-    return {"error_code": error.error_code, "message": error.message}
+def envelope(error_code: str, message: str, request_id: str | None = None) -> dict[str, str]:
+    """The one error-body shape (V8, V73).
+
+    `error_code` is what clients branch on, `message` is for humans, `request_id` is what an
+    operator quotes when neither is enough — it matches `x-request-id` on the response and
+    the `request_id` on every structlog line the request emitted.
+    """
+    body = {"error_code": error_code, "message": message}
+    if request_id is not None:
+        body["request_id"] = request_id
+    return body
+
+
+def error_body(error: NoaError, *, request_id: str | None = None) -> dict[str, str]:
+    """Response body for a `NoaError`.
+
+    `request_id` is keyword-optional because callers that only care about the V8 shape — the
+    tests asserting `detail` never leaks — have no request to read one from. Every path that
+    actually answers a client passes it; `error_response` below is how.
+    """
+    return envelope(error.error_code, error.message, request_id)
+
+
+def error_response(
+    *,
+    status_code: int,
+    error_code: str,
+    message: str,
+    request_id: str,
+    headers: Mapping[str, str] | None = None,
+) -> JSONResponse:
+    """Build an error response with the envelope and `x-request-id` (V73).
+
+    The header is set here rather than left to `RequestContextMiddleware`: the 500 path runs
+    in `ServerErrorMiddleware`, outside that middleware, and would otherwise answer without
+    it. Where both do set it, `MutableHeaders` replaces rather than appends, so there is
+    never a duplicate.
+    """
+    response_headers = dict(headers or {})
+    response_headers[REQUEST_ID_HEADER] = request_id
+    return JSONResponse(
+        status_code=status_code,
+        content=envelope(error_code, message, request_id),
+        headers=response_headers,
+    )
 
 
 def error_headers(error: NoaError) -> dict[str, str]:
@@ -220,32 +318,117 @@ def error_headers(error: NoaError) -> dict[str, str]:
     return {}
 
 
-def install_error_handler(app: FastAPI) -> None:
-    """Register the `NoaError` handler on `app`.
+def redacted_validation_errors(errors: list[Any]) -> list[dict[str, str]]:
+    """`loc` + `type` per failing field, for the log. Nothing else (V8).
 
-    One registration on the base class, not one per taxonomy: Starlette dispatches by MRO,
-    so `AuthError` and `AuthorizationError` both land here and a third taxonomy needs no
-    change beyond its entries in `STATUS_BY_ERROR`.
+    pydantic's error entries carry `input` — the value that failed validation, which on a
+    login is the submitted password — and `ctx`, which can carry an exception. Neither is
+    something to write to a log store, so this keeps the two fields that say *where* and
+    *what kind* and drops the rest.
     """
+    redacted: list[dict[str, str]] = []
+    for error in errors:
+        if not isinstance(error, Mapping):
+            continue
+        location = error.get("loc") or ()
+        parts = location if isinstance(location, (list, tuple)) else (location,)
+        redacted.append(
+            {
+                "loc": ".".join(str(part) for part in parts),
+                "type": str(error.get("type", "unknown")),
+            }
+        )
+    return redacted
+
+
+def install_error_handling(app: FastAPI) -> None:
+    """Install the request-id middleware and every error handler on `app` (V73).
+
+    One function, called by `noa_api.main` and by both test harnesses, because V73's "shared
+    handler, not per-route" is only true if there is one place that decides. Four handlers:
+
+    - `NoaError` — one registration on the base class, not one per taxonomy. Starlette
+      dispatches by MRO, so `AuthError` and `AuthorizationError` both land here and a third
+      taxonomy needs no change beyond its entries in `STATUS_BY_ERROR`.
+    - `StarletteHTTPException`, `RequestValidationError`, `Exception` — the surfaces FastAPI
+      would otherwise answer for, in its own shape. See the module docstring.
+    """
+    app.add_middleware(RequestContextMiddleware)
 
     @app.exception_handler(NoaError)
-    async def handle_noa_error(_request: Request, exc: Exception) -> JSONResponse:
+    async def handle_noa_error(request: Request, exc: Exception) -> JSONResponse:
         # Starlette types handlers as taking `Exception`; registration guarantees the
         # narrower class.
         error = exc if isinstance(exc, NoaError) else NoaError(str(exc))
 
-        return JSONResponse(
+        return error_response(
             status_code=status_for(error),
-            content=error_body(error),
-            headers=error_headers(error) or None,
+            error_code=error.error_code,
+            message=error.message,
+            request_id=request_id_for(request.scope),
+            headers=error_headers(error),
+        )
+
+    @app.exception_handler(StarletteHTTPException)
+    async def handle_http_exception(request: Request, exc: Exception) -> JSONResponse:
+        status_code = (
+            exc.status_code
+            if isinstance(exc, StarletteHTTPException)
+            else status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+        error_code, message = HTTP_ERROR_SHAPES.get(status_code, FALLBACK_HTTP_SHAPE)
+        headers = getattr(exc, "headers", None)
+
+        return error_response(
+            status_code=status_code,
+            error_code=error_code,
+            message=message,
+            request_id=request_id_for(request.scope),
+            headers=headers,
+        )
+
+    @app.exception_handler(RequestValidationError)
+    async def handle_validation_error(request: Request, exc: Exception) -> JSONResponse:
+        errors = exc.errors() if isinstance(exc, RequestValidationError) else []
+        logger.warning(LOG_VALIDATION_FAILED, errors=redacted_validation_errors(errors))
+
+        error_code, message = VALIDATION_SHAPE
+        return error_response(
+            # `HTTP_422_UNPROCESSABLE_ENTITY` is deprecated in the pinned Starlette; the
+            # value is the same 422.
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            error_code=error_code,
+            message=message,
+            request_id=request_id_for(request.scope),
+        )
+
+    @app.exception_handler(Exception)
+    async def handle_unhandled_exception(request: Request, exc: Exception) -> JSONResponse:
+        # The one place a stack trace is welcome. The body says nothing about it (V8): an
+        # unhandled exception is by definition a case nobody decided was safe to describe.
+        logger.exception(LOG_UNHANDLED, error_type=type(exc).__name__, exc_info=exc)
+
+        error_code, message = INTERNAL_SHAPE
+        return error_response(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            error_code=error_code,
+            message=message,
+            request_id=request_id_for(request.scope),
         )
 
 
 __all__ = [
+    "FALLBACK_HTTP_SHAPE",
     "FALLBACK_STATUS",
+    "HTTP_ERROR_SHAPES",
+    "INTERNAL_SHAPE",
     "STATUS_BY_ERROR",
+    "VALIDATION_SHAPE",
+    "envelope",
     "error_body",
     "error_headers",
-    "install_error_handler",
+    "error_response",
+    "install_error_handling",
+    "redacted_validation_errors",
     "status_for",
 ]

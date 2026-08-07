@@ -336,7 +336,7 @@ T60|.|Deployment: `Dockerfile` per app. `docker-compose.yml` for local dev (Post
 T61|.|CI: lint + typecheck + test per app. Python: pytest + ruff. TypeScript: eslint + tsc + vitest + playwright. Conventional commits enforced|C14,V67,V68
 T62|.|Docs: `README.md` (overview, setup, architecture), `ARCHITECTURE.md` (design decisions, topology), `AGENTS.md` (caveman communication, code standards)|-
 T63|.|Tool: `noa_get_action_result(action_request_id)` (READ). Requester-match vs MCP-token identity. Foreign ∧ unknown → identical not-found shape. Returns status + receipt summary, redacted args|I.mcp,V27,V76
-T64|.|Error envelope: ∀ error response body carries `request_id`, response carries `x-request-id` header. Shared exception handler, ⊥ per-route|V73
+T64|x|Error envelope: ∀ error response body carries `request_id`, response carries `x-request-id` header. Shared exception handler, ⊥ per-route|V73
 T65|.|Direct per-user tool grants → 410 `direct_tool_grants_disabled`. Role replacement preserves internal roles|V75,I.admin-api
 T66|.|Emit `notifications/tools/list_changed` on role/permission change. Test: revoked tool → 403 at execution even when still in client's cached catalog (V1 backstop). Verify LibreChat honours notification → T59 checklist item|V14,V74,C23
 T67|.|Rename Fernet env var → `NOA_SECRET_ENCRYPTION_KEY` in `core/config.py`, `.env.example`, Dockerfiles, `docker-compose.yml`, README. ⊥ `NOA_DB_SECRET_KEY` (misleading — encrypts server creds, ⊥ DB)|C7,V52

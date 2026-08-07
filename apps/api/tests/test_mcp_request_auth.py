@@ -484,7 +484,8 @@ def test_the_bare_sdk_401_is_replaced() -> None:
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     body = response.json()
-    assert set(body) == {"error_code", "message"}
+    # `request_id` joined the envelope with T64 (V73); the SDK's two keys are still gone.
+    assert set(body) == {"error_code", "message", "request_id"}
     assert "error_description" not in body
 
 

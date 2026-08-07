@@ -45,7 +45,7 @@ from noa_api.api.deps import (
     AdminUserDep,
     get_auth_service,
 )
-from noa_api.api.errors import install_error_handler
+from noa_api.api.errors import install_error_handling
 from support.auth import (
     COOKIE_NAME,
     FakeAuthRepository,
@@ -292,7 +292,7 @@ def admin_probe_app() -> Iterator[AdminProbeHarness]:
     jwt_service = JWTService(settings)
 
     app = FastAPI()
-    install_error_handler(app)
+    install_error_handling(app)
 
     @app.get(PROBE_PATH)
     async def probe(admin_user: AdminUserDep) -> dict[str, str]:

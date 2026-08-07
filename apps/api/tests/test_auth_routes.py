@@ -293,14 +293,18 @@ def test_blank_credentials_rejected_without_touching_the_directory(payload: dict
 
 
 def test_login_error_response_carries_no_password_and_no_detail() -> None:
-    """V8: body is `error_code` + `message`. `detail` names internals; it stays in logs."""
+    """V8: body is `error_code` + `message` + `request_id`. `detail` names internals.
+
+    `request_id` joined the set with T64 (V73). It is the one addition V8 admits: a
+    per-request opaque id, minted by NOA, that names the log line rather than anything in it.
+    """
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
 
     with auth_harness(repository=repository) as harness:
         response = harness.login(password=WRONG_PASSWORD)
 
-    assert set(response.json()) == {"error_code", "message"}
+    assert set(response.json()) == {"error_code", "message", "request_id"}
     assert WRONG_PASSWORD not in response.text
 
 

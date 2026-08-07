@@ -45,7 +45,7 @@ from noa_api.api.deps import (
     STATE_SESSION_FACTORY,
     STATE_SETTINGS,
 )
-from noa_api.api.errors import install_error_handler
+from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.mcp_request_auth import build_mcp_auth_context
 from noa_api.mcp_server import MCP_MOUNT_PATH, build_mcp_http_app
@@ -147,7 +147,7 @@ def create_app() -> FastAPI:
         lifespan=combine_lifespans(build_lifespan(runtime), mcp_app.lifespan),
     )
 
-    install_error_handler(app)
+    install_error_handling(app)
     app.include_router(auth_router)
 
     @app.get("/health")
