@@ -86,6 +86,8 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
 - TypeScript: typed, ⊥ `any`. `.ts` ≤ 300 lines, `.tsx` ≤ 450 lines.
 - Reusable functions over duplication. Shared code → `core/`. (V66)
 - Tests for new functionality. ≥1 check per touched invariant where practical. (V67)
+- Test compare ⊥ eat clock-stamped bytes (`Expires`, `Date`, `iat`) — drop them from equality,
+  assert by property, ∧ keep a case proving the compare still separates. (V87, B4)
 - Conventional commits. ⊥ secrets in git — `.env*` ignored except `.env.example`. (V68)
 - Env vars for lists = JSON arrays: `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 - Browser ⊥ call FastAPI direct. Same-origin proxy route per web app.
