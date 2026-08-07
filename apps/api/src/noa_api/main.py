@@ -14,6 +14,10 @@ is called. `AppRuntime` holds those, built in `create_app`:
   deliberate: a liveness probe that needs Postgres cannot report "the API is up but the
   database is not".
 - `LDAPService` — holds settings and a connect factory; nothing to fail at construction.
+- `SecretCipher` — the one instance, from `NOA_SECRET_ENCRYPTION_KEY` (C7, T21). Here rather
+  than in the lifespan because the tool context is built before `FastAPI(...)` too, and
+  because construction *does* fail on a bad key: that is a boot failure, by the same rule
+  `JWTService` follows below.
 
 `JWTService` stays in the lifespan, and that is not a leftover. T8 requires it specifically:
 its algorithm allowlist and RFC 7518 key-length check raise at construction, so building it
@@ -38,6 +42,7 @@ from core.auth.jwt_service import JWTService
 from core.auth.ldap_service import LDAPService
 from core.config import Settings, get_settings
 from core.db.session import create_engine, create_session_factory
+from core.secrets.crypto import SecretCipher
 from noa_api import __version__
 from noa_api.api.deps import (
     STATE_JWT_SERVICE,
@@ -69,6 +74,7 @@ class AppRuntime:
     engine: AsyncEngine
     session_factory: async_sessionmaker[AsyncSession]
     ldap_service: LDAPService
+    secret_cipher: SecretCipher
 
 
 def build_runtime(settings: Settings) -> AppRuntime:
@@ -79,6 +85,10 @@ def build_runtime(settings: Settings) -> AppRuntime:
         engine=engine,
         session_factory=create_session_factory(engine),
         ldap_service=LDAPService(settings),
+        # One cipher for the whole app (C7, V48). Every decrypt site takes it as an argument
+        # — there is no module-level cipher to import (T15) — so this is the only place it is
+        # built, and T54's admin routes will read the same one off `AppRuntime`.
+        secret_cipher=SecretCipher.from_settings(settings),
     )
 
 
@@ -138,7 +148,10 @@ def create_app() -> FastAPI:
             directory=runtime.ldap_service,
             settings=runtime.settings,
         ),
-        tool_context=build_mcp_tool_context(session_factory=runtime.session_factory),
+        tool_context=build_mcp_tool_context(
+            session_factory=runtime.session_factory,
+            secret_cipher=runtime.secret_cipher,
+        ),
     )
 
     app = FastAPI(

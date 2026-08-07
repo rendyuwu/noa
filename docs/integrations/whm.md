@@ -202,9 +202,41 @@ despite the unique index, because Postgres uniqueness is case-sensitive and the 
 | Tool | Risk | Notes |
 |---|---|---|
 | `whm_list_servers` | READ | Every configured server, via `WHMServer.to_safe_dict()`. Exposed per DECISIONS §6.6 — the model needs to know which servers exist. The only `*_list_servers` that is exposed. |
+| `whm_search_accounts` | READ | `server_ref` + `query` + `limit` (1–100, default 20). Case-insensitive substring of the account username **or** its domain. |
 
 Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19,
 `noa_api/mcp_tools/results.py`) sit in front of every tool, so nothing below is per-tool code.
+
+### `whm_search_accounts` (§T.21)
+
+WHM has no server-side account search, so `listaccts` is fetched whole and the match runs
+in-process (`fetch_whm_accounts`, internal per C9/§V.17 — `whm_list_accounts` will share it).
+Each row is reduced to the fields NOA speaks about by `core/integrations/whm/accounts.py`:
+`user`, `domain`, `email`, `contactemail`, `owner`, `suspended`, `suspendreason`, `suspendtime`,
+`is_locked`. Everything else WHM sends (`ip`, `plan`, disk counters, theme) is dropped — the
+result lands in a LibreChat transcript that persists in their MongoDB (§V.26). A row with no
+`user` is dropped entirely: it is not an account any CHANGE tool could then be called on.
+
+`suspended` and `is_locked` arrive as `0`/`1` or `"0"`/`"1"` depending on the cPanel version and
+are normalised to booleans — `"0"` is truthy in Python, so a raw read reports a live account as
+suspended. `is_locked` falls back to the older `suspendlock`, including when `is_locked` is
+present and JSON-null.
+
+Three deliberate departures from `noa-old`'s version of this tool:
+
+- **Per-field matching.** There the username and domain were joined into one haystack, so a
+  query containing a space matched *across* the junction (`"acme sho"` matched user `acme` plus
+  domain `shop.example.com`) and returned a row matching nothing the operator typed.
+- **Truncation is stated.** The result carries `total_matches` and `truncated`; returning the
+  first N silently lets the model report "there are twenty accounts" when there are two hundred
+  (§V.71).
+- **Sorted by username before the cut**, because `listaccts` order is WHM's own and not
+  documented as stable, which would make a truncated answer an arbitrary subset.
+
+`limit` is bounded twice: on the tool's JSON schema (`ge`/`le`, which is what refuses a bad call
+over MCP) and inside the tool (`limit_invalid`, which is what holds for an in-process call). A
+blank or whitespace-only `query` is `query_required` — §V.21's gate, and one a schema cannot
+express since `min_length` counts whitespace. Both guards run before any I/O.
 
 ## Error codes
 
@@ -213,6 +245,8 @@ Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19
 | `host_required` | `resolve_whm_server_ref` | `server_ref` blank or whitespace (§V.21). |
 | `host_not_found` | `resolve_whm_server_ref` | No server matches the id, name or hostname. |
 | `host_ambiguous` | `resolve_whm_server_ref` | Several match; `choices` carries the candidates. |
+| `query_required` | `whm_search_accounts` | Blank or whitespace-only search text (§V.21). |
+| `limit_invalid` | `whm_search_accounts` | `limit` outside 1–100 (§T.21). |
 | `tool_not_permitted` | `RbacToolMiddleware` | Caller lacks the grant, or the name is not a registered tool (§V.1, §V.10). |
 | `tool_execution_failed` | `sanitize_tool_errors` | Unmapped exception out of a tool (§V.19). |
 | `timeout` | `sanitize_tool_errors` | `TimeoutError` out of a tool (§V.19). |
@@ -246,7 +280,7 @@ lets the column be migrated in place.
 
 | Surface | Task |
 |---|---|
-| MCP tools: list/search accounts, suspend/unsuspend, firewall preflight, release-and-allow, allowlist-remove | §T.20–§T.26 |
+| MCP tools: list accounts, suspend/unsuspend, firewall preflight, release-and-allow, allowlist-remove | §T.20, §T.22–§T.26 |
 | Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
 | Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
 
@@ -271,7 +305,8 @@ exposure. Re-adding any of them is an owner decision.
 
 - Package overview: `core/integrations/whm/__init__.py`
 - WHM API client: `core/integrations/whm/client.py`
-- Row → SSH config: `core/integrations/whm/ssh.py`
+- Account row shaping + search predicate: `core/integrations/whm/accounts.py` (§T.21)
+- Row → SSH config, row → API client: `core/integrations/whm/ssh.py`
 - CSF: `core/integrations/whm/csf.py` (parsing), `csf_cli.py` (execution)
 - Imunify: `core/integrations/whm/imunify.py` (parsing), `imunify_cli.py` (execution)
 - Backend availability: `core/integrations/whm/availability.py`
@@ -279,6 +314,7 @@ exposure. Re-adding any of them is an owner decision.
 - Shared SSH layer: `core/remote_exec/` (§T.14)
 - Server inventory + reference resolution: `core/servers/whm_repository.py`,
   `core/servers/whm_ref.py` (§T.19)
+- Exposed READ tools: `apps/api/src/noa_api/mcp_tools/whm_read.py` (§T.19, §T.21)
 - MCP tool + registry: `apps/api/src/noa_api/mcp_tools/{whm_read,registry,results,context}.py`
 - RBAC gate in front of every tool: `apps/api/src/noa_api/mcp_rbac.py` (§V.1)
 - Tests: `apps/api/tests/test_whm_{client,ssh_config,csf_parsing,imunify_parsing}.py`,

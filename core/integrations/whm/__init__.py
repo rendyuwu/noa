@@ -13,6 +13,8 @@ Modules, one job each:
                    `NoaError` so the one shared handler shapes them (V73).
 - `client`       — `WHMClient` + `build_whm_client_from_creds`. Normalises WHM's HTTP-200
                    failures into stable `error_code` strings.
+- `accounts`     — pure shaping: a `listaccts` row → the fields NOA speaks about, plus the
+                   search predicate (T21). Shared by T20-T23, hence `core/` (V66).
 - `ssh`          — `whm_servers` row → pinned `SSHConnectionConfig`, with the three refusals
                    that happen before a socket opens.
 - `csf`          — pure parsing: target classification (V54) and `csf -g` verdicts.
@@ -34,6 +36,12 @@ Not ported from `MCP`, each for a stated reason (see the module docstrings): the
 `addon_csf.cgi` HTTP firewall path.
 """
 
+from core.integrations.whm.accounts import (
+    WHMAccount,
+    account_matches,
+    normalize_whm_account_list,
+    normalize_whm_account_summary,
+)
 from core.integrations.whm.availability import (
     BinaryCheck,
     FirewallAvailability,
@@ -77,6 +85,7 @@ from core.integrations.whm.imunify_cli import (
     run_imunify_command,
 )
 from core.integrations.whm.ssh import (
+    WHMClientFactory,
     WHMServerSecretLike,
     build_whm_client,
     has_ssh_credentials,
@@ -98,9 +107,12 @@ __all__ = [
     "ImunifyIPListResult",
     "ImunifyPurpose",
     "ImunifyVerdict",
+    "WHMAccount",
     "WHMClient",
+    "WHMClientFactory",
     "WHMFirewallCLIError",
     "WHMServerSecretLike",
+    "account_matches",
     "build_csf_command",
     "build_imunify_command",
     "build_whm_client",
@@ -111,6 +123,8 @@ __all__ = [
     "format_imunify_matches",
     "has_ssh_credentials",
     "imunify_entry_to_dict",
+    "normalize_whm_account_list",
+    "normalize_whm_account_summary",
     "parse_csf_grep_output",
     "parse_csf_target",
     "parse_imunify_ip_list_response",

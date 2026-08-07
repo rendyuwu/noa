@@ -36,6 +36,8 @@ from __future__ import annotations
 from typing import Protocol
 from urllib.parse import urlsplit
 
+import httpx
+
 from core.integrations.whm.client import WHMClient, build_whm_client_from_creds
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.types import SSHConnectionConfig
@@ -62,15 +64,44 @@ class WHMServerSecretLike(Protocol):
     ssh_host_key_fingerprint: str | None
 
 
-def build_whm_client(server: WHMServerSecretLike, *, cipher: SecretCipher) -> WHMClient:
-    """Row → authenticated WHM API client."""
+def build_whm_client(
+    server: WHMServerSecretLike,
+    *,
+    cipher: SecretCipher,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> WHMClient:
+    """Row → authenticated WHM API client.
+
+    `transport` is forwarded for the same reason `build_whm_client_from_creds` takes one: it
+    is the test seam, and it is a parameter rather than an attribute a test reaches into
+    afterwards. A tool test that swaps the transport keeps the real client, the real cipher
+    and the real decrypt site in the path — only the socket is doubled.
+    """
     return build_whm_client_from_creds(
         base_url=server.base_url,
         api_username=server.api_username,
         encrypted_token=server.api_token,
         verify_ssl=server.verify_ssl,
         cipher=cipher,
+        transport=transport,
     )
+
+
+class WHMClientFactory(Protocol):
+    """How the tool path asks for a WHM client (T21).
+
+    `build_whm_client` is the production implementation and the default everywhere. The
+    Protocol exists so `McpToolContext` can name the seam in a type instead of a
+    `Callable[..., WHMClient]` that would accept any signature — a factory taking the row
+    positionally and the cipher by keyword is the shape every caller writes.
+    """
+
+    def __call__(
+        self,
+        server: WHMServerSecretLike,
+        *,
+        cipher: SecretCipher,
+    ) -> WHMClient: ...
 
 
 def has_ssh_credentials(server: WHMServerSecretLike) -> bool:
@@ -131,6 +162,7 @@ def resolve_whm_ssh_config(
 
 
 __all__ = [
+    "WHMClientFactory",
     "WHMServerSecretLike",
     "build_whm_client",
     "has_ssh_credentials",

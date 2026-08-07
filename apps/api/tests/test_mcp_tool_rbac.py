@@ -27,11 +27,17 @@ from core.db.models import ADMIN_ROLE_NAME
 from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.registry import RegistryError, assert_names_in_catalog, register_mcp_tools
-from noa_api.mcp_tools.whm_read import TOOL_WHM_LIST_SERVERS
+from noa_api.mcp_tools.whm_read import TOOL_WHM_LIST_SERVERS, TOOL_WHM_SEARCH_ACCOUNTS
 from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
 from support.mcp_mount import McpSession, mounted_app, open_session
 from support.rbac import ROLE_SUPPORT, FakeAuthorizationRepository
 from support.servers import build_tool_context, whm_server
+
+# What this build registers, in the order `tools/list` sorts them. A literal rather than a set
+# derived from `register_mcp_tools`: an `admin` sees exactly this, so a tool added without
+# anyone noticing it became visible to every admin should fail here rather than be asserted
+# against itself. Grows with each of §T.20-31 and §T.63.
+REGISTERED_TOOLS = sorted([TOOL_WHM_LIST_SERVERS, TOOL_WHM_SEARCH_ACCOUNTS])
 
 # A catalogued tool this build does not register yet (T20). Standing in for what a client
 # holding a stale catalog, or a prompt-injected call, would name.
@@ -89,6 +95,19 @@ def test_a_granted_tool_is_listed_and_callable(scenario) -> None:
     assert result.get("isError") is not True
     assert result["structuredContent"]["ok"] is True
     assert [server["name"] for server in result["structuredContent"]["servers"]] == ["alpha"]
+
+
+def test_a_grant_names_one_tool_and_not_the_toolset(scenario) -> None:
+    """V1 is per tool, and with two registered tools that is finally observable.
+
+    A role granted `whm_search_accounts` sees only it, and calling the other one is refused —
+    a gate keyed on "has any WHM grant" would pass both and no earlier test could tell.
+    """
+    sign_in, _ = scenario
+    session = sign_in(roles=(ROLE_SUPPORT,), grants=(TOOL_WHM_SEARCH_ACCOUNTS,))
+
+    assert session.tool_names() == [TOOL_WHM_SEARCH_ACCOUNTS]
+    assert session.call_tool(TOOL_WHM_LIST_SERVERS)["isError"] is True
 
 
 def test_tools_list_hides_a_tool_the_caller_may_not_call(scenario) -> None:
@@ -173,7 +192,7 @@ def test_a_disabled_user_sees_no_tools_and_may_call_none(scenario) -> None:
     """
     sign_in, authorization = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,), grants=(TOOL_WHM_LIST_SERVERS,))
-    assert session.tool_names() == [TOOL_WHM_LIST_SERVERS]
+    assert sorted(session.tool_names()) == REGISTERED_TOOLS
 
     for user in authorization.users.values():
         user.is_active = False
@@ -189,13 +208,13 @@ def test_an_admin_sees_every_registered_tool(scenario) -> None:
     """V10: `admin` skips the grant table.
 
     The list is the *intersection* of the catalog and what is registered, which is why this
-    asserts against the registered set rather than against `TOOL_CATALOG` — the other
-    thirteen names are catalogued but have no implementation yet (T20-T31, T63).
+    asserts against the registered set rather than against `TOOL_CATALOG` — the remaining
+    catalogued names have no implementation yet (T20, T22-T31, T63).
     """
     sign_in, _ = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,))
 
-    assert session.tool_names() == [TOOL_WHM_LIST_SERVERS]
+    assert sorted(session.tool_names()) == REGISTERED_TOOLS
 
 
 @pytest.mark.parametrize("tool_name", [UNREGISTERED_TOOL, UNKNOWN_TOOL])

@@ -24,7 +24,7 @@ it without a transaction to resolve.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, Protocol
+from typing import Any, Protocol, TypeVar
 from uuid import UUID
 
 from sqlalchemy import select
@@ -53,16 +53,34 @@ class WHMServerRowLike(Protocol):
     def to_safe_dict(self) -> dict[str, Any]: ...
 
 
-class WHMServerReadRepository(Protocol):
-    """What T19's callers need from WHM inventory."""
+# Covariant because both methods return rows and neither accepts one: a repository of
+# `WHMServer` is usable wherever a repository of anything `WHMServerRowLike` is wanted.
+RowT_co = TypeVar("RowT_co", bound=WHMServerRowLike, covariant=True)
 
-    async def list_servers(self) -> Sequence[WHMServerRowLike]: ...
 
-    async def get_by_id(self, server_id: UUID) -> WHMServerRowLike | None: ...
+class WHMServerReadRepository(Protocol[RowT_co]):
+    """What T19's callers need from WHM inventory, parametrised by the row it yields.
+
+    **Generic, and that is what keeps `WHMServerRowLike` narrow** (T21). Reference resolution
+    matches on identity and never touches a credential, so it is written against the narrow
+    view. But a tool that resolves a server then *calls* it needs the credentials off the row
+    it resolved — the row, specifically, and not a second read by id, which could disagree
+    with the list a tie was judged against (`whm_ref`).
+
+    The parameter is how both hold at once: `resolve_whm_server_ref` hands back the row type
+    the repository yields, so the app wiring can declare `WHMServerReadRepository[WHMServer]`
+    and reach the credentials without a cast, while `core/`'s resolution logic still only sees
+    id, name and `base_url`. Widening `WHMServerRowLike` instead would let a resolver double
+    be handed to something that decrypts.
+    """
+
+    async def list_servers(self) -> Sequence[RowT_co]: ...
+
+    async def get_by_id(self, server_id: UUID) -> RowT_co | None: ...
 
 
 class SQLWHMServerRepository:
-    """`WHMServerReadRepository` over one `AsyncSession`."""
+    """`WHMServerReadRepository[WHMServer]` over one `AsyncSession`."""
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session

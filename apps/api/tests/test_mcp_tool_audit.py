@@ -51,13 +51,18 @@ from noa_api.mcp_audit import (
     result_summary,
     status_for_payload,
 )
-from noa_api.mcp_tools.whm_read import TOOL_WHM_LIST_SERVERS, whm_list_servers
+from noa_api.mcp_tools.whm_read import (
+    TOOL_WHM_LIST_SERVERS,
+    TOOL_WHM_SEARCH_ACCOUNTS,
+    whm_list_servers,
+)
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
 from support.mcp_mount import McpSession, mounted_app, open_session
 from support.rbac import ROLE_SUPPORT, FakeAuthorizationRepository
 from support.servers import SECRETS, build_tool_context, whm_server
 from support.tool_runs import FakeToolRunRepository
+from support.whm_api import whm_account, whm_api_listing
 
 SCRATCH_DB = "noa_tool_run_writer_test"
 
@@ -322,6 +327,48 @@ def test_an_unregistered_name_writes_no_row(scenario) -> None:
     session.call_tool(UNREGISTERED_TOOL)
 
     assert runs.runs == []
+
+
+def test_the_second_read_tool_is_audited_with_its_arguments(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V45, V83b: the row comes from the gate, so a *new* tool inherits it (T21).
+
+    Every other test here drives `whm_list_servers`, the tool that shipped beside the
+    middleware — which cannot distinguish "audits every READ" from "audits that one". This
+    calls `whm_search_accounts` instead, over the same mount, and asserts the row and the
+    recorded arguments. Its own fixture because it needs a decryptable API token and a WHM
+    endpoint, neither of which the shared `scenario` has.
+    """
+    identities = FakeMcpIdentityRepository()
+    authorization = FakeAuthorizationRepository()
+    runs = FakeToolRunRepository()
+    cipher = build_tool_context().cipher
+    endpoint = whm_api_listing([whm_account("acme")])
+    tools = build_tool_context(
+        servers=[whm_server("alpha", api_token=cipher.encrypt_text("whm-token"))],
+        authorization=authorization,
+        tool_runs=runs,
+        cipher=cipher,
+        whm_transport=endpoint.transport,
+    )
+
+    with mounted_app(monkeypatch, repository=identities, tool_context=tools.context) as fixture:
+        user = authorization.add_user("operator@example.com", roles=(ROLE_SUPPORT,))
+        authorization.grant(ROLE_SUPPORT, TOOL_WHM_SEARCH_ACCOUNTS)
+        plaintext, _ = identities.add_token(user_id=user.id, librechat_user_id=LIBRECHAT_USER)
+        session = open_session(fixture.client, plaintext)
+
+        result = session.call_tool(
+            TOOL_WHM_SEARCH_ACCOUNTS, {"server_ref": "alpha", "query": "acme", "limit": 5}
+        )
+
+    assert result["structuredContent"]["ok"] is True
+    run = runs.only
+    assert run.tool_name == TOOL_WHM_SEARCH_ACCOUNTS
+    assert run.risk is ToolRisk.READ
+    assert run.status is ToolRunStatus.COMPLETED
+    assert run.args == {"server_ref": "alpha", "query": "acme", "limit": 5}
 
 
 async def test_a_change_tool_writes_no_row_here() -> None:

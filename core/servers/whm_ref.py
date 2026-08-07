@@ -24,20 +24,25 @@ Both fallbacks compare case-insensitively, which is what makes the name tie *rea
 `Node1` and `node1` can both exist and both match `NODE1`. Dropping the ambiguity branch
 because "the column is unique" would be wrong for exactly that case.
 
-`server` is typed as `WHMServerRowLike` — id, name, `base_url`, the three fields matched on.
-The tools in T20-T26 need the credentials off the resolved row as well; the move then is to
-widen `WHMServerRowLike` (or hand the row to `resolve_whm_ssh_config`, whose
-`WHMServerSecretLike` the production row already satisfies), **not** to re-read the row by
-id — a second query can disagree with the list the tie was judged against.
+**The resolved row keeps its own type** (T21). Matching only ever reads id, name and
+`base_url` — the `WHMServerRowLike` bound — but the tools of T20-T26 need the credentials off
+the row that was resolved, and re-reading it by id would let a second query disagree with the
+list the tie was judged against. So `resolve_whm_server_ref` is generic in the row: hand it a
+`WHMServerReadRepository[WHMServer]` and `resolution.server` is a `WHMServer`, credentials
+included, with no cast and without widening the narrow view this module works against.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Generic, TypeVar
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from core.servers.whm_repository import WHMServerReadRepository, WHMServerRowLike
+
+# Invariant: `WHMServerRefResolution` both holds a row and is constructed with one.
+RowT = TypeVar("RowT", bound=WHMServerRowLike)
 
 # How many candidates a refusal carries. Verbatim from `noa-old`: enough to recognise the
 # one you meant, few enough that a tie between forty servers does not paste forty rows into
@@ -52,7 +57,7 @@ MESSAGE_REQUIRED = "WHM server reference is required"
 
 
 @dataclass(frozen=True)
-class WHMServerRefResolution:
+class WHMServerRefResolution(Generic[RowT]):
     """The answer to "which server did they mean?".
 
     `ok` is the only field a caller has to branch on. On success `server` is set; on failure
@@ -63,7 +68,7 @@ class WHMServerRefResolution:
     """
 
     ok: bool
-    server: WHMServerRowLike | None = None
+    server: RowT | None = None
     error_code: str | None = None
     message: str = ""
     choices: list[dict[str, str]] = field(default_factory=list)
@@ -90,8 +95,8 @@ def hostname_of(base_url: str) -> str | None:
 
 
 async def resolve_whm_server_ref(
-    server_ref: str, *, repository: WHMServerReadRepository
-) -> WHMServerRefResolution:
+    server_ref: str, *, repository: WHMServerReadRepository[RowT]
+) -> WHMServerRefResolution[RowT]:
     """Resolve `server_ref` to one WHM server, or refuse with a named code (V18, V21).
 
     Never raises for a bad reference: every outcome is a `WHMServerRefResolution` the tool
@@ -139,8 +144,8 @@ async def resolve_whm_server_ref(
 
 
 async def _resolve_by_id(
-    reference: str, *, repository: WHMServerReadRepository
-) -> WHMServerRefResolution | None:
+    reference: str, *, repository: WHMServerReadRepository[RowT]
+) -> WHMServerRefResolution[RowT] | None:
     """The UUID branch, or `None` when `reference` is not a UUID at all.
 
     A well-formed id that matches nothing is `host_not_found` and stops there — it does not
@@ -163,9 +168,7 @@ async def _resolve_by_id(
     return WHMServerRefResolution(ok=True, server=server)
 
 
-def _resolve_matches(
-    matches: list[WHMServerRowLike], *, message: str
-) -> WHMServerRefResolution | None:
+def _resolve_matches(matches: list[RowT], *, message: str) -> WHMServerRefResolution[RowT] | None:
     """One match wins, several tie, none falls through to the next pass."""
     if not matches:
         return None

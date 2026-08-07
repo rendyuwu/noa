@@ -18,6 +18,12 @@ inside `verify_token`, and knows nothing about tools; this is read per tool call
 `tools/list`. Merging them would put the tool repositories behind the auth path, where a
 bug in either becomes a 401.
 
+The cipher (T21) is the one field that is neither a session nor a repository, and it is here
+for the same reason the rest is: `SecretCipher` needs `Settings`, `noa_api.main.build_runtime`
+is the single `get_settings()` caller, and a tool reaching for its own would be a second copy
+of the world (C7, T15). It arrives already constructed, so a bad `NOA_SECRET_ENCRYPTION_KEY`
+stops startup rather than surfacing as a failed tool call.
+
 Session lifetime is per operation, not per request: each tool, each RBAC check and each of
 the two `tool_runs` writes (T73) opens one, uses it, closes it. The audit writes are the
 only ones that commit, and they commit *separately* on purpose — see `core.audit.tool_runs`.
@@ -37,6 +43,9 @@ from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.auth.authorization_repository import SQLAuthorizationRepository
 from core.auth.authorization_service import AuthorizationService
 from core.auth.authorization_types import AuthorizationRepository
+from core.db.models import WHMServer
+from core.integrations.whm.ssh import WHMClientFactory, build_whm_client
+from core.secrets.crypto import SecretCipher
 from core.servers.whm_repository import SQLWHMServerRepository, WHMServerReadRepository
 from noa_api.mcp_request_auth import McpSessionFactory
 
@@ -46,22 +55,37 @@ class McpToolContext:
     """Everything the MCP tool path needs, built once at startup."""
 
     session_factory: McpSessionFactory
+    # One cipher per app, held rather than built per call: `Fernet` is stateless after
+    # construction, and a per-call build would re-validate the key on every tool call and
+    # turn a misconfigured key into an intermittent tool failure instead of a boot failure
+    # (T15 — settings are injected here, there is no cipher singleton to reach for).
+    secret_cipher: SecretCipher
     authorization_repository_factory: Callable[[AsyncSession], AuthorizationRepository] = (
         SQLAuthorizationRepository
     )
-    whm_server_repository_factory: Callable[[AsyncSession], WHMServerReadRepository] = (
+    # Typed to the concrete row, not to `WHMServerRowLike`: a tool that resolves a server then
+    # calls it needs the credentials off *that* row, and the repository Protocol is generic
+    # precisely so this can say so without widening the narrow view `core.servers.whm_ref`
+    # matches against (T21).
+    whm_server_repository_factory: Callable[[AsyncSession], WHMServerReadRepository[WHMServer]] = (
         SQLWHMServerRepository
     )
     tool_run_repository_factory: Callable[[AsyncSession], ToolRunRepository] = SQLToolRunRepository
+    # The WHM API seam. Production builds a real client over a real socket; a tool test swaps
+    # in the same factory with an `httpx` transport, so the client, the cipher and the one
+    # decrypt site all stay in the path and only the socket is doubled.
+    whm_client_factory: WHMClientFactory = build_whm_client
     # A sink, even though the read path records nothing: `AuthorizationService` takes one,
     # and handing it a working sink rather than a stub means the day a tool records an event
     # it goes somewhere real instead of into a placeholder nobody re-checked.
     audit_sink: AdminAuditSink = field(default_factory=StructlogAdminAuditSink)
 
 
-def build_mcp_tool_context(*, session_factory: McpSessionFactory) -> McpToolContext:
+def build_mcp_tool_context(
+    *, session_factory: McpSessionFactory, secret_cipher: SecretCipher
+) -> McpToolContext:
     """Production wiring (T13's `create_app` calls this beside `build_mcp_auth_context`)."""
-    return McpToolContext(session_factory=session_factory)
+    return McpToolContext(session_factory=session_factory, secret_cipher=secret_cipher)
 
 
 def build_authorization_service(

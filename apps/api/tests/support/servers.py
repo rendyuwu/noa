@@ -27,12 +27,17 @@ from datetime import UTC, datetime
 from typing import cast
 from uuid import UUID, uuid4
 
+import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db.models import WHMServer
+from core.integrations.whm.client import WHMClient
+from core.integrations.whm.ssh import WHMServerSecretLike, build_whm_client
+from core.secrets.crypto import SecretCipher
 from noa_api.mcp_tools.context import McpToolContext
 from support.mcp_identity import StubSession
 from support.rbac import FakeAuthorizationRepository, RecordingAuditSink
+from support.secrets import build_cipher
 from support.tool_runs import FakeToolRunRepository
 
 # Fixed, so `to_safe_dict` output is comparable across runs.
@@ -56,13 +61,20 @@ def whm_server(
     base_url: str | None = None,
     server_id: UUID | None = None,
     ssh_username: str | None = "noa",
+    api_token: str = API_TOKEN,
 ) -> WHMServer:
-    """One `whm_servers` row, credentials included, ready to read."""
+    """One `whm_servers` row, credentials included, ready to read.
+
+    `api_token` is overridable because the default is ciphertext-*shaped* rather than real
+    ciphertext: it exists to be asserted absent from a result, and it does not decrypt. A test
+    that actually calls WHM passes `cipher.encrypt_text(...)` so the real decrypt site runs
+    (T21) — see `build_tool_context`.
+    """
     server = WHMServer(
         name=name,
         base_url=base_url or f"https://{name}.example.net:2087",
         api_username="root",
-        api_token=API_TOKEN,
+        api_token=api_token,
         verify_ssl=True,
         ssh_username=ssh_username,
         ssh_port=22,
@@ -109,6 +121,7 @@ class ToolFixture:
     authorization: FakeAuthorizationRepository
     audit: RecordingAuditSink
     tool_runs: FakeToolRunRepository
+    cipher: SecretCipher
 
 
 def build_tool_context(
@@ -116,6 +129,8 @@ def build_tool_context(
     servers: Iterable[WHMServer] = (),
     authorization: FakeAuthorizationRepository | None = None,
     tool_runs: FakeToolRunRepository | None = None,
+    cipher: SecretCipher | None = None,
+    whm_transport: httpx.AsyncBaseTransport | None = None,
 ) -> ToolFixture:
     """A production `McpToolContext` whose repositories are in-memory.
 
@@ -128,28 +143,41 @@ def build_tool_context(
     cannot record, so without a working writer in the shared fixture the RBAC tests would
     start failing for an unrelated reason — and a fixture that quietly disabled the audit
     path would let the whole suite pass with V45 unheld.
+
+    `cipher` and `whm_transport` are T21's two seams, and neither replaces production code.
+    The cipher is a real `SecretCipher` on a throwaway key, so a tool that decrypts an API
+    token runs the real decrypt (pass the same instance a row's `api_token` was encrypted
+    with). `whm_transport` reaches `build_whm_client` — the production factory — so the real
+    `WHMClient` and the real cipher stay in the path and only the socket is doubled.
     """
     server_repository = FakeWHMServerRepository(servers)
     authorization_repository = authorization or FakeAuthorizationRepository()
     tool_run_repository = tool_runs or FakeToolRunRepository()
     audit = RecordingAuditSink()
+    resolved_cipher = cipher or build_cipher()
 
     @asynccontextmanager
     async def session_factory() -> AsyncIterator[AsyncSession]:
         yield cast("AsyncSession", StubSession())
 
+    def whm_client_factory(server: WHMServerSecretLike, *, cipher: SecretCipher) -> WHMClient:
+        return build_whm_client(server, cipher=cipher, transport=whm_transport)
+
     return ToolFixture(
         context=McpToolContext(
             session_factory=session_factory,
+            secret_cipher=resolved_cipher,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
             tool_run_repository_factory=lambda _session: tool_run_repository,
+            whm_client_factory=whm_client_factory,
             audit_sink=audit,
         ),
         servers=server_repository,
         authorization=authorization_repository,
         audit=audit,
         tool_runs=tool_run_repository,
+        cipher=resolved_cipher,
     )
 
 
