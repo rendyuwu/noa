@@ -25,7 +25,8 @@ tools and tests branch on them.
 **Credentials.** `WHMClient` takes a plaintext token; `build_whm_client_from_creds` is the one
 place ciphertext becomes plaintext. `noa-old` reached for a module-level `maybe_decrypt_text`
 there; T15 deleted that wrapper along with the settings singleton it hid, so the `SecretCipher`
-arrives as an argument (T16 deviation (b)) and T54 builds the single instance on `AppRuntime`.
+arrives as an argument (T16 deviation (b)) and `build_runtime` builds the single instance on
+`AppRuntime` (T21).
 
 **A client per call, deliberately.** `httpx.AsyncClient` is opened and closed inside each
 request rather than held on the instance. Verbatim from `noa-old`: `verify_ssl` is per-server

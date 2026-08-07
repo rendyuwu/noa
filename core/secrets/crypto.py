@@ -27,7 +27,9 @@ Settings are injected, not imported. `noa-old` reached for a module-global `sett
 their constructor (`LDAPService`, `JWTService`) and `noa_api.main.build_runtime` is the one
 caller of `get_settings()`. So the classmethod takes the argument, and `noa-old`'s
 `@lru_cache get_secret_cipher()` plus its module-level `encrypt_text`/`decrypt_text` wrappers
-are gone: they existed only to hide that global. T54 builds one cipher on `AppRuntime`.
+are gone: they existed only to hide that global. `noa_api.main.build_runtime` builds the one
+cipher on `AppRuntime` (T21 — the tool path needed it before T54's admin routes did), and every
+decrypt site takes it as an argument.
 """
 
 from __future__ import annotations

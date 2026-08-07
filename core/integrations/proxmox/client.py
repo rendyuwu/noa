@@ -555,8 +555,9 @@ def build_proxmox_client_from_creds(
 
     T17 deviation (b): `noa-old` decrypted in three places — the admin validate service, the
     tool-layer `client_for_server`, and the postflight helper — each reaching for a module-level
-    `maybe_decrypt_text` that T15 deleted along with the settings singleton behind it. T54
-    builds the one `SecretCipher` on `AppRuntime` and it arrives here as an argument.
+    `maybe_decrypt_text` that T15 deleted along with the settings singleton behind it.
+    `noa_api.main.build_runtime` builds the one `SecretCipher` on `AppRuntime` (T21) and it
+    arrives here as an argument.
 
     `transport` is a test seam — `httpx.MockTransport` in `test_proxmox_client.py`.
     """
