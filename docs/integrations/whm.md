@@ -18,7 +18,8 @@ WHM splits its surface, so the layer does too:
 There is no WHM API for CSF or Imunify. That is why a WHM server row carries **both** an API
 token and SSH credentials, and why the firewall path inherits every guard in
 `core/remote_exec/` (§T.14): banner stripping (§V.56), `sudo -n` escalation (§V.55), host-key
-pinning with TOFU refresh (§V.69).
+pinning with TOFU refresh (§V.82 — the pin was inert as ported, see §B.2; §V.69 no longer claims
+it).
 
 ## Connection base
 

@@ -110,5 +110,11 @@ Per web app: `pnpm lint`, `pnpm typecheck`, `pnpm test`.
 
 `noa-old` is a pattern source, not a fork base. Port from branch `MCP` — `core/secrets/yopass.py`,
 `core/secrets/password.py`, and the yopass doc exist only there. Mature integration layers (WHM,
-Proxmox, PMG, `remote_exec`, `secrets`) get copied rather than rewritten; SSH banner stripping,
-`sudo -n` escalation, host-key pinning, and TOFU refresh are already hardened in them (C13, V69).
+Proxmox, PMG, `remote_exec`, `secrets`) get copied rather than rewritten; SSH banner stripping and
+`sudo -n` escalation are already hardened in them (C13, V69).
+
+Host-key pinning and TOFU refresh are **not**, despite what this section used to say. Upstream
+passes `known_hosts=None`, which is asyncssh's documented off switch, so the port inherited a pin
+that accepted any host key until it was fixed here (§B.2, §V.82). Upstream provenance is not
+evidence that a control works: a ported security control needs a test against the real mechanism
+before any doc calls it hardened.

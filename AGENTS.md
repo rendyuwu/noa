@@ -94,7 +94,10 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
 `core/secrets/yopass.py`, `core/secrets/password.py`, `docs/integrations/yopass.md` exist ONLY on
 `MCP`/`main`. Read `git show MCP:<path>`.
 Copy mature integration layers (WHM/Proxmox/PMG, `remote_exec`, `secrets`) — ⊥ rewrite. Banner
-stripping, `sudo -n`, host-key pinning, TOFU refresh already hardened there. (C13, V69)
+stripping ∧ `sudo -n` hardened there. **Host-key pinning ∧ TOFU refresh were ⊥** — upstream
+`known_hosts=None` = asyncssh's off switch, port inherited a dead pin, fixed here (B2, V82).
+Upstream provenance ⊥ evidence a control works: ported security control ! land with a test vs the
+real mechanism before any §V ∨ doc calls it hardened. (C13, V69, V82, V84)
 
 ## Docs map
 

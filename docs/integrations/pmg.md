@@ -21,7 +21,8 @@ That is the opposite of WHM (two transports) and of Proxmox (HTTP only), and it 
 dropped both at §T.4.
 
 The whole path inherits every guard in `core/remote_exec/` (§T.14): banner stripping (§V.56),
-`sudo -n` escalation (§V.55), host-key pinning with TOFU refresh (§V.69).
+`sudo -n` escalation (§V.55), host-key pinning with TOFU refresh (§V.82 — the pin was inert as
+ported, see §B.2; §V.69 no longer claims it).
 
 ## Connection base
 
