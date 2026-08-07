@@ -47,6 +47,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.integrations.whm.csf_cli import CSF_BINARY
+from core.integrations.whm.firewall_gate import ERROR_NO_FIREWALL_BACKEND
 from core.integrations.whm.imunify_cli import IMUNIFY_BINARY
 from core.remote_exec.types import CommandResult
 from noa_api.mcp_server import build_mcp_server
@@ -59,7 +60,6 @@ from noa_api.mcp_tools.results import (
 from noa_api.mcp_tools.whm_firewall import (
     ERROR_INVALID_RESPONSE,
     ERROR_INVALID_TARGET,
-    ERROR_NO_FIREWALL_BACKEND,
     ERROR_TARGET_REQUIRED,
     TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
     VERDICT_ALLOWLISTED,
@@ -183,6 +183,12 @@ async def test_both_backend_queries_are_in_flight_at_once(monkeypatch) -> None: 
 
 
 # --- V57: zero backends is an error, never an empty success ---
+#
+# The tool holds no copy of this check as of §T.68: it is `firewall_gate.run_on_usable_backends`'
+# refusal, raised where the backend set becomes work and travelling back through
+# `sanitize_tool_errors` (§V.19). These two cases are therefore also what proves the guard is no
+# longer per-tool — they pass with nothing about availability written in this tool at all, which
+# is what T25/T26 inherit. `test_whm_firewall_gate.py` asserts the gate itself.
 
 
 async def test_zero_usable_backends_is_an_error_not_an_empty_success(monkeypatch) -> None:  # type: ignore[no-untyped-def]

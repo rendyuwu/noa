@@ -7,11 +7,11 @@ symmetric with a one-directional import graph (`availability` → the two CLI mo
 back).
 
 **This is what V57 is built on.** Every firewall tool asks this first and then acts on whatever
-came back true, both backends in parallel. The invariant the tools carry — zero backends
-available → error `no_firewall_backend`, ⊥ a success that changed nothing — is enforced at the
-tool layer (T24 for the preflight READ; T25/T26 and T68 for the CHANGE side, where a silent
-no-op is the actual harm); what this module owes them is an *honest* answer, because a
-false-positive here becomes exactly the silent no-op V57 forbids.
+came back true, both backends in parallel. The invariant — zero backends available → error
+`no_firewall_backend`, ⊥ a success that changed nothing — is enforced one module over, in
+`firewall_gate.run_on_usable_backends`, which is the single door from this answer to acting on
+it (T68). What this module owes that door is an *honest* answer, because a false positive here
+becomes exactly the silent no-op V57 forbids, and no gate downstream can catch it.
 
 **Two probe strategies, chosen by the resolved SSH user.** This is the part that took an
 incident to get right (`noa-old` GH #82, V55):
@@ -54,6 +54,12 @@ from core.remote_exec.ssh import ssh_exec
 from core.remote_exec.sudo import is_sudo_rights_failure, requires_escalation
 from core.remote_exec.types import SSHConnectionConfig
 
+# The two backend names, in the order every merged result reads in. Here rather than in the
+# gate or a tool because `as_tools_dict` below is what spells them, and one home is the whole
+# point (V66); `firewall_gate` imports them, so the graph stays one-directional.
+BACKEND_CSF = "csf"
+BACKEND_IMUNIFY = "imunify"
+
 
 @dataclass(frozen=True, slots=True)
 class BinaryCheck:
@@ -79,7 +85,7 @@ class FirewallAvailability:
 
     def as_tools_dict(self) -> dict[str, bool]:
         """The `available["csf"]` / `available["imunify"]` shape the tools branch on (V57)."""
-        return {"csf": self.csf, "imunify": self.imunify}
+        return {BACKEND_CSF: self.csf, BACKEND_IMUNIFY: self.imunify}
 
 
 async def _check_binary(
@@ -150,6 +156,8 @@ async def check_firewall_binaries(config: SSHConnectionConfig) -> FirewallAvaila
 
 
 __all__ = [
+    "BACKEND_CSF",
+    "BACKEND_IMUNIFY",
     "BinaryCheck",
     "FirewallAvailability",
     "check_csf_binary",

@@ -130,10 +130,12 @@ from "not installed" — and telling an operator "no firewall tools on this serv
 truth is a missing sudoers line sends them hunting an install that is already there
 (`noa-old` GH #82).
 
-**Zero backends available is an error, not a success.** The tools answer `no_firewall_backend`
-rather than reporting a firewall state NOA could not read, or an approved CHANGE that changed
-nothing (§V.57; §T.24 for the preflight READ, §T.68 for the CHANGE side). This layer's job is
-only to answer honestly.
+**Zero backends available is an error, not a success.** The answer is `no_firewall_backend`
+rather than a firewall state NOA could not read, or an approved CHANGE that changed nothing
+(§V.57). The refusal is raised by `firewall_gate.require_usable_backends`, and every firewall
+operation reaches the backends through `firewall_gate.run_on_usable_backends` — one door, so a
+tool cannot forget the check and gather nothing (§T.68). `availability`'s job is only to answer
+honestly; a false positive here is a silent no-op no gate downstream can catch.
 
 ### Required sudoers entries
 
@@ -312,7 +314,7 @@ Three deliberate departures from `noa-old`'s version:
 | `limit_invalid` | `whm_search_accounts` | `limit` outside 1–100 (§T.21). |
 | `target_required` | `whm_preflight_firewall_entries` | Blank or whitespace-only target (§V.21). |
 | `invalid_target` | `whm_preflight_firewall_entries` | Not an IP, network or hostname (§V.54). |
-| `no_firewall_backend` | `whm_preflight_firewall_entries` | Neither backend could be run (§V.57). |
+| `no_firewall_backend` | `firewall_gate.require_usable_backends` | Neither backend could be run, on any firewall tool (§V.57, §T.68). |
 | `invalid_response` | `whm_preflight_firewall_entries` | `csf -g` exited 0 with nothing to read. |
 | `tool_not_permitted` | `RbacToolMiddleware` | Caller lacks the grant, or the name is not a registered tool (§V.1, §V.10). |
 | `tool_execution_failed` | `sanitize_tool_errors` | Unmapped exception out of a tool (§V.19). |

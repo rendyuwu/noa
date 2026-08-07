@@ -1,9 +1,10 @@
 """Firewall backend availability probing (T16, V55, V57, V69).
 
-This is the module V57 stands on: every firewall tool asks "which backends work here?" and
-then acts on whatever came back true. A false positive becomes the silent no-op V57 forbids —
-a CHANGE that reports success having changed nothing — so the probe's honesty is the thing
-under test.
+This is the module V57 stands on: every firewall tool asks "which backends work here?" and then
+acts on whatever came back true, through the one gate that refuses an empty answer
+(`firewall_gate`, T68 — `test_whm_firewall_gate.py`). A false positive here is the one failure
+that gate cannot catch: it becomes the silent no-op V57 forbids, a CHANGE that reports success
+having changed nothing. So the probe's honesty is the thing under test.
 
 Four behaviours, each an assertion of its own:
 
@@ -219,8 +220,8 @@ async def test_a_transport_failure_yields_not_usable_rather_than_an_error(monkey
 
     Its counterpart is `test_availability_reports_each_backend_independently`: one dead backend
     is a fact about that backend. Here both hops die, and the honest answer is still a struct —
-    the tool turns it into `no_firewall_backend` (V57), which is a decision this layer does not
-    make.
+    `firewall_gate` turns it into `no_firewall_backend` (V57, T68), which is a decision this
+    layer does not make.
     """
 
     async def unreachable(config, *, command: str, **_):  # type: ignore[no-untyped-def]

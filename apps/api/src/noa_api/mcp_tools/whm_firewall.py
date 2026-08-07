@@ -7,9 +7,13 @@ actual working pattern — *check whether an IP is denied → release it → all
 decision it feeds is the operator's, not a gate's. They read the verdict and decide whether to
 call T25 at all.
 
-Both backends are asked, in parallel, and only the ones that are usable (V57). CSF answers in
-human-facing text and Imunify in JSON; `core.integrations.whm.csf` and `.imunify` turn each into
-a verdict, and this module is where the two become one answer.
+Both backends are asked, in parallel, and only the ones that are usable (V57) — through
+`core.integrations.whm.firewall_gate.run_on_usable_backends`, which is where zero usable
+backends becomes `no_firewall_backend` rather than a success that read nothing (T68). This tool
+holds no copy of that check: one lives at the door every firewall tool goes through, so T25/T26
+cannot ship without it. CSF answers in human-facing text and Imunify in JSON;
+`core.integrations.whm.csf` and `.imunify` turn each into a verdict, and this module is where the
+two become one answer.
 
 Three things the result does that `noa-old`'s did not:
 
@@ -40,8 +44,7 @@ row is the audit middleware's, beside the RBAC gate (V83b).
 
 from __future__ import annotations
 
-import asyncio
-from collections.abc import Awaitable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Annotated
 
@@ -50,16 +53,21 @@ from pydantic import Field
 
 from core.db.lifecycle import ToolRisk
 from core.errors import NoaError
-from core.integrations.whm.availability import FirewallAvailability, check_firewall_binaries
+from core.integrations.whm.availability import (
+    BACKEND_CSF,
+    BACKEND_IMUNIFY,
+    FirewallAvailability,
+    check_firewall_binaries,
+)
 from core.integrations.whm.csf import parse_csf_grep_output, parse_csf_target
 from core.integrations.whm.csf_cli import require_csf_success, run_csf_command
+from core.integrations.whm.firewall_gate import run_on_usable_backends
 from core.integrations.whm.imunify import (
     format_imunify_matches,
     parse_imunify_ip_list_response,
 )
 from core.integrations.whm.imunify_cli import parse_imunify_json_output, run_imunify_command
 from core.integrations.whm.ssh import resolve_whm_ssh_config
-from core.remote_exec.sudo import SSH_SUDO_REQUIRED_CODE
 from core.remote_exec.types import SSHConnectionConfig
 from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
@@ -67,9 +75,6 @@ from noa_api.mcp_tools.results import ToolPayload, sanitize_tool_errors, tool_fa
 from noa_api.mcp_tools.whm_read import ERROR_UNKNOWN
 
 TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES = "whm_preflight_firewall_entries"
-
-BACKEND_CSF = "csf"
-BACKEND_IMUNIFY = "imunify"
 
 # The combined answer. `unknown` is the honest one: no backend produced a verdict.
 VERDICT_BLOCKED = "blocked"
@@ -84,20 +89,11 @@ _ALLOWING_VERDICTS = frozenset({"allowlisted", "whitelisted"})
 
 ERROR_TARGET_REQUIRED = "target_required"
 ERROR_INVALID_TARGET = "invalid_target"
-# V57's name for it. `noa-old` said `no_firewall_tools`; the spec says this.
-ERROR_NO_FIREWALL_BACKEND = "no_firewall_backend"
 # Verbatim from `noa-old`: csf exited 0 with nothing to read.
 ERROR_INVALID_RESPONSE = "invalid_response"
 
 MESSAGE_TARGET_REQUIRED = "A firewall target is required."
 MESSAGE_INVALID_TARGET = "Target must be an IP address, a CIDR network, or a hostname."
-MESSAGE_NO_FIREWALL_BACKEND = (
-    "Neither CSF nor Imunify360 could be run on this server, so its firewall state is unknown."
-)
-MESSAGE_SUDO_REQUIRED = (
-    "The SSH user lacks passwordless sudo rights for csf and imunify360-agent. Grant NOPASSWD "
-    "sudo for those binaries, or configure a root SSH user."
-)
 MESSAGE_CSF_GREP_FAILED = "CSF did not return the firewall entries for this target."
 MESSAGE_CSF_EMPTY = "CSF returned an empty response for this target."
 
@@ -217,43 +213,25 @@ def combine_firewall_verdict(lookups: Sequence[BackendLookup]) -> str:
     return VERDICT_UNKNOWN
 
 
-def _availability_refusal(availability: FirewallAvailability) -> ToolPayload | None:
-    """The V57 gate: zero usable backends is an error, never an empty success.
-
-    Two codes because two remedies. A denied `sudo -n` means a sudoers line is missing on a
-    server that has the binaries; telling that operator "no firewall tools here" sends them
-    hunting an install that is already there (`noa-old` GH #82, V55).
-    """
-    available = availability.as_tools_dict()
-    if available[BACKEND_CSF] or available[BACKEND_IMUNIFY]:
-        return None
-    if availability.sudo_required:
-        return tool_failure(SSH_SUDO_REQUIRED_CODE, MESSAGE_SUDO_REQUIRED)
-    return tool_failure(ERROR_NO_FIREWALL_BACKEND, MESSAGE_NO_FIREWALL_BACKEND)
-
-
 async def gather_firewall_entries(
     config: SSHConnectionConfig,
     *,
     target: str,
     availability: FirewallAvailability,
 ) -> dict[str, BackendLookup]:
-    """Ask every usable backend at once (V57).
+    """Ask every usable backend at once, through the one door that refuses none (T68, V57).
 
-    `asyncio.gather` rather than sequential awaits, for the reason the availability probe
-    gathers: each query is a full SSH handshake to the same host while an operator waits on a
-    chat turn. Only usable backends are queried — asking a machine with no Imunify installed
-    produces a failure entry that says nothing.
+    The zero-backend refusal is `run_on_usable_backends`', not this function's: a check written
+    here is a check the next firewall tool can forget, and a CHANGE tool that forgets it reports
+    an approved change it never made (`noa-old`'s empty `gather()`). Only usable backends are
+    queried — asking a machine with no Imunify installed produces a failure entry that says
+    nothing.
     """
-    available = availability.as_tools_dict()
-    queries: list[tuple[str, Awaitable[BackendLookup]]] = []
-    if available[BACKEND_CSF]:
-        queries.append((BACKEND_CSF, csf_firewall_entries(config, target=target)))
-    if available[BACKEND_IMUNIFY]:
-        queries.append((BACKEND_IMUNIFY, imunify_firewall_entries(config, target=target)))
-
-    results = await asyncio.gather(*(query for _, query in queries))
-    return {name: result for (name, _), result in zip(queries, results, strict=True)}
+    return await run_on_usable_backends(
+        availability,
+        csf=lambda: csf_firewall_entries(config, target=target),
+        imunify=lambda: imunify_firewall_entries(config, target=target),
+    )
 
 
 @sanitize_tool_errors(TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES)
@@ -312,9 +290,6 @@ async def whm_preflight_firewall_entries(
         )
 
     availability = await check_firewall_binaries(config)
-    if refusal := _availability_refusal(availability):
-        return refusal
-
     lookups = await gather_firewall_entries(
         config, target=normalized_target, availability=availability
     )
@@ -395,16 +370,11 @@ def register_whm_firewall_tools(server: FastMCP, *, context: McpToolContext) -> 
 
 
 __all__: list[str] = [
-    "BACKEND_CSF",
-    "BACKEND_IMUNIFY",
     "DESCRIPTION_WHM_PREFLIGHT_FIREWALL_ENTRIES",
     "ERROR_INVALID_RESPONSE",
     "ERROR_INVALID_TARGET",
-    "ERROR_NO_FIREWALL_BACKEND",
     "ERROR_TARGET_REQUIRED",
     "MESSAGE_INVALID_TARGET",
-    "MESSAGE_NO_FIREWALL_BACKEND",
-    "MESSAGE_SUDO_REQUIRED",
     "MESSAGE_TARGET_REQUIRED",
     "TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES",
     "VERDICT_ALLOWLISTED",

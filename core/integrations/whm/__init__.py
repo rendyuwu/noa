@@ -22,6 +22,8 @@ Modules, one job each:
 - `imunify`      — pure parsing: `ip-list` responses.
 - `imunify_cli`  — build and run `imunify360-agent`, decode its `--json`.
 - `availability` — is each backend usable here? The `asyncio.gather` dual probe behind V57.
+- `firewall_gate` — the one door from that answer to acting on it: zero usable backends is
+                   `no_firewall_backend`, never an empty success (T68, V57).
 
 Nothing here reaches for global state. A `SecretCipher` is injected wherever credentials are
 decrypted (C7 — there is no settings singleton in this repo), and **the SSH side takes a
@@ -45,6 +47,8 @@ from core.integrations.whm.accounts import (
     normalize_whm_account_summary,
 )
 from core.integrations.whm.availability import (
+    BACKEND_CSF,
+    BACKEND_IMUNIFY,
     BinaryCheck,
     FirewallAvailability,
     check_csf_binary,
@@ -71,6 +75,14 @@ from core.integrations.whm.errors import (
     ImunifyCLIError,
     WHMFirewallCLIError,
 )
+from core.integrations.whm.firewall_gate import (
+    ERROR_NO_FIREWALL_BACKEND,
+    MESSAGE_NO_FIREWALL_BACKEND,
+    MESSAGE_SUDO_REQUIRED,
+    require_usable_backends,
+    run_on_usable_backends,
+    usable_backends,
+)
 from core.integrations.whm.imunify import (
     ImunifyIPEntry,
     ImunifyIPListResult,
@@ -95,8 +107,13 @@ from core.integrations.whm.ssh import (
 )
 
 __all__ = [
+    "BACKEND_CSF",
+    "BACKEND_IMUNIFY",
     "CSF_BINARY",
+    "ERROR_NO_FIREWALL_BACKEND",
     "IMUNIFY_BINARY",
+    "MESSAGE_NO_FIREWALL_BACKEND",
+    "MESSAGE_SUDO_REQUIRED",
     "BinaryCheck",
     "CSFCLIError",
     "CSFGrepParsed",
@@ -132,7 +149,10 @@ __all__ = [
     "parse_imunify_ip_list_response",
     "parse_imunify_json_output",
     "require_csf_success",
+    "require_usable_backends",
     "resolve_whm_ssh_config",
     "run_csf_command",
     "run_imunify_command",
+    "run_on_usable_backends",
+    "usable_backends",
 ]
