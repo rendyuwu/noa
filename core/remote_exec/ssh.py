@@ -1,17 +1,21 @@
-"""Pinned SSH execution (T14, V55, V56, V69).
+"""Pinned SSH execution (T14, V55, V56, V69, V82).
 
-Ported from `noa-old` branch `MCP` (`core/remote_exec/ssh.py`, C13/V69). Three deltas from
-the source, all noted at their line; everything else is the hardened original.
+Ported from `noa-old` branch `MCP` (`core/remote_exec/ssh.py`, C13/V69), plus the B2 fix that
+the source needed too: `known_hosts` is an empty trusted-key *list*, never `None`.
 
 Two connection paths, and the split is the whole security model:
 
-- `ssh_exec` — refuses to connect without a stored fingerprint (`ssh_host_key_not_validated`)
-  and compares the presented key against it with `hmac.compare_digest`. `known_hosts=None`
-  disables asyncssh's own file-based check *because* the pin replaces it; dropping the pin
-  without dropping that kwarg would trust any host that answers.
+- `ssh_exec` — refuses to connect without a stored fingerprint (`ssh_host_key_not_validated`),
+  then lets asyncssh's key exchange call `_PinnedHostKeySSHClient.validate_host_public_key`,
+  which compares the presented key against the pin with `hmac.compare_digest`. Rejection
+  happens mid-handshake and before user auth, so a host that fails the pin never receives the
+  decrypted password or key.
 - `ssh_get_host_fingerprint` — the deliberate exception: trust-on-first-use, used by the
   admin validate flow (T54) to capture or refresh the value an operator then stores. It runs
   no command, so an unpinned connection here reveals nothing to a host that lied.
+
+Both paths reach the callback through the same `known_hosts` value, so there is one place to
+get wrong and one place to test — see `_connection_kwargs` for why `None` is the wrong value.
 
 `sudo -n` composition lives in `core.remote_exec.sudo` (V55), not here: this module runs a
 command string, it does not decide what escalation that string needs.
@@ -44,6 +48,10 @@ _SIGNAL_KILLED_EXIT_CODE: Final[int] = -1
 
 class _PinnedHostKeySSHClient(asyncssh.SSHClient):
     """Accepts exactly one host key: the stored fingerprint.
+
+    asyncssh calls this during key exchange (`connection.py:1359-1367`) and turns a `False`
+    into `HostKeyNotVerifiable`, which `ssh_exec` maps to `ssh_host_key_mismatch`. It is only
+    reached when `known_hosts` is a list rather than `None` (V82).
 
     `hmac.compare_digest` rather than `==` — fingerprints are public, but a constant-time
     compare costs nothing and keeps the comparison out of timing-oracle arguments.
@@ -94,9 +102,15 @@ def _connection_kwargs(config: SSHConnectionConfig, *, timeout_seconds: float) -
         "username": config.username,
         "password": config.password,
         "client_keys": _client_keys(config),
-        # Pin replaces the known_hosts file (see module docstring) — never loosen this
-        # without also removing the fingerprint check below it.
-        "known_hosts": None,
+        # `([], [], [])` — an *empty* trusted-key set, not `None` (B2, V82). asyncssh treats
+        # `known_hosts=None` as "validation off": `_trusted_host_keys` becomes `None` and the
+        # whole comparison block, `validate_host_public_key` included, is skipped
+        # (`asyncssh/connection.py:3509-3511,1359-1367`). An empty *list* keeps the block live
+        # with nothing pre-trusted, so every presented key falls through to the owner callback
+        # during key exchange — before user auth, so a wrong key never sees the credential.
+        # Three empty lists = (trusted host keys, trusted CA keys, revoked keys); the tuple
+        # must stay non-empty or asyncssh falls back to `~/.ssh/known_hosts` (`:3510-3518`).
+        "known_hosts": ([], [], []),
         "connect_timeout": timeout_seconds,
     }
 

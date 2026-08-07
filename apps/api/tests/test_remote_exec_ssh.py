@@ -1,14 +1,22 @@
-"""Pinned SSH execution (T14, V56, V69, V73).
+"""Pinned SSH execution (T14, V56, V69, V73, V82).
 
-No host needed: `asyncssh.create_connection` is monkeypatched, and the fake calls the client
-factory's `validate_host_public_key` the way the real handshake does — so the host-key pin is
-exercised, not just the code around it.
+Two kinds of test here, and the split is deliberate (B2).
+
+Everything *around* the transport — banner stripping, timeouts, failure classification, error
+shape — runs against a monkeypatched `asyncssh.create_connection`. Those behaviours need no
+socket, and a fake keeps them fast.
+
+The pin itself does **not** use the fake. A double that calls `validate_host_public_key`
+itself proves only that the callback works when something calls it; B2 was precisely that
+nothing did. So the pin is exercised against a real `asyncssh.create_server` on loopback: the
+rejection has to come out of a real key exchange, and the server has to record that it was
+never asked to authenticate anyone (V82).
 
 What each group protects:
 
 - banner strip + raw retention — V56, and the parse failures behind `noa-old` GH #83.
 - the pin — `ssh_exec` refuses without a stored fingerprint *before* opening a socket, and a
-  mismatched key is its own error code rather than a generic connect failure (V69).
+  host presenting any other key is rejected in-handshake, pre-auth (V69, V82).
 - TOFU capture — the one unpinned path, which T54's validate endpoint depends on.
 - error shape — `SSHExecutionError` is a `NoaError` with a mapped status, so the shared
   handler answers 502 instead of the unclassified-auth 503 fallback (V73).
@@ -16,7 +24,9 @@ What each group protects:
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
+from contextlib import asynccontextmanager
+from dataclasses import dataclass, field
 from types import SimpleNamespace
 from typing import Any
 
@@ -240,32 +250,140 @@ async def test_ssh_exec_without_stored_fingerprint_never_connects(
     assert attempts == []
 
 
-async def test_ssh_exec_rejects_host_presenting_a_different_key(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    connection = _FakeConnection(stdout="should never be read")
-    captured = _install_connection(
-        monkeypatch, connection, presented_fingerprint=_OTHER_FINGERPRINT
+# --- V82: the pin runs inside a real handshake (B2) ---
+#
+# `known_hosts=None` is the one value that silently switches host-key validation off — asyncssh
+# sets `_trusted_host_keys = None` and skips the block that would call the callback. These tests
+# stand on a real server precisely because a fake handshake cannot tell the two apart.
+
+
+@dataclass
+class _RecordingSSHServer(asyncssh.SSHServer):
+    """A loopback server that remembers whether a client ever got as far as authenticating."""
+
+    auth_attempts: list[str] = field(default_factory=list)
+
+    def begin_auth(self, username: str) -> bool:
+        self.auth_attempts.append(username)
+        return True
+
+    def password_auth_supported(self) -> bool:
+        return True
+
+    def validate_password(self, username: str, password: str) -> bool:
+        self.auth_attempts.append(f"{username}:{password}")
+        return True
+
+
+@dataclass
+class _LoopbackSSH:
+    port: int
+    host_key_fingerprint: str
+    auth_attempts: list[str]
+
+
+@asynccontextmanager
+async def _loopback_ssh_server(*, stdout: str = "live-output") -> AsyncIterator[_LoopbackSSH]:
+    """A real SSH server on 127.0.0.1 with a throwaway host key.
+
+    Ed25519 keygen and a loopback socket, so this costs milliseconds. Everything the pin
+    claims — rejection during key exchange, before auth — is only observable here.
+    """
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    attempts: list[str] = []
+
+    def _server_factory() -> _RecordingSSHServer:
+        server = _RecordingSSHServer(auth_attempts=attempts)
+        return server
+
+    def _process_factory(process: Any) -> None:
+        process.stdout.write(stdout)
+        process.exit(0)
+
+    server = await asyncssh.create_server(
+        _server_factory,
+        "127.0.0.1",
+        0,
+        server_host_keys=[host_key],
+        process_factory=_process_factory,
+    )
+    try:
+        yield _LoopbackSSH(
+            port=server.sockets[0].getsockname()[1],
+            host_key_fingerprint=host_key.get_fingerprint("sha256"),
+            auth_attempts=attempts,
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+def _live_config(server: _LoopbackSSH, *, fingerprint: str | None) -> SSHConnectionConfig:
+    return SSHConnectionConfig(
+        host="127.0.0.1",
+        port=server.port,
+        username="noa-ops",
+        password=_SSH_PASSWORD,
+        host_key_fingerprint=fingerprint,
     )
 
-    with pytest.raises(SSHExecutionError) as excinfo:
-        await ssh_exec(_config(), command="csf -g 1.2.3.4")
 
-    assert excinfo.value.error_code == "ssh_host_key_mismatch"
-    assert captured["accepted"] is False
-    assert connection.commands == []
+async def test_wrong_host_key_is_rejected_by_a_real_handshake_before_auth() -> None:
+    """B2's regression test: a wrong pin must stop the connection, not merely be compared.
+
+    The auth-attempt assertion is the part that matters. A post-connect fingerprint check
+    would also raise `ssh_host_key_mismatch` — after the SSH password had already been handed
+    to whatever answered the socket. Rejection has to land in key exchange.
+    """
+    async with _loopback_ssh_server(stdout="attacker-controlled") as server:
+        with pytest.raises(SSHExecutionError) as excinfo:
+            await ssh_exec(
+                _live_config(server, fingerprint=_OTHER_FINGERPRINT),
+                command="csf -g 1.2.3.4",
+                timeout_seconds=10.0,
+            )
+
+        assert excinfo.value.error_code == "ssh_host_key_mismatch"
+        # Never authenticated ⇒ the credential never crossed the wire.
+        assert server.auth_attempts == []
 
 
-async def test_ssh_exec_disables_known_hosts_because_the_pin_replaces_it(
+async def test_matching_host_key_runs_the_command_over_a_real_handshake() -> None:
+    """The pin must not be so strict it rejects the host it was taken from."""
+    async with _loopback_ssh_server(stdout="csf: 1.2.3.4 not found\n") as server:
+        result = await ssh_exec(
+            _live_config(server, fingerprint=server.host_key_fingerprint),
+            command="csf -g 1.2.3.4",
+            timeout_seconds=10.0,
+        )
+
+    assert result.exit_code == 0
+    assert result.stdout.strip() == "csf: 1.2.3.4 not found"
+
+
+async def test_get_host_fingerprint_captures_the_key_a_real_server_presents() -> None:
+    """TOFU stays unpinned, and now reports the key the handshake actually validated."""
+    async with _loopback_ssh_server() as server:
+        fingerprint = await ssh_get_host_fingerprint(
+            _live_config(server, fingerprint=None), timeout_seconds=10.0
+        )
+
+    assert fingerprint == server.host_key_fingerprint
+
+
+async def test_ssh_exec_keeps_host_key_validation_switched_on(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """`known_hosts` must stay a list. `None` is the off switch, and it fails silently."""
     connection = _FakeConnection(stdout="ok")
     captured = _install_connection(monkeypatch, connection)
 
     await ssh_exec(_config(username="noa-ops"), command="csf -v", timeout_seconds=7.5)
 
     kwargs = captured["kwargs"]
-    assert kwargs["known_hosts"] is None
+    assert kwargs["known_hosts"] is not None
+    # Empty trusted/CA/revoked lists: nothing pre-trusted, so every key reaches the callback.
+    assert kwargs["known_hosts"] == ([], [], [])
     assert kwargs["connect_timeout"] == 7.5
     assert kwargs["username"] == "noa-ops"
 
