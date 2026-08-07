@@ -18,12 +18,18 @@ Two split responsibilities, both deliberate:
   schema fastmcp derives comes from a signature with no context parameter in it.
 - `sanitize_tool_errors` wraps the function, not the registration. A caller that reaches
   the function some other way (a future internal call, C9/V17) gets the same V19 guarantee.
+
+Registration also declares the tool's `ToolRisk` (T73, V20). Nothing in this module records
+anything: the `tool_runs` row is written by `ToolRunAuditMiddleware` beside the RBAC gate
+(V83b), and the risk it stamps on that row comes from here, where the tool is defined,
+rather than from a list somewhere else that a new tool can be absent from.
 """
 
 from __future__ import annotations
 
 from fastmcp import FastMCP
 
+from core.db.lifecycle import ToolRisk
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import ToolPayload, sanitize_tool_errors, tool_ok
 
@@ -47,13 +53,13 @@ async def whm_list_servers(*, context: McpToolContext) -> ToolPayload:
         return tool_ok(servers=[server.to_safe_dict() for server in servers])
 
 
-def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> frozenset[str]:
-    """Register the WHM READ tools on `server`; return their names (I.mcp).
+def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
+    """Register the WHM READ tools on `server`; return each name with its risk (I.mcp, V20).
 
-    The returned set is what `registry.register_mcp_tools` checks against `TOOL_CATALOG`,
+    The returned keys are what `registry.register_mcp_tools` checks against `TOOL_CATALOG`,
     and what a test compares against the server's awaited `list_tools()` — see
     `noa_api.mcp_tools.registry` for why the names travel back rather than being read off
-    the server here.
+    the server here, and for why the risk travels with them.
     """
 
     @server.tool(
@@ -67,7 +73,7 @@ def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> froz
     async def whm_list_servers_tool() -> ToolPayload:
         return await whm_list_servers(context=context)
 
-    return frozenset({TOOL_WHM_LIST_SERVERS})
+    return {TOOL_WHM_LIST_SERVERS: ToolRisk.READ}
 
 
 __all__ = [

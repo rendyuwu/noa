@@ -249,7 +249,11 @@ lets the column be migrated in place.
 | MCP tools: list/search accounts, suspend/unsuspend, firewall preflight, release-and-allow, allowlist-remove | §T.20–§T.26 |
 | Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
 | Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
-| `tool_runs` row per MCP READ (§V.45) — the table does not exist yet, so tool calls are unaudited | §T.35 |
+
+Audit is no longer on that list: §V.45's `tool_runs` row is written for every MCP READ by
+`ToolRunAuditMiddleware`, beside the RBAC gate (§T.73, §V.83b), so each WHM READ tool below
+records requester, redacted arguments, a truncated result summary and timing — including
+when it fails.
 
 **Per-reseller API tokens are not ported.** cPanel API tokens enforce reseller *ownership*: a
 root-created token cannot mutate an account owned by another reseller, even with the

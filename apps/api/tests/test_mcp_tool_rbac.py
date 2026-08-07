@@ -22,6 +22,7 @@ from __future__ import annotations
 import pytest
 
 from core.auth.tool_catalog import TOOL_CATALOG
+from core.db.lifecycle import ToolRisk
 from core.db.models import ADMIN_ROLE_NAME
 from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
 from noa_api.mcp_server import build_mcp_server
@@ -228,7 +229,8 @@ async def test_the_registry_reports_exactly_what_it_registered() -> None:
     It validates the names each registrar *returns*, because fastmcp 3.4.5 exposes its
     registry only through an async accessor and `build_mcp_server` is synchronous. This is
     the test that makes that reporting trustworthy: a registrar that under-reported would
-    let an uncatalogued name through the check.
+    let an uncatalogued name through the check — and, since T73, would also leave that tool
+    unaudited, because the audit middleware is handed the same mapping.
     """
     context = build_tool_context().context
     server = build_mcp_server(tool_context=context)
@@ -236,7 +238,7 @@ async def test_the_registry_reports_exactly_what_it_registered() -> None:
     reported = register_mcp_tools(server, context=context)
     listed = {tool.name for tool in await server.list_tools(run_middleware=False)}
 
-    assert reported == listed
+    assert set(reported) == listed
 
 
 def test_every_registered_tool_name_is_in_the_catalog() -> None:
@@ -244,7 +246,21 @@ def test_every_registered_tool_name_is_in_the_catalog() -> None:
     context = build_tool_context().context
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
-    assert registered <= TOOL_CATALOG
+    assert set(registered) <= TOOL_CATALOG
+
+
+def test_every_registered_tool_declares_a_risk() -> None:
+    """V20, T73: `risk` on the audit row comes from registration, never from a default.
+
+    A registrar that returned a bare name would make the tool unclassifiable, and the audit
+    middleware's answer to "is this a READ?" would have to be a guess. Asserted over the
+    whole mapping so a tool added later inherits the requirement.
+    """
+    context = build_tool_context().context
+    registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
+
+    assert registered
+    assert all(isinstance(risk, ToolRisk) for risk in registered.values())
 
 
 def test_an_uncatalogued_name_fails_at_construction() -> None:

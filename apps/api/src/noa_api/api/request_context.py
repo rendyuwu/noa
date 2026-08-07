@@ -23,6 +23,12 @@ back out as a response header and into structured log output, so an unbounded or
 newline-carrying one is a log-forging surface at best. Inbound is still honoured — a proxy
 that mints ids (T60) is exactly the correlation V73 is for — but only when it looks like an
 id: bounded length, and characters that cover UUIDs, hex digests and W3C trace ids.
+
+That rule is not this header's alone, which is why `sanitize_header_label` is separate from
+`sanitize_request_id`: T73 reads `X-Noa-Conversation-Ref` and writes it into `tool_runs` and
+into log output, the same exposure under a different name and a different bound (V66). The
+two callers differ only in what they do with a rejection — an id is minted, a label goes
+`None` — and that choice stays with each caller rather than in here.
 """
 
 from __future__ import annotations
@@ -54,7 +60,7 @@ MAX_REQUEST_ID_LENGTH: Final = 200
 
 # Hex, dashes, dots, underscores and colons — UUIDs, digests, `traceparent`, and the
 # `service:id` forms proxies emit. Deliberately excludes whitespace and control characters.
-_REQUEST_ID_PATTERN: Final = re.compile(r"^[A-Za-z0-9._:-]+$")
+_HEADER_LABEL_PATTERN: Final = re.compile(r"^[A-Za-z0-9._:-]+$")
 
 _request_id: ContextVar[str | None] = ContextVar("noa_request_id", default=None)
 
@@ -73,21 +79,27 @@ def current_request_id() -> str | None:
     return _request_id.get()
 
 
-def sanitize_request_id(value: str | None) -> str | None:
-    """An inbound header value if it is usable as an id, else `None`.
+def sanitize_header_label(value: str | None, *, max_length: int) -> str | None:
+    """A client-supplied header value if it is usable as an identifier, else `None`.
 
-    See the module docstring: the value is echoed in a response header and written into log
-    output, so it is accepted only bounded and on an explicit character allowlist.
+    See the module docstring: any header NOA re-emits or writes into log output is a
+    log-forging surface, so it is accepted only bounded and on an explicit character
+    allowlist. Rejection is `None` here for every caller; what to do about it is theirs.
     """
     if value is None:
         return None
 
     candidate = value.strip()
-    if not candidate or len(candidate) > MAX_REQUEST_ID_LENGTH:
+    if not candidate or len(candidate) > max_length:
         return None
-    if not _REQUEST_ID_PATTERN.match(candidate):
+    if not _HEADER_LABEL_PATTERN.match(candidate):
         return None
     return candidate
+
+
+def sanitize_request_id(value: str | None) -> str | None:
+    """An inbound `x-request-id` if it is usable as an id, else `None` (V73)."""
+    return sanitize_header_label(value, max_length=MAX_REQUEST_ID_LENGTH)
 
 
 def request_id_for(scope: Scope) -> str:
@@ -157,5 +169,6 @@ __all__ = [
     "current_request_id",
     "new_request_id",
     "request_id_for",
+    "sanitize_header_label",
     "sanitize_request_id",
 ]

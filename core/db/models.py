@@ -231,10 +231,12 @@ class ToolRun(Base):
     `created_at` and `completed_at` are the timing pair. Duration is derived on read
     rather than stored, so the two can never disagree.
 
-    Nothing here writes the row yet — T73 wires the write into the tool path, beside the
-    RBAC gate so no individual tool can forget it (V83b). It is also T73 that redacts
-    `args` before they land (C7, V8); the column below only guarantees somewhere to put
-    the redacted form.
+    Nothing on the tool path reads this table, and nothing in a tool writes it:
+    `noa_api.mcp_audit.ToolRunAuditMiddleware` does, beside the RBAC gate, so no individual
+    tool can forget it (T73, V83b). It also redacts `args` before they land (C7, V8) — the
+    column below only guarantees somewhere to put the redacted form. READ rows are written
+    by that middleware; an approved CHANGE's row belongs to the post-approval executor
+    (T38, V46).
     """
 
     __tablename__ = "tool_runs"
@@ -262,10 +264,12 @@ class ToolRun(Base):
         index=True,
     )
     # Audit/grouping label only — never a security scope (DECISIONS §3.2, old V165).
-    # Nullable because MCP has no thread concept to guarantee one (C16 dropped threads).
+    # Nullable because MCP has no thread concept to guarantee one (C16 dropped threads):
+    # LibreChat sends no conversation id in the call, so it arrives as an optional header
+    # (`noa_api.mcp_audit`, T73) that T57 fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`.
     conversation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
-    # Redacted by the writer (T73). `'{}'` rather than NULL so "no arguments" and
-    # "arguments not recorded" cannot be confused in an audit view.
+    # Redacted by the writer (`noa_api.mcp_audit`, T73). `'{}'` rather than NULL so "no
+    # arguments" and "arguments not recorded" cannot be confused in an audit view.
     args: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )

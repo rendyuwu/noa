@@ -45,6 +45,7 @@ from fastmcp.server.auth import AuthProvider
 from fastmcp.server.http import StarletteWithLifespan
 from starlette.middleware import Middleware
 
+from noa_api.mcp_audit import ToolRunAuditMiddleware
 from noa_api.mcp_auth import NoaTokenVerifier
 from noa_api.mcp_rbac import RbacToolMiddleware
 from noa_api.mcp_request_auth import McpAuthContext, McpAuthErrorMiddleware
@@ -72,17 +73,27 @@ def build_mcp_server(*, tool_context: McpToolContext, auth: AuthProvider | None 
     requires every MCP request to resolve a user — but the default keeps a tool-registry
     test from having to construct a token verifier it will not use.
 
-    Three things happen here and all three belong together (T19):
+    Four things happen here and all four belong together (T19, T73):
 
     - **Tools are registered** (`register_mcp_tools`, T19-T31 and T63). That call is also
       the guard that every exposed name is in `TOOL_CATALOG`, so a name no role can be
-      granted fails at construction (V10, C22).
+      granted fails at construction (V10, C22), and it is where each tool's `ToolRisk` is
+      declared (V20).
     - **`RbacToolMiddleware` is attached** (V1), and it is handed the names that were just
       registered. Registering a tool and gating it are the same decision: a server that
       exposes a tool without the gate serves it to every authenticated operator regardless
       of role, and the failure is invisible — the tool works. The registered set travels
       with it so a catalogued-but-unbuilt name is refused in NOA's shape rather than
       fastmcp's (V10; see `noa_api.mcp_rbac`).
+    - **`ToolRunAuditMiddleware` is attached** (V45, V83b), for the same reason and with the
+      same argument: a tool cannot forget a middleware. **Order matters and is load-bearing.**
+      `FastMCP._run_middleware` composes over `reversed(self.middleware)`, so the first added
+      is the outermost — RBAC decides, then audit wraps the execution. Added the other way
+      round, a *registered* tool whose grant was revoked would still be classified as a READ,
+      so its denial would be written as a `tool_runs` row for a call that never ran. (An
+      unregistered name would not: it is absent from the risk map, so the audit middleware
+      passes it through either way. The order is pinned by
+      `test_a_call_refused_by_rbac_writes_no_row`, which is the case that can tell.)
     - **`mask_error_details=True`** (V19, second line). fastmcp's default is `False`, and
       its unmasked branch raises `ToolError(f"Error calling tool {name!r}: {e}")` — `str(e)`
       verbatim in front of the model. The first line is `sanitize_tool_errors` on each tool
@@ -91,7 +102,10 @@ def build_mcp_server(*, tool_context: McpToolContext, auth: AuthProvider | None 
     """
     server = FastMCP(SERVER_NAME, auth=auth, mask_error_details=True)
     registered = register_mcp_tools(server, context=tool_context)
-    server.add_middleware(RbacToolMiddleware(context=tool_context, registered_tools=registered))
+    server.add_middleware(
+        RbacToolMiddleware(context=tool_context, registered_tools=frozenset(registered))
+    )
+    server.add_middleware(ToolRunAuditMiddleware(context=tool_context, tool_risks=registered))
     return server
 
 

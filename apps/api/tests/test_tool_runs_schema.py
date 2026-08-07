@@ -9,9 +9,9 @@ Two levels, for two different claims:
   an FK's `ondelete` is a string until a real `DELETE` runs against it. Skipped (never
   failed) when Postgres is unreachable, like every other DB-backed test here.
 
-Nothing writes this table yet — T73 wires the write into the tool path. What is asserted
-here is that the shape V45-V47 ask for exists and holds, so T73 has somewhere correct to
-write and cannot quietly reshape it.
+This file is about the *shape*, not the writer. T73 wired the write into the tool path and
+`test_mcp_tool_audit.py` covers it end to end; what is asserted here is that the columns
+V45-V47 ask for exist and hold, so the writer cannot quietly reshape them.
 """
 
 from __future__ import annotations
@@ -127,8 +127,10 @@ def test_risk_and_status_are_separate_columns_so_a_failed_read_is_representable(
 def test_change_runs_are_representable() -> None:
     """V46: an approved CHANGE writes here too.
 
-    The receipt and audit-log halves of V46 are T36 and T73; this table only has to be
-    able to say that the run was a change.
+    The receipt half of V46 is T36, and the CHANGE row itself is written by the
+    post-approval executor (T38) rather than by T73's middleware, which records READs only —
+    a CHANGE tool's `tools/call` opens the approval gate and executes nothing (T33). This
+    table only has to be able to say that a run was a change.
     """
     run = ToolRun(
         tool_name="whm_suspend_account", risk=ToolRisk.CHANGE, status=ToolRunStatus.COMPLETED
@@ -199,7 +201,7 @@ def test_status_defaults_to_started() -> None:
 
 
 def test_args_default_to_an_empty_object_never_null() -> None:
-    """V45: args are recorded (redacted by T73).
+    """V45: args are recorded (redacted by the writer — `core.secrets.redaction`, T73).
 
     `'{}'` rather than NULL so an audit view cannot confuse "took no arguments" with
     "arguments were not recorded".
@@ -373,7 +375,8 @@ async def test_deleting_the_requester_keeps_the_run(session: AsyncSession) -> No
 
 
 async def test_args_hold_a_redacted_payload(session: AsyncSession) -> None:
-    """V45: JSONB round-trips the shape T73 will write (redaction is T73's, not the column's)."""
+    """V45: JSONB round-trips the shape T73 writes (redaction is the writer's, not the
+    column's)."""
     redacted = {"server_ref": "whm-1", "ssh_password": "[redacted]", "targets": ["1.2.3.4"]}
     session.add(
         ToolRun(
@@ -388,5 +391,6 @@ async def test_args_hold_a_redacted_payload(session: AsyncSession) -> None:
     stored = (await session.execute(sa.select(ToolRun))).scalar_one()
 
     # Nothing here redacts anything; the guarantee is only that there is a place for the
-    # redacted form, and that JSONB gives it back unchanged. T73 owns the redaction.
+    # redacted form, and that JSONB gives it back unchanged. `noa_api.mcp_audit` owns the
+    # redaction, and `test_secret_redaction.py` covers it.
     assert stored.args == redacted

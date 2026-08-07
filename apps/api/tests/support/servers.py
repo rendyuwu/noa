@@ -33,6 +33,7 @@ from core.db.models import WHMServer
 from noa_api.mcp_tools.context import McpToolContext
 from support.mcp_identity import StubSession
 from support.rbac import FakeAuthorizationRepository, RecordingAuditSink
+from support.tool_runs import FakeToolRunRepository
 
 # Fixed, so `to_safe_dict` output is comparable across runs.
 CREATED_AT = datetime(2026, 8, 6, 9, 0, tzinfo=UTC)
@@ -107,20 +108,30 @@ class ToolFixture:
     servers: FakeWHMServerRepository
     authorization: FakeAuthorizationRepository
     audit: RecordingAuditSink
+    tool_runs: FakeToolRunRepository
 
 
 def build_tool_context(
     *,
     servers: Iterable[WHMServer] = (),
     authorization: FakeAuthorizationRepository | None = None,
+    tool_runs: FakeToolRunRepository | None = None,
 ) -> ToolFixture:
     """A production `McpToolContext` whose repositories are in-memory.
 
-    The context, the RBAC engine and the tool functions are all production code; the session
-    is a stub both repositories ignore, which is what lets these tests run without Postgres.
+    The context, the RBAC engine, the audit middleware and the tool functions are all
+    production code; the session is a stub every repository ignores, which is what lets
+    these tests run without Postgres.
+
+    The `tool_runs` writer is a double here by default and in *every* test that mounts the
+    app, not only the audit ones (T73). That is deliberate: the middleware refuses a call it
+    cannot record, so without a working writer in the shared fixture the RBAC tests would
+    start failing for an unrelated reason — and a fixture that quietly disabled the audit
+    path would let the whole suite pass with V45 unheld.
     """
     server_repository = FakeWHMServerRepository(servers)
     authorization_repository = authorization or FakeAuthorizationRepository()
+    tool_run_repository = tool_runs or FakeToolRunRepository()
     audit = RecordingAuditSink()
 
     @asynccontextmanager
@@ -132,11 +143,13 @@ def build_tool_context(
             session_factory=session_factory,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
+            tool_run_repository_factory=lambda _session: tool_run_repository,
             audit_sink=audit,
         ),
         servers=server_repository,
         authorization=authorization_repository,
         audit=audit,
+        tool_runs=tool_run_repository,
     )
 
 

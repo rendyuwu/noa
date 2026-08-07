@@ -18,9 +18,10 @@ inside `verify_token`, and knows nothing about tools; this is read per tool call
 `tools/list`. Merging them would put the tool repositories behind the auth path, where a
 bug in either becomes a 401.
 
-Session lifetime is per operation, not per request: each tool (and each RBAC check) opens
-one, uses it, closes it. Reads only today, so there is no transaction spanning the two —
-when T33 makes a CHANGE tool write `action_requests`, that write and its audit event will
+Session lifetime is per operation, not per request: each tool, each RBAC check and each of
+the two `tool_runs` writes (T73) opens one, uses it, closes it. The audit writes are the
+only ones that commit, and they commit *separately* on purpose — see `core.audit.tool_runs`.
+When T33 makes a CHANGE tool write `action_requests`, that write and its audit event will
 share one session, and this is where that factory comes from.
 """
 
@@ -32,6 +33,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.audit.admin_events import AdminAuditSink, StructlogAdminAuditSink
+from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.auth.authorization_repository import SQLAuthorizationRepository
 from core.auth.authorization_service import AuthorizationService
 from core.auth.authorization_types import AuthorizationRepository
@@ -50,6 +52,7 @@ class McpToolContext:
     whm_server_repository_factory: Callable[[AsyncSession], WHMServerReadRepository] = (
         SQLWHMServerRepository
     )
+    tool_run_repository_factory: Callable[[AsyncSession], ToolRunRepository] = SQLToolRunRepository
     # A sink, even though the read path records nothing: `AuthorizationService` takes one,
     # and handing it a working sink rather than a stub means the day a tool records an event
     # it goes somewhere real instead of into a placeholder nobody re-checked.
@@ -77,8 +80,20 @@ def build_authorization_service(
     )
 
 
+def build_tool_run_repository(context: McpToolContext, session: AsyncSession) -> ToolRunRepository:
+    """The `tool_runs` writer over one session (T73, V45).
+
+    A function rather than a bare factory call so `noa_api.mcp_audit` names one thing for
+    both of its writes, and so this reads the same way as `build_authorization_service`
+    beside it. Constructed per write for the same reason: the repository holds the session,
+    and a long-lived one would pin a connection for the life of the process.
+    """
+    return context.tool_run_repository_factory(session)
+
+
 __all__ = [
     "McpToolContext",
     "build_authorization_service",
     "build_mcp_tool_context",
+    "build_tool_run_repository",
 ]

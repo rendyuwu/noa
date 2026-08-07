@@ -21,10 +21,12 @@ Three rules hold for everything in here.
    `noa_api.mcp_rbac.RbacToolMiddleware` (V1), one gate for every tool, so a tool added in
    T20 cannot forget it.
 
+4. **Nothing here records that it ran.** V45 wants a `tool_runs` row for every MCP READ, and
+   `noa_api.mcp_audit.ToolRunAuditMiddleware` writes it (T73) — beside the RBAC gate, for
+   the same reason and by the same rule (V83b). What a tool *does* declare is its
+   `ToolRisk`, at registration, because that is the one fact about a tool the middleware
+   cannot work out for itself.
+
 Landed: `whm_list_servers` (T19). Still to come: the other thirteen of §I.mcp, and — before
 any CHANGE tool — the approval gate (T32-T39).
-
-**Known gap, recorded rather than hidden:** V45 wants a `tool_runs` row for every MCP READ.
-T35 created the table; nothing writes it. T73 adds the write, beside the RBAC gate so no
-individual tool can forget it (V83b). Until then tool calls are still unaudited.
 """
