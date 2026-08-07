@@ -51,6 +51,7 @@ from support.auth import (
     auth_harness,
     build_settings,
 )
+from support.cookies import cookie_shape
 
 WRONG_PASSWORD = "not-the-password"
 
@@ -613,12 +614,18 @@ def test_logout_clears_cookie_without_authentication() -> None:
 
 
 def test_logout_is_idempotent() -> None:
+    """V6: a second logout is indistinguishable from the first.
+
+    Compared through `cookie_shape`, not the raw header: `delete_cookie` stamps `Expires`
+    from the clock, so two POSTs that straddle a second boundary emit different header
+    strings while clearing the very same cookie (B4).
+    """
     with auth_harness() as harness:
         first = harness.client.post("/auth/logout")
         second = harness.client.post("/auth/logout")
 
     assert first.status_code == second.status_code == 204
-    assert set_cookie_header(first) == set_cookie_header(second)
+    assert cookie_shape(set_cookie_header(first)) == cookie_shape(set_cookie_header(second))
 
 
 def test_logout_reaches_no_database() -> None:

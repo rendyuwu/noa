@@ -34,6 +34,7 @@ from core.auth.jwt_service import (
     JWTService,
 )
 from core.config import Settings
+from support.cookies import cookie_shape
 
 OPERATOR_EMAIL = "operator@example.com"
 OPERATOR_ID = UUID("11111111-2222-3333-4444-555555555555")
@@ -409,14 +410,33 @@ def test_clear_session_cookie_expires_it_with_matching_attributes() -> None:
 
 
 def test_clear_session_cookie_is_idempotent_and_needs_no_auth() -> None:
-    """V6: logout works without a session and repeats safely."""
+    """V6: logout works without a session and repeats safely.
+
+    Compared through `cookie_shape`, not the raw header: `delete_cookie` stamps `Expires`
+    from the clock, so two calls that straddle a second boundary emit different header
+    strings while clearing the very same cookie (B4).
+    """
     service = build_service()
     first, second = Response(), Response()
 
     service.clear_session_cookie(first)
     service.clear_session_cookie(second)
 
-    assert set_cookie_header(first) == set_cookie_header(second)
+    assert cookie_shape(set_cookie_header(first)) == cookie_shape(set_cookie_header(second))
+
+
+def test_cookie_shape_still_separates_cookies_that_differ() -> None:
+    """Dropping the clock stamp must not soften the comparison into a tautology.
+
+    A clear aimed at another `Domain` leaves the live cookie standing (V6), so the two
+    headers above have to stay distinguishable through `cookie_shape` (B4).
+    """
+    same, other = Response(), Response()
+
+    build_service().clear_session_cookie(same)
+    build_service(auth_session_cookie_domain=".other.internal").clear_session_cookie(other)
+
+    assert cookie_shape(set_cookie_header(same)) != cookie_shape(set_cookie_header(other))
 
 
 def test_cookie_name_follows_settings() -> None:
