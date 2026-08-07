@@ -49,6 +49,7 @@ from noa_api.api.errors import install_error_handler
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.mcp_request_auth import build_mcp_auth_context
 from noa_api.mcp_server import MCP_MOUNT_PATH, build_mcp_http_app
+from noa_api.mcp_tools.context import build_mcp_tool_context
 
 TITLE = "NOA API"
 
@@ -128,13 +129,16 @@ def create_app() -> FastAPI:
 
     # T12's production wiring: the same session factory and directory the rest of the app
     # uses, so an operator disabled through `/admin` is refused on their next MCP call by
-    # the row this reads (V1), not by a second copy of the world.
+    # the row this reads (V1), not by a second copy of the world. T19's tool context reads
+    # that same factory for the same reason — the RBAC gate in front of every tool has to
+    # see the grant an admin wrote a moment ago, not a pool of its own.
     mcp_app = build_mcp_http_app(
         auth_context=build_mcp_auth_context(
             session_factory=runtime.session_factory,
             directory=runtime.ldap_service,
             settings=runtime.settings,
-        )
+        ),
+        tool_context=build_mcp_tool_context(session_factory=runtime.session_factory),
     )
 
     app = FastAPI(

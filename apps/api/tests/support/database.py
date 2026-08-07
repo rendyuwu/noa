@@ -38,12 +38,16 @@ DEV_URL = get_settings().postgres_url_str
 # a T9 test that grants tools without creating a user must still start empty. `mcp_tokens`
 # for the same reason at T10 — the cascade from `users` would clear it only when a test
 # happened to create one.
+# `whm_servers` joins the list at T19: `whm_list_servers` and `resolve_whm_server_ref` read
+# it, and nothing cascades to it from `users` or `roles`, so a repository test that inserts
+# servers has to start from an empty table of its own.
 MUTATED_TABLES = (
     "users",
     "roles",
     "role_tool_permissions",
     "login_rate_limits",
     "mcp_tokens",
+    "whm_servers",
 )
 
 

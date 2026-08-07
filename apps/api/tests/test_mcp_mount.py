@@ -5,10 +5,11 @@ file is about the *real* app: that `create_app()` mounts an MCP endpoint, that t
 is authenticated, that both lifespans run, and that the pins the mount depends on still
 hold in the installed `fastmcp==3.4.5`.
 
-Everything is production code except the auth context: `main.build_mcp_auth_context` is
-patched to return T12's doubles, so the whole mount — verifier, middleware, session manager,
-combined lifespan — runs without Postgres or a directory. The seam is one function, and it
-is the same one `create_app` calls in production, so the wiring under test is not a copy.
+The harness — `mounted_app` and friends — lives in `support.mcp_mount` since T19, because
+`test_mcp_tool_rbac.py` drives the same mount to assert V1 over it and two copies of a
+sixty-line fixture would drift (V66). Everything in it is production code except the two
+context builders, which are patched to return in-memory doubles, so the whole mount runs
+without Postgres or a directory.
 
 The engine is never used here for the same reason, but it is still created: the app's own
 lifespan builds and disposes it, which is half of what "both lifespans ran" means.
@@ -17,10 +18,6 @@ lifespan builds and disposes it, which is half of what "both lifespans ran" mean
 from __future__ import annotations
 
 import json
-from collections.abc import Iterator
-from contextlib import contextmanager
-from dataclasses import dataclass
-from typing import Any
 
 import pytest
 from fastapi import status
@@ -31,7 +28,6 @@ from core.auth.ldap_service import LDAPService
 from noa_api import main
 from noa_api.api.deps import STATE_JWT_SERVICE, STATE_SESSION_FACTORY, STATE_SETTINGS
 from noa_api.mcp_auth import NoaTokenVerifier
-from noa_api.mcp_request_auth import McpAuthContext
 from noa_api.mcp_server import MCP_MOUNT_PATH, SERVER_NAME
 from support.auth import build_settings
 from support.mcp_identity import (
@@ -40,83 +36,13 @@ from support.mcp_identity import (
     FakeMcpIdentityRepository,
     build_auth_context,
 )
-
-# The endpoint as Starlette resolves it: the mount strips `/mcp`, and the sub-app's route is
-# the root, so the canonical URL carries the trailing slash. `/mcp` itself is covered below.
-MCP_URL = f"{MCP_MOUNT_PATH}/"
-
-MCP_ACCEPT = "application/json, text/event-stream"
-
-# `initialize` at the era C23 pins (R8). The smallest body that gets past auth.
-INITIALIZE_BODY: dict[str, Any] = {
-    "jsonrpc": "2.0",
-    "id": 1,
-    "method": "initialize",
-    "params": {
-        "protocolVersion": "2025-06-18",
-        "capabilities": {},
-        "clientInfo": {"name": "probe", "version": "0"},
-    },
-}
-
-
-def headers_for(token: str | None, librechat_user: str | None = LIBRECHAT_USER) -> dict[str, str]:
-    """Request headers, with either one omittable."""
-    built: dict[str, str] = {"Content-Type": "application/json", "Accept": MCP_ACCEPT}
-    if token is not None:
-        built["Authorization"] = f"Bearer {token}"
-    if librechat_user is not None:
-        built["X-Noa-LibreChat-User"] = librechat_user
-    return built
-
-
-@dataclass
-class MountFixture:
-    """The mounted app plus what was handed to the verifier behind it."""
-
-    client: TestClient
-    app: Any
-    repository: FakeMcpIdentityRepository
-    context_kwargs: dict[str, Any]
-
-
-@contextmanager
-def mounted_app(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    repository: FakeMcpIdentityRepository | None = None,
-) -> Iterator[MountFixture]:
-    """`create_app()` with T12's doubles behind the verifier.
-
-    Two patches, both narrow: settings so the lifespan reads explicit values rather than a
-    developer's `.env`, and `build_mcp_auth_context` so identity resolution runs over the
-    in-memory repository. The kwargs that production would have passed are captured, so a
-    test can assert what the real wiring hands the verifier (rather than that a doubled
-    context reached it, which proves nothing).
-    """
-    resolved_repository = repository or FakeMcpIdentityRepository()
-    captured: dict[str, Any] = {}
-
-    def fake_context(**kwargs: Any) -> McpAuthContext:
-        captured.update(kwargs)
-        return build_auth_context(repository=resolved_repository)
-
-    monkeypatch.setattr(main, "get_settings", build_settings)
-    monkeypatch.setattr(main, "build_mcp_auth_context", fake_context)
-
-    app = main.create_app()
-    with TestClient(app) as client:
-        yield MountFixture(
-            client=client,
-            app=app,
-            repository=resolved_repository,
-            context_kwargs=captured,
-        )
-
-
-def post_initialize(client: TestClient, headers: dict[str, str], url: str = MCP_URL) -> Any:
-    return client.post(url, content=json.dumps(INITIALIZE_BODY), headers=headers)
-
+from support.mcp_mount import (
+    INITIALIZE_BODY,
+    MCP_URL,
+    headers_for,
+    mounted_app,
+    post_initialize,
+)
 
 # --- V1: the mount is authenticated ---
 
@@ -204,13 +130,17 @@ def test_the_verifier_is_wired_to_the_app_session_factory_and_directory(
     the same rule for V4's revalidation.
     """
     with mounted_app(monkeypatch) as fixture:
-        captured = fixture.context_kwargs
+        captured = fixture.auth_context_kwargs
+        tool_captured = fixture.tool_context_kwargs
         state_session_factory = getattr(fixture.app.state, STATE_SESSION_FACTORY)
         state_settings = getattr(fixture.app.state, STATE_SETTINGS)
 
     assert captured["session_factory"] is state_session_factory
     assert isinstance(captured["directory"], LDAPService)
     assert captured["settings"] is state_settings
+    # T19: the tool path reads the same pool, so the RBAC gate in front of every tool sees
+    # the grant an admin wrote through `/admin` rather than a stale one of its own.
+    assert tool_captured["session_factory"] is state_session_factory
 
 
 # --- R6: both lifespans ---

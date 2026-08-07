@@ -179,10 +179,42 @@ all kinds — "you asked about an IPv6 address and here is what CSF says" is a u
 where changing it is not permitted. A bare address is never normalised to `/32`: that would
 erase the distinction the CHANGE tools check.
 
+## Server references (§V.18)
+
+Tools take a `server_ref`, not an id, because operators name servers the way they remember
+them. `resolve_whm_server_ref` (`core/servers/whm_ref.py`) tries three forms in a fixed order
+and **never guesses**:
+
+1. **UUID** — resolved by direct read. A well-formed id that matches nothing stops at
+   `host_not_found`; it does not fall through, or a mistyped id could resolve to a different
+   server whose *name* is that string.
+2. **`whm_servers.name`**, case-insensitively.
+3. **Hostname of `base_url`**, case-insensitively.
+
+Name beats hostname: the name was typed into NOA on purpose, the hostname is derived. Any tie
+at step 2 or 3 returns `host_ambiguous` with a `choices` list (≤ 10 entries, each `id` / `name`
+/ `base_url` — no credentials, since this text lands in a transcript). A name tie is reachable
+despite the unique index, because Postgres uniqueness is case-sensitive and the match is not.
+
+## Exposed MCP tools
+
+| Tool | Risk | Notes |
+|---|---|---|
+| `whm_list_servers` | READ | Every configured server, via `WHMServer.to_safe_dict()`. Exposed per DECISIONS §6.6 — the model needs to know which servers exist. The only `*_list_servers` that is exposed. |
+
+Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19,
+`noa_api/mcp_tools/results.py`) sit in front of every tool, so nothing below is per-tool code.
+
 ## Error codes
 
 | Code | Raised by | Meaning |
 |---|---|---|
+| `host_required` | `resolve_whm_server_ref` | `server_ref` blank or whitespace (§V.21). |
+| `host_not_found` | `resolve_whm_server_ref` | No server matches the id, name or hostname. |
+| `host_ambiguous` | `resolve_whm_server_ref` | Several match; `choices` carries the candidates. |
+| `tool_not_permitted` | `RbacToolMiddleware` | Caller lacks the grant, or the name is not a registered tool (§V.1, §V.10). |
+| `tool_execution_failed` | `sanitize_tool_errors` | Unmapped exception out of a tool (§V.19). |
+| `timeout` | `sanitize_tool_errors` | `TimeoutError` out of a tool (§V.19). |
 | `ssh_invalid_host` | `resolve_whm_ssh_config` | `base_url` has no hostname. Bad row. |
 | `ssh_not_configured` | `resolve_whm_ssh_config` | No SSH password and no private key stored. |
 | `ssh_host_key_not_validated` | `resolve_whm_ssh_config` | Not pinned yet — run admin validate. |
@@ -213,9 +245,10 @@ lets the column be migrated in place.
 
 | Surface | Task |
 |---|---|
-| `resolve_whm_server_ref` (UUID / name / hostname → candidates on ambiguity) | §T.19 |
-| MCP tools: list/search accounts, suspend/unsuspend, firewall preflight, release-and-allow, allowlist-remove | §T.19–§T.26 |
+| MCP tools: list/search accounts, suspend/unsuspend, firewall preflight, release-and-allow, allowlist-remove | §T.20–§T.26 |
 | Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
+| Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
+| `tool_runs` row per MCP READ (§V.45) — the table does not exist yet, so tool calls are unaudited | §T.35 |
 
 **Per-reseller API tokens are not ported.** cPanel API tokens enforce reseller *ownership*: a
 root-created token cannot mutate an account owned by another reseller, even with the
@@ -239,5 +272,10 @@ exposure. Re-adding any of them is an owner decision.
 - Backend availability: `core/integrations/whm/availability.py`
 - Errors: `core/integrations/whm/errors.py`
 - Shared SSH layer: `core/remote_exec/` (§T.14)
+- Server inventory + reference resolution: `core/servers/whm_repository.py`,
+  `core/servers/whm_ref.py` (§T.19)
+- MCP tool + registry: `apps/api/src/noa_api/mcp_tools/{whm_read,registry,results,context}.py`
+- RBAC gate in front of every tool: `apps/api/src/noa_api/mcp_rbac.py` (§V.1)
 - Tests: `apps/api/tests/test_whm_{client,ssh_config,csf_parsing,imunify_parsing}.py`,
-  `test_whm_firewall_{cli,availability}.py`
+  `test_whm_firewall_{cli,availability}.py`,
+  `test_whm_{server_ref,server_repository,tools_read}.py`, `test_mcp_tool_rbac.py`

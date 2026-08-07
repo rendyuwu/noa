@@ -42,7 +42,10 @@ from fastmcp.server.http import StarletteWithLifespan
 from starlette.middleware import Middleware
 
 from noa_api.mcp_auth import NoaTokenVerifier
+from noa_api.mcp_rbac import RbacToolMiddleware
 from noa_api.mcp_request_auth import McpAuthContext, McpAuthErrorMiddleware
+from noa_api.mcp_tools.context import McpToolContext
+from noa_api.mcp_tools.registry import register_mcp_tools
 
 # Shown to the client in `initialize`; also what `librechat.yaml` labels the server (T57).
 SERVER_NAME = "NOA"
@@ -54,8 +57,8 @@ MCP_MOUNT_PATH = "/mcp"
 MCP_APP_PATH = "/"
 
 
-def build_mcp_server(*, auth: AuthProvider | None = None) -> FastMCP:
-    """The FastMCP server, with its authentication provider (R3).
+def build_mcp_server(*, tool_context: McpToolContext, auth: AuthProvider | None = None) -> FastMCP:
+    """The FastMCP server: its tools, its RBAC gate and its authentication provider.
 
     One server per app rather than a module-level singleton: `create_app()` is called more
     than once in the test suite, and a shared instance would carry one app's verifier into
@@ -65,20 +68,42 @@ def build_mcp_server(*, auth: AuthProvider | None = None) -> FastMCP:
     requires every MCP request to resolve a user — but the default keeps a tool-registry
     test from having to construct a token verifier it will not use.
 
-    T19-T31 and T63 register the 14 exposed tools here, so the registry and the auth
-    provider are decided in the same place.
+    Three things happen here and all three belong together (T19):
+
+    - **Tools are registered** (`register_mcp_tools`, T19-T31 and T63). That call is also
+      the guard that every exposed name is in `TOOL_CATALOG`, so a name no role can be
+      granted fails at construction (V10, C22).
+    - **`RbacToolMiddleware` is attached** (V1), and it is handed the names that were just
+      registered. Registering a tool and gating it are the same decision: a server that
+      exposes a tool without the gate serves it to every authenticated operator regardless
+      of role, and the failure is invisible — the tool works. The registered set travels
+      with it so a catalogued-but-unbuilt name is refused in NOA's shape rather than
+      fastmcp's (V10; see `noa_api.mcp_rbac`).
+    - **`mask_error_details=True`** (V19, second line). fastmcp's default is `False`, and
+      its unmasked branch raises `ToolError(f"Error calling tool {name!r}: {e}")` — `str(e)`
+      verbatim in front of the model. The first line is `sanitize_tool_errors` on each tool
+      (`noa_api.mcp_tools.results`); this catches whatever is raised outside one, such as
+      argument validation or a bug in the registration wrapper.
     """
-    return FastMCP(SERVER_NAME, auth=auth)
+    server = FastMCP(SERVER_NAME, auth=auth, mask_error_details=True)
+    registered = register_mcp_tools(server, context=tool_context)
+    server.add_middleware(RbacToolMiddleware(context=tool_context, registered_tools=registered))
+    return server
 
 
-def build_mcp_http_app(*, auth_context: McpAuthContext) -> StarletteWithLifespan:
+def build_mcp_http_app(
+    *, auth_context: McpAuthContext, tool_context: McpToolContext
+) -> StarletteWithLifespan:
     """The mountable Streamable HTTP app, authenticated per T11/T12 (R6, V1, V3).
 
     Returns a Starlette app whose `lifespan` starts the session manager. It has to run:
     without it `StreamableHTTPASGIApp` has no session manager and every request fails at
     the transport. `noa_api.main` combines it with the app's own lifespan (R6).
     """
-    server = build_mcp_server(auth=NoaTokenVerifier(context=auth_context))
+    server = build_mcp_server(
+        tool_context=tool_context,
+        auth=NoaTokenVerifier(context=auth_context),
+    )
 
     return server.http_app(
         path=MCP_APP_PATH,
