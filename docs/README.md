@@ -8,4 +8,5 @@ Integration and operations reference.
 Rule carried over from the old repo: when a WHM, Proxmox, or PMG feature changes, update the
 matching file in `integrations/` in the same change.
 
-Design rationale lives in `DECISIONS.md` and `ARCHITECTURE.md` (§T.62), not here.
+Design rationale lives in `DECISIONS.md` and `ARCHITECTURE.md` (dependency pins §T.70, the rest with
+§T.62), not here.

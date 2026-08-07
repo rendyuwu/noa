@@ -53,7 +53,11 @@ deployment actually negotiates is `2025-11-25`. Every one of those is a handshak
 The sessionless `2026-07-28` era is in neither SDK's supported list, so moving there is an SDK bump,
 not a setting — and it buys nothing against a client that will not ask for it. FastMCP holds at 3.x
 because 4.x is beta-only, drops the 3.x shims, and relocates `fastmcp.server.auth.*`, which would
-break token verification for no gain. Re-open when LibreChat ships SDK v2. Full rationale: C23, T70.
+break token verification for no gain.
+
+Re-open when LibreChat ships SDK v2 — and note that a bump *inside* 1.x moves the negotiated era
+with no error and no config change, which is why no digit above is load-bearing. `ARCHITECTURE.md`
+carries the full rationale, the re-open triggers, and the tests that hold them (C23, T70).
 
 ## Prerequisites
 
