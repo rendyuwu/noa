@@ -6,6 +6,8 @@ own `.env` cannot change the outcome.
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -27,6 +29,27 @@ PROD_REQUIRED = {
     "ldap_server_uri": "ldaps://ldap.example.com:636",
 }
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# The Fernet key's name, written once (T67). The field guard below asserts `Settings` calls it
+# this, and the doc guard asserts `.env.example` and `README.md` say the same — so a rename
+# edits this line and then has to edit both documents to get back to green.
+ENCRYPTION_KEY_FIELD = "noa_secret_encryption_key"
+ENCRYPTION_KEY_ENV_VAR = ENCRYPTION_KEY_FIELD.upper()
+
+# The name T67 rejects: the key encrypts server credentials, not the database (C7).
+LEGACY_ENCRYPTION_KEY_FIELD = "noa_db_secret_key"
+
+# Files that carry the rejected name legitimately, because their subject is the prohibition:
+# the two spec artifacts, and this module.
+LEGACY_NAME_ALLOWED_IN = frozenset(
+    {
+        "SPEC.md",
+        "DECISIONS.md",
+        "apps/api/tests/test_config.py",
+    }
+)
+
 
 def build(**overrides: object) -> Settings:
     """Construct settings from explicit values only — no `.env`, no process env."""
@@ -35,6 +58,35 @@ def build(**overrides: object) -> Settings:
 
 def build_production(**overrides: object) -> Settings:
     return build(**{**PROD_REQUIRED, **overrides})
+
+
+def tracked_files() -> list[Path]:
+    """Every file git tracks, so the scan covers the repo and nothing outside it.
+
+    `git ls-files` rather than a filesystem walk: it excludes the developer's own `.env`,
+    `.venv`, and `node_modules` without an ignore list of its own to drift.
+    """
+    git = shutil.which("git")
+    if git is None:  # pragma: no cover - git is present wherever this repo is checked out
+        pytest.skip("git unavailable; cannot enumerate tracked files")
+
+    listing = subprocess.run(  # noqa: S603  (fixed argv, no shell)
+        [git, "ls-files", "-z"],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    return [REPO_ROOT / name for name in listing.stdout.split("\0") if name]
+
+
+def read_text_or_empty(path: Path) -> str:
+    """Text content, or `""` for anything unreadable as UTF-8 (images, lockfile blobs)."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return ""
 
 
 # --- Defaults and environment classification ---
@@ -127,8 +179,8 @@ def test_encryption_key_name_reflects_scope() -> None:
     """V52: the var encrypts server credentials, not the DB. No legacy alias."""
     fields = Settings.model_fields
 
-    assert "noa_secret_encryption_key" in fields
-    assert "noa_db_secret_key" not in fields
+    assert ENCRYPTION_KEY_FIELD in fields
+    assert LEGACY_ENCRYPTION_KEY_FIELD not in fields
 
 
 def test_secrets_are_not_exposed_by_repr() -> None:
@@ -329,8 +381,7 @@ def test_field_names_map_to_documented_env_vars(monkeypatch: pytest.MonkeyPatch)
 
 def test_env_example_documents_every_required_var() -> None:
     """`.env.example` is the documented surface — a new field belongs there too."""
-    repo_root = Path(__file__).resolve().parents[3]
-    example = (repo_root / ".env.example").read_text(encoding="utf-8")
+    example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     documented = {
         line.lstrip("# ").split("=", 1)[0].strip().lower()
         for line in example.splitlines()
@@ -340,6 +391,38 @@ def test_env_example_documents_every_required_var() -> None:
     undocumented = set(Settings.model_fields) - documented
 
     assert undocumented == set(), f"add to .env.example: {sorted(undocumented)}"
+
+
+@pytest.mark.parametrize("doc_name", [".env.example", "README.md"])
+def test_operator_docs_name_the_env_var_the_settings_field_defines(doc_name: str) -> None:
+    """T67: the two operator-facing files name the var the field above defines.
+
+    `.env.example` is already bound to the field set by the test above; `README.md` is the loose
+    restatement (V84a), and it is the file that carries the scope claim C7 exists for — "encrypts
+    server credentials, not the database". A rename that stops here leaves that sentence pointing
+    at a var nothing reads.
+    """
+    assert ENCRYPTION_KEY_ENV_VAR in (REPO_ROOT / doc_name).read_text(encoding="utf-8")
+
+
+def test_legacy_encryption_key_name_absent_from_every_tracked_file() -> None:
+    """T67/C7: the rejected name stays out of the files this task cannot reach.
+
+    T67 lists Dockerfiles and `docker-compose.yml` among its rename targets and neither exists —
+    T60 writes them, by which time this row is closed and a `NOA_DB_SECRET_KEY` there would meet
+    nothing red. Scanning every tracked file binds the property instead of trusting the next
+    author to have read this row (V84c, the reason `test_pins.py` binds the pin prose to the SDK).
+    """
+    offenders = sorted(
+        relative
+        for path in tracked_files()
+        if (relative := str(path.relative_to(REPO_ROOT))) not in LEGACY_NAME_ALLOWED_IN
+        and LEGACY_ENCRYPTION_KEY_FIELD in read_text_or_empty(path).lower()
+    )
+
+    assert offenders == [], (
+        f"the key encrypts server credentials — use {ENCRYPTION_KEY_ENV_VAR}: {offenders}"
+    )
 
 
 def test_resolve_env_file_prefers_repo_root(tmp_path: Path) -> None:
