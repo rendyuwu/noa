@@ -146,8 +146,13 @@ def test_unrecognised_output_is_unknown_not_not_found() -> None:
     assert parse_csf_grep_output(output, target="203.0.113.10").verdict == "unknown"
 
 
-def test_matches_are_bounded_and_ansi_colour_is_stripped() -> None:
-    """A busy box greps hundreds of log lines; the result is headed for an LLM context."""
+def test_matches_are_bounded_and_the_total_is_reported() -> None:
+    """A busy box greps hundreds of log lines; the result is headed for an LLM context.
+
+    §V.85: the cut happens here, so the count before it is reported here. Twenty lines with no
+    other signal read as "there are twenty entries" — a fabrication the tool would be handing
+    the model rather than one the model invented (T24 is the caller that states it).
+    """
     lines = ["Found \x1b[31m1.2.3.4\x1b[0m in /etc/csf/csf.deny"]
     lines += [f"Log entry {index} 1.2.3.4" for index in range(50)]
 
@@ -155,7 +160,33 @@ def test_matches_are_bounded_and_ansi_colour_is_stripped() -> None:
 
     assert parsed.verdict == "blocked"
     assert len(parsed.matches) == 20
+    assert parsed.total_matches == 51
     assert "\x1b[" not in parsed.matches[0]
+
+
+def test_an_uncut_result_reports_its_own_length_as_the_total() -> None:
+    """The other side of §V.85: `total_matches` is ⊥ a constant, and ⊥ only meaningful when
+    the list was cut. A caller compares the two to decide whether to say "truncated"."""
+    output = "Found 1.2.3.4 in /etc/csf/csf.deny\nTemporary Blocks: IP:1.2.3.4 Port: Dir:in\n"
+
+    parsed = parse_csf_grep_output(output, target="1.2.3.4")
+
+    assert len(parsed.matches) == 2
+    assert parsed.total_matches == 2
+
+
+def test_the_kept_evidence_is_the_prefix_of_csf_s_own_order() -> None:
+    """§V.85 asks for a stable ordering before the cut; csf's own is it.
+
+    `csf -g` renders the current tables and files, so identical calls against unchanged state
+    yield an identical prefix — unlike `listaccts`, the tool §V.85 was written at. Sorting the
+    lines would also scramble the deny/allow grouping that makes the evidence readable.
+    """
+    lines = [f"Found 1.2.3.4 in /etc/csf/csf.deny entry {index:02d}" for index in range(30)]
+
+    parsed = parse_csf_grep_output("\n".join(lines), target="1.2.3.4")
+
+    assert parsed.matches == lines[:20]
 
 
 def test_parse_csf_grep_output_requires_a_target() -> None:

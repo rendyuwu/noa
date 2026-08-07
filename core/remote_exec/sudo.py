@@ -34,7 +34,7 @@ from core.remote_exec.ssh import command_from_argv
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
 
 # Dedicated error code for a `sudo -n` missing-rights failure (`noa-old` GH #82, V55):
-# distinct from binary-missing (`no_firewall_tools`, V57) and from generic command-failed.
+# distinct from binary-missing (`no_firewall_backend`, V57) and from generic command-failed.
 SSH_SUDO_REQUIRED_CODE = "ssh_sudo_required"
 
 # sudo emits these on policy-denial / -n password-required. The plain

@@ -11,8 +11,14 @@ Four behaviours, each an assertion of its own:
 - each backend's verdict is independent — one missing must ⊥ drag the other down;
 - **present-but-denied ≠ absent.** `sudo_required` is what lets the tool layer answer
   `ssh_sudo_required` instead of "no firewall tools on this server" (`noa-old` GH #82);
-- a broken server resolves to "not usable" rather than raising, because a preflight that
-  raises cannot report on the other backend.
+- an unreachable host resolves to "not usable" rather than raising, because a probe that raises
+  cannot report on the other backend.
+
+A **row** that cannot become a connection no longer reaches this module: as of T24 the caller
+resolves the `SSHConnectionConfig` and an unpinned or credential-less server is refused there,
+by name (`test_whm_ssh_config.py` for the refusals, `test_whm_tools_firewall_preflight.py` for
+the tool's answer). Those two cases used to live here and reported "no firewall tools", which
+is the same misdiagnosis `sudo_required` exists to prevent.
 
 The root/non-root split is asserted through the probe *commands*, since that is where V55
 lands here: root gets `command -v`, non-root gets the real binary under `sudo -n` — never
@@ -31,13 +37,13 @@ from core.integrations.whm.availability import (
 )
 from core.integrations.whm.csf_cli import CSF_BINARY
 from core.integrations.whm.imunify_cli import IMUNIFY_BINARY
+from core.remote_exec.errors import SSHExecutionError
 from support.remote_exec import (
     SUDO_DENIED_STDERR,
     command_result,
     install_fake_ssh_exec,
+    ssh_config,
 )
-from support.secrets import build_cipher
-from support.whm import FakeWHMServer
 
 
 def _present(command: str):  # type: ignore[no-untyped-def]
@@ -51,7 +57,7 @@ def _present(command: str):  # type: ignore[no-untyped-def]
 async def test_check_firewall_binaries_probes_both_backends(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
 
-    availability = await check_firewall_binaries(FakeWHMServer(), cipher=build_cipher())
+    availability = await check_firewall_binaries(ssh_config())
 
     assert availability.csf is True
     assert availability.imunify is True
@@ -81,7 +87,7 @@ async def test_both_probes_are_in_flight_at_once(monkeypatch) -> None:  # type: 
 
     monkeypatch.setattr(availability_mod, "ssh_exec", fake_ssh_exec)
 
-    availability = await check_firewall_binaries(FakeWHMServer(), cipher=build_cipher())
+    availability = await check_firewall_binaries(ssh_config())
 
     assert both_started.is_set()
     assert availability.csf is True and availability.imunify is True
@@ -97,7 +103,7 @@ async def test_availability_reports_each_backend_independently(monkeypatch) -> N
 
     install_fake_ssh_exec(monkeypatch, availability_mod, handler)
 
-    availability = await check_firewall_binaries(FakeWHMServer(), cipher=build_cipher())
+    availability = await check_firewall_binaries(ssh_config())
 
     assert availability.csf is True
     assert availability.imunify is False
@@ -112,7 +118,7 @@ async def test_zero_backends_available_is_reported_honestly(monkeypatch) -> None
         lambda command: command_result(command=command, exit_code=1),
     )
 
-    availability = await check_firewall_binaries(FakeWHMServer(), cipher=build_cipher())
+    availability = await check_firewall_binaries(ssh_config())
 
     assert availability.as_tools_dict() == {"csf": False, "imunify": False}
 
@@ -127,9 +133,7 @@ async def test_availability_sets_sudo_required_when_escalation_denied(monkeypatc
         lambda command: command_result(command=command, exit_code=1, stderr=SUDO_DENIED_STDERR),
     )
 
-    availability = await check_firewall_binaries(
-        FakeWHMServer(ssh_username="noa-ops"), cipher=build_cipher()
-    )
+    availability = await check_firewall_binaries(ssh_config(username="noa-ops"))
 
     assert availability.csf is False
     assert availability.imunify is False
@@ -145,9 +149,7 @@ async def test_sudo_required_is_set_when_either_backend_is_denied(monkeypatch) -
 
     install_fake_ssh_exec(monkeypatch, availability_mod, handler)
 
-    availability = await check_firewall_binaries(
-        FakeWHMServer(ssh_username="noa-ops"), cipher=build_cipher()
-    )
+    availability = await check_firewall_binaries(ssh_config(username="noa-ops"))
 
     assert availability.csf is True
     assert availability.imunify is False
@@ -163,9 +165,7 @@ async def test_missing_binary_under_sudo_is_not_a_sudo_problem(monkeypatch) -> N
         ),
     )
 
-    availability = await check_firewall_binaries(
-        FakeWHMServer(ssh_username="noa-ops"), cipher=build_cipher()
-    )
+    availability = await check_firewall_binaries(ssh_config(username="noa-ops"))
 
     assert availability.sudo_required is False
 
@@ -176,7 +176,7 @@ async def test_missing_binary_under_sudo_is_not_a_sudo_problem(monkeypatch) -> N
 async def test_root_probes_presence_with_command_v(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
 
-    await check_csf_binary(FakeWHMServer(ssh_username=None), cipher=build_cipher())
+    await check_csf_binary(ssh_config())
 
     assert fake.commands == [f"command -v {CSF_BINARY}"]
 
@@ -188,8 +188,8 @@ async def test_non_root_probes_the_real_binary_under_sudo(monkeypatch) -> None: 
     already answers."""
     fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
 
-    await check_csf_binary(FakeWHMServer(ssh_username="noa-ops"), cipher=build_cipher())
-    await check_imunify_binary(FakeWHMServer(ssh_username="noa-ops"), cipher=build_cipher())
+    await check_csf_binary(ssh_config(username="noa-ops"))
+    await check_imunify_binary(ssh_config(username="noa-ops"))
 
     assert fake.commands == [
         f"TERM=dumb sudo -n {CSF_BINARY} -v",
@@ -206,31 +206,29 @@ async def test_root_presence_check_requires_non_empty_output(monkeypatch) -> Non
         lambda command: command_result(command=command, exit_code=0, stdout="   "),
     )
 
-    check = await check_csf_binary(FakeWHMServer(), cipher=build_cipher())
+    check = await check_csf_binary(ssh_config())
 
     assert check.usable is False
 
 
-# --- a broken server answers "not usable", it does not raise ---
+# --- an unreachable host answers "not usable", it does not raise ---
 
 
-async def test_unvalidated_host_key_yields_not_usable_rather_than_an_error(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)
+async def test_a_transport_failure_yields_not_usable_rather_than_an_error(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """A probe that raised would take the other backend's answer down with it.
 
-    availability = await check_firewall_binaries(
-        FakeWHMServer(ssh_host_key_fingerprint=None), cipher=build_cipher()
-    )
+    Its counterpart is `test_availability_reports_each_backend_independently`: one dead backend
+    is a fact about that backend. Here both hops die, and the honest answer is still a struct —
+    the tool turns it into `no_firewall_backend` (V57), which is a decision this layer does not
+    make.
+    """
+
+    async def unreachable(config, *, command: str, **_):  # type: ignore[no-untyped-def]
+        raise SSHExecutionError(code="ssh_connect_failed", message="host unreachable")
+
+    monkeypatch.setattr(availability_mod, "ssh_exec", unreachable)
+
+    availability = await check_firewall_binaries(ssh_config())
 
     assert availability.as_tools_dict() == {"csf": False, "imunify": False}
     assert availability.sudo_required is False
-    assert fake.runs == []
-
-
-async def test_server_without_ssh_credentials_yields_not_usable(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    install_fake_ssh_exec(monkeypatch, availability_mod, _present)
-
-    availability = await check_firewall_binaries(
-        FakeWHMServer(ssh_password=None, ssh_private_key=None), cipher=build_cipher()
-    )
-
-    assert availability.as_tools_dict() == {"csf": False, "imunify": False}

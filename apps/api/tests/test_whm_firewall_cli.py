@@ -14,6 +14,10 @@ Three things are pinned here, and each one is a production incident in `noa-old`
   is the real fix (V56); the raw-decode fallback is what keeps an unrecognised banner variant
   from turning an approved CHANGE into a parse error.
 
+`run_*_command` takes a resolved `SSHConnectionConfig` as of T24, so the row refusals it used to
+raise on the way past are no longer its business — `test_whm_ssh_config.py` owns them, and
+`test_whm_tools_firewall_preflight.py` owns the answer an operator gets.
+
 No host: `ssh_exec` is replaced inside each module's namespace (`support.remote_exec`).
 """
 
@@ -45,6 +49,7 @@ from core.integrations.whm.imunify_cli import (
     parse_imunify_json_output,
     run_imunify_command,
 )
+from core.remote_exec.errors import SSHExecutionError
 from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
 from support.remote_exec import (
     SUDO_DENIED_STDERR,
@@ -53,8 +58,6 @@ from support.remote_exec import (
     install_fake_ssh_exec,
     ssh_config,
 )
-from support.secrets import build_cipher
-from support.whm import FakeWHMServer
 
 _LVE_BANNER = (
     "***************************************************************************\n"
@@ -195,15 +198,13 @@ def test_imunify_unrecoverable_output_reports_a_parse_error() -> None:
     assert exc.value.error_code == "imunify_json_parse_error"
 
 
-# --- run_*: one exception tree out, and the pin is enforced ---
+# --- run_*: one exception tree out ---
 
 
 async def test_run_csf_command_sends_the_composed_command_over_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     fake = install_fake_ssh_exec(monkeypatch, csf_cli_mod, lambda _cmd: command_result(stdout="ok"))
 
-    result = await run_csf_command(
-        FakeWHMServer(ssh_username="noa-ops"), args=["-g", "1.2.3.4"], cipher=build_cipher()
-    )
+    result = await run_csf_command(ssh_config(username="noa-ops"), args=["-g", "1.2.3.4"])
 
     assert result.stdout == "ok"
     assert fake.commands == [f"TERM=dumb sudo -n {CSF_BINARY} -g 1.2.3.4"]
@@ -214,38 +215,39 @@ async def test_run_imunify_command_sends_the_composed_command_over_ssh(monkeypat
         monkeypatch, imunify_cli_mod, lambda _cmd: command_result(stdout="{}")
     )
 
-    await run_imunify_command(
-        FakeWHMServer(), args=["ip-list", "local", "list"], cipher=build_cipher()
-    )
+    await run_imunify_command(ssh_config(), args=["ip-list", "local", "list"])
 
     assert fake.commands == [f"{IMUNIFY_BINARY} ip-list local list"]
 
 
-async def test_run_csf_command_converts_an_ssh_failure_into_the_csf_error_tree(
+@pytest.mark.parametrize(
+    ("runner", "module", "error"),
+    [
+        pytest.param(run_csf_command, csf_cli_mod, CSFCLIError, id="csf"),
+        pytest.param(run_imunify_command, imunify_cli_mod, ImunifyCLIError, id="imunify"),
+    ],
+)
+async def test_run_converts_an_ssh_failure_into_the_backend_error_tree(
     monkeypatch,  # type: ignore[no-untyped-def]
+    runner,  # type: ignore[no-untyped-def]
+    module,  # type: ignore[no-untyped-def]
+    error: type[WHMFirewallCLIError],
 ) -> None:
-    """One exception tree out of the module, so a caller does not catch two."""
-    install_fake_ssh_exec(monkeypatch, csf_cli_mod, lambda _cmd: command_result())
+    """One exception tree out of the module, so a caller does not catch two.
 
-    with pytest.raises(CSFCLIError) as exc:
-        await run_csf_command(
-            FakeWHMServer(ssh_host_key_fingerprint=None), args=["-v"], cipher=build_cipher()
-        )
+    The transport code travels intact rather than being flattened: `ssh_host_key_mismatch` and
+    `csf_command_failed` send an operator to different places.
+    """
 
-    assert exc.value.error_code == "ssh_host_key_not_validated"
+    async def refuse(config, *, command: str, **_):  # type: ignore[no-untyped-def]
+        raise SSHExecutionError(code="ssh_host_key_mismatch", message="presented key ≠ pin")
 
+    monkeypatch.setattr(module, "ssh_exec", refuse)
 
-async def test_run_imunify_command_refuses_an_unvalidated_host_before_connecting(
-    monkeypatch,  # type: ignore[no-untyped-def]
-) -> None:
-    fake = install_fake_ssh_exec(monkeypatch, imunify_cli_mod, lambda _cmd: command_result())
+    with pytest.raises(error) as exc:
+        await runner(ssh_config(), args=["-v"])
 
-    with pytest.raises(ImunifyCLIError):
-        await run_imunify_command(
-            FakeWHMServer(ssh_host_key_fingerprint=None), args=["version"], cipher=build_cipher()
-        )
-
-    assert fake.runs == []
+    assert exc.value.error_code == "ssh_host_key_mismatch"
 
 
 # --- V73: one taxonomy, one handler, mapped status ---

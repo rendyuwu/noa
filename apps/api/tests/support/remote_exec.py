@@ -12,7 +12,7 @@ classification — none of which needs a socket.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from types import ModuleType
 
@@ -83,20 +83,34 @@ class FakeSSH:
         return self.handler(command)
 
 
+def install_fake_ssh_exec_in(
+    monkeypatch,  # type: ignore[no-untyped-def]
+    modules: Iterable[ModuleType],
+    handler: Callable[[str], CommandResult],
+) -> FakeSSH:
+    """Replace `ssh_exec` inside each module's namespace, sharing one recorder.
+
+    Per-module because `csf_cli`, `imunify_cli`, `availability` and `pmgsh_cli` each did
+    `from core.remote_exec.ssh import ssh_exec` — patching the source module would leave those
+    names bound to the original.
+
+    Several modules at once because a tool call crosses them: T24's preflight probes through
+    `availability` and then queries through `csf_cli` and `imunify_cli`, and one shared `FakeSSH`
+    is what lets a test assert the *whole* command sequence and its order (V66).
+    """
+    fake = FakeSSH(handler=handler)
+    for module in modules:
+        monkeypatch.setattr(module, "ssh_exec", fake)
+    return fake
+
+
 def install_fake_ssh_exec(
     monkeypatch,  # type: ignore[no-untyped-def]
     module: ModuleType,
     handler: Callable[[str], CommandResult],
 ) -> FakeSSH:
-    """Replace `ssh_exec` inside `module`'s namespace.
-
-    Per-module because `csf_cli`, `imunify_cli`, `availability` and `pmgsh_cli` each did
-    `from core.remote_exec.ssh import ssh_exec` — patching the source module would leave those
-    names bound to the original.
-    """
-    fake = FakeSSH(handler=handler)
-    monkeypatch.setattr(module, "ssh_exec", fake)
-    return fake
+    """`install_fake_ssh_exec_in` for the single-module case, which is most of them."""
+    return install_fake_ssh_exec_in(monkeypatch, [module], handler)
 
 
 __all__ = [
@@ -108,5 +122,6 @@ __all__ = [
     "RecordedRun",
     "command_result",
     "install_fake_ssh_exec",
+    "install_fake_ssh_exec_in",
     "ssh_config",
 ]

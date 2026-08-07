@@ -30,6 +30,16 @@ binary is not misread as a rights problem.
 Both `SSHExecutionError` and a non-zero exit surface as `CSFCLIError`, so a caller catches one
 tree (see `core.integrations.whm.errors`).
 
+**A resolved `SSHConnectionConfig` comes in, not a `whm_servers` row** (T24). `noa-old` — and
+this module until T24 — took the row plus a `SecretCipher` and called `resolve_whm_ssh_config`
+per command. The caller resolves it once instead, because the caller is a tool that has to
+close its database session *before* the SSH round trip: holding a pooled connection open across
+a hop to someone else's host is how a slow server becomes a database outage (T21's rule), and an
+ORM row cannot be read after its session closes. One resolve per call also means one decrypt of
+the stored credentials rather than one per command, and the row's three pre-socket refusals
+(`ssh_invalid_host`, `ssh_not_configured`, `ssh_host_key_not_validated`) now name the WHM server
+to the operator instead of arriving as a firewall-command failure.
+
 `command_output_text` came from `core.remote_exec.output` rather than being copied a third
 time — see that module for the count (T16 deviation (f), V66).
 """
@@ -37,7 +47,6 @@ time — see that module for the count (T16 deviation (f), V66).
 from __future__ import annotations
 
 from core.integrations.whm.errors import CSFCLIError
-from core.integrations.whm.ssh import WHMServerSecretLike, resolve_whm_ssh_config
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
 from core.remote_exec.ssh import ssh_exec
@@ -47,7 +56,6 @@ from core.remote_exec.sudo import (
     is_sudo_rights_failure,
 )
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
-from core.secrets.crypto import SecretCipher
 
 CSF_BINARY = "/usr/sbin/csf"
 
@@ -74,24 +82,14 @@ def require_csf_success(result: CommandResult, *, default_message: str) -> str:
     return output
 
 
-async def run_csf_command(
-    server: WHMServerSecretLike,
-    *,
-    args: list[str],
-    cipher: SecretCipher,
-) -> CommandResult:
-    """Execute `csf <args>` on `server`. Raises `CSFCLIError` on any SSH-side failure.
+async def run_csf_command(config: SSHConnectionConfig, *, args: list[str]) -> CommandResult:
+    """Execute `csf <args>` over `config`. Raises `CSFCLIError` on any SSH-side failure.
 
     Returns the raw `CommandResult` — the exit code is the caller's to interpret, because
     `csf -g` on a clean IP is a success with a "no matches" body, not an error.
     """
     try:
-        ssh_config = resolve_whm_ssh_config(
-            server,
-            cipher=cipher,
-            require_host_key_fingerprint=True,
-        )
-        return await ssh_exec(ssh_config, command=build_csf_command(args, config=ssh_config))
+        return await ssh_exec(config, command=build_csf_command(args, config=config))
     except SSHExecutionError as exc:
         # Converted, not wrapped: one exception tree out of this module.
         raise CSFCLIError(code=exc.error_code, message=exc.message) from exc

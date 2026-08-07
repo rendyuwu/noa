@@ -40,6 +40,7 @@ from fastmcp import FastMCP
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ToolRisk
 from noa_api.mcp_tools.context import McpToolContext
+from noa_api.mcp_tools.whm_firewall import register_whm_firewall_tools
 from noa_api.mcp_tools.whm_read import register_whm_read_tools
 
 
@@ -49,7 +50,10 @@ class RegistryError(RuntimeError):
 
 def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
     """Register every exposed tool on `server`; return name → risk (I.mcp, V20)."""
-    registered: dict[str, ToolRisk] = dict(register_whm_read_tools(server, context=context))
+    registered: dict[str, ToolRisk] = {
+        **register_whm_read_tools(server, context=context),
+        **register_whm_firewall_tools(server, context=context),
+    }
     assert_names_in_catalog(frozenset(registered))
     return registered
 

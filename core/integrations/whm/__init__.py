@@ -23,12 +23,14 @@ Modules, one job each:
 - `imunify_cli`  — build and run `imunify360-agent`, decode its `--json`.
 - `availability` — is each backend usable here? The `asyncio.gather` dual probe behind V57.
 
-Two things are injected rather than imported, both following T15's precedent: a `SecretCipher`
-for credentials at rest (C7 — there is no settings singleton in this repo), and the
-`SSHConnectionConfig` that `core.remote_exec.sudo` reads the `sudo -n` decision from (V55).
+Nothing here reaches for global state. A `SecretCipher` is injected wherever credentials are
+decrypted (C7 — there is no settings singleton in this repo), and **the SSH side takes a
+resolved `SSHConnectionConfig`, not a `whm_servers` row** (T24): `resolve_whm_ssh_config` is
+called once by the caller, inside its database session, and every command and probe below runs
+off that value. `core.remote_exec.sudo` reads the `sudo -n` decision from the same config (V55).
 
-Consumers: the WHM tools (T19-T26), and the admin server CRUD + validate routes (T54). Nothing
-imports this yet. Reference doc: `docs/integrations/whm.md`.
+Consumers: the WHM tools (T19-T26), and the admin server CRUD + validate routes (T54).
+Reference doc: `docs/integrations/whm.md`.
 
 Not ported from `MCP`, each for a stated reason (see the module docstrings): the per-reseller
 `token_resolver` (no `whm_server_tokens` table in T4's schema — a spec change, ⊥ a build call),

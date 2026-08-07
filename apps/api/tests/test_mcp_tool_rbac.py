@@ -27,6 +27,7 @@ from core.db.models import ADMIN_ROLE_NAME
 from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.registry import RegistryError, assert_names_in_catalog, register_mcp_tools
+from noa_api.mcp_tools.whm_firewall import TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES
 from noa_api.mcp_tools.whm_read import TOOL_WHM_LIST_SERVERS, TOOL_WHM_SEARCH_ACCOUNTS
 from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
 from support.mcp_mount import McpSession, mounted_app, open_session
@@ -37,7 +38,13 @@ from support.servers import build_tool_context, whm_server
 # derived from `register_mcp_tools`: an `admin` sees exactly this, so a tool added without
 # anyone noticing it became visible to every admin should fail here rather than be asserted
 # against itself. Grows with each of §T.20-31 and §T.63.
-REGISTERED_TOOLS = sorted([TOOL_WHM_LIST_SERVERS, TOOL_WHM_SEARCH_ACCOUNTS])
+REGISTERED_TOOLS = sorted(
+    [
+        TOOL_WHM_LIST_SERVERS,
+        TOOL_WHM_SEARCH_ACCOUNTS,
+        TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
+    ]
+)
 
 # A catalogued tool this build does not register yet (T20). Standing in for what a client
 # holding a stale catalog, or a prompt-injected call, would name.

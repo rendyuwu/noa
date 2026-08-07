@@ -29,6 +29,10 @@ Failure codes, all distinct because their remedies are:
 - `imunify_empty_response`  — exit 0, nothing on either stream. `--json` promised a document.
 - `imunify_invalid_response`— valid JSON, but not an object.
 - `imunify_json_parse_error`— not JSON, and the raw-decode recovery also failed.
+
+A resolved `SSHConnectionConfig` comes in rather than a `whm_servers` row, for the reasons
+`csf_cli` states at length (T24): the caller resolves once, inside its database session, and
+does the SSH hop after closing it.
 """
 
 from __future__ import annotations
@@ -37,7 +41,6 @@ import json
 from typing import Any
 
 from core.integrations.whm.errors import ImunifyCLIError
-from core.integrations.whm.ssh import WHMServerSecretLike, resolve_whm_ssh_config
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
 from core.remote_exec.ssh import ssh_exec
@@ -47,7 +50,6 @@ from core.remote_exec.sudo import (
     is_sudo_rights_failure,
 )
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
-from core.secrets.crypto import SecretCipher
 
 IMUNIFY_BINARY = "imunify360-agent"
 
@@ -121,27 +123,14 @@ def parse_imunify_json_output(result: CommandResult) -> dict[str, Any]:
         ) from exc
 
 
-async def run_imunify_command(
-    server: WHMServerSecretLike,
-    *,
-    args: list[str],
-    cipher: SecretCipher,
-) -> CommandResult:
-    """Execute `imunify360-agent <args>` on `server`. Raises `ImunifyCLIError` on SSH failure.
+async def run_imunify_command(config: SSHConnectionConfig, *, args: list[str]) -> CommandResult:
+    """Execute `imunify360-agent <args>` over `config`. Raises `ImunifyCLIError` on SSH failure.
 
     Returns the raw `CommandResult`; `parse_imunify_json_output` is the separate step, so a
     caller that only needs the exit status does not pay for a decode.
     """
     try:
-        ssh_config = resolve_whm_ssh_config(
-            server,
-            cipher=cipher,
-            require_host_key_fingerprint=True,
-        )
-        return await ssh_exec(
-            ssh_config,
-            command=build_imunify_command(args, config=ssh_config),
-        )
+        return await ssh_exec(config, command=build_imunify_command(args, config=config))
     except SSHExecutionError as exc:
         # Converted, not wrapped: one exception tree out of this module.
         raise ImunifyCLIError(code=exc.error_code, message=exc.message) from exc

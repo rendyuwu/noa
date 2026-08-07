@@ -30,6 +30,15 @@ clean host.
 
 Matches are bounded (`max_matches`, default 20). A busy server's grep can run to hundreds of
 log lines, and the tool result is headed for an LLM context (V64's concern, one layer down).
+**`total_matches` is reported beside them** (T24, V85): a cap that drops rows silently lets the
+model report "there are twenty entries" at two hundred — a fabrication the tool handed it. The
+count is this module's to give, because this is where the cut happens.
+
+V85 also asks for a stable ordering before the cut, and the kept order is csf's own — not a
+sort. `csf -g` renders the current tables and files deterministically, so identical calls
+against unchanged state yield an identical prefix, which is the property V85 is protecting
+(`listaccts`, the tool it was written at, has no such guarantee). Sorting log lines
+alphabetically would also scramble the deny/allow grouping that makes the evidence readable.
 """
 
 from __future__ import annotations
@@ -66,10 +75,15 @@ CSFGrepVerdict = Literal["blocked", "allowlisted", "not_found", "unknown"]
 
 @dataclass(frozen=True)
 class CSFGrepParsed:
-    """Verdict plus the bounded evidence lines it was read from."""
+    """Verdict, the bounded evidence lines it was read from, and how many there were.
+
+    `total_matches` counts the lines *before* `max_matches` cut them, so a caller can say the
+    list is short rather than letting it read as complete (V85).
+    """
 
     verdict: CSFGrepVerdict
     matches: list[str]
+    total_matches: int
 
 
 def parse_csf_target(raw: str) -> CSFTarget:
@@ -191,7 +205,7 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
     else:
         verdict = "unknown"
 
-    return CSFGrepParsed(verdict=verdict, matches=bounded)
+    return CSFGrepParsed(verdict=verdict, matches=bounded, total_matches=len(matches))
 
 
 def parse_csf_grep_output(output: str, *, target: str, max_matches: int = 20) -> CSFGrepParsed:

@@ -9,7 +9,8 @@ back).
 **This is what V57 is built on.** Every firewall tool asks this first and then acts on whatever
 came back true, both backends in parallel. The invariant the tools carry — zero backends
 available → error `no_firewall_backend`, ⊥ a success that changed nothing — is enforced at the
-tool layer (T24-T26, T68); what this module owes them is an *honest* answer, because a
+tool layer (T24 for the preflight READ; T25/T26 and T68 for the CHANGE side, where a silent
+no-op is the actual harm); what this module owes them is an *honest* answer, because a
 false-positive here becomes exactly the silent no-op V57 forbids.
 
 **Two probe strategies, chosen by the resolved SSH user.** This is the part that took an
@@ -30,9 +31,14 @@ indistinguishable from "not installed" — and telling an operator "no firewall 
 server" when the truth is a missing sudoers line sends them hunting an install that is already
 there. The flag lets the tool layer raise `ssh_sudo_required` instead.
 
-Every failure resolves to "not usable", never an exception: an unreachable host, an
-unvalidated host key, or a server with no SSH credentials at all are all legitimate answers to
-"can I run csf here?", and a preflight that raises cannot report on the other backend.
+A **transport** failure resolves to "not usable", never an exception: an unreachable host is a
+legitimate answer to "can I run csf here?", and a probe that raises cannot report on the other
+backend. A **row** failure no longer reaches here at all — as of T24 the caller resolves the
+`SSHConnectionConfig` itself, so an unpinned server or one with no stored credentials refuses
+with `ssh_host_key_not_validated` / `ssh_not_configured` before either probe starts. That is the
+better answer and it costs nothing: those failures were never per-backend anyway, since both
+probes read the same row and would both have come back "not usable" — reported as "no firewall
+tools on this server", which is the same misdiagnosis `sudo_required` exists to prevent.
 """
 
 from __future__ import annotations
@@ -43,12 +49,10 @@ from dataclasses import dataclass
 
 from core.integrations.whm.csf_cli import CSF_BINARY, build_csf_command
 from core.integrations.whm.imunify_cli import IMUNIFY_BINARY, build_imunify_command
-from core.integrations.whm.ssh import WHMServerSecretLike, resolve_whm_ssh_config
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.ssh import ssh_exec
 from core.remote_exec.sudo import is_sudo_rights_failure, requires_escalation
 from core.remote_exec.types import SSHConnectionConfig
-from core.secrets.crypto import SecretCipher
 
 
 @dataclass(frozen=True, slots=True)
@@ -79,24 +83,18 @@ class FirewallAvailability:
 
 
 async def _check_binary(
-    server: WHMServerSecretLike,
+    config: SSHConnectionConfig,
     *,
-    cipher: SecretCipher,
     which_command: str,
     build_probe: Callable[[SSHConnectionConfig], str],
 ) -> BinaryCheck:
     """Resolve whether one firewall binary is usable for the resolved SSH user.
 
     `build_probe` is a callable, not a prebuilt string, because `build_*_command` reads the
-    escalation decision off the config (V55) — and this function is the one place that knows
-    which config it resolved.
+    escalation decision off the config (V55) — and keeping it lazy means the two probes share
+    one shape while composing different commands.
     """
     try:
-        config = resolve_whm_ssh_config(
-            server,
-            cipher=cipher,
-            require_host_key_fingerprint=True,
-        )
         if not requires_escalation(config):
             present = await ssh_exec(config, command=which_command)
             usable = present.exit_code == 0 and bool(present.stdout.strip())
@@ -110,42 +108,38 @@ async def _check_binary(
         # Command-missing or other non-rights failure → treat as not present.
         return BinaryCheck(usable=False, sudo_required=False)
     except SSHExecutionError:
-        # Unreachable, unpinned, or no credentials. Not usable, and not this layer's error to
-        # raise — see the module docstring.
+        # Unreachable host. Not usable, and not this layer's error to raise — see the module
+        # docstring.
         return BinaryCheck(usable=False, sudo_required=False)
 
 
-async def check_csf_binary(server: WHMServerSecretLike, *, cipher: SecretCipher) -> BinaryCheck:
+async def check_csf_binary(config: SSHConnectionConfig) -> BinaryCheck:
     """Is `/usr/sbin/csf` runnable here (escalating via `sudo -n` when non-root)?"""
     return await _check_binary(
-        server,
-        cipher=cipher,
+        config,
         which_command=f"command -v {CSF_BINARY}",
-        build_probe=lambda config: build_csf_command(["-v"], config=config),
+        build_probe=lambda probe_config: build_csf_command(["-v"], config=probe_config),
     )
 
 
-async def check_imunify_binary(server: WHMServerSecretLike, *, cipher: SecretCipher) -> BinaryCheck:
+async def check_imunify_binary(config: SSHConnectionConfig) -> BinaryCheck:
     """Is `imunify360-agent` runnable here (escalating via `sudo -n` when non-root)?"""
     return await _check_binary(
-        server,
-        cipher=cipher,
+        config,
         which_command=f"command -v {IMUNIFY_BINARY}",
-        build_probe=lambda config: build_imunify_command(["version"], config=config),
+        build_probe=lambda probe_config: build_imunify_command(["version"], config=probe_config),
     )
 
 
-async def check_firewall_binaries(
-    server: WHMServerSecretLike, *, cipher: SecretCipher
-) -> FirewallAvailability:
+async def check_firewall_binaries(config: SSHConnectionConfig) -> FirewallAvailability:
     """Probe both backends in parallel and combine the verdicts (V57).
 
     `asyncio.gather` rather than two awaits: each probe is a full SSH handshake against the
     same host, and a firewall preflight runs while an operator waits on a chat turn.
     """
     csf_check, imunify_check = await asyncio.gather(
-        check_csf_binary(server, cipher=cipher),
-        check_imunify_binary(server, cipher=cipher),
+        check_csf_binary(config),
+        check_imunify_binary(config),
     )
 
     return FirewallAvailability(

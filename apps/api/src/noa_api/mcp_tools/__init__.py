@@ -27,6 +27,7 @@ Three rules hold for everything in here.
    `ToolRisk`, at registration, because that is the one fact about a tool the middleware
    cannot work out for itself.
 
-Landed: `whm_list_servers` (T19), `whm_search_accounts` (T21). Still to come: the other twelve
-of §I.mcp, and — before any CHANGE tool — the approval gate (T32-T39).
+Landed: `whm_list_servers` (T19), `whm_search_accounts` (T21),
+`whm_preflight_firewall_entries` (T24). Still to come: the other eleven of §I.mcp, and —
+before any CHANGE tool — the approval gate (T32-T39).
 """

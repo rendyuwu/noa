@@ -96,6 +96,20 @@ absolute path because under `sudo -n` the `PATH` is sudoers' `secure_path`;
 `imunify360-agent` is unqualified because its install prefix varies across CloudLinux versions
 and it is on `PATH` in all of them.
 
+### A row becomes a connection once (§T.24)
+
+Every SSH entry point in this package — `run_csf_command`, `run_imunify_command`,
+`check_firewall_binaries` — takes a resolved `SSHConnectionConfig`, **not** a `whm_servers` row
+plus a cipher. The caller runs `resolve_whm_ssh_config` once, inside its database session, and
+does the SSH hops after closing it: holding a pooled Postgres connection across four handshakes
+to someone else's host is how a slow WHM server becomes a database outage, and an ORM row
+cannot be read once its session is gone.
+
+Two consequences worth knowing. One decrypt of the stored credentials per tool call rather than
+one per command. And the row's three pre-socket refusals below are raised **at the tool**, so an
+unvalidated server answers `ssh_host_key_not_validated` instead of "no firewall backends" —
+which used to send an operator to install software that was already installed.
+
 ### Availability probing (§V.57)
 
 Both backends are probed in parallel (`asyncio.gather`) before any firewall tool acts:
@@ -116,9 +130,10 @@ from "not installed" — and telling an operator "no firewall tools on this serv
 truth is a missing sudoers line sends them hunting an install that is already there
 (`noa-old` GH #82).
 
-**Zero backends available is an error, not a success.** The tools raise `no_firewall_backend`
-rather than reporting an approved CHANGE that changed nothing (§V.57, §T.68). This layer's job
-is only to answer honestly.
+**Zero backends available is an error, not a success.** The tools answer `no_firewall_backend`
+rather than reporting a firewall state NOA could not read, or an approved CHANGE that changed
+nothing (§V.57; §T.24 for the preflight READ, §T.68 for the CHANGE side). This layer's job is
+only to answer honestly.
 
 ### Required sudoers entries
 
@@ -149,8 +164,14 @@ is really a configuration problem.
 Two rules that are easy to get wrong: **block beats allow** (an IP in both lists is
 operationally still blocked, and T25's release-and-allow makes that intermediate state real),
 and **`not_found` requires positive evidence** — silence is `unknown`, so a parse regression
-cannot read as a clean IP. Matches are bounded at 20 lines; the result heads for an LLM
-context.
+cannot read as a clean IP.
+
+Matches are bounded at 20 lines, because the result heads for an LLM context — and
+`CSFGrepParsed.total_matches` reports how many there were before the cut (§V.85, §T.24).
+Twenty lines with nothing beside them read as "there are twenty entries". The kept lines are
+csf's own order rather than a sort: `csf -g` renders the current tables and files, so identical
+calls against unchanged state yield an identical prefix, and sorting would scramble the
+deny/allow grouping that makes the evidence readable.
 
 **Imunify** answers JSON, so the work is validating a shape. `drop` beats `white`, rows for
 other IPs are filtered out even though `--by-ip` claims to have done it, and a malformed row is
@@ -203,6 +224,7 @@ despite the unique index, because Postgres uniqueness is case-sensitive and the 
 |---|---|---|
 | `whm_list_servers` | READ | Every configured server, via `WHMServer.to_safe_dict()`. Exposed per DECISIONS §6.6 — the model needs to know which servers exist. The only `*_list_servers` that is exposed. |
 | `whm_search_accounts` | READ | `server_ref` + `query` + `limit` (1–100, default 20). Case-insensitive substring of the account username **or** its domain. |
+| `whm_preflight_firewall_entries` | READ | `server_ref` + `target`. Asks CSF and Imunify360 what they hold for the target. Exposed per DECISIONS §6.5 — the one operator-facing preflight. |
 
 Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19,
 `noa_api/mcp_tools/results.py`) sit in front of every tool, so nothing below is per-tool code.
@@ -242,6 +264,42 @@ over MCP) and inside the tool (`limit_invalid`, which is what holds for an in-pr
 blank or whitespace-only `query` is `query_required` — §V.21's gate, and one a schema cannot
 express since `min_length` counts whitespace. Both guards run before any I/O.
 
+### `whm_preflight_firewall_entries` (§T.24)
+
+Step 1 of the firewall flow (DECISIONS §6.5): *check whether an address is denied → release it →
+allowlist it*. It is exposed rather than internal because the decision it feeds is the
+operator's — they read the verdict and decide whether to call the release tool at all — so §3's
+"a preflight runs inside its workflow" rule (C9, §V.17) does not reach it. It is the only
+preflight in that position.
+
+Order of operations: refuse a blank `target` (`target_required`) and an unclassifiable one
+(`invalid_target`), both before any I/O; resolve the `server_ref` and the row's SSH config in
+one database session and close it; probe both backends; query only the usable ones, in parallel.
+
+The result:
+
+| Field | Meaning |
+|---|---|
+| `combined_verdict` | `blocked` \| `allowlisted` \| `not_found` \| `unknown` |
+| `unanswered_backends` | Usable backends that produced no verdict — failed, or CSF's `unknown` |
+| `available_backends` | `{"csf": …, "imunify": …}` — what could be run at all |
+| `sudo_required` | A backend was present but its `sudo -n` was denied (GH #82) |
+| `target_kind` | `parse_csf_target`'s classification, so the model need not classify an address |
+| `matches` / `total_matches` / `truncated` | The evidence lines, and their bound (§V.85) |
+| `csf` / `imunify` | Each backend's own verdict, or the code its failure carries |
+
+Three deliberate departures from `noa-old`'s version:
+
+- **No raw output.** It returned csf's whole `-g` dump and Imunify's whole JSON document. Old
+  V75 (DECISIONS §6.5) says the before-state shows the `csf.deny` / `csf.allow` log line and
+  never a raw iptables table, and the result persists in LibreChat's MongoDB (§V.26).
+- **A verdict read from a subset says so.** It computed the combined verdict from whichever
+  backend succeeded and otherwise fell through to `not_found` — so a broken CSF plus a clean
+  Imunify reported "this address is not blocked", a fabrication the *tool* authored (the
+  reasoning behind §V.85). Here the backends that did not answer are named, and a call where
+  nothing answered is `unknown`, never `not_found`.
+- **Evidence is not repeated per backend.** The lines already say which system produced them.
+
 ## Error codes
 
 | Code | Raised by | Meaning |
@@ -251,6 +309,10 @@ express since `min_length` counts whitespace. Both guards run before any I/O.
 | `host_ambiguous` | `resolve_whm_server_ref` | Several match; `choices` carries the candidates. |
 | `query_required` | `whm_search_accounts` | Blank or whitespace-only search text (§V.21). |
 | `limit_invalid` | `whm_search_accounts` | `limit` outside 1–100 (§T.21). |
+| `target_required` | `whm_preflight_firewall_entries` | Blank or whitespace-only target (§V.21). |
+| `invalid_target` | `whm_preflight_firewall_entries` | Not an IP, network or hostname (§V.54). |
+| `no_firewall_backend` | `whm_preflight_firewall_entries` | Neither backend could be run (§V.57). |
+| `invalid_response` | `whm_preflight_firewall_entries` | `csf -g` exited 0 with nothing to read. |
 | `tool_not_permitted` | `RbacToolMiddleware` | Caller lacks the grant, or the name is not a registered tool (§V.1, §V.10). |
 | `tool_execution_failed` | `sanitize_tool_errors` | Unmapped exception out of a tool (§V.19). |
 | `timeout` | `sanitize_tool_errors` | `TimeoutError` out of a tool (§V.19). |
@@ -284,7 +346,7 @@ lets the column be migrated in place.
 
 | Surface | Task |
 |---|---|
-| MCP tools: list accounts, suspend/unsuspend, firewall preflight, release-and-allow, allowlist-remove | §T.20, §T.22–§T.26 |
+| MCP tools: list accounts, suspend/unsuspend, release-and-allow, allowlist-remove | §T.20, §T.22–§T.23, §T.25–§T.26 |
 | Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
 | Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
 
@@ -318,6 +380,8 @@ exposure. Re-adding any of them is an owner decision.
 - Shared SSH layer: `core/remote_exec/` (§T.14)
 - Server inventory + reference resolution: `core/servers/whm_repository.py`,
   `core/servers/whm_ref.py` (§T.19)
+- MCP tools: `apps/api/src/noa_api/mcp_tools/whm_read.py` (§T.19, §T.21),
+  `apps/api/src/noa_api/mcp_tools/whm_firewall.py` (§T.24)
 - Exposed READ tools: `apps/api/src/noa_api/mcp_tools/whm_read.py` (§T.19, §T.21)
 - MCP tool + registry: `apps/api/src/noa_api/mcp_tools/{whm_read,registry,results,context}.py`
 - RBAC gate in front of every tool: `apps/api/src/noa_api/mcp_rbac.py` (§V.1)

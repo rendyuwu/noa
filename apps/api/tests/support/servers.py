@@ -62,13 +62,20 @@ def whm_server(
     server_id: UUID | None = None,
     ssh_username: str | None = "noa",
     api_token: str = API_TOKEN,
+    ssh_password: str | None = SSH_PASSWORD,
+    ssh_private_key: str | None = SSH_PRIVATE_KEY,
+    ssh_host_key_fingerprint: str | None = FINGERPRINT,
 ) -> WHMServer:
     """One `whm_servers` row, credentials included, ready to read.
 
-    `api_token` is overridable because the default is ciphertext-*shaped* rather than real
-    ciphertext: it exists to be asserted absent from a result, and it does not decrypt. A test
-    that actually calls WHM passes `cipher.encrypt_text(...)` so the real decrypt site runs
-    (T21) — see `build_tool_context`.
+    `api_token` and `ssh_password` are overridable for the same reason: the defaults are
+    ciphertext-*shaped* rather than real ciphertext, so they exist to be asserted absent from a
+    result and they do not decrypt. A test that actually reaches WHM over HTTP (T21) or over
+    SSH (T24) passes `cipher.encrypt_text(...)` so the real decrypt site runs — see
+    `build_tool_context`.
+
+    `ssh_private_key` and `ssh_host_key_fingerprint` are overridable to `None` so a test can
+    build the two rows `resolve_whm_ssh_config` refuses: no credentials at all, and no pin.
     """
     server = WHMServer(
         name=name,
@@ -78,9 +85,9 @@ def whm_server(
         verify_ssl=True,
         ssh_username=ssh_username,
         ssh_port=22,
-        ssh_password=SSH_PASSWORD,
-        ssh_private_key=SSH_PRIVATE_KEY,
-        ssh_host_key_fingerprint=FINGERPRINT,
+        ssh_password=ssh_password,
+        ssh_private_key=ssh_private_key,
+        ssh_host_key_fingerprint=ssh_host_key_fingerprint,
     )
     # Server-side defaults (`gen_random_uuid()`, `now()`) are not applied to an instance
     # that never reached Postgres.
