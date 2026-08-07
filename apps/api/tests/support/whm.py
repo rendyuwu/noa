@@ -4,6 +4,10 @@ Three test files reach for the same three things — a `whm_servers`-shaped row,
 `SecretCipher`, and a stand-in for `ssh_exec` — so they live here rather than three times over
 (V66, the same reason `support/auth.py` exists).
 
+`build_cipher` moved to `support/secrets.py` when T17 needed it too, and is re-exported here:
+nothing about a throwaway Fernet key is WHM-specific, but four test files already import it
+from this name.
+
 No live host and no live WHM: `FakeWHMServer` satisfies the `WHMServerSecretLike` protocol
 structurally, and `install_fake_ssh_exec` replaces the transport at the module boundary. The
 layer under test is command composition, output parsing and failure classification — none of
@@ -16,10 +20,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from types import ModuleType
 
-from cryptography.fernet import Fernet
-
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
-from core.secrets.crypto import SecretCipher
+from support.secrets import build_cipher
 
 PINNED_FINGERPRINT = "SHA256:pinned-fingerprint-value"
 SSH_PASSWORD = "operator-ssh-password"
@@ -50,11 +52,6 @@ class FakeWHMServer:
     ssh_private_key: str | None = None
     ssh_private_key_passphrase: str | None = None
     ssh_host_key_fingerprint: str | None = PINNED_FINGERPRINT
-
-
-def build_cipher() -> SecretCipher:
-    """A cipher on a throwaway key. Real Fernet, so `maybe_decrypt_text` is really exercised."""
-    return SecretCipher(key=Fernet.generate_key().decode())
 
 
 def ssh_config(*, username: str = "root") -> SSHConnectionConfig:
