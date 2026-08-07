@@ -1,9 +1,10 @@
-"""One exception handler for every NOA error (T8, T9, T10, T11, T14, T15, T16).
+"""One exception handler for every NOA error (T8, T9, T10, T11, T14, T15, T16, T18).
 
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
 `core.auth.mcp_token_errors`, `core.auth.mcp_auth_errors`, `core.secrets.errors`,
-`core.integrations.whm.errors`), so routes raise and this decides the status code. Routes
+`core.integrations.whm.errors`, `core.integrations.pmg.errors`), so routes raise and this
+decides the status code. Routes
 that build their own `HTTPException` per failure are how two callers end up returning
 different codes for the same condition — `noa-old`'s admin routes did exactly that, in
 ~40 lines per endpoint.
@@ -66,6 +67,7 @@ from core.auth.mcp_token_errors import (
     McpTokenNotFoundError,
 )
 from core.errors import NoaError, RetryAfterMixin
+from core.integrations.pmg.errors import PMGSHCLIError
 from core.integrations.whm.errors import WHMFirewallCLIError
 from core.remote_exec.errors import SSHExecutionError
 from core.secrets.errors import SecretCryptoError, YopassError, YopassNotConfiguredError
@@ -156,6 +158,12 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # `ImunifyCLIError` inherit via the MRO walk, and which backend failed is already in
     # `error_code`. T54's validate route is the HTTP caller; the tools sanitise per V19.
     WHMFirewallCLIError: status.HTTP_502_BAD_GATEWAY,
+    # --- PMG `pmgsh` CLI (T18) ---
+    # 502, same reading again: NOA works, `pmgsh`/`pmgconfig` on the PMG node did not answer
+    # usably. One entry for the whole surface — `PMGSHCLIError` carries the specific
+    # `error_code`, including the `SSHExecutionError` codes it converts. T54's validate route is
+    # the HTTP caller; the tools sanitise per V19.
+    PMGSHCLIError: status.HTTP_502_BAD_GATEWAY,
     # --- Secrets (T15) ---
     # 500: NOA cannot read or write its own ciphertext. The operator's request was fine and
     # retrying changes nothing — the key is absent, wrong, or the row was never encrypted.
