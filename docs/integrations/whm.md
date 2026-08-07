@@ -255,7 +255,7 @@ Three deliberate departures from `noa-old`'s version of this tool:
   documented as stable, which would make a truncated answer an arbitrary subset.
 
 The last two are **§V.85**, generalised out of this tool: any READ that caps rows carries its
-own bound and orders them by a stable key first. §V.85 is not §V.64 — that one offloads a large
+own bound and orders them reproducibly first. §V.85 is not §V.64 — that one offloads a large
 listing whole to a table surface and drops nothing (`whm_list_accounts`, §T.20, §T.59-gated),
 while this one drops rows in-process because the operator asked for a limit.
 
@@ -280,7 +280,7 @@ The result:
 
 | Field | Meaning |
 |---|---|
-| `combined_verdict` | `blocked` \| `allowlisted` \| `not_found` \| `unknown` |
+| `combined_verdict` | `blocked` \| `allowlisted` \| `not_found` \| `unknown` (§V.86) |
 | `unanswered_backends` | Usable backends that produced no verdict — failed, or CSF's `unknown` |
 | `available_backends` | `{"csf": …, "imunify": …}` — what could be run at all |
 | `sudo_required` | A backend was present but its `sudo -n` was denied (GH #82) |
@@ -293,11 +293,12 @@ Three deliberate departures from `noa-old`'s version:
 - **No raw output.** It returned csf's whole `-g` dump and Imunify's whole JSON document. Old
   V75 (DECISIONS §6.5) says the before-state shows the `csf.deny` / `csf.allow` log line and
   never a raw iptables table, and the result persists in LibreChat's MongoDB (§V.26).
-- **A verdict read from a subset says so.** It computed the combined verdict from whichever
-  backend succeeded and otherwise fell through to `not_found` — so a broken CSF plus a clean
-  Imunify reported "this address is not blocked", a fabrication the *tool* authored (the
-  reasoning behind §V.85). Here the backends that did not answer are named, and a call where
-  nothing answered is `unknown`, never `not_found`.
+- **A verdict read from a subset says so** (§V.86). It computed the combined verdict from
+  whichever backend succeeded and otherwise fell through to `not_found` — so a broken CSF plus a
+  clean Imunify reported "this address is not blocked" on a box whose *blocking* backend was
+  silent, a fabrication the tool authored. Here the backends that did not answer are named, and
+  a call where nothing answered is `unknown`, never `not_found`. §V.57 bounds only the zero
+  case; this is the partial one.
 - **Evidence is not repeated per backend.** The lines already say which system produced them.
 
 ## Error codes

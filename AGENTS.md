@@ -75,6 +75,10 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
   `TimeoutError` → `timeout`. (V19)
 - Zero firewall backends available → error `no_firewall_backend`. ⊥ success-with-empty-gather.
   Silent no-op on approved CHANGE = ⊥ acceptable. (V57)
+- **Partial answer ⊥ a whole one.** A source that ⊥ answer gets NAMED beside the verdict; zero
+  answers → `unknown`, ⊥ the benign value. Silence ≠ evidence of absence. (V86)
+- A READ that CAPS rows ships its own bound — total count + truncation flag, ordered
+  reproducibly before the cut. (V85)
 
 ## Code style
 

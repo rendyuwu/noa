@@ -16,9 +16,11 @@ error and never an empty success; a denied `sudo -n` gets its own code, because 
 tools on this server" sends an operator hunting an install that is already there (`noa-old`
 GH #82).
 
-**A verdict read from a subset says so.** `noa-old` fell through to `not_found` when a backend
-failed, so a broken CSF plus a clean Imunify reported "this address is not blocked". Here the
-backend that did not answer is named, and a call where nothing answered is `unknown`.
+**A verdict read from a subset says so** (§V.86). `noa-old` fell through to `not_found` when a
+backend failed, so a broken CSF plus a clean Imunify reported "this address is not blocked" on a
+box whose *blocking* backend was silent. Here the backend that did not answer is named, and a
+call where nothing answered is `unknown`. §V.57 bounds only the zero case; this is the partial
+one, and §T.24 is where §V.86 was written.
 
 **The preflight accepts every target kind** (§V.54). The CHANGE tools reject anything but IPv4
 because they write rules; reporting what CSF says about an IPv6 address is useful regardless.
@@ -276,9 +278,9 @@ async def test_a_backend_that_did_not_answer_is_named_and_never_reads_as_clean(m
 
     There the combined verdict was computed from whichever backend succeeded and otherwise fell
     through to `not_found`: a broken CSF plus a clean Imunify reported "this address is not
-    blocked" — a fabrication the *tool* authored, which is what §V.85 is about. The verdict is
-    still reported, because CSF-down is not a reason to withhold Imunify's answer, but the gap
-    is stated beside it.
+    blocked" — a fabrication the tool authored, which is what §V.86 says. The verdict is still
+    reported, because CSF-down is not a reason to withhold Imunify's answer, only to bound what
+    it means, so the gap is stated beside it.
     """
     fixture, _ = firewall_context(
         monkeypatch,
@@ -618,7 +620,12 @@ async def test_the_database_session_closes_before_the_first_ssh_hop(monkeypatch)
 
 async def test_capped_csf_evidence_states_its_own_bound(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """§V.85, and this is the second capper the invariant was written ahead of (T21 was the
-    first). Twenty lines with no other signal read as "there are twenty entries"."""
+    first). Twenty lines with no other signal read as "there are twenty entries".
+
+    The kept order is csf's own rather than a sort — §V.85's amended ordering clause: what it
+    asks for is reproducibility across identical calls, which `csf -g` gives and `listaccts`
+    (where the clause was written) does not.
+    """
     lines = [CSF_DENY_LINE] + [f"lfd: ({TARGET}) blocked attempt {index}" for index in range(40)]
     fixture, _ = firewall_context(
         monkeypatch, firewall=FakeFirewall(csf=csf_answer("\n".join(lines)))

@@ -17,12 +17,13 @@ Three things the result does that `noa-old`'s did not:
   alongside the parsed verdict. DECISIONS §6.5 (old V75) says the before-state shows the
   `csf.deny`/`csf.allow` log line and never a raw iptables table, and the result persists in
   LibreChat's MongoDB (V26). The bounded `matches` list is the evidence.
-- **A backend that did not answer is named, and never reads as clean.** `noa-old` computed the
-  combined verdict from whichever backend succeeded and otherwise fell through to `not_found`,
-  so a broken CSF plus a clean Imunify reported "this IP is not blocked" — a fabrication the
-  *tool* authored, which is the reasoning V85 was written on. Here a backend that errored, or
-  that returned CSF's own `unknown` verdict, is listed in `unanswered_backends`, and a call
-  where nothing answered has `combined_verdict: "unknown"`.
+- **A backend that did not answer is named, and never reads as clean** (V86, generalised out of
+  this tool). `noa-old` computed the combined verdict from whichever backend succeeded and
+  otherwise fell through to `not_found`, so a broken CSF plus a clean Imunify reported "this IP
+  is not blocked" on a box whose *blocking* backend was silent — a fabrication the tool
+  authored. Here a backend that errored, or that returned CSF's own `unknown` verdict, is listed
+  in `unanswered_backends`, and a call where nothing answered has `combined_verdict: "unknown"`.
+  V57 bounds only the zero-backend case; this is the partial one.
 - **Evidence is not repeated per backend.** The lines are labelled by their own content
   (`csf.deny`, `Imunify blacklist: …`), so a per-backend copy would double the transcript to say
   the same thing twice. Each backend entry carries its verdict, or the code its failure has.
@@ -203,7 +204,7 @@ def combine_firewall_verdict(lookups: Sequence[BackendLookup]) -> str:
     releases *and* allows in one action so that intermediate state is real.
 
     `not_found` requires a backend to have said so. Everything else — no usable backend answer
-    at all — is `unknown`, never a clean bill: that distinction is the whole reason this
+    at all — is `unknown`, never a clean bill (V86): that distinction is the whole reason this
     function exists rather than a default.
     """
     verdicts = [lookup.verdict for lookup in lookups if lookup.answered]
@@ -333,8 +334,8 @@ async def whm_preflight_firewall_entries(
         # Present-but-denied ≠ absent: the operator is told to fix sudoers, not to install csf.
         "sudo_required": availability.sudo_required,
         "combined_verdict": combine_firewall_verdict(list(lookups.values())),
-        # A verdict read from a subset says so. Without this, "not_found" from a half-answering
-        # pair reads as "this address is clean".
+        # V86: a verdict read from a subset says so. Without this, "not_found" from a
+        # half-answering pair reads as "this address is clean".
         "unanswered_backends": [name for name, lookup in lookups.items() if not lookup.answered],
         "matches": matches,
         # V85: the cut is csf's (`max_matches`), so the bound travels with the rows.
