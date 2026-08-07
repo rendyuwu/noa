@@ -6,12 +6,12 @@ Eight tables, three groups:
 - MCP auth: `mcp_tokens` (C5, V2, V3)
 - Managed infrastructure: `whm_servers`, `proxmox_servers`, `pmg_servers` (C7, V48)
 
-Plus `login_rate_limits` from T8 (V9).
+Plus `login_rate_limits` from T8 (V9) and `tool_runs` from T35 (V20, V45-V47).
 
 Later tasks add their own tables and migrations: `action_requests` (T34),
-`tool_runs` (T35), `action_receipts` (T36), `audit_log` (T14). Ported from
-`noa-old` branch `MCP` per C13, minus the chat-presentation tables
-(threads/messages/assistant_runs/workflow_todos) that die with C16.
+`action_receipts` (T36), `audit_log` (T14). Ported from `noa-old` branch `MCP`
+per C13, minus the chat-presentation tables (threads/messages/assistant_runs/
+workflow_todos) that die with C16.
 
 Credential columns hold Fernet ciphertext, never plaintext (C7, V48). Each server
 model exposes `to_safe_dict()` returning presence booleans instead of secret
@@ -32,7 +32,9 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -41,10 +43,12 @@ from core.db.columns import (
     TimestampMixin,
     created_at,
     encrypted_secret,
+    lifecycle_enum,
     optional_encrypted_secret,
     updated_at,
     uuid_pk,
 )
+from core.db.lifecycle import ToolRisk, ToolRunStatus
 
 # `admin` is reserved: it bypasses per-tool permission checks for known tools and
 # cannot be edited or deleted through the API (V10, V13).
@@ -210,6 +214,70 @@ class LoginRateLimit(Base):
     updated_at: Mapped[datetime] = updated_at()
 
 
+class ToolRun(Base):
+    """One MCP tool execution, READ or CHANGE (T35, V45-V47).
+
+    Written for *every* tool call, not only the interesting ones: V45 covers READs, V46
+    covers approved CHANGEs, and V47 fixes the field list. This table is the answer to
+    "what did NOA actually do", so it is queried by the admin audit surface (T55) and
+    never by the tool path itself.
+
+    `risk` and `status` are separate columns on purpose (V20). Folding them into one
+    lifecycle set would make `FAILED` and `READ` compete for the same cell, and a failed
+    READ is exactly the row an audit trail must be able to hold. `noa-old` kept `risk`
+    only on `action_requests`, so its `tool_runs` could not say whether a run was a
+    change at all without a join to a row that may not exist.
+
+    `created_at` and `completed_at` are the timing pair. Duration is derived on read
+    rather than stored, so the two can never disagree.
+
+    Nothing here writes the row yet — T73 wires the write into the tool path, beside the
+    RBAC gate so no individual tool can forget it (V83b). It is also T73 that redacts
+    `args` before they land (C7, V8); the column below only guarantees somewhere to put
+    the redacted form.
+    """
+
+    __tablename__ = "tool_runs"
+
+    id: Mapped[UUID] = uuid_pk()
+    tool_name: Mapped[str] = mapped_column(String(200), nullable=False, index=True)
+    # Nullable with `SET NULL`, unlike every other user FK in schema v1, which cascades.
+    # An audit trail that a user deletion erases is not an audit trail, and `RESTRICT`
+    # would instead make `DELETE /admin/users/{id}` fail once a user had run one tool.
+    # T73 always writes an id; NULL describes life after the subject is deleted.
+    requested_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # Classification, fixed before the call runs (V20).
+    risk: Mapped[ToolRisk] = lifecycle_enum(ToolRisk, name="tool_run_risk")
+    # Execution state. Defaults to STARTED so a row inserted before the tool body runs is
+    # already correct, and a process that dies mid-call leaves evidence (T38's reaper).
+    status: Mapped[ToolRunStatus] = lifecycle_enum(
+        ToolRunStatus,
+        name="tool_run_status",
+        default=ToolRunStatus.STARTED,
+        index=True,
+    )
+    # Audit/grouping label only — never a security scope (DECISIONS §3.2, old V165).
+    # Nullable because MCP has no thread concept to guarantee one (C16 dropped threads).
+    conversation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    # Redacted by the writer (T73). `'{}'` rather than NULL so "no arguments" and
+    # "arguments not recorded" cannot be confused in an audit view.
+    args: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, server_default=text("'{}'::jsonb")
+    )
+    # Truncated (V45, V47). Bounded so a large READ result cannot bloat the audit table —
+    # the full body lives behind the table surface (V64), not here.
+    result_summary: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    # Timing, half one: when the run started. Indexed — the audit list sorts and pages on it.
+    created_at: Mapped[datetime] = created_at(index=True)
+    # Timing, half two. NULL while STARTED.
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SSHCredentialsMixin:
     """SSH connection fields shared by WHM and PMG servers (V66).
 
@@ -327,6 +395,7 @@ __all__ = [
     "Role",
     "RoleToolPermission",
     "SSHCredentialsMixin",
+    "ToolRun",
     "User",
     "UserRole",
     "WHMServer",

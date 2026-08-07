@@ -35,12 +35,13 @@ SCHEMA_V1_TABLES = {
 # Added after schema v1 by the task named alongside each.
 LATER_TABLES = {
     "login_rate_limits": "T8 (V9)",
+    "tool_runs": "T35 (V20, V45-V47)",
 }
 
 # Named so the assertion below says what it is guarding against rather than only
-# failing on a set difference: these arrive with T34-T36, and a table appearing early
+# failing on a set difference: these arrive with T34/T36, and a table appearing early
 # means a migration landed ahead of the task that specifies its columns.
-NOT_YET_TABLES = {"action_requests", "tool_runs", "action_receipts", "audit_log"}
+NOT_YET_TABLES = {"action_requests", "action_receipts", "audit_log"}
 
 # Columns that hold Fernet ciphertext (C7, V48). None may ever surface in a
 # `to_safe_dict()` payload (V2, V8).
@@ -71,7 +72,7 @@ def test_metadata_declares_schema_v1_plus_only_the_later_tables_landed_so_far() 
 
 
 def test_action_and_audit_tables_have_not_landed_early() -> None:
-    """T34-T36 own these; a column set defined before its task is a guess."""
+    """T34/T36 own these; a column set defined before its task is a guess."""
     assert set(Base.metadata.tables) & NOT_YET_TABLES == set()
 
 

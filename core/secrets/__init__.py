@@ -28,8 +28,10 @@ Consumers: `proxmox_reset_vm_password` (T27) for the generate → deliver → ap
 the admin server CRUD + validate routes (T54) for credentials at rest. Reference doc:
 `docs/integrations/yopass.md`.
 
-`noa-old`'s `redaction.py` is not here: it lands with the audit rows that need it
-(T35, T47, T55).
+`noa-old`'s `redaction.py` is not here: it lands with the code that *writes* redacted audit
+args, which is T73, not with the table itself. T35 created `tool_runs.args` and deliberately
+left it unredacted-by-nobody — a redactor with no caller is a control no test can exercise,
+which is how B2 shipped (V69). T55 reads those rows; T73 is what puts them there.
 """
 
 from core.secrets.crypto import ENCRYPTED_PREFIX, SecretCipher

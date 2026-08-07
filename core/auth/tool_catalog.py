@@ -12,8 +12,9 @@ code, so the test in `test_rbac_engine.py` asserts this equals §I.mcp's exposed
 
 Two things are NOT here on purpose:
 
-- **Risk classification** (`ToolRisk` READ/CHANGE, V20). It belongs with the approval
-  gate (T33) and `tool_runs` (T35). Permission resolution never branches on risk: a
+- **Risk classification** (`ToolRisk` READ/CHANGE, V20). The enum lives in
+  `core.db.lifecycle` as of T35; mapping a tool name to one belongs with the approval gate
+  (T33) and the `tool_runs` writer (T73). Permission resolution never branches on risk: a
   CHANGE tool the operator may call still goes through the approval gate (V16), and a
   CHANGE tool they may not call is refused by RBAC first (V1). Adding risk here would
   invite a check that conflates "may call" with "may run now".

@@ -41,6 +41,9 @@ DEV_URL = get_settings().postgres_url_str
 # `whm_servers` joins the list at T19: `whm_list_servers` and `resolve_whm_server_ref` read
 # it, and nothing cascades to it from `users` or `roles`, so a repository test that inserts
 # servers has to start from an empty table of its own.
+# `tool_runs` joins at T35. `TRUNCATE users CASCADE` would reach it anyway, but only when a
+# test happens to create a user — and its `requested_by_user_id` is `SET NULL`, so a run
+# left behind by an earlier test survives its requester and would still be counted.
 MUTATED_TABLES = (
     "users",
     "roles",
@@ -48,6 +51,7 @@ MUTATED_TABLES = (
     "login_rate_limits",
     "mcp_tokens",
     "whm_servers",
+    "tool_runs",
 )
 
 

@@ -2,9 +2,10 @@
 
 Landed: `admin_events` — audit events for admin changes (T9, V14).
 
-To come: tool-run audit (`tool_runs`, T35, V45-V47) and action receipts (T36, V46). They
-live beside this rather than inside it because they are written by the MCP path, not the
-admin path, and they persist to their own tables.
+Tool-run audit has a table but no writer: `tool_runs` exists as of T35 (V20, V45-V47) and
+T73 wires the write into the MCP tool path. Action receipts (T36, V46) have neither yet.
+Both live beside this rather than inside it because they are written by the MCP path, not
+the admin path, and they persist to their own tables.
 """
 
 from core.audit.admin_events import (

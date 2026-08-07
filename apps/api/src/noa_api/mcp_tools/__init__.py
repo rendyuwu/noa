@@ -25,5 +25,6 @@ Landed: `whm_list_servers` (T19). Still to come: the other thirteen of §I.mcp, 
 any CHANGE tool — the approval gate (T32-T39).
 
 **Known gap, recorded rather than hidden:** V45 wants a `tool_runs` row for every MCP READ.
-`tool_runs` is created by T35, which has not been built, so tool calls are not yet audited.
+T35 created the table; nothing writes it. T73 adds the write, beside the RBAC gate so no
+individual tool can forget it (V83b). Until then tool calls are still unaudited.
 """

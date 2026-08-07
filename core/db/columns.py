@@ -1,16 +1,18 @@
 """Shared column helpers (V66 — reuse over duplication).
 
-Every table repeats the same three shapes: a server-generated UUID primary key,
-created/updated timestamps, and encrypted-secret text. Declaring them once keeps
-the models readable and the DDL uniform.
+Every table repeats the same shapes: a server-generated UUID primary key,
+created/updated timestamps, encrypted-secret text, and — since T35 — lifecycle
+enum columns. Declaring them once keeps the models readable and the DDL uniform.
 """
 
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import DateTime, Text, func
+from sqlalchemy import DateTime, Enum, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -22,9 +24,15 @@ def uuid_pk() -> Mapped[UUID]:
     )
 
 
-def created_at() -> Mapped[datetime]:
-    """Insert timestamp, timezone-aware, DB-defaulted."""
-    return mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+def created_at(**kwargs: Any) -> Mapped[datetime]:
+    """Insert timestamp, timezone-aware, DB-defaulted.
+
+    `**kwargs` reaches `mapped_column` — `tool_runs` passes `index=True` because the
+    audit list sorts and pages on it (T35, T55), and no other table needs that index.
+    """
+    return mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), **kwargs
+    )
 
 
 def updated_at() -> Mapped[datetime]:
@@ -34,6 +42,44 @@ def updated_at() -> Mapped[datetime]:
         nullable=False,
         server_default=func.now(),
         onupdate=func.now(),
+    )
+
+
+def lifecycle_enum_type(enum_class: type[StrEnum], *, name: str) -> Enum:
+    """A `core.db.lifecycle` enum stored as a checked VARCHAR (V20).
+
+    `native_enum=False` keeps it out of Postgres' own enum types: adding a member to a
+    native enum is `ALTER TYPE`, which cannot run inside a transaction block on older
+    servers and leaves the type behind on downgrade. A VARCHAR plus a CHECK constraint
+    is dropped with the table.
+
+    `create_constraint=True` is the point of the helper — SQLAlchemy 2.0 defaults it to
+    `False`, which would leave `native_enum=False` as a plain unconstrained VARCHAR and
+    V20's "machine-stable" resting on application code alone. With the constraint, a
+    renamed member fails at the DB and has to be a migration.
+
+    `validate_strings=True` catches the same mistake earlier, on the Python side, before
+    a flush.
+    """
+    return Enum(
+        enum_class,
+        name=name,
+        native_enum=False,
+        create_constraint=True,
+        validate_strings=True,
+    )
+
+
+def lifecycle_enum(
+    enum_class: type[StrEnum], *, name: str, default: StrEnum | None = None, **kwargs: Any
+) -> Mapped[Any]:
+    """Required lifecycle-enum column, optionally DB-defaulted (V20)."""
+    server_default = default.value if default is not None else None
+    return mapped_column(
+        lifecycle_enum_type(enum_class, name=name),
+        nullable=False,
+        server_default=server_default,
+        **kwargs,
     )
 
 
