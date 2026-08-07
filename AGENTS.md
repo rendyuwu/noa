@@ -74,7 +74,10 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
 - Raw exceptions ⊥ reach LLM. Sanitize: `RuntimeError` → `tool_execution_failed`,
   `TimeoutError` → `timeout`. (V19)
 - Zero firewall backends available → error `no_firewall_backend`. ⊥ success-with-empty-gather.
-  Silent no-op on approved CHANGE = ⊥ acceptable. (V57)
+  Silent no-op on approved CHANGE = ⊥ acceptable. Guard sits at the MECHANISM: ∀ firewall op goes
+  through `firewall_gate.run_on_usable_backends` — ⊥ a per-tool check, ⊥ a hand-rolled
+  `asyncio.gather` (AST-guarded). Binaries present ∧ `sudo -n` denied → `ssh_sudo_required`,
+  ⊥ `no_firewall_backend`. (V57, V55, T68)
 - **Partial answer ⊥ a whole one.** A source that ⊥ answer gets NAMED beside the verdict; zero
   answers → `unknown`, ⊥ the benign value. Silence ≠ evidence of absence. (V86)
 - A READ that CAPS rows ships its own bound — total count + truncation flag, ordered
