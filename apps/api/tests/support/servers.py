@@ -41,6 +41,7 @@ from core.integrations.whm.client import WHMClient
 from core.integrations.whm.ssh import WHMServerSecretLike, build_whm_client
 from core.secrets.crypto import SecretCipher
 from noa_api.mcp_tools.context import McpToolContext
+from support.action_requests import FakeActionRequestRepository
 from support.mcp_identity import StubSession
 from support.rbac import FakeAuthorizationRepository, RecordingAuditSink
 from support.secrets import build_cipher
@@ -59,6 +60,11 @@ SSH_PRIVATE_KEY = "enc:v1:fernet:whm-ssh-private-key"
 SECRETS = (API_TOKEN, SSH_PASSWORD, SSH_PRIVATE_KEY)
 
 FINGERPRINT = "SHA256:l3Rz6cS0nOtASecret+ItIsAPublicKeyDigest"
+
+# The pending-request TTL these fixtures hand the tool path (T33, V32). Not `Settings`'
+# 3600: a deadline asserted against the production default cannot separate a gate that read
+# the configured value from one that hardcoded it.
+PENDING_TTL_SECONDS = 900
 
 
 def whm_server(
@@ -199,6 +205,7 @@ class ToolFixture:
     authorization: FakeAuthorizationRepository
     audit: RecordingAuditSink
     tool_runs: FakeToolRunRepository
+    action_requests: FakeActionRequestRepository
     cipher: SecretCipher
 
 
@@ -208,6 +215,8 @@ def build_tool_context(
     pmg_servers: Iterable[PMGServer] = (),
     authorization: FakeAuthorizationRepository | None = None,
     tool_runs: FakeToolRunRepository | None = None,
+    action_requests: FakeActionRequestRepository | None = None,
+    pending_ttl_seconds: int = PENDING_TTL_SECONDS,
     cipher: SecretCipher | None = None,
     whm_transport: httpx.AsyncBaseTransport | None = None,
 ) -> ToolFixture:
@@ -223,6 +232,15 @@ def build_tool_context(
     start failing for an unrelated reason — and a fixture that quietly disabled the audit
     path would let the whole suite pass with V45 unheld.
 
+    The `action_requests` writer is a double for the same reason and on the same terms
+    (T33): it is the only thing standing between a CHANGE gate call and Postgres, and the
+    live SQL has its own coverage in `test_mcp_change_gate.py`.
+
+    `pending_ttl_seconds` is deliberately *not* the production default. `Settings` says 3600
+    (`core.config`), so a test asserting a deadline against that number could not tell a gate
+    that read the setting from one that hardcoded it; this value is a number nothing else in
+    the tree holds.
+
     `cipher` and `whm_transport` are T21's two seams, and neither replaces production code.
     The cipher is a real `SecretCipher` on a throwaway key, so a tool that decrypts an API
     token runs the real decrypt (pass the same instance a row's `api_token` was encrypted
@@ -233,6 +251,7 @@ def build_tool_context(
     pmg_repository = FakePMGServerRepository(pmg_servers)
     authorization_repository = authorization or FakeAuthorizationRepository()
     tool_run_repository = tool_runs or FakeToolRunRepository()
+    action_request_repository = action_requests or FakeActionRequestRepository()
     audit = RecordingAuditSink()
     resolved_cipher = cipher or build_cipher()
 
@@ -247,10 +266,12 @@ def build_tool_context(
         context=McpToolContext(
             session_factory=session_factory,
             secret_cipher=resolved_cipher,
+            pending_ttl_seconds=pending_ttl_seconds,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
             pmg_server_repository_factory=lambda _session: pmg_repository,
             tool_run_repository_factory=lambda _session: tool_run_repository,
+            action_request_repository_factory=lambda _session: action_request_repository,
             whm_client_factory=whm_client_factory,
             audit_sink=audit,
         ),
@@ -259,6 +280,7 @@ def build_tool_context(
         authorization=authorization_repository,
         audit=audit,
         tool_runs=tool_run_repository,
+        action_requests=action_request_repository,
         cipher=resolved_cipher,
     )
 
@@ -267,6 +289,7 @@ __all__ = [
     "API_TOKEN",
     "CREATED_AT",
     "FINGERPRINT",
+    "PENDING_TTL_SECONDS",
     "SECRETS",
     "SSH_PASSWORD",
     "SSH_PRIVATE_KEY",

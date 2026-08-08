@@ -44,6 +44,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from core.approvals.errors import (
+    ChangeEvidenceRequiredError,
+    ChangeGateError,
+    ChangeGateUnavailableError,
+    ChangeReasonForbiddenError,
+)
 from core.auth.authorization_errors import (
     AdminAccessRequiredError,
     AuthorizationError,
@@ -202,6 +208,20 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # ...except when yopass was never configured. That is NOA's own gap, not the upstream's,
     # so it takes 500 rather than inheriting 502 from `YopassError`.
     YopassNotConfiguredError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    # --- CHANGE approval gate (T33) ---
+    # 503: NOA could not record a pending request, so it refused to run the change (V23).
+    # The operator did nothing wrong and retrying is the remedy, which is what 503 says.
+    ChangeGateUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    # 500 for both of the gate's other refusals. Neither is reachable from anything a client
+    # sends: a reason-shaped argument means a CHANGE tool declared a parameter C8 forbids,
+    # and missing evidence means it skipped its own in-process preflight (C9, V17). Those are
+    # NOA's bugs, and answering 400 would blame the caller for one.
+    ChangeReasonForbiddenError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    ChangeEvidenceRequiredError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    # Bare `ChangeGateError`: still "the change was not submitted and did not run", so 503
+    # rather than the fallback by accident. A subclass-tree test asserts every member above
+    # is mapped, so reaching this line means a new class arrived without a decision.
+    ChangeGateError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 # Bare `AuthError` means "authentication failed and we did not classify why", which is an

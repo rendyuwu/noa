@@ -151,6 +151,10 @@ def create_app() -> FastAPI:
         tool_context=build_mcp_tool_context(
             session_factory=runtime.session_factory,
             secret_cipher=runtime.secret_cipher,
+            # V32's deadline, resolved once here rather than read again inside the gate:
+            # `get_settings()` is called in exactly one place (T5) and the CHANGE gate (T33)
+            # stamps `action_requests.expires_at` from this value.
+            pending_ttl_seconds=runtime.settings.approval_pending_ttl_seconds,
         ),
     )
 

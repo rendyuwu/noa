@@ -24,11 +24,16 @@ is the single `get_settings()` caller, and a tool reaching for its own would be 
 of the world (C7, T15). It arrives already constructed, so a bad `NOA_SECRET_ENCRYPTION_KEY`
 stops startup rather than surfacing as a failed tool call.
 
-Session lifetime is per operation, not per request: each tool, each RBAC check and each of
-the two `tool_runs` writes (T73) opens one, uses it, closes it. The audit writes are the
-only ones that commit, and they commit *separately* on purpose — see `core.audit.tool_runs`.
-When T33 makes a CHANGE tool write `action_requests`, that write and its audit event will
-share one session, and this is where that factory comes from.
+Session lifetime is per operation, not per request: each tool, each RBAC check, each of the
+two `tool_runs` writes (T73) and the CHANGE gate's INSERT (T33) opens one, uses it, closes
+it. Those last three are the only ones that commit, and they commit *separately* on
+purpose — see `core.audit.tool_runs` and `core.approvals.repository`.
+
+`pending_ttl_seconds` is the one plain scalar here, and it is here for the same reason the
+cipher is: `APPROVAL_PENDING_TTL_SECONDS` is settings, `noa_api.main.build_runtime` is the
+single `get_settings()` caller, and a gate reaching for its own copy would be a second world
+(T15, C7). It arrives resolved so the deadline on every pending request is assertable from a
+test without patching configuration.
 """
 
 from __future__ import annotations
@@ -38,6 +43,7 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.approvals.repository import ActionRequestRepository, SQLActionRequestRepository
 from core.audit.admin_events import AdminAuditSink, StructlogAdminAuditSink
 from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.auth.authorization_repository import SQLAuthorizationRepository
@@ -61,6 +67,10 @@ class McpToolContext:
     # turn a misconfigured key into an intermittent tool failure instead of a boot failure
     # (T15 — settings are injected here, there is no cipher singleton to reach for).
     secret_cipher: SecretCipher
+    # `APPROVAL_PENDING_TTL_SECONDS` (V32). Required rather than defaulted: a default here
+    # would be a second answer to "how long may a request stay pending", and the one that
+    # drifts silently is always the copy nobody edits.
+    pending_ttl_seconds: int
     authorization_repository_factory: Callable[[AsyncSession], AuthorizationRepository] = (
         SQLAuthorizationRepository
     )
@@ -78,6 +88,13 @@ class McpToolContext:
         SQLPMGServerRepository
     )
     tool_run_repository_factory: Callable[[AsyncSession], ToolRunRepository] = SQLToolRunRepository
+    # The CHANGE gate's writer (T33). Beside the audit one and not folded into it: they write
+    # different tables at different moments — this one before a change is authorised, that one
+    # around a READ that already ran — and a single repository would invite a caller to reach
+    # the wrong write from the wrong side of the approval boundary.
+    action_request_repository_factory: Callable[[AsyncSession], ActionRequestRepository] = (
+        SQLActionRequestRepository
+    )
     # The WHM API seam. Production builds a real client over a real socket; a tool test swaps
     # in the same factory with an `httpx` transport, so the client, the cipher and the one
     # decrypt site all stay in the path and only the socket is doubled.
@@ -89,10 +106,17 @@ class McpToolContext:
 
 
 def build_mcp_tool_context(
-    *, session_factory: McpSessionFactory, secret_cipher: SecretCipher
+    *,
+    session_factory: McpSessionFactory,
+    secret_cipher: SecretCipher,
+    pending_ttl_seconds: int,
 ) -> McpToolContext:
     """Production wiring (T13's `create_app` calls this beside `build_mcp_auth_context`)."""
-    return McpToolContext(session_factory=session_factory, secret_cipher=secret_cipher)
+    return McpToolContext(
+        session_factory=session_factory,
+        secret_cipher=secret_cipher,
+        pending_ttl_seconds=pending_ttl_seconds,
+    )
 
 
 def build_authorization_service(
@@ -122,8 +146,21 @@ def build_tool_run_repository(context: McpToolContext, session: AsyncSession) ->
     return context.tool_run_repository_factory(session)
 
 
+def build_action_request_repository(
+    context: McpToolContext, session: AsyncSession
+) -> ActionRequestRepository:
+    """The `action_requests` writer over one session (T33, V23).
+
+    Reads the same way as the two functions above it, and is constructed per write for the
+    same reason: the repository holds the session, and a long-lived one would pin a
+    connection for the life of the process.
+    """
+    return context.action_request_repository_factory(session)
+
+
 __all__ = [
     "McpToolContext",
+    "build_action_request_repository",
     "build_authorization_service",
     "build_mcp_tool_context",
     "build_tool_run_repository",

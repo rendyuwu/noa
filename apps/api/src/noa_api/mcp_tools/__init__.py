@@ -27,7 +27,14 @@ Three rules hold for everything in here.
    `ToolRisk`, at registration, because that is the one fact about a tool the middleware
    cannot work out for itself.
 
+5. **A CHANGE tool executes nothing when it is called.** It runs its preflight in-process
+   (C9, V17) and hands the evidence to `change_gate.open_change_request`, which writes a
+   PENDING `action_requests` row and returns (T33, V16). "May this run?" is answered from
+   that row's `status`, never from an argument and never from an LLM claim (V23); the
+   decision itself arrives as a cookie POST from a NOA-origin document (V22, T37).
+
 Landed: `whm_list_servers` (T19), `whm_search_accounts` (T21),
-`whm_preflight_firewall_entries` (T24). Still to come: the other eleven of §I.mcp, and —
-before any CHANGE tool — the approval gate (T32-T39).
+`whm_preflight_firewall_entries` (T24), and the CHANGE gate's write side (T33 — no CHANGE
+tool calls it yet). Still to come: the other eleven of §I.mcp, and the rest of the approval
+path — the gate's result shape (T32), the endpoints (T37), the executor (T38), expiry (T39).
 """
