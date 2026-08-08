@@ -41,7 +41,9 @@ from core.integrations.whm.client import WHMClient
 from core.integrations.whm.ssh import WHMServerSecretLike, build_whm_client
 from core.secrets.crypto import SecretCipher
 from noa_api.mcp_tools.context import McpToolContext
+from support.action_expiry import FakeActionRequestExpiryRepository
 from support.action_requests import FakeActionRequestRepository
+from support.action_results import FakeActionResultRepository
 from support.mcp_identity import StubSession
 from support.rbac import FakeAuthorizationRepository, RecordingAuditSink
 from support.secrets import build_cipher
@@ -206,6 +208,8 @@ class ToolFixture:
     audit: RecordingAuditSink
     tool_runs: FakeToolRunRepository
     action_requests: FakeActionRequestRepository
+    action_results: FakeActionResultRepository
+    action_expiry: FakeActionRequestExpiryRepository
     cipher: SecretCipher
 
 
@@ -216,6 +220,8 @@ def build_tool_context(
     authorization: FakeAuthorizationRepository | None = None,
     tool_runs: FakeToolRunRepository | None = None,
     action_requests: FakeActionRequestRepository | None = None,
+    action_results: FakeActionResultRepository | None = None,
+    action_expiry: FakeActionRequestExpiryRepository | None = None,
     pending_ttl_seconds: int = PENDING_TTL_SECONDS,
     cipher: SecretCipher | None = None,
     whm_transport: httpx.AsyncBaseTransport | None = None,
@@ -236,6 +242,14 @@ def build_tool_context(
     (T33): it is the only thing standing between a CHANGE gate call and Postgres, and the
     live SQL has its own coverage in `test_mcp_change_gate.py`.
 
+    `action_results` and `action_expiry` are T63's pair, and they are two doubles rather than
+    one because production has two classes: a reader that holds only `SELECT`s and a writer
+    whose one reachable status is `EXPIRED`. Both are handed the same journal, so a test can
+    assert the *order* the read path took them in — which is what pins "a request that is not
+    the caller's is never expired by this read" (V27). The SQL behind the reader has its own
+    coverage in `test_action_results_live.py`, where a NULL requester is a claim about the
+    statement rather than about a Python comparison.
+
     `pending_ttl_seconds` is deliberately *not* the production default. `Settings` says 3600
     (`core.config`), so a test asserting a deadline against that number could not tell a gate
     that read the setting from one that hardcoded it; this value is a number nothing else in
@@ -252,6 +266,10 @@ def build_tool_context(
     authorization_repository = authorization or FakeAuthorizationRepository()
     tool_run_repository = tool_runs or FakeToolRunRepository()
     action_request_repository = action_requests or FakeActionRequestRepository()
+    # One journal across both, so the read path's order is assertable (T63).
+    read_path_journal: list[str] = []
+    action_result_repository = action_results or FakeActionResultRepository(read_path_journal)
+    action_expiry_repository = action_expiry or FakeActionRequestExpiryRepository(read_path_journal)
     audit = RecordingAuditSink()
     resolved_cipher = cipher or build_cipher()
 
@@ -272,6 +290,8 @@ def build_tool_context(
             pmg_server_repository_factory=lambda _session: pmg_repository,
             tool_run_repository_factory=lambda _session: tool_run_repository,
             action_request_repository_factory=lambda _session: action_request_repository,
+            action_result_repository_factory=lambda _session: action_result_repository,
+            action_request_expiry_repository_factory=lambda _session: action_expiry_repository,
             whm_client_factory=whm_client_factory,
             audit_sink=audit,
         ),
@@ -281,6 +301,8 @@ def build_tool_context(
         audit=audit,
         tool_runs=tool_run_repository,
         action_requests=action_request_repository,
+        action_results=action_result_repository,
+        action_expiry=action_expiry_repository,
         cipher=resolved_cipher,
     )
 

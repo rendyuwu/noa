@@ -6,8 +6,14 @@ lock already held, then a 409. What is here is the other half — **the sweep**,
 V32's terminality *without traffic*. Without it a request nobody ever opens stays `PENDING`
 for as long as the database exists, and `action_requests.status` — the column V23 answers
 "may this run?" from every time — has no truthful answer once the TTL has passed. And the
-same mechanism serves the render path (T41's card, T63's `noa_get_action_result`), so a GET
-cannot show a stale `PENDING` either.
+same mechanism serves the render path, so a read cannot show a stale `PENDING` either: T63's
+`noa_get_action_result` is its first live caller (`core.approvals.results`), and T41's card
+is the second.
+
+**Where the render path puts this call is the render path's decision.** `expire_if_due` takes
+an id and no requester, so T63 runs it *after* its requester-matched read — otherwise a
+prompt-injected identifier could make NOA write to a request belonging to an operator the
+caller cannot see. A surface that resolves the row itself may reasonably call it first.
 
 **A third writer, and the reason is the same one that split the first two.**
 `SQLActionRequestRepository` (T33) writes `PENDING` and nothing else, because the MCP tool
@@ -73,7 +79,8 @@ LOG_SWEEP_EXPIRED: Final = "action_requests_expired_by_sweep"
 # ever went wrong.
 LOG_SWEEP_FAILED: Final = "action_request_expiry_sweep_failed"
 
-# The render path found a request past its deadline and made it terminal (T41, T63).
+# A render path found a request past its deadline and made it terminal (T63's result tool
+# today, T41's card next).
 LOG_EXPIRED_ON_READ: Final = "action_request_expired_on_render"
 
 logger = structlog.get_logger(__name__)
@@ -185,14 +192,16 @@ class ActionRequestExpiryService:
     ) -> bool:
         """Make one request terminal if its deadline has passed; report whether it did.
 
-        Called *before* a render path reads the row (T41's card, T63's result tool), so what
-        it then reads is the row's real state rather than a `PENDING` nobody may act on any
+        Called around a render path's read of the row (T41's card, T63's result tool), so what
+        that path serves is the row's real state rather than a `PENDING` nobody may act on any
         more. `False` covers both "still live" and "already terminal" — a caller that needs to
-        tell those apart reads `status`, which is where V23 says the answer lives.
+        tell those apart reads `status`, which is where V23 says the answer lives; a caller
+        that ran this *after* its own read (T63, see the module docstring) knows `True` means
+        the row is `EXPIRED` as of the moment it passed in.
 
         The commit runs whether or not anything matched. An empty `UPDATE` commits an empty
-        transaction, which costs a round trip and keeps this method's contract — "the row you
-        read next is durable" — free of a branch that could get it wrong.
+        transaction, which costs a round trip and keeps this method's contract — "the row is
+        durable either way" — free of a branch that could get it wrong.
         """
         moment = now_utc(now)
         expired = await self._repository.expire_due(

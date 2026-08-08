@@ -43,7 +43,17 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.approvals.expiry import (
+    ActionRequestExpiryRepository,
+    ActionRequestExpiryService,
+    SQLActionRequestExpiryRepository,
+)
 from core.approvals.repository import ActionRequestRepository, SQLActionRequestRepository
+from core.approvals.results import (
+    ActionResultRepository,
+    ActionResultService,
+    SQLActionResultRepository,
+)
 from core.audit.admin_events import AdminAuditSink, StructlogAdminAuditSink
 from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.auth.authorization_repository import SQLAuthorizationRepository
@@ -95,6 +105,19 @@ class McpToolContext:
     action_request_repository_factory: Callable[[AsyncSession], ActionRequestRepository] = (
         SQLActionRequestRepository
     )
+    # T63's reader, and it is only a reader: `SQLActionResultRepository` holds no statement
+    # that is not a `SELECT`. Beside the writer above rather than folded into it for the
+    # reason `core.approvals` splits its classes by who can reach which write — a reader that
+    # shared a class with the PENDING writer would be a reason to hand the read path one.
+    action_result_repository_factory: Callable[[AsyncSession], ActionResultRepository] = (
+        SQLActionResultRepository
+    )
+    # The one write the read path may make (T39): a PENDING request past its deadline becomes
+    # EXPIRED before it is served, so no GET shows a state nobody may act on (V32). This
+    # repository can write that status and no other.
+    action_request_expiry_repository_factory: Callable[
+        [AsyncSession], ActionRequestExpiryRepository
+    ] = SQLActionRequestExpiryRepository
     # The WHM API seam. Production builds a real client over a real socket; a tool test swaps
     # in the same factory with an `httpx` transport, so the client, the cipher and the one
     # decrypt site all stay in the path and only the socket is doubled.
@@ -158,9 +181,29 @@ def build_action_request_repository(
     return context.action_request_repository_factory(session)
 
 
+def build_action_result_service(
+    context: McpToolContext, session: AsyncSession
+) -> ActionResultService:
+    """The approval-result read path over one session (T63, V27, V32).
+
+    Both collaborators are built here rather than on the context, for the reason
+    `build_authorization_service` gives: each holds the session, and a long-lived one would
+    pin a connection for the life of the process. Constructing them together is also what
+    puts the read and the expiry write in the *same* session, so the row this answers about
+    is the row the deadline was judged against.
+    """
+    return ActionResultService(
+        repository=context.action_result_repository_factory(session),
+        expiry=ActionRequestExpiryService(
+            context.action_request_expiry_repository_factory(session)
+        ),
+    )
+
+
 __all__ = [
     "McpToolContext",
     "build_action_request_repository",
+    "build_action_result_service",
     "build_authorization_service",
     "build_mcp_tool_context",
     "build_tool_run_repository",

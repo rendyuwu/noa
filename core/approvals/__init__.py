@@ -5,7 +5,8 @@ authorization (T34). V23 says "may this run?" is answered from `action_requests.
 every time, never from an LLM claim and never from a tool argument, and that only means
 anything if exactly one layer writes and reads that column. This package is that layer.
 
-Six modules, and the split that matters is **who can reach which writer**:
+Eight modules, and the split that matters is **who can reach which writer** — three writers,
+one reader, and four modules that hold no statement at all:
 
 - `repository` — opens a request. `SQLActionRequestRepository` writes `PENDING` and can write
   nothing else, because its caller is the MCP tool path (T33) — the path an LLM can reach.
@@ -21,8 +22,17 @@ Six modules, and the split that matters is **who can reach which writer**:
   write exactly one terminal status, `EXPIRED`, and only for a row that is still `PENDING`
   past its deadline: the status is not a parameter and the predicate is part of the
   statement. Two callers need that and neither may hold the writer above — the background
-  sweep, which has no operator behind it, and the render path (T41, T63), which is a GET.
-  `PendingExpirySweeper` is the loop, hosted by the app lifespan.
+  sweep, which has no operator behind it, and the render paths (T63's result tool, T41's
+  card), neither of which is a decision. `PendingExpirySweeper` is the loop, hosted by the
+  app lifespan.
+- `results` — reads one back for the operator who opened it (T63). The only module here that
+  writes nothing: no `commit`, no status parameter, no statement that is not a `SELECT`. The
+  requester-match sits in its `WHERE`, so a request that is not the caller's is never fetched
+  (V27, V76), and the one write its service needs — expiring a stale PENDING before serving
+  it — is `expiry`'s, run *after* that matched read so a foreign id cannot trigger a write.
+- `context` — the keys of `approval_context`, and the rule for taking the arguments off it.
+  One writer (T33's gate) and three readers (a decision, a result, T41's card) over one JSONB
+  column: a misspelt key there reads as an absent one, so the spelling is a constant (V66).
 - `csrf` — the token that makes "the browser sent the cookie" insufficient on its own (V39).
   Shared mechanism, mint and verify in one place, so the card (T41) and the endpoint agree.
 - `clock` — one definition of "now, aware, UTC", shared by the two doors that compare a row
@@ -34,7 +44,8 @@ Six modules, and the split that matters is **who can reach which writer**:
 
 Opening a request is `noa_api.mcp_tools.change_gate` rather than anything here, because it
 needs the caller's identity and the in-process preflight evidence (C9, V17). Deciding one is
-`noa_api.api.routes.action_requests`. Expiring one needs neither, which is why `expiry` is
-the only writer here with no caller-supplied identity in sight. Executing an approved change
-is T38.
+`noa_api.api.routes.action_requests`. Reading one back over MCP is
+`noa_api.mcp_tools.noa_read` (T63), which supplies the caller `results` matches against.
+Expiring one needs no identity at all, which is why `expiry` is the only writer here with
+none in sight. Executing an approved change is T38.
 """

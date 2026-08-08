@@ -221,9 +221,11 @@ def get_action_request_expiry_service(session: SessionDep) -> ActionRequestExpir
 
     It is a *different* service from `ActionDecisionService` on purpose: this one can write
     only `EXPIRED`, so a render path cannot hold something that could grant an authorization.
-    T41's GET calls `expire_if_due` before it loads the row, which is what keeps a card from
-    showing a `PENDING` nobody may act on any more; T63's result tool does the same on the
-    MCP side, where it builds the service on its own session instead of this one.
+    T41's GET calls `expire_if_due` around loading the row, which is what keeps a card from
+    showing a `PENDING` nobody may act on any more. T63's result tool does the same on the MCP
+    side, where it builds the service on its own session instead of this one — and runs it
+    *after* its requester-matched read, so an id belonging to another operator is not a way to
+    make NOA write (`core.approvals.results`).
     """
     return ActionRequestExpiryService(SQLActionRequestExpiryRepository(session))
 

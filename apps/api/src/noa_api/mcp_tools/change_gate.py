@@ -47,6 +47,11 @@ from uuid import UUID
 
 import structlog
 
+from core.approvals.context import (
+    CONTEXT_ARGUMENTS_KEY,
+    CONTEXT_EVIDENCE_KEY,
+    CONTEXT_REQUESTER_KEY,
+)
 from core.approvals.errors import (
     ChangeEvidenceRequiredError,
     ChangeGateUnavailableError,
@@ -154,15 +159,20 @@ def build_approval_context(
     Plain `dict`s and JSON-native values throughout: this lands in JSONB and comes back as
     ordinary Python, so a `Mapping` subclass or a `datetime` handed in here would round-trip
     into something a comparison against the original would not match.
+
+    The three keys come from `core.approvals.context`, which is also where the readers get
+    them (T37's decision, T63's result tool). A misspelt key in JSONB reads as an absent one
+    and answers `{}`, so the writer and its readers naming one constant is what keeps that
+    from being silent (V66).
     """
     redacted_arguments = redact_sensitive_data(dict(arguments))
     return {
-        "arguments": redacted_arguments if isinstance(redacted_arguments, dict) else {},
-        "requester": {
+        CONTEXT_ARGUMENTS_KEY: redacted_arguments if isinstance(redacted_arguments, dict) else {},
+        CONTEXT_REQUESTER_KEY: {
             "email": requester_email,
             "librechat_user_id": librechat_user_id,
         },
-        "evidence": dict(evidence),
+        CONTEXT_EVIDENCE_KEY: dict(evidence),
     }
 
 

@@ -159,7 +159,7 @@ async def test_a_pass_without_a_moment_uses_an_aware_utc_clock() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Check-on-read (V32, the render path T41/T63 will call)
+# Check-on-read (V32 — T63's result tool calls this today, T41's card next)
 # --------------------------------------------------------------------------------------
 
 

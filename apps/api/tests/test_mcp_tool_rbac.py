@@ -26,6 +26,7 @@ from core.db.lifecycle import ToolRisk
 from core.db.models import ADMIN_ROLE_NAME
 from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
 from noa_api.mcp_server import build_mcp_server
+from noa_api.mcp_tools.noa_read import TOOL_NOA_GET_ACTION_RESULT
 from noa_api.mcp_tools.pmg_read import TOOL_PMG_WHITELIST_SEARCH
 from noa_api.mcp_tools.registry import RegistryError, assert_names_in_catalog, register_mcp_tools
 from noa_api.mcp_tools.whm_firewall import TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES
@@ -45,6 +46,7 @@ REGISTERED_TOOLS = sorted(
         TOOL_WHM_SEARCH_ACCOUNTS,
         TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
         TOOL_PMG_WHITELIST_SEARCH,
+        TOOL_NOA_GET_ACTION_RESULT,
     ]
 )
 
@@ -218,7 +220,7 @@ def test_an_admin_sees_every_registered_tool(scenario) -> None:
 
     The list is the *intersection* of the catalog and what is registered, which is why this
     asserts against the registered set rather than against `TOOL_CATALOG` — the remaining
-    catalogued names have no implementation yet (T20, T22-T31, T63).
+    catalogued names have no implementation yet (T20, T22-T30).
     """
     sign_in, _ = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,))

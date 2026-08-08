@@ -48,6 +48,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.clock import as_utc, now_utc
+from core.approvals.context import CONTEXT_ARGUMENTS_KEY, arguments_from_context
 from core.approvals.errors import (
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
@@ -57,11 +58,6 @@ from core.approvals.errors import (
 from core.audit.tool_runs import SQLToolRunRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRisk
 from core.db.models import ActionRequest
-
-# Where the CHANGE gate put the tool's arguments inside `approval_context` (T33's
-# `build_approval_context`). Read rather than retyped at the two call sites, so the audit row
-# and the approval card cannot end up describing different arguments.
-CONTEXT_ARGUMENTS_KEY: Final = "arguments"
 
 # One structured event per terminal transition. Identifiers only — the reason is the
 # operator's own words about a production change and belongs in the row that authorises it,
@@ -103,12 +99,11 @@ class LockedActionRequest:
     def redacted_arguments(self) -> dict[str, Any]:
         """The tool arguments as the gate redacted them at request time (V8, V33).
 
-        Redacted once, at the gate, and carried — never re-derived here. `{}` when the key
-        is missing or is not an object, which matches `tool_runs.args`' own server default:
-        "took no arguments" and "arguments not recorded" must not become the same row.
+        `core.approvals.context` owns the key and the extraction rule, because T63 reads the
+        same payload for `noa_get_action_result` and two readers of one JSONB column with two
+        spellings of its key is one spelling too many (V66).
         """
-        arguments = self.approval_context.get(CONTEXT_ARGUMENTS_KEY)
-        return dict(arguments) if isinstance(arguments, dict) else {}
+        return arguments_from_context(self.approval_context)
 
 
 @dataclass(frozen=True)

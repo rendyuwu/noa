@@ -34,8 +34,6 @@ from uuid import UUID, uuid4
 import pytest
 import sqlalchemy as sa
 from fastmcp import FastMCP
-from fastmcp.server.auth.auth import AccessToken
-from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from structlog.testing import capture_logs
 
@@ -46,13 +44,11 @@ from core.approvals.errors import (
     ChangeReasonForbiddenError,
 )
 from core.approvals.repository import ActionRequestRepository, SQLActionRequestRepository
-from core.auth.mcp_identity import McpIdentity
 from core.db.lifecycle import ActionRequestStatus
 from core.db.models import ActionRequest, User
 from core.secrets.redaction import REDACTED
 from noa_api.api.errors import FALLBACK_STATUS, status_for
 from noa_api.mcp_audit import CONVERSATION_REF_HEADER
-from noa_api.mcp_request_auth import identity_claims
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.change_gate import (
     FORBIDDEN_REASON_KEYS,
@@ -65,7 +61,13 @@ from noa_api.mcp_tools.change_gate import (
 )
 from support.action_requests import FakeActionRequestRepository
 from support.database import MUTATED_TABLES, migrated_database, truncate
-from support.mcp_identity import DISPLAY_NAME, EMAIL, LIBRECHAT_USER, http_request_context
+from support.mcp_identity import (
+    DISPLAY_NAME,
+    EMAIL,
+    LIBRECHAT_USER,
+    authenticated_caller,
+    http_request_context,
+)
 from support.servers import PENDING_TTL_SECONDS, ToolFixture, build_tool_context
 
 SCRATCH_DB = "noa_change_gate_test"
@@ -83,32 +85,6 @@ ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "acme.example"}
 
 
-def caller(user_id: UUID | None = None) -> tuple[AuthenticatedUser, UUID]:
-    """An accepted caller, shaped exactly as `NoaTokenVerifier` shapes one (R5).
-
-    `identity_claims` rather than a dict literal, so the keys the verifier writes and the
-    keys `current_mcp_identity` reads stay the same constants — a hand-written claims dict
-    would let this file pass against an identity production never produces.
-    """
-    resolved = user_id or uuid4()
-    identity = McpIdentity(
-        user_id=resolved,
-        email=EMAIL,
-        display_name=DISPLAY_NAME,
-        token_id=uuid4(),
-        librechat_user_id=LIBRECHAT_USER,
-        expires_at=None,
-    )
-    return AuthenticatedUser(
-        AccessToken(
-            token="opaque",
-            client_id=str(resolved),
-            scopes=[],
-            claims=identity_claims(identity),
-        )
-    ), resolved
-
-
 async def open_gate(
     tools: ToolFixture,
     *,
@@ -119,7 +95,7 @@ async def open_gate(
     tool_name: str = CHANGE_TOOL,
 ) -> tuple[PendingChangeRequest, UUID]:
     """Call the real gate inside a real request context; return what it wrote and for whom."""
-    user, resolved = caller(user_id)
+    user, resolved = authenticated_caller(user_id)
     headers = {CONVERSATION_REF_HEADER: conversation_ref} if conversation_ref is not None else {}
 
     with http_request_context(headers, user=user):

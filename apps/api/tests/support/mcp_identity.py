@@ -34,14 +34,16 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import UUID, uuid4
 
+from fastmcp.server.auth.auth import AccessToken
 from fastmcp.server.http import set_http_request
+from mcp.server.auth.middleware.bearer_auth import AuthenticatedUser
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
 from core.auth.errors import LdapUnavailableError
-from core.auth.mcp_identity import McpIdentityResolver
+from core.auth.mcp_identity import McpIdentity, McpIdentityResolver
 from core.auth.mcp_token_service import generate_mcp_token, hash_mcp_token
-from noa_api.mcp_request_auth import McpAuthContext
+from noa_api.mcp_request_auth import McpAuthContext, identity_claims
 from support.auth import FakeRateLimitRepository
 
 # Fixed clock, so staleness and expiry assertions are equalities rather than tolerances.
@@ -253,6 +255,40 @@ class StubSession:
     """Stands in for `AsyncSession`. Both repository doubles ignore it."""
 
 
+def authenticated_caller(user_id: UUID | None = None) -> tuple[AuthenticatedUser, UUID]:
+    """An accepted caller, shaped exactly as `NoaTokenVerifier` shapes one (R5).
+
+    `scope["user"]` is where `get_access_token()` looks first, so this is what lets a test
+    drive a tool function through the *production* `current_mcp_identity` rather than a
+    patched name — the identity a tool reads is the one the auth middleware left behind.
+
+    `identity_claims` rather than a dict literal, so the keys the verifier writes and the keys
+    `current_mcp_identity` reads stay one set of constants: a hand-written claims dict would
+    let a test pass against an identity production never produces.
+
+    Shared by T33's gate tests and T63's result tool (V66) — both need a caller whose id they
+    then assert a row against, and two copies of this construction would be two chances for a
+    test to agree with itself.
+    """
+    resolved = user_id or uuid4()
+    identity = McpIdentity(
+        user_id=resolved,
+        email=EMAIL,
+        display_name=DISPLAY_NAME,
+        token_id=uuid4(),
+        librechat_user_id=LIBRECHAT_USER,
+        expires_at=None,
+    )
+    return AuthenticatedUser(
+        AccessToken(
+            token="opaque",
+            client_id=str(resolved),
+            scopes=[],
+            claims=identity_claims(identity),
+        )
+    ), resolved
+
+
 @contextmanager
 def http_request_context(
     headers: Mapping[str, str] | None = None,
@@ -337,6 +373,7 @@ __all__ = [
     "IdentityFixture",
     "StoredAuthToken",
     "StubSession",
+    "authenticated_caller",
     "build_auth_context",
     "build_resolver",
     "http_request_context",
