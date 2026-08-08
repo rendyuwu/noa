@@ -317,8 +317,9 @@ class ActionRequest(Base):
 
     __tablename__ = "action_requests"
     __table_args__ = (
-        # T39's sweep is `status = PENDING AND expires_at < now()`. Composite rather than
-        # two indexes; `status` leads, so status-only lookups use it too.
+        # T39's sweep is `status = PENDING AND expires_at <= now`. Composite rather than
+        # two indexes; `status` leads, so status-only lookups use it too. (`<=`, not `<`:
+        # the sweep and the decision door judge a deadline the same way — `core.approvals.expiry`.)
         Index("ix_action_requests_status_expires_at", "status", "expires_at"),
         # T37 (C8, V15), closing what T34 left open by name. A row that says an operator
         # decided must carry what they typed, at the mechanism rather than in the endpoint

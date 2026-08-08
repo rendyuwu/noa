@@ -32,6 +32,7 @@ from core.approvals.decisions import (
     ApprovedChangeExecutor,
     SQLActionDecisionRepository,
 )
+from core.approvals.expiry import ActionRequestExpiryService, SQLActionRequestExpiryRepository
 from core.audit.admin_events import StructlogAdminAuditSink
 from core.auth.auth_repository import SQLAuthRepository, SQLLoginRateLimitRepository
 from core.auth.auth_service import AuthService, SessionUser
@@ -212,6 +213,26 @@ def get_action_decision_service(
 ActionDecisionServiceDep = Annotated[ActionDecisionService, Depends(get_action_decision_service)]
 
 
+def get_action_request_expiry_service(session: SessionDep) -> ActionRequestExpiryService:
+    """V32's check-on-read, for a path that renders a request rather than decides one (T39).
+
+    Built per request on the request's session, like the decision service above, so the
+    expiry and whatever the handler reads next are one transaction's worth of truth.
+
+    It is a *different* service from `ActionDecisionService` on purpose: this one can write
+    only `EXPIRED`, so a render path cannot hold something that could grant an authorization.
+    T41's GET calls `expire_if_due` before it loads the row, which is what keeps a card from
+    showing a `PENDING` nobody may act on any more; T63's result tool does the same on the
+    MCP side, where it builds the service on its own session instead of this one.
+    """
+    return ActionRequestExpiryService(SQLActionRequestExpiryRepository(session))
+
+
+ActionRequestExpiryServiceDep = Annotated[
+    ActionRequestExpiryService, Depends(get_action_request_expiry_service)
+]
+
+
 def get_authorization_service(session: SessionDep) -> AuthorizationService:
     """The RBAC engine wired to this request's session (T9).
 
@@ -256,6 +277,7 @@ AdminUserDep = Annotated[SessionUser, Depends(require_admin)]
 
 __all__ = [
     "ActionDecisionServiceDep",
+    "ActionRequestExpiryServiceDep",
     "AdminUserDep",
     "AuthServiceDep",
     "AuthorizationServiceDep",
@@ -265,6 +287,7 @@ __all__ = [
     "SessionUserDep",
     "SettingsDep",
     "get_action_decision_service",
+    "get_action_request_expiry_service",
     "get_approved_change_executor",
     "get_auth_service",
     "get_authorization_service",

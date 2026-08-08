@@ -5,7 +5,7 @@ authorization (T34). V23 says "may this run?" is answered from `action_requests.
 every time, never from an LLM claim and never from a tool argument, and that only means
 anything if exactly one layer writes and reads that column. This package is that layer.
 
-Four modules, and the split that matters is **who can reach which writer**:
+Six modules, and the split that matters is **who can reach which writer**:
 
 - `repository` — opens a request. `SQLActionRequestRepository` writes `PENDING` and can write
   nothing else, because its caller is the MCP tool path (T33) — the path an LLM can reach.
@@ -17,8 +17,16 @@ Four modules, and the split that matters is **who can reach which writer**:
   cookie POST (V22). Deliberately a separate class from the one above: folding them together
   would put a writer that can set `APPROVED` on the side of the boundary V22 exists to close.
   It joins the request's session, because there *is* one here.
+- `expiry` — answers one that nobody answered. `SQLActionRequestExpiryRepository` (T39) can
+  write exactly one terminal status, `EXPIRED`, and only for a row that is still `PENDING`
+  past its deadline: the status is not a parameter and the predicate is part of the
+  statement. Two callers need that and neither may hold the writer above — the background
+  sweep, which has no operator behind it, and the render path (T41, T63), which is a GET.
+  `PendingExpirySweeper` is the loop, hosted by the app lifespan.
 - `csrf` — the token that makes "the browser sent the cookie" insufficient on its own (V39).
   Shared mechanism, mint and verify in one place, so the card (T41) and the endpoint agree.
+- `clock` — one definition of "now, aware, UTC", shared by the two doors that compare a row
+  against its deadline, so the boundary cannot hold at one and not the other.
 - `errors` — the refusals, as `NoaError` subclasses, in two trees: gate failures (the change
   was never submitted) and decision failures (a real request was refused). `NoaError` so
   `sanitize_tool_errors` (V19) hands the model a named code rather than a generic failure,
@@ -26,5 +34,7 @@ Four modules, and the split that matters is **who can reach which writer**:
 
 Opening a request is `noa_api.mcp_tools.change_gate` rather than anything here, because it
 needs the caller's identity and the in-process preflight evidence (C9, V17). Deciding one is
-`noa_api.api.routes.action_requests`. Executing an approved change is T38.
+`noa_api.api.routes.action_requests`. Expiring one needs neither, which is why `expiry` is
+the only writer here with no caller-supplied identity in sight. Executing an approved change
+is T38.
 """

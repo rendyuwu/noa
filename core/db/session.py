@@ -21,6 +21,9 @@ with an unreachable database still boots and answers `/health` (V51). A broken
 
 from __future__ import annotations
 
+from contextlib import AbstractAsyncContextManager
+from typing import Protocol
+
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -29,6 +32,22 @@ from sqlalchemy.ext.asyncio import (
 )
 
 from core.config import Settings
+
+
+class SessionFactory(Protocol):
+    """What a caller outside FastAPI's dependency graph needs: call it, get a session.
+
+    A Protocol rather than the concrete `async_sessionmaker[AsyncSession]` so a path that
+    opens its own transactions can be exercised without Postgres — T39's expiry sweeper is
+    the case in `core/`: its loop, its error handling and its one-session-per-pass rule are
+    all testable without a database, while the SQL it runs is pinned separately against a
+    real one.
+
+    `noa_api.mcp_request_auth.McpSessionFactory` states the same shape on the MCP side, where
+    it cannot import this one: `core/` must not depend on an app.
+    """
+
+    def __call__(self) -> AbstractAsyncContextManager[AsyncSession]: ...
 
 
 def create_engine(settings: Settings) -> AsyncEngine:
@@ -57,4 +76,4 @@ def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSessi
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
-__all__ = ["create_engine", "create_session_factory"]
+__all__ = ["SessionFactory", "create_engine", "create_session_factory"]

@@ -149,6 +149,12 @@ class Settings(BaseSettings):
     # --- Approval gate (V31, V32) ---
     approval_max_inflight_per_user: int = Field(default=1, ge=1)
     approval_pending_ttl_seconds: int = Field(default=3600, ge=60)
+    # How often T39's background sweep looks for pending requests past their deadline. Not
+    # derived from the TTL: it is a resolution, not a lifetime — how late a request may still
+    # read PENDING after it stopped being answerable, which is bounded by this and not by how
+    # long the request was given. `ge=1` because a sweeper that never runs is V32 held by
+    # nothing at all.
+    approval_expiry_sweep_interval_seconds: int = Field(default=60, ge=1)
 
     # --- Origins / CORS ---
     api_cors_allowed_origins: list[str] = Field(

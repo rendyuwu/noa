@@ -40,6 +40,7 @@ from fastmcp.utilities.lifespan import combine_lifespans
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from core.approvals.decisions import ApprovedChangeExecutor, DeferredApprovedChangeExecutor
+from core.approvals.expiry import PendingExpirySweeper
 from core.auth.jwt_service import JWTService
 from core.auth.ldap_service import LDAPService
 from core.config import Settings, get_settings
@@ -83,15 +84,19 @@ class AppRuntime:
     # asyncio host and its reaper. One per app, not one per request — a per-request executor
     # would mean a per-request reaper.
     approved_change_executor: ApprovedChangeExecutor
+    # T39's background half of V32. One per app for the same reason, and it draws sessions
+    # from the factory above so a sweep sees the same rows every other path does.
+    expiry_sweeper: PendingExpirySweeper
 
 
 def build_runtime(settings: Settings) -> AppRuntime:
     """Construct one app's long-lived objects. Opens no connection (the engine is lazy)."""
     engine = create_engine(settings)
+    session_factory = create_session_factory(engine)
     return AppRuntime(
         settings=settings,
         engine=engine,
-        session_factory=create_session_factory(engine),
+        session_factory=session_factory,
         ldap_service=LDAPService(settings),
         # One cipher for the whole app (C7, V48). Every decrypt site takes it as an argument
         # — there is no module-level cipher to import (T15) — so this is the only place it is
@@ -101,6 +106,13 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # Inert today: T22-T29 are unbuilt, so no CHANGE tool exists to open an
         # `action_requests` row, so nothing can reach an approval endpoint here.
         approved_change_executor=DeferredApprovedChangeExecutor(),
+        # Constructed here, started by the lifespan (T39, V32). Constructing it opens nothing
+        # — like the engine above, it is inert until the lifespan says otherwise, so building
+        # an app still costs no connection.
+        expiry_sweeper=PendingExpirySweeper(
+            session_factory=session_factory,
+            interval_seconds=settings.approval_expiry_sweep_interval_seconds,
+        ),
     )
 
 
@@ -122,9 +134,15 @@ def build_lifespan(
         setattr(app.state, STATE_SESSION_FACTORY, runtime.session_factory)
         setattr(app.state, STATE_APPROVED_CHANGE_EXECUTOR, runtime.approved_change_executor)
 
+        # V32's terminality without traffic (T39). Started here rather than at construction
+        # because the task belongs to the running loop, and stopped before the engine is
+        # disposed below — a pass still in flight would otherwise run against a dead pool.
+        await runtime.expiry_sweeper.start()
+
         try:
             yield
         finally:
+            await runtime.expiry_sweeper.stop()
             await runtime.engine.dispose()
 
     return lifespan

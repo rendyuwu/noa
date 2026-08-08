@@ -39,7 +39,7 @@ correctness of everything above it is carried by tests instead of by use.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Final, Protocol, runtime_checkable
 from uuid import UUID
 
@@ -47,6 +47,7 @@ import structlog
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.approvals.clock import as_utc, now_utc
 from core.approvals.errors import (
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
@@ -221,7 +222,7 @@ class SQLActionDecisionRepository:
             tool_name=row.tool_name,
             conversation_ref=row.conversation_ref,
             approval_context=dict(row.approval_context or {}),
-            expires_at=_as_utc(row.expires_at),
+            expires_at=as_utc(row.expires_at),
         )
 
     async def start_change_run(
@@ -311,7 +312,7 @@ class ActionDecisionService:
         now: datetime | None = None,
     ) -> ApprovalOutcome:
         """Authorise the change, start its run, hand it off (V15, V28, V29, V46)."""
-        decided_at = _now(now)
+        decided_at = now_utc(now)
         locked = await self._locked_pending(
             action_request_id=action_request_id,
             caller_user_id=caller_user_id,
@@ -363,7 +364,7 @@ class ActionDecisionService:
         `tool_run_id` stays NULL and there is no branch here that could set it: a denied
         change did not run, and an audit row saying otherwise would be worse than none.
         """
-        decided_at = _now(now)
+        decided_at = now_utc(now)
         locked = await self._locked_pending(
             action_request_id=action_request_id,
             caller_user_id=caller_user_id,
@@ -475,16 +476,6 @@ class ActionDecisionService:
                 cause=type(exc).__name__,
                 detail=str(exc),
             )
-
-
-def _now(value: datetime | None) -> datetime:
-    """The decision's moment. A parameter so a test can pin it, never a second clock read."""
-    return _as_utc(value) if value is not None else datetime.now(UTC)
-
-
-def _as_utc(value: datetime) -> datetime:
-    """Aware UTC. `DateTime(timezone=True)` returns aware values; a double may not."""
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
 
 
 __all__ = [

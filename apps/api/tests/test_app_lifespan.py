@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from core.approvals.expiry import PendingExpirySweeper
 from core.auth.errors import AuthConfigurationError
 from core.auth.jwt_service import JWTService
 from core.config import Settings
@@ -156,6 +157,57 @@ def test_lifespan_disposes_the_engine(
         assert disposed == []
 
     assert engines and disposed == engines
+
+
+# --- T39's expiry sweeper ---
+
+
+def test_the_sweeper_starts_with_the_app_and_stops_before_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V32's background half runs for exactly the life of the app, and no longer.
+
+    The *ordering* is the claim worth pinning: `stop()` has to complete before
+    `engine.dispose()`, because a sweep still in flight would otherwise be running against a
+    disposed pool — a shutdown-time error in the one component whose whole job is to keep
+    working when things go wrong.
+
+    The real `PendingExpirySweeper` is subclassed rather than replaced, so what starts and
+    stops here is the production task, not a stand-in for it.
+    """
+    journal: list[str] = []
+    settings = build_settings(approval_expiry_sweep_interval_seconds=3600)
+    monkeypatch.setattr(main, "get_settings", lambda: settings)
+
+    class RecordingSweeper(PendingExpirySweeper):
+        async def start(self) -> None:
+            await super().start()
+            journal.append("sweeper:started")
+
+        async def stop(self) -> None:
+            await super().stop()
+            journal.append("sweeper:stopped")
+
+    built: list[dict[str, Any]] = []
+
+    def factory(**kwargs: Any) -> RecordingSweeper:
+        built.append(kwargs)
+        return RecordingSweeper(**kwargs)
+
+    async def tracked_dispose(self: AsyncEngine, **kwargs: Any) -> None:
+        journal.append("engine:disposed")
+
+    monkeypatch.setattr(main, "PendingExpirySweeper", factory)
+    monkeypatch.setattr(AsyncEngine, "dispose", tracked_dispose)
+
+    with TestClient(main.create_app()):
+        assert journal == ["sweeper:started"]
+
+    assert journal == ["sweeper:started", "sweeper:stopped", "engine:disposed"]
+    # Built once, from settings — not from a number written twice.
+    assert len(built) == 1
+    assert built[0]["interval_seconds"] == 3600
+    assert built[0]["session_factory"] is not None
 
 
 # --- State wiring ---

@@ -63,8 +63,9 @@ class ActionRequestStatus(StrEnum):
 
     `EXPIRED` is new here — `noa-old` had only the first three, so a request nobody
     answered stayed PENDING forever and "may this run?" had no truthful answer after the
-    TTL passed. V32 makes the expiry terminal, and T39 both sweeps in the background and
-    checks on read, so a stale PENDING is never served.
+    TTL passed. V32 makes the expiry terminal; it is written by the decision door on read
+    (T37) and by T39's background sweep, which is what makes it true without traffic. The
+    same sweep's predicate serves the render path, so a stale PENDING is never served.
 
     DENIED and EXPIRED are deliberately separate members rather than one "not approved":
     a denial is an operator's answer and carries their reason (V15), while an expiry is

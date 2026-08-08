@@ -19,10 +19,9 @@ because T38 is what makes it do anything.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
-from datetime import UTC, datetime, timedelta
-from typing import Any
-from uuid import UUID, uuid4
+from collections.abc import AsyncIterator, Iterator
+from datetime import UTC, datetime
+from uuid import uuid4
 
 import pytest
 import sqlalchemy as sa
@@ -41,13 +40,19 @@ from core.approvals.errors import (
 )
 from core.approvals.repository import SQLActionRequestRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
-from core.db.models import ActionRequest, ToolRun, User
+from core.db.models import ActionRequest, User
 from support.action_decisions import (
     APPROVAL_CONTEXT,
     CHANGE_TOOL,
     CONVERSATION_ID,
+    HANDOVER_GRACE_SECONDS,
     REASON,
+    ObservedDecisionRepository,
     RecordingApprovedChangeExecutor,
+    insert_user,
+    open_request,
+    read_request,
+    read_runs,
 )
 from support.database import MUTATED_TABLES, migrated_database, truncate
 
@@ -94,54 +99,9 @@ def build_service(
     )
 
 
-async def insert_user(factory: async_sessionmaker[AsyncSession], email: str) -> UUID:
-    async with factory() as session:
-        user = User(email=email, is_active=True)
-        session.add(user)
-        await session.commit()
-        return user.id
-
-
-async def open_request(
-    factory: async_sessionmaker[AsyncSession],
-    *,
-    requested_by_user_id: UUID,
-    expires_in_seconds: int = 3600,
-    approval_context: dict[str, Any] | None = None,
-) -> UUID:
-    """A PENDING row written by the *gate's* repository (T33), not by hand.
-
-    The row under test is the one the production writer produces, so a change to the gate's
-    insert shows up here rather than being papered over by a fixture that agrees with the
-    test instead of with the code.
-    """
-    async with factory() as session:
-        repository = SQLActionRequestRepository(session)
-        action_request_id = await repository.create_pending(
-            tool_name=CHANGE_TOOL,
-            requested_by_user_id=requested_by_user_id,
-            conversation_ref=CONVERSATION_ID,
-            approval_context=APPROVAL_CONTEXT if approval_context is None else approval_context,
-            expires_at=datetime.now(UTC) + timedelta(seconds=expires_in_seconds),
-        )
-        await repository.commit()
-        return action_request_id
-
-
-async def read_request(
-    factory: async_sessionmaker[AsyncSession], action_request_id: UUID
-) -> ActionRequest:
-    async with factory() as session:
-        result = await session.execute(
-            sa.select(ActionRequest).where(ActionRequest.id == action_request_id)
-        )
-        return result.scalar_one()
-
-
-async def read_runs(factory: async_sessionmaker[AsyncSession]) -> list[ToolRun]:
-    async with factory() as session:
-        result = await session.execute(sa.select(ToolRun))
-        return list(result.scalars())
+# The row helpers — `insert_user`, `open_request`, `read_request`, `read_runs` — moved to
+# `support.action_decisions` at T39, when the expiry sweep's live file needed the same four
+# (V66). They still write through the gate's own repository; see their docstrings.
 
 
 # --------------------------------------------------------------------------------------
@@ -296,49 +256,9 @@ async def test_denial_writes_no_run(factory) -> None:
 # --------------------------------------------------------------------------------------
 
 
-class ObservedDecisionRepository(SQLActionDecisionRepository):
-    """The production repository, with its locked read narrated and optionally held open.
-
-    Two hooks and no substitutions: `before_read` fires just before the `SELECT` is issued,
-    `after_read` just after it returns, and the journal records both plus the commit. The SQL
-    under test is the real SQL — what is added is the ability to say *when* each statement
-    happened relative to the other transaction's.
-    """
-
-    def __init__(
-        self,
-        session: AsyncSession,
-        *,
-        label: str,
-        journal: list[str],
-        before_read: Callable[[], Awaitable[None]] | None = None,
-        after_read: Callable[[], Awaitable[None]] | None = None,
-    ) -> None:
-        super().__init__(session)
-        self._label = label
-        self._journal = journal
-        self._before_read = before_read
-        self._after_read = after_read
-
-    async def lock_for_decision(self, *, action_request_id: UUID):
-        if self._before_read is not None:
-            await self._before_read()
-        self._journal.append(f"{self._label}:reading")
-        result = await super().lock_for_decision(action_request_id=action_request_id)
-        self._journal.append(f"{self._label}:read")
-        if self._after_read is not None:
-            await self._after_read()
-        return result
-
-    async def commit(self) -> None:
-        await super().commit()
-        self._journal.append(f"{self._label}:committed")
-
-
-# How long the first transaction holds its lock after the second has issued its read. Only
-# the *absence* of the lock needs this: without `FOR UPDATE` the second read returns at once,
-# and this is the window in which it would do so and be recorded ahead of the first commit.
-HANDOVER_GRACE_SECONDS = 0.25
+# `ObservedDecisionRepository` and `HANDOVER_GRACE_SECONDS` moved to
+# `support.action_decisions` at T39: the expiry sweep races the same window and must hold it
+# open the same way (V66, V89).
 
 
 async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> None:

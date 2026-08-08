@@ -320,6 +320,9 @@ def test_bootstrap_admin_emails_lowercased() -> None:
     [
         ("approval_max_inflight_per_user", 0),  # V31: a cap of 0 blocks all CHANGE
         ("approval_pending_ttl_seconds", 5),  # V32: TTL must be usable
+        # V32: a sweep interval of 0 is a sweeper that never sleeps; a negative one is a
+        # sweeper that never runs. Either way the background half of V32 is held by nothing.
+        ("approval_expiry_sweep_interval_seconds", 0),
         ("yopass_secret_expiration_seconds", 0),
         ("secret_password_length", 4),  # V49: no trivially guessable password
         ("db_pool_size", 0),
@@ -334,11 +337,15 @@ def test_out_of_range_values_rejected(field: str, value: int) -> None:
 
 
 def test_approval_defaults_match_invariants() -> None:
-    """V31 default cap of 1; V32 pending TTL present."""
+    """V31 default cap of 1; V32 pending TTL and the sweep interval that enforces it."""
     settings = build()
 
     assert settings.approval_max_inflight_per_user == 1
     assert settings.approval_pending_ttl_seconds == 3600
+    # A resolution, not a lifetime: how long a request may still *read* PENDING after it
+    # stopped being answerable. Well under the TTL, and deliberately not derived from it.
+    assert settings.approval_expiry_sweep_interval_seconds == 60
+    assert settings.approval_expiry_sweep_interval_seconds < settings.approval_pending_ttl_seconds
 
 
 def test_mcp_token_ttl_optional() -> None:

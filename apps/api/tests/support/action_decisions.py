@@ -24,29 +24,42 @@ Rows are dataclasses, not ORM instances, for the reason `support.tool_runs` give
 `ActionRequest` would carry its server-defaulted columns as `None` until a flush, so an
 assertion on `status` would be asserting against the double's own gaps rather than against
 what the caller asked for.
+
+**The live helpers at the bottom are not doubles.** `insert_user`, `open_request`,
+`read_request`, `read_runs` and `ObservedDecisionRepository` run against a real Postgres and
+live here because two files need them (V66): `test_action_request_decisions_live.py` (T37)
+and `test_action_request_expiry_live.py` (T39). The second one races a sweep against an
+approval, which needs the same "hold the transaction open between its locked read and its
+commit" instrument the first one uses — and a second copy of that instrument is a second
+thing that can silently stop overlapping, which is exactly the failure V89 exists to name.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Awaitable, Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+import sqlalchemy as sa
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from httpx import Response
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.approvals.csrf import mint_decision_csrf_token
 from core.approvals.decisions import (
     ActionDecisionService,
     LockedActionRequest,
+    SQLActionDecisionRepository,
 )
+from core.approvals.repository import SQLActionRequestRepository
 from core.auth.jwt_service import JWTService
 from core.config import Settings
 from core.db.lifecycle import ActionRequestStatus
+from core.db.models import ActionRequest, ToolRun, User
 from noa_api.api.deps import (
     STATE_APPROVED_CHANGE_EXECUTOR,
     STATE_JWT_SERVICE,
@@ -398,17 +411,132 @@ def decision_harness(
         )
 
 
+# --------------------------------------------------------------------------------------
+# Live helpers — real Postgres, shared by the two `*_live` files (V66)
+# --------------------------------------------------------------------------------------
+
+
+async def insert_user(factory: async_sessionmaker[AsyncSession], email: str) -> UUID:
+    """An active operator to hang requests off."""
+    async with factory() as session:
+        user = User(email=email, is_active=True)
+        session.add(user)
+        await session.commit()
+        return user.id
+
+
+async def open_request(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    requested_by_user_id: UUID,
+    expires_in_seconds: float = 3600,
+    expires_at: datetime | None = None,
+    approval_context: dict[str, Any] | None = None,
+) -> UUID:
+    """A PENDING row written by the *gate's* repository (T33), not by hand.
+
+    The row under test is the one the production writer produces, so a change to the gate's
+    insert shows up in these files rather than being papered over by a fixture that agrees
+    with the test instead of with the code.
+
+    `expires_at` overrides `expires_in_seconds` and takes an absolute moment, which is how a
+    test reaches the deadline *boundary* — "exactly now" is not expressible as an offset from
+    a clock read that has already moved on.
+    """
+    deadline = expires_at or datetime.now(UTC) + timedelta(seconds=expires_in_seconds)
+    async with factory() as session:
+        repository = SQLActionRequestRepository(session)
+        action_request_id = await repository.create_pending(
+            tool_name=CHANGE_TOOL,
+            requested_by_user_id=requested_by_user_id,
+            conversation_ref=CONVERSATION_ID,
+            approval_context=APPROVAL_CONTEXT if approval_context is None else approval_context,
+            expires_at=deadline,
+        )
+        await repository.commit()
+        return action_request_id
+
+
+async def read_request(
+    factory: async_sessionmaker[AsyncSession], action_request_id: UUID
+) -> ActionRequest:
+    async with factory() as session:
+        result = await session.execute(
+            sa.select(ActionRequest).where(ActionRequest.id == action_request_id)
+        )
+        return result.scalar_one()
+
+
+async def read_runs(factory: async_sessionmaker[AsyncSession]) -> list[ToolRun]:
+    async with factory() as session:
+        result = await session.execute(sa.select(ToolRun))
+        return list(result.scalars())
+
+
+class ObservedDecisionRepository(SQLActionDecisionRepository):
+    """The production repository, with its locked read narrated and optionally held open.
+
+    Two hooks and no substitutions: `before_read` fires just before the `SELECT` is issued,
+    `after_read` just after it returns, and the journal records both plus the commit. The SQL
+    under test is the real SQL — what is added is the ability to say *when* each statement
+    happened relative to the other transaction's, which is the whole of V89's obligation (a):
+    the window is held open on purpose rather than hoped for.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        *,
+        label: str,
+        journal: list[str],
+        before_read: Callable[[], Awaitable[None]] | None = None,
+        after_read: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
+        super().__init__(session)
+        self._label = label
+        self._journal = journal
+        self._before_read = before_read
+        self._after_read = after_read
+
+    async def lock_for_decision(self, *, action_request_id: UUID) -> LockedActionRequest | None:
+        if self._before_read is not None:
+            await self._before_read()
+        self._journal.append(f"{self._label}:reading")
+        result = await super().lock_for_decision(action_request_id=action_request_id)
+        self._journal.append(f"{self._label}:read")
+        if self._after_read is not None:
+            await self._after_read()
+        return result
+
+    async def commit(self) -> None:
+        await super().commit()
+        self._journal.append(f"{self._label}:committed")
+
+
+# How long the first transaction holds its lock after the second party has issued its
+# statement. Only the *absence* of the lock needs this: without it the second statement
+# returns at once, and this is the window in which it would do so and be recorded ahead of
+# the first commit.
+HANDOVER_GRACE_SECONDS = 0.25
+
+
 __all__ = [
     "APPROVAL_CONTEXT",
     "CHANGE_TOOL",
     "CONVERSATION_ID",
+    "HANDOVER_GRACE_SECONDS",
     "REASON",
     "DecisionHarness",
     "FakeActionDecisionRepository",
+    "ObservedDecisionRepository",
     "RecordedChangeRun",
     "RecordedDecision",
     "RecordingApprovedChangeExecutor",
     "StartedExecution",
     "decision_harness",
+    "insert_user",
     "locked_request",
+    "open_request",
+    "read_request",
+    "read_runs",
 ]
