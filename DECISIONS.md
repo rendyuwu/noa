@@ -13,8 +13,16 @@ this.
 Every question raised in this session is answered. Nothing is marked OPEN. Two items are
 deliberately deferred rather than open: phasing (§8.7, owner-owned) and LibreChat Mongo retention
 (§8.6, a go-live gate, not a build blocker). One item needs re-verification against upstream before
-it is relied on: §10.2 — now tracked as `SPEC.md` **T59**, a blocking gate, and the evidence has
-moved against it (see §7.2's correction: MCP Apps is stable, and `text/uri-list` is not part of it).
+it is relied on: §10.2 — tracked as `SPEC.md` **T59**.
+
+> **Resolved 2026-08-08 — T59 PASSED.** The re-verification ran live against LibreChat pin
+> `45cc53c4`: a NOA-served `text/uri-list` UI resource renders in an iframe on NOA's origin and
+> the session cookie rides into it, so the approval POST works from the frame. Verdict and
+> numbers: `docs/spikes/librechat-embed-render-gate.md`; harness:
+> `spikes/librechat-embed-render-gate/`. §7.2's warning is **not** refuted and still holds as a
+> *future* risk — MCP Apps is stable and excludes `text/uri-list`, and PR #13831 remains out of
+> tree at that pin. What changed is the timeframe: the path works today, and `C21` binds the
+> re-verification to every LibreChat bump rather than to a reading of the spec.
 
 **Corrected 2026-08-04 — what this file got wrong:**
 

@@ -66,8 +66,11 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
   workflow exposed. Evidence born in-process, ⊥ cross tool boundary. (C9, V17)
 - **Never-implement list** (C22) = management policy, ⊥ technical. ⊥ port, ⊥ expose, ⊥ re-add.
   Re-add = owner decision, ⊥ agent call.
-- **T59 = blocking gate.** Iframe render path unverified vs pinned LibreChat (C21). ⊥ start embed
-  work (T32, T41–T46, T56) before T59 resolves. PASS → iframe. FAIL → link-out primary.
+- **T59 = CLEARED 2026-08-08 (was a blocking gate).** Iframe render path VERIFIED live vs pinned
+  LibreChat `45cc53c4` — frame on NOA origin, cookie rides in, in-frame POST authenticated
+  (R29). Embed work (T32, T41–T46, T56) unblocked; active branch = iframe UI resource + link-out
+  text beside it (V24, V25). Approve/deny in-frame ! be JS `fetch` — no `allow-forms` (V80).
+  Re-verify on every LibreChat bump: `spikes/librechat-embed-render-gate/` (C21).
 - **Python `<3.13`** (C1) ∧ **`fastmcp==3.4.5`** (C23) ∧ **exact-pinned `next`/`react`** (C2).
   Bump = deliberate + re-verify, ⊥ drive-by.
 - Ambiguous identifier → structured candidates result. ⊥ guess. (C10, V18)
