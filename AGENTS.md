@@ -58,10 +58,15 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
 
 - **Reason** = one field, operator-typed in approval card. CHANGE tool schemas ⊥ carry reason param
   of any name. ⊥ `reason`, ⊥ `proposed_reason`. LLM ⊥ author, ⊥ relay, ⊥ see. Reason born at
-  approve time, ⊥ call time. (C8, V15, V43)
+  DECISION time, ⊥ call time — **approve ∧ deny both require a non-blank one**, 409
+  `change_reason_required` either way, ∧ the DB CHECK `ck_action_requests_decided_reason` holds it
+  vs any writer. EXPIRED carries ⊥ reason ∵ nobody gave one. (C8, V15, V43, T37)
 - **Approve/deny** ⊥ travel through LLM. Only path = cookie POST from NOA-origin document +
-  server-minted CSRF token. "May this run?" read from `action_requests.status` in DB — ⊥ from LLM
-  claim, ⊥ from tool arg. (C18, V22, V23)
+  server-minted CSRF token — HMAC, bound to the session **∧** the request id, key derived from
+  `AUTH_JWT_SECRET`, `core/approvals/csrf.py`. "May this run?" read from `action_requests.status`
+  in DB — ⊥ from LLM claim, ⊥ from tool arg. One writer of a terminal status
+  (`core/approvals/decisions.py`), ∧ it is ⊥ reachable from the MCP path: T33's repository writes
+  PENDING ∧ nothing else. (C18, V22, V23, V28, V39, T37)
 - **One workflow, one tool.** Preflight, checks, execution → internal functions. Only final
   workflow exposed. Evidence born in-process, ⊥ cross tool boundary. (C9, V17)
 - **Never-implement list** (C22) = management policy, ⊥ technical. ⊥ port, ⊥ expose, ⊥ re-add.
@@ -94,6 +99,9 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
 - Tests for new functionality. ≥1 check per touched invariant where practical. (V67)
 - Test compare ⊥ eat clock-stamped bytes (`Expires`, `Date`, `iat`) — drop them from equality,
   assert by property, ∧ keep a case proving the compare still separates. (V87, B4)
+- Test of a CONCURRENCY control ! prove the 2 parties OVERLAPPED. `asyncio.gather` of 2 callers
+  ⊥ a race — it passes with the lock deleted. Hold the window open, assert ORDER (⊥ the win
+  count), ∧ ship a negative control showing the forbidden order is reachable. (V89, B5)
 - Conventional commits. ⊥ secrets in git — `.env*` ignored except `.env.example`. (V68)
 - Env vars for lists = JSON arrays: `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 - Browser ⊥ call FastAPI direct. Same-origin proxy route per web app.
