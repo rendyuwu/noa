@@ -5,10 +5,11 @@ schema-v1 model so `Base.metadata` is complete for migration autogenerate.
 """
 
 from core.db.base import Base
-from core.db.lifecycle import ToolRisk, ToolRunStatus
+from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from core.db.models import (
     ADMIN_ROLE_NAME,
     INTERNAL_ROLE_PREFIX,
+    ActionRequest,
     LoginRateLimit,
     McpToken,
     PMGServer,
@@ -26,6 +27,8 @@ from core.db.session import create_engine, create_session_factory
 __all__ = [
     "ADMIN_ROLE_NAME",
     "INTERNAL_ROLE_PREFIX",
+    "ActionRequest",
+    "ActionRequestStatus",
     "Base",
     "LoginRateLimit",
     "McpToken",

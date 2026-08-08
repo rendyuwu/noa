@@ -140,11 +140,12 @@ def test_change_runs_are_representable() -> None:
 
 
 def test_lifecycle_enums_are_distinct_and_machine_stable() -> None:
-    """V20: three distinct enums, stable values — and only two of them exist yet.
+    """V20: this table's two enums, stable values.
 
     Exact member sets, so a rename is a test failure rather than a silent data change.
     Disjoint values, because a shared member would let a query written against one column
-    match rows in the other.
+    match rows in the other. V20's third enum landed with T34; the three-way version of
+    this assertion lives in `test_action_requests_schema.py`, where all three exist.
     """
     assert {member.name: member.value for member in ToolRisk} == {
         "READ": "READ",
@@ -159,17 +160,6 @@ def test_lifecycle_enums_are_distinct_and_machine_stable() -> None:
     assert {member.value for member in ToolRisk} & {
         member.value for member in ToolRunStatus
     } == set()
-
-
-def test_action_request_status_has_not_landed_early() -> None:
-    """V20's third enum belongs to T34, which adds an `EXPIRED` member `noa-old` lacked.
-
-    Writing the member set before the task that specifies it is a guess, the same reason
-    `test_schema_v1.py` refuses tables that arrive ahead of their task.
-    """
-    import core.db.lifecycle as lifecycle
-
-    assert not hasattr(lifecycle, "ActionRequestStatus")
 
 
 def test_enum_columns_are_checked_varchars_not_native_postgres_enums() -> None:

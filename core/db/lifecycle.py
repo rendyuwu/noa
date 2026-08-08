@@ -1,4 +1,4 @@
-"""Lifecycle enums for the tool-call path (V20, T35).
+"""Lifecycle enums for the tool-call path (V20, T35, T34).
 
 V20 keeps these as *separate* enums rather than one flat set of states, because they
 answer different questions about the same call:
@@ -6,22 +6,24 @@ answer different questions about the same call:
 - :class:`ToolRisk` classifies the tool — READ or CHANGE. It is not a status; it never
   advances, and it is decided before the call runs.
 - :class:`ToolRunStatus` tracks the execution — STARTED, then COMPLETED or FAILED.
+- :class:`ActionRequestStatus` tracks the *decision* — PENDING, then APPROVED, DENIED
+  or EXPIRED. A decision is not an execution: an APPROVED request whose run then fails
+  is two facts, and one column could only hold one of them.
 
-`tool_runs` carries both as separate columns, which is what makes a *failed READ*
-representable. A single flat set would force `FAILED` and `READ` into one column and
-lose one of them.
+`tool_runs` carries risk and run status as separate columns, which is what makes a
+*failed READ* representable. A single flat set would force `FAILED` and `READ` into one
+column and lose one of them.
 
-`ActionRequestStatus` — V20's third enum — deliberately does not live here yet. It is
-T34's, and V20 adds an `EXPIRED` member that `noa-old` never had, so writing the member
-set before the task that specifies it would be a guess (the same reason
-`test_schema_v1.py` guards against a table landing ahead of its task).
+Values are disjoint across all three, so a query written against one column cannot match
+rows in another.
 
 `StrEnum` so a member compares equal to its stored string: the column is VARCHAR with a
 CHECK constraint (`native_enum=False`), not a Postgres enum type, so reads come back as
 plain strings and queries can be written against either form.
 
 Ported from `noa-old` branch `MCP` (`storage/postgres/lifecycle.py`) per C13; values are
-verbatim, so rows written by either codebase read the same.
+verbatim, so rows written by either codebase read the same — except `EXPIRED`, which V20
+adds and `noa-old` never had.
 """
 
 from __future__ import annotations
@@ -53,4 +55,26 @@ class ToolRunStatus(StrEnum):
     FAILED = "FAILED"
 
 
-__all__ = ["ToolRisk", "ToolRunStatus"]
+class ActionRequestStatus(StrEnum):
+    """Whether a CHANGE may run (V20, V23, T34).
+
+    PENDING is the initial state, written by the gate (T33). The three terminal states
+    are reached exactly once, under a row lock (V28).
+
+    `EXPIRED` is new here — `noa-old` had only the first three, so a request nobody
+    answered stayed PENDING forever and "may this run?" had no truthful answer after the
+    TTL passed. V32 makes the expiry terminal, and T39 both sweeps in the background and
+    checks on read, so a stale PENDING is never served.
+
+    DENIED and EXPIRED are deliberately separate members rather than one "not approved":
+    a denial is an operator's answer and carries their reason (V15), while an expiry is
+    the absence of one.
+    """
+
+    PENDING = "PENDING"
+    APPROVED = "APPROVED"
+    DENIED = "DENIED"
+    EXPIRED = "EXPIRED"
+
+
+__all__ = ["ActionRequestStatus", "ToolRisk", "ToolRunStatus"]

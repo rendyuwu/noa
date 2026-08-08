@@ -44,6 +44,9 @@ DEV_URL = get_settings().postgres_url_str
 # `tool_runs` joins at T35. `TRUNCATE users CASCADE` would reach it anyway, but only when a
 # test happens to create a user — and its `requested_by_user_id` is `SET NULL`, so a run
 # left behind by an earlier test survives its requester and would still be counted.
+# `action_requests` joins at T34 for both of those reasons, and CASCADE from `tool_runs`
+# is no help either: its `tool_run_id` is `SET NULL` as well, so a decision row outlives
+# every other row a test created.
 MUTATED_TABLES = (
     "users",
     "roles",
@@ -53,6 +56,7 @@ MUTATED_TABLES = (
     "whm_servers",
     "pmg_servers",
     "tool_runs",
+    "action_requests",
 )
 
 

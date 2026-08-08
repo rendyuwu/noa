@@ -6,12 +6,12 @@ Eight tables, three groups:
 - MCP auth: `mcp_tokens` (C5, V2, V3)
 - Managed infrastructure: `whm_servers`, `proxmox_servers`, `pmg_servers` (C7, V48)
 
-Plus `login_rate_limits` from T8 (V9) and `tool_runs` from T35 (V20, V45-V47).
+Plus `login_rate_limits` from T8 (V9), `tool_runs` from T35 (V20, V45-V47) and
+`action_requests` from T34 (V20, V32, V33, V43).
 
-Later tasks add their own tables and migrations: `action_requests` (T34),
-`action_receipts` (T36), `audit_log` (T14). Ported from `noa-old` branch `MCP`
-per C13, minus the chat-presentation tables (threads/messages/assistant_runs/
-workflow_todos) that die with C16.
+Later tasks add their own tables and migrations: `action_receipts` (T36), `audit_log`
+(T14). Ported from `noa-old` branch `MCP` per C13, minus the chat-presentation tables
+(threads/messages/assistant_runs/workflow_todos) that die with C16.
 
 Credential columns hold Fernet ciphertext, never plaintext (C7, V48). Each server
 model exposes `to_safe_dict()` returning presence booleans instead of secret
@@ -28,6 +28,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -48,7 +49,7 @@ from core.db.columns import (
     updated_at,
     uuid_pk,
 )
-from core.db.lifecycle import ToolRisk, ToolRunStatus
+from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 
 # `admin` is reserved: it bypasses per-tool permission checks for known tools and
 # cannot be edited or deleted through the API (V10, V13).
@@ -282,6 +283,94 @@ class ToolRun(Base):
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ActionRequest(Base):
+    """One "may this CHANGE run?" question and its answer (T34, V20, V32, V33, V43).
+
+    This row *is* the authorization. V23 says the question is answered from
+    `action_requests.status` every time — never from an LLM claim and never from a tool
+    argument — so the gate (T33) writes PENDING here and the tool executes only once this
+    column says APPROVED. A held bearer token can create one of these; what it cannot do
+    is decide one (V22: the decision arrives as a cookie POST from a NOA-origin document).
+
+    Five columns `noa-old` had here are deliberately absent, and one it lacked is present:
+
+    - `proposed_reason` — forbidden outright (C8, V43). `noa-old` had no such column
+      either, but it did something worse: the reason travelled inside `args` JSONB, so the
+      LLM authored it. Here `reason` is a column of its own, NULL until an operator types
+      one into the approval card (V15), and there is exactly one of them.
+    - `args` — folded into `approval_context`. V33 wants the gate-time payload persisted
+      as one object rather than rebuilt at render time; splitting the arguments out would
+      make two records of one moment that can disagree.
+    - `risk` — every row here is a CHANGE by construction (V16: READs never reach the
+      gate). `noa-old` kept `risk` on this table *instead* of on `tool_runs`, which is why
+      its audit trail could not describe a failed READ; T35 put it where it belongs.
+    - `decided_by_user_id` — V27 makes the decider the requester (a mismatch is a 404, not
+      a 403). A second identity column would be a second truth about one person.
+    - `updated_at` — `decided_at` already stamps the only mutation V28 permits. A second
+      timestamp invites reading the wrong one (`LoginRateLimit` above records the same
+      call for the same reason).
+    - `expires_at` — present, and `noa-old` had nothing like it. Without a deadline a
+      request nobody answers stays PENDING forever (V32, T39).
+    """
+
+    __tablename__ = "action_requests"
+    __table_args__ = (
+        # T39's sweep is `status = PENDING AND expires_at < now()`. Composite rather than
+        # two indexes; `status` leads, so status-only lookups use it too.
+        Index("ix_action_requests_status_expires_at", "status", "expires_at"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    tool_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # SET NULL, like `tool_runs` and unlike every schema-v1 user FK, which cascades. An
+    # approved CHANGE is an audit artifact (V46) and T36's receipts hang off this row, so
+    # cascading would let one user deletion erase both. Fails closed against V27: NULL
+    # matches no caller, so a requester-match lookup 404s.
+    requested_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    # The answer to "may this run?" (V23). Defaults to PENDING because the gate inserts
+    # before anyone has decided anything; the three terminal states are reached exactly
+    # once, under a row lock (V28).
+    status: Mapped[ActionRequestStatus] = lifecycle_enum(
+        ActionRequestStatus,
+        name="action_request_status",
+        default=ActionRequestStatus.PENDING,
+    )
+    # Audit/grouping label only, never a security scope — the same column and the same
+    # caveat as `tool_runs.conversation_ref` above.
+    conversation_ref: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # V33: built at gate time and persisted here, never rebuilt from a transcript when the
+    # card renders. Holds what V35 shows an operator — provenance, tool arguments, and the
+    # in-process preflight evidence (V17). No server default, unlike `tool_runs.args`: an
+    # empty context is never a legitimate state here, so an insert that omits it should
+    # fail rather than quietly record a card with nothing on it.
+    approval_context: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # The one reason that exists (C8, V15, V43). NULL until decided, and still NULL after
+    # an expiry — nobody typed one. Unbounded `Text` because no machine writes it: a cap
+    # would silently truncate the operator's own words, and truncating the field that
+    # authorises a change is worse than storing a long one. T37 bounds the input.
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The execution this decision produced (T38). NULL until an approval starts one, and
+    # NULL forever on deny or expiry. The link lives here and only here — a matching
+    # `action_request_id` on `tool_runs` would be two truths about one edge.
+    tool_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tool_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # V32's deadline. Required: a row without one cannot expire, and "pending forever" is
+    # the state V32 exists to remove. Kept after a decision as the historical fact it is.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = created_at()
+    # NULL while PENDING. Set by whichever terminal transition wins the lock (V28),
+    # including the expiry sweep — an expiry is a decision the clock made.
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class SSHCredentialsMixin:
     """SSH connection fields shared by WHM and PMG servers (V66).
 
@@ -392,6 +481,7 @@ class PMGServer(Base, SSHCredentialsMixin, TimestampMixin):
 __all__ = [
     "ADMIN_ROLE_NAME",
     "INTERNAL_ROLE_PREFIX",
+    "ActionRequest",
     "LoginRateLimit",
     "McpToken",
     "PMGServer",
