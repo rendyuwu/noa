@@ -95,7 +95,9 @@ uv run ruff format --check .
 uv run pytest -q
 ```
 
-Per web app: `pnpm lint`, `pnpm typecheck`, `pnpm test`.
+Per web app: `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` where a browser lane
+exists (`apps/web-embed` boots its own dev server; run `pnpm exec playwright install chromium`
+once).
 
 ## Conventions
 

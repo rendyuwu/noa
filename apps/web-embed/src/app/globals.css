@@ -1,0 +1,70 @@
+/*
+ * Hand-written styles. This app carries no design-system dependency: it renders a
+ * card inside a small iframe on the NOA origin, and the whole surface is a few
+ * fields and two buttons (§T.40 as built, §I.embed).
+ *
+ * Everything below is scaffold-level: a reset, the type scale, and the tokens the
+ * approval card (§T.41) and the table surface (§T.56) will read.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --noa-font-sans:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --noa-font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+
+  --noa-space-1: 0.25rem;
+  --noa-space-2: 0.5rem;
+  --noa-space-3: 0.75rem;
+  --noa-space-4: 1rem;
+  --noa-space-6: 1.5rem;
+
+  --noa-radius: 0.5rem;
+
+  --noa-bg: #ffffff;
+  --noa-fg: #14171a;
+  --noa-muted: #5a6572;
+  --noa-border: #d8dee5;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --noa-bg: #11151a;
+    --noa-fg: #e8edf2;
+    --noa-muted: #97a3b1;
+    --noa-border: #2b333d;
+  }
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--noa-bg);
+  color: var(--noa-fg);
+  font-family: var(--noa-font-sans);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  /*
+   * The card scrolls itself. The frame LibreChat gives it is fixed-height, so a
+   * document that grows past it has to own the overflow (§I.embed: "compact,
+   * self-scrolling").
+   */
+  min-height: 100vh;
+  overflow-wrap: break-word;
+}
+
+code,
+pre {
+  font-family: var(--noa-font-mono);
+}
