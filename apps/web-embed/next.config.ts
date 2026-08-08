@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import type { NextConfig } from 'next'
 
+import { buildFramingHeaders } from './config/framing'
 import { loadRootEnv } from './config/root-env'
 
 // This package is a standalone deploy artifact (C12). It is not part of a pnpm
@@ -20,6 +21,11 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // Framing allowlist (§T.45, V41). Read after `loadRootEnv` above, so the repo-root `.env` has
+  // already been applied. Note that `output: 'standalone'` never executes this config at runtime:
+  // the origin is baked at `next build`, which means a runtime variable cannot widen the allowlist
+  // — and cannot change it either, so a deployment that moves LibreChat rebuilds (§T.60).
+  headers: async () => buildFramingHeaders(process.env),
 }
 
 export default nextConfig

@@ -15,6 +15,20 @@ const BASE_URL = process.env.EMBED_BASE_URL ?? 'http://localhost:3001'
 // as a broken proxy.
 const UPSTREAM_PORT = 8099
 
+// The stand-in for LibreChat: a page that frames the embed (§T.45). Reached under two hostnames
+// that both resolve here, so the parent origin is the only variable between the allowed case and
+// the refused one.
+const PARENT_PORT = 8110
+
+// The origin the framing specs treat as LibreChat's (§T.45, V41). `http`, not the deployed
+// `https://chat.noa.internal`: this harness serves plain HTTP, and an https parent framing an http
+// child is blocked as mixed content before CSP is ever consulted — the refusal spec would then
+// pass for a reason that has nothing to do with the header. The shipped default value is pinned
+// unit-side in `config/framing.test.ts`; what belongs here is that a browser enforces whatever
+// origin the app was configured with.
+export const CHAT_ORIGIN = `http://chat.noa.internal:${PARENT_PORT}`
+export const OTHER_ORIGIN = `http://not-chat.noa.internal:${PARENT_PORT}`
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
@@ -36,6 +50,13 @@ export default defineConfig({
       env: { UPSTREAM_STUB_PORT: String(UPSTREAM_PORT) },
     },
     {
+      command: 'node e2e/support/framing-parent.mjs',
+      port: PARENT_PORT,
+      reuseExistingServer: false,
+      timeout: 30_000,
+      env: { FRAMING_PARENT_PORT: String(PARENT_PORT) },
+    },
+    {
       command: 'pnpm dev',
       // Readiness is the open socket, deliberately not `/healthz`. Waiting on the
       // route under test turns a broken `/healthz` into a two-minute startup
@@ -48,7 +69,10 @@ export default defineConfig({
       // decides the outcome.
       reuseExistingServer: false,
       timeout: 120_000,
-      env: { NOA_API_URL: `http://127.0.0.1:${UPSTREAM_PORT}` },
+      env: {
+        NOA_API_URL: `http://127.0.0.1:${UPSTREAM_PORT}`,
+        NOA_LIBRECHAT_ORIGIN: CHAT_ORIGIN,
+      },
     },
   ],
 })
