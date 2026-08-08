@@ -1,0 +1,56 @@
+# LibreChat config for the embed render gate run (T59).
+#
+# `mcpServers.noa` is the shape T57 will ship, minus one deviation noted below: the bearer
+# token is written literally here instead of coming from `customUserVars.NOA_MCP_TOKEN`,
+# because per-user vars are entered through LibreChat's UI and this run drives the API. The
+# header set is otherwise the production one — `X-Noa-LibreChat-User` is required on every
+# request per C24, and LibreChat resolves `{{LIBRECHAT_USER_ID}}` per call.
+#
+# The URL points at `/mcp-embed-probe/`, the harness server, not NOA's real `/mcp/`. The
+# probe tools are uncatalogued on purpose (V10, V83a); see `noa_embed_probe_server.py`.
+#
+# Trailing slash is deliberate: Starlette answers the mounted app at `/mcp-embed-probe/` and
+# 307s the bare path, so the slash saves a redirect on every call (T13).
+
+version: 1.3.0
+
+cache: false
+
+# Without an explicit allowlist LibreChat turns on SSRF protection and refuses an MCP URL
+# that resolves to a loopback address — which every hostname in this rig does. Naming the
+# domain is what a real deployment would do for an internal MCP host anyway.
+mcpSettings:
+  allowedDomains:
+    - noa.internal
+
+interface:
+  modelSelect: true
+  parameters: true
+  agents: true
+  mcpServers:
+    use: true
+
+endpoints:
+  agents:
+    disableBuilder: false
+    capabilities:
+      - tools
+      - actions
+
+mcpServers:
+  noa:
+    type: streamable-http
+    url: http://noa.internal:8000/mcp-embed-probe/
+    timeout: 60000
+    # Measured, not preference. LibreChat inspects every startup server with no user in
+    # context, so `{{LIBRECHAT_USER_ID}}` has nothing to resolve to and NOA answers 401 —
+    # correctly, per C24/V3. LibreChat reads that 401 as "this server wants OAuth", marks it
+    # `needs_authorization`, and never connects again. `startup: false` defers the connection
+    # to the first per-user call, where the headers do resolve; `requiresOAuth: false` stops
+    # the inference. Both belong in T57's real config for the same reason.
+    startup: false
+    requiresOAuth: false
+    headers:
+      Authorization: "Bearer ${NOA_MCP_TOKEN}"
+      X-Noa-LibreChat-User: "{{LIBRECHAT_USER_ID}}"
+      X-Noa-Conversation-Ref: "{{LIBRECHAT_BODY_CONVERSATIONID}}"

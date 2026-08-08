@@ -1,0 +1,12 @@
+{
+  "name": "noa-librechat-embed-render-gate",
+  "private": true,
+  "type": "module",
+  "description": "Browser probe for T59: does a NOA-served text/uri-list UI resource render on NOA's origin inside LibreChat, with the session cookie riding into the frame?",
+  "scripts": {
+    "probe": "node browser_probe.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.56.1"
+  }
+}

@@ -1,0 +1,9 @@
+# Scratch from a run: logs, the minted token, the JSON-RPC method log.
+.runtime/
+
+# Playwright comes from the LibreChat clone (or a local install); neither belongs in the tree.
+node_modules
+
+# Screenshots are re-captured on every run. `probe-results.json` is the artifact behind the
+# report, so it is tracked.
+evidence/*.png

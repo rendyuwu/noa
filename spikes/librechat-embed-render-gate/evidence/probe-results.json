@@ -1,0 +1,159 @@
+{
+  "startedAt": "2026-08-08T11:07:16.813Z",
+  "stages": {
+    "librechat-session": {
+      "userId": "6a770491846a3a89bdad72d7",
+      "email": "operator@noa.internal"
+    },
+    "agent": {
+      "id": "agent_SVFiZNjyKBPQUVoLY-BZx",
+      "model": "claude-sonnet-5",
+      "tools": [
+        "embed_probe_uri_list_mcp_noa",
+        "embed_probe_html_mcp_noa",
+        "embed_probe_notify_tools_changed_mcp_noa"
+      ]
+    },
+    "noa-login": {
+      "status": 200,
+      "body": "{\"user\":{\"id\":\"504ddfd6-c3f6-4494-983d-5060552a463b\",\"email\":\"operator@noa.internal\",\"display_name\":\"operator@noa.internal\",\"is_active\":true,\"roles\":[\"admin\"]}}"
+    },
+    "noa-cookie": {
+      "name": "noa_session",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJvcGVyYXRvckBub2EuaW50ZXJuYWwiLCJ1aWQiOiI1MDRkZGZkNi1jM2Y2LTQ0OTQtOTgzZC01MDYwNTUyYTQ2M2IiLCJpYXQiOjE3ODYxODcyMzgsImV4cCI6MTc4NjE5MDgzOH0.3zzQ74aBYOaCk9BAPG14mnDJbGfoI766eyseGri62Nk",
+      "domain": ".noa.internal",
+      "path": "/",
+      "expires": 1786190838.375731,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    "librechat-ui-login": {
+      "url": "http://chat.noa.internal:3080/c/new?agent_id=agent_SVFiZNjyKBPQUVoLY-BZx"
+    },
+    "uri-list": {
+      "frames": [
+        {
+          "src": "http://embed.noa.internal:8000/embed-probe/frame?id=f0848f52-83cc-4746-8a93-28c9360db818&mode=uri-list",
+          "hasSrcdoc": false,
+          "srcdocLength": 0,
+          "sandbox": "allow-scripts allow-same-origin",
+          "csp": null,
+          "referrerPolicy": null
+        },
+        {
+          "src": "http://embed.noa.internal:8000/embed-probe/frame?id=f0848f52-83cc-4746-8a93-28c9360db818&mode=uri-list",
+          "hasSrcdoc": false,
+          "srcdocLength": 0,
+          "sandbox": "allow-popups allow-scripts allow-same-origin",
+          "csp": null,
+          "referrerPolicy": null
+        },
+        {
+          "src": "assets/silence.mp3",
+          "hasSrcdoc": false,
+          "srcdocLength": 0,
+          "sandbox": null,
+          "csp": null,
+          "referrerPolicy": null
+        }
+      ],
+      "probes": [
+        {
+          "frameUrl": "http://embed.noa.internal:8000/embed-probe/frame?id=f0848f52-83cc-4746-8a93-28c9360db818&mode=uri-list",
+          "mode": "uri-list",
+          "origin": "http://embed.noa.internal:8000",
+          "cookieVisible": "(empty)",
+          "me": "200 {\"user\":{\"id\":\"504ddfd6-c3f6-4494-983d-5060552a463b\",\"email\":\"operator@noa.internal\",\"display_name\":\"operator@noa.internal\",\"is_active\":true,\"roles\":[\"admin\"]}}",
+          "decide": "200 {\"authenticated_as\":\"operator@noa.internal\",\"action_request_id\":\"f0848f52-83cc-4746-8a93-28c9360db818\",\"origin_header\":\"http://embed.noa.internal:8000\",\"sec_fetch_site\":null,\"sec_fetch_dest\":null}",
+          "documentOrigin": "http://embed.noa.internal:8000"
+        },
+        {
+          "frameUrl": "http://embed.noa.internal:8000/embed-probe/frame?id=f0848f52-83cc-4746-8a93-28c9360db818&mode=uri-list",
+          "mode": "uri-list",
+          "origin": "http://embed.noa.internal:8000",
+          "cookieVisible": "(empty)",
+          "me": "200 {\"user\":{\"id\":\"504ddfd6-c3f6-4494-983d-5060552a463b\",\"email\":\"operator@noa.internal\",\"display_name\":\"operator@noa.internal\",\"is_active\":true,\"roles\":[\"admin\"]}}",
+          "decide": "200 {\"authenticated_as\":\"operator@noa.internal\",\"action_request_id\":\"f0848f52-83cc-4746-8a93-28c9360db818\",\"origin_header\":\"http://embed.noa.internal:8000\",\"sec_fetch_site\":null,\"sec_fetch_dest\":null}",
+          "documentOrigin": "http://embed.noa.internal:8000"
+        }
+      ]
+    },
+    "html-control": {
+      "frames": [
+        {
+          "src": null,
+          "hasSrcdoc": true,
+          "srcdocLength": 2713,
+          "sandbox": "allow-scripts",
+          "csp": null,
+          "referrerPolicy": null
+        },
+        {
+          "src": null,
+          "hasSrcdoc": true,
+          "srcdocLength": 2713,
+          "sandbox": "allow-popups allow-scripts",
+          "csp": null,
+          "referrerPolicy": null
+        },
+        {
+          "src": "assets/silence.mp3",
+          "hasSrcdoc": false,
+          "srcdocLength": 0,
+          "sandbox": null,
+          "csp": null,
+          "referrerPolicy": null
+        }
+      ],
+      "probes": [
+        {
+          "frameUrl": "about:srcdoc",
+          "mode": "srcdoc",
+          "origin": "null",
+          "cookieVisible": "threw: SecurityError: Failed to read the 'cookie' property from 'Document': The document is sandboxed and lacks the 'allow-same-origin' flag.",
+          "me": "threw: TypeError: Failed to fetch",
+          "decide": "threw: TypeError: Failed to fetch",
+          "documentOrigin": "null"
+        },
+        {
+          "frameUrl": "about:srcdoc",
+          "mode": "srcdoc",
+          "origin": "null",
+          "cookieVisible": "threw: SecurityError: Failed to read the 'cookie' property from 'Document': The document is sandboxed and lacks the 'allow-same-origin' flag.",
+          "me": "threw: TypeError: Failed to fetch",
+          "decide": "threw: TypeError: Failed to fetch",
+          "documentOrigin": "null"
+        }
+      ]
+    },
+    "notify": {
+      "methodsAfterPrompt": [
+        {
+          "at": 1786187269.722,
+          "method": "initialize"
+        },
+        {
+          "at": 1786187269.743,
+          "method": "notifications/initialized"
+        },
+        {
+          "at": 1786187269.768,
+          "method": "ping"
+        },
+        {
+          "at": 1786187269.785,
+          "method": "tools/list"
+        },
+        {
+          "at": 1786187272.535,
+          "method": "tools/call"
+        }
+      ],
+      "toolsListAfterNotification": false,
+      "note": "NOA emitted notifications/tools/list_changed from inside the tool call. A tools/list arriving afterwards would mean LibreChat honours it."
+    }
+  },
+  "failures": [],
+  "finishedAt": "2026-08-08T11:08:33.923Z"
+}
