@@ -17,7 +17,8 @@ Monorepo, 3 deployables, 1 shared `core/`, 1 Alembic (C12):
 
 - `apps/api` — FastAPI + FastMCP. Two router sets: `/mcp` + `/admin`.
 - `apps/admin-web` — Next.js + BIGSU admin panel. ⊥ frameable.
-- `apps/web-embed` — Next.js approval card iframe + large-result tables.
+- `apps/web-embed` — Next.js approval card iframe + large-result tables. **⊥ BIGSU, ⊥ Tailwind** —
+  hand-written CSS; eslint refuses `@gio/*` ∧ any `apps/admin-web` import (T40). Dev port 3001.
 - `core/` — config, auth, remote_exec, secrets, integrations. Shared by all.
 
 `apps/admin-web` ∧ `apps/web-embed` = independent packages. Own lockfile, own CI, own deploy.
@@ -102,6 +103,9 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
 - Test of a CONCURRENCY control ! prove the 2 parties OVERLAPPED. `asyncio.gather` of 2 callers
   ⊥ a race — it passes with the lock deleted. Hold the window open, assert ORDER (⊥ the win
   count), ∧ ship a negative control showing the forbidden order is reachable. (V89, B5)
+- Test SETUP gate ⊥ be the thing under test. Readiness wait pointed at the subject turns the
+  subject's failure into a TIMEOUT, ∧ a timeout names nothing. Gate sits one layer BELOW — socket
+  under route, process under socket. (V90)
 - Conventional commits. ⊥ secrets in git — `.env*` ignored except `.env.example`. (V68)
 - Env vars for lists = JSON arrays: `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 - Browser ⊥ call FastAPI direct. Same-origin proxy route per web app.
