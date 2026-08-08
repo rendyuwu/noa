@@ -29,6 +29,34 @@ const PARENT_PORT = 8110
 export const CHAT_ORIGIN = `http://chat.noa.internal:${PARENT_PORT}`
 export const OTHER_ORIGIN = `http://not-chat.noa.internal:${PARENT_PORT}`
 
+/** The stub upstream, for the specs that read its hit counter. */
+export const UPSTREAM_ORIGIN = `http://127.0.0.1:${UPSTREAM_PORT}`
+
+/**
+ * The sandbox LibreChat was measured applying to this frame at pin `45cc53c4` (R13, R29).
+ *
+ * `allow-forms` is **absent**, and that absence is the premise V80 rests on: a native form submit
+ * dies silently in here, so the card's buttons are `fetch` handlers. Pinned as a constant because
+ * a spec that quietly widened it would be testing a frame LibreChat does not serve.
+ */
+export const MEASURED_SANDBOX = 'allow-scripts allow-same-origin'
+
+/**
+ * One card id per outcome the approval page renders (§T.41), shared with the stub that serves them
+ * (`env` below) so a spec cannot ask about a state the stub does not have (V66). Valid UUIDs: the
+ * real route's path parameter is UUID-typed, and an id shaped unlike a real one would exercise a
+ * 422 the specs are not about.
+ */
+export const APPROVAL_IDS = {
+  pending: '9f1c2b7e-0000-4000-8000-000000000001',
+  decided: '9f1c2b7e-0000-4000-8000-000000000002',
+  unauthorized: '9f1c2b7e-0000-4000-8000-000000000401',
+  notFound: '9f1c2b7e-0000-4000-8000-000000000404',
+} as const
+
+/** The token the stub puts on a PENDING card. The real one is HMAC-signed (V39, T37). */
+export const STUB_CSRF = 'v1.1786000000.stub-signature'
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
@@ -47,7 +75,14 @@ export default defineConfig({
       port: UPSTREAM_PORT,
       reuseExistingServer: false,
       timeout: 30_000,
-      env: { UPSTREAM_STUB_PORT: String(UPSTREAM_PORT) },
+      env: {
+        UPSTREAM_STUB_PORT: String(UPSTREAM_PORT),
+        STUB_PENDING_ID: APPROVAL_IDS.pending,
+        STUB_DECIDED_ID: APPROVAL_IDS.decided,
+        STUB_UNAUTHORIZED_ID: APPROVAL_IDS.unauthorized,
+        STUB_NOT_FOUND_ID: APPROVAL_IDS.notFound,
+        STUB_CSRF,
+      },
     },
     {
       command: 'node e2e/support/framing-parent.mjs',

@@ -6,14 +6,16 @@ lock already held, then a 409. What is here is the other half — **the sweep**,
 V32's terminality *without traffic*. Without it a request nobody ever opens stays `PENDING`
 for as long as the database exists, and `action_requests.status` — the column V23 answers
 "may this run?" from every time — has no truthful answer once the TTL has passed. And the
-same mechanism serves the render path, so a read cannot show a stale `PENDING` either: T63's
-`noa_get_action_result` is its first live caller (`core.approvals.results`), and T41's card
-is the second.
+same mechanism serves the render paths, so a read cannot show a stale `PENDING` either: T63's
+`noa_get_action_result` was its first live caller (`core.approvals.results`) and T41's approval
+card is the second (`core.approvals.card`).
 
-**Where the render path puts this call is the render path's decision.** `expire_if_due` takes
-an id and no requester, so T63 runs it *after* its requester-matched read — otherwise a
-prompt-injected identifier could make NOA write to a request belonging to an operator the
-caller cannot see. A surface that resolves the row itself may reasonably call it first.
+**Both render paths run this *after* their requester-matched read** (`core.approvals.reads`).
+`expire_if_due` takes an id and no requester, so running it first would let an identifier the
+caller cannot see be written to — and the ids reach an operator through a tool result that
+persists in LibreChat's MongoDB (V26), so "the caller supplied it" is not the same as "the
+caller may see it". V32 allows a surface that resolves the row itself to call this first; T41's
+card declined, and reading first costs only one poll of freshness (see `apply_due_expiry`).
 
 **A third writer, and the reason is the same one that split the first two.**
 `SQLActionRequestRepository` (T33) writes `PENDING` and nothing else, because the MCP tool
@@ -79,8 +81,8 @@ LOG_SWEEP_EXPIRED: Final = "action_requests_expired_by_sweep"
 # ever went wrong.
 LOG_SWEEP_FAILED: Final = "action_request_expiry_sweep_failed"
 
-# A render path found a request past its deadline and made it terminal (T63's result tool
-# today, T41's card next).
+# A render path found a request past its deadline and made it terminal (T63's result tool or
+# T41's approval card).
 LOG_EXPIRED_ON_READ: Final = "action_request_expired_on_render"
 
 logger = structlog.get_logger(__name__)

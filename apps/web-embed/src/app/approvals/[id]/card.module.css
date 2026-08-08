@@ -1,0 +1,159 @@
+/*
+ * The approval card's own styles (§T.41, §I.embed: "compact, self-scrolling").
+ *
+ * Hand-written, reading the tokens `src/app/globals.css` defines. No design system here — the
+ * eslint firewall refuses `@gio/*` (§T.40 as built), and adopting BIGSU on the embed would be a
+ * deliberate change to that rather than an import.
+ *
+ * Compact because the frame LibreChat gives this document is small and fixed-height, and
+ * self-scrolling because a document that outgrows its frame has to own the overflow — the parent
+ * cannot, and an iframe that clips its Approve button is a card nobody can answer.
+ */
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-4);
+  padding: var(--noa-space-4);
+  /* The scroll container. `100dvh` rather than `100vh`: the frame is the viewport here. */
+  max-height: 100dvh;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-1);
+}
+
+.tool {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: var(--noa-font-mono);
+  word-break: break-all;
+}
+
+.status {
+  margin: 0;
+  color: var(--noa-muted);
+  font-size: 0.8125rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-2);
+  border: 1px solid var(--noa-border);
+  border-radius: var(--noa-radius);
+  padding: var(--noa-space-3);
+}
+
+.sectionTitle {
+  margin: 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--noa-muted);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: minmax(0, auto) minmax(0, 1fr);
+  gap: var(--noa-space-1) var(--noa-space-3);
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.factKey {
+  color: var(--noa-muted);
+}
+
+.factValue {
+  margin: 0;
+  font-family: var(--noa-font-mono);
+  word-break: break-word;
+}
+
+.empty {
+  margin: 0;
+  color: var(--noa-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+.reasonLabel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-2);
+  font-size: 0.8125rem;
+}
+
+.reason {
+  /* Inherit rather than re-declare: a textarea does not take the body font on its own. */
+  font: inherit;
+  color: inherit;
+  background: var(--noa-bg);
+  border: 1px solid var(--noa-border);
+  border-radius: var(--noa-radius);
+  padding: var(--noa-space-2);
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.actions {
+  display: flex;
+  gap: var(--noa-space-2);
+}
+
+.button {
+  font: inherit;
+  font-weight: 600;
+  border: 1px solid var(--noa-border);
+  border-radius: var(--noa-radius);
+  padding: var(--noa-space-2) var(--noa-space-4);
+  background: var(--noa-bg);
+  color: var(--noa-fg);
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.approve {
+  border-color: #1f7a4d;
+  color: #1f7a4d;
+}
+
+.deny {
+  border-color: #a3324a;
+  color: #a3324a;
+}
+
+.outcome {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-2);
+  padding: var(--noa-space-4);
+  max-height: 100dvh;
+  overflow-y: auto;
+}
+
+.noticeTitle {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.noticeBody {
+  margin: 0;
+  color: var(--noa-muted);
+  font-size: 0.8125rem;
+}

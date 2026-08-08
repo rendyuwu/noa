@@ -1,10 +1,23 @@
-"""Decision routes: approve and deny one pending CHANGE (T37, I.embed).
+"""The approval card's routes: read one request, then approve or deny it (T37, T41, I.embed).
 
 **This is the only door on the authorization** (C18, V22). A held MCP bearer token can open
 an `action_requests` row; what it cannot do is decide one, because deciding happens here —
 behind the `noa_session` cookie, from a document on NOA's own origin, with a server-minted
 CSRF token. Nothing on this path passes through the LLM, and nothing on the LLM's path
 reaches this module.
+
+**The `GET` is the card, and it is where the CSRF token comes from** (T41, T46). One request in,
+one card out: the provenance V35 names, the gate-time before-state (C9, V17), the redacted
+arguments — and, when the request is still PENDING, a freshly minted token for the two POSTs
+below. There is no minting *route*: a token that arrived separately from the thing it authorises
+is a token a page could hold without ever having been allowed to read the request, and the read
+is where V27's requester-match happens. `csrf` is `null` for anything already terminal, because
+a live token on a card nobody may decide is a spare key with no door (V39).
+
+Reading is a strictly weaker capability than deciding and is wired that way rather than
+promised: the `GET` holds `ApprovalCardService`, whose repository has no `commit` and no
+statement that is not a `SELECT`, while the POSTs hold `ActionDecisionService`, the one writer
+of a terminal status. Sharing a router does not share a writer.
 
 **The reason is born here.** C8 puts it in exactly one place: an operator types it into the
 approval card and it arrives in this body. A CHANGE tool's schema carries no reason parameter
@@ -38,16 +51,22 @@ body shape, so no handler here builds an `HTTPException`.
 
 from __future__ import annotations
 
-from typing import Final
+from typing import Any, Final
 from uuid import UUID
 
 from fastapi import APIRouter, status
 from pydantic import BaseModel, Field
 
-from core.approvals.csrf import verify_decision_csrf_token
+from core.approvals.csrf import mint_decision_csrf_token, verify_decision_csrf_token
 from core.approvals.decisions import ApprovalOutcome, DenialOutcome
+from core.approvals.errors import ActionRequestNotFoundError
 from core.db.lifecycle import ActionRequestStatus
-from noa_api.api.deps import ActionDecisionServiceDep, SessionUserDep, SettingsDep
+from noa_api.api.deps import (
+    ActionDecisionServiceDep,
+    ApprovalCardServiceDep,
+    SessionUserDep,
+    SettingsDep,
+)
 
 # Long enough that no operator writing a real justification hits it, short enough that a body
 # cannot be used to push megabytes into a column with no length of its own (T34).
@@ -86,6 +105,80 @@ class DenialResponse(BaseModel):
 
     action_request_id: str
     status: str
+
+
+class ApprovalCardResponse(BaseModel):
+    """200 body for the card (T41 — V34, V35, V39).
+
+    Shaped by `ApprovalCardView.as_payload()` rather than re-listed field by field: two
+    spellings of one payload is one that can disagree, and the view is where the decision about
+    what an operator may see was made. `dict[str, Any]` on `requester`/`arguments`/`evidence`
+    for the same reason — the arguments and the preflight evidence are a CHANGE tool's own
+    shapes, and a model that flattened them here would have to be widened by every tool.
+
+    No `reason` field, and `ApprovalCardView` has none to serialise (C8, V15, V43).
+    """
+
+    action_request_id: str
+    tool_name: str
+    status: str
+    conversation_ref: str | None
+    requester: dict[str, Any]
+    arguments: dict[str, Any]
+    evidence: dict[str, Any]
+    created_at: str
+    expires_at: str
+    decided_at: str | None
+    run: dict[str, Any] | None
+    # `None` once the request is terminal: there is nothing left to authorise, so there is no
+    # token to hold (V39). The card reads this to decide whether to render live buttons at all.
+    csrf: str | None
+
+
+@router.get("/{action_request_id}", response_model=ApprovalCardResponse)
+async def read_card(
+    action_request_id: UUID,
+    settings: SettingsDep,
+    current_user: SessionUserDep,
+    cards: ApprovalCardServiceDep,
+) -> ApprovalCardResponse:
+    """One approval card, for the operator who opened the request (T41 — V27, V32, V35, V39).
+
+    `SessionUserDep` is the access control's first half and V6's row re-read: a disabled
+    operator loses the card on their next request rather than at cookie expiry. The second half
+    is the requester-match, and it is inside the statement — a request that is not this
+    caller's is never fetched (`core.approvals.reads`).
+
+    404 for absent, another operator's, *and* one whose requester was deleted, through the same
+    class the decision doors raise, so all four surfaces answer with one body. V27 bounds that
+    at the body and not the status: a code that varied by cause would be a 403 spelled
+    differently, and only `request_id` may differ between two of these responses (V73).
+
+    The deadline is checked on read (V32), so a card past its TTL renders `EXPIRED` with no
+    token rather than a live Approve button over a request the decision door would refuse.
+    """
+    card = await cards.card_for(
+        action_request_id=action_request_id,
+        requester_user_id=current_user.user_id,
+    )
+    if card is None:
+        raise ActionRequestNotFoundError(
+            f"no `action_requests` row {action_request_id} for requester {current_user.user_id}"
+        )
+
+    # Minted here, from the identity the cookie resolved to and the id in the path — never from
+    # anything in the request body. The token is bound to both, so it authorises this operator
+    # on this card and nothing else (V39).
+    csrf = (
+        mint_decision_csrf_token(
+            settings=settings,
+            user_id=current_user.user_id,
+            action_request_id=card.action_request_id,
+        )
+        if card.is_pending
+        else None
+    )
+    return ApprovalCardResponse(**card.as_payload(), csrf=csrf)
 
 
 def _authorize(
@@ -189,6 +282,7 @@ async def deny(
 
 __all__ = [
     "MAX_REASON_LENGTH",
+    "ApprovalCardResponse",
     "ApprovalResponse",
     "DecisionRequest",
     "DenialResponse",

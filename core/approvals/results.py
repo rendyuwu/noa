@@ -13,20 +13,12 @@ statement that is not a `SELECT`. The one write on this path — expiring a stal
 GET cannot serve it (V32) — is delegated to `ActionRequestExpiryService`, whose writer can set
 exactly one status.
 
-**The requester-match is in the `WHERE`, not in an `if`.** `id = :id AND
-requested_by_user_id = :caller`, so a row that is not the caller's is never fetched and there
-is no later branch that could forget to drop it. A NULL requester — the FK is `SET NULL`
-(T34), so a deleted operator leaves one behind — matches nobody under SQL's NULL semantics,
-which is the fail-closed direction V27 names.
-
-Stated as a preference and not as a proof, because it was measured: moving the comparison
-out of the statement and into a Python `!=` after the read leaves **every test in this task
-green**, live ones included. The two spellings answer identically — `None != caller` is
-`True`, so even the deleted-requester case still refuses. What the statement buys is that the
-foreign row does not exist in this process to be logged, returned by a later edit, or half
-dropped by a refactor; that is defence in depth, and the honest place to say so is here
-rather than in a test name that would imply otherwise (V69: a control asserted by prose is
-worth exactly what the prose is worth).
+**The row guard is `core.approvals.reads`, shared with T41's card.** The requester-match sits
+in the `WHERE` (`select_requester_matched`) and V32's check-on-read runs after it
+(`apply_due_expiry`); both live one module over because the *other* reader of an approval
+request has to guard it identically, and two spellings of an access control is how it ends up
+holding at one surface and not the other (V66). What is not shared is what each surface
+renders — see the next paragraph.
 
 **What the views cannot carry.** `ActionResultView` has no `reason` field and nowhere to put
 one. The reason is the operator's own words, typed on the approval card, and C8 says the LLM
@@ -47,50 +39,23 @@ beside it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.approvals.clock import as_utc, now_utc
+from core.approvals.clock import as_utc
 from core.approvals.context import arguments_from_context
 from core.approvals.expiry import ActionRequestExpiryService
-from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
-from core.db.models import ActionRequest, ToolRun
-
-
-@dataclass(frozen=True)
-class ActionRunView:
-    """The execution an approval started, as far as it has got (V29, V46, V47).
-
-    `result_summary` is already truncated and already redacted by whoever wrote it
-    (`noa_api.mcp_audit` for a READ, T38's executor for a change) — nothing here re-derives
-    it, for the reason `LockedActionRequest.redacted_arguments` gives one field over.
-
-    `STARTED` with a NULL summary is the normal state today: T37 opens this row inside the
-    decision's transaction and T38's executor, which moves it, is unbuilt. Reporting that
-    plainly is the point — a model that is told "started" tells an operator to wait, which is
-    true.
-    """
-
-    tool_run_id: UUID
-    status: ToolRunStatus
-    result_summary: str | None
-    created_at: datetime
-    completed_at: datetime | None
-
-    def as_payload(self) -> dict[str, Any]:
-        """JSON-native fields for the tool result."""
-        return {
-            "tool_run_id": str(self.tool_run_id),
-            "status": self.status.value,
-            "result_summary": self.result_summary,
-            "created_at": self.created_at.isoformat(),
-            "completed_at": None if self.completed_at is None else self.completed_at.isoformat(),
-        }
+from core.approvals.reads import (
+    ActionRunView,
+    apply_due_expiry,
+    run_view,
+    select_requester_matched,
+)
+from core.db.lifecycle import ActionRequestStatus
 
 
 @dataclass(frozen=True)
@@ -160,28 +125,17 @@ class SQLActionResultRepository:
     ) -> ActionResultView | None:
         """The caller's request and the run it started, or `None` (V27, V47).
 
-        One statement with an outer join rather than two reads: the request and its run are
-        one answer to one question, and two round trips could straddle the moment the
-        executor moves the run.
-
-        `None` covers "no such request" *and* "not yours" *and* "its requester was deleted",
-        which is V27's whole point — the caller cannot tell those apart, so the tool has one
-        refusal for all of them.
+        The statement is `core.approvals.reads.select_requester_matched` — one outer join with
+        the requester-match in the `WHERE`, shared with T41's card so the access control has
+        one spelling (V66). What is local to this class is the *projection*: only
+        `arguments_from_context` comes off `approval_context`, and `ActionResultView` has
+        nowhere to put the rest.
         """
-        result = await self._session.execute(
-            select(ActionRequest, ToolRun)
-            .outerjoin(ToolRun, ActionRequest.tool_run_id == ToolRun.id)
-            .where(
-                ActionRequest.id == action_request_id,
-                # The access control, in the statement: a row that is not this caller's is
-                # never fetched, and a NULL requester matches nothing, which is the
-                # fail-closed direction T34's `SET NULL` needs (V27). That the refusal holds
-                # is asserted by test; that it holds *here* rather than after the read is a
-                # preference — see the module docstring, where the measurement is recorded.
-                ActionRequest.requested_by_user_id == requester_user_id,
-            )
+        row = await select_requester_matched(
+            self._session,
+            action_request_id=action_request_id,
+            requester_user_id=requester_user_id,
         )
-        row = result.first()
         if row is None:
             return None
 
@@ -194,36 +148,16 @@ class SQLActionResultRepository:
             created_at=as_utc(request.created_at),
             expires_at=as_utc(request.expires_at),
             decided_at=None if request.decided_at is None else as_utc(request.decided_at),
-            run=None if run is None else _run_view(run),
+            run=None if run is None else run_view(run),
         )
-
-
-def _run_view(run: ToolRun) -> ActionRunView:
-    """The `tool_runs` half of the join, as a value object."""
-    return ActionRunView(
-        tool_run_id=run.id,
-        status=ToolRunStatus(run.status),
-        result_summary=run.result_summary,
-        created_at=as_utc(run.created_at),
-        completed_at=None if run.completed_at is None else as_utc(run.completed_at),
-    )
 
 
 class ActionResultService:
     """Read one request, and never serve a stale PENDING (T63 — V23, V27, V32, V76).
 
-    **Order: the requester-match first, the expiry second.** `core.approvals.expiry` describes
-    its check-on-read as running *before* the render path reads the row, and for T41's card —
-    which resolves the row itself — that is right. Here it is the other way round on purpose:
-    `expire_if_due` takes an id and nothing else, so calling it first would let a prompt-
-    injected identifier make NOA write to a request belonging to somebody the caller cannot
-    even see. Reading first makes a foreign id a pure no-op — no row, no write, one refusal.
-
-    What that costs is one poll of freshness: if a decision commits between the read and the
-    update, the update finds the row no longer PENDING, skips it (which is exactly the
-    property T39 relies on) and this answers with the PENDING it read. That window exists for
-    any unlocked read, the next call closes it, and V23 keeps the authority in the row rather
-    than in this answer.
+    **Order: the requester-match first, the expiry second** — `core.approvals.reads`
+    (`apply_due_expiry`) holds that ordering and the argument for it, shared with T41's card so
+    a second reader cannot arrive at the other order (V66).
     """
 
     def __init__(
@@ -248,7 +182,6 @@ class ActionResultService:
         the `UPDATE` stamped are the same moment rather than two that nearly agree
         (`core.approvals.clock` — the same rule the two decision doors follow).
         """
-        moment = now_utc(now)
         view = await self._repository.get_for_requester(
             action_request_id=action_request_id,
             requester_user_id=requester_user_id,
@@ -256,17 +189,7 @@ class ActionResultService:
         if view is None:
             return None
 
-        expired = await self._expiry.expire_if_due(
-            action_request_id=view.action_request_id,
-            now=moment,
-        )
-        if not expired:
-            return view
-
-        # The `UPDATE` fired, so `EXPIRED` at `moment` is what is durable — reported from the
-        # write that happened rather than re-read, which would be a second round trip that
-        # could disagree with it.
-        return replace(view, status=ActionRequestStatus.EXPIRED, decided_at=moment)
+        return await apply_due_expiry(view, expiry=self._expiry, now=now)
 
 
 __all__ = [

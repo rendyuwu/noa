@@ -66,7 +66,10 @@ test('an allowed decision POST reaches the API', async ({ page }) => {
     return response.status
   }, `/api/action-requests/${ID}/approve`)
 
-  expect(status).toBe(200)
+  // 202, which is what the real endpoint answers (V29: the decision is durable, the change has
+  // not run yet) and what the stub mirrors since §T.41. The status is passed through untouched, so
+  // this is also the assertion that the proxy does not normalise one.
+  expect(status).toBe(202)
 
   const hits = await (await page.request.get(`${UPSTREAM}/__hits`)).json()
   expect(hits[`POST /action-requests/${ID}/approve`]).toBe(1)

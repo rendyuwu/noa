@@ -2,9 +2,9 @@
 
 Next.js 16 app served on the NOA origin. Hosts the approval card and the large-result table surface.
 
-Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44 and the framing header at §T.45.
-The routes it exists for are still to come — §T.41–§T.43, §T.46 (card, decision POST, 401 state,
-CSRF carry) and §T.56 (table surface).
+Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45 and
+the approval card at §T.41. Still to come: polling and the receipt (§T.42), the 401 link-out (§T.43)
+and the table surface (§T.56).
 The §T.59 render gate that used to block all of them cleared 2026-08-08 (R29): LibreChat puts the
 frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
 authenticates.
@@ -14,8 +14,31 @@ authenticates.
 | `/healthz` | Liveness. Touches nothing else. | §T.40 |
 | `/api/[...path]` | Same-origin proxy to the NOA API. Allowlisted, see below. | §T.44 |
 | `/approvals/[id]` | Approval card. The reason input lives here and nowhere else (C8, V15). | §T.41 |
-| `/action-requests/{id}` | Confirmation detail + execution status polling | §T.42 |
 | `/tables/[token]` | Large READ result table (V64) | §T.56 |
+
+## The card
+
+`/approvals/[id]` is a **server** component. It reads the incoming `Cookie` header and fetches the
+card from the API server-side (`src/lib/approvals/detail.ts`), so the HTML that reaches the frame is
+already the authenticated card — no moment where an operator watches an empty box, and the CSRF
+token arrives as part of the render rather than through a second round trip a page could make
+without having been allowed to read the request first.
+
+The token comes from the card's own `GET /action-requests/{id}` (§T.46: there is no minting route),
+and the API sends `null` for anything already decided or expired — so a card with no live token
+renders no reason box and no buttons.
+
+The one client component is `src/app/approvals/[id]/decision-controls.tsx`: a reason `<textarea>` and
+two `<button type="button">` elements whose handlers POST via `fetch`. **There is no `<form>` in that
+tree**, and that is V80 rather than taste — the sandbox LibreChat applies to this frame omits
+`allow-forms` (R13, measured live at R29), so a native submit would do nothing at all. The browser
+lane proves it both ways: `e2e/approvals.browser.e2e.ts` clicks Approve inside a frame carrying that
+exact sandbox string and reads the upstream's hit counter, and a second document in the *same*
+sandbox shows a `fetch` arriving where a form submit does not.
+
+Blankness of the reason is not judged here. V15 puts that gate on the endpoint (409
+`change_reason_required`, checked under the row lock against the same rule the database CHECK holds),
+so the card submits what was typed and renders the refusal.
 
 ## Reaching the API
 
@@ -34,9 +57,9 @@ is two places for the value to disagree).
 | Method | Path | For |
 |---|---|---|
 | `GET` | `/api/auth/me` | identity, and the 401 state (V38, V42) |
-| `GET` | `/api/action-requests/{id}` | card detail (§T.41) |
-| `POST` | `/api/action-requests/{id}/approve` | the decision (§T.42, V22) |
-| `POST` | `/api/action-requests/{id}/deny` | the decision (§T.42, V22) |
+| `GET` | `/api/action-requests/{id}` | polling the run to terminal (§T.42) |
+| `POST` | `/api/action-requests/{id}/approve` | the decision (§T.41, V22) |
+| `POST` | `/api/action-requests/{id}/deny` | the decision (§T.41, V22) |
 
 Anything else answers `404 route_not_proxied` and is never forwarded. This is the only NOA origin
 LibreChat may frame (V41 — the admin app answers `frame-ancestors 'none'`), so a pass-through proxy
@@ -113,9 +136,12 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-The approval card and the routes around it (§T.41–§T.43, §T.46, §T.56). This app has no login page,
-no LDAP form and no credential handling — a 401 renders an explicit "cannot authenticate here"
-state, never a blank card with a live Approve button (§T.43, V38, V42).
+Polling the run to a terminal state and rendering the receipt (§T.42), the "Sign in to NOA" link-out
+beside the 401 state (§T.43), and the large-result table surface (§T.56).
+
+This app has no login page, no LDAP form and no credential handling. A 401 already renders an explicit
+"cannot authenticate here" state with no reason box and no buttons (V38, V42); what §T.43 adds is the
+new-tab link-out beside it, never a form in the frame.
 
 `AGENTS.md` and `CLAUDE.md` in this directory are written by `next dev` itself and committed so the
 tree stays clean; see the note inside them.

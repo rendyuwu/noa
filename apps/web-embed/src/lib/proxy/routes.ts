@@ -33,18 +33,19 @@ type Rule = {
 const ALLOWED: readonly Rule[] = [
   // Identity for the card's header and for the 401 state (V38, V42). Cookie-only (§I.admin-api).
   { method: 'GET', shape: ['auth', 'me'], why: 'V38/V42 — identity, and the 401 state' },
-  // The card's own detail read (§T.41). Not built API-side yet; the entry is the seam.
-  { method: 'GET', shape: ['action-requests', null], why: '§T.41 — approval card detail' },
+  // The card's detail read. Built API-side at §T.41, where the *page* reads it server-side
+  // instead — this entry is what lets the browser poll the run to a terminal state (§T.42, V29).
+  { method: 'GET', shape: ['action-requests', null], why: '§T.42 — polling the run (V29)' },
   // The decision itself: the only path an approve/deny may travel (V22, C18).
   {
     method: 'POST',
     shape: ['action-requests', null, 'approve'],
-    why: '§T.42, V22 — cookie POST from a NOA-origin document',
+    why: '§T.41, V22 — cookie POST from a NOA-origin document',
   },
   {
     method: 'POST',
     shape: ['action-requests', null, 'deny'],
-    why: '§T.42, V22 — same door, same guards (V15 wants a reason either way)',
+    why: '§T.41, V22 — same door, same guards (V15 wants a reason either way)',
   },
 ]
 

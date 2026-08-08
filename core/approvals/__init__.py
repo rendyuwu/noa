@@ -5,8 +5,8 @@ authorization (T34). V23 says "may this run?" is answered from `action_requests.
 every time, never from an LLM claim and never from a tool argument, and that only means
 anything if exactly one layer writes and reads that column. This package is that layer.
 
-Eight modules, and the split that matters is **who can reach which writer** — three writers,
-one reader, and four modules that hold no statement at all:
+Ten modules, and the split that matters is **who can reach which writer** — three writers,
+two readers over one shared row guard, and five modules that hold no statement at all:
 
 - `repository` — opens a request. `SQLActionRequestRepository` writes `PENDING` and can write
   nothing else, because its caller is the MCP tool path (T33) — the path an LLM can reach.
@@ -25,11 +25,15 @@ one reader, and four modules that hold no statement at all:
   sweep, which has no operator behind it, and the render paths (T63's result tool, T41's
   card), neither of which is a decision. `PendingExpirySweeper` is the loop, hosted by the
   app lifespan.
-- `results` — reads one back for the operator who opened it (T63). The only module here that
-  writes nothing: no `commit`, no status parameter, no statement that is not a `SELECT`. The
-  requester-match sits in its `WHERE`, so a request that is not the caller's is never fetched
-  (V27, V76), and the one write its service needs — expiring a stale PENDING before serving
-  it — is `expiry`'s, run *after* that matched read so a foreign id cannot trigger a write.
+- `reads` — the row guard both readers share. The requester-matched `SELECT` (V27) and V32's
+  check-on-read ordering live here in one spelling each, because the two surfaces below must
+  guard a row identically while rendering different things (V66). Writes nothing itself.
+- `results` — reads one back *for a model* (T63): `noa_get_action_result`. Structurally
+  narrower than the card — no `reason`, no `evidence`, no requester identity, and nowhere to
+  put any of them (V76, C8, V17).
+- `card` — reads one back *for the operator in front of it* (T41): the approval card's
+  provenance, before-state and evidence (V33, V35). Same guard, wider projection, and still no
+  `reason`: that column is written by a decision, not read by a render.
 - `context` — the keys of `approval_context`, and the rule for taking the arguments off it.
   One writer (T33's gate) and three readers (a decision, a result, T41's card) over one JSONB
   column: a misspelt key there reads as an absent one, so the spelling is a constant (V66).
@@ -45,7 +49,8 @@ one reader, and four modules that hold no statement at all:
 Opening a request is `noa_api.mcp_tools.change_gate` rather than anything here, because it
 needs the caller's identity and the in-process preflight evidence (C9, V17). Deciding one is
 `noa_api.api.routes.action_requests`. Reading one back over MCP is
-`noa_api.mcp_tools.noa_read` (T63), which supplies the caller `results` matches against.
+`noa_api.mcp_tools.noa_read` (T63), which supplies the caller `results` matches against; over
+HTTP it is the `GET` on that same decision router (T41), which supplies `card`'s.
 Expiring one needs no identity at all, which is why `expiry` is the only writer here with
 none in sight. Executing an approved change is T38.
 """

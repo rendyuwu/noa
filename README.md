@@ -96,8 +96,9 @@ uv run pytest -q
 ```
 
 Per web app: `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` where a browser lane
-exists (`apps/web-embed` boots its own dev server, a stub upstream for the proxy specs and a parent
-page for the framing specs; run `pnpm exec playwright install chromium` once).
+exists (`apps/web-embed` boots its own dev server, a stub upstream for the proxy and card specs, and
+a parent page that frames the card the way LibreChat does; run `pnpm exec playwright install
+chromium` once).
 
 ## Conventions
 

@@ -27,6 +27,7 @@ from typing import Annotated, Final, TypeVar, cast
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.approvals.card import ApprovalCardService, SQLApprovalCardRepository
 from core.approvals.decisions import (
     ActionDecisionService,
     ApprovedChangeExecutor,
@@ -221,11 +222,11 @@ def get_action_request_expiry_service(session: SessionDep) -> ActionRequestExpir
 
     It is a *different* service from `ActionDecisionService` on purpose: this one can write
     only `EXPIRED`, so a render path cannot hold something that could grant an authorization.
-    T41's GET calls `expire_if_due` around loading the row, which is what keeps a card from
+    T41's GET calls `expire_if_due` after loading the row, which is what keeps a card from
     showing a `PENDING` nobody may act on any more. T63's result tool does the same on the MCP
-    side, where it builds the service on its own session instead of this one — and runs it
-    *after* its requester-matched read, so an id belonging to another operator is not a way to
-    make NOA write (`core.approvals.results`).
+    side, where it builds the service on its own session instead of this one. Both run it
+    *after* their requester-matched read, so an id belonging to another operator is not a way to
+    make NOA write (`core.approvals.reads`).
     """
     return ActionRequestExpiryService(SQLActionRequestExpiryRepository(session))
 
@@ -233,6 +234,30 @@ def get_action_request_expiry_service(session: SessionDep) -> ActionRequestExpir
 ActionRequestExpiryServiceDep = Annotated[
     ActionRequestExpiryService, Depends(get_action_request_expiry_service)
 ]
+
+
+def get_approval_card_service(
+    session: SessionDep,
+    expiry: ActionRequestExpiryServiceDep,
+) -> ApprovalCardService:
+    """What the approval card GET reads its request through (T41, V27, V32, V35).
+
+    A *reader*, and the type says so: `SQLApprovalCardRepository` has no `commit` and issues no
+    statement that is not a `SELECT`. The only write this dependency can cause is an expiry, and
+    it can only cause one because it was handed the expiry service above — which writes exactly
+    one status. Nothing on this path can grant an authorization, which is the point of building
+    it separately from `ActionDecisionService` even though both hang off the same router.
+
+    Both share this request's session, so the row the card renders and the expiry that may have
+    just moved it are one transaction's worth of truth.
+    """
+    return ApprovalCardService(
+        repository=SQLApprovalCardRepository(session),
+        expiry=expiry,
+    )
+
+
+ApprovalCardServiceDep = Annotated[ApprovalCardService, Depends(get_approval_card_service)]
 
 
 def get_authorization_service(session: SessionDep) -> AuthorizationService:
@@ -281,6 +306,7 @@ __all__ = [
     "ActionDecisionServiceDep",
     "ActionRequestExpiryServiceDep",
     "AdminUserDep",
+    "ApprovalCardServiceDep",
     "AuthServiceDep",
     "AuthorizationServiceDep",
     "JWTServiceDep",
@@ -290,6 +316,7 @@ __all__ = [
     "SettingsDep",
     "get_action_decision_service",
     "get_action_request_expiry_service",
+    "get_approval_card_service",
     "get_approved_change_executor",
     "get_auth_service",
     "get_authorization_service",

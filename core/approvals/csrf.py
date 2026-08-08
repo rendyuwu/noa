@@ -31,8 +31,11 @@ rather than tolerated. Same single-process assumption, and the same revisit trig
 than one API replica makes clock drift a real term, and the fix then is an explicit leeway,
 not a silent widening.
 
-There is no minting *route* here. T41 renders the approval card and is what will hand a
-freshly minted token to it; this module is the mechanism both ends share (V66).
+There is no minting *route*, and T41 settled that there never will be: the approval card's own
+`GET /action-requests/{id}` mints one in the same answer that renders the card (T46). A token
+that arrived separately from the thing it authorises is a token a page could hold without ever
+having passed V27's requester-match, and that read is where the match happens. Terminal
+requests get `null` rather than a token — a live key for a card with no door.
 """
 
 from __future__ import annotations

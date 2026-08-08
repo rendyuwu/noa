@@ -643,8 +643,12 @@ def test_the_production_app_mounts_the_decision_routes() -> None:
 
     assert "/action-requests/{action_request_id}/approve" in paths
     assert "/action-requests/{action_request_id}/deny" in paths
-    # The negative control (V87): this set genuinely distinguishes mounted from absent.
-    assert "/action-requests/{action_request_id}" not in paths, "the GET detail is T41's"
+    # T41's card, on the same router and the same session cookie.
+    assert "/action-requests/{action_request_id}" in paths
+    # The negative control (V87): this set genuinely distinguishes mounted from absent. There is
+    # no collection route and §I.embed lists none — one URL per request (V34), reached by an id
+    # the operator was given, never by listing what exists.
+    assert "/action-requests" not in paths
 
 
 def test_the_deferred_executor_is_what_production_wires_today() -> None:
