@@ -36,6 +36,16 @@ export default defineConfig(
   reactHooks.configs.flat['recommended-latest'],
   nextPlugin.configs.recommended,
   {
+    // Playwright's stub upstream (§T.44) is a plain Node script, not app code: it
+    // runs outside the bundler, so the browser-shaped default globals do not
+    // describe it. Named here rather than app-wide — a `process` reference inside
+    // `src/` should still be an error.
+    files: ['e2e/support/**/*.mjs'],
+    languageOptions: {
+      globals: { process: 'readonly', URL: 'readonly' },
+    },
+  },
+  {
     rules: {
       'no-restricted-imports': ['error', forbiddenImports],
       '@typescript-eslint/no-unused-vars': [

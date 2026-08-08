@@ -335,7 +335,7 @@ T40|x|Embed app scaffold: `apps/web-embed` — Next.js 16, own `package.json`, `
 T41|.|Embed: `/approvals/[id]` page — GET detail, render approval card (provenance, before-state, evidence, reason input, Approve/Deny buttons). CSRF token. Compact, self-scrolling. Buttons ! be JS-`fetch` handlers, ⊥ `<form>` submit (V80)|I.embed,V35,V34,V80
 T42|.|Embed: approve/deny POST handler — JS `fetch` to NOA API with `noa_session` cookie + CSRF (⊥ form submit, V80/R13). Poll `/action-requests/{id}` to terminal. Render receipt on completion|I.embed,V29,V34,V80
 T43|.|Embed: 401 state — explicit "cannot authenticate here" + "Sign in to NOA" button (new-tab link-out). ⊥ LDAP redirect inside iframe|V38,V42
-T44|.|Embed: session plumbing — proxy `app/api/[...path]` or direct API origin with `Domain=.noa.internal` cookie|V40,I.embed
+T44|x|Embed: session plumbing — proxy `app/api/[...path]` or direct API origin with `Domain=.noa.internal` cookie|V40,I.embed
 T45|.|Embed: framing headers — `Content-Security-Policy: frame-ancestors https://chat.noa.internal`. No `X-Frame-Options` needed|V37,V41
 T46|.|Embed: CSRF token carried into the decision POST. **Mint + verify LANDED 2026-08-08 (T37)** — `core/approvals/csrf.py`, V39 as amended (session- ∧ request-bound, key derived from `AUTH_JWT_SECRET`, TTL = pending TTL). T46 shrinks to the EMBED half: the card obtains a token ∧ sends it in the `fetch` body ∨ header — ⊥ hidden form field (V80). ⊥ minting ROUTE exists yet; T41's GET detail is where the card gets one|V39,V80,T37,T41
 T47|.|Admin web scaffold: `apps/admin-web` — Next.js 16, BIGSU dependencies (`@gio/bigsu-ui`, `@gio/bigsu-icons`), `.npmrc` for `bigsu.biznetgio.pt/registry/`. Hygiene: `.ts≤300`, `.tsx≤450`|C2,C14,I.admin-web
