@@ -34,7 +34,8 @@ Three rules hold for everything in here.
    decision itself arrives as a cookie POST from a NOA-origin document (V22, T37).
 
 Landed: `whm_list_servers` (T19), `whm_search_accounts` (T21),
-`whm_preflight_firewall_entries` (T24), and the CHANGE gate's write side (T33 — no CHANGE
-tool calls it yet). Still to come: the other eleven of §I.mcp, and the rest of the approval
-path — the gate's result shape (T32), the endpoints (T37), the executor (T38), expiry (T39).
+`whm_preflight_firewall_entries` (T24), the CHANGE gate's write side (T33 — no CHANGE tool
+calls it yet), and the decision endpoints that answer it (T37,
+`noa_api.api.routes.action_requests`). Still to come: the other eleven of §I.mcp, and the
+rest of the approval path — the gate's result shape (T32), the executor (T38), expiry (T39).
 """

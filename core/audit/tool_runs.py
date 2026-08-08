@@ -1,8 +1,9 @@
 """SQL behind the `tool_runs` audit trail (T73 — V20, V45, V47).
 
-T35 built the table and wrote nothing to it. This is the writer, and `noa_api.mcp_audit` is
-its only caller on the READ path (T38's executor becomes the second, for approved CHANGEs,
-V46).
+T35 built the table and wrote nothing to it. This is the writer. `noa_api.mcp_audit` is its
+only caller on the READ path; `core.approvals.decisions` is the second, opening the `STARTED`
+row an approval authorises inside the decision's own transaction (T37, V46), and T38's
+executor will be the third when it moves that row to a terminal state.
 
 **Two statements, two transactions, on purpose.** `start_run` inserts a `STARTED` row and
 commits *before* the tool body runs; `finish_run` moves it to `COMPLETED` or `FAILED` after.

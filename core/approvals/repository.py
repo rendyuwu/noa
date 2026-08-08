@@ -5,10 +5,13 @@ T34 built `action_requests` and wrote nothing to it. This is the writer, and
 
 **Only PENDING is writable from here.** `status` is not a parameter and there is no update
 method. V23 answers "may this run?" from this column every time, and V28 permits exactly one
-`pending → decided` transition, under a row lock — that transition belongs to T37's endpoint,
-reached by a cookie POST from a NOA-origin document (V22). A repository that could write
+`pending → decided` transition, under a row lock. That transition lives in a different class
+in a different module — `core.approvals.decisions.SQLActionDecisionRepository` (T37), reached
+only by a cookie POST from a NOA-origin document (V22). A repository that could write
 `APPROVED` would put a second door on the authorization next to the one V22 names, and the
-MCP path — the one an LLM can reach — would be holding the key to it.
+MCP path — the one an LLM can reach — would be holding the key to it. The split is asserted,
+not just described: `test_action_request_decisions_live.py` pins this class's public surface
+to `create_pending` and `commit`.
 
 **This repository owns its session and commits**, unlike `SQLWHMServerRepository` and
 `SQLAuthorizationRepository`, which flush into a caller's transaction. Same split and the

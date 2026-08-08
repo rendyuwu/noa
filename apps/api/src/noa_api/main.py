@@ -1,6 +1,7 @@
-"""FastAPI application factory (T3, T8, T13).
+"""FastAPI application factory (T3, T8, T13, T37).
 
-Live surfaces: `/health` (V51), `/auth` (T8) and the mounted MCP server at `/mcp` (T13).
+Live surfaces: `/health` (V51), `/auth` (T8), `/action-requests` (T37) and the mounted MCP
+server at `/mcp` (T13).
 
 **What is built where, and why it moved.** T8 put every long-lived object in the lifespan.
 T13 splits that in two, because mounting the MCP app forces the order: `http_app()` reads
@@ -38,6 +39,7 @@ from fastapi import FastAPI
 from fastmcp.utilities.lifespan import combine_lifespans
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from core.approvals.decisions import ApprovedChangeExecutor, DeferredApprovedChangeExecutor
 from core.auth.jwt_service import JWTService
 from core.auth.ldap_service import LDAPService
 from core.config import Settings, get_settings
@@ -45,12 +47,14 @@ from core.db.session import create_engine, create_session_factory
 from core.secrets.crypto import SecretCipher
 from noa_api import __version__
 from noa_api.api.deps import (
+    STATE_APPROVED_CHANGE_EXECUTOR,
     STATE_JWT_SERVICE,
     STATE_LDAP_SERVICE,
     STATE_SESSION_FACTORY,
     STATE_SETTINGS,
 )
 from noa_api.api.errors import install_error_handling
+from noa_api.api.routes.action_requests import router as action_requests_router
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.mcp_request_auth import build_mcp_auth_context
 from noa_api.mcp_server import MCP_MOUNT_PATH, build_mcp_http_app
@@ -75,6 +79,10 @@ class AppRuntime:
     session_factory: async_sessionmaker[AsyncSession]
     ldap_service: LDAPService
     secret_cipher: SecretCipher
+    # T37's approvals hand a started run to this; T38 replaces the placeholder with the real
+    # asyncio host and its reaper. One per app, not one per request — a per-request executor
+    # would mean a per-request reaper.
+    approved_change_executor: ApprovedChangeExecutor
 
 
 def build_runtime(settings: Settings) -> AppRuntime:
@@ -89,6 +97,10 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # — there is no module-level cipher to import (T15) — so this is the only place it is
         # built, and T54's admin routes will read the same one off `AppRuntime`.
         secret_cipher=SecretCipher.from_settings(settings),
+        # T38's seam, filled with the placeholder that records a handoff and starts nothing.
+        # Inert today: T22-T29 are unbuilt, so no CHANGE tool exists to open an
+        # `action_requests` row, so nothing can reach an approval endpoint here.
+        approved_change_executor=DeferredApprovedChangeExecutor(),
     )
 
 
@@ -108,6 +120,7 @@ def build_lifespan(
         setattr(app.state, STATE_JWT_SERVICE, JWTService(runtime.settings))
         setattr(app.state, STATE_LDAP_SERVICE, runtime.ldap_service)
         setattr(app.state, STATE_SESSION_FACTORY, runtime.session_factory)
+        setattr(app.state, STATE_APPROVED_CHANGE_EXECUTOR, runtime.approved_change_executor)
 
         try:
             yield
@@ -120,7 +133,7 @@ def build_lifespan(
 def create_app() -> FastAPI:
     """Build the FastAPI app with the MCP server mounted at `/mcp` (T13, I.mcp).
 
-    Router sets still to land: `/admin` (T51-T55) and `/action-requests` (T37).
+    Router set still to land: `/admin` (T51-T55).
 
     Three things about the mount are load-bearing:
 
@@ -166,6 +179,10 @@ def create_app() -> FastAPI:
 
     install_error_handling(app)
     app.include_router(auth_router)
+    # The only writer of a terminal `action_requests.status` (T37, V22, V28). On the FastAPI
+    # side of the app deliberately: it is reached by a cookie POST from a NOA-origin
+    # document, never through the MCP mount below.
+    app.include_router(action_requests_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

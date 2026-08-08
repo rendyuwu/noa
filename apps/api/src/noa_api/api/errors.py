@@ -3,7 +3,8 @@
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
 `core.auth.mcp_token_errors`, `core.auth.mcp_auth_errors`, `core.secrets.errors`,
-`core.integrations.whm.errors`, `core.integrations.pmg.errors`), so routes raise and this
+`core.integrations.whm.errors`, `core.integrations.pmg.errors`, `core.approvals.errors`),
+so routes raise and this
 decides the status code. Routes
 that build their own `HTTPException` per failure are how two callers end up returning
 different codes for the same condition — `noa-old`'s admin routes did exactly that, in
@@ -45,10 +46,16 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from core.approvals.errors import (
+    ActionDecisionError,
+    ActionRequestAlreadyDecidedError,
+    ActionRequestExpiredError,
+    ActionRequestNotFoundError,
     ChangeEvidenceRequiredError,
     ChangeGateError,
     ChangeGateUnavailableError,
     ChangeReasonForbiddenError,
+    ChangeReasonRequiredError,
+    DecisionCsrfInvalidError,
 )
 from core.auth.authorization_errors import (
     AdminAccessRequiredError,
@@ -222,6 +229,27 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # rather than the fallback by accident. A subclass-tree test asserts every member above
     # is mapped, so reaching this line means a new class arrived without a decision.
     ChangeGateError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    # --- Decisions on an existing request (T37) ---
+    # 404 for absent *and* for another operator's, which is V27's whole point: a 403 would
+    # confirm the request exists. `ActionDecisionError` sits at the end of this group, so
+    # note the pairing — these two answer with different statuses and must not collapse.
+    ActionRequestNotFoundError: status.HTTP_404_NOT_FOUND,
+    # 409 for both terminal refusals. The caller may decide requests in general; this one is
+    # past deciding. Two classes rather than one because the remedies differ — reload and
+    # read the outcome (V28) versus ask for the change again (V32).
+    ActionRequestAlreadyDecidedError: status.HTTP_409_CONFLICT,
+    ActionRequestExpiredError: status.HTTP_409_CONFLICT,
+    # 409, and the status is V15's own: a decision without a non-blank reason. Not a 422 —
+    # `reason` is a well-formed string, it is the *decision* that is refused, and V15 names
+    # both this code and this status.
+    ChangeReasonRequiredError: status.HTTP_409_CONFLICT,
+    # 403, not 401: the session authenticated fine and signing in again changes nothing
+    # (V39). The remedy is a freshly minted token, which means reloading the card.
+    DecisionCsrfInvalidError: status.HTTP_403_FORBIDDEN,
+    # Bare `ActionDecisionError`: a refusal about one request, so 409 rather than the 503
+    # fallback, which would read as "NOA is down" for something NOA decided. The same
+    # subclass-tree test guards this from becoming the default for a class added later.
+    ActionDecisionError: status.HTTP_409_CONFLICT,
 }
 
 # Bare `AuthError` means "authentication failed and we did not classify why", which is an

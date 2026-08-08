@@ -26,6 +26,7 @@ from uuid import UUID
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -236,8 +237,9 @@ class ToolRun(Base):
     `noa_api.mcp_audit.ToolRunAuditMiddleware` does, beside the RBAC gate, so no individual
     tool can forget it (T73, V83b). It also redacts `args` before they land (C7, V8) — the
     column below only guarantees somewhere to put the redacted form. READ rows are written
-    by that middleware; an approved CHANGE's row belongs to the post-approval executor
-    (T38, V46).
+    by that middleware. An approved CHANGE's row is opened by the decision that authorised
+    it (`core.approvals.decisions`, T37, V46) — in the same transaction, so `APPROVED` with
+    no run cannot exist — and moved to a terminal state by the executor (T38).
     """
 
     __tablename__ = "tool_runs"
@@ -318,6 +320,21 @@ class ActionRequest(Base):
         # T39's sweep is `status = PENDING AND expires_at < now()`. Composite rather than
         # two indexes; `status` leads, so status-only lookups use it too.
         Index("ix_action_requests_status_expires_at", "status", "expires_at"),
+        # T37 (C8, V15), closing what T34 left open by name. A row that says an operator
+        # decided must carry what they typed, at the mechanism rather than in the endpoint
+        # alone (V84c) — so a second writer cannot record a decision nobody justified.
+        # `~ '[^[:space:]]'` — "holds a non-whitespace character" — rather than `btrim(...)
+        # <> ''`, because bare `btrim` strips spaces only and would accept a reason of one
+        # tab that the endpoint's `.strip()` rejects. The `IS NOT NULL` is not redundant:
+        # `NULL ~ '…'` is NULL, and a CHECK evaluating to NULL is satisfied, so without it
+        # the constraint would catch every blank string and wave through the NULL. EXPIRED
+        # and PENDING sit outside it: an expiry is the *absence* of an answer (T39's sweep
+        # writes one with `reason IS NULL`), and a pending request has not been answered.
+        CheckConstraint(
+            "status NOT IN ('APPROVED', 'DENIED') "
+            "OR (reason IS NOT NULL AND reason ~ '[^[:space:]]')",
+            name="ck_action_requests_decided_reason",
+        ),
     )
 
     id: Mapped[UUID] = uuid_pk()
@@ -352,11 +369,13 @@ class ActionRequest(Base):
     # The one reason that exists (C8, V15, V43). NULL until decided, and still NULL after
     # an expiry — nobody typed one. Unbounded `Text` because no machine writes it: a cap
     # would silently truncate the operator's own words, and truncating the field that
-    # authorises a change is worse than storing a long one. T37 bounds the input.
+    # authorises a change is worse than storing a long one. T37 bounds the input at the
+    # endpoint, and the CHECK in `__table_args__` binds it to a decided `status`.
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The execution this decision produced (T38). NULL until an approval starts one, and
-    # NULL forever on deny or expiry. The link lives here and only here — a matching
-    # `action_request_id` on `tool_runs` would be two truths about one edge.
+    # The execution this decision produced. NULL until an approval starts one (T37 — in the
+    # same transaction as the decision, so the two cannot disagree), and NULL forever on deny
+    # or expiry. The link lives here and only here — a matching `action_request_id` on
+    # `tool_runs` would be two truths about one edge.
     tool_run_id: Mapped[UUID | None] = mapped_column(
         PG_UUID(as_uuid=True),
         ForeignKey("tool_runs.id", ondelete="SET NULL"),

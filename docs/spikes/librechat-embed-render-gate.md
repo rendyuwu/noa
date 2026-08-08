@@ -121,7 +121,9 @@ predicted by the source read:
   `ToolRunAuditMiddleware`.
 - **`/embed-probe/decide` is not the approve endpoint.** It authenticates the caller through
   production's own `require_session_user` and answers; it implements no CSRF token (`V39`), no
-  row lock (`V28`), no reason (`V15`). `T33`/`T37` build the real one.
+  row lock (`V28`), no reason (`V15`). The real one is
+  `POST /action-requests/{id}/approve` (`T33` writes the row, `T37` decides it) — this rig
+  measured the render and cookie path only, and re-running it does not exercise that endpoint.
 - **Plain HTTP.** The rig speaks HTTP, so `AUTH_SESSION_COOKIE_SECURE` is off (development
   forces it) and LibreChat needed `SESSION_COOKIE_SECURE=false` to set its own refresh cookie
   at all. A TLS deployment changes the cookie flags, not the origin or sandbox facts measured

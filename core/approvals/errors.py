@@ -1,6 +1,19 @@
-"""Refusals from the CHANGE approval gate (T33 — C8, V17, V22, V43, V73).
+"""Refusals from the CHANGE approval gate and from a decision on one (T33, T37).
 
-One tree, three refusals, and the split is what the caller can do about it:
+**Two trees, not one**, and the split is who is being refused.
+
+`ChangeGateError` (T33 — C8, V17, V22, V43, V73) is raised on the MCP tool path, before a
+change has been submitted for approval at all. Every message in it ends in "nothing was
+changed", and the base maps to 503.
+
+`ActionDecisionError` (T37 — V15, V27, V28, V32, V39) is raised on the HTTP decision path,
+against a request that already exists. Sharing one tree would mean an operator whose
+approval arrived a minute late reading "this change could not be submitted for approval",
+which is a sentence about a different moment, and would put a 404 and a 409 under a base
+that means 503.
+
+`ChangeGateError` — one tree, three refusals, and the split is what the caller can do
+about it:
 
 - `ChangeGateUnavailableError` — NOA could not record the request. The change did not
   happen and must not; retrying is the remedy.
@@ -14,12 +27,15 @@ One tree, three refusals, and the split is what the caller can do about it:
 `NoaError` rather than a bare exception for the usual two reasons (V73): `sanitize_tool_errors`
 passes a `NoaError`'s own `error_code` through to the model instead of collapsing it into
 `tool_execution_failed` (V19), so the code that names the fix survives the boundary; and
-T37's endpoints will raise from the same tree into an HTTP response, where one handler shapes
-every body. Both statuses are mapped explicitly in `noa_api.api.errors` — a subclass-tree
-test asserts none of these falls through to the 503 default.
+`noa_api.api.errors` maps every class here to a status, so T37's endpoints raise rather than
+build responses. All of them are mapped explicitly — a subclass-tree test per tree asserts
+none falls through to the 503 default.
 
 Messages are operator-safe (V8): they say what NOA declined to do, never which column, key
 or argument was involved. That detail rides in `detail`, which is logs only.
+
+One of these messages is read by an operator staring at an approval card, so they say what
+to do next: retry, or reload, or nothing at all.
 """
 
 from __future__ import annotations
@@ -81,9 +97,104 @@ class ChangeEvidenceRequiredError(ChangeGateError):
     )
 
 
+class ActionDecisionError(NoaError):
+    """Base: a decision on an existing request was refused (T37, V15, V27, V28, V32, V39).
+
+    Sibling of `ChangeGateError`, not a subclass — see the module docstring. Nothing raises
+    this class directly; it exists so `noa_api.api.errors` can map the tree and so a
+    subclass added later takes a refusal status rather than the unclassified 503.
+    """
+
+    error_code: str = "action_decision_failed"
+    message: str = "That decision could not be recorded."
+
+
+class ActionRequestNotFoundError(ActionDecisionError):
+    """No such request, *or* not this operator's (V27).
+
+    One class for both, because V27 makes a mismatch a 404 rather than a 403: an operator
+    who is told "forbidden" has been told the request exists. The requester-match is the
+    access control on this surface (T34 dropped `decided_by_user_id` for the same reason —
+    the decider is the requester), so "yours and absent" and "someone else's" have to be
+    indistinguishable from outside, down to the response body.
+
+    The requester FK is `SET NULL` (T34), so a deleted operator's request matches nobody and
+    lands here too. That is the fail-closed direction.
+    """
+
+    error_code: str = "action_request_not_found"
+    message: str = "That approval request does not exist, or it is not yours to decide."
+
+
+class ActionRequestAlreadyDecidedError(ActionDecisionError):
+    """The request left PENDING before this decision reached the lock (V28).
+
+    V28 permits exactly one `pending → decided` transition. The loser of a double-click gets
+    this, and so does a second operator's tab that had the card open — the first answer
+    stands, and the second is refused rather than silently overwriting it.
+
+    409 rather than 404: the request is real and the caller may decide requests in general,
+    just not this one any more. The remedy is to reload the card and read the decision.
+    """
+
+    error_code: str = "action_request_already_decided"
+    message: str = "That approval request has already been decided. Reload to see the outcome."
+
+
+class ActionRequestExpiredError(ActionDecisionError):
+    """The request's TTL passed before anyone answered (V32).
+
+    Raised by the decision path's check-on-read, which also makes the row terminal rather
+    than leaving something that still reads PENDING. Distinct from
+    `ActionRequestAlreadyDecidedError` because the remedy differs: nobody said no here, so
+    the change can simply be asked for again.
+    """
+
+    error_code: str = "action_request_expired"
+    message: str = "That approval request expired before it was answered. Ask for the change again."
+
+
+class ChangeReasonRequiredError(ActionDecisionError):
+    """A decision arrived without the operator's reason (C8, V15).
+
+    V15 names both the status and this code: a decision without a non-blank reason is a 409
+    `change_reason_required`, and the gate is *this endpoint* — not the tool call, which
+    cannot carry a reason at all (`assert_no_reason_argument`, C8). The reason is born here
+    and only here.
+
+    Whitespace counts as blank. A space bar is not an answer to "why is this change being
+    made", and the field that authorises a change is the last one to accept a placeholder.
+    """
+
+    error_code: str = "change_reason_required"
+    message: str = "A reason is required. Type why this change is being made or refused."
+
+
+class DecisionCsrfInvalidError(ActionDecisionError):
+    """The decision POST carried no valid CSRF token (V22, V39).
+
+    403 rather than 401: the session is fine and re-authenticating changes nothing. The
+    token is missing, malformed, minted for a different operator or a different request, or
+    older than the pending TTL — all one code and one body, because telling a caller *which*
+    is telling them how much closer they got.
+
+    Reachable honestly, too: a card left open past the TTL. Hence a message that says to
+    reload rather than one that reads as an accusation.
+    """
+
+    error_code: str = "csrf_token_invalid"
+    message: str = "This approval card is no longer valid. Reload it and try again."
+
+
 __all__ = [
+    "ActionDecisionError",
+    "ActionRequestAlreadyDecidedError",
+    "ActionRequestExpiredError",
+    "ActionRequestNotFoundError",
     "ChangeEvidenceRequiredError",
     "ChangeGateError",
     "ChangeGateUnavailableError",
     "ChangeReasonForbiddenError",
+    "ChangeReasonRequiredError",
+    "DecisionCsrfInvalidError",
 ]

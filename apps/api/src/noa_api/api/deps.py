@@ -14,7 +14,9 @@ Per-request objects — the DB session, the repositories, the rate limiter, `Aut
 this app depends on it, so the `users.is_active` re-read V6 demands happens once,
 centrally, and a new route cannot forget it. `require_admin` (T9) layers on top of it, so
 the role check always happens *after* that re-read — a disabled admin loses the panel on
-their next request, not at cookie expiry.
+their next request, not at cookie expiry. T37's decision routes depend on it for the same
+reason, one boundary over: a disabled operator cannot approve a change with a cookie that
+has not expired yet.
 """
 
 from __future__ import annotations
@@ -25,6 +27,11 @@ from typing import Annotated, Final, TypeVar, cast
 from fastapi import Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from core.approvals.decisions import (
+    ActionDecisionService,
+    ApprovedChangeExecutor,
+    SQLActionDecisionRepository,
+)
 from core.audit.admin_events import StructlogAdminAuditSink
 from core.auth.auth_repository import SQLAuthRepository, SQLLoginRateLimitRepository
 from core.auth.auth_service import AuthService, SessionUser
@@ -43,6 +50,7 @@ STATE_SETTINGS: Final = "settings"
 STATE_JWT_SERVICE: Final = "jwt_service"
 STATE_LDAP_SERVICE: Final = "ldap_service"
 STATE_SESSION_FACTORY: Final = "session_factory"
+STATE_APPROVED_CHANGE_EXECUTOR: Final = "approved_change_executor"
 
 DETAIL_NO_SESSION_COOKIE = "no `noa_session` cookie on the request"
 
@@ -168,6 +176,42 @@ async def require_session_user(
 SessionUserDep = Annotated[SessionUser, Depends(require_session_user)]
 
 
+def get_approved_change_executor(request: Request) -> ApprovedChangeExecutor:
+    """The executor an approval hands its run to (T37's seam, T38's implementation).
+
+    Long-lived and read off `app.state` like the rest: T38's real executor owns background
+    tasks and a reaper, and one per request would mean one reaper per request.
+
+    `ApprovedChangeExecutor` is `runtime_checkable`, so `_from_state`'s type guard works on
+    it — the check is structural (does it have `start`), which is exactly the promise this
+    dependency makes to the service that calls it.
+    """
+    return _from_state(request, STATE_APPROVED_CHANGE_EXECUTOR, ApprovedChangeExecutor)
+
+
+def get_action_decision_service(
+    session: SessionDep,
+    executor: Annotated[ApprovedChangeExecutor, Depends(get_approved_change_executor)],
+) -> ActionDecisionService:
+    """The one writer of a terminal `action_requests.status` (T37, V22, V28).
+
+    Built per request on the request's session, like `AuthService`, so the decision, the
+    `tool_runs` row it starts and their commit are one transaction — and so a handler that
+    raises rolls all of it back together.
+
+    Deliberately absent from `McpToolContext`. `SQLActionRequestRepository` is what the tool
+    path gets, and it can write only `PENDING`; this can write `APPROVED`, so it lives on the
+    side of the boundary V22 draws — behind a session cookie, never behind a bearer token.
+    """
+    return ActionDecisionService(
+        repository=SQLActionDecisionRepository(session),
+        executor=executor,
+    )
+
+
+ActionDecisionServiceDep = Annotated[ActionDecisionService, Depends(get_action_decision_service)]
+
+
 def get_authorization_service(session: SessionDep) -> AuthorizationService:
     """The RBAC engine wired to this request's session (T9).
 
@@ -211,6 +255,7 @@ AdminUserDep = Annotated[SessionUser, Depends(require_admin)]
 
 
 __all__ = [
+    "ActionDecisionServiceDep",
     "AdminUserDep",
     "AuthServiceDep",
     "AuthorizationServiceDep",
@@ -219,6 +264,8 @@ __all__ = [
     "SessionDep",
     "SessionUserDep",
     "SettingsDep",
+    "get_action_decision_service",
+    "get_approved_change_executor",
     "get_auth_service",
     "get_authorization_service",
     "get_db_session",

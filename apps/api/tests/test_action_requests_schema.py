@@ -522,6 +522,92 @@ async def test_deleting_the_requester_keeps_the_request(session: AsyncSession) -
     assert surviving.requested_by_user_id is None
 
 
+@pytest.mark.parametrize(
+    "decided", [ActionRequestStatus.APPROVED, ActionRequestStatus.DENIED], ids=lambda s: s.value
+)
+@pytest.mark.parametrize(
+    "reason",
+    [None, "", "   ", "\t", "\n", " \t\n\r "],
+    ids=["null", "empty", "spaces", "tab", "newline", "mixed"],
+)
+async def test_database_refuses_a_decided_row_without_a_reason(
+    session: AsyncSession, decided: ActionRequestStatus, reason: str | None
+) -> None:
+    """T37, closing what T34 flagged open (C8, V15, V84c).
+
+    V15's 409 lives in the endpoint; this is the same rule at the mechanism, so a *second*
+    writer — T38's executor, T39's sweep, an admin script — cannot record a decision nobody
+    justified. Whitespace counts as blank, which is the case a `NOT NULL` alone would miss.
+
+    The tab and newline cases are not padding: bare `btrim()` strips *spaces only*, so a
+    constraint written that way passes the first three ids and lets a one-tab reason through
+    — a blank the endpoint's Python `.strip()` would have refused. Two spellings of "blank"
+    is one too many, and the database's is the one a non-endpoint writer is measured against.
+
+    Raw SQL rather than the ORM: the constraint under test is the one the migration built,
+    and an application-side guard would answer first and prove nothing about the schema.
+    """
+    with pytest.raises(IntegrityError):
+        await session.execute(
+            sa.text(
+                "INSERT INTO action_requests"
+                " (tool_name, status, approval_context, expires_at, reason, decided_at)"
+                " VALUES (:tool, :status, '{}'::jsonb, now(), :reason, now())"
+            ),
+            {"tool": "whm_suspend_account", "status": decided.value, "reason": reason},
+        )
+        await session.commit()
+    await session.rollback()
+
+
+async def test_a_decided_row_with_a_reason_is_accepted(session: AsyncSession) -> None:
+    """The negative control for the case above (V87).
+
+    A constraint that refused everything would pass every parametrisation there while
+    breaking every real approval, and nothing in that test could tell the difference.
+    """
+    session.add(
+        pending_request(
+            status=ActionRequestStatus.APPROVED,
+            reason="Confirmed with the customer on ticket NOC-4471.",
+            decided_at=datetime.now(UTC),
+        )
+    )
+    await session.commit()
+
+    stored = (await session.execute(sa.select(ActionRequest))).scalar_one()
+
+    assert stored.status is ActionRequestStatus.APPROVED
+
+
+@pytest.mark.parametrize(
+    "undecided",
+    [ActionRequestStatus.PENDING, ActionRequestStatus.EXPIRED],
+    ids=lambda s: s.value,
+)
+async def test_an_undecided_row_may_carry_no_reason(
+    session: AsyncSession, undecided: ActionRequestStatus
+) -> None:
+    """PENDING and EXPIRED sit outside the constraint, deliberately.
+
+    A pending request has not been answered at all, and an expiry is the *absence* of an
+    answer — T39's sweep must stay able to write one with `reason IS NULL`. A constraint
+    that covered all four statuses would make that sweep impossible to write.
+    """
+    session.add(
+        pending_request(
+            status=undecided,
+            decided_at=datetime.now(UTC) if undecided is ActionRequestStatus.EXPIRED else None,
+        )
+    )
+    await session.commit()
+
+    stored = (await session.execute(sa.select(ActionRequest))).scalar_one()
+
+    assert stored.status is undecided
+    assert stored.reason is None
+
+
 async def test_deleting_the_run_keeps_the_request(session: AsyncSession) -> None:
     """The authorization is not erased by losing the execution it produced."""
     run_id = await insert_run(session)
