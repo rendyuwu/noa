@@ -55,6 +55,21 @@ Two success predicates, because PMG answers reads and writes differently:
 
 Both `SSHExecutionError` and a non-zero exit surface as `PMGSHCLIError`, so a caller catches one
 tree (see `core.integrations.pmg.errors`).
+
+**A resolved `SSHConnectionConfig` comes in, not a `pmg_servers` row** (T31). `noa-old` — and
+this module until T31 — took the row plus a `SecretCipher` and called `resolve_pmg_ssh_config`
+per command. The caller resolves it once instead, which is the change T24 made to
+`core.integrations.whm.csf_cli` for the same reason: the caller is a tool that has to close its
+database session *before* the SSH round trip, because holding a pooled connection open across a
+hop to someone else's host is how a slow server becomes a database outage (T21's rule), and an
+ORM row cannot be read after its session closes. Two consequences worth naming:
+
+- the row's four pre-socket refusals (`ssh_invalid_host`, `ssh_invalid_port`,
+  `ssh_not_configured`, `ssh_host_key_not_validated`) now raise at the *tool*, where they name
+  the PMG server, instead of arriving as a `pmgsh` command failure;
+- `require_host_key_fingerprint` becomes the caller's to choose, which is what T54's validate
+  flow needs — it connects unpinned on purpose, to capture the value it is about to store, and
+  this module hard-coded `True`.
 """
 
 from __future__ import annotations
@@ -63,7 +78,6 @@ import json
 from typing import Final, Protocol
 
 from core.integrations.pmg.errors import PMGSHCLIError
-from core.integrations.pmg.ssh import PMGServerSecretLike, resolve_pmg_ssh_config
 from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
 from core.remote_exec.ssh import ssh_exec
@@ -73,7 +87,6 @@ from core.remote_exec.sudo import (
     is_sudo_rights_failure,
 )
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
-from core.secrets.crypto import SecretCipher
 
 PMGSH_BINARY: Final[str] = "/usr/bin/pmgsh"
 
@@ -169,63 +182,42 @@ class _CommandBuilder(Protocol):
 
 
 async def _run_command(
-    server: PMGServerSecretLike,
+    config: SSHConnectionConfig,
     *,
     args: list[str],
-    cipher: SecretCipher,
     builder: _CommandBuilder,
 ) -> CommandResult:
-    """Resolve → compose → execute, converting SSH failures into this module's tree.
+    """Compose → execute, converting SSH failures into this module's tree.
 
-    Resolve happens first and once, because the composition reads the resolved username to
-    decide escalation (V55) — so a row that cannot produce a usable config is refused before a
-    socket opens, and the command that runs is built from the config that opened it.
+    The command is built from the same config that opens the connection, because the
+    composition reads the resolved username to decide escalation (V55) — a boolean parameter
+    would let one call site disagree with the connection it is running over.
     """
     try:
-        ssh_config = resolve_pmg_ssh_config(
-            server,
-            cipher=cipher,
-            require_host_key_fingerprint=True,
-        )
-        return await ssh_exec(ssh_config, command=builder(args, config=ssh_config))
+        return await ssh_exec(config, command=builder(args, config=config))
     except SSHExecutionError as exc:
         # Converted, not wrapped: one exception tree out of this module.
         raise PMGSHCLIError(code=exc.error_code, message=exc.message) from exc
 
 
-async def run_pmgsh_command(
-    server: PMGServerSecretLike,
-    *,
-    args: list[str],
-    cipher: SecretCipher,
-) -> CommandResult:
-    """Execute `pmgsh <args>` on `server`. Raises `PMGSHCLIError` on any SSH-side failure.
+async def run_pmgsh_command(config: SSHConnectionConfig, *, args: list[str]) -> CommandResult:
+    """Execute `pmgsh <args>` over `config`. Raises `PMGSHCLIError` on any SSH-side failure.
 
     Returns the raw `CommandResult` — the exit code is the caller's to interpret, because a
     mutation's non-zero exit with `200 OK` on stdout is a success (see
     `require_pmg_mutation_success`).
     """
-    return await _run_command(server, args=args, cipher=cipher, builder=build_pmgsh_command)
+    return await _run_command(config, args=args, builder=build_pmgsh_command)
 
 
-async def run_pmgconfig_command(
-    server: PMGServerSecretLike,
-    *,
-    args: list[str],
-    cipher: SecretCipher,
-) -> CommandResult:
-    """Execute `pmgconfig <args>` on `server`."""
-    return await _run_command(server, args=args, cipher=cipher, builder=build_pmgconfig_command)
+async def run_pmgconfig_command(config: SSHConnectionConfig, *, args: list[str]) -> CommandResult:
+    """Execute `pmgconfig <args>` over `config`."""
+    return await _run_command(config, args=args, builder=build_pmgconfig_command)
 
 
-async def run_pmgsh_json(
-    server: PMGServerSecretLike,
-    *,
-    args: list[str],
-    cipher: SecretCipher,
-) -> object:
+async def run_pmgsh_json(config: SSHConnectionConfig, *, args: list[str]) -> object:
     """Run `pmgsh <args>` and decode its JSON. Success is checked *before* parsing."""
-    result = await run_pmgsh_command(server, args=args, cipher=cipher)
+    result = await run_pmgsh_command(config, args=args)
     output = require_pmgsh_success(
         result,
         default_message="PMG command failed",
@@ -233,20 +225,19 @@ async def run_pmgsh_json(
     return parse_pmgsh_json_output(output)
 
 
-async def run_pmg_version_probe(server: PMGServerSecretLike, *, cipher: SecretCipher) -> object:
+async def run_pmg_version_probe(config: SSHConnectionConfig) -> object:
     """Cheapest authenticated call — the credential probe for T54's validate route."""
-    return await run_pmgsh_json(server, args=["get", "/version"], cipher=cipher)
+    return await run_pmgsh_json(config, args=["get", "/version"])
 
 
-async def run_pmg_mynetworks_probe(
-    server: PMGServerSecretLike, *, cipher: SecretCipher
-) -> dict[str, str]:
+async def run_pmg_mynetworks_probe(config: SSHConnectionConfig) -> dict[str, str]:
     """Read `mynetworks` and return it as validate-route evidence, ⊥ parsed entries.
 
     The endpoint travels with the output so a validate receipt records *what* was probed, not
-    only that something answered. Entry parsing is the tools' job (T30, T31).
+    only that something answered. Entry parsing is the tools' job — see
+    `core.integrations.pmg.mynetworks` (T31).
     """
-    result = await run_pmgsh_command(server, args=["ls", MYNETWORKS_PATH], cipher=cipher)
+    result = await run_pmgsh_command(config, args=["ls", MYNETWORKS_PATH])
     output = require_pmgsh_success(
         result,
         default_message="PMG mynetworks probe failed",
@@ -254,60 +245,52 @@ async def run_pmg_mynetworks_probe(
     return {"endpoint": MYNETWORKS_PATH, "output": output}
 
 
-async def run_pmg_mynetworks_list(server: PMGServerSecretLike, *, cipher: SecretCipher) -> str:
-    """Raw `pmgsh ls /config/mynetworks` output. Parsed by the tool layer (V59, T30/T31)."""
-    result = await run_pmgsh_command(server, args=["ls", MYNETWORKS_PATH], cipher=cipher)
+async def run_pmg_mynetworks_list(config: SSHConnectionConfig) -> str:
+    """Raw `pmgsh ls /config/mynetworks` output.
+
+    Text, not entries: `core.integrations.pmg.mynetworks` turns it into normalised CIDRs
+    (V59), and keeping the split means this module stays about running commands.
+    """
+    result = await run_pmgsh_command(config, args=["ls", MYNETWORKS_PATH])
     return require_pmgsh_success(
         result,
         default_message="PMG mynetworks list failed",
     )
 
 
-async def run_pmg_mynetworks_add(
-    server: PMGServerSecretLike, *, cidr: str, cipher: SecretCipher
-) -> str:
+async def run_pmg_mynetworks_add(config: SSHConnectionConfig, *, cidr: str) -> str:
     """Add one CIDR to `mynetworks` (V60). `cidr` is already validated/normalised by the caller.
 
     `-cidr <value>` as two argv tokens, so a hostile value cannot become a second flag.
     """
-    result = await run_pmgsh_command(
-        server,
-        args=["create", MYNETWORKS_PATH, "-cidr", cidr],
-        cipher=cipher,
-    )
+    result = await run_pmgsh_command(config, args=["create", MYNETWORKS_PATH, "-cidr", cidr])
     return require_pmg_mutation_success(
         result,
         default_message="PMG mynetworks add failed",
     )
 
 
-async def run_pmg_mynetworks_delete(
-    server: PMGServerSecretLike, *, cidr: str, cipher: SecretCipher
-) -> str:
+async def run_pmg_mynetworks_delete(config: SSHConnectionConfig, *, cidr: str) -> str:
     """Remove one CIDR from `mynetworks` (V61).
 
     The CIDR is a *path segment* here (`/config/mynetworks/1.2.3.4/32`), not a flag value, and it
     stays one argv token — `command_from_argv` quotes it whole, so the embedded `/` cannot split
     it into two arguments.
     """
-    result = await run_pmgsh_command(
-        server,
-        args=["delete", f"{MYNETWORKS_PATH}/{cidr}"],
-        cipher=cipher,
-    )
+    result = await run_pmgsh_command(config, args=["delete", f"{MYNETWORKS_PATH}/{cidr}"])
     return require_pmg_mutation_success(
         result,
         default_message="PMG mynetworks remove failed",
     )
 
 
-async def run_pmgconfig_sync_restart(server: PMGServerSecretLike, *, cipher: SecretCipher) -> str:
+async def run_pmgconfig_sync_restart(config: SSHConnectionConfig) -> str:
     """Apply a `mynetworks` change: `pmgconfig sync --restart 1` (V60, V61).
 
     Required after every add/remove — `pmgsh` writes PMG's config, and Postfix does not pick the
     change up until this runs. A mutation that skips it looks applied and is not.
     """
-    result = await run_pmgconfig_command(server, args=["sync", "--restart", "1"], cipher=cipher)
+    result = await run_pmgconfig_command(config, args=["sync", "--restart", "1"])
     return require_pmgsh_success(
         result,
         default_message="PMG config sync failed",

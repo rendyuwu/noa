@@ -26,6 +26,7 @@ from core.db.lifecycle import ToolRisk
 from core.db.models import ADMIN_ROLE_NAME
 from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
 from noa_api.mcp_server import build_mcp_server
+from noa_api.mcp_tools.pmg_read import TOOL_PMG_WHITELIST_SEARCH
 from noa_api.mcp_tools.registry import RegistryError, assert_names_in_catalog, register_mcp_tools
 from noa_api.mcp_tools.whm_firewall import TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES
 from noa_api.mcp_tools.whm_read import TOOL_WHM_LIST_SERVERS, TOOL_WHM_SEARCH_ACCOUNTS
@@ -43,6 +44,7 @@ REGISTERED_TOOLS = sorted(
         TOOL_WHM_LIST_SERVERS,
         TOOL_WHM_SEARCH_ACCOUNTS,
         TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
+        TOOL_PMG_WHITELIST_SEARCH,
     ]
 )
 

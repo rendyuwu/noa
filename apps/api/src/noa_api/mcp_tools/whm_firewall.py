@@ -71,8 +71,13 @@ from core.integrations.whm.ssh import resolve_whm_ssh_config
 from core.remote_exec.types import SSHConnectionConfig
 from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
-from noa_api.mcp_tools.results import ToolPayload, sanitize_tool_errors, tool_failure, tool_ok
-from noa_api.mcp_tools.whm_read import ERROR_UNKNOWN
+from noa_api.mcp_tools.results import (
+    ERROR_UNKNOWN,
+    ToolPayload,
+    sanitize_tool_errors,
+    tool_failure,
+    tool_ok,
+)
 
 TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES = "whm_preflight_firewall_entries"
 
@@ -275,9 +280,9 @@ async def whm_preflight_firewall_entries(
         resolution = await resolve_whm_server_ref(server_ref, repository=repository)
         if not resolution.ok or resolution.server is None:
             return tool_failure(
-                # `ERROR_UNKNOWN` is `whm_read`'s, imported rather than re-spelled: the same
-                # fallback for the same resolver, and two copies is how one of them drifts
-                # (V66).
+                # `ERROR_UNKNOWN` lives in `results` rather than beside one system's tools:
+                # the same fallback for the same resolver shape, and two copies is how one of
+                # them drifts (V66, T31).
                 resolution.error_code or ERROR_UNKNOWN,
                 resolution.message,
                 choices=resolution.choices,

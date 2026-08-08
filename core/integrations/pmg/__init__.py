@@ -16,25 +16,35 @@ Modules:
                  `sudo -n` iff the resolved user is not root (V55), and the two success
                  predicates PMG needs (a mutation reports `200 OK` in its output, not its exit
                  code).
+- `mynetworks` — that command output → normalised CIDR entries (T31, V59). `1.2.3.4` and
+                 `1.2.3.4/32` are one whitelist entry, so both the operator's target and every
+                 stored line are normalised before anything is compared.
 
-Both dependencies are injected rather than imported, following T15: a `SecretCipher` for
-credentials at rest (C7 — there is no settings singleton in this repo), and the resolved
-`SSHConnectionConfig` that `core.remote_exec.sudo` reads the `sudo -n` decision from (V55).
+`ssh` decrypts, `pmgsh_cli` runs, and the split is load-bearing: as of T31 the run functions
+take a resolved `SSHConnectionConfig` rather than a row plus a `SecretCipher`, so a caller
+resolves once, closes its database session, and only then reaches the box (T21's rule, the
+change T24 made on the WHM side). A row that cannot produce a usable config is refused by the
+caller, where the refusal names the PMG server.
 
 `mynetworks` is the only PMG endpoint this layer touches (V58). Everything it exposes is a read
 or a write against `/config/mynetworks`, plus the version probe T54's validate route uses.
 
-Consumers: the PMG tools `pmg_whitelist` (T29), `pmg_whitelist_list` (T30),
-`pmg_whitelist_search` (T31), and the admin server CRUD + validate routes (T54). Nothing imports
-this yet. Reference doc: `docs/integrations/pmg.md`.
+Consumers: the PMG tools `pmg_whitelist` (T29), `pmg_whitelist_list` (T30) and
+`pmg_whitelist_search` (T31 — the one that exists), plus the admin server CRUD + validate
+routes (T54). Reference doc: `docs/integrations/pmg.md`.
 
-Not ported from `MCP`: `pmg/server_ref.py` (ref resolution is a tool-layer concern, and PMG's
-lands with T29-T31 exactly as WHM's deferred to T19), the `ipaddress` normalisation and
-`mynetworks` line parsing in `pmg/tools/whitelist_tools.py` (V59/V60/V61 belong to those same
-tools), and `core/workflows/pmg/` (C16 drops it with chat presentation).
+Not ported from `MCP`: `pmg/server_ref.py` — reference resolution is inventory, not integration,
+so PMG's landed in `core/servers/pmg_ref.py` at T31 exactly where WHM's did at T19 — and
+`core/workflows/pmg/` (C16 drops it with chat presentation).
 """
 
 from core.integrations.pmg.errors import PMGSHCLIError
+from core.integrations.pmg.mynetworks import (
+    MynetworksEntry,
+    find_matching_entries,
+    normalize_cidr,
+    parse_mynetworks_entries,
+)
 from core.integrations.pmg.pmgsh_cli import (
     MYNETWORKS_PATH,
     PMGCONFIG_BINARY,
@@ -64,11 +74,15 @@ __all__ = [
     "MYNETWORKS_PATH",
     "PMGCONFIG_BINARY",
     "PMGSH_BINARY",
+    "MynetworksEntry",
     "PMGSHCLIError",
     "PMGServerSecretLike",
     "build_pmgconfig_command",
     "build_pmgsh_command",
+    "find_matching_entries",
     "has_ssh_credentials",
+    "normalize_cidr",
+    "parse_mynetworks_entries",
     "parse_pmgsh_json_output",
     "require_pmg_mutation_success",
     "require_pmgsh_success",

@@ -49,6 +49,12 @@ LOG_TOOL_FAILED = "mcp_tool_failed"
 ERROR_TOOL_EXECUTION_FAILED = "tool_execution_failed"
 ERROR_TIMEOUT = "timeout"
 
+# The `error_code` a failure that carries none falls back to. Verbatim from `noa-old`, and here
+# rather than beside one system's tools because every tool that resolves a `server_ref` or reads
+# a client's failure dict needs the same fallback — it started in `whm_read` and `whm_firewall`
+# already reached across for it, which is one import away from a second spelling (V66).
+ERROR_UNKNOWN = "unknown"
+
 MESSAGE_TOOL_EXECUTION_FAILED = (
     "The tool failed while running. Try again; contact an administrator if this continues."
 )
@@ -141,6 +147,7 @@ def _failed(tool_name: str, exc: BaseException, error_code: str, message: str) -
 __all__ = [
     "ERROR_TIMEOUT",
     "ERROR_TOOL_EXECUTION_FAILED",
+    "ERROR_UNKNOWN",
     "LOG_TOOL_FAILED",
     "MESSAGE_TIMEOUT",
     "MESSAGE_TOOL_EXECUTION_FAILED",

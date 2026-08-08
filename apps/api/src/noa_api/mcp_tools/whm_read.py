@@ -41,7 +41,13 @@ from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount, account_matches, normalize_whm_account_list
 from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
-from noa_api.mcp_tools.results import ToolPayload, sanitize_tool_errors, tool_failure, tool_ok
+from noa_api.mcp_tools.results import (
+    ERROR_UNKNOWN,
+    ToolPayload,
+    sanitize_tool_errors,
+    tool_failure,
+    tool_ok,
+)
 
 TOOL_WHM_LIST_SERVERS = "whm_list_servers"
 TOOL_WHM_SEARCH_ACCOUNTS = "whm_search_accounts"
@@ -53,8 +59,6 @@ DEFAULT_SEARCH_LIMIT = 20
 
 ERROR_QUERY_REQUIRED = "query_required"
 ERROR_LIMIT_INVALID = "limit_invalid"
-# What a `WHMClient` failure with no `error_code` becomes. Verbatim from `noa-old`.
-ERROR_UNKNOWN = "unknown"
 
 MESSAGE_QUERY_REQUIRED = "A search query is required."
 MESSAGE_LIMIT_INVALID = f"Limit must be between {MIN_SEARCH_LIMIT} and {MAX_SEARCH_LIMIT}."
@@ -269,7 +273,6 @@ __all__ = [
     "DESCRIPTION_WHM_SEARCH_ACCOUNTS",
     "ERROR_LIMIT_INVALID",
     "ERROR_QUERY_REQUIRED",
-    "ERROR_UNKNOWN",
     "MAX_SEARCH_LIMIT",
     "MESSAGE_LIMIT_INVALID",
     "MESSAGE_QUERY_REQUIRED",

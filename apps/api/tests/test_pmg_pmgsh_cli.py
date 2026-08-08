@@ -21,6 +21,12 @@ non-zero exit when stdout carries `200 OK` — and must keep rejecting the same 
 which is a different shape entirely. Getting that backwards turns an approved CHANGE that failed
 into a receipt that says it worked (V57's reasoning, applied to PMG).
 
+**A resolved `SSHConnectionConfig` goes in, not a row** as of T31, so the row refusals that used
+to be asserted here now belong to `resolve_pmg_ssh_config` (`test_pmg_ssh_config.py`) and to the
+tool that calls it (`test_pmg_tools_whitelist_search.py::test_an_unpinned_server_is_refused…`).
+What is left in this file is what this module still decides: composition, success, parsing, and
+the conversion of an SSH failure into one exception tree.
+
 No host: `ssh_exec` is replaced inside the module's namespace (`support.remote_exec`).
 """
 
@@ -52,9 +58,9 @@ from core.integrations.pmg.pmgsh_cli import (
     run_pmgsh_command,
     run_pmgsh_json,
 )
+from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.output import command_output_text
 from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
-from support.pmg import FakePMGServer
 from support.remote_exec import (
     SUDO_DENIED_STDERR,
     SUDO_MISSING_BINARY_STDERR,
@@ -62,7 +68,6 @@ from support.remote_exec import (
     install_fake_ssh_exec,
     ssh_config,
 )
-from support.secrets import build_cipher
 
 _LVE_BANNER = (
     "***************************************************************************\n"
@@ -290,47 +295,44 @@ def test_parse_pmgsh_json_output_raises_when_a_document_fails_to_decode(output: 
     assert exc.value.error_code == "pmgsh_json_invalid"
 
 
-# --- run_*: the pin is enforced, and one exception tree comes out ---
-
-
-async def test_run_pmgsh_command_refuses_an_unvalidated_host_before_connecting(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    fake = install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result())
-
-    with pytest.raises(PMGSHCLIError) as exc:
-        await run_pmgsh_command(
-            FakePMGServer(ssh_host_key_fingerprint=None),
-            args=["get", "/version"],
-            cipher=build_cipher(),
-        )
-
-    assert exc.value.error_code == "ssh_host_key_not_validated"
-    assert fake.runs == []
+# --- run_*: the config that connects is the config the command was built from ---
 
 
 async def test_run_pmgsh_command_converts_an_ssh_failure_into_the_pmg_tree(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """One exception tree out of the module, so a caller does not catch two."""
-    install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result())
+    """One exception tree out of the module, so a caller does not catch two.
+
+    The transport raises here rather than a row being malformed: since T31 the row never
+    reaches this module, and a mismatched host key is what the pin (V82) actually produces.
+    """
+
+    def refuse(_command: str):  # type: ignore[no-untyped-def]
+        raise SSHExecutionError(code="ssh_host_key_mismatch", message="presented key ≠ pin")
+
+    install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, refuse)
 
     with pytest.raises(PMGSHCLIError) as exc:
-        await run_pmgsh_command(
-            FakePMGServer(ssh_host="not a host"), args=["get", "/version"], cipher=build_cipher()
-        )
+        await run_pmgsh_command(_pmg_ssh_config(), args=["get", "/version"])
 
-    assert exc.value.error_code == "ssh_invalid_host"
+    assert exc.value.error_code == "ssh_host_key_mismatch"
 
 
 async def test_run_pmgsh_command_sends_the_composed_command_over_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The command is built from the config that opens the connection (V55).
+
+    Asserted together: a `noa-ops` config both escalates and is the config the transport saw.
+    Composing against one config and connecting with another is the failure a boolean
+    `escalate` parameter makes possible.
+    """
     fake = install_fake_ssh_exec(
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="200 OK")
     )
+    config = _pmg_ssh_config(username="noa-ops")
 
-    result = await run_pmgsh_command(
-        FakePMGServer(ssh_username="noa-ops"), args=["get", "/version"], cipher=build_cipher()
-    )
+    result = await run_pmgsh_command(config, args=["get", "/version"])
 
     assert result.stdout == "200 OK"
     assert fake.commands == [f"TERM=dumb sudo -n {PMGSH_BINARY} get /version"]
-    assert fake.runs[0].config.host_key_fingerprint is not None
+    assert fake.runs[0].config is config
 
 
 async def test_run_pmgsh_json_checks_success_before_parsing(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -341,7 +343,7 @@ async def test_run_pmgsh_json_checks_success_before_parsing(monkeypatch) -> None
     )
 
     with pytest.raises(PMGSHCLIError) as exc:
-        await run_pmgsh_json(FakePMGServer(), args=["get", "/version"], cipher=build_cipher())
+        await run_pmgsh_json(_pmg_ssh_config(), args=["get", "/version"])
 
     assert exc.value.error_code == "pmgsh_command_failed"
 
@@ -351,7 +353,7 @@ async def test_run_pmg_version_probe_uses_exact_args(monkeypatch) -> None:  # ty
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout='{"version":"8.1"}')
     )
 
-    assert await run_pmg_version_probe(FakePMGServer(), cipher=build_cipher()) == {"version": "8.1"}
+    assert await run_pmg_version_probe(_pmg_ssh_config()) == {"version": "8.1"}
     assert fake.commands == [f"TERM=dumb {PMGSH_BINARY} get /version"]
 
 
@@ -361,21 +363,20 @@ async def test_run_pmg_mynetworks_probe_returns_the_endpoint_with_its_output(mon
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="1 10.10.10.0/24")
     )
 
-    evidence = await run_pmg_mynetworks_probe(FakePMGServer(), cipher=build_cipher())
+    evidence = await run_pmg_mynetworks_probe(_pmg_ssh_config())
 
     assert evidence == {"endpoint": MYNETWORKS_PATH, "output": "1 10.10.10.0/24"}
     assert fake.commands == [f"TERM=dumb {PMGSH_BINARY} ls {MYNETWORKS_PATH}"]
 
 
 async def test_run_pmg_mynetworks_list_returns_raw_output_for_the_tool_layer(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """Entry parsing and CIDR normalisation are T30/T31's job (V59) — this returns text."""
+    """Entry parsing and CIDR normalisation live in `core.integrations.pmg.mynetworks` (V59) —
+    this returns text."""
     install_fake_ssh_exec(
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="1 10.10.10.0/24")
     )
 
-    assert (
-        await run_pmg_mynetworks_list(FakePMGServer(), cipher=build_cipher()) == "1 10.10.10.0/24"
-    )
+    assert await run_pmg_mynetworks_list(_pmg_ssh_config()) == "1 10.10.10.0/24"
 
 
 async def test_run_pmg_mynetworks_add_uses_exact_args(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -383,7 +384,7 @@ async def test_run_pmg_mynetworks_add_uses_exact_args(monkeypatch) -> None:  # t
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(exit_code=1, stdout="200 OK")
     )
 
-    output = await run_pmg_mynetworks_add(FakePMGServer(), cidr=_CIDR, cipher=build_cipher())
+    output = await run_pmg_mynetworks_add(_pmg_ssh_config(), cidr=_CIDR)
 
     assert output == "200 OK"
     assert fake.commands == [f"TERM=dumb {PMGSH_BINARY} create {MYNETWORKS_PATH} -cidr {_CIDR}"]
@@ -394,7 +395,7 @@ async def test_run_pmg_mynetworks_delete_uses_exact_args(monkeypatch) -> None:  
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(exit_code=1, stdout="200 OK")
     )
 
-    await run_pmg_mynetworks_delete(FakePMGServer(), cidr=_CIDR, cipher=build_cipher())
+    await run_pmg_mynetworks_delete(_pmg_ssh_config(), cidr=_CIDR)
 
     assert fake.commands == [f"TERM=dumb {PMGSH_BINARY} delete {MYNETWORKS_PATH}/{_CIDR}"]
 
@@ -405,7 +406,7 @@ async def test_run_pmgconfig_sync_restart_uses_exact_args(monkeypatch) -> None: 
         monkeypatch, pmgsh_cli_mod, lambda _cmd: command_result(stdout="synced")
     )
 
-    assert await run_pmgconfig_sync_restart(FakePMGServer(), cipher=build_cipher()) == "synced"
+    assert await run_pmgconfig_sync_restart(_pmg_ssh_config()) == "synced"
     assert fake.commands == [f"TERM=dumb {PMGCONFIG_BINARY} sync --restart 1"]
 
 

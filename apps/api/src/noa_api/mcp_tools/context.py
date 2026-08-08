@@ -43,9 +43,10 @@ from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.auth.authorization_repository import SQLAuthorizationRepository
 from core.auth.authorization_service import AuthorizationService
 from core.auth.authorization_types import AuthorizationRepository
-from core.db.models import WHMServer
+from core.db.models import PMGServer, WHMServer
 from core.integrations.whm.ssh import WHMClientFactory, build_whm_client
 from core.secrets.crypto import SecretCipher
+from core.servers.pmg_repository import PMGServerReadRepository, SQLPMGServerRepository
 from core.servers.whm_repository import SQLWHMServerRepository, WHMServerReadRepository
 from noa_api.mcp_request_auth import McpSessionFactory
 
@@ -69,6 +70,12 @@ class McpToolContext:
     # matches against (T21).
     whm_server_repository_factory: Callable[[AsyncSession], WHMServerReadRepository[WHMServer]] = (
         SQLWHMServerRepository
+    )
+    # Same construction, one system over (T31). Typed to `PMGServer` rather than to
+    # `PMGServerRowLike` because the whitelist tools resolve a node and then *connect* to it,
+    # which needs the SSH columns off the row that won the resolution.
+    pmg_server_repository_factory: Callable[[AsyncSession], PMGServerReadRepository[PMGServer]] = (
+        SQLPMGServerRepository
     )
     tool_run_repository_factory: Callable[[AsyncSession], ToolRunRepository] = SQLToolRunRepository
     # The WHM API seam. Production builds a real client over a real socket; a tool test swaps

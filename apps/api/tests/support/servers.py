@@ -1,4 +1,10 @@
-"""Doubles for the server-inventory read path (T19).
+"""Doubles for the server-inventory read path (T19, T31).
+
+Both systems' inventory lives here, because inventory is one subject: a row of the mapped
+class, an in-memory repository that answers the way the SQL one does, and the `McpToolContext`
+that holds them. The system-specific doubles stay in their own modules — `support/whm.py` and
+`support/pmg.py` own the `Protocol`-shaped rows their integration layers take, and
+`support/whm_firewall.py` and `support/pmg.py` own the tool-path helpers that wrap what is here.
 
 Two decisions here carry the weight of the tests that use this module.
 
@@ -30,7 +36,7 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.models import WHMServer
+from core.db.models import PMGServer, WHMServer
 from core.integrations.whm.client import WHMClient
 from core.integrations.whm.ssh import WHMServerSecretLike, build_whm_client
 from core.secrets.crypto import SecretCipher
@@ -97,6 +103,45 @@ def whm_server(
     return server
 
 
+def pmg_server(
+    name: str,
+    *,
+    ssh_host: str | None = None,
+    server_id: UUID | None = None,
+    ssh_username: str | None = None,
+    ssh_password: str | None = SSH_PASSWORD,
+    ssh_private_key: str | None = SSH_PRIVATE_KEY,
+    ssh_host_key_fingerprint: str | None = FINGERPRINT,
+) -> PMGServer:
+    """One `pmg_servers` row, credentials included, ready to read (T31).
+
+    The same construction as `whm_server` and for the same reasons — a real mapped instance
+    with the three server-defaulted columns filled by hand — over a narrower row: PMG is
+    SSH-only (V58), so there is no `base_url`, no API token and no `verify_ssl`.
+
+    The credential defaults are shared with the WHM row on purpose. They are ciphertext-*shaped*
+    rather than real ciphertext, they exist to be asserted absent from a result, and one set of
+    literals means one `SECRETS` tuple covers both systems. A test that actually connects passes
+    `cipher.encrypt_text(...)` — see `support.pmg.whitelist_server`.
+
+    `ssh_private_key` and `ssh_host_key_fingerprint` are overridable to `None` so a test can
+    build the two rows `resolve_pmg_ssh_config` refuses: no credentials at all, and no pin.
+    """
+    server = PMGServer(
+        name=name,
+        ssh_host=ssh_host or f"{name}.example.net",
+        ssh_username=ssh_username,
+        ssh_port=22,
+        ssh_password=ssh_password,
+        ssh_private_key=ssh_private_key,
+        ssh_host_key_fingerprint=ssh_host_key_fingerprint,
+    )
+    server.id = server_id or uuid4()
+    server.created_at = CREATED_AT
+    server.updated_at = CREATED_AT
+    return server
+
+
 class FakeWHMServerRepository:
     """In-memory `WHMServerReadRepository`.
 
@@ -119,12 +164,38 @@ class FakeWHMServerRepository:
         return next((server for server in self.servers if server.id == server_id), None)
 
 
+class FakePMGServerRepository:
+    """In-memory `PMGServerReadRepository` (T31).
+
+    Sorted by name for the reason its WHM twin is: the resolver's tie handling is asserted
+    against this order, and a double that returned insertion order would let a test pass
+    against a repository that does not.
+
+    Kept as a separate class rather than one generic double, matching the two production
+    repositories: `SQLPMGServerRepository` selects a different table, and a shared double would
+    stop being evidence that the tool asked PMG's inventory rather than WHM's.
+    """
+
+    def __init__(self, servers: Iterable[PMGServer] = ()) -> None:
+        self.servers: list[PMGServer] = list(servers)
+        self.reads = 0
+
+    async def list_servers(self) -> Sequence[PMGServer]:
+        self.reads += 1
+        return sorted(self.servers, key=lambda server: server.name)
+
+    async def get_by_id(self, server_id: UUID) -> PMGServer | None:
+        self.reads += 1
+        return next((server for server in self.servers if server.id == server_id), None)
+
+
 @dataclass
 class ToolFixture:
     """An `McpToolContext` over doubles, plus the doubles behind it."""
 
     context: McpToolContext
     servers: FakeWHMServerRepository
+    pmg_servers: FakePMGServerRepository
     authorization: FakeAuthorizationRepository
     audit: RecordingAuditSink
     tool_runs: FakeToolRunRepository
@@ -134,6 +205,7 @@ class ToolFixture:
 def build_tool_context(
     *,
     servers: Iterable[WHMServer] = (),
+    pmg_servers: Iterable[PMGServer] = (),
     authorization: FakeAuthorizationRepository | None = None,
     tool_runs: FakeToolRunRepository | None = None,
     cipher: SecretCipher | None = None,
@@ -158,6 +230,7 @@ def build_tool_context(
     `WHMClient` and the real cipher stay in the path and only the socket is doubled.
     """
     server_repository = FakeWHMServerRepository(servers)
+    pmg_repository = FakePMGServerRepository(pmg_servers)
     authorization_repository = authorization or FakeAuthorizationRepository()
     tool_run_repository = tool_runs or FakeToolRunRepository()
     audit = RecordingAuditSink()
@@ -176,11 +249,13 @@ def build_tool_context(
             secret_cipher=resolved_cipher,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
+            pmg_server_repository_factory=lambda _session: pmg_repository,
             tool_run_repository_factory=lambda _session: tool_run_repository,
             whm_client_factory=whm_client_factory,
             audit_sink=audit,
         ),
         servers=server_repository,
+        pmg_servers=pmg_repository,
         authorization=authorization_repository,
         audit=audit,
         tool_runs=tool_run_repository,
@@ -195,8 +270,10 @@ __all__ = [
     "SECRETS",
     "SSH_PASSWORD",
     "SSH_PRIVATE_KEY",
+    "FakePMGServerRepository",
     "FakeWHMServerRepository",
     "ToolFixture",
     "build_tool_context",
+    "pmg_server",
     "whm_server",
 ]

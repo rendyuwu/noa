@@ -51,6 +51,7 @@ MUTATED_TABLES = (
     "login_rate_limits",
     "mcp_tokens",
     "whm_servers",
+    "pmg_servers",
     "tool_runs",
 )
 

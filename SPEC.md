@@ -314,7 +314,7 @@ T27|.|Tool: `proxmox_reset_vm_password` (CHANGE). Internal preflight → generat
 T28|.|Tool: `proxmox_vm_nic(action: enable\|disable)` (CHANGE merged). Single tool, enum `action` param. Internal preflight. DECISIONS §9 enum collapse|I.mcp,C8,C9,V63
 T29|.|Tool: `pmg_whitelist(action: add\|remove)` (CHANGE merged). Single tool, enum `action` param. Internal preflight → `pmgsh` command. DECISIONS §9 enum collapse|I.mcp,C8,C9,V58,V60,V61
 T30|.|Tool: `pmg_whitelist_list` (READ). List all mynetworks CIDRs. Large result → summary + table URL per V64. Mechanism gated on T59|I.mcp,V58,V64,T59
-T31|.|Tool: `pmg_whitelist_search` (READ). Normalize input → search exact CIDR membership|I.mcp,V58,V59
+T31|x|Tool: `pmg_whitelist_search` (READ). Normalize input → search exact CIDR membership|I.mcp,V58,V59
 T32|.|CHANGE gate: `build_change_gate_response()` — single function, 3 branches (link-out text \| UI resource \| elicitation future). URL carries `action_request_id` only|V24,V25,V26
 T33|.|CHANGE gate: MCP `tools/call` on CHANGE → INSERT `action_requests(status=pending)` + `approval_context` (persisted) + `conversation_ref`. ⊥ `proposed_reason` column — reason arrives at approve time only (C8,V43). "May this run?" from DB|V22,V23,V33,V43,I.mcp
 T34|.|`action_requests` table + migration: `id`, `tool_name`, `requested_by_user_id`, `status` (`ActionRequestStatus` PENDING/APPROVED/DENIED/EXPIRED), `conversation_ref`, `approval_context` JSONB, `reason` (nullable until decided, operator-typed), `tool_run_id` nullable, `expires_at`, `created_at`, `decided_at`. ⊥ `proposed_reason` column|V20,V32,V33,V43
