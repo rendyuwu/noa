@@ -77,6 +77,12 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
   (R29). Embed work (T32, T41–T46, T56) unblocked; active branch = iframe UI resource + link-out
   text beside it (V24, V25). Approve/deny in-frame ! be JS `fetch` — no `allow-forms` (V80).
   Re-verify on every LibreChat bump: `spikes/librechat-embed-render-gate/` (C21).
+- **An ESCAPE HATCH out of the frame ships the plain ADDRESS beside the link** — ⊥ a link alone.
+  `target="_blank"` needs `allow-popups`, absent at 1 of the 2 render sites ⇒ the click does
+  NOTHING, silently; ∧ where popups ARE granted the opened tab INHERITS the sandbox ⇒ `allow-forms`
+  ⊥ in it either, so a `<form>` login in that tab is inert too. "Top-level" ⊥ mean "unsandboxed"
+  (MEASURED, T43). Assert on the page COUNT ∨ a hit counter, ⊥ on an exception, ∧ at BOTH pinned
+  sandbox strings — the permissive one is the negative control. (V94, V25, R32, R13)
 - **Python `<3.13`** (C1) ∧ **`fastmcp==3.4.5`** (C23) ∧ **exact-pinned `next`/`react`** (C2).
   Bump = deliberate + re-verify, ⊥ drive-by.
 - Ambiguous identifier → structured candidates result. ⊥ guess. (C10, V18)
