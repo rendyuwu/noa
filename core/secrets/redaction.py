@@ -84,9 +84,39 @@ def redact_sensitive_data(value: object, *, replacement: str = REDACTED) -> obje
     return value
 
 
+def sensitive_key_paths(value: object, *, _prefix: str = "") -> list[str]:
+    """Every location inside `value` that `redact_sensitive_data` would replace (V8).
+
+    The same walk as the redactor, answering "where" instead of rewriting — so a caller that
+    has to *refuse* a redacted payload rather than produce one (T38's executor, which will
+    not run a change whose arguments came back as `[redacted]`) asks the same question the
+    redactor answered and cannot disagree with it (V66).
+
+    A flat top-level scan is the failure this exists to prevent: the redactor recurses, so
+    `{"server": {"ssh_password": ...}}` is stored redacted and a top-level check sees nothing
+    wrong with it.
+
+    Paths are dotted, with list positions as `[i]`, so a refusal names where the value was
+    without carrying it.
+    """
+    found: list[str] = []
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            path = f"{_prefix}.{key}" if _prefix else str(key)
+            if is_sensitive_key(str(key)):
+                found.append(path)
+            else:
+                found.extend(sensitive_key_paths(item, _prefix=path))
+    elif isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
+        for index, item in enumerate(value):
+            found.extend(sensitive_key_paths(item, _prefix=f"{_prefix}[{index}]"))
+    return found
+
+
 __all__ = [
     "REDACTED",
     "SENSITIVE_KEYS",
     "is_sensitive_key",
     "redact_sensitive_data",
+    "sensitive_key_paths",
 ]

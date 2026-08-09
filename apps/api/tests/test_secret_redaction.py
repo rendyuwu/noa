@@ -17,6 +17,7 @@ from core.secrets.redaction import (
     SENSITIVE_KEYS,
     is_sensitive_key,
     redact_sensitive_data,
+    sensitive_key_paths,
 )
 
 # Argument names the CHANGE tools of T25-T29 carry, plus the credential columns of schema
@@ -99,6 +100,32 @@ def test_redaction_is_one_way() -> None:
     redacted = redact_sensitive_data({"password": SECRET})
 
     assert SECRET not in repr(redacted)
+
+
+def test_the_locator_walks_exactly_where_the_redactor_replaces() -> None:
+    """`sensitive_key_paths` answers "where" for a caller that must refuse rather than rewrite.
+
+    T38's executor will not run a change whose arguments came back `[redacted]`, and the two
+    walks disagreeing is the failure that matters: a shallower locator passes a nested
+    credential through to a runner as the literal placeholder (V66).
+    """
+    payload = {
+        "server": {"name": "alpha", "ssh_password": SECRET},
+        "servers": [{"name": "beta", "api_token": SECRET}],
+        "duration_minutes": 120,
+    }
+
+    assert sorted(sensitive_key_paths(payload)) == [
+        "server.ssh_password",
+        "servers[0].api_token",
+    ]
+
+
+def test_the_locator_finds_nothing_in_an_unredacted_payload() -> None:
+    """The negative control (V87): an ordinary argument set is not a refusal, and a value that
+    merely *looks* like the placeholder is not one either — the rule is key names."""
+    assert sensitive_key_paths({"server_ref": "whm-1", "target": REDACTED}) == []
+    assert sensitive_key_paths({}) == []
 
 
 def test_the_key_list_is_not_empty_and_covers_the_schema_v1_columns() -> None:

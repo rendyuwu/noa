@@ -196,6 +196,28 @@ async def test_a_change_whose_arguments_were_redacted_is_refused() -> None:
     assert repository.only_receipt.receipt_data["error_code"] == ERROR_ARGUMENTS_REDACTED
 
 
+async def test_a_nested_redacted_argument_is_refused_too() -> None:
+    """The guard walks as deep as the redactor does (V66).
+
+    `redact_sensitive_data` recurses, so `{"server": {"ssh_password": ...}}` reaches
+    `approval_context` with the value already replaced. A top-level-only scan sees an
+    innocent `server` object and hands the runner `[redacted]` as a password — which is the
+    exact outcome the refusal exists to prevent, one nesting level down.
+    """
+    repository = FakeApprovedChangeExecutionRepository(
+        authorized=authorized_change(
+            arguments={"account": "acmeco", "server": {"ssh_password": REDACTED}},
+        ),
+    )
+    runner = RecordingChangeRunner()
+
+    status = await execute(build(repository, runner), repository)
+
+    assert runner.calls == []
+    assert status is ToolRunStatus.FAILED
+    assert repository.only_receipt.receipt_data["error_code"] == ERROR_ARGUMENTS_REDACTED
+
+
 async def test_the_redaction_guard_reads_key_names_not_values() -> None:
     """The negative control for the guard above (V87).
 
@@ -318,7 +340,12 @@ async def test_a_long_result_is_bounded_before_it_is_stored() -> None:
 
 async def test_a_credential_in_a_result_is_redacted_before_it_is_stored() -> None:
     """V8, and the reason redaction is applied to results and not only to arguments: this row
-    outlives the call and the receipt outlives the row."""
+    outlives the call and the receipt outlives the row.
+
+    Both artifacts, because they carry the same payload in front of the same readers — T42's
+    card, T63's tool, the admin audit surface. Redacting only the summary would put the
+    credential one JSONB column over, where nothing looks for it.
+    """
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
     runner = RecordingChangeRunner({"ok": True, "password": "hunter2"})
 
@@ -326,6 +353,8 @@ async def test_a_credential_in_a_result_is_redacted_before_it_is_stored() -> Non
 
     assert "hunter2" not in (repository.only_finish.result_summary or "")
     assert REDACTED in (repository.only_finish.result_summary or "")
+    assert "hunter2" not in repr(repository.only_receipt.receipt_data)
+    assert repository.only_receipt.receipt_data["after"]["password"] == REDACTED
 
 
 # --------------------------------------------------------------------------------------

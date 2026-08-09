@@ -645,6 +645,42 @@ async def test_finishing_an_unknown_run_touches_nothing(session: AsyncSession) -
     assert (await session.execute(sa.select(sa.func.count()).select_from(ToolRun))).scalar() == 0
 
 
+async def test_a_terminal_run_is_never_re_finished(session: AsyncSession) -> None:
+    """The first terminal write wins; the second is a no-op (T38).
+
+    Two writers reach one run: the executor, finishing a change that took longer than the
+    reaper's deadline, and the reaper, calling that same run abandoned. Without
+    `status = STARTED` in the predicate the later `UPDATE` overwrites the earlier answer —
+    a completed change re-written as "outcome never observed", or a reaped run flipped to
+    `COMPLETED` beside the abandonment receipt `create_if_missing` already made permanent.
+    """
+    repository = SQLToolRunRepository(session)
+    run_id = await repository.start_run(
+        tool_name=TOOL_WHM_LIST_SERVERS,
+        requested_by_user_id=await _insert_user(session, "twice@example.com"),
+        risk=ToolRisk.READ,
+        conversation_ref=None,
+        args={},
+    )
+    await repository.finish_run(
+        tool_run_id=run_id, status=ToolRunStatus.COMPLETED, result_summary='{"ok":true}'
+    )
+    await repository.commit()
+
+    await repository.finish_run(
+        tool_run_id=run_id,
+        status=ToolRunStatus.FAILED,
+        result_summary='{"ok":false,"error_code":"tool_run_abandoned"}',
+    )
+    await repository.commit()
+    session.expire_all()
+
+    stored = (await session.execute(sa.select(ToolRun))).scalar_one()
+
+    assert stored.status is ToolRunStatus.COMPLETED
+    assert stored.result_summary == '{"ok":true}'
+
+
 async def _insert_user(session: AsyncSession, email: str) -> UUID:
     user = User(email=email, is_active=True)
     session.add(user)

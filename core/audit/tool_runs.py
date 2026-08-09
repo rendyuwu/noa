@@ -111,10 +111,20 @@ class SQLToolRunRepository:
         it again would be a round trip that can fail on its own. `completed_at` is set from
         the application clock, matching `created_at`'s server default closely enough for a
         duration and, unlike a second `now()`, provable in a test.
+
+        **`status = STARTED` is in the predicate: the first terminal write wins.** Two of
+        the four callers can reach one run — T38's executor, finishing a change that ran
+        long, and T38's reaper, calling the same run abandoned past its deadline — and
+        without this the second one silently overwrites the first. Both directions produce a
+        lie: a change that completed re-written as "outcome never observed", or a reaped run
+        flipped to `COMPLETED` beside the abandonment receipt `create_if_missing` already
+        made permanent. The predicate is re-evaluated by the `UPDATE` against the newest
+        committed row version, so it closes the window between the reaper's `SELECT` and its
+        write as well as the plain interleaving.
         """
         await self._session.execute(
             update(ToolRun)
-            .where(ToolRun.id == tool_run_id)
+            .where(ToolRun.id == tool_run_id, ToolRun.status == ToolRunStatus.STARTED)
             .values(
                 status=status,
                 result_summary=result_summary,

@@ -41,7 +41,14 @@ name (`core.secrets.redaction`). Every CHANGE tool NOA plans generates its secre
 server-side (C15, V49), so no argument NOA needs is redacted today — but the day one is, this
 refuses instead of running the change with `[redacted]` where a value belonged. Checked by key
 name rather than by comparing values to the placeholder, so a legitimate argument whose value
-happens to be the literal string is not a false refusal.
+happens to be the literal string is not a false refusal — and checked with the redactor's own
+recursive walk (`core.secrets.redaction.sensitive_key_paths`), because a top-level-only scan
+would pass `{"server": {"ssh_password": ...}}` straight through to a runner (V66).
+
+**What the runner answered is redacted before it is stored.** `tool_runs.result_summary` goes
+through `core.audit.summaries`, which redacts; `action_receipts.receipt_data` is the same
+payload and outlives the call in front of the same readers, so it goes through the same rule.
+A per-writer exemption is how one of them eventually puts a credential in the audit trail.
 """
 
 from __future__ import annotations
@@ -62,7 +69,7 @@ from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import ActionRequest
 from core.errors import NoaError
-from core.secrets.redaction import is_sensitive_key
+from core.secrets.redaction import redact_sensitive_data, sensitive_key_paths
 
 # The execution began. One event per authorised change actually starting to run, so "why did
 # this account get suspended at 03:00" is answerable from the logs (V46's audit-log third).
@@ -365,7 +372,7 @@ class ApprovedChangeExecutionService:
            (app shutdown) has no answer to record, and the row it leaves `STARTED` is exactly
            what the reaper is for.
         """
-        redacted = sorted(key for key in authorized.arguments if is_sensitive_key(str(key)))
+        redacted = sorted(sensitive_key_paths(authorized.arguments))
         if redacted:
             return _failure(
                 ERROR_ARGUMENTS_REDACTED,
@@ -452,11 +459,18 @@ def build_receipt(*, evidence: Mapping[str, Any], payload: Mapping[str, Any]) ->
     `ok` is lifted to the top level from the envelope rather than recomputed: one field, one
     source. `error_code` appears only when there is one, matching `tool_failure`'s rule that an
     absent field beats an empty one.
+
+    `after` is redacted on the way in, the same rule `result_summary` applies to the same
+    payload (V8, V45): this row outlives the call and is read by T42's card, T63's tool and the
+    admin audit surface, so a runner that answers with a `password` field must not leave one
+    here. `before` is the gate's own `approval_context` evidence, copied rather than re-derived
+    — whatever redaction it carries is T33's, and re-deciding it here would be a second answer.
     """
+    redacted_payload = redact_sensitive_data(dict(payload))
     receipt: dict[str, Any] = {
         RECEIPT_OK_KEY: payload.get(RECEIPT_OK_KEY) is True,
         RECEIPT_BEFORE_KEY: dict(evidence),
-        RECEIPT_AFTER_KEY: dict(payload),
+        RECEIPT_AFTER_KEY: redacted_payload if isinstance(redacted_payload, dict) else {},
     }
     error_code = payload.get(RECEIPT_ERROR_CODE_KEY)
     if error_code:

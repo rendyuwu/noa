@@ -38,6 +38,7 @@ from core.approvals.reaper import (
     SQLStrandedRunRepository,
     StrandedRunReaperService,
 )
+from core.audit.receipts import SQLActionReceiptRepository
 from core.audit.tool_runs import SQLToolRunRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from core.db.models import ActionRequest, ToolRun
@@ -248,6 +249,67 @@ async def test_a_terminal_run_is_never_reaped(factory) -> None:  # type: ignore[
     run = next(row for row in await read_runs(factory) if row.id == run_id)
     assert run.status is ToolRunStatus.COMPLETED
     assert run.result_summary == '{"ok":true}'
+
+
+class InterleavingStrandedRunRepository(SQLStrandedRunRepository):
+    """A reap pass with another writer's commit landing *inside* it (V89).
+
+    The window between the pass's `SELECT` and its `UPDATE` is the one that matters, and a
+    test that opened it after the pass had finished would prove nothing about the predicate.
+    So the competing write is triggered from the read itself, on its own session, and is
+    committed before the reap's write is issued.
+    """
+
+    def __init__(self, session: AsyncSession, *, on_read) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(session)
+        self._on_read = on_read
+
+    async def stranded_runs(self, *, cutoff: datetime):  # type: ignore[no-untyped-def]
+        found = await super().stranded_runs(cutoff=cutoff)
+        await self._on_read()
+        return found
+
+
+async def test_a_run_that_finishes_inside_the_pass_is_not_overwritten(factory) -> None:  # type: ignore[no-untyped-def]
+    """The executor and the reaper can both reach one run, and the first answer wins (T38).
+
+    A change slower than the deadline is read as stranded, finishes while the pass is still
+    open, and must not then be re-written as "outcome never observed" — the receipt its own
+    commit made permanent says it completed, and the two would contradict each other.
+
+    Held by `status = STARTED` in the terminal `UPDATE`'s predicate, which Postgres
+    re-evaluates against the newest committed row version: drop it and this goes red while
+    every single-writer test above stays green.
+    """
+    request_id, run_id = await approved_change(factory)
+    await age_run(factory, run_id, created_at=moment() - timedelta(seconds=REAP_AFTER_SECONDS + 1))
+
+    async def executor_finishes() -> None:
+        async with factory() as session:
+            await SQLToolRunRepository(session).finish_run(
+                tool_run_id=run_id,
+                status=ToolRunStatus.COMPLETED,
+                result_summary='{"ok":true}',
+            )
+            await SQLActionReceiptRepository(session).create_if_missing(
+                action_request_id=request_id,
+                tool_run_id=run_id,
+                receipt_data={"ok": True, "before": {}, "after": {"ok": True}},
+            )
+            await session.commit()
+
+    async with factory() as session:
+        service = StrandedRunReaperService(
+            InterleavingStrandedRunRepository(session, on_read=executor_finishes),
+            reap_after_seconds=REAP_AFTER_SECONDS,
+        )
+        await service.reap(now=moment())
+
+    run = next(row for row in await read_runs(factory) if row.id == run_id)
+    assert run.status is ToolRunStatus.COMPLETED
+    assert run.result_summary == '{"ok":true}'
+    receipts = await read_receipts(factory)
+    assert [receipt.receipt_data["ok"] for receipt in receipts] == [True]
 
 
 # --------------------------------------------------------------------------------------

@@ -122,10 +122,6 @@ class ReapOutcome:
     receipt_ids: tuple[UUID, ...]
     approved_without_run_ids: tuple[UUID, ...]
 
-    @property
-    def touched_anything(self) -> bool:
-        return bool(self.reaped_run_ids or self.approved_without_run_ids)
-
 
 class StrandedRunRepository(Protocol):
     """The reads and writes one reap pass may make (V30, V46)."""
