@@ -29,12 +29,13 @@ transcript, so it is read for the card (V33, V35) and never for the model. Neith
 out downstream; neither is ever loaded. `arguments_from_context` is the only thing this module
 takes off that payload.
 
-**The run is `tool_runs`, not `action_receipts`.** §T.63 says "receipt summary", and T36's
-`action_receipts` table plus T38's executor are both unbuilt — a join to a table nothing fills
-would answer `null` while looking like a feature. `action_requests.tool_run_id` is written in
-the same transaction as an approval (T37, V29), so the run row is the execution record that
-exists today: status, redacted summary, timing (V47). When T36 lands, the receipt joins here
-beside it.
+**The run is `tool_runs`, not `action_receipts`.** §T.63 says "receipt summary". T36 has since
+built the `action_receipts` table, but T38's executor — its only writer — is still unbuilt, so
+a join there answers `null` for every request and would look like a feature while being one
+table's worth of nothing. `action_requests.tool_run_id` is written in the same transaction as
+an approval (T37, V29), so the run row is the execution record that exists today: status,
+redacted summary, timing (V47). When T38 lands and receipts start being written, the receipt
+joins here beside it.
 """
 
 from __future__ import annotations

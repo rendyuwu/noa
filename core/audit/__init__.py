@@ -9,8 +9,9 @@ Two surfaces, two shapes, and the difference is deliberate:
   rolls back with the request that wrote it is not an audit row.
 
 They are separate because they are written from different paths — the admin API and the MCP
-tool path — and only one of them persists. Action receipts (T36, V46) have neither table nor
-writer yet.
+tool path — and only one of them persists. Action receipts (T36, V46) have a table
+(`core.db.models.ActionReceipt`) and no writer yet: T38's executor is what fills one, so
+nothing here reaches that table.
 """
 
 from core.audit.admin_events import (

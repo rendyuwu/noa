@@ -6,11 +6,11 @@ Eight tables, three groups:
 - MCP auth: `mcp_tokens` (C5, V2, V3)
 - Managed infrastructure: `whm_servers`, `proxmox_servers`, `pmg_servers` (C7, V48)
 
-Plus `login_rate_limits` from T8 (V9), `tool_runs` from T35 (V20, V45-V47) and
-`action_requests` from T34 (V20, V32, V33, V43).
+Plus `login_rate_limits` from T8 (V9), `tool_runs` from T35 (V20, V45-V47),
+`action_requests` from T34 (V20, V32, V33, V43) and `action_receipts` from T36 (V46).
 
-Later tasks add their own tables and migrations: `action_receipts` (T36), `audit_log`
-(T14). Ported from `noa-old` branch `MCP` per C13, minus the chat-presentation tables
+Later tasks add their own tables and migrations: `audit_log` (T14). Ported from `noa-old`
+branch `MCP` per C13, minus the chat-presentation tables
 (threads/messages/assistant_runs/workflow_todos) that die with C16.
 
 Credential columns hold Fernet ciphertext, never plaintext (C7, V48). Each server
@@ -391,6 +391,75 @@ class ActionRequest(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class ActionReceipt(Base):
+    """What an approved CHANGE actually did (T36, V46).
+
+    V46 names three artifacts for an approved change: the `tool_runs` row (what ran),
+    this receipt (what it did), and the audit log. The run says a change completed; the
+    receipt is the two-part story DECISIONS §6.5 requires an operator to be able to read
+    back — before-state and after-state, each verified separately, never collapsed into a
+    single "done".
+
+    Nothing writes this table yet. T38's executor does, once it exists; T42's card and
+    T63's `noa_get_action_result` read it beside the run. What this task owes is a shape
+    those three cannot quietly reshape.
+
+    Ported from `noa-old` `MCP:.../0006_action_receipts.py` (C13) with three departures,
+    each named because a port carries the code and not the defect (T21(b)):
+
+    - `receipt_data`, not `payload` — §T.36's name.
+    - `terminal_phase` absent. It carried the terminal state of a multi-phase workflow,
+      and C16 drops workflows. The terminal state now lives on `tool_runs.status` and
+      `action_requests.status`; a third column saying it again is a third truth about one
+      moment, which is T34's argument for the four columns it dropped.
+    - `schema_version` absent. `approval_context` and `tool_runs.args` are both unversioned
+      JSONB; versioning the third would make their bareness look deliberate when it is not.
+
+    The one thing the port had for free and this shape does not: `noa-old` made
+    `action_request_id` the primary key, so one receipt per request came with the table.
+    §T.36 names a separate `id`, so the uniqueness is stated below or it is lost — and it
+    is load-bearing, because T38's executor and its reaper can both reach a finished run.
+    A second receipt turns "the receipt" into "some receipt", and a reader picking one
+    arbitrarily is exactly the disagreement T34 refused when it folded `args` into
+    `approval_context`.
+    """
+
+    __tablename__ = "action_receipts"
+    __table_args__ = (
+        # One decision, one outcome (V28, V34). Also the lookup index — every reader
+        # arrives holding an `action_request_id` — so there is no second index for it.
+        UniqueConstraint("action_request_id", name="uq_action_receipts_action_request_id"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    # CASCADE and NOT NULL, unlike every other FK added since T35. Those are `SET NULL`
+    # because the row survives losing its subject and still describes something: a
+    # `tool_runs` row minus its requester is still what ran. A receipt minus its request
+    # is a JSONB blob nothing is about — the tool name, the requester and the arguments
+    # all live on `action_requests`. The audit-survival property that matters is carried
+    # there, where T34 made both FKs `SET NULL` so a user deletion erases neither the
+    # authorization nor this.
+    action_request_id: Mapped[UUID] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("action_requests.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    # SET NULL, mirroring `action_requests.tool_run_id` above: one edge, described the same
+    # way at both ends. NULL describes life after the run row is deleted, not a receipt
+    # written without one.
+    tool_run_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("tool_runs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # No server default, deliberately unlike `tool_runs.args` (`'{}'` there so "took no
+    # arguments" and "not recorded" stay distinguishable) and exactly like
+    # `approval_context` above: an empty receipt is never a legitimate state, so an insert
+    # that omits it should fail rather than record an outcome with nothing in it.
+    receipt_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = created_at()
+
+
 class SSHCredentialsMixin:
     """SSH connection fields shared by WHM and PMG servers (V66).
 
@@ -501,6 +570,7 @@ class PMGServer(Base, SSHCredentialsMixin, TimestampMixin):
 __all__ = [
     "ADMIN_ROLE_NAME",
     "INTERNAL_ROLE_PREFIX",
+    "ActionReceipt",
     "ActionRequest",
     "LoginRateLimit",
     "McpToken",

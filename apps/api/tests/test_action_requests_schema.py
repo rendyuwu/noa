@@ -109,7 +109,9 @@ def test_no_table_in_the_schema_carries_a_proposed_reason_column() -> None:
     Written over `Base.metadata` on purpose: T36's `action_receipts` and every later table
     inherit the rule without being listed here, the same way `test_config.py` scans every
     tracked file rather than an enumerated set. V43 says "⊥ LLM-authored reason anywhere
-    in schema/DB/receipt", and the receipt is the half that has not been built yet.
+    in schema/DB/receipt", and since T36 this assertion covers the receipt half too —
+    `test_action_receipts_schema.py` names `reason` in its own forbidden set as well, so
+    the rule is held both by the sweep that needs no listing and at the table itself.
     """
     offenders = {
         f"{table_name}.{column.name}"

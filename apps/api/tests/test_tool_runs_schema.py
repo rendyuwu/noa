@@ -127,7 +127,8 @@ def test_risk_and_status_are_separate_columns_so_a_failed_read_is_representable(
 def test_change_runs_are_representable() -> None:
     """V46: an approved CHANGE writes here too.
 
-    The receipt half of V46 is T36, and the CHANGE row itself is written by the
+    The receipt half of V46 is T36's `action_receipts` (table built, writer still T38's), and
+    the CHANGE row itself is written by the
     post-approval executor (T38) rather than by T73's middleware, which records READs only —
     a CHANGE tool's `tools/call` opens the approval gate and executes nothing (T33). This
     table only has to be able to say that a run was a change.

@@ -4,7 +4,8 @@ Next.js 16 app served on the NOA origin. Hosts the approval card and the large-r
 
 Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45, the
 approval card at §T.41 and its polling loop at §T.42. Still to come: the receipt (the rest of §T.42,
-waiting on §T.36 and §T.38), the 401 link-out (§T.43) and the table surface (§T.56).
+waiting on §T.38 — §T.36 built the table, and §T.38's executor is what writes a row into it), the
+401 link-out (§T.43) and the table surface (§T.56).
 The §T.59 render gate that used to block all of them cleared 2026-08-08 (R29): LibreChat puts the
 frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
 authenticates.
@@ -63,9 +64,9 @@ today's run would be polled for as long as the frame stays open. Giving up says 
 running this change. Reload this card to check again."* — never that it failed, because there is no
 evidence of that.
 
-The receipt (`action_receipts`) is the other half of §T.42 and is **not built**: it needs §T.36's
-table and §T.38's executor to have written one. What the card shows today is the run itself — status,
-finish time and result summary.
+The receipt (`action_receipts`) is the other half of §T.42 and is **not built**: §T.36 built the
+table, and §T.38's executor is what writes a row into it, so there is nothing to render yet. What
+the card shows today is the run itself — status, finish time and result summary.
 
 Blankness of the reason is not judged here. V15 puts that gate on the endpoint (409
 `change_reason_required`, checked under the row lock against the same rule the database CHECK holds),
@@ -167,7 +168,8 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-The receipt (the rest of §T.42 — blocked on §T.36's `action_receipts` table and §T.38's executor),
+The receipt (the rest of §T.42 — `action_receipts` exists since §T.36, blocked on §T.38's executor
+to write one),
 the "Sign in to NOA" link-out beside the 401 state (§T.43), and the large-result table surface
 (§T.56).
 

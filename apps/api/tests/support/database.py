@@ -47,6 +47,10 @@ DEV_URL = get_settings().postgres_url_str
 # `action_requests` joins at T34 for both of those reasons, and CASCADE from `tool_runs`
 # is no help either: its `tool_run_id` is `SET NULL` as well, so a decision row outlives
 # every other row a test created.
+# `action_receipts` joins at T36. This one *is* reached by the truncate above — its FK to
+# `action_requests` cascades — and is named anyway, because that is a property of today's
+# schema rather than of this list: a later change to that FK would silently start leaving
+# receipts behind, and the failure would land in whichever test happened to count rows.
 MUTATED_TABLES = (
     "users",
     "roles",
@@ -57,6 +61,7 @@ MUTATED_TABLES = (
     "pmg_servers",
     "tool_runs",
     "action_requests",
+    "action_receipts",
 )
 
 
