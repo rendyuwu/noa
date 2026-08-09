@@ -31,7 +31,34 @@ const PENDING_BODY: Record<string, unknown> = {
   expires_at: '2026-08-08T10:00:00+00:00',
   decided_at: null,
   run: null,
+  receipt: null,
   csrf: CARD_CSRF,
+}
+
+/**
+ * The after-state half of a receipt (§T.38, §T.42(b)).
+ *
+ * Shares no value with `evidence` above, deliberately: the claim these suites make is that the
+ * card renders *both* halves, and a fixture whose halves overlapped could not tell that from one
+ * rendering the same half twice (V87).
+ */
+export const RECEIPT_AFTER: Record<string, unknown> = {
+  ok: true,
+  suspended: true,
+  suspended_at: '2026-08-08T09:31:00+00:00',
+}
+
+/** What the API sends under `receipt` once a change has recorded an outcome (V46). */
+export function receiptBody(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    ok: true,
+    // The gate-time preflight, the same payload the pending card carries as `evidence` — that is
+    // what T38's writer copies onto the receipt.
+    before: { suspended: false, domain: 'acme.example' },
+    after: RECEIPT_AFTER,
+    error_code: null,
+    ...overrides,
+  }
 }
 
 /** The `tool_runs` half of the card (V29, V47). `STARTED` by default: that is what an approve opens. */
@@ -56,12 +83,18 @@ export function cardBody(overrides: Record<string, unknown> = {}): Record<string
  * `csrf` is `null` because the API sends none once nothing may be decided (V39) — a fixture that
  * kept the token would let a spec pass against a card showing live buttons after the decision.
  */
-export function approvedBody(runOverrides: Record<string, unknown> = {}): Record<string, unknown> {
+export function approvedBody(
+  runOverrides: Record<string, unknown> = {},
+  receipt: Record<string, unknown> | null = null,
+): Record<string, unknown> {
   return cardBody({
     status: 'APPROVED',
     decided_at: '2026-08-08T09:30:00+00:00',
     csrf: null,
     run: runBody(runOverrides),
+    // `null` by default, because that is what a card carries while its run is still in flight:
+    // the receipt lands with the terminal write, not with the decision (V46).
+    receipt,
   })
 }
 

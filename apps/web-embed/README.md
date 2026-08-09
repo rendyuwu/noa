@@ -3,9 +3,8 @@
 Next.js 16 app served on the NOA origin. Hosts the approval card and the large-result table surface.
 
 Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45, the
-approval card at §T.41 and its polling loop at §T.42. Still to come: the receipt (the rest of §T.42
-— §T.36 built the table and §T.38 built its writer, so rows now exist and rendering one is all that
-is left), the 401 link-out (§T.43) and the table surface (§T.56).
+approval card at §T.41, and its polling loop and receipt at §T.42. Still to come: the 401 link-out
+(§T.43) and the table surface (§T.56).
 The §T.59 render gate that used to block all of them cleared 2026-08-08 (R29): LibreChat puts the
 frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
 authenticates.
@@ -65,12 +64,16 @@ measured in minutes to a quarter of an hour, which is longer than this cap, so t
 first on a slow change. Giving up says *"NOA is still running this change. Reload this card to check
 again."* — never that it failed, because there is no evidence of that.
 
-The receipt (`action_receipts`) is the other half of §T.42 and is **not built here yet**, though it
-now has something to show: §T.36 built the table and §T.38's executor writes a row for every
-approved change that reaches a terminal state — two parts, the before-state the operator approved
-against and what the change actually did. What the card shows today is still only the run itself —
-status, finish time and result summary — so rendering the receipt needs the API's card payload to
-carry it first.
+**The receipt renders as two halves, never as one word** (§T.42(b), V46, DECISIONS §6.5). §T.36
+built `action_receipts` and §T.38 writes a row for every approved change that reaches a terminal
+state — the before-state the operator approved against, and what the change actually did. The card's
+`GET` carries it under `receipt` and the card shows the pair: the before-state where the gate's
+preflight evidence was already displayed, and a *What the change did* section beside the run with the
+verdict, the named cause when there is one, and the after-state as data. A change that failed keeps
+its before-state, which is the case a "done"-only card would drop.
+
+Until a receipt exists the section is absent rather than empty: nothing has recorded an outcome, and
+an empty outcome block would be a claim NOA cannot make.
 
 Blankness of the reason is not judged here. V15 puts that gate on the endpoint (409
 `change_reason_required`, checked under the row lock against the same rule the database CHECK holds),
@@ -172,9 +175,7 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-The receipt (the rest of §T.42 — the table exists since §T.36 and §T.38 writes rows into it, so what
-is left is carrying it on the card payload and rendering both of its halves),
-the "Sign in to NOA" link-out beside the 401 state (§T.43), and the large-result table surface
+The "Sign in to NOA" link-out beside the 401 state (§T.43), and the large-result table surface
 (§T.56).
 
 This app has no login page, no LDAP form and no credential handling. A 401 already renders an explicit

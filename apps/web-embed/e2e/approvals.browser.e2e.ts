@@ -6,6 +6,7 @@ import {
   CHAT_ORIGIN,
   MEASURED_SANDBOX,
   STUB_CSRF,
+  STUB_RECEIPT_AFTER,
   STUB_RUN_RESULT,
   UPSTREAM_ORIGIN,
 } from '../playwright.config'
@@ -226,11 +227,22 @@ test('the card follows its run to a terminal state, on the same URL (§T.42 — 
   const card = await frameCard(page, id)
 
   await expect(cardBody(card)).toContainText('STARTED')
+  // No receipt while the run is in flight, so what appears below is something the frame fetched.
+  await expect(cardBody(card)).not.toContainText('What the change did')
 
   // The stub answers STARTED twice and COMPLETED after that, so this is a transition the page had
   // to go and fetch — not the first answer it ever saw.
   await expect(cardBody(card)).toContainText('COMPLETED', { timeout: 20_000 })
   await expect(cardBody(card)).toContainText(STUB_RUN_RESULT)
+
+  // §T.42(b), V46, DECISIONS §6.5: the answer this URL owns is the receipt's two halves, rendered
+  // in the frame R29 measured — the before-state the operator authorised against, and what the
+  // change did, never one word standing in for both.
+  await expect(cardBody(card)).toContainText('What the change did')
+  await expect(cardBody(card)).toContainText('Completed')
+  await expect(cardBody(card)).toContainText(STUB_RECEIPT_AFTER)
+  await expect(cardBody(card)).toContainText('Before state')
+  await expect(cardBody(card)).toContainText('acme.example')
 
   // And the reads came from the browser through §T.44's proxy, not only from the page's own
   // server-side render: that first read is hit 1, so anything past it is the poll.

@@ -20,6 +20,19 @@ decision that was made (T33's `build_approval_context`). Every key is read throu
 `core.approvals.context`'s constants: this is JSONB, so a misspelt key reads as an absent one
 and answers empty.
 
+**The receipt joins here and nowhere else yet** (T42(b) — V34, V46). T38's executor writes what
+an approved change did, in two halves DECISIONS §6.5 refuses to let collapse: the before-state
+the operator authorised against, and what the change answered. This is where those render, and
+`select_requester_matched` is asked for them by this repository only — the model-facing reader
+next door leaves the join off, because a receipt's `before` half *is* V17's preflight evidence
+and the point of that separation is that it is never loaded on the transcript's path (V76).
+
+That this one is a join at render time while the provenance above is not is the difference
+between the two FKs, not an inconsistency: `requested_by_user_id` is `SET NULL`, so the identity
+had to be copied onto `approval_context` before it could vanish, whereas
+`action_receipts.action_request_id` is NOT NULL with `UNIQUE` on it (T36) — the row cannot
+detach from the request, and there is at most one of it.
+
 **No `reason`, and nowhere to put one.** The reason is written by a decision (T37) and read by
 nothing on a render path: the card's job is to collect one, not to replay one. Leaving the
 field off means a future edit that wanted to show it has to add it on purpose (C8, V15, V43).
@@ -47,6 +60,16 @@ from core.approvals.context import (
     # `arguments_from_context` (V66). Re-exported below so this module stays the name T41's
     # card and its tests reach for.
     evidence_from_context,
+)
+from core.approvals.execution import (
+    # The keys T38's writer puts in `receipt_data`, read here rather than respelled: a misspelt
+    # key in JSONB reads as an absent one, and the constants' own comment names this card as one
+    # of the three readers they exist for (V66). The import is of four strings — nothing on this
+    # read path executes anything.
+    RECEIPT_AFTER_KEY,
+    RECEIPT_BEFORE_KEY,
+    RECEIPT_ERROR_CODE_KEY,
+    RECEIPT_OK_KEY,
 )
 from core.approvals.expiry import ActionRequestExpiryService
 from core.approvals.reads import (
@@ -76,15 +99,60 @@ class ApprovalCardRequester:
 
 
 @dataclass(frozen=True)
+class ApprovalCardReceipt:
+    """What the change actually did, in the two halves it was written as (T38 — V46, V34).
+
+    DECISIONS §6.5 is the requirement this shape serves: an operator reads back the state they
+    authorised against **and** what the change did to it, each on its own, never collapsed into
+    a single "done". So `before` and `after` are two fields here and two sections on the card —
+    a single "outcome" string would be exactly the collapse that was refused.
+
+    `ok` is lifted off the receipt rather than inferred from `after` being non-empty: the writer
+    took it from the runner's own envelope (`build_receipt`), and re-deciding it here would be a
+    second answer to whether the change worked. `error_code` is `None` when the receipt carries
+    none, matching the writer's rule that an absent field beats an empty one.
+
+    **Neither half is re-derived and neither is re-redacted.** `after` was redacted by the
+    writer on the way in (V8, V45) and `before` is the gate's own `approval_context` evidence;
+    this class copies. A reader that redacted again would be a second redaction policy, and the
+    day the two disagree is the day one of them is wrong.
+
+    No timestamp. `action_receipts.created_at` exists on the row and is deliberately not carried:
+    `tool_runs` already reports when the run started and finished (V47), and a third stamp for
+    one moment is the third truth T34 refused when it dropped its own duplicate columns.
+    """
+
+    ok: bool
+    before: dict[str, Any]
+    after: dict[str, Any]
+    error_code: str | None
+
+    def as_payload(self) -> dict[str, Any]:
+        """JSON-native fields for the card body.
+
+        `error_code` is `None` rather than omitted, for the reason `run` is: this body is parsed
+        by a renderer that switches on the field, and a missing key reads as one it forgot.
+        """
+        return {
+            RECEIPT_OK_KEY: self.ok,
+            RECEIPT_BEFORE_KEY: dict(self.before),
+            RECEIPT_AFTER_KEY: dict(self.after),
+            RECEIPT_ERROR_CODE_KEY: self.error_code,
+        }
+
+
+@dataclass(frozen=True)
 class ApprovalCardView:
     """One request as the operator who opened it may read it (V33, V35).
 
-    Wider than `ActionResultView` by exactly two fields — `requester` and `evidence` — plus the
-    `conversation_ref` column. Those three are the provenance and the before-state V35 names,
-    and they are the whole reason this class exists rather than reusing the model-facing one.
+    Wider than `ActionResultView` by exactly three fields — `requester`, `evidence` and
+    `receipt` — plus the `conversation_ref` column. The first two are the provenance and the
+    before-state V35 names; the third is what the change did, and all three are the reason this
+    class exists rather than reusing the model-facing one.
 
-    `run` is the execution an approval started, or `None`. Present here so one URL can own the
-    whole lifecycle (V34): the same card that asked the question reports what the answer did.
+    `run` is the execution an approval started, or `None`. `receipt` is what that execution
+    recorded, or `None`. Both are present here so one URL can own the whole lifecycle **through
+    the receipt** (V34): the same card that asked the question reports what the answer did.
     """
 
     action_request_id: UUID
@@ -98,6 +166,7 @@ class ApprovalCardView:
     expires_at: datetime
     decided_at: datetime | None
     run: ActionRunView | None
+    receipt: ApprovalCardReceipt | None
 
     @property
     def is_pending(self) -> bool:
@@ -111,8 +180,9 @@ class ApprovalCardView:
     def as_payload(self) -> dict[str, Any]:
         """JSON-native fields for the card body.
 
-        `run` and `decided_at` are `None` rather than omitted when absent: "this change never
-        ran" is an answer, and a missing key reads to the renderer as a field it forgot.
+        `run`, `receipt` and `decided_at` are `None` rather than omitted when absent: "this
+        change never ran" and "nothing recorded what it did" are answers, and a missing key
+        reads to the renderer as a field it forgot.
 
         No `reason` key. See the module docstring — the field does not exist to be serialised.
         """
@@ -128,6 +198,7 @@ class ApprovalCardView:
             "expires_at": self.expires_at.isoformat(),
             "decided_at": None if self.decided_at is None else self.decided_at.isoformat(),
             "run": None if self.run is None else self.run.as_payload(),
+            "receipt": None if self.receipt is None else self.receipt.as_payload(),
         }
 
 
@@ -149,6 +220,41 @@ def requester_from_context(approval_context: Mapping[str, Any]) -> ApprovalCardR
         email=email if isinstance(email, str) else "",
         librechat_user_id=librechat_user_id if isinstance(librechat_user_id, str) else "",
     )
+
+
+def receipt_from_data(receipt_data: Any) -> ApprovalCardReceipt:
+    """One `action_receipts.receipt_data` payload as the card reads it (V46, V38).
+
+    Called only when a receipt **row** exists, which is what "the change recorded an outcome"
+    means — so this never answers `None`. What it is permissive about is the payload's shape:
+    `receipt_data` is unversioned JSONB (T36), and a half that is not an object renders as
+    "nothing recorded" rather than raising, because a `KeyError` in front of an operator is a
+    blank iframe and V38 says that is not an acceptable state.
+
+    Every key goes through the writer's own constants, so a rename there fails the import rather
+    than quietly reading as an absent key (V66).
+
+    `ok` is `True` only for a literal `True`, the same comparison `build_receipt` makes when it
+    lifts the field off the runner's envelope: a truthy string on this row is a payload nothing
+    NOA wrote, and reading it as success would be the one direction that must not fail open.
+    """
+    data = receipt_data if isinstance(receipt_data, dict) else {}
+    error_code = data.get(RECEIPT_ERROR_CODE_KEY)
+    return ApprovalCardReceipt(
+        ok=data.get(RECEIPT_OK_KEY) is True,
+        before=_receipt_half(data.get(RECEIPT_BEFORE_KEY)),
+        after=_receipt_half(data.get(RECEIPT_AFTER_KEY)),
+        # Empty string reads as no code: the writer omits the key when there is none, and a
+        # blank one on the card would be a labelled row saying nothing.
+        error_code=error_code if isinstance(error_code, str) and error_code else None,
+    )
+
+
+def _receipt_half(value: Any) -> dict[str, Any]:
+    """One half of a receipt, or an empty mapping — `arguments_from_context`'s rule, one table
+    over: a payload written by something other than T38's two writers cannot put a list where
+    an object belongs and make the card raise for it."""
+    return dict(value) if isinstance(value, dict) else {}
 
 
 class ApprovalCardRepository(Protocol):
@@ -178,20 +284,25 @@ class SQLApprovalCardRepository:
         action_request_id: UUID,
         requester_user_id: UUID,
     ) -> ApprovalCardView | None:
-        """The caller's request as a card, or `None` (V27, V35).
+        """The caller's request as a card, or `None` (V27, V35, V46).
 
         `None` covers absent, another operator's, and one whose requester was deleted — one
         answer for all three, which is what keeps the route from being an existence oracle.
+
+        `include_receipt=True` is this surface's half of the split `core.approvals.reads`
+        describes: the card is where a receipt renders (V34), and the model-facing reader next
+        door leaves it off so V17's before-state is never loaded on that path (V76).
         """
         row = await select_requester_matched(
             self._session,
             action_request_id=action_request_id,
             requester_user_id=requester_user_id,
+            include_receipt=True,
         )
         if row is None:
             return None
 
-        request, run = row
+        request, run, receipt = row
         approval_context = request.approval_context or {}
         return ApprovalCardView(
             action_request_id=request.id,
@@ -205,6 +316,7 @@ class SQLApprovalCardRepository:
             expires_at=as_utc(request.expires_at),
             decided_at=None if request.decided_at is None else as_utc(request.decided_at),
             run=None if run is None else run_view(run),
+            receipt=None if receipt is None else receipt_from_data(receipt.receipt_data),
         )
 
 
@@ -251,11 +363,13 @@ class ApprovalCardService:
 
 
 __all__ = [
+    "ApprovalCardReceipt",
     "ApprovalCardRepository",
     "ApprovalCardRequester",
     "ApprovalCardService",
     "ApprovalCardView",
     "SQLApprovalCardRepository",
     "evidence_from_context",
+    "receipt_from_data",
     "requester_from_context",
 ]

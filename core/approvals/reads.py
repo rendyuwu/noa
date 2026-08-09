@@ -6,6 +6,11 @@ answers the operator in front of it (`core.approvals.card`). They must render *d
 things — the model may not be shown the preflight evidence (V17) and the card exists to show
 it (V33, V35) — but they must **guard the row identically**, and that is what lives here.
 
+That difference is why the receipt join is a parameter and not the default. `action_receipts`
+carries the same before-state one table over (T36, T38), so fetching it on the model's path
+would put V17's evidence in that process holding nothing but a projection between it and the
+transcript. The card asks for it; `core.approvals.results` does not (V76).
+
 **The access control is one statement.** `select_requester_matched` carries
 `requested_by_user_id = :caller` in the `WHERE`, so a row that is not the caller's is never
 fetched by either surface and there is no later branch that could forget to drop it. A NULL
@@ -39,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.approvals.clock import as_utc, now_utc
 from core.approvals.expiry import ActionRequestExpiryService
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
-from core.db.models import ActionRequest, ToolRun
+from core.db.models import ActionReceipt, ActionRequest, ToolRun
 
 
 @dataclass(frozen=True)
@@ -92,12 +97,13 @@ async def select_requester_matched(
     *,
     action_request_id: UUID,
     requester_user_id: UUID,
-) -> tuple[ActionRequest, ToolRun | None] | None:
-    """The caller's request and the run it started, or `None` (V27, V47).
+    include_receipt: bool = False,
+) -> tuple[ActionRequest, ToolRun | None, ActionReceipt | None] | None:
+    """The caller's request, the run it started and its receipt, or `None` (V27, V46, V47).
 
-    One statement with an outer join rather than two reads: the request and its run are one
-    answer to one question, and two round trips could straddle the moment the executor moves
-    the run.
+    One statement with outer joins rather than two or three reads: the request, its run and
+    what that run did are one answer to one question, and separate round trips could straddle
+    the moment the executor moves the run and writes the receipt in one commit.
 
     `None` covers "no such request" *and* "not yours" *and* "its requester was deleted", which
     is V27's whole point — the caller cannot tell those apart, so both surfaces have one
@@ -110,11 +116,27 @@ async def select_requester_matched(
     foreign row does not exist in this process to be logged, returned by a later edit, or half
     dropped by a refactor — defence in depth, said here rather than in a test name that would
     imply otherwise (V69: a control asserted by prose is worth what the prose is worth).
+
+    **`include_receipt` defaults to off, and that is the model path's guard** (V17, V76). A
+    receipt's `before` half is the gate's in-process preflight evidence, which V17 keeps out of
+    the transcript — so `core.approvals.results` leaves this false and the receipt is never
+    *fetched* rather than fetched and then dropped by a projection somebody could widen. The
+    join itself is bound by the same `WHERE` as everything else here: a receipt hangs off an
+    `action_requests` row that was already requester-matched, so there is no second access
+    control to get right (V66). T36's `UNIQUE (action_request_id)` is what keeps this join from
+    multiplying the row.
     """
+    # Both joins hang off `ActionRequest`, so their order in the chain does not change the SQL.
+    # The receipt one is added first only because the entity list has to agree with it.
+    statement = (
+        select(ActionRequest, ToolRun, ActionReceipt).outerjoin(
+            ActionReceipt, ActionReceipt.action_request_id == ActionRequest.id
+        )
+        if include_receipt
+        else select(ActionRequest, ToolRun)
+    )
     result = await session.execute(
-        select(ActionRequest, ToolRun)
-        .outerjoin(ToolRun, ActionRequest.tool_run_id == ToolRun.id)
-        .where(
+        statement.outerjoin(ToolRun, ActionRequest.tool_run_id == ToolRun.id).where(
             ActionRequest.id == action_request_id,
             # The access control, in the statement — see the docstring above.
             ActionRequest.requested_by_user_id == requester_user_id,
@@ -124,8 +146,11 @@ async def select_requester_matched(
     if row is None:
         return None
 
-    request, run = row
-    return request, run
+    # One shape for both callers, so a reader that does not ask for the receipt still gets a
+    # tuple it can unpack the same way — and `None` there means "not asked for", which is why
+    # `core.approvals.results` never has to decide what to do with one.
+    request, run, *receipt = row
+    return request, run, (receipt[0] if receipt else None)
 
 
 class ExpirableRequestView(Protocol):

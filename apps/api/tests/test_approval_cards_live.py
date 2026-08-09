@@ -12,6 +12,10 @@ refusals and the order it does things in. Three claims here are claims *about th
 - **The card and the three writers describe one row.** The `EXPIRED` a stale request becomes and
   the run an approval starts are written by other classes in `core.approvals`; this is where the
   card is put against them rather than against a fixture that agrees with it.
+- **The receipt is a join, not a copy.** `action_receipts` is its own table with its own writer
+  (T36, T38), and what a double can prove about that is only that a dict came back. Whether the
+  join hangs off the requester-matched row — so a receipt is never fetched for a request the
+  caller may not read — is a claim about the statement, and only Postgres answers it.
 
 The requester-matched `SELECT` itself is shared with T63 (`core.approvals.reads`) and is covered
 there too. It is re-asserted here rather than cited, because what a *shared* statement guarantees
@@ -34,7 +38,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from core.approvals.card import ApprovalCardService, ApprovalCardView, SQLApprovalCardRepository
 from core.approvals.decisions import SQLActionDecisionRepository
+from core.approvals.execution import build_receipt
 from core.approvals.expiry import ActionRequestExpiryService, SQLActionRequestExpiryRepository
+from core.audit.receipts import SQLActionReceiptRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import User
 from support.action_decisions import (
@@ -60,11 +66,20 @@ OTHER_EMAIL = "someone-else@example.com"
 EVIDENCE_SENTINEL = "before-state-only-the-approval-card-may-see"
 REQUESTER_SENTINEL = "librechat-account-the-card-shows-as-origin"
 
+EVIDENCE_HALF: dict[str, object] = {"before_state": EVIDENCE_SENTINEL}
+
 SEPARABLE_CONTEXT: dict[str, object] = {
     "arguments": {"server_ref": "alpha", "account": "acmeco"},
     "requester": {"email": OPERATOR_EMAIL, "librechat_user_id": REQUESTER_SENTINEL},
-    "evidence": {"before_state": EVIDENCE_SENTINEL},
+    "evidence": EVIDENCE_HALF,
 }
+
+# What the runner answered, in the envelope `build_receipt` reads (T38). Its sentinel appears in
+# no other branch of anything this file writes, so "the card carries the after-state" is a
+# compare that separates from "the card carries the before-state twice" (V87).
+AFTER_SENTINEL = "after-state-the-runner-reported"
+
+RUNNER_PAYLOAD: dict[str, object] = {"ok": True, "result": AFTER_SENTINEL}
 
 
 @pytest.fixture(scope="module")
@@ -119,6 +134,32 @@ async def approve(
             reason=REASON,
         )
         return outcome.tool_run_id
+
+
+async def write_receipt(
+    factory: async_sessionmaker[AsyncSession],
+    action_request_id: UUID,
+    *,
+    tool_run_id: UUID | None = None,
+    receipt_data: dict[str, object] | None = None,
+) -> None:
+    """A receipt through the production writer, in the production shape (T36, T38).
+
+    `receipt_data` defaults to what `build_receipt` produces, so what this file reads back is
+    what the executor actually stores rather than a hand-built payload that agrees with the
+    reader. Overriding it is how the malformed-payload case reaches a row no writer would emit.
+    """
+    async with factory() as session:
+        await SQLActionReceiptRepository(session).create_if_missing(
+            action_request_id=action_request_id,
+            tool_run_id=tool_run_id,
+            receipt_data=(
+                build_receipt(evidence=EVIDENCE_HALF, payload=RUNNER_PAYLOAD)
+                if receipt_data is None
+                else receipt_data
+            ),
+        )
+        await session.commit()
 
 
 async def delete_user(factory: async_sessionmaker[AsyncSession], user_id: UUID) -> None:
@@ -272,6 +313,116 @@ async def test_the_card_reports_the_run_the_approval_started(factory) -> None:  
     assert card.run is not None
     assert card.run.tool_run_id == tool_run_id
     assert card.run.status is ToolRunStatus.STARTED
+
+
+# --------------------------------------------------------------------------------------
+# V46 / V34 / DECISIONS §6.5: the receipt, in the two halves it was written as
+# --------------------------------------------------------------------------------------
+
+
+async def test_the_card_carries_the_receipt_its_writer_wrote(factory) -> None:  # type: ignore[no-untyped-def]
+    """T42(b): the row T38 writes is the row this card reads, through a real join.
+
+    The compare separates on the property the requirement is about — before and after are two
+    payloads with two sentinels, neither of which appears in the other. A reader that showed
+    the before-state twice, or collapsed the pair into one "done", goes red here.
+
+    Nothing is re-derived on the way out: `after` is compared against the payload the writer
+    redacted (V8, V45) rather than against a shape rebuilt here.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    request_id = await open_request(
+        factory,
+        requested_by_user_id=user_id,
+        approval_context=SEPARABLE_CONTEXT,
+    )
+    tool_run_id = await approve(factory, request_id, caller_user_id=user_id)
+    await write_receipt(factory, request_id, tool_run_id=tool_run_id)
+
+    card = await read_card(factory, request_id, requester_user_id=user_id)
+
+    assert card is not None
+    assert card.receipt is not None
+    assert card.receipt.ok is True
+    assert card.receipt.before == EVIDENCE_HALF
+    assert card.receipt.after == RUNNER_PAYLOAD
+    assert card.receipt.error_code is None
+    # The pair, stated as a pair: one URL owns the question and the answer (V34), and the
+    # answer is two halves that do not agree with each other.
+    assert card.receipt.before != card.receipt.after
+    assert AFTER_SENTINEL in json.dumps(card.as_payload())
+
+
+async def test_a_card_with_no_receipt_reports_none(factory) -> None:  # type: ignore[no-untyped-def]
+    """The separating case (V87): the join runs and finds nothing, and that is an answer.
+
+    Without this, "the card carries the receipt" passes just as well against a reader that
+    invents an empty one for every request — which would render an outcome section over a
+    change that never ran.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    request_id = await open_request(factory, requested_by_user_id=user_id)
+    await approve(factory, request_id, caller_user_id=user_id)
+
+    card = await read_card(factory, request_id, requester_user_id=user_id)
+
+    assert card is not None
+    assert card.run is not None
+    assert card.receipt is None
+    assert card.as_payload()["receipt"] is None
+
+
+async def test_another_operators_receipt_is_not_readable(factory) -> None:  # type: ignore[no-untyped-def]
+    """V27: the receipt rides on the requester-matched statement, so it is never fetched either.
+
+    The receipt genuinely exists — the owner's read proves it — which is what makes the
+    intruder's `None` a refusal rather than an empty table (V87).
+    """
+    owner_id = await insert_user(factory, OPERATOR_EMAIL)
+    intruder_id = await insert_user(factory, OTHER_EMAIL)
+    request_id = await open_request(
+        factory,
+        requested_by_user_id=owner_id,
+        approval_context=SEPARABLE_CONTEXT,
+    )
+    tool_run_id = await approve(factory, request_id, caller_user_id=owner_id)
+    await write_receipt(factory, request_id, tool_run_id=tool_run_id)
+
+    assert await read_card(factory, request_id, requester_user_id=intruder_id) is None
+
+    owners = await read_card(factory, request_id, requester_user_id=owner_id)
+    assert owners is not None
+    assert owners.receipt is not None
+
+
+async def test_a_receipt_payload_no_writer_would_emit_renders_empty_rather_than_raising(  # type: ignore[no-untyped-def]
+    factory,
+) -> None:
+    """V38: a card in front of an operator is the wrong place for a `TypeError`.
+
+    `receipt_data` is unversioned JSONB (T36), so a row written by something other than T38's
+    two writers is expressible. Both halves render as "nothing recorded", and `ok` fails closed
+    on a truthy value that is not `True` — reading `"yes"` as success is the one direction that
+    must not be permissive.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    request_id = await open_request(factory, requested_by_user_id=user_id)
+    tool_run_id = await approve(factory, request_id, caller_user_id=user_id)
+    await write_receipt(
+        factory,
+        request_id,
+        tool_run_id=tool_run_id,
+        receipt_data={"ok": "yes", "before": "not-a-mapping", "after": None, "error_code": ""},
+    )
+
+    card = await read_card(factory, request_id, requester_user_id=user_id)
+
+    assert card is not None
+    assert card.receipt is not None
+    assert card.receipt.ok is False
+    assert card.receipt.before == {}
+    assert card.receipt.after == {}
+    assert card.receipt.error_code is None
 
 
 # --------------------------------------------------------------------------------------

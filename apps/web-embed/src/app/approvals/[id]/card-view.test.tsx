@@ -10,6 +10,7 @@ import {
   approvalCard,
   approvedBody,
   cardBody,
+  receiptBody,
 } from '../../../../tests/support/approval-card'
 
 /**
@@ -177,10 +178,72 @@ describe('CardView', () => {
     expect(screen.getByText(RESULT)).toBeTruthy()
   })
 
+  it('renders both halves of a finished change, never one "done" (§T.42(b), V46)', async () => {
+    // DECISIONS §6.5, at the render: the state the operator authorised against and what the change
+    // did to it are two blocks, and the fixture's halves share no value — so a card that showed one
+    // of them twice, or collapsed the pair into the verdict word, goes red here (V87).
+    stubPolls(() =>
+      Response.json(
+        approvedBody({ status: 'COMPLETED', result_summary: RESULT }, receiptBody()),
+      ),
+    )
+    render(<CardView initial={load(approvedBody())} />)
+
+    // Before the receipt lands there is no outcome section at all — an empty one over a change
+    // nobody has recorded would be a claim NOA cannot make.
+    expect(screen.queryByText(/what the change did/i)).toBeNull()
+
+    await tick(POLL_INTERVAL_RUN_MS)
+
+    expect(screen.getByText(/what the change did/i)).toBeTruthy()
+    expect(screen.getByText('Completed')).toBeTruthy()
+    // The after-state, as data rather than as a word.
+    expect(screen.getByText('suspended_at')).toBeTruthy()
+    expect(screen.getByText('2026-08-08T09:31:00+00:00')).toBeTruthy()
+    // And the before-state still on the card beside it.
+    expect(screen.getByText(/before state/i)).toBeTruthy()
+    expect(screen.getByText('domain')).toBeTruthy()
+    expect(screen.getByText('acme.example')).toBeTruthy()
+  })
+
+  it('keeps the before-state on a change that failed, and names the cause', async () => {
+    // The one case where an operator most needs the half a "done"-only card would drop.
+    stubPolls(() =>
+      Response.json(
+        approvedBody(
+          { status: 'FAILED', result_summary: 'NOA cannot run this change.' },
+          receiptBody({
+            ok: false,
+            after: { ok: false, error_code: 'ssh_sudo_required', message: 'refused' },
+            error_code: 'ssh_sudo_required',
+          }),
+        ),
+      ),
+    )
+    render(<CardView initial={load(approvedBody())} />)
+
+    await tick(POLL_INTERVAL_RUN_MS)
+
+    expect(screen.getByText('Did not complete')).toBeTruthy()
+    expect(screen.getAllByText('ssh_sudo_required').length).toBeGreaterThan(0)
+    expect(screen.getByText(/before state/i)).toBeTruthy()
+    expect(screen.getByText('acme.example')).toBeTruthy()
+  })
+
+  it('shows the before-state once, not once per source', async () => {
+    // `evidence` and `receipt.before` are the same payload — T38's writer copies it — so rendering
+    // both would put one fact on the card twice under two headings.
+    render(<CardView initial={load(approvedBody({ status: 'COMPLETED' }, receiptBody()))} />)
+
+    expect(screen.getAllByText('domain')).toHaveLength(1)
+    expect(screen.getAllByText('acme.example')).toHaveLength(1)
+  })
+
   it('stops watching a run that never moves, and says so', async () => {
-    // §T.38's executor is unbuilt: a STARTED run stays STARTED. Without the cap this loop would run
-    // for as long as the frame is open. Giving up is not reported as a failure — NOA has no
-    // evidence of one, only of not having been told.
+    // A run whose executor died moves only when §T.38's reaper next runs, which is not a timescale
+    // anyone watches a frame for. Without the cap this loop would run for as long as the frame is
+    // open. Giving up is not reported as a failure — NOA has no evidence of one, only of not having
+    // been told.
     const polls = stubPolls(() => Response.json(approvedBody({ status: 'STARTED' })))
     render(<CardView initial={load(approvedBody())} />)
 

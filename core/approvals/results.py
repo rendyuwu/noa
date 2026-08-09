@@ -39,7 +39,11 @@ reached a terminal state — and joining it *here* is still T63's own decision r
 something T38 did on its behalf. What a model may be told is narrower than what the card shows
 (V76), and a receipt's before-state is the gate's in-process preflight, which V17 keeps out of
 the transcript. So the receipt joins this view when someone decides which of its halves a model
-may see; T42's card is where it renders first.
+may see; T42's card is where it renders first, and it has since done so.
+
+That decision is now expressible rather than merely stated: `select_requester_matched` takes an
+`include_receipt` flag, the card passes it and this reader does not. So the separation is a
+statement that was never issued, not a field this class remembers to drop.
 """
 
 from __future__ import annotations
@@ -135,6 +139,11 @@ class SQLActionResultRepository:
         one spelling (V66). What is local to this class is the *projection*: only
         `arguments_from_context` comes off `approval_context`, and `ActionResultView` has
         nowhere to put the rest.
+
+        **`include_receipt` is left at its default, and that is deliberate** (V17, V76). The
+        card passes it (T42); this does not, so `action_receipts` is not joined and its
+        before-state — the same in-process preflight `approval_context` holds — is never
+        fetched into the process that answers a model. Not filtered downstream: not read.
         """
         row = await select_requester_matched(
             self._session,
@@ -144,7 +153,8 @@ class SQLActionResultRepository:
         if row is None:
             return None
 
-        request, run = row
+        # Third slot is the receipt this path did not ask for, and it is always `None` here.
+        request, run, _ = row
         return ActionResultView(
             action_request_id=request.id,
             tool_name=request.tool_name,

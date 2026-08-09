@@ -14,6 +14,11 @@
  *
  * There is no `reason` field here and the API sends none (C8, V15, V43). The reason is typed into
  * this card and travels outward only; nothing renders one back.
+ *
+ * The **receipt** is the one field that arrives late: it is `null` until something has recorded
+ * what the change did, and then it carries two halves that are never merged (§T.42(b), V46,
+ * DECISIONS §6.5). Modelled as two fields rather than one summary string for that reason — the
+ * shape is where "do not collapse this into 'done'" is enforced, not the component.
  */
 
 /** The four `ActionRequestStatus` values the API can send (V20). */
@@ -41,6 +46,28 @@ export type ApprovalRequester = {
   librechatUserId: string
 }
 
+/**
+ * What the change did, in the two halves it was written as (§T.38, §T.42 — V46).
+ *
+ * DECISIONS §6.5 is the requirement: an operator reads back the state they authorised against
+ * **and** what the change did to it, each on its own, never collapsed into a single "done". So
+ * `before` and `after` are two fields here and two blocks on the card — modelling them as one
+ * string would make the collapse a rendering decision, and it is not one that is available.
+ *
+ * `ok` comes off the receipt rather than being inferred from `after` having keys: the API lifted
+ * it from the runner's own envelope, and a second opinion here is a second answer to whether the
+ * change worked.
+ */
+export type ApprovalReceipt = {
+  ok: boolean
+  /** The gate-time preflight the operator approved against (C9, V17). */
+  before: Record<string, unknown>
+  /** What the runner answered, redacted by the writer and carried, never re-derived (V8, V45). */
+  after: Record<string, unknown>
+  /** The named cause when the change did not complete. `null` when there is none. */
+  errorCode: string | null
+}
+
 export type ApprovalCard = {
   actionRequestId: string
   toolName: string
@@ -60,6 +87,8 @@ export type ApprovalCard = {
   expiresAt: string
   decidedAt: string | null
   run: ApprovalRun | null
+  /** What the run recorded, once something has (V46). `null` until then. */
+  receipt: ApprovalReceipt | null
   /** Server-minted, session- and request-bound (V39). `null` once nothing may be decided. */
   csrf: string | null
 }
@@ -125,6 +154,32 @@ function parseRun(value: unknown): ApprovalRun | null {
 }
 
 /**
+ * The receipt block, or `null` when the API sent none (§T.42 — V46, V38).
+ *
+ * `null` means "nothing has recorded what this change did", which is the truth until T38's
+ * executor or its reaper writes one — and the card renders no outcome section rather than an
+ * empty one. Anything that is not an object lands here too: a body the API cannot send is not a
+ * reason to blank the frame, and the halves render as "nothing recorded" instead.
+ *
+ * `ok` is `true` only for a literal `true`, matching the API's own comparison. Fail-closed is
+ * the only safe direction for "did this change work" — a truthy string read as success would
+ * tell an operator a change landed on the evidence that something non-boolean was in the field.
+ */
+function parseReceipt(value: unknown): ApprovalReceipt | null {
+  if (!isRecord(value)) return null
+
+  const errorCode = asString(value['error_code'])
+  return {
+    ok: value['ok'] === true,
+    before: asRecord(value['before']),
+    after: asRecord(value['after']),
+    // Empty string reads as no code: the API sends `null` when there is none, and a blank one
+    // would render as a labelled row saying nothing.
+    errorCode: errorCode === '' ? null : errorCode,
+  }
+}
+
+/**
  * The API body as an `ApprovalCard`, or `null` if it is not one.
  *
  * `null` for a body with no `action_request_id`: that is the one field every other part of the
@@ -149,6 +204,7 @@ export function parseApprovalCard(value: unknown): ApprovalCard | null {
     expiresAt: asString(value['expires_at']),
     decidedAt: asNullableString(value['decided_at']),
     run: parseRun(value['run']),
+    receipt: parseReceipt(value['receipt']),
     csrf: asNullableString(value['csrf']),
   }
 }

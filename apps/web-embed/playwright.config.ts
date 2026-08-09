@@ -62,6 +62,15 @@ export const STUB_CSRF = 'v1.1786000000.stub-signature'
 /** What the polling card's run reports once it finishes. Asserted, so it lives in one place. */
 export const STUB_RUN_RESULT = 'Account acmeco suspended on alpha.'
 
+/**
+ * The after-state on the receipt that lands with the finished run (§T.42(b), V46).
+ *
+ * Its own value, sharing nothing with the before-state the stub's cards carry (`suspended: false`,
+ * `domain: acme.example`): the browser assertion is that *both* halves render, and a value present
+ * in both could not tell that from one of them rendered twice (V87).
+ */
+export const STUB_RECEIPT_AFTER = '2026-08-08T09:30:12+00:00'
+
 export default defineConfig({
   testDir: './e2e',
   testMatch: '**/*.e2e.ts',
@@ -88,6 +97,7 @@ export default defineConfig({
         STUB_NOT_FOUND_ID: APPROVAL_IDS.notFound,
         STUB_POLLING_ID: APPROVAL_IDS.polling,
         STUB_RUN_RESULT,
+        STUB_RECEIPT_AFTER,
         STUB_CSRF,
       },
     },

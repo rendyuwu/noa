@@ -8,8 +8,11 @@ reaches this module.
 
 **The `GET` is the card, and it is where the CSRF token comes from** (T41, T46). One request in,
 one card out: the provenance V35 names, the gate-time before-state (C9, V17), the redacted
-arguments — and, when the request is still PENDING, a freshly minted token for the two POSTs
-below. There is no minting *route*: a token that arrived separately from the thing it authorises
+arguments, the receipt once the change has run (T42(b), V46) — and, when the request is still
+PENDING, a freshly minted token for the two POSTs below. One URL through the whole lifecycle,
+question and answer alike, is V34.
+
+There is no minting *route*: a token that arrived separately from the thing it authorises
 is a token a page could hold without ever having been allowed to read the request, and the read
 is where V27's requester-match happens. `csrf` is `null` for anything already terminal, because
 a live token on a card nobody may decide is a spare key with no door (V39).
@@ -108,7 +111,7 @@ class DenialResponse(BaseModel):
 
 
 class ApprovalCardResponse(BaseModel):
-    """200 body for the card (T41 — V34, V35, V39).
+    """200 body for the card (T41, T42 — V34, V35, V39, V46).
 
     Shaped by `ApprovalCardView.as_payload()` rather than re-listed field by field: two
     spellings of one payload is one that can disagree, and the view is where the decision about
@@ -130,6 +133,11 @@ class ApprovalCardResponse(BaseModel):
     expires_at: str
     decided_at: str | None
     run: dict[str, Any] | None
+    # What the change did, once something recorded it (T38's executor or its reaper — V46).
+    # `None` until then, and the two halves stay two keys inside it: DECISIONS §6.5 refuses a
+    # single "done", and a body that flattened them would make the card's render a choice
+    # rather than the contract's (T42(b)).
+    receipt: dict[str, Any] | None
     # `None` once the request is terminal: there is nothing left to authorise, so there is no
     # token to hold (V39). The card reads this to decide whether to render live buttons at all.
     csrf: str | None

@@ -36,6 +36,7 @@ from fastapi.testclient import TestClient
 from httpx import Response
 
 from core.approvals.card import (
+    ApprovalCardReceipt,
     ApprovalCardRequester,
     ApprovalCardService,
     ApprovalCardView,
@@ -79,6 +80,12 @@ ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 # assertion about absence needs something present to be absent.
 EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "acme.example"}
 
+# The after-state half of a receipt: what the runner answered, already redacted by the writer
+# (T38's `build_receipt`). Deliberately shares no value with `EVIDENCE` above — the claim these
+# files make is that the card carries *both* halves, and a fixture whose halves overlapped could
+# not tell a card showing two from one showing the same one twice (V87).
+RECEIPT_AFTER: dict[str, Any] = {"suspended": True, "suspended_at": "2026-08-08T09:31:00+00:00"}
+
 LIBRECHAT_USER_ID = "librechat-user-1"
 
 # Fixed, because nothing judges it: pinning it keeps payload equality exact (V87). The
@@ -103,6 +110,27 @@ def run_view(
     )
 
 
+def receipt_view(
+    *,
+    ok: bool = True,
+    before: dict[str, Any] | None = None,
+    after: dict[str, Any] | None = None,
+    error_code: str | None = None,
+) -> ApprovalCardReceipt:
+    """What T38's writer recorded, as the card reader returns it (V46).
+
+    `before` defaults to the same `EVIDENCE` the gate persisted, because that is what the
+    production writer copies onto the receipt — a fixture with a different before-state would
+    describe a receipt neither of T38's two writers can produce.
+    """
+    return ApprovalCardReceipt(
+        ok=ok,
+        before=EVIDENCE if before is None else before,
+        after=RECEIPT_AFTER if after is None else after,
+        error_code=error_code,
+    )
+
+
 def card_view(
     *,
     action_request_id: UUID | None = None,
@@ -117,6 +145,7 @@ def card_view(
     now: datetime | None = None,
     decided_at: datetime | None = None,
     run: ActionRunView | None = None,
+    receipt: ApprovalCardReceipt | None = None,
 ) -> ApprovalCardView:
     """One request as the card reader returns it. `expires_in_seconds` may be negative.
 
@@ -141,6 +170,7 @@ def card_view(
         expires_at=moment + timedelta(seconds=expires_in_seconds),
         decided_at=decided_at,
         run=run,
+        receipt=receipt,
     )
 
 
@@ -341,10 +371,12 @@ __all__ = [
     "CREATED_AT",
     "EVIDENCE",
     "LIBRECHAT_USER_ID",
+    "RECEIPT_AFTER",
     "CardHarness",
     "FakeApprovalCardRepository",
     "StoredCard",
     "card_harness",
     "card_view",
+    "receipt_view",
     "run_view",
 ]

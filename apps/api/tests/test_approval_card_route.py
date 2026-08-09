@@ -37,8 +37,10 @@ from support.approval_cards import (
     CREATED_AT,
     EVIDENCE,
     LIBRECHAT_USER_ID,
+    RECEIPT_AFTER,
     CardHarness,
     card_harness,
+    receipt_view,
     run_view,
 )
 from support.auth import OPERATOR_EMAIL
@@ -125,6 +127,7 @@ def test_the_card_body_carries_no_reason(harness: CardHarness) -> None:
         "expires_at",
         "decided_at",
         "run",
+        "receipt",
         "csrf",
     }
 
@@ -132,8 +135,9 @@ def test_the_card_body_carries_no_reason(harness: CardHarness) -> None:
 def test_the_card_reports_the_run_an_approval_started(harness: CardHarness) -> None:
     """V29, V34: one URL owns the lifecycle, so the card reports what the answer did.
 
-    `STARTED` with no summary is the honest state today — T38's executor, which moves it, is
-    unbuilt — and a card that says so tells the operator to keep the tab open, which is true.
+    `STARTED` with no summary is the honest state between the decision and the executor's
+    terminal write, and a card that says so tells the operator to keep the tab open, which is
+    true. What that run *did* is the receipt, below.
     """
     run = run_view(status=ToolRunStatus.STARTED)
     card = harness.add_card(
@@ -160,6 +164,59 @@ def test_a_request_with_no_run_says_so_rather_than_omitting_the_key(
     payload = body(harness.get_card(card.action_request_id))
 
     assert payload["run"] is None
+    assert payload["receipt"] is None
+
+
+def test_the_card_body_carries_the_receipts_two_halves(harness: CardHarness) -> None:
+    """T42(b), V34, V46, DECISIONS §6.5: before-state and after-state, each on its own.
+
+    The two halves are asserted as two keys with two different payloads, which is the property
+    the requirement is about — a body that answered `{"outcome": "done"}` would satisfy "the
+    card reports the receipt" and none of what that was for. The fixture's halves share no
+    value, so a response that sent one of them twice separates from this (V87).
+    """
+    card = harness.add_card(
+        status=ActionRequestStatus.APPROVED,
+        decided_at=datetime(2026, 8, 8, 9, 30, tzinfo=UTC),
+        run=run_view(status=ToolRunStatus.COMPLETED),
+        receipt=receipt_view(),
+    )
+
+    payload = body(harness.get_card(card.action_request_id))
+
+    assert payload["receipt"] == {
+        "ok": True,
+        "before": EVIDENCE,
+        "after": RECEIPT_AFTER,
+        "error_code": None,
+    }
+    assert payload["receipt"]["before"] != payload["receipt"]["after"]
+
+
+def test_a_failed_changes_receipt_keeps_its_before_state_and_names_the_cause(
+    harness: CardHarness,
+) -> None:
+    """V46: a receipt with a before-state and a refused after-state is the truthful record.
+
+    The half that must not disappear is `before` — a change that failed is exactly when an
+    operator needs to read what the system looked like when they authorised it.
+    """
+    card = harness.add_card(
+        status=ActionRequestStatus.APPROVED,
+        decided_at=CREATED_AT,
+        run=run_view(status=ToolRunStatus.FAILED),
+        receipt=receipt_view(
+            ok=False,
+            after={"ok": False, "error_code": "ssh_sudo_required", "message": "refused"},
+            error_code="ssh_sudo_required",
+        ),
+    )
+
+    payload = body(harness.get_card(card.action_request_id))
+
+    assert payload["receipt"]["ok"] is False
+    assert payload["receipt"]["error_code"] == "ssh_sudo_required"
+    assert payload["receipt"]["before"] == EVIDENCE
 
 
 @pytest.mark.parametrize(

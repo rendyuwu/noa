@@ -28,7 +28,16 @@ const BODY = {
   expires_at: '2026-08-08T10:00:00+00:00',
   decided_at: null,
   run: null,
+  receipt: null,
   csrf: 'v1.1786000000.signature',
+}
+
+/** What the API sends once a change has recorded an outcome (§T.38, V46). */
+const RECEIPT = {
+  ok: true,
+  before: { suspended: false },
+  after: { suspended: true, suspended_at: '2026-08-08T09:31:00+00:00' },
+  error_code: null,
 }
 
 function parsed(overrides: Record<string, unknown> = {}): ApprovalCard {
@@ -55,6 +64,7 @@ describe('parseApprovalCard', () => {
     expect(card.expiresAt).toBe(BODY.expires_at)
     expect(card.decidedAt).toBeNull()
     expect(card.run).toBeNull()
+    expect(card.receipt).toBeNull()
     expect(card.csrf).toBe(BODY.csrf)
   })
 
@@ -92,6 +102,49 @@ describe('parseApprovalCard', () => {
   it('drops a run it cannot name', () => {
     // A run with no id is one nothing can poll (§T.42), so it is not a run.
     expect(parsed({ run: { status: 'STARTED' } }).run).toBeNull()
+  })
+
+  it('keeps the receipt as two halves (§T.42(b), V46, DECISIONS §6.5)', () => {
+    // The requirement is that before and after stay separable all the way to the render. A parser
+    // that merged them, or kept only the one it thought was the outcome, goes red here — and the
+    // two payloads share no value, so this cannot pass by carrying one of them twice (V87).
+    const card = parsed({ receipt: RECEIPT })
+
+    expect(card.receipt).toEqual({
+      ok: true,
+      before: { suspended: false },
+      after: { suspended: true, suspended_at: '2026-08-08T09:31:00+00:00' },
+      errorCode: null,
+    })
+    expect(card.receipt?.before).not.toEqual(card.receipt?.after)
+  })
+
+  it('carries the named cause when a change did not complete', () => {
+    const card = parsed({
+      receipt: { ...RECEIPT, ok: false, error_code: 'ssh_sudo_required' },
+    })
+
+    expect(card.receipt?.ok).toBe(false)
+    expect(card.receipt?.errorCode).toBe('ssh_sudo_required')
+    // The half that must not disappear on a failure: what the operator authorised against.
+    expect(card.receipt?.before).toEqual({ suspended: false })
+  })
+
+  it.each([null, undefined, 'done', 42, []])('reads %o as no receipt', (receipt: unknown) => {
+    // `null` is what the API sends until something records an outcome, and anything else is a body
+    // it cannot send — both render as no outcome section rather than an empty one (V38).
+    expect(parsed({ receipt }).receipt).toBeNull()
+  })
+
+  it('fails closed on an ok field that is not true', () => {
+    // A truthy string read as success would tell an operator a change landed on the evidence that
+    // something non-boolean was in the field. Halves that are not objects render as empty.
+    const card = parsed({ receipt: { ok: 'yes', before: 'not-a-mapping', after: null } })
+
+    expect(card.receipt?.ok).toBe(false)
+    expect(card.receipt?.before).toEqual({})
+    expect(card.receipt?.after).toEqual({})
+    expect(card.receipt?.errorCode).toBeNull()
   })
 
   it('renders unknown fields as unknown rather than throwing', () => {

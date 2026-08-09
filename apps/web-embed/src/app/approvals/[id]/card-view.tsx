@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from 'react'
 
-import { type ApprovalCard, type ApprovalCardLoad, canDecide, statusLabel } from '@/lib/approvals/card'
+import {
+  type ApprovalCard,
+  type ApprovalCardLoad,
+  type ApprovalReceipt,
+  canDecide,
+  statusLabel,
+} from '@/lib/approvals/card'
 import { fetchApprovalCard, isRunning, isStalled, isTerminal, pollIntervalMs } from '@/lib/approvals/poll'
 
 import { DecisionControls } from './decision-controls'
@@ -20,7 +26,9 @@ import styles from './card.module.css'
  * **Then it asks again, because the state lives in the database** (V29). Approve returns 202 and the
  * change runs elsewhere; the only way for this frame to learn the outcome is to re-read the row.
  * `/approvals/[id]` owns the whole lifecycle of one request (V34), and a card that showed the
- * question but never the answer would own half of it.
+ * question but never the answer would own half of it. The answer arrives in two parts — the run's
+ * terminal status, and the receipt saying what it did (§T.42(b), V46) — and the second is what a
+ * poll is actually waiting for.
  *
  * **A poll can discover every state the first read could.** A session that expires under an open
  * frame answers 401, and that renders V38's explicit "cannot authenticate here" rather than leaving
@@ -59,25 +67,29 @@ function Fact({ label, value }: { label: string; value: string }) {
 }
 
 /** A JSONB payload as flat text. Nested values are shown as JSON rather than dropped. */
-function KeyValues({ title, values }: { title: string; values: Record<string, unknown> }) {
+function FactList({ values }: { values: Record<string, unknown> }) {
   const entries = Object.entries(values)
 
+  if (entries.length === 0) return <p className={styles.empty}>Nothing recorded.</p>
+
+  return (
+    <dl className={styles.facts}>
+      {entries.map(([key, value]) => (
+        <Fact
+          key={key}
+          label={key}
+          value={typeof value === 'string' ? value : JSON.stringify(value)}
+        />
+      ))}
+    </dl>
+  )
+}
+
+function KeyValues({ title, values }: { title: string; values: Record<string, unknown> }) {
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>{title}</h2>
-      {entries.length === 0 ? (
-        <p className={styles.empty}>Nothing recorded.</p>
-      ) : (
-        <dl className={styles.facts}>
-          {entries.map(([key, value]) => (
-            <Fact
-              key={key}
-              label={key}
-              value={typeof value === 'string' ? value : JSON.stringify(value)}
-            />
-          ))}
-        </dl>
-      )}
+      <FactList values={values} />
     </section>
   )
 }
@@ -134,6 +146,34 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
   )
 }
 
+/**
+ * What the change did, once something recorded it (§T.42(b) — V34, V46, DECISIONS §6.5).
+ *
+ * **Two halves, never one word.** The requirement this section exists for is that an operator can
+ * read back the state they authorised against *and* what the change did to it, separately — so a
+ * failed change still shows its before-state, and a successful one shows more than "done". The
+ * verdict line is a third thing beside them, not a replacement for either.
+ *
+ * The before-state renders here rather than in the section above once a receipt exists, and that
+ * is one heading either way: `receipt.before` is the copy T38's writer took at execution time, so
+ * showing both would be the same payload twice under two labels, which reads as two facts.
+ *
+ * `errorCode` is the API's own string, shown verbatim. It is the word an operator will quote to an
+ * administrator, and translating it here would make the card and the audit trail disagree.
+ */
+function Outcome({ receipt }: { receipt: ApprovalReceipt }) {
+  return (
+    <section className={styles.section}>
+      <h2 className={styles.sectionTitle}>What the change did</h2>
+      <dl className={styles.facts}>
+        <Fact label="Outcome" value={receipt.ok ? 'Completed' : 'Did not complete'} />
+        {receipt.errorCode ? <Fact label="Reason" value={receipt.errorCode} /> : null}
+      </dl>
+      <FactList values={receipt.after} />
+    </section>
+  )
+}
+
 function Card({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
   return (
     <main className={styles.card}>
@@ -145,9 +185,11 @@ function Card({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
       <Provenance card={card} />
       <KeyValues title="Arguments" values={card.arguments} />
       {/* The in-process preflight (C9, V17): the before-state this card exists to show, and the
-          one thing on the row the model is never told (`core.approvals.results`). */}
-      <KeyValues title="Before state" values={card.evidence} />
+          one thing on the row the model is never told (`core.approvals.results`). Off the receipt
+          once there is one — see `Outcome` for why that is one heading and not two. */}
+      <KeyValues title="Before state" values={card.receipt?.before ?? card.evidence} />
       <Run card={card} stalled={stalled} />
+      {card.receipt ? <Outcome receipt={card.receipt} /> : null}
 
       {canDecide(card) && card.csrf ? (
         <DecisionControls actionRequestId={card.actionRequestId} csrf={card.csrf} />

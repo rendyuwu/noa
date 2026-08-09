@@ -32,6 +32,7 @@ const NOT_FOUND_ID = process.env.STUB_NOT_FOUND_ID ?? ''
 // state; this id is how the browser lane can watch a run reach a terminal one.
 const POLLING_ID = process.env.STUB_POLLING_ID ?? ''
 const RUN_RESULT = process.env.STUB_RUN_RESULT ?? ''
+const RECEIPT_AFTER = process.env.STUB_RECEIPT_AFTER ?? ''
 
 /** `GET` reads per id, so the polling card can answer differently the second time. */
 const reads = {}
@@ -63,6 +64,9 @@ function cardBody(id, { pending }) {
           created_at: '2026-08-08T09:30:00+00:00',
           completed_at: null,
         },
+    // What the change did, once something recorded it (V46). `null` everywhere but the polling
+    // card's terminal read: a receipt lands with the run's terminal write, not with the decision.
+    receipt: null,
     // `null` once nothing may be decided (V39): no live token for a card with no door.
     csrf: pending ? CSRF : null,
   }
@@ -175,6 +179,17 @@ const server = createServer((request, response) => {
           created_at: '2026-08-08T09:30:00+00:00',
           completed_at: finished ? '2026-08-08T09:30:12+00:00' : null,
         },
+        // The receipt arrives with the terminal write and not before (§T.42(b), V46), so the
+        // browser lane watches an outcome section appear rather than finding one already there.
+        // Two halves, sharing no value, because "both halves render" is what is asserted.
+        receipt: finished
+          ? {
+              ok: true,
+              before: { suspended: false, domain: 'acme.example' },
+              after: { suspended: true, suspended_at: RECEIPT_AFTER },
+              error_code: null,
+            }
+          : null,
         seen_cookie: request.headers['cookie'] ?? null,
       })
       return

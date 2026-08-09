@@ -35,12 +35,14 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.approvals.decisions import SQLActionDecisionRepository
+from core.approvals.execution import build_receipt
 from core.approvals.expiry import ActionRequestExpiryService, SQLActionRequestExpiryRepository
 from core.approvals.results import (
     ActionResultService,
     ActionResultView,
     SQLActionResultRepository,
 )
+from core.audit.receipts import SQLActionReceiptRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import User
 from support.action_decisions import (
@@ -66,11 +68,18 @@ OTHER_EMAIL = "someone-else@example.com"
 EVIDENCE_SENTINEL = "before-state-only-the-approval-card-may-see"
 REQUESTER_SENTINEL = "librechat-account-only-the-approval-card-may-see"
 
+EVIDENCE_HALF: dict[str, object] = {"before_state": EVIDENCE_SENTINEL}
+
 SEPARABLE_CONTEXT: dict[str, object] = {
     "arguments": {"server_ref": "alpha", "account": "acmeco"},
     "requester": {"email": OPERATOR_EMAIL, "librechat_user_id": REQUESTER_SENTINEL},
-    "evidence": {"before_state": EVIDENCE_SENTINEL},
+    "evidence": EVIDENCE_HALF,
 }
+
+# The receipt's after-state (T38). Its own sentinel, because "the receipt did not travel" has to
+# separate from "the evidence did not travel" — the two halves fail for different reasons if the
+# model path ever grows the join (V17 for one, V76 for the pair).
+RECEIPT_SENTINEL = "after-state-only-the-approval-card-may-see"
 
 
 @pytest.fixture(scope="module")
@@ -125,6 +134,25 @@ async def approve(
             reason=REASON,
         )
         return outcome.tool_run_id
+
+
+async def write_receipt(
+    factory: async_sessionmaker[AsyncSession],
+    action_request_id: UUID,
+    *,
+    tool_run_id: UUID,
+) -> None:
+    """A receipt through the production writer, in the production shape (T36, T38, V46)."""
+    async with factory() as session:
+        await SQLActionReceiptRepository(session).create_if_missing(
+            action_request_id=action_request_id,
+            tool_run_id=tool_run_id,
+            receipt_data=build_receipt(
+                evidence=EVIDENCE_HALF,
+                payload={"ok": True, "result": RECEIPT_SENTINEL},
+            ),
+        )
+        await session.commit()
 
 
 async def delete_user(factory: async_sessionmaker[AsyncSession], user_id: UUID) -> None:
@@ -257,6 +285,46 @@ async def test_preflight_evidence_never_reaches_the_result(factory) -> None:  # 
     assert "requester" not in payload_object
     assert EVIDENCE_SENTINEL not in payload
     assert REQUESTER_SENTINEL not in payload
+
+
+async def test_a_receipt_never_reaches_the_result(factory) -> None:  # type: ignore[no-untyped-def]
+    """V76, V17: T42's card renders the receipt; this reader does not even fetch one.
+
+    The receipt is the same before-state one table over (T38 copies `approval_context`'s
+    evidence onto it), so a join added here would put V17's in-process evidence back on the
+    path that answers into a transcript LibreChat persists (V26). The row genuinely exists —
+    asserted against the table — so this is not green because nothing wrote a receipt (V87).
+
+    Both sentinels, because both halves would arrive together: the before-state that must not
+    travel for V17's reason, and the after-state that must not for V76's.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    request_id = await open_request(
+        factory,
+        requested_by_user_id=user_id,
+        approval_context=SEPARABLE_CONTEXT,
+    )
+    tool_run_id = await approve(factory, request_id, caller_user_id=user_id)
+    await write_receipt(factory, request_id, tool_run_id=tool_run_id)
+
+    async with factory() as session:
+        stored = await session.execute(sa.text("SELECT count(*) FROM action_receipts"))
+        assert stored.scalar_one() == 1
+
+    view = await read_result(factory, request_id, requester_user_id=user_id)
+
+    assert view is not None
+    payload_object = view.as_payload()
+    payload = json.dumps(payload_object)
+
+    assert not hasattr(view, "receipt")
+    assert "receipt" not in payload_object
+    assert RECEIPT_SENTINEL not in payload
+    assert EVIDENCE_SENTINEL not in payload
+    # The run still arrives: what a model may be told about an approved change is its status
+    # and its redacted summary (V47), and dropping that too would make this pass for the wrong
+    # reason (V87).
+    assert payload_object["run"] is not None
 
 
 # --------------------------------------------------------------------------------------

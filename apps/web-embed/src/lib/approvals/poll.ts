@@ -14,10 +14,11 @@
  * after clicking Approve reads as a card that broke.
  *
  * **The run poll is capped and the pending poll is not**, and that asymmetry is deliberate. A
- * PENDING card has a server-side terminator: the sweep flips it at the TTL, the next poll reads a
- * terminal status and stops. A STARTED run has none yet — §T.38's executor is unbuilt, so today's
- * `DeferredApprovedChangeExecutor` opens the row and starts nothing, and a run that never moves
- * would be polled every two seconds for as long as the frame is open.
+ * PENDING card has a server-side terminator on a deadline this app knows: the sweep flips it at the
+ * TTL, the next poll reads a terminal status and stops. A STARTED run's terminator is §T.38's
+ * reaper, which runs on an interval of its own and only after a cutoff — so a run whose executor
+ * died is minutes from moving, and one polled every two seconds until it does would be polled for
+ * as long as the frame is open.
  */
 
 import { type ApprovalCard, type ApprovalCardLoad, parseApprovalCard } from '@/lib/approvals/card'
@@ -35,7 +36,8 @@ export const POLL_INTERVAL_RUN_MS = 2_000
 
 /**
  * How many times a single run is polled before the card stops asking (≈5 minutes at the interval
- * above). See the module docstring: until §T.38 lands, a STARTED run has nothing that will move it.
+ * above). See the module docstring: a run whose executor died moves when §T.38's reaper next runs,
+ * which is not on a timescale anybody watches a frame for.
  */
 export const RUN_POLL_LIMIT = 150
 
@@ -84,9 +86,9 @@ export function pollIntervalMs(card: ApprovalCard): number {
  * Whether the card has watched one run for long enough and should stop asking.
  *
  * Only a run is capped — a PENDING request has a server-side terminator in the expiry sweep (V32),
- * so its loop ends whether or not anyone is looking. Giving up is reported as "still running,
- * reload to check", never as a failure: NOA has no evidence the change failed, only that it has not
- * been told the change finished.
+ * on a deadline the card is already showing. Giving up is reported as "still running, reload to
+ * check", never as a failure: NOA has no evidence the change failed, only that it has not been told
+ * the change finished, and the receipt that would say either way is not written yet (V46).
  */
 export function isStalled(card: ApprovalCard, runPolls: number): boolean {
   return isRunning(card) && runPolls >= RUN_POLL_LIMIT
