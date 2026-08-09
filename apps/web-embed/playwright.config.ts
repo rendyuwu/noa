@@ -42,6 +42,25 @@ export const UPSTREAM_ORIGIN = `http://127.0.0.1:${UPSTREAM_PORT}`
 export const MEASURED_SANDBOX = 'allow-scripts allow-same-origin'
 
 /**
+ * The other sandbox R13/R29 recorded, at LibreChat's second render site (`MCPUIResource`).
+ *
+ * Same string plus `allow-popups`, and that difference is the whole of §T.43's problem: the 401
+ * state's "Sign in to NOA" link opens a top-level tab under this one and **nothing at all** under
+ * `MEASURED_SANDBOX`, silently. Pinned here beside its sibling so the pair is one edit to widen.
+ */
+export const POPUP_SANDBOX = 'allow-popups allow-scripts allow-same-origin'
+
+/**
+ * Where the 401 card's link-out points during a browser run (§T.43, `NOA_SIGN_IN_URL`).
+ *
+ * Deliberately a document on the stub upstream rather than a dead address: it is the *opened tab*
+ * that the popup specs then measure — a tab opened from a sandboxed frame inherits the opener's
+ * sandbox flags unless `allow-popups-to-escape-sandbox` is granted, and this document reports what
+ * it is still allowed to do.
+ */
+export const SIGN_IN_URL = `${UPSTREAM_ORIGIN}/__popup-control`
+
+/**
  * One card id per outcome the approval page renders (§T.41), shared with the stub that serves them
  * (`env` below) so a spec cannot ask about a state the stub does not have (V66). Valid UUIDs: the
  * real route's path parameter is UUID-typed, and an id shaped unlike a real one would exercise a
@@ -54,6 +73,13 @@ export const APPROVAL_IDS = {
   notFound: '9f1c2b7e-0000-4000-8000-000000000404',
   /** The one card that moves between reads: an approved change whose run finishes (§T.42, V29). */
   polling: '9f1c2b7e-0000-4000-8000-000000000003',
+  /**
+   * The card whose session comes back (§T.43): 401 on the first read, a PENDING card afterwards.
+   *
+   * Its own id because `unauthorized` above answers 401 forever, which is what the V38 state needs
+   * and what a retry can never escape. This one is the operator who went and signed in.
+   */
+  recovers: '9f1c2b7e-0000-4000-8000-000000000402',
 } as const
 
 /** The token the stub puts on a PENDING card. The real one is HMAC-signed (V39, T37). */
@@ -96,6 +122,7 @@ export default defineConfig({
         STUB_UNAUTHORIZED_ID: APPROVAL_IDS.unauthorized,
         STUB_NOT_FOUND_ID: APPROVAL_IDS.notFound,
         STUB_POLLING_ID: APPROVAL_IDS.polling,
+        STUB_RECOVERS_ID: APPROVAL_IDS.recovers,
         STUB_RUN_RESULT,
         STUB_RECEIPT_AFTER,
         STUB_CSRF,
@@ -124,6 +151,9 @@ export default defineConfig({
       env: {
         NOA_API_URL: `http://127.0.0.1:${UPSTREAM_PORT}`,
         NOA_LIBRECHAT_ORIGIN: CHAT_ORIGIN,
+        // §T.43's link-out target. Handed in for the same reason as the upstream above: a value from
+        // a developer's `.env` would make the popup specs measure whatever they had configured.
+        NOA_SIGN_IN_URL: SIGN_IN_URL,
       },
     },
   ],

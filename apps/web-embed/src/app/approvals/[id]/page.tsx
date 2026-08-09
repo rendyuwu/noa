@@ -1,6 +1,7 @@
 import { headers } from 'next/headers'
 
 import { loadApprovalCard } from '@/lib/approvals/detail'
+import { resolveSignInUrl } from '@/lib/sign-in'
 
 import { CardView } from './card-view'
 
@@ -20,6 +21,11 @@ import { CardView } from './card-view'
  *
  * The only decision that leaves this page is a JS `fetch`, because the sandbox this frame runs
  * under omits `allow-forms` (V80, R13, R29). Nothing here is a `<form>`.
+ *
+ * **The sign-in address is resolved here** (§T.43) rather than in the component that renders it: it
+ * comes from a server-side variable with no `NEXT_PUBLIC_*` twin, so the page reads it and passes it
+ * down. Resolved per request rather than in `next.config.ts`, because `output: 'standalone'` never
+ * runs that config at runtime — the framing header is baked there on purpose (V41), and this is not.
  */
 
 // Reading `headers()` already opts this route out of prerendering; saying so as well means a
@@ -31,5 +37,11 @@ export default async function ApprovalCardPage({ params }: { params: Promise<{ i
   const { id } = await params
   const cookie = (await headers()).get('cookie')
 
-  return <CardView initial={await loadApprovalCard(id, { cookie })} />
+  return (
+    <CardView
+      initial={await loadApprovalCard(id, { cookie })}
+      actionRequestId={id}
+      signInUrl={resolveSignInUrl(process.env)}
+    />
+  )
 }

@@ -12,6 +12,8 @@ import {
 import { fetchApprovalCard, isRunning, isStalled, isTerminal, pollIntervalMs } from '@/lib/approvals/poll'
 
 import { DecisionControls } from './decision-controls'
+import { Notice } from './notice'
+import { SignInNotice } from './sign-in-notice'
 import styles from './card.module.css'
 
 /**
@@ -32,9 +34,10 @@ import styles from './card.module.css'
  *
  * **A poll can discover every state the first read could.** A session that expires under an open
  * frame answers 401, and that renders V38's explicit "cannot authenticate here" rather than leaving
- * a live Approve button standing on a card nobody may decide any more. A transient failure is the
- * one answer that changes nothing: the card stays, the loop stays, because "NOA could not be
- * reached just now" is not "there is nothing more to wait for".
+ * a live Approve button standing on a card nobody may decide any more — with §T.43's way out of it
+ * beside it (`sign-in-notice.tsx`), which is a link-out and a retry and never a form in the frame
+ * (V42). A transient failure is the one answer that changes nothing: the card stays, the loop stays,
+ * because "NOA could not be reached just now" is not "there is nothing more to wait for".
  *
  * This is a client component and everything it renders is inside it, so the card has exactly one
  * renderer. A live region updated separately from a server-rendered one would be two descriptions
@@ -46,15 +49,6 @@ type LiveCard = {
   load: ApprovalCardLoad
   /** Consecutive polls that found a run still in flight. Reset the moment one does not. */
   runPolls: number
-}
-
-function Notice({ title, body }: { title: string; body: string }) {
-  return (
-    <main className={styles.notice}>
-      <h1 className={styles.noticeTitle}>{title}</h1>
-      <p className={styles.noticeBody}>{body}</p>
-    </main>
-  )
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
@@ -205,7 +199,23 @@ function Card({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
   )
 }
 
-export function CardView({ initial }: { initial: ApprovalCardLoad }) {
+export function CardView({
+  initial,
+  actionRequestId,
+  signInUrl,
+}: {
+  initial: ApprovalCardLoad
+  /**
+   * The id from the URL, not from the card.
+   *
+   * A 401 or a 404 carries no card and therefore no id, so a retry offered from one of those states
+   * would have nothing to re-read — this is the page's own parameter, which is true whatever the
+   * last read answered (§T.43).
+   */
+  actionRequestId: string
+  /** Where an operator signs in, or `null` when nothing usable is configured (`lib/sign-in.ts`). */
+  signInUrl: string | null
+}) {
   const [live, setLive] = useState<LiveCard>({ load: initial, runPolls: 0 })
 
   useEffect(() => {
@@ -240,6 +250,23 @@ export function CardView({ initial }: { initial: ApprovalCardLoad }) {
     // re-arms the timer, so a poll answering "unavailable" is retried rather than ending the loop.
   }, [live])
 
+  /**
+   * One read, on demand, from the state that has nothing to poll (§T.43).
+   *
+   * The poll's reader, not a second one (V66) — and the poll's rule for what to do with the answer:
+   * "NOA could not be reached just now" leaves the operator looking at the notice they were already
+   * looking at, and anything else replaces it. A `card` answer re-arms the loop by itself, because
+   * the effect above watches `live`.
+   */
+  async function retryRead(): Promise<ApprovalCardLoad> {
+    const next = await fetchApprovalCard(actionRequestId)
+    setLive((previous) => ({
+      load: next.kind === 'unavailable' ? previous.load : next,
+      runPolls: 0,
+    }))
+    return next
+  }
+
   const { load, runPolls } = live
 
   if (load.kind === 'card') {
@@ -247,15 +274,10 @@ export function CardView({ initial }: { initial: ApprovalCardLoad }) {
   }
 
   if (load.kind === 'unauthenticated') {
-    // V38, V42: an explicit state, never a blank card and never a live Approve button. This app
-    // has no login page and no LDAP form; the "Sign in to NOA" link-out that belongs beside this
-    // is §T.43's, and it opens a top-level tab rather than a form in the frame.
-    return (
-      <Notice
-        title="Cannot authenticate here"
-        body="NOA does not recognise this session. Open NOA in a new tab, sign in, then reload this card."
-      />
-    )
+    // V38, V42: an explicit state, never a blank card and never a live Approve button — and §T.43's
+    // way out of it, which is a top-level link-out plus a retry. This app has no login page and no
+    // LDAP form, and nothing in that notice navigates the frame.
+    return <SignInNotice signInUrl={signInUrl} onRetry={retryRead} />
   }
 
   if (load.kind === 'not-found') {

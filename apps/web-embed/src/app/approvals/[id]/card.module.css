@@ -157,3 +157,23 @@
   color: var(--noa-muted);
   font-size: 0.8125rem;
 }
+
+/*
+ * The 401 state's link-out (§T.43). Shares `.button` with the decision controls so the two doors on
+ * this card look like one thing; only what an anchor does not inherit is set here.
+ */
+.noticeLink {
+  text-decoration: none;
+  text-align: center;
+}
+
+/*
+ * The same address as text, for the render site whose sandbox omits `allow-popups` (R13, R29) —
+ * there the link above opens nothing at all, and this is what an operator copies. Monospace and
+ * breakable: it is a URL in a narrow frame, and one that overflows silently is not a door either.
+ */
+.noticeAddress {
+  font-family: var(--noa-font-mono);
+  color: var(--noa-fg);
+  word-break: break-all;
+}

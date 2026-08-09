@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { ApprovalCardLoad } from '@/lib/approvals/card'
@@ -26,9 +26,22 @@ import {
  */
 
 const RESULT = 'Account acmeco suspended on alpha.'
+const SIGN_IN = 'https://admin.noa.internal/login'
 
 function load(body: Record<string, unknown>): ApprovalCardLoad {
   return { kind: 'card', card: approvalCard(body) }
+}
+
+/**
+ * The component under its real props.
+ *
+ * The id comes from the page's own URL parameter rather than off the card (§T.43): a 401 answer
+ * carries no card, and a retry offered from that state has to know what to re-read.
+ */
+function renderCardView(initial: ApprovalCardLoad, signInUrl: string | null = SIGN_IN) {
+  return render(
+    <CardView initial={initial} actionRequestId={CARD_ID} signInUrl={signInUrl} />,
+  )
 }
 
 /** Answers to hand back, one per poll. The last one repeats, so a loop that will not stop shows. */
@@ -80,7 +93,7 @@ describe('CardView', () => {
     const polls = stubPolls(() =>
       Response.json(approvedBody({ status: 'COMPLETED', result_summary: RESULT })),
     )
-    render(<CardView initial={load(approvedBody())} />)
+    renderCardView(load(approvedBody()))
 
     expect(screen.getByText('STARTED')).toBeTruthy()
     expect(polls.calls).toBe(0)
@@ -100,7 +113,7 @@ describe('CardView', () => {
     // The separating case. Without it, "it polled until COMPLETED" passes just as well against a
     // component that polls forever and happened to be handed a terminal answer.
     const polls = stubPolls(() => Response.json(cardBody({ status: 'DENIED', csrf: null })))
-    render(<CardView initial={load(cardBody({ status: 'DENIED', csrf: null }))} />)
+    renderCardView(load(cardBody({ status: 'DENIED', csrf: null })))
 
     await ticks(5, POLL_INTERVAL_PENDING_MS)
 
@@ -112,7 +125,7 @@ describe('CardView', () => {
     // Two speeds, and this is the one that separates them: at the run interval a PENDING card has
     // not asked yet.
     const polls = stubPolls(() => Response.json(cardBody()))
-    render(<CardView initial={load(cardBody())} />)
+    renderCardView(load(cardBody()))
 
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(0)
@@ -125,7 +138,7 @@ describe('CardView', () => {
     // An approval that expires under an open frame must stop offering a decision the door would
     // refuse — a button that cannot succeed reads as an action refused rather than never available.
     stubPolls(() => Response.json(cardBody({ status: 'EXPIRED', csrf: null })))
-    render(<CardView initial={load(cardBody())} />)
+    renderCardView(load(cardBody()))
 
     expect(screen.getByRole('button', { name: /approve/i })).toBeTruthy()
 
@@ -136,22 +149,84 @@ describe('CardView', () => {
     expect(screen.getByText(/expired without an answer/i)).toBeTruthy()
   })
 
-  it('replaces the card with the 401 state and no live button (V38)', async () => {
+  it('replaces the card with the 401 state and no live decision (V38)', async () => {
     stubPolls(() => Response.json({ error_code: 'session_invalid' }, { status: 401 }))
-    render(<CardView initial={load(cardBody())} />)
+    renderCardView(load(cardBody()))
 
     await tick(POLL_INTERVAL_PENDING_MS)
 
     expect(screen.getByText(/cannot authenticate here/i)).toBeTruthy()
-    expect(screen.queryByRole('button')).toBeNull()
+    // Named rather than counted: §T.43 puts a link-out and a retry in this state, and neither is a
+    // decision. What V38 forbids is an Approve an operator cannot use, and the reason box beside it.
+    expect(screen.queryByRole('button', { name: /approve|deny/i })).toBeNull()
     expect(screen.queryByLabelText(/why is this change/i)).toBeNull()
+    expect(screen.getByRole('link', { name: /sign in to noa/i })).toBeTruthy()
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy()
+  })
+
+  it('Try again re-reads the card and hands the loop back (§T.43 — V42)', async () => {
+    // The way out of a 401 that does not navigate the frame: the session is picked up in another
+    // tab, this button re-reads, and the card that comes back resumes polling on its own.
+    const polls = stubPolls(
+      () => Response.json({ error_code: 'session_invalid' }, { status: 401 }),
+      () => Response.json(approvedBody()),
+      () => Response.json(approvedBody({ status: 'COMPLETED', result_summary: RESULT })),
+    )
+    renderCardView(load(cardBody()))
+
+    await tick(POLL_INTERVAL_PENDING_MS)
+    expect(polls.calls).toBe(1)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /try again/i }))
+    })
+
+    expect(polls.calls).toBe(2)
+    expect(screen.getByText('whm_suspend_account')).toBeTruthy()
+    expect(screen.getByText('STARTED')).toBeTruthy()
+
+    // And the loop is live again — the retry is not a one-shot read that leaves a static card.
+    await tick(POLL_INTERVAL_RUN_MS)
+    expect(polls.calls).toBe(3)
+    expect(screen.getByText(RESULT)).toBeTruthy()
+  })
+
+  it('keeps the 401 state when a retry cannot reach NOA (V87)', async () => {
+    // The same rule the poll follows: "could not be asked" is not an answer about the session. The
+    // separating case for the spec above — without it, a retry that replaced the notice with
+    // whatever came back would pass just as well.
+    const polls = stubPolls(
+      () => Response.json({ error_code: 'session_invalid' }, { status: 401 }),
+      () => new Response('', { status: 503 }),
+    )
+    renderCardView(load(cardBody()))
+
+    await tick(POLL_INTERVAL_PENDING_MS)
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: /try again/i }))
+    })
+
+    expect(polls.calls).toBe(2)
+    expect(screen.getByText(/cannot authenticate here/i)).toBeTruthy()
+    expect(screen.getByRole('status').textContent).toContain('could not be reached')
+  })
+
+  it('offers no sign-in link when none is configured, and still offers the retry', async () => {
+    stubPolls(() => Response.json({ error_code: 'session_invalid' }, { status: 401 }))
+    const { container } = renderCardView(load(cardBody()), null)
+
+    await tick(POLL_INTERVAL_PENDING_MS)
+
+    expect(container.querySelector('a')).toBeNull()
+    expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy()
   })
 
   it('replaces the card with the one not-available sentence on a 404 (V27)', async () => {
     // Absent, another operator's and a deleted requester's all answer alike — one body from the
     // API, one sentence here.
     stubPolls(() => Response.json({ error_code: 'action_request_not_found' }, { status: 404 }))
-    render(<CardView initial={load(cardBody())} />)
+    renderCardView(load(cardBody()))
 
     await tick(POLL_INTERVAL_PENDING_MS)
 
@@ -166,7 +241,7 @@ describe('CardView', () => {
       () => new Response('', { status: 503 }),
       () => Response.json(approvedBody({ status: 'COMPLETED', result_summary: RESULT })),
     )
-    render(<CardView initial={load(approvedBody())} />)
+    renderCardView(load(approvedBody()))
 
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(1)
@@ -187,7 +262,7 @@ describe('CardView', () => {
         approvedBody({ status: 'COMPLETED', result_summary: RESULT }, receiptBody()),
       ),
     )
-    render(<CardView initial={load(approvedBody())} />)
+    renderCardView(load(approvedBody()))
 
     // Before the receipt lands there is no outcome section at all — an empty one over a change
     // nobody has recorded would be a claim NOA cannot make.
@@ -220,7 +295,7 @@ describe('CardView', () => {
         ),
       ),
     )
-    render(<CardView initial={load(approvedBody())} />)
+    renderCardView(load(approvedBody()))
 
     await tick(POLL_INTERVAL_RUN_MS)
 
@@ -233,7 +308,7 @@ describe('CardView', () => {
   it('shows the before-state once, not once per source', async () => {
     // `evidence` and `receipt.before` are the same payload — T38's writer copies it — so rendering
     // both would put one fact on the card twice under two headings.
-    render(<CardView initial={load(approvedBody({ status: 'COMPLETED' }, receiptBody()))} />)
+    renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
 
     expect(screen.getAllByText('domain')).toHaveLength(1)
     expect(screen.getAllByText('acme.example')).toHaveLength(1)
@@ -245,7 +320,7 @@ describe('CardView', () => {
     // open. Giving up is not reported as a failure — NOA has no evidence of one, only of not having
     // been told.
     const polls = stubPolls(() => Response.json(approvedBody({ status: 'STARTED' })))
-    render(<CardView initial={load(approvedBody())} />)
+    renderCardView(load(approvedBody()))
 
     await ticks(RUN_POLL_LIMIT, POLL_INTERVAL_RUN_MS)
 
@@ -260,7 +335,7 @@ describe('CardView', () => {
     // The sandbox LibreChat gives this frame omits `allow-forms` (R13, R29), so a native submit
     // dies silently in there. A re-render driven by a poll must not reintroduce one.
     stubPolls(() => Response.json(cardBody()))
-    const { container } = render(<CardView initial={load(cardBody())} />)
+    const { container } = renderCardView(load(cardBody()))
 
     expect(container.querySelector('form')).toBeNull()
     await tick(POLL_INTERVAL_PENDING_MS)
@@ -274,12 +349,12 @@ describe('CardView', () => {
   ] as const)('renders the %s state the server read, and polls nothing', async (kind, text) => {
     const polls = stubPolls(() => Response.json(cardBody()))
     const initial = (kind === 'unavailable' ? { kind, status: 503 } : { kind }) as ApprovalCardLoad
-    render(<CardView initial={initial} />)
+    renderCardView(initial)
 
     expect(screen.getByText(text)).toBeTruthy()
 
-    // Nothing to poll: there is no id in any of these answers, and inventing a retry here would be
-    // a second definition of what the loader already decided.
+    // No *loop* from any of these: none of them says what to wait for. §T.43's retry is a click,
+    // not a timer — a state with no terminator polled on an interval would ask forever.
     await ticks(5, POLL_INTERVAL_PENDING_MS)
     expect(polls.calls).toBe(0)
   })

@@ -3,8 +3,8 @@
 Next.js 16 app served on the NOA origin. Hosts the approval card and the large-result table surface.
 
 Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45, the
-approval card at §T.41, and its polling loop and receipt at §T.42. Still to come: the 401 link-out
-(§T.43) and the table surface (§T.56).
+approval card at §T.41, its polling loop and receipt at §T.42, and the 401 link-out at §T.43. Still
+to come: the table surface (§T.56).
 The §T.59 render gate that used to block all of them cleared 2026-08-08 (R29): LibreChat puts the
 frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
 authenticates.
@@ -56,6 +56,41 @@ have rendered (V38, V27): a session that expires under an open frame must not le
 button standing. A transient failure is the one answer that changes nothing — the card stays and the
 loop keeps going, because "NOA could not be reached just now" is not "there is nothing more to wait
 for".
+
+## When NOA does not know who you are (§T.43, V38, V42)
+
+Two mechanisms authenticate two different principals. LibreChat's server reaches `/mcp` with a
+per-user bearer token (C5); this card is a document in the **operator's browser** and authenticates
+with the `noa_session` cookie (V22, V40). The browser never holds the MCP token, so a 401 in here
+means the operator has a working LibreChat token and no NOA browser session.
+
+V42 puts the remedy outside this app — no login page, no LDAP form, no credential handling — and
+§T.43 adds *no LDAP redirect inside the iframe*. So `sign-in-notice.tsx` renders three things and
+navigates nothing: a "Sign in to NOA" link that opens a **new top-level tab**, the same address
+printed as text, and a **Try again** that re-reads the card in place through the same reader the poll
+uses (`lib/approvals/poll.ts`). A session picked up in the other tab turns the notice into the card
+without the frame going anywhere.
+
+**The address is printed as well as linked, and that is measured rather than belt-and-braces.**
+LibreChat frames this card at two render sites and only one grants `allow-popups` (R13, R29:
+`ToolCallInfo` = `allow-scripts allow-same-origin`, `MCPUIResource` = that plus `allow-popups`).
+Where it is absent a `target="_blank"` click is refused with nothing the operator can see — V80's
+failure shape, one mechanism over — so the printed address is what makes the state answerable there.
+`e2e/approvals.browser.e2e.ts` asserts both: no tab opens under the first string, and a tab does open
+under the second, which is the control that keeps the first from passing against a broken link (V87).
+
+That same lane records one more thing about the tab a click *does* open: it **inherits the frame's
+sandbox**, so a native `<form>` submit inside it reaches nothing (measured 2026-08-09 — the probe
+document's `fetch` arrived, its form submit did not, and the tab never navigated). A login page
+reached by clicking is therefore only usable if it posts by `fetch`; one reached by copying the
+address into a fresh tab is an ordinary document. Two doors, and the printed one is the door that
+does not depend on any of this.
+
+The address comes from `NOA_SIGN_IN_URL` (repo-root `.env`), read **per request** on the server and
+passed into the card — not baked like the framing origin, and deliberately not `NEXT_PUBLIC_*`.
+Absent, blank, or anything that is not an `http`/`https` URL renders **no link at all**
+(`src/lib/sign-in.ts`): a door to a host nobody deployed reads as an action that was refused, and a
+`javascript:` value would be script execution configured by environment variable.
 
 **The run poll is capped at 150 reads (~5 minutes) and the pending poll is not.** A `PENDING` request
 has a server-side terminator in the sweep, and since §T.38 a `STARTED` run has one too — its executor
@@ -175,12 +210,10 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-The "Sign in to NOA" link-out beside the 401 state (§T.43), and the large-result table surface
-(§T.56).
+The large-result table surface (§T.56).
 
-This app has no login page, no LDAP form and no credential handling. A 401 already renders an explicit
-"cannot authenticate here" state with no reason box and no buttons (V38, V42); what §T.43 adds is the
-new-tab link-out beside it, never a form in the frame.
+This app has no login page, no LDAP form and no credential handling, and nothing in it navigates the
+frame (V38, V42, §T.43) — see *When NOA does not know who you are* above.
 
 `AGENTS.md` and `CLAUDE.md` in this directory are written by `next dev` itself and committed so the
 tree stays clean; see the note inside them.

@@ -1,15 +1,24 @@
 import { expect, test } from '@playwright/test'
-import type { Frame, FrameLocator, Page } from '@playwright/test'
 
 import {
   APPROVAL_IDS,
-  CHAT_ORIGIN,
   MEASURED_SANDBOX,
   STUB_CSRF,
   STUB_RECEIPT_AFTER,
   STUB_RUN_RESULT,
   UPSTREAM_ORIGIN,
 } from '../playwright.config'
+import {
+  EMBED_ORIGIN,
+  HOST_RESOLVER_ARGS,
+  cardBody,
+  frameCard,
+  framedDocument,
+  hits,
+  parentUrl,
+  pendingId,
+  signIn,
+} from './support/frame'
 
 /**
  * The approval card in a real browser, inside the frame LibreChat actually gives it (§T.41 — V22,
@@ -35,68 +44,13 @@ import {
  * `SecurityError`, and anything this file needs from in there is evaluated in the frame itself.
  */
 
-// DNS only: `chat.noa.internal` is the origin the dev server was told to allow framing from
-// (§T.45), and Chromium's Local Network Access checks are why the parent has to be a resolvable
-// real server rather than an intercepted response (V90's family).
-test.use({
-  launchOptions: {
-    args: [
-      '--host-resolver-rules=MAP chat.noa.internal 127.0.0.1, MAP not-chat.noa.internal 127.0.0.1',
-    ],
-  },
-})
-
-const EMBED_ORIGIN = 'http://localhost:3001'
-
-/**
- * A PENDING card id unique to one test.
- *
- * The stub serves any id it does not recognise as PENDING, so a suffix is all this needs — and the
- * hit counter then belongs to one test rather than to whichever ran first.
- */
-function pendingId(suffix: string): string {
-  return `9f1c2b7e-0000-4000-8000-0000000${suffix.padStart(5, '0')}`
-}
-
-/** The parent page LibreChat stands in for, framing `src` under the measured sandbox. */
-function parentUrl(src: string): string {
-  const parent = new URL(CHAT_ORIGIN)
-  parent.searchParams.set('src', src)
-  parent.searchParams.set('sandbox', MEASURED_SANDBOX)
-  return parent.toString()
-}
-
-async function frameCard(page: Page, id: string): Promise<FrameLocator> {
-  await page.goto(parentUrl(`${EMBED_ORIGIN}/approvals/${id}`))
-  return page.frameLocator('#card')
-}
-
-/** The framed document itself, for the two reads that have to run inside it. */
-async function framedDocument(page: Page): Promise<Frame> {
-  const element = await page.waitForSelector('#card')
-  const frame = await element.contentFrame()
-  if (frame === null) throw new Error('#card has no content frame')
-  return frame
-}
-
-async function hits(page: Page): Promise<Record<string, number>> {
-  const response = await page.request.get(`${UPSTREAM_ORIGIN}/__hits`)
-  return (await response.json()) as Record<string, number>
-}
-
-/** The card's own DOM. Scoped so Next's dev-mode overlay is not counted as part of the card. */
-function cardBody(card: FrameLocator) {
-  return card.locator('main')
-}
+// The frame LibreChat gives this card, and the session it is read with — both from
+// `support/frame.ts`, so the 401 lane (`sign-in.browser.e2e.ts`) measures the same frame this one
+// does (V66).
+test.use({ launchOptions: { args: HOST_RESOLVER_ARGS } })
 
 test.beforeEach(async ({ context }) => {
-  // The session the card is read with. Scoped to `localhost`, not `.noa.internal`: a browser will
-  // not accept the real domain for a localhost document, and asserting it anyway would be a check
-  // that cannot fail. The registrable-domain scoping is the API's setting (V40) and is asserted
-  // API-side; what belongs here is that the browser's cookie for this origin reaches NOA.
-  await context.addCookies([
-    { name: 'noa_session', value: 'e2e.session.value', domain: 'localhost', path: '/' },
-  ])
+  await signIn(context)
 })
 
 test('the card renders its provenance and before-state inside the frame', async ({ page }) => {
@@ -185,16 +139,6 @@ test('in that same sandbox a fetch reaches NOA and a form submit does not', asyn
   // The form never left the frame. Asserted on the counter, not on an exception: the sandbox
   // blocks the submission silently, which is exactly why V80 forbids relying on one.
   expect((await hits(page))['POST /__probe/form']).toBeUndefined()
-})
-
-test('a 401 renders “cannot authenticate here” and no Approve button (V38)', async ({ page }) => {
-  // Never a blank card and never a live button: an Approve an operator cannot use reads as an
-  // action that was refused rather than one that was never available.
-  const card = await frameCard(page, APPROVAL_IDS.unauthorized)
-
-  await expect(card.locator('h1')).toContainText('Cannot authenticate here')
-  await expect(cardBody(card).getByRole('button')).toHaveCount(0)
-  await expect(card.getByLabel(/why is this change/i)).toHaveCount(0)
 })
 
 test('a 404 renders one not-available state and no Approve button (V27)', async ({ page }) => {

@@ -31,6 +31,11 @@ const NOT_FOUND_ID = process.env.STUB_NOT_FOUND_ID ?? ''
 // The one card that MOVES between reads (§T.42, V29). Everything else this stub serves is a fixed
 // state; this id is how the browser lane can watch a run reach a terminal one.
 const POLLING_ID = process.env.STUB_POLLING_ID ?? ''
+
+// The card whose SESSION comes back (§T.43): 401 on the first read, a PENDING card after that. Its
+// own id because `UNAUTHORIZED_ID` answers 401 forever — that is the state V38 renders, and a retry
+// can never escape it. This id is the operator who went and signed in.
+const RECOVERS_ID = process.env.STUB_RECOVERS_ID ?? ''
 const RUN_RESULT = process.env.STUB_RUN_RESULT ?? ''
 const RECEIPT_AFTER = process.env.STUB_RECEIPT_AFTER ?? ''
 
@@ -92,13 +97,14 @@ function json(response, status, body, extraHeaders = {}) {
  * a form submit dies silently in this sandbox, and a spec that only checked the `fetch` worked
  * would never notice if that premise stopped being true.
  */
-const SANDBOX_CONTROL = `<!doctype html><meta charset="utf-8"><title>sandbox control</title>
-<form id="viaForm" method="post" action="/__probe/form"><button type="submit">submit</button></form>
+function sandboxControl(prefix) {
+  return `<!doctype html><meta charset="utf-8"><title>sandbox control</title>
+<form id="viaForm" method="post" action="/__probe/${prefix}form"><button type="submit">submit</button></form>
 <script>
   window.probe = async () => {
     let fetched = 'ok'
     try {
-      await fetch('/__probe/fetch', { method: 'POST' })
+      await fetch('/__probe/${prefix}fetch', { method: 'POST' })
     } catch (error) {
       fetched = String(error)
     }
@@ -111,6 +117,21 @@ const SANDBOX_CONTROL = `<!doctype html><meta charset="utf-8"><title>sandbox con
     return { fetched, submitted }
   }
 </script>`
+}
+
+/**
+ * The same document, on counter paths of its own, for the tab §T.43's link-out opens.
+ *
+ * A separate prefix rather than a second use of the paths above, because the V80 control asserts
+ * `POST /__probe/form` is **undefined** — a shared counter would let one spec's probe satisfy or
+ * break the other's, and this stub is one process for every spec file.
+ *
+ * What it is for: a tab opened from a sandboxed frame inherits the opener's sandbox flags unless
+ * `allow-popups-to-escape-sandbox` is granted, which R13 records as absent. So the question "does
+ * the link-out land somewhere an operator can actually sign in" is a question about what this
+ * document is still allowed to do, and it answers it on the counter rather than in prose.
+ */
+const POPUP_PROBE_PREFIX = 'popup-'
 
 const server = createServer((request, response) => {
   const url = new URL(request.url ?? '/', `http://127.0.0.1:${PORT}`)
@@ -121,9 +142,11 @@ const server = createServer((request, response) => {
     return
   }
 
-  if (url.pathname === '/__sandbox-control') {
+  if (url.pathname === '/__sandbox-control' || url.pathname === '/__popup-control') {
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' })
-    response.end(SANDBOX_CONTROL)
+    response.end(
+      sandboxControl(url.pathname === '/__popup-control' ? POPUP_PROBE_PREFIX : ''),
+    )
     return
   }
 
@@ -154,6 +177,22 @@ const server = createServer((request, response) => {
       json(response, 401, { error_code: 'session_invalid', message: 'Sign in to NOA.' })
       return
     }
+    if (id === RECOVERS_ID) {
+      // 401 for the page's own server-side read, a card for everything after it (§T.43): the
+      // operator signed in between the two, and the retry is what asks again.
+      reads[id] = (reads[id] ?? 0) + 1
+      if (reads[id] === 1) {
+        json(response, 401, { error_code: 'session_invalid', message: 'Sign in to NOA.' })
+        return
+      }
+
+      json(response, 200, {
+        ...cardBody(id, { pending: true }),
+        seen_cookie: request.headers['cookie'] ?? null,
+      })
+      return
+    }
+
     if (id === NOT_FOUND_ID) {
       json(response, 404, {
         error_code: 'action_request_not_found',
