@@ -91,6 +91,11 @@ Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`
   answers → `unknown`, ⊥ the benign value. Silence ≠ evidence of absence. (V86)
 - A READ that CAPS rows ships its own bound — total count + truncation flag, ordered
   reproducibly before the cut. (V85)
+- **A background pass that WRITES carries a LIMIT ∧ reports what the LIMIT hid.** Cap IN the
+  statement, ⊥ a slice after loading; total from the SAME statement as the page; `truncated` +
+  `remaining` beside `count`, ∵ "how many did this pass resolve" reads as "how many were
+  there". Batch ÷ interval = the drain rate ∧ it gets STATED. ⊥ `FOR UPDATE ... SKIP LOCKED`
+  on rows a live worker also writes — a repair loop ⊥ outrank the worker. (V92, V85)
 
 ## Code style
 
