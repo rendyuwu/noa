@@ -27,6 +27,15 @@ a `FAILED` run to fill the gap would put a claim in the audit trail that nothing
 `§T.38` reserves both the row's creation and the link to T37. So this half is a detector: it
 says the pair exists and names the request, and a human decides what it means.
 
+**A pass is BOUNDED, and says so.** Both populations are read under
+`APPROVAL_STRANDED_RUN_REAP_BATCH_SIZE`, and a pass that hit the bound reports how many rows it
+left behind (V85, V92) — a capped pass logging like a complete one reads as "everything is
+resolved". The bound is what keeps "a pass is one transaction" affordable: an unbounded pass
+after a long outage loads every stranded row, each carrying its request's evidence, and holds
+every row lock it takes plus its own xmin until the last of N updates and N receipt inserts
+lands. Drain rate is the batch over the interval — 100 per 120s by default; the argument that
+this beats the rate stranded rows appear at lives beside the setting in `core.config`.
+
 **The loop is `core.tasks.periodic.PeriodicTask`**, shared with T39's sweeper — one session per
 pass, sleeps before the first one, survives a pass that raises, stopped by the lifespan before
 the engine is disposed.
@@ -37,11 +46,11 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Final, Protocol
+from typing import Any, Final, Generic, Protocol, TypeVar
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select
+from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.clock import now_utc
@@ -114,21 +123,72 @@ class StrandedRun:
     evidence: dict[str, Any]
 
 
+RowT = TypeVar("RowT")
+
+
+@dataclass(frozen=True)
+class BoundedRows(Generic[RowT]):
+    """One capped page of a population, carrying the bound it was read under (V85, V92).
+
+    `total` is how many rows matched the pass's predicate, counted in the *same* statement as
+    the page through a `count(*) OVER ()` window — Postgres evaluates a window over everything
+    `WHERE` admitted, before `ORDER BY` and `LIMIT`, so the page and its total describe one
+    snapshot rather than two reads that nearly agree.
+    """
+
+    rows: tuple[RowT, ...]
+    total: int
+
+    @property
+    def remaining(self) -> int:
+        """How many the pass left behind. `0` when it saw its whole population.
+
+        Clamped, because `total` is a count of what matched and `rows` is what came back: they
+        are one statement apart from nothing today, but a negative backlog is not a number this
+        should ever be able to report.
+        """
+        return max(0, self.total - len(self.rows))
+
+
 @dataclass(frozen=True)
 class ReapOutcome:
-    """What one pass did, so a caller can log it or assert on it."""
+    """What one pass did *and what it left*, so a caller can log it or assert on it.
+
+    The two `*_remaining` counts are not diagnostics: a bounded pass that reported only what it
+    resolved would read as a pass that resolved everything (V85, V92).
+    """
 
     reaped_run_ids: tuple[UUID, ...]
     receipt_ids: tuple[UUID, ...]
     approved_without_run_ids: tuple[UUID, ...]
+    stranded_remaining: int = 0
+    approved_without_run_remaining: int = 0
+
+    @property
+    def stranded_truncated(self) -> bool:
+        """Whether the bound bit. What V85 says may not go unreported.
+
+        Derived rather than stored, and derived *here* rather than on `BoundedRows`, so there is
+        one definition of "this pass was capped" and the log line cannot disagree with the
+        outcome an assertion reads.
+        """
+        return self.stranded_remaining > 0
+
+    @property
+    def approved_without_run_truncated(self) -> bool:
+        return self.approved_without_run_remaining > 0
 
 
 class StrandedRunRepository(Protocol):
-    """The reads and writes one reap pass may make (V30, V46)."""
+    """The reads and writes one reap pass may make (V30, V46, V92).
 
-    async def stranded_runs(self, *, cutoff: datetime) -> tuple[StrandedRun, ...]: ...
+    Both reads take a `limit` and answer with the total behind it. A read that could answer
+    with an unbounded tuple is the shape this Protocol exists to make unspellable.
+    """
 
-    async def approved_without_run(self, *, cutoff: datetime) -> tuple[UUID, ...]: ...
+    async def stranded_runs(self, *, cutoff: datetime, limit: int) -> BoundedRows[StrandedRun]: ...
+
+    async def approved_without_run(self, *, cutoff: datetime, limit: int) -> BoundedRows[UUID]: ...
 
     async def finish_run(
         self,
@@ -175,8 +235,9 @@ class SQLStrandedRunRepository:
         self._runs = runs or SQLToolRunRepository(session)
         self._receipts = receipts or SQLActionReceiptRepository(session)
 
-    async def stranded_runs(self, *, cutoff: datetime) -> tuple[StrandedRun, ...]:
-        """Every run still `STARTED` that began at or before `cutoff`.
+    async def stranded_runs(self, *, cutoff: datetime, limit: int) -> BoundedRows[StrandedRun]:
+        """The oldest `limit` runs still `STARTED` that began at or before `cutoff`, and how
+        many there were.
 
         One statement with an outer join to `action_requests`, so a CHANGE run arrives with the
         evidence its receipt needs and a READ run arrives with `None` — two queries would let a
@@ -187,45 +248,62 @@ class SQLStrandedRunRepository:
 
         `<=` on the deadline, matching both expiry doors (T39(a)): a row exactly on its cutoff
         is one thing, not two.
+
+        **Ordered by `(created_at, id)` before the cut** (V85, V92). Oldest first because the
+        oldest stranded run has spent the most of its operator's V31 allowance, and `id` behind
+        it because `created_at` is not unique — without a tiebreaker two passes over an
+        untouched backlog could each take a different half of a tied group and neither would
+        finish it.
+
+        **No `FOR UPDATE`, deliberately** — see `StrandedRunReaperService.reap`.
         """
         result = await self._session.execute(
-            select(ToolRun, ActionRequest)
+            select(ToolRun, ActionRequest, func.count().over().label("total"))
             .outerjoin(ActionRequest, ActionRequest.tool_run_id == ToolRun.id)
-            .where(
-                ToolRun.status == ToolRunStatus.STARTED,
-                ToolRun.created_at <= cutoff,
-            )
-            .order_by(ToolRun.created_at)
+            .where(*_stranded_run_predicate(cutoff))
+            .order_by(ToolRun.created_at, ToolRun.id)
+            .limit(limit)
         )
-        return tuple(
-            StrandedRun(
-                tool_run_id=run.id,
-                tool_name=run.tool_name,
-                action_request_id=None if request is None else request.id,
-                evidence=_evidence_of(request),
-            )
-            for run, request in result.all()
+        rows = result.all()
+        return BoundedRows(
+            rows=tuple(
+                StrandedRun(
+                    tool_run_id=run.id,
+                    tool_name=run.tool_name,
+                    action_request_id=None if request is None else request.id,
+                    evidence=_evidence_of(request),
+                )
+                for run, request, _total in rows
+            ),
+            total=int(rows[0][2]) if rows else 0,
         )
 
-    async def approved_without_run(self, *, cutoff: datetime) -> tuple[UUID, ...]:
-        """APPROVED requests with no run linked, decided at or before `cutoff`.
+    async def approved_without_run(self, *, cutoff: datetime, limit: int) -> BoundedRows[UUID]:
+        """The oldest `limit` APPROVED requests with no run linked, decided at or before
+        `cutoff`, and how many there were.
 
         Unrepresentable through the decision path (T37 writes both in one transaction, V29) and
         reachable through a deleted run row, whose `SET NULL` nulls this column. The `cutoff`
         keeps a decision committing right now out of the answer — not because the window is
         wide, but because a detector that reports a healthy in-flight approval as an anomaly
         gets ignored.
+
+        **Bounded although it writes nothing** (V92). Read-only buys less than it looks like it
+        does: the ids it returns are logged, one line, and a detector that names every row of an
+        arbitrarily large population produces a log entry no one can read and a list nothing
+        bounds. Ordered `(decided_at, id)` before the cut for the same reason as the runs above.
         """
         result = await self._session.execute(
-            select(ActionRequest.id)
-            .where(
-                ActionRequest.status == ActionRequestStatus.APPROVED,
-                ActionRequest.tool_run_id.is_(None),
-                ActionRequest.decided_at <= cutoff,
-            )
-            .order_by(ActionRequest.decided_at)
+            select(ActionRequest.id, func.count().over().label("total"))
+            .where(*_approved_without_run_predicate(cutoff))
+            .order_by(ActionRequest.decided_at, ActionRequest.id)
+            .limit(limit)
         )
-        return tuple(result.scalars())
+        rows = result.all()
+        return BoundedRows(
+            rows=tuple(request_id for request_id, _total in rows),
+            total=int(rows[0][1]) if rows else 0,
+        )
 
     async def finish_run(
         self,
@@ -257,6 +335,23 @@ class SQLStrandedRunRepository:
         await self._session.commit()
 
 
+def _stranded_run_predicate(cutoff: datetime) -> tuple[ColumnElement[bool], ...]:
+    """What "stranded" means, in one place."""
+    return (
+        ToolRun.status == ToolRunStatus.STARTED,
+        ToolRun.created_at <= cutoff,
+    )
+
+
+def _approved_without_run_predicate(cutoff: datetime) -> tuple[ColumnElement[bool], ...]:
+    """What the pair the reaper will not repair looks like, in one place."""
+    return (
+        ActionRequest.status == ActionRequestStatus.APPROVED,
+        ActionRequest.tool_run_id.is_(None),
+        ActionRequest.decided_at <= cutoff,
+    )
+
+
 def _evidence_of(request: ActionRequest | None) -> dict[str, Any]:
     """The gate-time preflight off a joined request row, or `{}`.
 
@@ -276,27 +371,54 @@ class StrandedRunReaperService:
         repository: StrandedRunRepository,
         *,
         reap_after_seconds: float,
+        batch_size: int,
     ) -> None:
         self._repository = repository
         self._reap_after_seconds = reap_after_seconds
+        self._batch_size = batch_size
 
     async def reap(self, *, now: datetime | None = None) -> ReapOutcome:
-        """Move every abandoned run to `FAILED`, with its receipt, and commit once.
+        """Move up to `batch_size` abandoned runs to `FAILED`, with their receipts, and commit
+        once — reporting what the batch left behind.
 
         One clock read for the whole pass, handed to both predicates, so a run and a request
         are judged against the same moment — the rule `ActionRequestExpiryService.sweep`
         follows, and the reason `core.approvals.clock` exists.
 
-        The commit runs after both writes for every row, not per row: a pass is one
-        transaction, so a failure halfway leaves nothing half-reaped, and the next pass sees
-        the same rows it would have seen.
+        **A pass is still one transaction, and the batch is what keeps that affordable** (V92).
+        The commit runs after both writes for every row in the batch, not per row: a failure
+        halfway leaves nothing half-reaped, and the next pass sees the same rows it would have
+        seen. Unbounded, that promise was the problem — one pass after a long outage held every
+        row lock it took, and its own xmin, across N updates and N receipt inserts, and a
+        failure near the end threw the whole pass away for the next one to repeat. Bounded, the
+        worst case is `batch_size` rows re-done. Per-batch or per-row commits would buy a
+        faster drain and cost the promise; the drain the batch already gives beats the rate
+        rows appear at (see `core.config`), so the promise is the better half of that trade.
+
+        **What the pass leaves is part of what it reports.** `stranded_remaining` and
+        `approved_without_run_remaining` ride out on the outcome and into the log line, because
+        a capped pass reporting only what it resolved reads as one that resolved everything
+        (V85, V92).
+
+        **The read takes no row locks, on purpose.** `FOR UPDATE ... SKIP LOCKED` would make
+        two reapers' batches disjoint, and it would also make this pass hold each run from the
+        moment it read it until the batch commits — so the executor's terminal write for a
+        change that *did* complete would queue behind the reaper and then find its own
+        `status = STARTED` predicate false (V91). That converts "a change finished a little
+        late" into "reported abandoned", deterministically, in the reaper's favour. A repair
+        loop must not outrank the worker, so the two writers keep racing on commit order, which
+        is the race V91 already answers. Two replicas therefore both reap the same rows: the
+        second's updates match nothing and its receipts conflict away, so the *outcome* is
+        right and the cost is duplicated work — a known limit recorded in `§T.38`, whose remedy
+        if it ever bites is one advisory lock around the pass (T38(d)'s instrument), not a lock
+        on the rows.
         """
         moment = now_utc(now)
         cutoff = moment - timedelta(seconds=self._reap_after_seconds)
 
-        stranded = await self._repository.stranded_runs(cutoff=cutoff)
+        stranded = await self._repository.stranded_runs(cutoff=cutoff, limit=self._batch_size)
         receipts: list[UUID] = []
-        for run in stranded:
+        for run in stranded.rows:
             await self._repository.finish_run(
                 tool_run_id=run.tool_run_id,
                 status=ToolRunStatus.FAILED,
@@ -306,15 +428,20 @@ class StrandedRunReaperService:
             if receipt_id is not None:
                 receipts.append(receipt_id)
 
-        orphaned = await self._repository.approved_without_run(cutoff=cutoff)
+        orphaned = await self._repository.approved_without_run(
+            cutoff=cutoff,
+            limit=self._batch_size,
+        )
         await self._repository.commit()
 
         outcome = ReapOutcome(
-            reaped_run_ids=tuple(run.tool_run_id for run in stranded),
+            reaped_run_ids=tuple(run.tool_run_id for run in stranded.rows),
             receipt_ids=tuple(receipts),
-            approved_without_run_ids=orphaned,
+            approved_without_run_ids=orphaned.rows,
+            stranded_remaining=stranded.remaining,
+            approved_without_run_remaining=orphaned.remaining,
         )
-        _log(outcome, stranded=stranded, cutoff=cutoff)
+        _log(outcome, stranded=stranded.rows, cutoff=cutoff)
         return outcome
 
     async def _record_receipt(self, run: StrandedRun) -> UUID | None:
@@ -348,6 +475,10 @@ def _log(outcome: ReapOutcome, *, stranded: Sequence[StrandedRun], cutoff: datet
     """One line per population that had anything in it, and silence otherwise.
 
     A quiet pass is the common case, and a log line per pass would bury the ones that matter.
+
+    **`truncated` and `remaining` ride on both lines** (V85, V92). `count` alone answers "how
+    many did this pass resolve", which an operator reads as "how many were there" — the one
+    reading a capped pass must not be allowed to make.
     """
     if outcome.reaped_run_ids:
         logger.warning(
@@ -357,12 +488,16 @@ def _log(outcome: ReapOutcome, *, stranded: Sequence[StrandedRun], cutoff: datet
             tool_run_ids=[str(run_id) for run_id in outcome.reaped_run_ids],
             tools=sorted({run.tool_name for run in stranded}),
             receipts_written=len(outcome.receipt_ids),
+            truncated=outcome.stranded_truncated,
+            remaining=outcome.stranded_remaining,
         )
     if outcome.approved_without_run_ids:
         logger.error(
             LOG_APPROVED_WITHOUT_RUN,
             count=len(outcome.approved_without_run_ids),
             action_request_ids=[str(request_id) for request_id in outcome.approved_without_run_ids],
+            truncated=outcome.approved_without_run_truncated,
+            remaining=outcome.approved_without_run_remaining,
         )
 
 
@@ -381,12 +516,14 @@ class StrandedRunReaper:
         session_factory: SessionFactory,
         interval_seconds: float,
         reap_after_seconds: float,
+        batch_size: int,
         repository_factory: Callable[
             [AsyncSession], StrandedRunRepository
         ] = SQLStrandedRunRepository,
     ) -> None:
         self._session_factory = session_factory
         self._reap_after_seconds = reap_after_seconds
+        self._batch_size = batch_size
         self._repository_factory = repository_factory
         self._loop = PeriodicTask(
             task_name=REAP_TASK_NAME,
@@ -418,6 +555,7 @@ class StrandedRunReaper:
             service = StrandedRunReaperService(
                 self._repository_factory(session),
                 reap_after_seconds=self._reap_after_seconds,
+                batch_size=self._batch_size,
             )
             return await service.reap()
 
@@ -429,6 +567,7 @@ __all__ = [
     "LOG_RUNS_REAPED",
     "MESSAGE_RUN_ABANDONED",
     "REAP_TASK_NAME",
+    "BoundedRows",
     "ReapOutcome",
     "SQLStrandedRunRepository",
     "StrandedRun",

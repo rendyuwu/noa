@@ -327,6 +327,10 @@ def test_bootstrap_admin_emails_lowercased() -> None:
         # and a reaped run reads as an outcome nobody observed.
         ("approval_stranded_run_reap_after_seconds", 59),
         ("approval_stranded_run_reap_interval_seconds", 0),
+        # V92: a batch of 0 is a reaper that resolves nothing, and a batch with no ceiling is
+        # the unbounded pass again, spelled in an env var.
+        ("approval_stranded_run_reap_batch_size", 0),
+        ("approval_stranded_run_reap_batch_size", 1001),
         ("yopass_secret_expiration_seconds", 0),
         ("secret_password_length", 4),  # V49: no trivially guessable password
         ("db_pool_size", 0),
@@ -352,8 +356,11 @@ def test_approval_defaults_match_invariants() -> None:
     assert settings.approval_expiry_sweep_interval_seconds < settings.approval_pending_ttl_seconds
 
 
-def test_reaper_defaults_are_a_lifetime_and_a_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V30/T38: how long a run may sit STARTED, and how often the reaper looks.
+def test_reaper_defaults_are_a_lifetime_a_resolution_and_a_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V30/T38: how long a run may sit STARTED, how often the reaper looks, and how much one
+    pass may resolve.
 
     Two settings rather than one derived from the other, matching the sweep pair one invariant
     over — and the interval is well under the deadline, because a reaper that looked less often
@@ -372,6 +379,16 @@ def test_reaper_defaults_are_a_lifetime_and_a_resolution(monkeypatch: pytest.Mon
         < settings.approval_stranded_run_reap_after_seconds
     )
     assert settings.approval_stranded_run_reap_after_seconds < settings.approval_pending_ttl_seconds
+    # V92. The drain rate is the batch over the interval — 100 per 120s, so 50 a minute. It is
+    # asserted as a rate rather than as the number alone, because the number on its own says
+    # nothing: what has to beat the rate stranded rows appear at is batch ÷ interval.
+    assert settings.approval_stranded_run_reap_batch_size == 100
+    drained_per_minute = (
+        settings.approval_stranded_run_reap_batch_size
+        * 60
+        / settings.approval_stranded_run_reap_interval_seconds
+    )
+    assert drained_per_minute == 50
 
 
 def test_mcp_token_ttl_optional() -> None:

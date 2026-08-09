@@ -15,6 +15,11 @@ What only Postgres can answer:
   transaction (V29), so nothing NOA does produces that pair — but `tool_run_id` is `SET NULL`,
   so deleting a run row does. Without this file the detector would be a predicate that has
   never once been true, which is a guard held by nothing (V69's shape).
+- **The batch, and the ordering it cuts on** (V85, V92). That a pass stops at `batch_size` is
+  visible from a double; that the rows beyond it are never *loaded*, that the total behind the
+  cut is counted in the same statement, and that `(created_at, id)` decides which rows the cut
+  keeps, are all claims about the `SELECT`. `created_at` is not unique, so the tiebreaker is
+  the difference between a reproducible cut and one that falls wherever the scan yielded.
 
 Rows come from the production writers wherever one exists: T33's gate opens requests, T37's
 decision approves them and opens their runs, and T73's audit path is stood in for by a direct
@@ -64,6 +69,10 @@ REAP_AFTER_SECONDS = 900
 
 READ_TOOL = "whm_list_servers"
 
+# Wide enough that a test which is not about the bound never reaches it. The bounded cases below
+# pass their own.
+BATCH_SIZE = 100
+
 
 @pytest.fixture(scope="module")
 def database_url() -> AsyncIterator[str]:
@@ -85,12 +94,14 @@ async def reap(
     factory: async_sessionmaker[AsyncSession],
     *,
     now: datetime | None = None,
+    batch_size: int = BATCH_SIZE,
 ):  # type: ignore[no-untyped-def]
     """One pass through the production SQL, in its own session."""
     async with factory() as session:
         service = StrandedRunReaperService(
             SQLStrandedRunRepository(session),
             reap_after_seconds=REAP_AFTER_SECONDS,
+            batch_size=batch_size,
         )
         return await service.reap(now=now)
 
@@ -180,6 +191,42 @@ def moment() -> datetime:
     return datetime(2026, 8, 9, 12, 0, tzinfo=UTC)
 
 
+def cutoff() -> datetime:
+    """The deadline a pass at `moment()` judges against."""
+    return moment() - timedelta(seconds=REAP_AFTER_SECONDS)
+
+
+async def stranded_reads(
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    count: int,
+) -> list[UUID]:
+    """`count` stranded READ runs, oldest first, one second apart.
+
+    READ runs rather than approved changes because the batch is about how many rows a pass
+    touches, and a READ run reaches the same predicate without spending an operator's V31
+    allowance to get there.
+    """
+    user_id = await insert_user(factory, "reader@example.com")
+    run_ids: list[UUID] = []
+    for index in range(count):
+        run_id = await insert_read_run(factory, requested_by_user_id=user_id)
+        await age_run(
+            factory,
+            run_id,
+            created_at=moment() - timedelta(seconds=REAP_AFTER_SECONDS + count - index),
+        )
+        run_ids.append(run_id)
+    return run_ids
+
+
+async def status_of(
+    factory: async_sessionmaker[AsyncSession],
+    tool_run_id: UUID,
+) -> ToolRunStatus:
+    return next(row for row in await read_runs(factory) if row.id == tool_run_id).status
+
+
 # --------------------------------------------------------------------------------------
 # The stranded-run predicate
 # --------------------------------------------------------------------------------------
@@ -264,8 +311,8 @@ class InterleavingStrandedRunRepository(SQLStrandedRunRepository):
         super().__init__(session)
         self._on_read = on_read
 
-    async def stranded_runs(self, *, cutoff: datetime):  # type: ignore[no-untyped-def]
-        found = await super().stranded_runs(cutoff=cutoff)
+    async def stranded_runs(self, *, cutoff: datetime, limit: int):  # type: ignore[no-untyped-def]
+        found = await super().stranded_runs(cutoff=cutoff, limit=limit)
         await self._on_read()
         return found
 
@@ -302,6 +349,7 @@ async def test_a_run_that_finishes_inside_the_pass_is_not_overwritten(factory) -
         service = StrandedRunReaperService(
             InterleavingStrandedRunRepository(session, on_read=executor_finishes),
             reap_after_seconds=REAP_AFTER_SECONDS,
+            batch_size=BATCH_SIZE,
         )
         await service.reap(now=moment())
 
@@ -310,6 +358,152 @@ async def test_a_run_that_finishes_inside_the_pass_is_not_overwritten(factory) -
     assert run.result_summary == '{"ok":true}'
     receipts = await read_receipts(factory)
     assert [receipt.receipt_data["ok"] for receipt in receipts] == [True]
+
+
+# --------------------------------------------------------------------------------------
+# The bound one pass is held to (V85, V92)
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_pass_reaps_its_batch_and_leaves_the_rest_started(factory) -> None:  # type: ignore[no-untyped-def]
+    """More stranded rows than one batch: what the pass did, and what it left behind.
+
+    The `LIMIT` is in the statement, so the rows beyond it are never loaded — which is the
+    difference between a bounded pass and a pass that loads everything and then writes some of
+    it. What proves the `LIMIT` is real from out here is that the third row is still `STARTED`
+    afterwards *and* the pass knew it was there.
+    """
+    run_ids = await stranded_reads(factory, count=3)
+
+    outcome = await reap(factory, now=moment(), batch_size=2)
+
+    assert len(outcome.reaped_run_ids) == 2
+    assert outcome.stranded_remaining == 1
+    assert [await status_of(factory, run_id) for run_id in run_ids] == [
+        ToolRunStatus.FAILED,
+        ToolRunStatus.FAILED,
+        ToolRunStatus.STARTED,
+    ]
+
+
+async def test_a_pass_whose_batch_covers_everything_reports_nothing_left(factory) -> None:  # type: ignore[no-untyped-def]
+    """The negative control for the test above (V87).
+
+    Same three rows, a batch that fits them: every row terminal and `remaining` zero. Without
+    this, "the pass left one behind" could be a count that is simply always non-zero.
+    """
+    run_ids = await stranded_reads(factory, count=3)
+
+    outcome = await reap(factory, now=moment(), batch_size=3)
+
+    assert len(outcome.reaped_run_ids) == 3
+    assert outcome.stranded_remaining == 0
+    assert [await status_of(factory, run_id) for run_id in run_ids] == [ToolRunStatus.FAILED] * 3
+
+
+async def test_the_next_pass_takes_what_the_last_one_left(factory) -> None:  # type: ignore[no-untyped-def]
+    """The backlog drains. A bound that stopped the pass without the next one resuming would
+    be a reaper that gives up on row `batch_size + 1` forever."""
+    run_ids = await stranded_reads(factory, count=3)
+
+    first = await reap(factory, now=moment(), batch_size=2)
+    second = await reap(factory, now=moment(), batch_size=2)
+
+    assert set(first.reaped_run_ids) | set(second.reaped_run_ids) == set(run_ids)
+    assert first.reaped_run_ids != second.reaped_run_ids
+    assert second.stranded_remaining == 0
+    assert [await status_of(factory, run_id) for run_id in run_ids] == [ToolRunStatus.FAILED] * 3
+
+
+async def test_the_batch_takes_the_oldest_runs_first(factory) -> None:  # type: ignore[no-untyped-def]
+    """Ordered before the cut, oldest first (V85).
+
+    Oldest first because a stranded run spends its operator's V31 allowance until it is reaped,
+    so the row that has waited longest is the one worth the batch's slot. An unordered cut
+    would also make two identical passes over an untouched backlog take different subsets.
+    """
+    run_ids = await stranded_reads(factory, count=3)
+
+    outcome = await reap(factory, now=moment(), batch_size=1)
+
+    assert outcome.reaped_run_ids == (run_ids[0],)
+    assert outcome.stranded_remaining == 2
+
+
+async def test_runs_sharing_a_timestamp_are_cut_reproducibly(factory) -> None:  # type: ignore[no-untyped-def]
+    """`created_at` is not unique, so it cannot be the whole sort key (V85).
+
+    Two rows stamped identically and a batch of one: without a tiebreaker the cut falls
+    wherever the scan happened to yield, so two identical calls can answer differently and a
+    tied group can be split between passes that never finish it. The ids are chosen rather than
+    generated because the claim *is* about ordering on `id` — with random ones the assertion
+    would only sometimes separate.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    stale = moment() - timedelta(seconds=REAP_AFTER_SECONDS + 1)
+    ids = [UUID(int=index) for index in range(1, 7)]
+    async with factory() as session:
+        # Inserted highest id first, so insertion order and id order disagree at every position.
+        for run_id in reversed(ids):
+            session.add(
+                ToolRun(
+                    id=run_id,
+                    tool_name=READ_TOOL,
+                    requested_by_user_id=user_id,
+                    risk=ToolRisk.READ,
+                    status=ToolRunStatus.STARTED,
+                    conversation_ref=None,
+                    args={},
+                    created_at=stale,
+                )
+            )
+        await session.commit()
+
+    async with factory() as session:
+        page = await SQLStrandedRunRepository(session).stranded_runs(cutoff=cutoff(), limit=3)
+
+    assert [run.tool_run_id for run in page.rows] == ids[:3]
+    assert page.total == 6
+
+
+async def test_a_batched_pass_writes_a_receipt_only_for_the_changes_it_reaped(factory) -> None:  # type: ignore[no-untyped-def]
+    """The receipt half is inside the bound too (V46, V92).
+
+    A pass writes an UPDATE *and* a receipt insert per reaped change, so a bound that capped
+    the rows it read but not the receipts it wrote would not be a bound on the transaction. The
+    request left behind keeps no receipt until a later pass reaps its run.
+    """
+    first_request, first_run = await approved_change(factory, email="first@example.com")
+    second_request, second_run = await approved_change(factory, email="second@example.com")
+    await age_run(factory, first_run, created_at=cutoff() - timedelta(seconds=2))
+    await age_run(factory, second_run, created_at=cutoff() - timedelta(seconds=1))
+
+    outcome = await reap(factory, now=moment(), batch_size=1)
+
+    assert outcome.reaped_run_ids == (first_run,)
+    assert outcome.stranded_remaining == 1
+    receipts = await read_receipts(factory)
+    assert [receipt.action_request_id for receipt in receipts] == [first_request]
+    assert await status_of(factory, second_run) is ToolRunStatus.STARTED
+    assert second_request not in {receipt.action_request_id for receipt in receipts}
+
+
+async def test_the_detector_is_bounded_and_counts_what_it_did_not_name(factory) -> None:  # type: ignore[no-untyped-def]
+    """The read-only half takes the same treatment (V92).
+
+    Nothing is repaired here, but every id it finds goes into one log line — so an unbounded
+    detector is an unbounded log entry and an unbounded tuple behind it. Bounded, it names a
+    batch and counts the rest.
+    """
+    for index in range(3):
+        request_id, run_id = await approved_change(factory, email=f"orphan{index}@example.com")
+        await age_decision(factory, request_id, decided_at=moment() - timedelta(hours=2))
+        await unlink_run(factory, run_id)
+
+    outcome = await reap(factory, now=moment(), batch_size=2)
+
+    assert len(outcome.approved_without_run_ids) == 2
+    assert outcome.approved_without_run_remaining == 1
 
 
 # --------------------------------------------------------------------------------------

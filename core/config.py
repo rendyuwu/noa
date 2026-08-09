@@ -166,6 +166,23 @@ class Settings(BaseSettings):
     # How often the reaper looks. A resolution, like the sweep interval, and deliberately not
     # derived from the deadline above.
     approval_stranded_run_reap_interval_seconds: int = Field(default=120, ge=1)
+    # How many stranded runs one pass may resolve. A bound the pass is held to, not a knob for
+    # throughput: without it a pass after a long outage loads every stranded row — each carrying
+    # its request's evidence — and issues an UPDATE plus a receipt INSERT for each inside one
+    # transaction, holding all of those row locks and that transaction's xmin until the last
+    # write lands.
+    #
+    # Drain rate is this over the interval above: 100 per 120s, so 50 a minute and 3,000 an
+    # hour. That beats the rate stranded rows appear at, because appearing costs a process
+    # death mid-call or a failed closing audit write (T73) — the population that can strand at
+    # one instant is the runs in flight at that instant, and V31's cap bounds the CHANGE half of
+    # it per operator. A *sustained* 50 a minute would mean NOA is failing that many calls a
+    # minute, which is not a backlog a reaper is the remedy for. The two knobs compose: an
+    # operator who needs a faster drain lowers the interval, which is what a resolution is for.
+    #
+    # `le` as much as `ge`: a batch size with no ceiling is the unbounded pass again, spelled in
+    # an env var.
+    approval_stranded_run_reap_batch_size: int = Field(default=100, ge=1, le=1000)
 
     # --- Origins / CORS ---
     api_cors_allowed_origins: list[str] = Field(

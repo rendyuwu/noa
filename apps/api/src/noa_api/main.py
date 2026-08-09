@@ -140,12 +140,15 @@ def build_runtime(settings: Settings) -> AppRuntime:
             session_factory=session_factory,
             interval_seconds=settings.approval_expiry_sweep_interval_seconds,
         ),
-        # The same arrangement for T38's reaper (V30). Two settings, not one: how often it
-        # looks is a resolution, how long a run may sit STARTED is a lifetime.
+        # The same arrangement for T38's reaper (V30). Three settings, none derived from
+        # another: how often it looks is a resolution, how long a run may sit STARTED is a
+        # lifetime, and how much one pass may resolve is a bound (V92). Batch over interval is
+        # the drain rate, which is the number `core.config` argues.
         stranded_run_reaper=StrandedRunReaper(
             session_factory=session_factory,
             interval_seconds=settings.approval_stranded_run_reap_interval_seconds,
             reap_after_seconds=settings.approval_stranded_run_reap_after_seconds,
+            batch_size=settings.approval_stranded_run_reap_batch_size,
         ),
     )
 

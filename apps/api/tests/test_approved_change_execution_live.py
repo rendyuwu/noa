@@ -123,6 +123,9 @@ async def reap(factory: async_sessionmaker[AsyncSession]) -> None:
             # Zero, so every `STARTED` row is past its cutoff: this file's subject is the
             # collision between the two writers, not the deadline.
             reap_after_seconds=0,
+            # Wide enough to be no part of the claim either — the bound is T38(n)'s subject,
+            # asserted in `test_stranded_run_reaper_live.py`.
+            batch_size=100,
         )
         await service.reap()
 

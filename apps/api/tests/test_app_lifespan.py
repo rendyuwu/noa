@@ -224,13 +224,16 @@ def test_the_reaper_starts_with_the_app_and_stops_before_the_engine(
     when `dispose()` runs is a pass against a disposed pool. The real `StrandedRunReaper` is
     subclassed rather than replaced, so what starts and stops is the production task.
 
-    Both settings are asserted, and they are two settings on purpose — how often it looks is a
-    resolution, how long a run may sit `STARTED` is a lifetime.
+    All three settings are asserted, and they are three settings on purpose — how often it looks
+    is a resolution, how long a run may sit `STARTED` is a lifetime, and how much one pass may
+    resolve is a bound (V92). A batch size that never left `core.config` would be an unbounded
+    pass with a documented limit.
     """
     journal: list[str] = []
     settings = build_settings(
         approval_stranded_run_reap_interval_seconds=3600,
         approval_stranded_run_reap_after_seconds=1800,
+        approval_stranded_run_reap_batch_size=25,
     )
     monkeypatch.setattr(main, "get_settings", lambda: settings)
 
@@ -262,6 +265,7 @@ def test_the_reaper_starts_with_the_app_and_stops_before_the_engine(
     assert len(built) == 1
     assert built[0]["interval_seconds"] == 3600
     assert built[0]["reap_after_seconds"] == 1800
+    assert built[0]["batch_size"] == 25
 
 
 def test_the_executor_is_stopped_before_the_engine_and_before_the_loops(

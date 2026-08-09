@@ -32,7 +32,9 @@ row guard, and the rest holding no statement at all:
   belong to a request. `APPROVED`-with-no-run is **detected and logged, never repaired**: the
   decision path cannot produce that pair (T37 writes both in one transaction), a deleted run
   row can, and in that case the change may well have completed — so inventing a failed run
-  would put a claim in the audit trail nothing observed.
+  would put a claim in the audit trail nothing observed. **One pass is bounded** by
+  `APPROVAL_STRANDED_RUN_REAP_BATCH_SIZE` and reports what it left, so a pass stays one short
+  transaction and a capped pass never reads like a complete one (V85, V92).
 - `expiry` — answers one that nobody answered. `SQLActionRequestExpiryRepository` (T39) can
   write exactly one terminal status, `EXPIRED`, and only for a row that is still `PENDING`
   past its deadline: the status is not a parameter and the predicate is part of the

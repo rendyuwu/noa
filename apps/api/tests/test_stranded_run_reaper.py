@@ -1,7 +1,7 @@
 """The reaper and its loop, without a database (T38 — V20, V30, V46, V47).
 
 `tool_runs.status` defaults to `STARTED` so a process that dies mid-call leaves evidence rather
-than nothing (T35). This is what makes that worth having. Three claims here, none about SQL:
+than nothing (T35). This is what makes that worth having. Four claims here, none about SQL:
 
 - **What a reaped run records.** `FAILED`, because the enum offers no third terminal state, with
   a summary that says the outcome is *unknown* — an interrupted change may well have applied on
@@ -13,10 +13,14 @@ than nothing (T35). This is what makes that worth having. Three claims here, non
   fixed. The decision path cannot produce that pair (T37 writes both in one transaction, V29);
   a deleted run row can, via `SET NULL` — and in *that* case the change may have completed, so
   opening a `FAILED` run to fill the gap would put a false claim in the audit trail.
+- **How much one pass may do, and what it says about the rest.** Both populations are read
+  under `batch_size`, and a pass that hit the bound reports what it left — in the outcome and
+  in the log line, because a capped pass that logs like a complete one reads as "everything is
+  resolved" (V85, V92).
 
-The predicates and the cutoff comparison are `test_stranded_run_reaper_live.py`'s, against a
-real Postgres. The loop's four properties are `test_periodic_task.py`'s, proven once for both
-background components (V66).
+The predicates, the cutoff comparison and the ordering the batch cuts on are
+`test_stranded_run_reaper_live.py`'s, against a real Postgres. The loop's four properties are
+`test_periodic_task.py`'s, proven once for both background components (V66).
 """
 
 from __future__ import annotations
@@ -53,6 +57,10 @@ INTERVAL_SECONDS = 0.02
 
 WAIT_TIMEOUT_SECONDS = 2.0
 
+# Wide enough that the tests which are not about the bound never reach it, so a batch assertion
+# is only ever made by a test that asked for one (V92).
+BATCH_SIZE = 100
+
 
 async def wait_for(predicate: Callable[[], bool], *, what: str) -> None:
     """Poll until `predicate` holds, or fail saying what never happened."""
@@ -65,19 +73,30 @@ async def wait_for(predicate: Callable[[], bool], *, what: str) -> None:
     raise AssertionError(f"timed out waiting for {what}")
 
 
-def build_service(repository: FakeStrandedRunRepository) -> StrandedRunReaperService:
-    return StrandedRunReaperService(repository, reap_after_seconds=REAP_AFTER_SECONDS)
+def build_service(
+    repository: FakeStrandedRunRepository,
+    *,
+    batch_size: int = BATCH_SIZE,
+) -> StrandedRunReaperService:
+    return StrandedRunReaperService(
+        repository,
+        reap_after_seconds=REAP_AFTER_SECONDS,
+        batch_size=batch_size,
+    )
 
 
 def build_reaper(
     repository: FakeStrandedRunRepository,
     factory: RecordingSessionFactory,
+    *,
+    batch_size: int = BATCH_SIZE,
 ) -> StrandedRunReaper:
     """The production reaper over doubles — only the session and the repository are fake."""
     return StrandedRunReaper(
         session_factory=factory,
         interval_seconds=INTERVAL_SECONDS,
         reap_after_seconds=REAP_AFTER_SECONDS,
+        batch_size=batch_size,
         repository_factory=lambda _session: repository,
     )
 
@@ -119,9 +138,9 @@ async def test_the_summary_says_the_outcome_is_unknown_not_that_it_failed() -> N
     assert "Check the target system" in summary["message"]
 
 
-async def test_every_stranded_run_in_a_pass_is_reaped() -> None:
+async def test_every_stranded_run_in_a_batch_is_reaped() -> None:
     """A pass that stopped at the first row would leave the rest for the next interval, and the
-    cap they are spending with them."""
+    cap they are spending with them. The batch is the only thing that stops it (V92)."""
     repository = FakeStrandedRunRepository()
     repository.runs.extend([stranded_run(), stranded_run(), stranded_run()])
 
@@ -144,7 +163,12 @@ async def test_a_quiet_pass_writes_nothing_and_still_commits() -> None:
 
 async def test_a_pass_is_one_transaction() -> None:
     """Per-row commits would leave a pass half-applied when the second row's write failed, and
-    the next pass would see a different set than the one it was judging."""
+    the next pass would see a different set than the one it was judging.
+
+    Still true with the batch in place, and the batch is what makes it affordable: the promise
+    costs one transaction's worth of row locks, and `batch_size` is the ceiling on that
+    worth (V92).
+    """
     repository = FakeStrandedRunRepository()
     repository.runs.extend([stranded_run(), stranded_run()])
 
@@ -152,6 +176,145 @@ async def test_a_pass_is_one_transaction() -> None:
 
     assert repository.commits == 1
     assert repository.journal[-1] == "commit"
+
+
+# --------------------------------------------------------------------------------------
+# The bound a pass is held to, and the bound it reports (V85, V92)
+# --------------------------------------------------------------------------------------
+
+
+async def test_a_pass_stops_at_its_batch_size() -> None:
+    """The whole fix: one pass writes a bounded number of rows.
+
+    Unbounded, a pass after a long outage loaded every stranded row — each carrying its
+    request's evidence — and issued an UPDATE plus a receipt INSERT for every one of them
+    inside a single transaction.
+    """
+    repository = FakeStrandedRunRepository()
+    repository.runs.extend(stranded_run() for _ in range(5))
+
+    outcome = await build_service(repository, batch_size=2).reap()
+
+    assert len(outcome.reaped_run_ids) == 2
+    assert len(repository.finishes) == 2
+    # The bound reached the read, rather than the service slicing a full result after loading
+    # it — which is the version of this fix that fixes nothing.
+    assert repository.limits == [2, 2]
+
+
+async def test_a_truncated_pass_reports_how_many_it_left() -> None:
+    """V85 one population over: the pass that capped says what the cap hid.
+
+    Five stranded, two reaped, three still stranded — and the caller is told the three, not
+    left to infer them from a count that looks complete.
+    """
+    repository = FakeStrandedRunRepository()
+    repository.runs.extend(stranded_run() for _ in range(5))
+
+    outcome = await build_service(repository, batch_size=2).reap()
+
+    assert outcome.stranded_remaining == 3
+    assert outcome.stranded_truncated is True
+
+
+async def test_a_pass_that_saw_its_whole_population_reports_nothing_left() -> None:
+    """The negative control for the pair above (V87): `truncated` has to be able to be false,
+    or "this pass was capped" is a claim that is always true and therefore says nothing."""
+    repository = FakeStrandedRunRepository()
+    repository.runs.extend(stranded_run() for _ in range(2))
+
+    outcome = await build_service(repository, batch_size=2).reap()
+
+    assert len(outcome.reaped_run_ids) == 2
+    assert outcome.stranded_remaining == 0
+    assert outcome.stranded_truncated is False
+
+
+async def test_a_truncated_pass_says_so_in_the_log() -> None:
+    """Where an operator actually reads it (V85).
+
+    `count` alone answers "how many did this pass resolve", which reads as "how many were
+    there" — so a capped pass and a complete one would produce the same line with different
+    numbers on it, and nothing would say which was which.
+    """
+    repository = FakeStrandedRunRepository()
+    repository.runs.extend(stranded_run() for _ in range(5))
+
+    with capture_logs() as logs:
+        await build_service(repository, batch_size=2).reap()
+
+    entry = next(item for item in logs if item["event"] == LOG_RUNS_REAPED)
+    assert entry["count"] == 2
+    assert entry["truncated"] is True
+    assert entry["remaining"] == 3
+
+
+async def test_a_complete_pass_logs_that_nothing_is_left() -> None:
+    """The negative control for the line above (V87): the two passes have to read differently.
+
+    A `truncated` that is always true, or a `remaining` that is always zero, would let the log
+    of a capped pass be mistaken for the log of a finished one — the exact reading V85 exists
+    to prevent.
+    """
+    repository = FakeStrandedRunRepository()
+    repository.runs.extend(stranded_run() for _ in range(2))
+
+    with capture_logs() as logs:
+        await build_service(repository, batch_size=2).reap()
+
+    entry = next(item for item in logs if item["event"] == LOG_RUNS_REAPED)
+    assert entry["count"] == 2
+    assert entry["truncated"] is False
+    assert entry["remaining"] == 0
+
+
+async def test_the_detector_is_bounded_and_reports_its_own_bound() -> None:
+    """Read-only buys less than it looks like it does (V92).
+
+    Nothing is written for this population, but its ids are logged — one line naming every row
+    of an arbitrarily large population is a log entry nobody can read, and the tuple behind it
+    is still unbounded memory.
+    """
+    repository = FakeStrandedRunRepository()
+    repository.orphans.extend(uuid4() for _ in range(4))
+
+    with capture_logs() as logs:
+        outcome = await build_service(repository, batch_size=2).reap()
+
+    assert len(outcome.approved_without_run_ids) == 2
+    assert outcome.approved_without_run_remaining == 2
+    assert outcome.approved_without_run_truncated is True
+    entry = next(item for item in logs if item["event"] == LOG_APPROVED_WITHOUT_RUN)
+    assert entry["count"] == 2
+    assert entry["truncated"] is True
+    assert entry["remaining"] == 2
+
+
+async def test_a_complete_detector_pass_reports_nothing_left() -> None:
+    """The negative control for the detector's bound (V87)."""
+    repository = FakeStrandedRunRepository()
+    repository.orphans.extend(uuid4() for _ in range(2))
+
+    with capture_logs() as logs:
+        outcome = await build_service(repository, batch_size=2).reap()
+
+    assert outcome.approved_without_run_remaining == 0
+    entry = next(item for item in logs if item["event"] == LOG_APPROVED_WITHOUT_RUN)
+    assert entry["truncated"] is False
+    assert entry["remaining"] == 0
+
+
+async def test_the_reaper_hands_its_batch_size_down_to_the_pass() -> None:
+    """The setting is the bound, and it reaches the read through the loop's own construction —
+    not through a default that a misconfiguration would quietly fall back to."""
+    repository = FakeStrandedRunRepository()
+    repository.runs.extend(stranded_run() for _ in range(3))
+
+    outcome = await build_reaper(repository, RecordingSessionFactory(), batch_size=1).run_once()
+
+    assert len(outcome.reaped_run_ids) == 1
+    assert outcome.stranded_remaining == 2
+    assert repository.limits == [1, 1]
 
 
 async def test_both_populations_are_judged_against_one_moment() -> None:
@@ -390,6 +553,7 @@ async def test_the_first_pass_waits_one_interval() -> None:
         session_factory=factory,
         interval_seconds=30,
         reap_after_seconds=REAP_AFTER_SECONDS,
+        batch_size=BATCH_SIZE,
         repository_factory=lambda _session: repository,
     )
 

@@ -29,7 +29,7 @@ from core.approvals.execution import (
     AuthorizedChange,
     ChangeExecutionRequest,
 )
-from core.approvals.reaper import StrandedRun
+from core.approvals.reaper import BoundedRows, StrandedRun
 from core.db.lifecycle import ToolRunStatus
 from support.action_decisions import APPROVAL_CONTEXT, CHANGE_TOOL, CONVERSATION_ID
 
@@ -246,18 +246,23 @@ class FakeStrandedRunRepository:
     # The cutoffs the service judged each population against, so a test can assert one clock
     # read per pass rather than two that nearly agree.
     cutoffs: list[Any] = field(default_factory=list)
+    # The bound each read was made under, so a test can assert the batch size reached the SQL
+    # rather than only that the pass stopped somewhere (V92).
+    limits: list[int] = field(default_factory=list)
 
-    async def stranded_runs(self, *, cutoff: Any) -> tuple[StrandedRun, ...]:
+    async def stranded_runs(self, *, cutoff: Any, limit: int) -> BoundedRows[StrandedRun]:
         self.journal.append("stranded")
         self.cutoffs.append(cutoff)
+        self.limits.append(limit)
         if self.fail is not None:
             raise self.fail
-        return tuple(self.runs)
+        return BoundedRows(rows=tuple(self.runs[:limit]), total=len(self.runs))
 
-    async def approved_without_run(self, *, cutoff: Any) -> tuple[UUID, ...]:
+    async def approved_without_run(self, *, cutoff: Any, limit: int) -> BoundedRows[UUID]:
         self.journal.append("orphans")
         self.cutoffs.append(cutoff)
-        return tuple(self.orphans)
+        self.limits.append(limit)
+        return BoundedRows(rows=tuple(self.orphans[:limit]), total=len(self.orphans))
 
     async def finish_run(
         self,
