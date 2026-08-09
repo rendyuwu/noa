@@ -33,7 +33,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.approvals.card import ApprovalCardService, ApprovalCardView, SQLApprovalCardRepository
-from core.approvals.decisions import ActionDecisionService, SQLActionDecisionRepository
+from core.approvals.decisions import SQLActionDecisionRepository
 from core.approvals.expiry import ActionRequestExpiryService, SQLActionRequestExpiryRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import User
@@ -41,7 +41,7 @@ from support.action_decisions import (
     CHANGE_TOOL,
     CONVERSATION_ID,
     REASON,
-    RecordingApprovedChangeExecutor,
+    build_decision_service,
     insert_user,
     open_request,
     read_request,
@@ -112,10 +112,7 @@ async def approve(
 ) -> UUID:
     """A real approval through the real decision service; returns the run it started."""
     async with factory() as session:
-        service = ActionDecisionService(
-            repository=SQLActionDecisionRepository(session),
-            executor=RecordingApprovedChangeExecutor(),
-        )
+        service = build_decision_service(SQLActionDecisionRepository(session))
         outcome = await service.approve(
             action_request_id=action_request_id,
             caller_user_id=caller_user_id,

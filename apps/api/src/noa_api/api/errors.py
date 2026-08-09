@@ -51,6 +51,7 @@ from core.approvals.errors import (
     ActionRequestExpiredError,
     ActionRequestNotFoundError,
     ChangeEvidenceRequiredError,
+    ChangeExecutionLimitReachedError,
     ChangeGateError,
     ChangeGateUnavailableError,
     ChangeReasonForbiddenError,
@@ -243,6 +244,10 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # `reason` is a well-formed string, it is the *decision* that is refused, and V15 names
     # both this code and this status.
     ChangeReasonRequiredError: status.HTTP_409_CONFLICT,
+    # 409 for V31's cap (T38). Same reading as "already decided": the caller may approve changes
+    # in general, just not one more right now. Not 429 — nothing is rate-limiting them, and
+    # `Retry-After` would be a number NOA cannot honestly produce.
+    ChangeExecutionLimitReachedError: status.HTTP_409_CONFLICT,
     # 403, not 401: the session authenticated fine and signing in again changes nothing
     # (V39). The remedy is a freshly minted token, which means reloading the card.
     DecisionCsrfInvalidError: status.HTTP_403_FORBIDDEN,

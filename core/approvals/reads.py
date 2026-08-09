@@ -47,13 +47,16 @@ class ActionRunView:
     """The execution an approval started, as far as it has got (V29, V46, V47).
 
     `result_summary` is already truncated and already redacted by whoever wrote it
-    (`noa_api.mcp_audit` for a READ, T38's executor for a change) — nothing here re-derives
-    it, for the reason `LockedActionRequest.redacted_arguments` gives one field over.
+    (`noa_api.mcp_audit` for a READ, `core.approvals.execution` for a change, and
+    `core.approvals.reaper` for one nobody finished) — nothing here re-derives it, for the reason
+    `LockedActionRequest.redacted_arguments` gives one field over.
 
-    `STARTED` with a NULL summary is the normal state today: T37 opens this row inside the
-    decision's transaction and T38's executor, which moves it, is unbuilt. Reporting that
+    `STARTED` with a NULL summary is a change still running: T37 opens this row inside the
+    decision's transaction and T38's executor moves it when the change ends. Reporting that
     plainly is the point — a model that is told "started" tells an operator to wait, which is
-    true, and a card that says the same is telling them to keep the tab open.
+    true, and a card that says the same is telling them to keep the tab open. A run that stays
+    `STARTED` past the reaper's deadline becomes `FAILED` with a summary saying the outcome was
+    never observed, so no reader waits forever.
     """
 
     tool_run_id: UUID

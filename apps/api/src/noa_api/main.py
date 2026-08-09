@@ -39,8 +39,9 @@ from fastapi import FastAPI
 from fastmcp.utilities.lifespan import combine_lifespans
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from core.approvals.decisions import ApprovedChangeExecutor, DeferredApprovedChangeExecutor
+from core.approvals.execution_host import AsyncioApprovedChangeExecutor
 from core.approvals.expiry import PendingExpirySweeper
+from core.approvals.reaper import StrandedRunReaper
 from core.auth.jwt_service import JWTService
 from core.auth.ldap_service import LDAPService
 from core.config import Settings, get_settings
@@ -59,7 +60,8 @@ from noa_api.api.routes.action_requests import router as action_requests_router
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.mcp_request_auth import build_mcp_auth_context
 from noa_api.mcp_server import MCP_MOUNT_PATH, build_mcp_http_app
-from noa_api.mcp_tools.context import build_mcp_tool_context
+from noa_api.mcp_tools.change_runners import build_change_runners
+from noa_api.mcp_tools.context import McpToolContext, build_mcp_tool_context
 
 TITLE = "NOA API"
 
@@ -80,38 +82,70 @@ class AppRuntime:
     session_factory: async_sessionmaker[AsyncSession]
     ldap_service: LDAPService
     secret_cipher: SecretCipher
-    # T37's approvals hand a started run to this; T38 replaces the placeholder with the real
-    # asyncio host and its reaper. One per app, not one per request — a per-request executor
-    # would mean a per-request reaper.
-    approved_change_executor: ApprovedChangeExecutor
+    # The tool context, held rather than rebuilt: the MCP mount needs it and so does the
+    # executor's runner map (T38), and two contexts would be two worlds configured alike.
+    tool_context: McpToolContext
+    # T37's approvals hand a started run to this; T38 filled it with the real asyncio host
+    # (V29, V30). One per app, not one per request — a per-request executor would leave nobody
+    # holding its outstanding tasks at shutdown.
+    #
+    # Typed to the host, not to `ApprovedChangeExecutor`, and deliberately: the lifespan below
+    # has to `stop()` it, while the Protocol declares `start` alone so that
+    # `ActionDecisionService` — which is handed one through `app.state` — cannot reach a method
+    # whose job is shutting the app's background work down.
+    approved_change_executor: AsyncioApprovedChangeExecutor
     # T39's background half of V32. One per app for the same reason, and it draws sessions
     # from the factory above so a sweep sees the same rows every other path does.
     expiry_sweeper: PendingExpirySweeper
+    # T38's background half of V30: the runs a died-mid-call process left STARTED. Same shape,
+    # same loop, same lifespan ownership as the sweeper above.
+    stranded_run_reaper: StrandedRunReaper
 
 
 def build_runtime(settings: Settings) -> AppRuntime:
     """Construct one app's long-lived objects. Opens no connection (the engine is lazy)."""
     engine = create_engine(settings)
     session_factory = create_session_factory(engine)
+    # One cipher for the whole app (C7, V48). Every decrypt site takes it as an argument —
+    # there is no module-level cipher to import (T15) — so this is the only place it is built,
+    # and T54's admin routes will read the same one off `AppRuntime`.
+    secret_cipher = SecretCipher.from_settings(settings)
+    tool_context = build_mcp_tool_context(
+        session_factory=session_factory,
+        secret_cipher=secret_cipher,
+        # V32's deadline, resolved once here rather than read again inside the gate:
+        # `get_settings()` is called in exactly one place (T5) and the CHANGE gate (T33)
+        # stamps `action_requests.expires_at` from this value.
+        pending_ttl_seconds=settings.approval_pending_ttl_seconds,
+    )
     return AppRuntime(
         settings=settings,
         engine=engine,
         session_factory=session_factory,
         ldap_service=LDAPService(settings),
-        # One cipher for the whole app (C7, V48). Every decrypt site takes it as an argument
-        # — there is no module-level cipher to import (T15) — so this is the only place it is
-        # built, and T54's admin routes will read the same one off `AppRuntime`.
-        secret_cipher=SecretCipher.from_settings(settings),
-        # T38's seam, filled with the placeholder that records a handoff and starts nothing.
-        # Inert today: T22-T29 are unbuilt, so no CHANGE tool exists to open an
-        # `action_requests` row, so nothing can reach an approval endpoint here.
-        approved_change_executor=DeferredApprovedChangeExecutor(),
+        secret_cipher=secret_cipher,
+        tool_context=tool_context,
+        # T38's real executor (V29, V30). Constructing it starts nothing: it owns tasks only
+        # once an approval hands it a run, and `stop()` in the lifespan is what ends them.
+        # `build_change_runners` is empty until T22-T29 land, which the registry's coverage
+        # check makes a startup guarantee rather than a hope.
+        approved_change_executor=AsyncioApprovedChangeExecutor(
+            session_factory=session_factory,
+            runners=build_change_runners(context=tool_context),
+        ),
         # Constructed here, started by the lifespan (T39, V32). Constructing it opens nothing
         # — like the engine above, it is inert until the lifespan says otherwise, so building
         # an app still costs no connection.
         expiry_sweeper=PendingExpirySweeper(
             session_factory=session_factory,
             interval_seconds=settings.approval_expiry_sweep_interval_seconds,
+        ),
+        # The same arrangement for T38's reaper (V30). Two settings, not one: how often it
+        # looks is a resolution, how long a run may sit STARTED is a lifetime.
+        stranded_run_reaper=StrandedRunReaper(
+            session_factory=session_factory,
+            interval_seconds=settings.approval_stranded_run_reap_interval_seconds,
+            reap_after_seconds=settings.approval_stranded_run_reap_after_seconds,
         ),
     )
 
@@ -134,14 +168,24 @@ def build_lifespan(
         setattr(app.state, STATE_SESSION_FACTORY, runtime.session_factory)
         setattr(app.state, STATE_APPROVED_CHANGE_EXECUTOR, runtime.approved_change_executor)
 
-        # V32's terminality without traffic (T39). Started here rather than at construction
-        # because the task belongs to the running loop, and stopped before the engine is
-        # disposed below — a pass still in flight would otherwise run against a dead pool.
+        # V32's terminality without traffic (T39) and V30's reaper (T38). Started here rather
+        # than at construction because the tasks belong to the running loop, and stopped before
+        # the engine is disposed below — a pass still in flight would otherwise run against a
+        # dead pool.
         await runtime.expiry_sweeper.start()
+        await runtime.stranded_run_reaper.start()
 
         try:
             yield
         finally:
+            # **Order is load-bearing, and it is executor first.** An approved change in flight
+            # holds a session; cancelling it leaves its run STARTED, which is the reaper's to
+            # resolve — so the reaper must still be alive to see the shutdown's own leftovers on
+            # its next boot, and nothing may still be *starting* work once the loops stop. Every
+            # one of the three has to finish before `dispose()`, because the pool they draw from
+            # is gone the moment it returns (T39's rule, three components now).
+            await runtime.approved_change_executor.stop()
+            await runtime.stranded_run_reaper.stop()
             await runtime.expiry_sweeper.stop()
             await runtime.engine.dispose()
 
@@ -179,14 +223,10 @@ def create_app() -> FastAPI:
             directory=runtime.ldap_service,
             settings=runtime.settings,
         ),
-        tool_context=build_mcp_tool_context(
-            session_factory=runtime.session_factory,
-            secret_cipher=runtime.secret_cipher,
-            # V32's deadline, resolved once here rather than read again inside the gate:
-            # `get_settings()` is called in exactly one place (T5) and the CHANGE gate (T33)
-            # stamps `action_requests.expires_at` from this value.
-            pending_ttl_seconds=runtime.settings.approval_pending_ttl_seconds,
-        ),
+        # The runtime's own context, not a second one built here (T38): the executor's runner
+        # map is derived from it too, and two contexts would be two worlds configured alike —
+        # the failure mode `AppRuntime` exists to prevent one field over.
+        tool_context=runtime.tool_context,
     )
 
     app = FastAPI(

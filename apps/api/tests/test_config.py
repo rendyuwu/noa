@@ -323,6 +323,10 @@ def test_bootstrap_admin_emails_lowercased() -> None:
         # V32: a sweep interval of 0 is a sweeper that never sleeps; a negative one is a
         # sweeper that never runs. Either way the background half of V32 is held by nothing.
         ("approval_expiry_sweep_interval_seconds", 0),
+        # V30/T38: a reap deadline under a minute would call a merely slow change abandoned,
+        # and a reaped run reads as an outcome nobody observed.
+        ("approval_stranded_run_reap_after_seconds", 59),
+        ("approval_stranded_run_reap_interval_seconds", 0),
         ("yopass_secret_expiration_seconds", 0),
         ("secret_password_length", 4),  # V49: no trivially guessable password
         ("db_pool_size", 0),
@@ -346,6 +350,28 @@ def test_approval_defaults_match_invariants() -> None:
     # stopped being answerable. Well under the TTL, and deliberately not derived from it.
     assert settings.approval_expiry_sweep_interval_seconds == 60
     assert settings.approval_expiry_sweep_interval_seconds < settings.approval_pending_ttl_seconds
+
+
+def test_reaper_defaults_are_a_lifetime_and_a_resolution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """V30/T38: how long a run may sit STARTED, and how often the reaper looks.
+
+    Two settings rather than one derived from the other, matching the sweep pair one invariant
+    over — and the interval is well under the deadline, because a reaper that looked less often
+    than its own deadline would leave a run abandoned for up to two deadlines.
+
+    The deadline also has to be *under* the pending TTL: a stranded change spends its operator's
+    V31 allowance until it is reaped, and holding that longer than a request may stay pending
+    would make one crash cost more than a whole approval window.
+    """
+    settings = build()
+
+    assert settings.approval_stranded_run_reap_after_seconds == 900
+    assert settings.approval_stranded_run_reap_interval_seconds == 120
+    assert (
+        settings.approval_stranded_run_reap_interval_seconds
+        < settings.approval_stranded_run_reap_after_seconds
+    )
+    assert settings.approval_stranded_run_reap_after_seconds < settings.approval_pending_ttl_seconds
 
 
 def test_mcp_token_ttl_optional() -> None:

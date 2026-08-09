@@ -193,13 +193,15 @@ def get_approved_change_executor(request: Request) -> ApprovedChangeExecutor:
 
 def get_action_decision_service(
     session: SessionDep,
+    settings: SettingsDep,
     executor: Annotated[ApprovedChangeExecutor, Depends(get_approved_change_executor)],
 ) -> ActionDecisionService:
-    """The one writer of a terminal `action_requests.status` (T37, V22, V28).
+    """The one writer of a terminal `action_requests.status` (T37, V22, V28, V31).
 
     Built per request on the request's session, like `AuthService`, so the decision, the
     `tool_runs` row it starts and their commit are one transaction — and so a handler that
-    raises rolls all of it back together.
+    raises rolls all of it back together. V31's per-user count is taken on that same session
+    and inside that same transaction, which is what its advisory lock is holding open (T38).
 
     Deliberately absent from `McpToolContext`. `SQLActionRequestRepository` is what the tool
     path gets, and it can write only `PENDING`; this can write `APPROVED`, so it lives on the
@@ -208,6 +210,7 @@ def get_action_decision_service(
     return ActionDecisionService(
         repository=SQLActionDecisionRepository(session),
         executor=executor,
+        max_inflight_per_user=settings.approval_max_inflight_per_user,
     )
 
 

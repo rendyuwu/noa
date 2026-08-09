@@ -1,4 +1,4 @@
-"""Refusals from the CHANGE approval gate and from a decision on one (T33, T37).
+"""Refusals from the CHANGE approval gate and from a decision on one (T33, T37, T38).
 
 **Two trees, not one**, and the split is who is being refused.
 
@@ -6,8 +6,8 @@
 change has been submitted for approval at all. Every message in it ends in "nothing was
 changed", and the base maps to 503.
 
-`ActionDecisionError` (T37 — V15, V27, V28, V32, V39) is raised on the HTTP decision path,
-against a request that already exists. Sharing one tree would mean an operator whose
+`ActionDecisionError` (T37, T38 — V15, V27, V28, V31, V32, V39) is raised on the HTTP decision
+path, against a request that already exists. Sharing one tree would mean an operator whose
 approval arrived a minute late reading "this change could not be submitted for approval",
 which is a sentence about a different moment, and would put a 404 and a 409 under a base
 that means 503.
@@ -98,7 +98,7 @@ class ChangeEvidenceRequiredError(ChangeGateError):
 
 
 class ActionDecisionError(NoaError):
-    """Base: a decision on an existing request was refused (T37, V15, V27, V28, V32, V39).
+    """Base: a decision on an existing request was refused (T37, T38 — V15, V27, V28, V31, V32).
 
     Sibling of `ChangeGateError`, not a subclass — see the module docstring. Nothing raises
     this class directly; it exists so `noa_api.api.errors` can map the tree and so a
@@ -170,6 +170,30 @@ class ChangeReasonRequiredError(ActionDecisionError):
     message: str = "A reason is required. Type why this change is being made or refused."
 
 
+class ChangeExecutionLimitReachedError(ActionDecisionError):
+    """The operator already has their allowance of changes running (V31, T38).
+
+    409, and the same reading as `ActionRequestAlreadyDecidedError`: the caller may approve
+    changes in general, just not one more right now. Not a 429 — nothing is rate-limiting the
+    operator, and `Retry-After` would be a number NOA cannot honestly produce (it depends on
+    how long someone else's SSH round trip takes).
+
+    V31 forbids a silent queue, which is what makes this a refusal rather than a wait: a queued
+    approval is an authorisation whose moment has passed by the time it runs. Nothing is lost by
+    refusing — the request stays PENDING until its TTL, so the remedy is to approve it again once
+    the running change finishes.
+
+    A change stranded by a dead process counts towards the limit until the reaper resolves it
+    (`core.approvals.reaper`), which is why that deadline exists rather than being left to
+    "eventually".
+    """
+
+    error_code: str = "change_execution_limit_reached"
+    message: str = (
+        "You already have a change running. Wait for it to finish, then approve this one again."
+    )
+
+
 class DecisionCsrfInvalidError(ActionDecisionError):
     """The decision POST carried no valid CSRF token (V22, V39).
 
@@ -192,6 +216,7 @@ __all__ = [
     "ActionRequestExpiredError",
     "ActionRequestNotFoundError",
     "ChangeEvidenceRequiredError",
+    "ChangeExecutionLimitReachedError",
     "ChangeGateError",
     "ChangeGateUnavailableError",
     "ChangeReasonForbiddenError",

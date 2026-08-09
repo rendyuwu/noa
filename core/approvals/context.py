@@ -8,7 +8,10 @@ writer and several readers, and the keys are the whole of it:
 - `core.approvals.decisions.LockedActionRequest` reads the arguments into an approved change's
   audit row (T37, V47);
 - `core.approvals.results` reads them again for `noa_get_action_result` (T63);
-- T41's card reads all three.
+- T41's card reads all three;
+- `core.approvals.execution` reads the arguments *and* the evidence, because an approved
+  change is executed from what the gate recorded and its receipt's before-state is that same
+  preflight (T38, V46).
 
 Four spellings of `"arguments"` across four modules is three chances for one of them to be
 wrong in a way nothing catches — the payload is JSONB, so a misspelt key reads as an absent
@@ -39,8 +42,9 @@ CONTEXT_ARGUMENTS_KEY: Final = "arguments"
 # from a decision that was made (V35).
 CONTEXT_REQUESTER_KEY: Final = "requester"
 
-# The in-process preflight the CHANGE tool ran (C9, V17). For the approval card, and only for
-# it: V17 says this evidence is born in-process and stays out of the transcript.
+# The in-process preflight the CHANGE tool ran (C9, V17). For the approval card and for the
+# receipt's before-state — never for a model: V17 says this evidence is born in-process and
+# stays out of the transcript.
 CONTEXT_EVIDENCE_KEY: Final = "evidence"
 
 
@@ -54,9 +58,26 @@ def arguments_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any
     return dict(arguments) if isinstance(arguments, dict) else {}
 
 
+def evidence_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any]:
+    """The in-process preflight the CHANGE tool ran (C9, V17, V35).
+
+    Written for T41's card and hoisted here at T38, when the executor became its second reader
+    — the receipt's before-state is this payload, so the operator reads the same evidence they
+    authorised against (V46). `core.approvals.card` re-exports it.
+
+    `{}` when absent or not an object — the gate refuses to open a request with no evidence at
+    all (`ChangeEvidenceRequiredError`), so an empty payload here means the row predates that
+    guard or was written by something else, and either way the honest answer is "nothing
+    recorded" rather than an exception in front of an operator.
+    """
+    evidence = approval_context.get(CONTEXT_EVIDENCE_KEY)
+    return dict(evidence) if isinstance(evidence, dict) else {}
+
+
 __all__ = [
     "CONTEXT_ARGUMENTS_KEY",
     "CONTEXT_EVIDENCE_KEY",
     "CONTEXT_REQUESTER_KEY",
     "arguments_from_context",
+    "evidence_from_context",
 ]

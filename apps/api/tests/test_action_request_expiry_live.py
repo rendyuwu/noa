@@ -28,7 +28,6 @@ from uuid import UUID
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.approvals.decisions import ActionDecisionService, SQLActionDecisionRepository
 from core.approvals.errors import ActionRequestAlreadyDecidedError, ActionRequestExpiredError
 from core.approvals.expiry import (
     ActionRequestExpiryService,
@@ -41,7 +40,8 @@ from support.action_decisions import (
     HANDOVER_GRACE_SECONDS,
     REASON,
     ObservedDecisionRepository,
-    RecordingApprovedChangeExecutor,
+    build_decision_service,
+    build_live_decision_service,
     insert_user,
     open_request,
     read_request,
@@ -96,20 +96,6 @@ async def expire_if_due(
     async with factory() as session:
         service = ActionRequestExpiryService(SQLActionRequestExpiryRepository(session))
         return await service.expire_if_due(action_request_id=action_request_id, now=now)
-
-
-def build_decision_service(
-    session: AsyncSession,
-) -> tuple[ActionDecisionService, RecordingApprovedChangeExecutor]:
-    """The decision path, for the tests that put the two writers against each other."""
-    recorder = RecordingApprovedChangeExecutor()
-    return (
-        ActionDecisionService(
-            repository=SQLActionDecisionRepository(session),
-            executor=recorder,
-        ),
-        recorder,
-    )
 
 
 # --------------------------------------------------------------------------------------
@@ -196,7 +182,7 @@ async def test_a_request_exactly_on_its_deadline_expires_at_both_doors(factory) 
     # The door first: the sweep is set-based, so running it first would expire both rows and
     # leave nothing for the other half of the comparison to be made against.
     async with factory() as session:
-        service, _ = build_decision_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestExpiredError):
             await service.approve(
                 action_request_id=decided,
@@ -266,7 +252,7 @@ async def test_the_sweep_cannot_touch_a_decided_request(factory) -> None:
     )
 
     async with factory() as session:
-        service, _ = build_decision_service(session)
+        service, _ = build_live_decision_service(session)
         outcome = await service.approve(
             action_request_id=action_request_id,
             caller_user_id=user_id,
@@ -333,7 +319,7 @@ async def test_check_on_read_cannot_expire_a_decided_request(factory) -> None:
     )
 
     async with factory() as session:
-        service, _ = build_decision_service(session)
+        service, _ = build_live_decision_service(session)
         await service.deny(
             action_request_id=action_request_id,
             caller_user_id=user_id,
@@ -398,11 +384,10 @@ async def test_a_sweep_cannot_expire_a_request_being_approved(factory) -> None:
 
     async def approve() -> None:
         async with factory() as session:
-            service = ActionDecisionService(
-                repository=ObservedDecisionRepository(
+            service = build_decision_service(
+                ObservedDecisionRepository(
                     session, label="approve", journal=journal, after_read=hold_the_lock
-                ),
-                executor=RecordingApprovedChangeExecutor(),
+                )
             )
             await service.approve(
                 action_request_id=action_request_id,
@@ -455,11 +440,10 @@ async def test_an_unlocked_read_of_the_same_row_does_not_wait(factory) -> None:
 
     async def approve() -> None:
         async with factory() as session:
-            service = ActionDecisionService(
-                repository=ObservedDecisionRepository(
+            service = build_decision_service(
+                ObservedDecisionRepository(
                     session, label="approve", journal=journal, after_read=hold_the_lock
-                ),
-                executor=RecordingApprovedChangeExecutor(),
+                )
             )
             await service.approve(
                 action_request_id=action_request_id,
@@ -499,7 +483,7 @@ async def test_a_decision_after_the_sweep_is_refused_as_already_decided(factory)
     assert await sweep(factory) == (action_request_id,)
 
     async with factory() as session:
-        service, executor = build_decision_service(session)
+        service, executor = build_live_decision_service(session)
         with pytest.raises(ActionRequestAlreadyDecidedError):
             await service.approve(
                 action_request_id=action_request_id,
@@ -548,7 +532,7 @@ async def test_a_swept_row_matches_one_expired_at_the_decision_door(factory) -> 
     by_the_sweep = await open_request(factory, requested_by_user_id=user_id, expires_in_seconds=-5)
 
     async with factory() as session:
-        service, _ = build_decision_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestExpiredError):
             await service.approve(
                 action_request_id=at_the_door,
@@ -579,7 +563,7 @@ async def test_the_shape_compare_still_separates_two_different_outcomes(factory)
     expired = await open_request(factory, requested_by_user_id=user_id, expires_in_seconds=-5)
 
     async with factory() as session:
-        service, _ = build_decision_service(session)
+        service, _ = build_live_decision_service(session)
         await service.deny(
             action_request_id=denied,
             caller_user_id=user_id,

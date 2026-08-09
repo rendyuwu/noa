@@ -34,7 +34,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.approvals.decisions import ActionDecisionService, SQLActionDecisionRepository
+from core.approvals.decisions import SQLActionDecisionRepository
 from core.approvals.expiry import ActionRequestExpiryService, SQLActionRequestExpiryRepository
 from core.approvals.results import (
     ActionResultService,
@@ -47,7 +47,7 @@ from support.action_decisions import (
     APPROVAL_CONTEXT,
     CHANGE_TOOL,
     REASON,
-    RecordingApprovedChangeExecutor,
+    build_decision_service,
     insert_user,
     open_request,
     read_request,
@@ -118,10 +118,7 @@ async def approve(
 ) -> UUID:
     """A real approval through the real decision service; returns the run it started."""
     async with factory() as session:
-        service = ActionDecisionService(
-            repository=SQLActionDecisionRepository(session),
-            executor=RecordingApprovedChangeExecutor(),
-        )
+        service = build_decision_service(SQLActionDecisionRepository(session))
         outcome = await service.approve(
             action_request_id=action_request_id,
             caller_user_id=caller_user_id,
@@ -295,10 +292,7 @@ async def test_a_denied_request_reports_no_run(factory) -> None:  # type: ignore
     request_id = await open_request(factory, requested_by_user_id=user_id)
 
     async with factory() as session:
-        service = ActionDecisionService(
-            repository=SQLActionDecisionRepository(session),
-            executor=RecordingApprovedChangeExecutor(),
-        )
+        service = build_decision_service(SQLActionDecisionRepository(session))
         await service.deny(
             action_request_id=request_id,
             caller_user_id=user_id,

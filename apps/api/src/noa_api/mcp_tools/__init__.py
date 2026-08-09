@@ -37,7 +37,12 @@ Landed: `whm_list_servers` (T19), `whm_search_accounts` (T21),
 `whm_preflight_firewall_entries` (T24), `pmg_whitelist_search` (T31),
 `noa_get_action_result` (T63 — `noa_read.py`, the read side of the approval loop), the CHANGE
 gate's write side (T33 — no CHANGE tool calls it yet), the decision endpoints that answer it
-(T37, `noa_api.api.routes.action_requests`) and pending expiry (T39, whose check-on-read T63
-is the first live caller of). Still to come: the other nine of §I.mcp, the gate's result shape
-(T32) and the executor (T38).
+(T37, `noa_api.api.routes.action_requests`), pending expiry (T39, whose check-on-read T63
+is the first live caller of) and the post-approval executor with its reaper (T38,
+`core.approvals.execution`). Still to come: the other nine of §I.mcp and the gate's result
+shape (T32).
+
+The executor's dispatch table lives here — `change_runners.build_change_runners` — and is
+**empty** until T22-T29 land. `registry.py` refuses at startup to expose a CHANGE tool with no
+runner behind it, so the first CHANGE tool cannot ship half of itself.
 """

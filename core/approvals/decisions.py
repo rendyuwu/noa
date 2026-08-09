@@ -29,11 +29,25 @@ not in a connection). A process that dies in that gap leaves a committed `APPROV
 a `STARTED` run, which is exactly the pair T38's reaper is specified to sweep — whereas
 handing off first could start a change whose authorization then rolled back.
 
-`ApprovedChangeExecutor` is the seam T38 fills. Today the only implementation is
-`DeferredApprovedChangeExecutor`, which records and does nothing: T22-T29 are unbuilt, so no
-CHANGE tool exists to open a request, and nothing can reach these endpoints in production
-yet. That is what makes the placeholder inert rather than a silent hole — and why the
-correctness of everything above it is carried by tests instead of by use.
+`ApprovedChangeExecutor` is the seam T38 filled: `AsyncioApprovedChangeExecutor`
+(`core.approvals.execution_host`) schedules an in-process task per approved change (V30). The
+`DeferredApprovedChangeExecutor` placeholder this module carried between T37 and T38 is gone —
+production no longer wires it, and a placeholder nothing uses is dead code that reads as a
+supported mode.
+
+**V31's cap lives here too, and it is the reason this file grew a second lock.** An approval
+starts a change, so the bound on how many changes one operator may have in flight belongs at
+the moment one starts and nowhere else: over the limit is a 409, never a queue. Counting alone
+would not hold it — two approvals in flight for the same operator both read a count of zero
+under READ COMMITTED, because neither sees the other's uncommitted `tool_runs` insert. So the
+count is taken under a per-user advisory lock held for the rest of the transaction, and the
+repository takes the lock and returns the count in one call so "counted under the lock" is
+construction rather than an obligation (the argument `start_change_run` makes for "same
+session", one method over).
+
+That lock is always acquired *after* the row lock and never held while waiting for one, so it
+adds no deadlock cycle: two approvals for one operator queue on the advisory key, and two
+approvals of one request queue on the row — never both ways round.
 """
 
 from __future__ import annotations
@@ -44,7 +58,7 @@ from typing import Any, Final, Protocol, runtime_checkable
 from uuid import UUID
 
 import structlog
-from sqlalchemy import select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.clock import as_utc, now_utc
@@ -53,11 +67,12 @@ from core.approvals.errors import (
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
     ActionRequestNotFoundError,
+    ChangeExecutionLimitReachedError,
     ChangeReasonRequiredError,
 )
 from core.audit.tool_runs import SQLToolRunRepository
-from core.db.lifecycle import ActionRequestStatus, ToolRisk
-from core.db.models import ActionRequest
+from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
+from core.db.models import ActionRequest, ToolRun
 
 # One structured event per terminal transition. Identifiers only — the reason is the
 # operator's own words about a production change and belongs in the row that authorises it,
@@ -70,8 +85,15 @@ LOG_REQUEST_EXPIRED_ON_READ: Final = "action_request_expired_on_read"
 # approval stands and is durable); it is the reaper's problem now.
 LOG_EXECUTION_HANDOFF_FAILED: Final = "approved_change_execution_handoff_failed"
 
-# The placeholder executor ran. Every occurrence is a run that will sit STARTED until T38.
-LOG_EXECUTION_DEFERRED: Final = "approved_change_execution_deferred"
+# An approval was refused because the operator already has their allowance of changes running
+# (V31). Logged because "my approve button returns 409" is otherwise indistinguishable, to the
+# operator, from a request that expired.
+LOG_INFLIGHT_LIMIT_REACHED: Final = "approved_change_inflight_limit_reached"
+
+# The advisory-lock key space V31's count is serialized in. Prefixed rather than bare so the
+# hash is drawn from a namespace nothing else in NOA shares: two features hashing raw user ids
+# would serialize against each other for no reason.
+INFLIGHT_LOCK_NAMESPACE: Final = "noa:approvals:inflight-changes"
 
 logger = structlog.get_logger(__name__)
 
@@ -132,29 +154,12 @@ class ApprovedChangeExecutor(Protocol):
     async def start(self, *, tool_run_id: UUID, action_request_id: UUID) -> None: ...
 
 
-class DeferredApprovedChangeExecutor:
-    """Records the handoff and starts nothing — T38's placeholder.
-
-    Deliberately not a silent no-op: every call is a `tool_runs` row that will sit `STARTED`
-    until T38's executor and reaper land, and the log line is what makes that visible rather
-    than something an operator discovers by waiting.
-
-    Inert today: T22-T29 are unbuilt, so nothing can open an `action_requests` row through a
-    real CHANGE tool, so nothing can reach an approval endpoint in production.
-    """
-
-    async def start(self, *, tool_run_id: UUID, action_request_id: UUID) -> None:
-        logger.warning(
-            LOG_EXECUTION_DEFERRED,
-            tool_run_id=str(tool_run_id),
-            action_request_id=str(action_request_id),
-        )
-
-
 class ActionDecisionRepository(Protocol):
-    """What a decision needs: a lock, a run, a write, and a commit (V28, V29)."""
+    """What a decision needs: a lock, a count, a run, a write, and a commit (V28, V29, V31)."""
 
     async def lock_for_decision(self, *, action_request_id: UUID) -> LockedActionRequest | None: ...
+
+    async def inflight_changes_under_user_lock(self, *, requested_by_user_id: UUID) -> int: ...
 
     async def start_change_run(
         self,
@@ -219,6 +224,41 @@ class SQLActionDecisionRepository:
             approval_context=dict(row.approval_context or {}),
             expires_at=as_utc(row.expires_at),
         )
+
+    async def inflight_changes_under_user_lock(self, *, requested_by_user_id: UUID) -> int:
+        """Lock this operator's change slots, then count what is running (V31).
+
+        **One method for both halves on purpose.** A bare count is not the invariant: two
+        approvals in flight for one operator each read the other's `tool_runs` insert as absent
+        under READ COMMITTED, so both would pass a cap of one. `pg_advisory_xact_lock` is what
+        serializes them, and it is held until this transaction ends — by which time the winner's
+        insert is committed and the loser's count sees it.
+
+        **Advisory rather than a row lock.** `SELECT … FROM users FOR UPDATE` would serialize
+        the same way and would also block `PATCH /admin/users/{id}`: an admin disabling an
+        operator would queue behind that operator's approval. A key in a namespace of NOA's own
+        blocks nothing but other approvals. `hashtextextended` may collide across user ids,
+        which costs two unrelated operators a moment of queueing and cannot cost correctness.
+
+        **In flight = `STARTED` and `CHANGE`.** A run stranded by a dead process still counts,
+        which is deliberate and is one of the two reasons the reaper has a deadline: without it,
+        one crash would spend an operator's allowance until someone noticed.
+        """
+        await self._session.execute(
+            select(func.pg_advisory_xact_lock(func.hashtextextended(text(":key"), 0))).params(
+                key=f"{INFLIGHT_LOCK_NAMESPACE}:{requested_by_user_id}",
+            )
+        )
+        result = await self._session.execute(
+            select(func.count())
+            .select_from(ToolRun)
+            .where(
+                ToolRun.requested_by_user_id == requested_by_user_id,
+                ToolRun.risk == ToolRisk.CHANGE,
+                ToolRun.status == ToolRunStatus.STARTED,
+            )
+        )
+        return int(result.scalar_one())
 
     async def start_change_run(
         self,
@@ -294,9 +334,15 @@ class ActionDecisionService:
         *,
         repository: ActionDecisionRepository,
         executor: ApprovedChangeExecutor,
+        max_inflight_per_user: int,
     ) -> None:
         self._repository = repository
         self._executor = executor
+        # `APPROVAL_MAX_INFLIGHT_PER_USER` (V31). Required rather than defaulted, for T33(e)'s
+        # reason one setting over: a default here would be a second answer to "how many changes
+        # may one operator have running", and the copy that drifts is always the one nobody
+        # edits.
+        self._max_inflight_per_user = max_inflight_per_user
 
     async def approve(
         self,
@@ -306,7 +352,7 @@ class ActionDecisionService:
         reason: str,
         now: datetime | None = None,
     ) -> ApprovalOutcome:
-        """Authorise the change, start its run, hand it off (V15, V28, V29, V46)."""
+        """Authorise the change, start its run, hand it off (V15, V28, V29, V31, V46)."""
         decided_at = now_utc(now)
         locked = await self._locked_pending(
             action_request_id=action_request_id,
@@ -314,6 +360,7 @@ class ActionDecisionService:
             reason=reason,
             decided_at=decided_at,
         )
+        await self._assert_below_inflight_cap(caller_user_id)
         tool_run_id = await self._repository.start_change_run(
             tool_name=locked.tool_name,
             # The caller, not `locked.requested_by_user_id` — they are the same value, and
@@ -432,6 +479,38 @@ class ActionDecisionService:
 
         return locked
 
+    async def _assert_below_inflight_cap(self, caller_user_id: UUID) -> None:
+        """Refuse a change this operator has no room to run (V31).
+
+        **Last of the guards, and that ordering is deliberate.** It runs after the row is
+        locked and after the request has been found live, so an operator at their limit learns
+        it about a request that was actually theirs to approve — and a 404 or an expiry never
+        costs an advisory lock. It runs *before* `start_change_run`, because the row that
+        insert writes is the thing being counted: after it, the cap could only ever be checked
+        against a number this call already changed.
+
+        409, never a queue: V31 says so, and the reason is that a queued approval is an
+        authorisation whose moment has passed by the time it runs. The operator's remedy is to
+        wait for their running change to finish and approve again — the request stays PENDING
+        until its TTL, so nothing is lost by refusing.
+        """
+        inflight = await self._repository.inflight_changes_under_user_lock(
+            requested_by_user_id=caller_user_id,
+        )
+        if inflight < self._max_inflight_per_user:
+            return
+
+        logger.warning(
+            LOG_INFLIGHT_LIMIT_REACHED,
+            requested_by_user_id=str(caller_user_id),
+            inflight=inflight,
+            limit=self._max_inflight_per_user,
+        )
+        raise ChangeExecutionLimitReachedError(
+            f"`{caller_user_id}` already has {inflight} CHANGE run(s) in flight, "
+            f"limit {self._max_inflight_per_user} (V31)"
+        )
+
     async def _expire(self, locked: LockedActionRequest, *, decided_at: datetime) -> None:
         """Make a stale PENDING terminal, under the lock already held (V32)."""
         await self._repository.write_decision(
@@ -475,8 +554,9 @@ class ActionDecisionService:
 
 __all__ = [
     "CONTEXT_ARGUMENTS_KEY",
-    "LOG_EXECUTION_DEFERRED",
+    "INFLIGHT_LOCK_NAMESPACE",
     "LOG_EXECUTION_HANDOFF_FAILED",
+    "LOG_INFLIGHT_LIMIT_REACHED",
     "LOG_REQUEST_APPROVED",
     "LOG_REQUEST_DENIED",
     "LOG_REQUEST_EXPIRED_ON_READ",
@@ -484,7 +564,6 @@ __all__ = [
     "ActionDecisionService",
     "ApprovalOutcome",
     "ApprovedChangeExecutor",
-    "DeferredApprovedChangeExecutor",
     "DenialOutcome",
     "LockedActionRequest",
     "SQLActionDecisionRepository",

@@ -19,7 +19,9 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from core.approvals.execution_host import AsyncioApprovedChangeExecutor
 from core.approvals.expiry import PendingExpirySweeper
+from core.approvals.reaper import StrandedRunReaper
 from core.auth.errors import AuthConfigurationError
 from core.auth.jwt_service import JWTService
 from core.config import Settings
@@ -208,6 +210,123 @@ def test_the_sweeper_starts_with_the_app_and_stops_before_the_engine(
     assert len(built) == 1
     assert built[0]["interval_seconds"] == 3600
     assert built[0]["session_factory"] is not None
+
+
+# --- T38's reaper and executor ---
+
+
+def test_the_reaper_starts_with_the_app_and_stops_before_the_engine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V30's background half runs for exactly the life of the app, and no longer.
+
+    Same claim and same reason as the sweeper above, one component over: a pass still in flight
+    when `dispose()` runs is a pass against a disposed pool. The real `StrandedRunReaper` is
+    subclassed rather than replaced, so what starts and stops is the production task.
+
+    Both settings are asserted, and they are two settings on purpose — how often it looks is a
+    resolution, how long a run may sit `STARTED` is a lifetime.
+    """
+    journal: list[str] = []
+    settings = build_settings(
+        approval_stranded_run_reap_interval_seconds=3600,
+        approval_stranded_run_reap_after_seconds=1800,
+    )
+    monkeypatch.setattr(main, "get_settings", lambda: settings)
+
+    class RecordingReaper(StrandedRunReaper):
+        async def start(self) -> None:
+            await super().start()
+            journal.append("reaper:started")
+
+        async def stop(self) -> None:
+            await super().stop()
+            journal.append("reaper:stopped")
+
+    built: list[dict[str, Any]] = []
+
+    def factory(**kwargs: Any) -> RecordingReaper:
+        built.append(kwargs)
+        return RecordingReaper(**kwargs)
+
+    async def tracked_dispose(self: AsyncEngine, **kwargs: Any) -> None:
+        journal.append("engine:disposed")
+
+    monkeypatch.setattr(main, "StrandedRunReaper", factory)
+    monkeypatch.setattr(AsyncEngine, "dispose", tracked_dispose)
+
+    with TestClient(main.create_app()):
+        assert journal == ["reaper:started"]
+
+    assert journal == ["reaper:started", "reaper:stopped", "engine:disposed"]
+    assert len(built) == 1
+    assert built[0]["interval_seconds"] == 3600
+    assert built[0]["reap_after_seconds"] == 1800
+
+
+def test_the_executor_is_stopped_before_the_engine_and_before_the_loops(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Shutdown order, and every part of it is load-bearing (V30).
+
+    A change in flight holds a session, so the executor has to finish before `dispose()` like
+    everything else. It is stopped *first* because cancelling it is what produces the leftover
+    `STARTED` rows — nothing may still be starting work once the loops that resolve them are
+    gone, and the reaper picks those up on the next boot.
+    """
+    journal: list[str] = []
+    monkeypatch.setattr(main, "get_settings", lambda: build_settings())
+
+    class RecordingExecutor(AsyncioApprovedChangeExecutor):
+        async def stop(self) -> None:
+            await super().stop()
+            journal.append("executor:stopped")
+
+    class RecordingReaper(StrandedRunReaper):
+        async def stop(self) -> None:
+            await super().stop()
+            journal.append("reaper:stopped")
+
+    class RecordingSweeper(PendingExpirySweeper):
+        async def stop(self) -> None:
+            await super().stop()
+            journal.append("sweeper:stopped")
+
+    async def tracked_dispose(self: AsyncEngine, **kwargs: Any) -> None:
+        journal.append("engine:disposed")
+
+    monkeypatch.setattr(main, "AsyncioApprovedChangeExecutor", RecordingExecutor)
+    monkeypatch.setattr(main, "StrandedRunReaper", RecordingReaper)
+    monkeypatch.setattr(main, "PendingExpirySweeper", RecordingSweeper)
+    monkeypatch.setattr(AsyncEngine, "dispose", tracked_dispose)
+
+    with TestClient(main.create_app()):
+        assert journal == []
+
+    assert journal == [
+        "executor:stopped",
+        "reaper:stopped",
+        "sweeper:stopped",
+        "engine:disposed",
+    ]
+
+
+def test_building_the_app_starts_no_execution_and_opens_no_connection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V51, one component further: the executor owns tasks only once an approval hands it a run.
+
+    An executor that touched the database at construction would make every boot — and every
+    `/health` probe on a broken deployment — depend on Postgres being up.
+    """
+    monkeypatch.setattr(
+        main, "get_settings", lambda: build_settings(postgres_url=UNREACHABLE_POSTGRES_URL)
+    )
+    runtime = main.build_runtime(main.get_settings())
+
+    assert runtime.approved_change_executor.outstanding == 0
+    assert not runtime.stranded_run_reaper.running
+    assert not runtime.expiry_sweeper.running
 
 
 # --- State wiring ---

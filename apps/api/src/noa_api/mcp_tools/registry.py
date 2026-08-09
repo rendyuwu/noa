@@ -18,6 +18,12 @@ what makes three properties checkable instead of hoped for:
   default would make a CHANGE tool that nobody remembered to classify record itself as a
   READ *and* write a row for a change that has not happened — silently, and in the audit
   trail. Declaring the risk beside the tool means a registrar cannot omit it.
+- **Every CHANGE name has a runner** (T38, V46). A CHANGE tool can open an approval request
+  without being able to execute one: the two halves live in different modules and run at
+  different moments (`noa_api.mcp_tools.change_runners`). Registered without a runner, the tool
+  would produce a card an operator could approve and NOA could only answer
+  `change_runner_unavailable` to — a working request path in front of a dead execution path.
+  So the check happens where both facts meet, which is here.
 
 `RegistryError` rather than `assert`: this runs at app construction, and `python -O` strips
 asserts. A guard that vanishes under an optimization flag is not a guard.
@@ -35,10 +41,14 @@ the client — so tools are grouped by system for reading.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+
 from fastmcp import FastMCP
 
+from core.approvals.execution import ChangeRunner
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ToolRisk
+from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.noa_read import register_noa_read_tools
 from noa_api.mcp_tools.pmg_read import register_pmg_read_tools
@@ -47,7 +57,8 @@ from noa_api.mcp_tools.whm_read import register_whm_read_tools
 
 
 class RegistryError(RuntimeError):
-    """A tool was registered under a name the catalog does not know (V10, C22)."""
+    """A tool was registered under a name the catalog does not know (V10, C22), or a CHANGE
+    tool was registered with nothing able to run it after approval (T38, V46)."""
 
 
 def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
@@ -59,6 +70,7 @@ def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str,
         **register_noa_read_tools(server, context=context),
     }
     assert_names_in_catalog(frozenset(registered))
+    assert_change_runners_cover(registered, build_change_runners(context=context))
     return registered
 
 
@@ -71,8 +83,35 @@ def assert_names_in_catalog(names: frozenset[str]) -> None:
         )
 
 
+def assert_change_runners_cover(
+    registered: Mapping[str, ToolRisk],
+    runners: Mapping[str, ChangeRunner],
+) -> None:
+    """Refuse a CHANGE tool that nothing can execute after approval (T38, V46).
+
+    A startup failure rather than a runtime one, for the reason the catalog check above is: the
+    consequence otherwise lands on an operator who has already typed a reason and pressed
+    Approve, and it lands as a change that will not run.
+
+    Vacuous while T22-T29 are unbuilt — there are no CHANGE tools to cover — and written now
+    anyway, because a rule has to exist before its first instance or the first instance is what
+    discovers it (V85's discipline, T33(d)'s vacuous registry sweep). A probe test registers a
+    CHANGE tool without a runner to prove the predicate separates rather than merely never
+    firing (V87).
+    """
+    uncovered = sorted(
+        name for name, risk in registered.items() if risk is ToolRisk.CHANGE and name not in runners
+    )
+    if uncovered:
+        raise RegistryError(
+            "CHANGE tools registered with no post-approval runner (an operator could approve "
+            f"a change NOA cannot run): {uncovered}"
+        )
+
+
 __all__ = [
     "RegistryError",
+    "assert_change_runners_cover",
     "assert_names_in_catalog",
     "register_mcp_tools",
 ]

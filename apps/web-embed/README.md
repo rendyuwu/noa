@@ -3,9 +3,9 @@
 Next.js 16 app served on the NOA origin. Hosts the approval card and the large-result table surface.
 
 Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45, the
-approval card at §T.41 and its polling loop at §T.42. Still to come: the receipt (the rest of §T.42,
-waiting on §T.38 — §T.36 built the table, and §T.38's executor is what writes a row into it), the
-401 link-out (§T.43) and the table surface (§T.56).
+approval card at §T.41 and its polling loop at §T.42. Still to come: the receipt (the rest of §T.42
+— §T.36 built the table and §T.38 built its writer, so rows now exist and rendering one is all that
+is left), the 401 link-out (§T.43) and the table surface (§T.56).
 The §T.59 render gate that used to block all of them cleared 2026-08-08 (R29): LibreChat puts the
 frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
 authenticates.
@@ -59,14 +59,18 @@ loop keeps going, because "NOA could not be reached just now" is not "there is n
 for".
 
 **The run poll is capped at 150 reads (~5 minutes) and the pending poll is not.** A `PENDING` request
-has a server-side terminator in the sweep; a `STARTED` run has none until §T.38's executor lands, so
-today's run would be polled for as long as the frame stays open. Giving up says *"NOA is still
-running this change. Reload this card to check again."* — never that it failed, because there is no
-evidence of that.
+has a server-side terminator in the sweep, and since §T.38 a `STARTED` run has one too — its executor
+writes a terminal status, and its reaper resolves a run whose process died. Both terminators are
+measured in minutes to a quarter of an hour, which is longer than this cap, so the cap still speaks
+first on a slow change. Giving up says *"NOA is still running this change. Reload this card to check
+again."* — never that it failed, because there is no evidence of that.
 
-The receipt (`action_receipts`) is the other half of §T.42 and is **not built**: §T.36 built the
-table, and §T.38's executor is what writes a row into it, so there is nothing to render yet. What
-the card shows today is the run itself — status, finish time and result summary.
+The receipt (`action_receipts`) is the other half of §T.42 and is **not built here yet**, though it
+now has something to show: §T.36 built the table and §T.38's executor writes a row for every
+approved change that reaches a terminal state — two parts, the before-state the operator approved
+against and what the change actually did. What the card shows today is still only the run itself —
+status, finish time and result summary — so rendering the receipt needs the API's card payload to
+carry it first.
 
 Blankness of the reason is not judged here. V15 puts that gate on the endpoint (409
 `change_reason_required`, checked under the row lock against the same rule the database CHECK holds),
@@ -168,8 +172,8 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-The receipt (the rest of §T.42 — `action_receipts` exists since §T.36, blocked on §T.38's executor
-to write one),
+The receipt (the rest of §T.42 — the table exists since §T.36 and §T.38 writes rows into it, so what
+is left is carrying it on the card payload and rendering both of its halves),
 the "Sign in to NOA" link-out beside the 401 state (§T.43), and the large-result table surface
 (§T.56).
 

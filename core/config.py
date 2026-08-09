@@ -146,7 +146,7 @@ class Settings(BaseSettings):
     mcp_auth_rate_limit_max_attempts: int = Field(default=5, ge=1)
     mcp_auth_rate_limit_block_seconds: int = Field(default=600, ge=1)
 
-    # --- Approval gate (V31, V32) ---
+    # --- Approval gate (V30, V31, V32) ---
     approval_max_inflight_per_user: int = Field(default=1, ge=1)
     approval_pending_ttl_seconds: int = Field(default=3600, ge=60)
     # How often T39's background sweep looks for pending requests past their deadline. Not
@@ -155,6 +155,17 @@ class Settings(BaseSettings):
     # long the request was given. `ge=1` because a sweeper that never runs is V32 held by
     # nothing at all.
     approval_expiry_sweep_interval_seconds: int = Field(default=60, ge=1)
+    # How long a `tool_runs` row may sit STARTED before T38's reaper calls it abandoned. This
+    # *is* a lifetime, unlike the interval above, and the number is a judgement about the
+    # slowest legitimate change: 15 minutes covers an SSH round trip to an unhappy host with
+    # room to spare, and is short enough that V31's cap — which counts STARTED runs — is not
+    # spent for hours by one crashed process. `ge=60` because a deadline shorter than a minute
+    # would reap changes that are merely slow, and a reaped run reads as an outcome nobody
+    # observed.
+    approval_stranded_run_reap_after_seconds: int = Field(default=900, ge=60)
+    # How often the reaper looks. A resolution, like the sweep interval, and deliberately not
+    # derived from the deadline above.
+    approval_stranded_run_reap_interval_seconds: int = Field(default=120, ge=1)
 
     # --- Origins / CORS ---
     api_cors_allowed_origins: list[str] = Field(

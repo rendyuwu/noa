@@ -29,13 +29,17 @@ transcript, so it is read for the card (V33, V35) and never for the model. Neith
 out downstream; neither is ever loaded. `arguments_from_context` is the only thing this module
 takes off that payload.
 
-**The run is `tool_runs`, not `action_receipts`.** §T.63 says "receipt summary". T36 has since
-built the `action_receipts` table, but T38's executor — its only writer — is still unbuilt, so
-a join there answers `null` for every request and would look like a feature while being one
-table's worth of nothing. `action_requests.tool_run_id` is written in the same transaction as
-an approval (T37, V29), so the run row is the execution record that exists today: status,
-redacted summary, timing (V47). When T38 lands and receipts start being written, the receipt
-joins here beside it.
+**The run is `tool_runs`, not `action_receipts`.** §T.63 says "receipt summary". The run row is
+what this reads: `action_requests.tool_run_id` is written in the same transaction as an approval
+(T37, V29), so it exists for every approved change, and it carries status, redacted summary and
+timing (V47).
+
+T38 has since built the receipt's writer, so a receipt now exists for every approved change that
+reached a terminal state — and joining it *here* is still T63's own decision rather than
+something T38 did on its behalf. What a model may be told is narrower than what the card shows
+(V76), and a receipt's before-state is the gate's in-process preflight, which V17 keeps out of
+the transcript. So the receipt joins this view when someone decides which of its halves a model
+may see; T42's card is where it renders first.
 """
 
 from __future__ import annotations

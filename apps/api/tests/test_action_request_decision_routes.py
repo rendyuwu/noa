@@ -27,6 +27,7 @@ import pytest
 from fastapi import status
 from httpx import Response
 
+from core.approvals.decisions import ActionDecisionService
 from core.approvals.errors import (
     ActionDecisionError,
     ActionRequestAlreadyDecidedError,
@@ -36,6 +37,7 @@ from core.approvals.errors import (
     DecisionCsrfInvalidError,
 )
 from core.db.lifecycle import ActionRequestStatus
+from noa_api.api import deps
 from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
 from noa_api.api.routes.action_requests import MAX_REASON_LENGTH
 from support.action_decisions import (
@@ -44,6 +46,7 @@ from support.action_decisions import (
     CONVERSATION_ID,
     REASON,
     DecisionHarness,
+    RecordingApprovedChangeExecutor,
     decision_harness,
     locked_request,
 )
@@ -127,18 +130,27 @@ def test_approve_starts_a_change_run_carrying_the_gate_time_facts(
 def test_approve_hands_the_run_to_the_executor_after_committing(
     harness: DecisionHarness,
 ) -> None:
-    """V28, V29, V46 in one assertion: the order the service did things in.
+    """V28, V29, V31, V46 in one assertion: the order the service did things in.
 
-    `lock` first, so every guard is evaluated through it. `run` before `decision` and both
-    before `commit`, so an APPROVED row with no run is unrepresentable. `execute` last,
-    because a handoff before the commit could start a change whose authorization then rolled
-    back.
+    `lock` first, so every guard is evaluated through it. `inflight` after the guards and
+    *before* `run`, because the run this approval inserts is the row V31's count is counting —
+    taken after it, the cap could only ever be checked against a number this call already
+    changed (T38). `run` before `decision` and both before `commit`, so an APPROVED row with no
+    run is unrepresentable. `execute` last, because a handoff before the commit could start a
+    change whose authorization then rolled back.
     """
     request = pending(harness)
 
     harness.approve(request.action_request_id)
 
-    assert harness.journal == ["lock", "run", "decision:APPROVED", "commit", "execute"]
+    assert harness.journal == [
+        "lock",
+        "inflight",
+        "run",
+        "decision:APPROVED",
+        "commit",
+        "execute",
+    ]
     assert harness.executor.only.tool_run_id == harness.repository.only_run.tool_run_id
     assert harness.executor.only.action_request_id == request.action_request_id
 
@@ -565,6 +577,164 @@ def test_a_request_at_its_deadline_is_expired(harness: DecisionHarness) -> None:
 
 
 # --------------------------------------------------------------------------------------
+# V31 — the per-user cap on in-flight changes (T38)
+# --------------------------------------------------------------------------------------
+
+
+def test_an_operator_at_the_cap_is_refused_409(harness: DecisionHarness) -> None:
+    """V31: over the limit is a refusal with its own code, never a silent queue.
+
+    A queued approval is an authorisation whose moment has passed by the time it runs, and the
+    operator would have no way to tell a slow change from a stuck one. Nothing is lost by
+    refusing: the request stays PENDING until its TTL, so approving again is the remedy.
+    """
+    request = pending(harness)
+    harness.repository.set_inflight(harness.operator.id, 1)
+
+    response = harness.approve(request.action_request_id)
+
+    assert response.status_code == status.HTTP_409_CONFLICT
+    assert body(response)["error_code"] == "change_execution_limit_reached"
+
+
+def test_an_operator_below_the_cap_is_allowed(harness: DecisionHarness) -> None:
+    """The negative control (V87): the cap has to admit the ordinary case, or "refused at the
+    limit" is a claim about a door that is simply shut."""
+    request = pending(harness)
+    harness.repository.set_inflight(harness.operator.id, 0)
+
+    assert harness.approve(request.action_request_id).status_code == status.HTTP_202_ACCEPTED
+
+
+def test_the_cap_is_counted_per_operator_and_not_globally() -> None:
+    """Somebody else's change must not spend this operator's allowance.
+
+    The count is scoped by `requested_by_user_id` in the statement; here it is scoped by the
+    double's own map, so what this pins is that the service passes the *caller* down.
+    """
+    with decision_harness() as built:
+        built.sign_in()
+        other = built.add_operator(OTHER_EMAIL)
+        built.repository.set_inflight(other.id, 99)
+        request = pending(built)
+
+        assert built.approve(request.action_request_id).status_code == status.HTTP_202_ACCEPTED
+
+
+def test_the_cap_refuses_before_a_run_is_started(harness: DecisionHarness) -> None:
+    """Ordering: the run this approval would insert is the row being counted.
+
+    Counted after it, the cap could only ever be compared against a number this call already
+    changed — so a limit of one would admit every first approval and then refuse forever.
+    """
+    request = pending(harness)
+    harness.repository.set_inflight(harness.operator.id, 1)
+
+    harness.approve(request.action_request_id)
+
+    assert harness.journal == ["lock", "inflight"]
+    assert harness.repository.runs == []
+    assert harness.repository.decisions == []
+    assert harness.executor.started == []
+
+
+def test_the_cap_is_checked_after_the_row_is_found(harness: DecisionHarness) -> None:
+    """A request that is not this operator's answers 404 whatever their allowance is (V27).
+
+    The cap is the last guard, so being at the limit never becomes a way to learn that somebody
+    else's request exists — and an operator at their limit is told about a request that was
+    actually theirs to approve.
+    """
+    harness.repository.set_inflight(harness.operator.id, 99)
+    other = harness.add_operator(OTHER_EMAIL)
+    foreign = pending(harness, requested_by_user_id=other.id)
+
+    response = harness.approve(foreign.action_request_id)
+
+    assert response.status_code == status.HTTP_404_NOT_FOUND
+    assert body(response)["error_code"] == "action_request_not_found"
+
+
+def test_a_blank_reason_is_refused_without_taking_the_user_lock(
+    harness: DecisionHarness,
+) -> None:
+    """V15 before V31: a submit that cannot succeed does not serialize behind anyone."""
+    harness.repository.set_inflight(harness.operator.id, 99)
+    request = pending(harness)
+
+    harness.approve(request.action_request_id, reason="   ")
+
+    assert harness.journal == []
+
+
+def test_a_denial_ignores_the_cap(harness: DecisionHarness) -> None:
+    """Nothing starts, so there is nothing to bound (V31).
+
+    An operator at their limit must still be able to say no — refusing a denial would leave the
+    request to expire, which records less about a decision that was actually made.
+    """
+    request = pending(harness)
+    harness.repository.set_inflight(harness.operator.id, 99)
+
+    response = harness.deny(request.action_request_id)
+
+    assert response.status_code == status.HTTP_200_OK
+    assert harness.journal == ["lock", "decision:DENIED", "commit"]
+
+
+def test_the_production_dependency_reads_the_cap_off_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`get_action_decision_service` is what production builds, and the harness overrides it.
+
+    So the test below proves the *harness* plumbs a cap, and this one proves `deps` does — the
+    gap was real and was found by mutation, not by reading: hardcoding `max_inflight_per_user=1`
+    in the dependency left every other test in this file green.
+
+    The service is spied on rather than inspected: what is asserted is the argument the
+    dependency passed, which is the whole of the wiring claim, and it needs no access to
+    anything private.
+    """
+    passed: list[int] = []
+
+    class RecordingService(ActionDecisionService):
+        def __init__(self, *, max_inflight_per_user: int, **kwargs: object) -> None:
+            passed.append(max_inflight_per_user)
+            super().__init__(max_inflight_per_user=max_inflight_per_user, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(deps, "ActionDecisionService", RecordingService)
+
+    deps.get_action_decision_service(
+        # The session is only handed to `SQLActionDecisionRepository`, which stores it and issues
+        # nothing here.
+        session=None,  # type: ignore[arg-type]
+        settings=build_settings(approval_max_inflight_per_user=7),
+        executor=RecordingApprovedChangeExecutor(),
+    )
+
+    assert passed == [7]
+
+
+def test_the_cap_comes_from_settings() -> None:
+    """`APPROVAL_MAX_INFLIGHT_PER_USER` is the one answer to "how many" (T5).
+
+    Asserted with a value that is not the production default, so a service that hardcoded the
+    default would pass a test written against 1 and fail this one (T33(e)'s argument, one setting
+    over). Two changes in flight, a limit of two, and the third is what is refused.
+    """
+    with decision_harness(settings=build_settings(approval_max_inflight_per_user=2)) as built:
+        built.sign_in()
+        request = pending(built)
+
+        built.repository.set_inflight(built.operator.id, 1)
+        assert built.approve(request.action_request_id).status_code == status.HTTP_202_ACCEPTED
+
+        built.repository.set_inflight(built.operator.id, 2)
+        second = pending(built)
+        assert built.approve(second.action_request_id).status_code == status.HTTP_409_CONFLICT
+
+
+# --------------------------------------------------------------------------------------
 # V73 — error shape
 # --------------------------------------------------------------------------------------
 
@@ -651,19 +821,23 @@ def test_the_production_app_mounts_the_decision_routes() -> None:
     assert "/action-requests" not in paths
 
 
-def test_the_deferred_executor_is_what_production_wires_today() -> None:
-    """T38's seam, filled with the placeholder — and the placeholder says so in the logs.
+def test_the_real_executor_is_what_production_wires() -> None:
+    """T38's seam, filled with the asyncio host that actually runs the change (V29, V30).
 
-    Asserted rather than assumed because "approved changes silently never run" is precisely
-    the failure this arrangement risks, and the log line is the only thing that makes it
-    visible before T38 lands.
+    Asserted rather than assumed because "approved changes silently never run" is precisely the
+    failure this arrangement risks: between T37 and T38 the seam held a placeholder that logged
+    and started nothing, and nothing in the request path would have looked different.
+
+    Nothing is in flight on a freshly built runtime — the host owns tasks only once an approval
+    hands it a run, which is what keeps `build_runtime` free of a connection (V51).
     """
-    from core.approvals.decisions import DeferredApprovedChangeExecutor
+    from core.approvals.execution_host import AsyncioApprovedChangeExecutor
     from noa_api.main import build_runtime
 
     runtime = build_runtime(build_settings())
 
-    assert isinstance(runtime.approved_change_executor, DeferredApprovedChangeExecutor)
+    assert isinstance(runtime.approved_change_executor, AsyncioApprovedChangeExecutor)
+    assert runtime.approved_change_executor.outstanding == 0
 
 
 def _without_request_id(response: Response) -> dict[str, object]:

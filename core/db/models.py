@@ -239,7 +239,10 @@ class ToolRun(Base):
     column below only guarantees somewhere to put the redacted form. READ rows are written
     by that middleware. An approved CHANGE's row is opened by the decision that authorised
     it (`core.approvals.decisions`, T37, V46) — in the same transaction, so `APPROVED` with
-    no run cannot exist — and moved to a terminal state by the executor (T38).
+    no run cannot exist — and moved to a terminal state by the executor
+    (`core.approvals.execution`, T38). A row that stays `STARTED` past its deadline is moved
+    there by `core.approvals.reaper` instead, with a summary saying the outcome was never
+    observed rather than that the change failed.
     """
 
     __tablename__ = "tool_runs"
@@ -400,9 +403,10 @@ class ActionReceipt(Base):
     back — before-state and after-state, each verified separately, never collapsed into a
     single "done".
 
-    Nothing writes this table yet. T38's executor does, once it exists; T42's card and
-    T63's `noa_get_action_result` read it beside the run. What this task owes is a shape
-    those three cannot quietly reshape.
+    Written by `core.audit.receipts`, whose two callers are T38's executor — for a change that
+    ran — and T38's reaper, for one whose process died before it could report. T42's card and
+    T63's `noa_get_action_result` read it beside the run. What T36 owed was a shape those
+    cannot quietly reshape, and the `UNIQUE` below is the load-bearing part of it.
 
     Ported from `noa-old` `MCP:.../0006_action_receipts.py` (C13) with three departures,
     each named because a port carries the code and not the defect (T21(b)):

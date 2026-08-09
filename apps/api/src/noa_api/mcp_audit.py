@@ -36,6 +36,11 @@ result, not as a raise. Status is therefore read off `ok`, and `result_summary` 
 A raise that still escapes (argument validation, a bug above the decorator) is recorded
 FAILED and re-raised unchanged: this middleware audits, it does not sanitize.
 
+Both of those rules — the status read off `ok`, and the bounded redacted summary — moved to
+`core.audit.summaries` at T38, because the post-approval executor records the same field
+from the same envelope (V66). They are re-exported below so this module stays the one name
+its callers and tests reach for.
+
 **`conversation_ref` is a label, never a scope** (DECISIONS §10.4, old V165). It arrives as
 `X-Noa-Conversation-Ref` because LibreChat sends no conversation identifier in the call
 itself — at pin `45cc53c4` `MCPManager.callTool` sends `params: {name, arguments}` with no
@@ -48,7 +53,6 @@ log-forging surface V73 closed for `x-request-id`, so it reuses that check.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import Any, Final
 from uuid import UUID
@@ -59,6 +63,11 @@ from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import ToolResult
 from mcp import types as mt
 
+from core.audit.summaries import (
+    MAX_RESULT_SUMMARY_LENGTH,
+    result_summary,
+    status_for_payload,
+)
 from core.auth.mcp_auth_errors import McpAuthError
 from core.db.lifecycle import ToolRisk, ToolRunStatus
 from core.secrets.redaction import redact_sensitive_data
@@ -74,12 +83,6 @@ CONVERSATION_REF_HEADER: Final = "x-noa-conversation-ref"
 # `tool_runs.conversation_ref` is `String(255)`; a longer value would fail the INSERT and
 # take the whole call down with it (fail-closed), so it is dropped to NULL instead.
 MAX_CONVERSATION_REF_LENGTH: Final = 255
-
-# `tool_runs.result_summary` is `String(2000)`. Truncation happens here rather than at the
-# column so the stored value is a marked ellipsis instead of a silently clipped one.
-MAX_RESULT_SUMMARY_LENGTH: Final = 2000
-
-TRUNCATION_SUFFIX: Final = "..."
 
 # The caller-visible refusal when the audit row cannot be written. One code, like the RBAC
 # gate's: it says "NOA declined", not why NOA's database is unhappy (V8).
@@ -127,40 +130,6 @@ def redacted_args(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     """
     redacted = redact_sensitive_data(dict(arguments or {}))
     return redacted if isinstance(redacted, dict) else {}
-
-
-def result_summary(payload: Mapping[str, Any] | None) -> str | None:
-    """A bounded, redacted rendering of what the tool answered (V45, V47).
-
-    Compact JSON so the 2000 characters hold as much of the result as possible, `default=str`
-    so a stray non-serializable value degrades to its repr instead of raising inside the
-    audit path. Redacted for the same reason the arguments are: this row outlives the call
-    and is read by the admin audit surface (T55).
-    """
-    if payload is None:
-        return None
-
-    rendered = json.dumps(redact_sensitive_data(dict(payload)), separators=(",", ":"), default=str)
-    if len(rendered) <= MAX_RESULT_SUMMARY_LENGTH:
-        return rendered
-    return rendered[: MAX_RESULT_SUMMARY_LENGTH - len(TRUNCATION_SUFFIX)] + TRUNCATION_SUFFIX
-
-
-def status_for_payload(payload: Mapping[str, Any] | None) -> ToolRunStatus:
-    """COMPLETED or FAILED, read off the result envelope (V20).
-
-    `ok` is the one field every tool result carries (`noa_api.mcp_tools.results`), and
-    `sanitize_tool_errors` turns an exception into `ok: False` rather than a raise — so
-    without this branch every failed READ would be recorded as a success. An ambiguity
-    result (V18) is `ok: False` too, and is recorded FAILED on purpose: the call did not do
-    what was asked, and `result_summary` carries the `choices` that say why.
-
-    A missing or non-boolean `ok` counts as failure. A result that cannot be read as a
-    success is not evidence of one.
-    """
-    if not payload or payload.get("ok") is not True:
-        return ToolRunStatus.FAILED
-    return ToolRunStatus.COMPLETED
 
 
 class ToolRunAuditMiddleware(Middleware):

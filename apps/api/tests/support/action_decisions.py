@@ -51,15 +51,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from core.approvals.csrf import mint_decision_csrf_token
 from core.approvals.decisions import (
+    ActionDecisionRepository,
     ActionDecisionService,
+    ApprovedChangeExecutor,
     LockedActionRequest,
     SQLActionDecisionRepository,
 )
 from core.approvals.repository import SQLActionRequestRepository
 from core.auth.jwt_service import JWTService
 from core.config import Settings
-from core.db.lifecycle import ActionRequestStatus
-from core.db.models import ActionRequest, ToolRun, User
+from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
+from core.db.models import ActionReceipt, ActionRequest, ToolRun, User
 from noa_api.api.deps import (
     STATE_APPROVED_CHANGE_EXECUTOR,
     STATE_JWT_SERVICE,
@@ -89,6 +91,13 @@ REASON = "Customer confirmed the account is compromised; suspending per ticket N
 
 # What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}` (T57, R28).
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
+
+# V31's cap for a support-built service (T38). Deliberately not `Settings`' own default of 1:
+# four live files approve a request or two and none of them is about the cap, so a helper
+# carrying the production number would make every one of them a cap test by accident — and a
+# helper that agreed with the default would be unseparable from one that hardcoded it (T33(e)'s
+# argument for a 900-second test TTL). A test that *is* about the cap passes its own number.
+SUPPORT_MAX_INFLIGHT_PER_USER = 8
 
 # The gate's `approval_context` shape (T33's `build_approval_context`), already redacted.
 APPROVAL_CONTEXT: dict[str, Any] = {
@@ -160,10 +169,18 @@ class FakeActionDecisionRepository:
         self.commits: list[str] = []
         self.journal = journal if journal is not None else []
         self._pending: list[RecordedDecision] = []
+        # V31's count, as this double reports it (T38). Per user rather than a single number,
+        # so a cap test can put one operator at their limit and leave another free — which is
+        # what proves the count is scoped by requester and not global.
+        self.inflight_by_user: dict[UUID, int] = {}
 
     def add(self, request: LockedActionRequest) -> LockedActionRequest:
         self.rows[request.action_request_id] = request
         return request
+
+    def set_inflight(self, user_id: UUID, count: int) -> None:
+        """Report `count` in-flight CHANGE runs for `user_id` (V31)."""
+        self.inflight_by_user[user_id] = count
 
     # --- `ActionDecisionRepository` ---
 
@@ -171,6 +188,12 @@ class FakeActionDecisionRepository:
         self.locks.append(action_request_id)
         self.journal.append("lock")
         return self.rows.get(action_request_id)
+
+    async def inflight_changes_under_user_lock(self, *, requested_by_user_id: UUID) -> int:
+        # Journalled like every other call, because *when* the count is taken is the claim:
+        # after the lock and the guards, and before the run that would change the answer.
+        self.journal.append("inflight")
+        return self.inflight_by_user.get(requested_by_user_id, 0)
 
     async def start_change_run(
         self,
@@ -264,6 +287,54 @@ class RecordingApprovedChangeExecutor:
     def only(self) -> StartedExecution:
         assert len(self.started) == 1, f"expected one handoff, got {len(self.started)}"
         return self.started[0]
+
+
+def build_decision_service(
+    repository: ActionDecisionRepository,
+    *,
+    executor: ApprovedChangeExecutor | None = None,
+    max_inflight_per_user: int = SUPPORT_MAX_INFLIGHT_PER_USER,
+) -> ActionDecisionService:
+    """The production service over whatever repository a test hands it.
+
+    One construction site for nine call sites (V66). It exists because T38 made V31's cap a
+    required argument: nine copies of the constructor meant nine places to decide what the cap
+    is, and eight of them are in files that have nothing to say about it.
+
+    `executor` defaults to a fresh recorder — a service built to *deny* still needs one, and a
+    test that never inspects it should not have to name it.
+    """
+    return ActionDecisionService(
+        repository=repository,
+        executor=executor or RecordingApprovedChangeExecutor(),
+        max_inflight_per_user=max_inflight_per_user,
+    )
+
+
+def build_live_decision_service(
+    session: AsyncSession,
+    *,
+    executor: RecordingApprovedChangeExecutor | None = None,
+    max_inflight_per_user: int = SUPPORT_MAX_INFLIGHT_PER_USER,
+) -> tuple[ActionDecisionService, RecordingApprovedChangeExecutor]:
+    """The production service over the production repository, and the recorder it hands off to.
+
+    Only the executor is doubled: the SQL, the lock, the guards, the ordering and the error
+    classes are all production code — which is what makes these files claims about V28 and V29
+    rather than about a service calling a repository.
+
+    Both `*_live` files that race the two writers had this verbatim (V66); it landed here when
+    T38's cap argument made it two places to decide what a cap is.
+    """
+    recorder = executor or RecordingApprovedChangeExecutor()
+    return (
+        build_decision_service(
+            SQLActionDecisionRepository(session),
+            executor=recorder,
+            max_inflight_per_user=max_inflight_per_user,
+        ),
+        recorder,
+    )
 
 
 @dataclass
@@ -391,10 +462,13 @@ def decision_harness(
         jwt_service=jwt_service,
     )
     # The real `ActionDecisionService` over a fake repository: the ordering, the guards and
-    # the error classes are all production code.
-    app.dependency_overrides[get_action_decision_service] = lambda: ActionDecisionService(
-        repository=repository,
+    # the error classes are all production code. V31's cap comes off *this harness's* settings,
+    # the way `get_action_decision_service` reads it off the app's — so a cap test sets it with
+    # `build_settings(approval_max_inflight_per_user=...)` and there is one source either way.
+    app.dependency_overrides[get_action_decision_service] = lambda: build_decision_service(
+        repository,
         executor=executor,
+        max_inflight_per_user=resolved_settings.approval_max_inflight_per_user,
     )
 
     with TestClient(app) as client:
@@ -473,14 +547,32 @@ async def read_runs(factory: async_sessionmaker[AsyncSession]) -> list[ToolRun]:
         return list(result.scalars())
 
 
-class ObservedDecisionRepository(SQLActionDecisionRepository):
-    """The production repository, with its locked read narrated and optionally held open.
+async def read_receipts(factory: async_sessionmaker[AsyncSession]) -> list[ActionReceipt]:
+    """Every `action_receipts` row (T36, T38).
 
-    Two hooks and no substitutions: `before_read` fires just before the `SELECT` is issued,
-    `after_read` just after it returns, and the journal records both plus the commit. The SQL
-    under test is the real SQL — what is added is the ability to say *when* each statement
-    happened relative to the other transaction's, which is the whole of V89's obligation (a):
-    the window is held open on purpose rather than hoped for.
+    Unfiltered, like `read_runs` beside it: the claim these files make is usually about *how
+    many* receipts exist, and a query that narrowed to one request could not see a second one
+    written against another.
+    """
+    async with factory() as session:
+        result = await session.execute(sa.select(ActionReceipt))
+        return list(result.scalars())
+
+
+class ObservedDecisionRepository(SQLActionDecisionRepository):
+    """The production repository, with its two locks narrated and optionally held open.
+
+    Four hooks and no substitutions: `before_read`/`after_read` fire around the row lock's
+    `SELECT … FOR UPDATE` (V28), `before_count`/`after_count` around V31's advisory lock and the
+    count it holds open (T38), and the journal records all of them plus the commit. The SQL under
+    test is the real SQL — what is added is the ability to say *when* each statement happened
+    relative to the other transaction's, which is the whole of V89's obligation (a): the window
+    is held open on purpose rather than hoped for.
+
+    Two locks and therefore two races, and they are different races. Two decisions on **one
+    request** contend on the row; two approvals of **different requests by one operator** do not
+    touch each other's rows at all, and contend only on the advisory key — which is why V31 needs
+    its own overlap test rather than inheriting V28's.
     """
 
     def __init__(
@@ -491,12 +583,16 @@ class ObservedDecisionRepository(SQLActionDecisionRepository):
         journal: list[str],
         before_read: Callable[[], Awaitable[None]] | None = None,
         after_read: Callable[[], Awaitable[None]] | None = None,
+        before_count: Callable[[], Awaitable[None]] | None = None,
+        after_count: Callable[[], Awaitable[None]] | None = None,
     ) -> None:
         super().__init__(session)
         self._label = label
         self._journal = journal
         self._before_read = before_read
         self._after_read = after_read
+        self._before_count = before_count
+        self._after_count = after_count
 
     async def lock_for_decision(self, *, action_request_id: UUID) -> LockedActionRequest | None:
         if self._before_read is not None:
@@ -508,9 +604,50 @@ class ObservedDecisionRepository(SQLActionDecisionRepository):
             await self._after_read()
         return result
 
+    async def inflight_changes_under_user_lock(self, *, requested_by_user_id: UUID) -> int:
+        if self._before_count is not None:
+            await self._before_count()
+        self._journal.append(f"{self._label}:counting")
+        count = await super().inflight_changes_under_user_lock(
+            requested_by_user_id=requested_by_user_id
+        )
+        self._journal.append(f"{self._label}:counted")
+        if self._after_count is not None:
+            await self._after_count()
+        return count
+
     async def commit(self) -> None:
         await super().commit()
         self._journal.append(f"{self._label}:committed")
+
+
+class UnlockedCountDecisionRepository(ObservedDecisionRepository):
+    """`ObservedDecisionRepository` with V31's advisory lock removed and nothing else changed.
+
+    The negative control's instrument (V87). "The second count landed after the first commit" is
+    worthless as an assertion if *every* count would land there — if the harness simply never
+    overlapped the two transactions. This runs the identical handshake with a plain count in
+    place of the locked one, which is the same shape
+    `test_an_unlocked_read_of_the_same_row_does_not_wait` uses for V28's row lock.
+    """
+
+    async def inflight_changes_under_user_lock(self, *, requested_by_user_id: UUID) -> int:
+        if self._before_count is not None:
+            await self._before_count()
+        self._journal.append(f"{self._label}:counting")
+        result = await self._session.execute(
+            sa.select(sa.func.count())
+            .select_from(ToolRun)
+            .where(
+                ToolRun.requested_by_user_id == requested_by_user_id,
+                ToolRun.risk == ToolRisk.CHANGE,
+                ToolRun.status == ToolRunStatus.STARTED,
+            )
+        )
+        self._journal.append(f"{self._label}:counted")
+        if self._after_count is not None:
+            await self._after_count()
+        return int(result.scalar_one())
 
 
 # How long the first transaction holds its lock after the second party has issued its
@@ -526,6 +663,7 @@ __all__ = [
     "CONVERSATION_ID",
     "HANDOVER_GRACE_SECONDS",
     "REASON",
+    "SUPPORT_MAX_INFLIGHT_PER_USER",
     "DecisionHarness",
     "FakeActionDecisionRepository",
     "ObservedDecisionRepository",
@@ -533,10 +671,14 @@ __all__ = [
     "RecordedDecision",
     "RecordingApprovedChangeExecutor",
     "StartedExecution",
+    "UnlockedCountDecisionRepository",
+    "build_decision_service",
+    "build_live_decision_service",
     "decision_harness",
     "insert_user",
     "locked_request",
     "open_request",
+    "read_receipts",
     "read_request",
     "read_runs",
 ]

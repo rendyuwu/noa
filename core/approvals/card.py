@@ -41,9 +41,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.clock import as_utc
 from core.approvals.context import (
-    CONTEXT_EVIDENCE_KEY,
     CONTEXT_REQUESTER_KEY,
     arguments_from_context,
+    # Lived here until T38, when the executor became its second reader and it moved beside
+    # `arguments_from_context` (V66). Re-exported below so this module stays the name T41's
+    # card and its tests reach for.
+    evidence_from_context,
 )
 from core.approvals.expiry import ActionRequestExpiryService
 from core.approvals.reads import (
@@ -146,18 +149,6 @@ def requester_from_context(approval_context: Mapping[str, Any]) -> ApprovalCardR
         email=email if isinstance(email, str) else "",
         librechat_user_id=librechat_user_id if isinstance(librechat_user_id, str) else "",
     )
-
-
-def evidence_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any]:
-    """The in-process preflight the CHANGE tool ran (C9, V17, V35).
-
-    For the card and only the card. `{}` when absent or not an object — the gate refuses to
-    open a request with no evidence at all (`ChangeEvidenceRequiredError`), so an empty payload
-    here means the row predates that guard or was written by something else, and either way the
-    honest render is "nothing recorded" rather than an exception in front of an operator.
-    """
-    evidence = approval_context.get(CONTEXT_EVIDENCE_KEY)
-    return dict(evidence) if isinstance(evidence, dict) else {}
 
 
 class ApprovalCardRepository(Protocol):

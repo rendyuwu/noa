@@ -48,14 +48,15 @@ inside that window, with the negative control V89 requires.
 **The loop must outlive its own failures.** `PendingExpirySweeper` catches per pass, because
 a guarantee that ends the first time Postgres blinks is not a guarantee. It sleeps *before*
 its first pass so that starting the app touches no database: `/health` has to answer with
-Postgres down (V51), and one interval of delay against an hour-long TTL costs nothing.
+Postgres down (V51), and one interval of delay against an hour-long TTL costs nothing. Both
+of those, and the two rules about stopping, now live in `core.tasks.periodic.PeriodicTask`
+— hoisted at T38, whose reaper is the second component on the same loop, so the four
+properties are proven once and inherited twice rather than copied (V66).
 """
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable
-from contextlib import suppress
 from datetime import datetime
 from typing import Final, Protocol
 from uuid import UUID
@@ -68,6 +69,7 @@ from core.approvals.clock import now_utc
 from core.db.lifecycle import ActionRequestStatus
 from core.db.models import ActionRequest
 from core.db.session import SessionFactory
+from core.tasks.periodic import PeriodicTask
 
 # The asyncio task's name, so a dump of running tasks says what this is.
 SWEEP_TASK_NAME: Final = "noa-action-request-expiry-sweep"
@@ -221,12 +223,17 @@ class PendingExpirySweeper:
     """The background half of V32: an asyncio task that expires what nobody answered.
 
     In-process rather than a cron entry or a separate worker, matching V30's shape for the
-    async host T38 builds next door: one task, its own session per pass, started and stopped
+    async host T38 built next door: one task, its own session per pass, started and stopped
     by the app lifespan that owns the engine it draws from.
 
     A pass gets its **own session**, not a long-lived one. A session held for the life of the
     process pins a connection to it and would answer every later sweep through whatever state
     that connection was left in.
+
+    The loop is `core.tasks.periodic.PeriodicTask`, held rather than reimplemented (V66, T38).
+    This class stays the thing the lifespan starts and stops, and `run_once` stays here for
+    the reason it always was: the loop is what swallows a failure, so a caller driving a
+    single pass sees it.
     """
 
     def __init__(
@@ -239,42 +246,30 @@ class PendingExpirySweeper:
         ] = SQLActionRequestExpiryRepository,
     ) -> None:
         self._session_factory = session_factory
-        self._interval_seconds = interval_seconds
         # The same seam `McpToolContext` uses for every repository it builds per call: the
         # production default is the real one, and a test can drive the loop — its sleep, its
         # error handling, its one-session-per-pass rule — without a database, while the SQL
         # itself stays pinned against a real one.
         self._repository_factory = repository_factory
-        self._task: asyncio.Task[None] | None = None
+        self._loop = PeriodicTask(
+            task_name=SWEEP_TASK_NAME,
+            interval_seconds=interval_seconds,
+            run_pass=self.run_once,
+            failure_event=LOG_SWEEP_FAILED,
+        )
 
     @property
     def running(self) -> bool:
         """Whether a sweep task is currently owned by this sweeper."""
-        return self._task is not None
+        return self._loop.running
 
     async def start(self) -> None:
-        """Begin sweeping. Idempotent: a second call does not start a second loop.
-
-        Idempotent rather than an error because two loops would both be correct and one of
-        them would never be stopped — `stop()` only knows about the task it holds.
-        """
-        if self._task is not None:
-            return
-        self._task = asyncio.create_task(self._run(), name=SWEEP_TASK_NAME)
+        """Begin sweeping. Idempotent — see `PeriodicTask.start`."""
+        await self._loop.start()
 
     async def stop(self) -> None:
-        """Cancel the loop and wait for it, so no pass outlives the engine it draws from.
-
-        Awaited rather than fired and forgotten: the lifespan disposes the engine immediately
-        after this returns, and a pass still in flight would then be running against a
-        disposed pool.
-        """
-        task, self._task = self._task, None
-        if task is None:
-            return
-        task.cancel()
-        with suppress(asyncio.CancelledError):
-            await task
+        """Cancel the loop and wait for it, so no pass outlives the engine it draws from."""
+        await self._loop.stop()
 
     async def run_once(self) -> tuple[UUID, ...]:
         """One pass, in its own session and its own transaction. Raises on failure.
@@ -285,28 +280,6 @@ class PendingExpirySweeper:
         async with self._session_factory() as session:
             service = ActionRequestExpiryService(self._repository_factory(session))
             return await service.sweep()
-
-    async def _run(self) -> None:
-        """Sleep, sweep, repeat — and survive a failing pass (V32).
-
-        **Sleep first.** A pass at startup would make every boot touch Postgres, and V51 says
-        `/health` must answer with the database down; one interval against a TTL measured in
-        hours buys nothing worth that.
-
-        `except Exception` and not `BaseException`: `CancelledError` is a `BaseException` in
-        3.11+, so `stop()` still stops this loop rather than being caught and logged as a
-        failed pass.
-        """
-        while True:
-            await asyncio.sleep(self._interval_seconds)
-            try:
-                await self.run_once()
-            except Exception as exc:
-                logger.error(
-                    LOG_SWEEP_FAILED,
-                    cause=type(exc).__name__,
-                    detail=str(exc),
-                )
 
 
 __all__ = [

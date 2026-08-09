@@ -21,24 +21,23 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from core.approvals.decisions import (
-    ActionDecisionService,
-    SQLActionDecisionRepository,
-)
+from core.approvals.decisions import SQLActionDecisionRepository
 from core.approvals.errors import (
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
     ActionRequestNotFoundError,
+    ChangeExecutionLimitReachedError,
     ChangeReasonRequiredError,
 )
 from core.approvals.repository import SQLActionRequestRepository
+from core.audit.tool_runs import SQLToolRunRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRisk, ToolRunStatus
 from core.db.models import ActionRequest, User
 from support.action_decisions import (
@@ -48,7 +47,9 @@ from support.action_decisions import (
     HANDOVER_GRACE_SECONDS,
     REASON,
     ObservedDecisionRepository,
-    RecordingApprovedChangeExecutor,
+    UnlockedCountDecisionRepository,
+    build_decision_service,
+    build_live_decision_service,
     insert_user,
     open_request,
     read_request,
@@ -84,21 +85,6 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
         await engine.dispose()
 
 
-def build_service(
-    session: AsyncSession,
-    executor: RecordingApprovedChangeExecutor | None = None,
-) -> tuple[ActionDecisionService, RecordingApprovedChangeExecutor]:
-    """The production service over the production repository. Only the executor is doubled."""
-    recorder = executor or RecordingApprovedChangeExecutor()
-    return (
-        ActionDecisionService(
-            repository=SQLActionDecisionRepository(session),
-            executor=recorder,
-        ),
-        recorder,
-    )
-
-
 # The row helpers — `insert_user`, `open_request`, `read_request`, `read_runs` — moved to
 # `support.action_decisions` at T39, when the expiry sweep's live file needed the same four
 # (V66). They still write through the gate's own repository; see their docstrings.
@@ -123,7 +109,7 @@ async def test_approval_writes_the_change_tool_run(factory) -> None:
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
     async with factory() as session:
-        service, executor = build_service(session)
+        service, executor = build_live_decision_service(session)
         outcome = await service.approve(
             action_request_id=action_request_id,
             caller_user_id=user_id,
@@ -152,7 +138,7 @@ async def test_the_decision_row_is_the_authorization_after_approval(factory) -> 
     before = datetime.now(UTC)
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         outcome = await service.approve(
             action_request_id=action_request_id,
             caller_user_id=user_id,
@@ -236,7 +222,7 @@ async def test_denial_writes_no_run(factory) -> None:
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
     async with factory() as session:
-        service, executor = build_service(session)
+        service, executor = build_live_decision_service(session)
         await service.deny(
             action_request_id=action_request_id,
             caller_user_id=user_id,
@@ -295,11 +281,10 @@ async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> 
 
     async def first() -> Exception | None:
         async with factory() as session:
-            service = ActionDecisionService(
-                repository=ObservedDecisionRepository(
+            service = build_decision_service(
+                ObservedDecisionRepository(
                     session, label="first", journal=journal, after_read=hold_the_lock
-                ),
-                executor=RecordingApprovedChangeExecutor(),
+                )
             )
             try:
                 await service.approve(
@@ -313,11 +298,10 @@ async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> 
 
     async def second() -> Exception | None:
         async with factory() as session:
-            service = ActionDecisionService(
-                repository=ObservedDecisionRepository(
+            service = build_decision_service(
+                ObservedDecisionRepository(
                     session, label="second", journal=journal, before_read=announce_read
-                ),
-                executor=RecordingApprovedChangeExecutor(),
+                )
             )
             try:
                 await service.approve(
@@ -407,7 +391,7 @@ async def test_concurrent_approve_and_deny_leave_one_answer(factory) -> None:
 
     async def approve() -> Exception | None:
         async with factory() as session:
-            service, _ = build_service(session)
+            service, _ = build_live_decision_service(session)
             try:
                 await service.approve(
                     action_request_id=action_request_id,
@@ -420,7 +404,7 @@ async def test_concurrent_approve_and_deny_leave_one_answer(factory) -> None:
 
     async def deny() -> Exception | None:
         async with factory() as session:
-            service, _ = build_service(session)
+            service, _ = build_live_decision_service(session)
             try:
                 await service.deny(
                     action_request_id=action_request_id,
@@ -450,7 +434,7 @@ async def test_a_second_decision_after_the_first_committed_is_refused(factory) -
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         await service.approve(
             action_request_id=action_request_id,
             caller_user_id=user_id,
@@ -458,7 +442,7 @@ async def test_a_second_decision_after_the_first_committed_is_refused(factory) -
         )
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestAlreadyDecidedError):
             await service.deny(
                 action_request_id=action_request_id,
@@ -481,7 +465,7 @@ async def test_another_operators_request_is_not_found(factory) -> None:
     action_request_id = await open_request(factory, requested_by_user_id=owner_id)
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestNotFoundError):
             await service.approve(
                 action_request_id=action_request_id,
@@ -497,7 +481,7 @@ async def test_an_unknown_id_is_not_found(factory) -> None:
     user_id = await insert_user(factory, OPERATOR_EMAIL)
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestNotFoundError):
             await service.approve(
                 action_request_id=uuid4(),
@@ -525,7 +509,7 @@ async def test_a_request_whose_requester_was_deleted_is_not_found(factory) -> No
     assert stored.requested_by_user_id is None
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestNotFoundError):
             await service.approve(
                 action_request_id=action_request_id,
@@ -546,7 +530,7 @@ async def test_an_expired_request_becomes_terminal_on_read(factory) -> None:
     )
 
     async with factory() as session:
-        service, executor = build_service(session)
+        service, executor = build_live_decision_service(session)
         with pytest.raises(ActionRequestExpiredError):
             await service.approve(
                 action_request_id=action_request_id,
@@ -578,14 +562,14 @@ async def test_deciding_an_expired_request_twice_reports_it_as_decided(factory) 
     )
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestExpiredError):
             await service.approve(
                 action_request_id=action_request_id, caller_user_id=user_id, reason=REASON
             )
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ActionRequestAlreadyDecidedError):
             await service.approve(
                 action_request_id=action_request_id, caller_user_id=user_id, reason=REASON
@@ -598,7 +582,7 @@ async def test_a_blank_reason_touches_no_row(factory) -> None:
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
     async with factory() as session:
-        service, _ = build_service(session)
+        service, _ = build_live_decision_service(session)
         with pytest.raises(ChangeReasonRequiredError):
             await service.approve(
                 action_request_id=action_request_id,
@@ -619,3 +603,245 @@ async def test_the_gates_repository_still_cannot_decide(factory) -> None:
     writable = {name for name in dir(SQLActionRequestRepository) if not name.startswith("_")}
 
     assert writable == {"create_pending", "commit"}
+
+
+# --------------------------------------------------------------------------------------
+# V31 — the per-user cap, and the lock that makes it hold (T38, V89)
+# --------------------------------------------------------------------------------------
+
+
+async def test_the_cap_counts_a_started_change_run(factory) -> None:
+    """V31, sequentially: one change in flight, a limit of one, and the second is refused.
+
+    The count is `tool_runs` rows that are `CHANGE` and `STARTED` — which is what "in flight"
+    means when the executor has not written a terminal status yet (T38). Two requests, because a
+    second approval of the *same* request is V28's 409 and would pass this test for the wrong
+    reason.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    first_request = await open_request(factory, requested_by_user_id=user_id)
+    second_request = await open_request(factory, requested_by_user_id=user_id)
+
+    async with factory() as session:
+        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
+        await service.approve(
+            action_request_id=first_request,
+            caller_user_id=user_id,
+            reason=REASON,
+        )
+
+    async with factory() as session:
+        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
+        with pytest.raises(ChangeExecutionLimitReachedError):
+            await service.approve(
+                action_request_id=second_request,
+                caller_user_id=user_id,
+                reason=REASON,
+            )
+
+    assert len(await read_runs(factory)) == 1
+    assert (await read_request(factory, second_request)).status is ActionRequestStatus.PENDING
+
+
+async def test_a_finished_change_frees_the_operators_slot(factory) -> None:
+    """The negative control for the cap (V87): it must let go.
+
+    A cap that counted every change an operator ever made would refuse the second approval
+    forever, and this test would be the only thing that noticed.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    first_request = await open_request(factory, requested_by_user_id=user_id)
+    second_request = await open_request(factory, requested_by_user_id=user_id)
+
+    async with factory() as session:
+        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
+        outcome = await service.approve(
+            action_request_id=first_request,
+            caller_user_id=user_id,
+            reason=REASON,
+        )
+
+    # What the executor does when the change finishes (T38).
+    async with factory() as session:
+        runs = SQLToolRunRepository(session)
+        await runs.finish_run(
+            tool_run_id=outcome.tool_run_id,
+            status=ToolRunStatus.COMPLETED,
+            result_summary='{"ok":true}',
+        )
+        await runs.commit()
+
+    async with factory() as session:
+        service, _ = build_live_decision_service(session, max_inflight_per_user=1)
+        await service.approve(
+            action_request_id=second_request,
+            caller_user_id=user_id,
+            reason=REASON,
+        )
+
+    assert len(await read_runs(factory)) == 2
+
+
+async def test_another_operators_change_does_not_spend_this_ones_allowance(factory) -> None:
+    """The count is scoped by `requested_by_user_id` in the statement.
+
+    Global instead of per-user, the cap would make one operator's slow change stop the team —
+    which is the outage V31's wording ("per-user") exists to avoid.
+    """
+    first_user = await insert_user(factory, OPERATOR_EMAIL)
+    second_user = await insert_user(factory, OTHER_EMAIL)
+    first_request = await open_request(factory, requested_by_user_id=first_user)
+    second_request = await open_request(factory, requested_by_user_id=second_user)
+
+    for request_id, user_id in ((first_request, first_user), (second_request, second_user)):
+        async with factory() as session:
+            service, _ = build_live_decision_service(session, max_inflight_per_user=1)
+            await service.approve(
+                action_request_id=request_id,
+                caller_user_id=user_id,
+                reason=REASON,
+            )
+
+    assert len(await read_runs(factory)) == 2
+
+
+async def test_two_overlapping_approvals_by_one_operator_start_one_run(factory) -> None:
+    """V31 under concurrency, proven overlapped (V89, B5).
+
+    **Why V28's row lock does not cover this.** Two approvals of *different* requests never
+    touch each other's rows, so `SELECT … FOR UPDATE` serializes nothing between them. Both read
+    a count of zero under READ COMMITTED — neither can see the other's uncommitted `tool_runs`
+    insert — and both proceed. What serializes them is V31's per-user advisory lock, taken inside
+    the same transaction as the count it protects.
+
+    **The window is held open on purpose.** The first transaction stops between taking the
+    advisory lock and committing, and the second is started inside that window.
+
+    **The ordering assertion is what carries the invariant**, not the win count: `second:counted`
+    must land *after* `first:committed`, because that is what "the second count waited for the
+    lock" means, and it is false the instant the advisory lock is removed. The
+    `tool_runs` count is the harm this prevents — two rows would mean two production changes
+    running for one operator whose limit is one.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    first_request = await open_request(factory, requested_by_user_id=user_id)
+    second_request = await open_request(factory, requested_by_user_id=user_id)
+
+    journal: list[str] = []
+    second_counting = asyncio.Event()
+
+    async def hold_the_lock() -> None:
+        """Stay inside the first transaction until the second has reached for the key."""
+        await second_counting.wait()
+        await asyncio.sleep(HANDOVER_GRACE_SECONDS)
+
+    async def announce_count() -> None:
+        second_counting.set()
+
+    async def approve(
+        action_request_id: UUID,
+        *,
+        label: str,
+        before_count=None,  # type: ignore[no-untyped-def]
+        after_count=None,  # type: ignore[no-untyped-def]
+    ) -> Exception | None:
+        async with factory() as session:
+            service = build_decision_service(
+                ObservedDecisionRepository(
+                    session,
+                    label=label,
+                    journal=journal,
+                    before_count=before_count,
+                    after_count=after_count,
+                ),
+                max_inflight_per_user=1,
+            )
+            try:
+                await service.approve(
+                    action_request_id=action_request_id,
+                    caller_user_id=user_id,
+                    reason=f"{REASON} ({label})",
+                )
+            except Exception as exc:
+                return exc
+            return None
+
+    outcomes = await asyncio.gather(
+        approve(first_request, label="first", after_count=hold_the_lock),
+        approve(second_request, label="second", before_count=announce_count),
+    )
+
+    assert journal.index("second:counted") > journal.index("first:committed"), (
+        f"the second count did not wait for the first transaction: {journal}"
+    )
+
+    winners = [outcome for outcome in outcomes if outcome is None]
+    losers = [outcome for outcome in outcomes if outcome is not None]
+
+    assert len(winners) == 1, f"expected exactly one approval to win, got {outcomes}"
+    assert isinstance(losers[0], ChangeExecutionLimitReachedError)
+    assert len(await read_runs(factory)) == 1
+
+
+async def test_an_unlocked_count_does_not_wait_and_the_cap_is_breached(factory) -> None:
+    """The negative control for the ordering assertion above (V87, V89's obligation (b)).
+
+    A "the second count landed after the first commit" assertion is worthless if *every* count
+    would land there — if, say, the harness never actually overlapped the two transactions. This
+    runs the identical handshake with the advisory lock removed and nothing else changed, and
+    shows two things at once: the count returns *while* the first transaction still holds its
+    slot, and both approvals then win. So the ordering the test above forbids is reachable, and
+    the harm it forbids is real.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    first_request = await open_request(factory, requested_by_user_id=user_id)
+    second_request = await open_request(factory, requested_by_user_id=user_id)
+
+    journal: list[str] = []
+    second_counting = asyncio.Event()
+
+    async def hold_open() -> None:
+        await second_counting.wait()
+        await asyncio.sleep(HANDOVER_GRACE_SECONDS)
+
+    async def announce_count() -> None:
+        second_counting.set()
+
+    async def approve(
+        action_request_id: UUID,
+        *,
+        label: str,
+        before_count=None,  # type: ignore[no-untyped-def]
+        after_count=None,  # type: ignore[no-untyped-def]
+    ) -> Exception | None:
+        async with factory() as session:
+            service = build_decision_service(
+                UnlockedCountDecisionRepository(
+                    session,
+                    label=label,
+                    journal=journal,
+                    before_count=before_count,
+                    after_count=after_count,
+                ),
+                max_inflight_per_user=1,
+            )
+            try:
+                await service.approve(
+                    action_request_id=action_request_id,
+                    caller_user_id=user_id,
+                    reason=f"{REASON} ({label})",
+                )
+            except Exception as exc:
+                return exc
+            return None
+
+    outcomes = await asyncio.gather(
+        approve(first_request, label="first", after_count=hold_open),
+        approve(second_request, label="second", before_count=announce_count),
+    )
+
+    assert journal.index("second:counted") < journal.index("first:committed"), (
+        f"the unlocked count still waited, so the handshake never overlapped: {journal}"
+    )
+    assert outcomes == [None, None], f"expected both approvals to win without the lock: {outcomes}"
+    assert len(await read_runs(factory)) == 2
