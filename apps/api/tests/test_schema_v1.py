@@ -38,6 +38,7 @@ LATER_TABLES = {
     "tool_runs": "T35 (V20, V45-V47)",
     "action_requests": "T34 (V20, V32, V33, V43)",
     "action_receipts": "T36 (V46)",
+    "tool_result_tables": "T56 (V64, V85)",
 }
 
 # Named so the assertion below says what it is guarding against rather than only

@@ -57,6 +57,22 @@ export async function frameCard(
 }
 
 /**
+ * The same frame, around the large-READ table surface (§T.56).
+ *
+ * The table is served into the frame LibreChat gives *this* app — same parent origin, same sandbox
+ * string, same session cookie as the card — because a surface measured in a frame LibreChat does
+ * not serve is measured under a premise nothing holds (V66, the reason `frameCard` is shared).
+ */
+export async function frameTable(
+  page: Page,
+  token: string,
+  sandbox: string = MEASURED_SANDBOX,
+): Promise<FrameLocator> {
+  await page.goto(parentUrl(`${EMBED_ORIGIN}/tables/${token}`, sandbox))
+  return page.frameLocator('#card')
+}
+
+/**
  * The framed document itself, for the reads that have to run inside it.
  *
  * `allow-same-origin` keeps the frame same-origin with *its own* origin, which is not the parent's —

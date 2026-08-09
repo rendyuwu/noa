@@ -56,8 +56,7 @@ from uuid import UUID
 
 import structlog
 from fastmcp.tools import ToolResult
-from mcp.types import EmbeddedResource, TextContent, TextResourceContents
-from pydantic import AnyUrl
+from mcp.types import EmbeddedResource, TextContent
 
 from core.approvals.context import (
     CONTEXT_ARGUMENTS_KEY,
@@ -75,6 +74,15 @@ from core.secrets.redaction import redact_sensitive_data
 from noa_api.mcp_audit import read_conversation_ref
 from noa_api.mcp_request_auth import current_mcp_identity
 from noa_api.mcp_tools.context import McpToolContext, build_action_request_repository
+from noa_api.mcp_tools.ui_resource import (
+    # The three fields that make an iframe render at all, and the join onto the embed base.
+    # Hoisted at T56, when the table surface became the second result carrying a NOA-origin
+    # document: V64 says that surface uses *this* mechanism rather than a second one, and two
+    # spellings of "what makes LibreChat render a frame" is how one of them goes stale (V66).
+    UI_RESOURCE_MIME_TYPE,
+    build_ui_resource,
+    embed_url,
+)
 
 # Argument names that would carry an LLM-authored reason (C8, V43). An explicit set, not a
 # substring rule: `reason` has to be refused, while a legitimate argument such as
@@ -111,13 +119,6 @@ APPROVAL_CARD_PATH: Final = "/approvals"
 # (`packages/api/src/mcp/parsers.ts:183` at pin `45cc53c4`, R31c). A resource without it
 # arrives as an ordinary attachment and never renders.
 UI_RESOURCE_URI_PREFIX: Final = "ui://noa/approval/"
-
-# The half of the pair that picks the render *mode*. mcp-ui `5.7.0` maps `text/uri-list` to
-# `externalUrl` -> `iframeRenderMode: 'src'`, and `text/html` to `rawHtml` -> `srcDoc` (R12).
-# Only the first puts the document on NOA's origin with `allow-same-origin`, so only the first
-# lets the `noa_session` cookie ride into the frame — MEASURED live 2026-08-08 against both
-# halves (R29, C17), where the `srcDoc` control could not read `document.cookie` at all.
-UI_RESOURCE_MIME_TYPE: Final = "text/uri-list"
 
 
 class ChangeGateBranch(StrEnum):
@@ -307,12 +308,16 @@ def approval_card_url(action_request_id: UUID, *, embed_base_url: str) -> str:
     URL is a name, not a key, and a URL that were a key would be one an operator could paste
     into a chat.
 
-    `rstrip` even though `core.config` already strips trailing slashes from
-    `NOA_EMBED_BASE_URL`: this function is also called with literals in tests and by T56's
-    sibling surface later, and one doubled slash is the kind of thing that only shows up in
-    front of an operator.
+    The join itself is `noa_api.mcp_tools.ui_resource.embed_url`, shared with T56's table
+    surface since that row landed — it strips a trailing slash even though `core.config`
+    already does, because both are also called with literals in tests and one doubled slash is
+    the kind of thing that only shows up in front of an operator.
     """
-    return f"{embed_base_url.rstrip('/')}{APPROVAL_CARD_PATH}/{action_request_id}"
+    return embed_url(
+        embed_base_url=embed_base_url,
+        path=APPROVAL_CARD_PATH,
+        identifier=str(action_request_id),
+    )
 
 
 def build_change_gate_response(
@@ -391,15 +396,12 @@ def _approval_ui_resource(request: PendingChangeRequest, *, url: str) -> Embedde
     LibreChat treat this as a UI resource at all, `text/uri-list` is what makes mcp-ui render
     it as an iframe `src` instead of `srcDoc`, and the body is the URL because that is what a
     uri-list *is*. Change any one and the card either does not render or renders on an opaque
-    origin where the session cookie cannot follow (C17).
+    origin where the session cookie cannot follow (C17). The shape lives in
+    `noa_api.mcp_tools.ui_resource`; what is local here is which `ui://` name this surface has.
     """
-    return EmbeddedResource(
-        type="resource",
-        resource=TextResourceContents(
-            uri=AnyUrl(f"{UI_RESOURCE_URI_PREFIX}{request.action_request_id}"),
-            mimeType=UI_RESOURCE_MIME_TYPE,
-            text=url,
-        ),
+    return build_ui_resource(
+        uri=f"{UI_RESOURCE_URI_PREFIX}{request.action_request_id}",
+        url=url,
     )
 
 

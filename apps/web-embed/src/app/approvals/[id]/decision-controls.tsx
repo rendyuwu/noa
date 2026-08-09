@@ -5,6 +5,10 @@ import { useState } from 'react'
 import { type DecisionKind, submitDecision } from '@/lib/approvals/decide'
 import { type DecisionOutcome, describeDecision } from '@/lib/approvals/outcome'
 
+// `.actions` and `.button` live with the notice states since §T.56 hoisted them (V66); the two
+// colour modifiers below are the card's own, so the class names compose across both modules.
+import shared from '@/components/notice.module.css'
+
 import styles from './card.module.css'
 
 /**
@@ -71,10 +75,10 @@ export function DecisionControls({
         />
       </label>
 
-      <div className={styles.actions}>
+      <div className={shared.actions}>
         <button
           type="button"
-          className={`${styles.button} ${styles.approve}`}
+          className={`${shared.button} ${styles.approve}`}
           onClick={() => void decide('approve')}
           disabled={pending !== null || settled}
         >
@@ -82,7 +86,7 @@ export function DecisionControls({
         </button>
         <button
           type="button"
-          className={`${styles.button} ${styles.deny}`}
+          className={`${shared.button} ${styles.deny}`}
           onClick={() => void decide('deny')}
           disabled={pending !== null || settled}
         >

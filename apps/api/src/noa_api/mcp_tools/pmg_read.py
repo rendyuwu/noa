@@ -37,9 +37,10 @@ Registration declares `ToolRisk.READ` (T73, V20). Nothing here records anything:
 `tool_runs` row is written by `ToolRunAuditMiddleware` beside the RBAC gate (V83b), and the
 risk it stamps comes from here, where the tool is defined.
 
-`pmg_whitelist_list` (T30) is not here yet — it is the large-result case (V64) and its render
-mechanism is gated on T59. A bounded membership question needs no table surface, so this tool
-is not waiting on that gate.
+`pmg_whitelist_list` (T30) is not here yet — it is the large-result case (V64). Its surface is
+built: `noa_api.mcp_tools.table_surface` parks the rows and answers with an address (T56), and
+the render mechanism cleared its gate on 2026-08-08 (T59, R29). A bounded membership question
+needs no table surface, so this tool never waited on either.
 """
 
 from __future__ import annotations

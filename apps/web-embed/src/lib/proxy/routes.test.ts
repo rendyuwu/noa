@@ -63,10 +63,11 @@ describe('resolveProxyTarget — allows exactly the embed’s four calls', () =>
   })
 
   it('exposes four routes and no more', () => {
-    // Pinned deliberately, and neither §T.41 nor §T.42 moved it: §T.46 settled that the CSRF token
-    // rides in the card's own detail response, so there was no minting route to allowlist, and the
-    // poll uses the `GET action-requests/<id>` entry planted here rather than a new one. §T.56 (the
-    // table surface) is the remaining widening, and it has to change this number to do it — which
+    // Pinned deliberately, and nothing has moved it: §T.46 settled that the CSRF token rides in the
+    // card's own detail response, so there was no minting route to allowlist, and the poll uses the
+    // `GET action-requests/<id>` entry planted here rather than a new one. §T.56 was predicted to
+    // widen it and did not — the table surface reads server-side and never polls, so the browser
+    // needs no route to it at all. A surface that *does* need one has to change this number, which
     // is the point.
     expect(
       ALLOWED_ROUTES.map((rule) => `${rule.method} ${rule.shape.map((s) => s ?? '<id>').join('/')}`),

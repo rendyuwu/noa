@@ -12,8 +12,8 @@ import {
 import { fetchApprovalCard, isRunning, isStalled, isTerminal, pollIntervalMs } from '@/lib/approvals/poll'
 
 import { DecisionControls } from './decision-controls'
-import { Notice } from './notice'
-import { SignInNotice } from './sign-in-notice'
+import { Notice } from '@/components/notice'
+import { SignInNotice } from '@/components/sign-in-notice'
 import styles from './card.module.css'
 
 /**

@@ -1,0 +1,103 @@
+/*
+ * The large-READ table surface's own styles (§T.56, §I.embed).
+ *
+ * Hand-written, reading the tokens `src/app/globals.css` defines — no design system here, the
+ * eslint firewall refuses `@gio/*` (§T.40 as built).
+ *
+ * Self-scrolling in both directions, unlike the card: the frame LibreChat gives this document is
+ * small and fixed-height, and a listing is wide as well as long. A table that clipped its own
+ * columns would be a page an operator cannot read the right-hand side of, and the parent frame
+ * cannot scroll on its behalf.
+ */
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-3);
+  padding: var(--noa-space-4);
+  max-height: 100dvh;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-1);
+}
+
+.tool {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: var(--noa-font-mono);
+  word-break: break-all;
+}
+
+/*
+ * The bound (V85). Muted like the card's status line, but never hidden: this is the sentence that
+ * keeps a capped page from reading like a complete one.
+ */
+.bound {
+  margin: 0;
+  color: var(--noa-muted);
+  font-size: 0.8125rem;
+}
+
+/* Truncation is a fact about the data, not a warning about the app — stated, not alarmed. */
+.truncated {
+  color: var(--noa-fg);
+  font-weight: 600;
+}
+
+.scroller {
+  overflow: auto;
+  border: 1px solid var(--noa-border);
+  border-radius: var(--noa-radius);
+}
+
+.table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.8125rem;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: var(--noa-space-2) var(--noa-space-3);
+  border-bottom: 1px solid var(--noa-border);
+  white-space: nowrap;
+}
+
+.table th {
+  position: sticky;
+  top: 0;
+  background: var(--noa-bg);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--noa-muted);
+}
+
+.table td {
+  font-family: var(--noa-font-mono);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}
+
+.empty {
+  margin: 0;
+  padding: var(--noa-space-3);
+  color: var(--noa-muted);
+  font-size: 0.8125rem;
+  font-style: italic;
+}
+
+.footer {
+  margin: 0;
+  color: var(--noa-muted);
+  font-size: 0.75rem;
+}

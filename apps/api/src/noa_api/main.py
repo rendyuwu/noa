@@ -58,6 +58,7 @@ from noa_api.api.deps import (
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
 from noa_api.api.routes.auth import router as auth_router
+from noa_api.api.routes.result_tables import router as result_tables_router
 from noa_api.mcp_request_auth import build_mcp_auth_context
 from noa_api.mcp_server import MCP_MOUNT_PATH, build_mcp_http_app
 from noa_api.mcp_tools.change_runners import build_change_runners
@@ -121,6 +122,11 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # approval URL off this base, and a second `get_settings()` caller inside the gate is
         # how one deployment ends up handing out two different origins.
         embed_base_url=settings.noa_embed_base_url,
+        # V64's two numbers, resolved here for the same reason as the two above: a large READ
+        # parks its rows with this lifetime and this cap (T56), and a second `get_settings()`
+        # caller inside a tool is how two tools end up capping at two different counts.
+        result_table_ttl_seconds=settings.result_table_ttl_seconds,
+        result_table_max_rows=settings.result_table_max_rows,
     )
     return AppRuntime(
         settings=settings,
@@ -248,6 +254,10 @@ def create_app() -> FastAPI:
     # side of the app deliberately: it is reached by a cookie POST from a NOA-origin
     # document, never through the MCP mount below.
     app.include_router(action_requests_router)
+    # The large-READ table surface (T56, V64). Read-only and cookie-authenticated, beside the
+    # decision routes rather than inside them: a parked listing has nothing to authorise, and
+    # the service behind this one can write nothing at all.
+    app.include_router(result_tables_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

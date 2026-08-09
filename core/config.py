@@ -184,6 +184,23 @@ class Settings(BaseSettings):
     # an env var.
     approval_stranded_run_reap_batch_size: int = Field(default=100, ge=1, le=1000)
 
+    # --- Large READ results (V64, V85) ---
+    # How long a parked table stays readable. A lifetime, like the reap deadline above and
+    # unlike the two intervals: the URL it belongs to persists in LibreChat's transcript
+    # (V26), so an operator may open it long after the call, and 24 hours is a working day
+    # plus the night in between. Read past this and the surface answers exactly as it does
+    # for an absent or a foreign token — one refusal for all of them (V27's shape).
+    result_table_ttl_seconds: int = Field(default=86400, ge=60)
+    # How many rows one parked table may hold. A bound the write is held to, not a knob for
+    # throughput: `whm_list_accounts` on a dense server is thousands of rows, and neither an
+    # unbounded JSONB column nor an unbounded `<table>` in a small iframe is a thing anybody
+    # chose. What the cap must never do is hide itself — the row stores the pre-cut count and
+    # a truncation flag beside the rows, and both are rendered (V85).
+    #
+    # `le` as much as `ge`, for T38's reason one table over: a cap with no ceiling is the
+    # unbounded write again, spelled in an env var.
+    result_table_max_rows: int = Field(default=5000, ge=1, le=50000)
+
     # --- Origins / CORS ---
     api_cors_allowed_origins: list[str] = Field(
         default_factory=lambda: ["http://localhost:3000", "http://localhost:3001"]

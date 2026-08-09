@@ -46,6 +46,7 @@ from core.auth.ldap_service import LDAPService
 from core.auth.login_rate_limiter import LoginRateLimiter
 from core.config import Settings
 from core.db.models import ADMIN_ROLE_NAME
+from core.results.tables import ResultTableService, SQLToolResultTableReader
 
 # `app.state` keys, written by the lifespan in `noa_api.main`.
 STATE_SETTINGS: Final = "settings"
@@ -263,6 +264,26 @@ def get_approval_card_service(
 ApprovalCardServiceDep = Annotated[ApprovalCardService, Depends(get_approval_card_service)]
 
 
+def get_result_table_service(session: SessionDep) -> ResultTableService:
+    """What the large-READ table surface reads through (T56, V27, V64).
+
+    A *reader*, like the card service above and for the same reason spelled against another
+    table: `SQLToolResultTableReader` has no `commit` and issues no statement that is not a
+    `SELECT`. The writer that parks a table lives on the MCP tool path
+    (`SQLToolResultTableWriter`), which is the other side of the boundary an operator's cookie
+    does not cross and an MCP bearer token cannot cross back over.
+
+    No expiry service here, unlike the card: a parked table past its deadline needs no write to
+    become unreadable. The statement judges the deadline, so the row simply stops matching —
+    there is no status column anybody reads, so there is nothing to correct (V32 is about a
+    PENDING that V23 answers from, and nothing here answers a question like that).
+    """
+    return ResultTableService(repository=SQLToolResultTableReader(session))
+
+
+ResultTableServiceDep = Annotated[ResultTableService, Depends(get_result_table_service)]
+
+
 def get_authorization_service(session: SessionDep) -> AuthorizationService:
     """The RBAC engine wired to this request's session (T9).
 
@@ -314,6 +335,7 @@ __all__ = [
     "AuthorizationServiceDep",
     "JWTServiceDep",
     "LDAPServiceDep",
+    "ResultTableServiceDep",
     "SessionDep",
     "SessionUserDep",
     "SettingsDep",
@@ -326,6 +348,7 @@ __all__ = [
     "get_db_session",
     "get_jwt_service",
     "get_ldap_service",
+    "get_result_table_service",
     "get_session_factory",
     "get_settings_dep",
     "require_admin",

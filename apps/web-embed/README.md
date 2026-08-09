@@ -3,8 +3,8 @@
 Next.js 16 app served on the NOA origin. Hosts the approval card and the large-result table surface.
 
 Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45, the
-approval card at §T.41, its polling loop and receipt at §T.42, and the 401 link-out at §T.43. Still
-to come: the table surface (§T.56).
+approval card at §T.41, its polling loop and receipt at §T.42, the 401 link-out at §T.43 and the
+large-result table surface at §T.56.
 The §T.59 render gate that used to block all of them cleared 2026-08-08 (R29): LibreChat puts the
 frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
 authenticates.
@@ -114,6 +114,36 @@ Blankness of the reason is not judged here. V15 puts that gate on the endpoint (
 `change_reason_required`, checked under the row lock against the same rule the database CHECK holds),
 so the card submits what was typed and renders the refusal.
 
+The 401 state is `src/components/sign-in-notice.tsx`, shared with the table surface since §T.56 —
+two copies of "cannot authenticate here" would be two places for the printed address to go missing
+from one of them (V66, V94).
+
+## The table (§T.56, V64, V85)
+
+`/tables/[token]` is where a large READ's rows are read. A tool whose answer is a listing —
+`whm_list_accounts` (§T.20), `pmg_whitelist_list` (§T.30) — parks the rows in `tool_result_tables`
+and answers the model with a short summary plus this page's address, so the body costs no tokens and
+never enters a transcript LibreChat's administrator can read (V26). Neither tool is built yet, so
+today this route has tests and no producer.
+
+Read the same way the card is: the page is a **server component**, it forwards the incoming `Cookie`
+header (`src/lib/tables/detail.ts`), and the HTML that reaches the frame is already the operator's
+table. Nothing polls — a parked table is written once — so this surface needed **no new proxy entry**,
+and the allowlist below is still four.
+
+**Read-only, and the absences are asserted by name**: no Approve, no Deny, no reason box, no `<form>`,
+no `input`, no CSRF token. There is nothing here to authorise; the approval card is the surface that
+decides. The browser lane (`e2e/tables.browser.e2e.ts`) renders the table inside the sandbox R29
+measured and reads the stub's counter to show the page issued no POST at all — asserted on the
+counter rather than on an exception, because a request never made throws nothing (V80's rule).
+
+**The bound is on the page, always** (V85). A parked table holds at most `RESULT_TABLE_MAX_ROWS`
+rows and stores the count *before* that cut, so the page says either "1,240 rows, all of them shown"
+or "1,240 rows matched. This page shows the first 25" — one sentence with two numbers, never a
+warning that only appears when something was dropped. `RESULT_TABLE_TTL_SECONDS` is how long the
+address stays live; past it the surface answers exactly as it does for an unknown token, which is
+also its answer for another operator's and for one whose requester was deleted (V27).
+
 ## Reaching the API
 
 The browser never calls FastAPI directly (`AGENTS.md`). It calls `/api/*` on this origin and the
@@ -210,7 +240,9 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-The large-result table surface (§T.56).
+Nothing of this app's own. The two READ tools that will park a table (§T.20 `whm_list_accounts`,
+§T.30 `pmg_whitelist_list`) are API-side rows that are not built yet, so `/tables/[token]` has no
+producer in production — only its tests.
 
 This app has no login page, no LDAP form and no credential handling, and nothing in it navigates the
 frame (V38, V42, §T.43) — see *When NOA does not know who you are* above.

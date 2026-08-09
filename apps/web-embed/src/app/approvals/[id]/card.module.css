@@ -102,27 +102,6 @@
   resize: vertical;
 }
 
-.actions {
-  display: flex;
-  gap: var(--noa-space-2);
-}
-
-.button {
-  font: inherit;
-  font-weight: 600;
-  border: 1px solid var(--noa-border);
-  border-radius: var(--noa-radius);
-  padding: var(--noa-space-2) var(--noa-space-4);
-  background: var(--noa-bg);
-  color: var(--noa-fg);
-  cursor: pointer;
-}
-
-.button:disabled {
-  cursor: progress;
-  opacity: 0.6;
-}
-
 .approve {
   border-color: #1f7a4d;
   color: #1f7a4d;
@@ -136,44 +115,4 @@
 .outcome {
   margin: 0;
   font-size: 0.8125rem;
-}
-
-.notice {
-  display: flex;
-  flex-direction: column;
-  gap: var(--noa-space-2);
-  padding: var(--noa-space-4);
-  max-height: 100dvh;
-  overflow-y: auto;
-}
-
-.noticeTitle {
-  margin: 0;
-  font-size: 1rem;
-}
-
-.noticeBody {
-  margin: 0;
-  color: var(--noa-muted);
-  font-size: 0.8125rem;
-}
-
-/*
- * The 401 state's link-out (§T.43). Shares `.button` with the decision controls so the two doors on
- * this card look like one thing; only what an anchor does not inherit is set here.
- */
-.noticeLink {
-  text-decoration: none;
-  text-align: center;
-}
-
-/*
- * The same address as text, for the render site whose sandbox omits `allow-popups` (R13, R29) —
- * there the link above opens nothing at all, and this is what an operator copies. Monospace and
- * breakable: it is a URL in a narrow frame, and one that overflows silently is not a door either.
- */
-.noticeAddress {
-  font-family: var(--noa-font-mono);
-  color: var(--noa-fg);
-  word-break: break-all;
 }

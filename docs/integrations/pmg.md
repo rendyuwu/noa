@@ -215,7 +215,7 @@ longer recognises.
 | Surface | Task |
 |---|---|
 | MCP tools `pmg_whitelist(action)` and `pmg_whitelist_list` | §T.29, §T.30 |
-| Large-result table surface for `pmg_whitelist_list` (§V.64) | §T.30, gated on §T.59 |
+| `pmg_whitelist_list` using the table surface (§V.64) | §T.30 — the surface itself is built (§T.56) |
 | Admin routes `/admin/pmg/servers…` + `POST …/validate` | §T.54 |
 | `pmg_servers` create / update / delete (`core/servers/pmg_repository.py` is reads only) | §T.54 |
 

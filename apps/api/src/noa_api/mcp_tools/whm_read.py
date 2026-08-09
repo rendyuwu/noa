@@ -151,7 +151,8 @@ async def whm_search_accounts(
     comes back and the match runs in this process. That is the ported behaviour and it is also
     why `limit` matters: the tool result is what enters the transcript, and an unbounded answer
     on a shared server is thousands of rows (V64 is the answer for a genuinely large *listing*,
-    which is T20's problem, not this tool's — a bounded search needs no table surface).
+    which is T20's problem, not this tool's — a bounded search needs no table surface, and the
+    surface itself is built: `noa_api.mcp_tools.table_surface`, T56).
 
     Two guards before any I/O, so a malformed call costs no round trip:
 

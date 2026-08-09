@@ -104,6 +104,11 @@ from core.errors import NoaError, RetryAfterMixin
 from core.integrations.pmg.errors import PMGSHCLIError
 from core.integrations.whm.errors import WHMFirewallCLIError
 from core.remote_exec.errors import SSHExecutionError
+from core.results.errors import (
+    ResultTableError,
+    ResultTableNotFoundError,
+    ResultTableUnavailableError,
+)
 from core.secrets.errors import SecretCryptoError, YopassError, YopassNotConfiguredError
 from noa_api.api.request_context import (
     REQUEST_ID_HEADER,
@@ -261,6 +266,18 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # fallback, which would read as "NOA is down" for something NOA decided. The same
     # subclass-tree test guards this from becoming the default for a class added later.
     ActionDecisionError: status.HTTP_409_CONFLICT,
+    # --- Large READ tables (T56, V27, V64) ---
+    # 404 for all four of its causes — unknown token, another operator's, one whose requester
+    # was deleted, and one past its lifetime. V27's rule against an existence oracle, spelled
+    # against another table: a status that varied by cause would say which tokens are real.
+    ResultTableNotFoundError: status.HTTP_404_NOT_FOUND,
+    # 503: the rows could not be parked, so the READ has no surface to point at. Retrying the
+    # tool call is the remedy, and unlike a CHANGE there is nothing a retry could double —
+    # a READ that ran twice changed nothing either time.
+    ResultTableUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    # Bare `ResultTableError`: still "that table could not be read", so 503 by decision rather
+    # than by falling through. The subclass-tree test covers this tree too.
+    ResultTableError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 # Bare `AuthError` means "authentication failed and we did not classify why", which is an

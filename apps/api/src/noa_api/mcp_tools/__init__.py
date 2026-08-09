@@ -39,8 +39,9 @@ Landed: `whm_list_servers` (T19), `whm_search_accounts` (T21),
 gate's write side (T33 — no CHANGE tool calls it yet), the decision endpoints that answer it
 (T37, `noa_api.api.routes.action_requests`), pending expiry (T39, whose check-on-read T63
 is the first live caller of) and the post-approval executor with its reaper (T38,
-`core.approvals.execution`). Still to come: the other nine of §I.mcp and the gate's result
-shape (T32).
+`core.approvals.execution`), the CHANGE gate's result shape (T32, `change_gate.py`) and the
+large-READ table surface's (T56, `table_surface.py` — no READ tool parks one yet, T20 and T30
+are the first that will). Still to come: the other nine of §I.mcp.
 
 The executor's dispatch table lives here — `change_runners.build_change_runners` — and is
 **empty** until T22-T29 land. `registry.py` refuses at startup to expose a CHANGE tool with no

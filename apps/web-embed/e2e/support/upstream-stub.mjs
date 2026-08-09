@@ -45,6 +45,46 @@ const reads = {}
 const CSRF = process.env.STUB_CSRF ?? 'v1.1786000000.stub-signature'
 const TOOL_RUN_ID = '5c2f1a90-0000-4000-8000-000000000001'
 
+// The large-READ table surface's tokens (§T.56), one per outcome that page renders. Same rule as
+// the card ids above: handed in by `playwright.config.ts`, which is where the specs read them.
+// No token for the whole-listing case: any token this stub does not recognise is served as one,
+// the way any unrecognised card id is served PENDING.
+const TABLE_TRUNCATED_TOKEN = process.env.STUB_TABLE_TRUNCATED_TOKEN ?? ''
+const TABLE_UNAUTHORIZED_TOKEN = process.env.STUB_TABLE_UNAUTHORIZED_TOKEN ?? ''
+const TABLE_NOT_FOUND_TOKEN = process.env.STUB_TABLE_NOT_FOUND_TOKEN ?? ''
+
+// Served only to a request that carried a cookie. The separator for "the operator's session
+// reached the API through the page's own read": every other token here answers 200 regardless, so
+// that spec would pass with the cookie dropped (V87).
+const TABLE_NEEDS_COOKIE_TOKEN = process.env.STUB_TABLE_NEEDS_COOKIE_TOKEN ?? ''
+const TABLE_TOTAL_ROWS = Number(process.env.STUB_TABLE_TOTAL_ROWS ?? 1240)
+
+/** Two rows, whatever the total says — a capped page holds fewer rows than it matched (V85). */
+const TABLE_ROWS = [
+  { user: 'acmeco', domain: 'acme.example' },
+  { user: 'betaco', domain: 'beta.example' },
+]
+
+/** The body the API's `GET /tables/{token}` sends (§I.embed, V64, V85). */
+function tableBody(token, { truncated }) {
+  return {
+    token,
+    tool_name: 'whm_list_accounts',
+    columns: [
+      { key: 'user', label: 'Account' },
+      { key: 'domain', label: 'Primary domain' },
+    ],
+    rows: TABLE_ROWS,
+    // The count before the cut when capped, and the rows themselves when not: the two states V85
+    // separates, served as two tokens so a spec can assert the page tells them apart.
+    total_rows: truncated ? TABLE_TOTAL_ROWS : TABLE_ROWS.length,
+    stored_rows: TABLE_ROWS.length,
+    truncated,
+    created_at: '2026-08-09T09:00:00+00:00',
+    expires_at: '2126-08-10T09:00:00+00:00',
+  }
+}
+
 /** The card body the API's `GET /action-requests/{id}` sends (§I.embed). */
 function cardBody(id, { pending }) {
   return {
@@ -238,6 +278,36 @@ const server = createServer((request, response) => {
       ...cardBody(id, { pending: id !== DECIDED_ID }),
       // Echoed so a spec can assert the operator's cookie reached the API through the page's
       // server-side read, not only through the browser-facing proxy.
+      seen_cookie: request.headers['cookie'] ?? null,
+    })
+    return
+  }
+
+  if (request.method === 'GET' && url.pathname.startsWith('/tables/')) {
+    const token = url.pathname.slice('/tables/'.length)
+
+    if (token === TABLE_UNAUTHORIZED_TOKEN) {
+      json(response, 401, { error_code: 'session_invalid', message: 'Sign in to NOA.' })
+      return
+    }
+    if (token === TABLE_NEEDS_COOKIE_TOKEN && !request.headers['cookie']) {
+      json(response, 401, { error_code: 'session_invalid', message: 'Sign in to NOA.' })
+      return
+    }
+    if (token === TABLE_NOT_FOUND_TOKEN) {
+      // One body for unknown, foreign, orphaned and expired alike (V27) — the API answers all
+      // four this way, and the page has one sentence for the lot.
+      json(response, 404, {
+        error_code: 'result_table_not_found',
+        message: 'That table is not available. It may have expired — run the tool again.',
+      })
+      return
+    }
+
+    json(response, 200, {
+      ...tableBody(token, { truncated: token === TABLE_TRUNCATED_TOKEN }),
+      // Echoed for the same reason the card body echoes it: a spec can then assert the operator's
+      // cookie reached the API through the page's own server-side read.
       seen_cookie: request.headers['cookie'] ?? null,
     })
     return

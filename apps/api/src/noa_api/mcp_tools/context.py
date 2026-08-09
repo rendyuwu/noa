@@ -62,6 +62,7 @@ from core.auth.authorization_service import AuthorizationService
 from core.auth.authorization_types import AuthorizationRepository
 from core.db.models import PMGServer, WHMServer
 from core.integrations.whm.ssh import WHMClientFactory, build_whm_client
+from core.results.tables import SQLToolResultTableWriter, ToolResultTableWriter
 from core.secrets.crypto import SecretCipher
 from core.servers.pmg_repository import PMGServerReadRepository, SQLPMGServerRepository
 from core.servers.whm_repository import SQLWHMServerRepository, WHMServerReadRepository
@@ -88,6 +89,15 @@ class McpToolContext:
     # every operator a `localhost` address instead of failing at startup. Normalized by
     # `core.config` (trailing slashes stripped), so callers join a path onto it directly.
     embed_base_url: str
+    # `RESULT_TABLE_TTL_SECONDS` (V64) — how long a parked table stays readable behind its
+    # URL. Required rather than defaulted, for `pending_ttl_seconds`' reason one field up: a
+    # default here would be a second answer to a question settings already answer, and the
+    # copy that drifts is always the one nobody edits.
+    result_table_ttl_seconds: int
+    # `RESULT_TABLE_MAX_ROWS` (V85) — how many rows one parked table may hold. Required for
+    # the same reason, and with one of its own: a cap that could be forgotten at a wiring site
+    # is a cap that silently becomes "all of them" for whichever tool wired it last.
+    result_table_max_rows: int
     authorization_repository_factory: Callable[[AsyncSession], AuthorizationRepository] = (
         SQLAuthorizationRepository
     )
@@ -125,6 +135,12 @@ class McpToolContext:
     action_request_expiry_repository_factory: Callable[
         [AsyncSession], ActionRequestExpiryRepository
     ] = SQLActionRequestExpiryRepository
+    # T56's writer: where a large READ parks its rows so the answer costs no tokens (V64).
+    # A writer and nothing else — `SQLToolResultTableWriter` has no read method, and the
+    # surface that reads a table back hangs off a cookie on the far side of V22's boundary.
+    result_table_writer_factory: Callable[[AsyncSession], ToolResultTableWriter] = (
+        SQLToolResultTableWriter
+    )
     # The WHM API seam. Production builds a real client over a real socket; a tool test swaps
     # in the same factory with an `httpx` transport, so the client, the cipher and the one
     # decrypt site all stay in the path and only the socket is doubled.
@@ -141,6 +157,8 @@ def build_mcp_tool_context(
     secret_cipher: SecretCipher,
     pending_ttl_seconds: int,
     embed_base_url: str,
+    result_table_ttl_seconds: int,
+    result_table_max_rows: int,
 ) -> McpToolContext:
     """Production wiring (T13's `create_app` calls this beside `build_mcp_auth_context`)."""
     return McpToolContext(
@@ -148,6 +166,8 @@ def build_mcp_tool_context(
         secret_cipher=secret_cipher,
         pending_ttl_seconds=pending_ttl_seconds,
         embed_base_url=embed_base_url,
+        result_table_ttl_seconds=result_table_ttl_seconds,
+        result_table_max_rows=result_table_max_rows,
     )
 
 
@@ -190,6 +210,18 @@ def build_action_request_repository(
     return context.action_request_repository_factory(session)
 
 
+def build_result_table_writer(
+    context: McpToolContext, session: AsyncSession
+) -> ToolResultTableWriter:
+    """The `tool_result_tables` writer over one session (T56, V64).
+
+    Constructed per write like the three above it, and for the same reason: the repository
+    holds the session, and a long-lived one would pin a connection for the life of the
+    process.
+    """
+    return context.result_table_writer_factory(session)
+
+
 def build_action_result_service(
     context: McpToolContext, session: AsyncSession
 ) -> ActionResultService:
@@ -215,5 +247,6 @@ __all__ = [
     "build_action_result_service",
     "build_authorization_service",
     "build_mcp_tool_context",
+    "build_result_table_writer",
     "build_tool_run_repository",
 ]

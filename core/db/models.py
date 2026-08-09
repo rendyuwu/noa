@@ -7,7 +7,8 @@ Eight tables, three groups:
 - Managed infrastructure: `whm_servers`, `proxmox_servers`, `pmg_servers` (C7, V48)
 
 Plus `login_rate_limits` from T8 (V9), `tool_runs` from T35 (V20, V45-V47),
-`action_requests` from T34 (V20, V32, V33, V43) and `action_receipts` from T36 (V46).
+`action_requests` from T34 (V20, V32, V33, V43), `action_receipts` from T36 (V46) and
+`tool_result_tables` from T56 (V64, V85).
 
 Later tasks add their own tables and migrations: `audit_log` (T14). Ported from `noa-old`
 branch `MCP` per C13, minus the chat-presentation tables
@@ -280,7 +281,7 @@ class ToolRun(Base):
         JSONB, nullable=False, server_default=text("'{}'::jsonb")
     )
     # Truncated (V45, V47). Bounded so a large READ result cannot bloat the audit table —
-    # the full body lives behind the table surface (V64), not here.
+    # the full body lives behind the table surface (V64) — `tool_result_tables` (T56) — not here.
     result_summary: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     # Timing, half one: when the run started. Indexed — the audit list sorts and pages on it.
     created_at: Mapped[datetime] = created_at(index=True)
@@ -462,6 +463,78 @@ class ActionReceipt(Base):
     # that omits it should fail rather than record an outcome with nothing in it.
     receipt_data: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     created_at: Mapped[datetime] = created_at()
+
+
+class ToolResultTable(Base):
+    """One large READ result, parked so it never enters the transcript (T56, V64, V85).
+
+    V64's whole point is that a listing of thousands of accounts costs zero tokens: the tool
+    answers with a short summary and a URL, and the rows live here until an operator opens
+    the table surface behind that URL (`apps/web-embed/src/app/tables/[token]`). The
+    truncated `tool_runs.result_summary` one table over is the audit record of the same call;
+    this is the body it deliberately does not hold.
+
+    **The requester is the access control, and the token is not** (V26, V27). A row is read
+    back only by the operator whose call produced it — `requested_by_user_id` sits in the
+    reader's `WHERE` (`core.results.tables`), so a table that is not the caller's is never
+    fetched, and the FK is `SET NULL` like every other user FK since T35, so a deleted
+    operator's table matches nobody rather than everybody. The token is unguessable because
+    it is cheap to make it so, not because unguessability is what authorises the read: the
+    URL persists in LibreChat's MongoDB (V26), and a URL that were a key would be one an
+    operator could paste into a chat.
+
+    **The bound is stored, not recomputed** (V85). `rows` is capped when the row is written;
+    `total_rows` is the count before that cut and `truncated` says whether one happened. A
+    surface that rendered `len(rows)` as the total would be the fabrication V85 exists to
+    stop — "there are five thousand accounts" on a box with nine — and it would be authored
+    by NOA rather than by the model.
+
+    `expires_at` is a lifetime, checked on read rather than swept: a read past the deadline
+    answers exactly as an absent or a foreign token does, so a stale table cannot be
+    distinguished from one that never existed (V27's shape, one table over).
+    """
+
+    __tablename__ = "tool_result_tables"
+    __table_args__ = (
+        # The lookup index and the uniqueness in one. Every reader arrives holding a token,
+        # so there is no second index here — the discipline that kept T36's index set at one
+        # and T34's at two.
+        UniqueConstraint("token", name="uq_tool_result_tables_token"),
+    )
+
+    id: Mapped[UUID] = uuid_pk()
+    # `secrets.token_urlsafe(32)` from the writer: 43 characters today, bounded well above
+    # that so a future widening is a migration rather than a silent truncation.
+    token: Mapped[str] = mapped_column(String(128), nullable=False)
+    # SET NULL, like `tool_runs.requested_by_user_id`. NULL matches no caller under SQL's
+    # NULL semantics, which is the fail-closed direction V27 names: a deleted operator's
+    # parked table becomes unreadable rather than readable by anyone.
+    requested_by_user_id: Mapped[UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # Which READ produced this, for the page's heading and for an operator reading two open
+    # tabs. Not a join to `tool_runs`: the audit row is written by other code at another
+    # moment (T73), and a link between them would be a second record of one call.
+    tool_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Ordered column list, `[{"key": ..., "label": ...}]`. Ordered because a table's column
+    # order is part of what was rendered, and a mapping would lose it.
+    column_labels: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    # The rows themselves, redacted by the writer (V8) and already capped.
+    rows: Mapped[list[Any]] = mapped_column(JSONB, nullable=False)
+    # No server default on either payload column, exactly like `approval_context` and
+    # `receipt_data`: a table with no columns and no rows is not a legitimate state, so an
+    # insert omitting one fails rather than parking an empty page.
+    #
+    # Matches before the cut (V85). Equal to `len(rows)` when nothing was dropped, which is
+    # what makes `truncated` checkable against it rather than a flag on its own.
+    total_rows: Mapped[int] = mapped_column(Integer, nullable=False)
+    truncated: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = created_at()
+    # NOT NULL for T34's reason one table over: a row without a deadline cannot expire, and
+    # "parked forever" is a state nobody chose.
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 class SSHCredentialsMixin:

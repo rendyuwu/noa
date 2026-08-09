@@ -1,0 +1,62 @@
+"""Refusals from the large-READ table surface (T56 — V27, V64, V73).
+
+Two classes, and the split is the same one `core.approvals.errors` makes: what the caller
+can do about it.
+
+`ResultTableNotFoundError` is the only one an operator sees, and it answers **four** causes
+with one body — no such token, another operator's token, one whose requester was deleted,
+and one past its deadline. That is V27's rule stated one table over: a code that varied by
+cause would be a 403 spelled differently, and would make this origin an oracle for which
+tokens exist.
+
+`ResultTableUnavailableError` is the write side. Parking a table is what makes a large READ's
+answer readable at all, so a failure there is refused rather than papered over — the
+alternative is a tool result carrying a URL to a table that was never stored, which is a dead
+link in a transcript that persists (V26).
+
+`NoaError` subclasses for V73's two reasons: `sanitize_tool_errors` passes a `NoaError`'s own
+`error_code` through to the model instead of collapsing it (V19), and `noa_api.api.errors`
+maps each class to a status, so the route raises rather than building a response.
+"""
+
+from __future__ import annotations
+
+from core.errors import NoaError
+
+
+class ResultTableError(NoaError):
+    """Base: something about a parked table could not be done."""
+
+    error_code: str = "result_table_failed"
+    message: str = "That table could not be read. Try the tool call again."
+
+
+class ResultTableNotFoundError(ResultTableError):
+    """No table this caller may read under that token (V27, V64).
+
+    One code, one message, four causes — see the module docstring. The message says what to
+    do next, because the most likely cause is the benign one: the tables expire, and the
+    remedy is to run the READ again rather than to ask anybody for access.
+    """
+
+    error_code: str = "result_table_not_found"
+    message: str = "That table is not available. It may have expired — run the tool again."
+
+
+class ResultTableUnavailableError(ResultTableError):
+    """The table could not be parked, so the READ has no surface to point at (V64).
+
+    Fail-closed, the same shape the CHANGE gate's write failure has (T33): a result whose
+    URL leads nowhere is worse than a refusal, because the refusal is visible at the moment
+    it happens and the dead link is not.
+    """
+
+    error_code: str = "result_table_unavailable"
+    message: str = "That result could not be prepared for viewing. Try the tool call again."
+
+
+__all__ = [
+    "ResultTableError",
+    "ResultTableNotFoundError",
+    "ResultTableUnavailableError",
+]

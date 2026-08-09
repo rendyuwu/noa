@@ -51,6 +51,9 @@ DEV_URL = get_settings().postgres_url_str
 # `action_requests` cascades — and is named anyway, because that is a property of today's
 # schema rather than of this list: a later change to that FK would silently start leaving
 # receipts behind, and the failure would land in whichever test happened to count rows.
+# `tool_result_tables` joins at T56, for `tool_runs`' reason exactly: its
+# `requested_by_user_id` is `SET NULL`, so a parked table left by an earlier test outlives its
+# requester and would still be found by a token lookup — or counted by a test that counts rows.
 MUTATED_TABLES = (
     "users",
     "roles",
@@ -62,6 +65,7 @@ MUTATED_TABLES = (
     "tool_runs",
     "action_requests",
     "action_receipts",
+    "tool_result_tables",
 )
 
 

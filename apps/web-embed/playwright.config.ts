@@ -82,6 +82,36 @@ export const APPROVAL_IDS = {
   recovers: '9f1c2b7e-0000-4000-8000-000000000402',
 } as const
 
+/**
+ * One token per outcome the table surface renders (§T.56), shared with the stub that serves them
+ * for `APPROVAL_IDS`' reason (V66).
+ *
+ * Not UUID-shaped, deliberately: the real token is `secrets.token_urlsafe(32)` and the route takes
+ * a plain string, so a UUID here would exercise a shape the surface never sees.
+ */
+export const TABLE_TOKENS = {
+  /** A whole listing: every matched row is on the page. */
+  whole: 'e2e-table-whole-000000000000000000000001',
+  /** A capped one — the state V85 exists for, where the counts must not agree. */
+  truncated: 'e2e-table-capped-000000000000000000000002',
+  /** 401 forever: the state V38 renders and a retry cannot escape. */
+  unauthorized: 'e2e-table-unauthorized-00000000000000401',
+  /** The one answer for unknown, foreign, orphaned and expired alike (V27). */
+  notFound: 'e2e-table-missing-00000000000000000000404',
+  /**
+   * A table the stub serves **only** to a request carrying a cookie, and 401s otherwise.
+   *
+   * The separator for "the operator's session reached the API through the page's own server-side
+   * read" (V22, V40): against a stub that answered 200 regardless, that spec would pass with the
+   * cookie dropped, which is a test that cannot fail for the reason it was written (V87).
+   */
+  needsCookie: 'e2e-table-cookie-000000000000000000000003',
+} as const
+
+/** What a capped table reports (§T.56, V85). Asserted, so the numbers live in one place. */
+export const STUB_TABLE_TOTAL_ROWS = 1240
+export const STUB_TABLE_STORED_ROWS = 2
+
 /** The token the stub puts on a PENDING card. The real one is HMAC-signed (V39, T37). */
 export const STUB_CSRF = 'v1.1786000000.stub-signature'
 
@@ -126,6 +156,11 @@ export default defineConfig({
         STUB_RUN_RESULT,
         STUB_RECEIPT_AFTER,
         STUB_CSRF,
+        STUB_TABLE_TRUNCATED_TOKEN: TABLE_TOKENS.truncated,
+        STUB_TABLE_UNAUTHORIZED_TOKEN: TABLE_TOKENS.unauthorized,
+        STUB_TABLE_NOT_FOUND_TOKEN: TABLE_TOKENS.notFound,
+        STUB_TABLE_NEEDS_COOKIE_TOKEN: TABLE_TOKENS.needsCookie,
+        STUB_TABLE_TOTAL_ROWS: String(STUB_TABLE_TOTAL_ROWS),
       },
     },
     {

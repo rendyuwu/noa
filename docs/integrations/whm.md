@@ -258,8 +258,14 @@ Three deliberate departures from `noa-old`'s version of this tool:
 
 The last two are **§V.85**, generalised out of this tool: any READ that caps rows carries its
 own bound and orders them reproducibly first. §V.85 is not §V.64 — that one offloads a large
-listing whole to a table surface and drops nothing (`whm_list_accounts`, §T.20, §T.59-gated),
-while this one drops rows in-process because the operator asked for a limit.
+listing to the table surface, which is built (§T.56: rows parked in `tool_result_tables`, read
+back at `/tables/{token}` behind the operator's own session), while this one drops rows
+in-process because the operator asked for a limit. `whm_list_accounts` (§T.20) is the tool that
+will use it; the surface no longer waits on §T.59, which cleared 2026-08-08.
+
+The two rules meet at the cap §T.56 does apply: a parked table holds at most
+`RESULT_TABLE_MAX_ROWS` rows and stores the count before that cut beside them, so a capped page
+says so rather than reading as a complete one.
 
 `limit` is bounded twice: on the tool's JSON schema (`ge`/`le`, which is what refuses a bad call
 over MCP) and inside the tool (`limit_invalid`, which is what holds for an in-process call). A

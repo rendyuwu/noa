@@ -46,6 +46,7 @@ from support.action_requests import FakeActionRequestRepository
 from support.action_results import FakeActionResultRepository
 from support.mcp_identity import StubSession
 from support.rbac import FakeAuthorizationRepository, RecordingAuditSink
+from support.result_tables import FakeToolResultTableWriter
 from support.secrets import build_cipher
 from support.tool_runs import FakeToolRunRepository
 
@@ -73,6 +74,14 @@ PENDING_TTL_SECONDS = 900
 # against the production default cannot separate a gate that read the configured value from
 # one that hardcoded a laptop address (V87).
 EMBED_BASE_URL = "https://embed.noa.test"
+
+# The parked-table lifetime and row cap these fixtures hand the tool path (T56, V64, V85).
+# Neither is `Settings`' value (86400 and 5000), for the reason the two above are not: a
+# deadline or a cap asserted against the production default cannot separate a tool that read
+# the configured value from one that hardcoded it. The cap is small enough that a truncation
+# is reachable in a test without building five thousand rows.
+RESULT_TABLE_TTL_SECONDS = 1800
+RESULT_TABLE_MAX_ROWS = 25
 
 
 def whm_server(
@@ -216,6 +225,7 @@ class ToolFixture:
     action_requests: FakeActionRequestRepository
     action_results: FakeActionResultRepository
     action_expiry: FakeActionRequestExpiryRepository
+    result_tables: FakeToolResultTableWriter
     cipher: SecretCipher
 
 
@@ -228,8 +238,11 @@ def build_tool_context(
     action_requests: FakeActionRequestRepository | None = None,
     action_results: FakeActionResultRepository | None = None,
     action_expiry: FakeActionRequestExpiryRepository | None = None,
+    result_tables: FakeToolResultTableWriter | None = None,
     pending_ttl_seconds: int = PENDING_TTL_SECONDS,
     embed_base_url: str = EMBED_BASE_URL,
+    result_table_ttl_seconds: int = RESULT_TABLE_TTL_SECONDS,
+    result_table_max_rows: int = RESULT_TABLE_MAX_ROWS,
     cipher: SecretCipher | None = None,
     whm_transport: httpx.AsyncBaseTransport | None = None,
 ) -> ToolFixture:
@@ -277,6 +290,7 @@ def build_tool_context(
     read_path_journal: list[str] = []
     action_result_repository = action_results or FakeActionResultRepository(read_path_journal)
     action_expiry_repository = action_expiry or FakeActionRequestExpiryRepository(read_path_journal)
+    result_table_writer = result_tables or FakeToolResultTableWriter()
     audit = RecordingAuditSink()
     resolved_cipher = cipher or build_cipher()
 
@@ -293,6 +307,8 @@ def build_tool_context(
             secret_cipher=resolved_cipher,
             pending_ttl_seconds=pending_ttl_seconds,
             embed_base_url=embed_base_url,
+            result_table_ttl_seconds=result_table_ttl_seconds,
+            result_table_max_rows=result_table_max_rows,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
             pmg_server_repository_factory=lambda _session: pmg_repository,
@@ -300,6 +316,7 @@ def build_tool_context(
             action_request_repository_factory=lambda _session: action_request_repository,
             action_result_repository_factory=lambda _session: action_result_repository,
             action_request_expiry_repository_factory=lambda _session: action_expiry_repository,
+            result_table_writer_factory=lambda _session: result_table_writer,
             whm_client_factory=whm_client_factory,
             audit_sink=audit,
         ),
@@ -311,6 +328,7 @@ def build_tool_context(
         action_requests=action_request_repository,
         action_results=action_result_repository,
         action_expiry=action_expiry_repository,
+        result_tables=result_table_writer,
         cipher=resolved_cipher,
     )
 
@@ -320,6 +338,8 @@ __all__ = [
     "CREATED_AT",
     "FINGERPRINT",
     "PENDING_TTL_SECONDS",
+    "RESULT_TABLE_MAX_ROWS",
+    "RESULT_TABLE_TTL_SECONDS",
     "SECRETS",
     "SSH_PASSWORD",
     "SSH_PRIVATE_KEY",
