@@ -68,6 +68,12 @@ FINGERPRINT = "SHA256:l3Rz6cS0nOtASecret+ItIsAPublicKeyDigest"
 # the configured value from one that hardcoded it.
 PENDING_TTL_SECONDS = 900
 
+# The embed origin these fixtures hand the tool path (T32, V26). Not `Settings`'
+# `http://localhost:3001`, and for the same reason as the TTL above: an approval URL asserted
+# against the production default cannot separate a gate that read the configured value from
+# one that hardcoded a laptop address (V87).
+EMBED_BASE_URL = "https://embed.noa.test"
+
 
 def whm_server(
     name: str,
@@ -223,6 +229,7 @@ def build_tool_context(
     action_results: FakeActionResultRepository | None = None,
     action_expiry: FakeActionRequestExpiryRepository | None = None,
     pending_ttl_seconds: int = PENDING_TTL_SECONDS,
+    embed_base_url: str = EMBED_BASE_URL,
     cipher: SecretCipher | None = None,
     whm_transport: httpx.AsyncBaseTransport | None = None,
 ) -> ToolFixture:
@@ -253,7 +260,7 @@ def build_tool_context(
     `pending_ttl_seconds` is deliberately *not* the production default. `Settings` says 3600
     (`core.config`), so a test asserting a deadline against that number could not tell a gate
     that read the setting from one that hardcoded it; this value is a number nothing else in
-    the tree holds.
+    the tree holds. `embed_base_url` is the same trick one field over (T32).
 
     `cipher` and `whm_transport` are T21's two seams, and neither replaces production code.
     The cipher is a real `SecretCipher` on a throwaway key, so a tool that decrypts an API
@@ -285,6 +292,7 @@ def build_tool_context(
             session_factory=session_factory,
             secret_cipher=resolved_cipher,
             pending_ttl_seconds=pending_ttl_seconds,
+            embed_base_url=embed_base_url,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
             pmg_server_repository_factory=lambda _session: pmg_repository,

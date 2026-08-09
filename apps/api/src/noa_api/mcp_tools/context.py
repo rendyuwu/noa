@@ -29,11 +29,12 @@ two `tool_runs` writes (T73) and the CHANGE gate's INSERT (T33) opens one, uses 
 it. Those last three are the only ones that commit, and they commit *separately* on
 purpose — see `core.audit.tool_runs` and `core.approvals.repository`.
 
-`pending_ttl_seconds` is the one plain scalar here, and it is here for the same reason the
-cipher is: `APPROVAL_PENDING_TTL_SECONDS` is settings, `noa_api.main.build_runtime` is the
-single `get_settings()` caller, and a gate reaching for its own copy would be a second world
-(T15, C7). It arrives resolved so the deadline on every pending request is assertable from a
-test without patching configuration.
+`pending_ttl_seconds` and `embed_base_url` are the two plain scalars here, and they are here
+for the same reason the cipher is: `APPROVAL_PENDING_TTL_SECONDS` and `NOA_EMBED_BASE_URL` are
+settings, `noa_api.main.build_runtime` is the single `get_settings()` caller, and a gate
+reaching for its own copy would be a second world (T15, C7). They arrive resolved so the
+deadline on every pending request — and the address on every approval card — are assertable
+from a test without patching configuration.
 """
 
 from __future__ import annotations
@@ -81,6 +82,12 @@ class McpToolContext:
     # would be a second answer to "how long may a request stay pending", and the one that
     # drifts silently is always the copy nobody edits.
     pending_ttl_seconds: int
+    # `NOA_EMBED_BASE_URL` — the origin the approval card is served from (T32, V26). Required
+    # rather than defaulted for the reason above and one more: a default here would be a URL
+    # that works on a developer's laptop, so a deployment that forgot the variable would hand
+    # every operator a `localhost` address instead of failing at startup. Normalized by
+    # `core.config` (trailing slashes stripped), so callers join a path onto it directly.
+    embed_base_url: str
     authorization_repository_factory: Callable[[AsyncSession], AuthorizationRepository] = (
         SQLAuthorizationRepository
     )
@@ -133,12 +140,14 @@ def build_mcp_tool_context(
     session_factory: McpSessionFactory,
     secret_cipher: SecretCipher,
     pending_ttl_seconds: int,
+    embed_base_url: str,
 ) -> McpToolContext:
     """Production wiring (T13's `create_app` calls this beside `build_mcp_auth_context`)."""
     return McpToolContext(
         session_factory=session_factory,
         secret_cipher=secret_cipher,
         pending_ttl_seconds=pending_ttl_seconds,
+        embed_base_url=embed_base_url,
     )
 
 

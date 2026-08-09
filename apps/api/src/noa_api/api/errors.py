@@ -52,6 +52,7 @@ from core.approvals.errors import (
     ActionRequestNotFoundError,
     ChangeEvidenceRequiredError,
     ChangeExecutionLimitReachedError,
+    ChangeGateBranchUnavailableError,
     ChangeGateError,
     ChangeGateUnavailableError,
     ChangeReasonForbiddenError,
@@ -226,6 +227,11 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # NOA's bugs, and answering 400 would blame the caller for one.
     ChangeReasonForbiddenError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     ChangeEvidenceRequiredError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    # 500 for the same reason, one step later (T32, V24): the branch that shapes the approval
+    # surface is a module constant, never a tool argument, so a caller cannot have selected an
+    # unbuilt one. Not 503 — the pending row already exists by then, and "try again" would open
+    # a second request for one change.
+    ChangeGateBranchUnavailableError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     # Bare `ChangeGateError`: still "the change was not submitted and did not run", so 503
     # rather than the fallback by accident. A subclass-tree test asserts every member above
     # is mapped, so reaching this line means a new class arrived without a decision.

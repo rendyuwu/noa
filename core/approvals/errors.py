@@ -23,6 +23,8 @@ about it:
 - `ChangeEvidenceRequiredError` — the gate was opened with no in-process preflight evidence
   (V17), so the approval card would ask an operator to authorise a change it cannot
   describe (V35).
+- `ChangeGateBranchUnavailableError` — the request was written and then the approval surface
+  could not be shaped, because NOA selected one of V24's branches it has not built (T32).
 
 `NoaError` rather than a bare exception for the usual two reasons (V73): `sanitize_tool_errors`
 passes a `NoaError`'s own `error_code` through to the model instead of collapsing it into
@@ -94,6 +96,32 @@ class ChangeEvidenceRequiredError(ChangeGateError):
     message: str = (
         "This change could not be submitted for approval because NOA gathered no "
         "before-state for it. Contact an administrator if this continues."
+    )
+
+
+class ChangeGateBranchUnavailableError(ChangeGateError):
+    """The approval surface was asked for in a branch NOA has not built (T32, V24).
+
+    V24 gives `build_change_gate_response()` three branches — link-out text, UI resource, and
+    elicitation — and only the first two exist. The third is declared rather than omitted so
+    the upgrade path is visible in the code, and declared branches that are not built have to
+    refuse rather than fall through to something that *looks* like an approval surface.
+
+    Not reachable from anything a client sends: the branch is a module constant selected by
+    T59's live run (R29), never a tool argument. Reaching this means NOA's own wiring points
+    at a branch with no implementation behind it, which is why the message says nothing about
+    branches — an operator can do nothing with that word.
+
+    Sibling of the other two "NOA's bug" refusals rather than of
+    `ChangeGateUnavailableError`: the PENDING row was written by then, so retrying the tool
+    call would open a *second* request for the same change. The remedy is a fix, not a retry,
+    and the message says so.
+    """
+
+    error_code: str = "change_gate_branch_unavailable"
+    message: str = (
+        "NOA recorded this change for approval but could not produce the approval card, so "
+        "nothing was changed. Contact an administrator."
     )
 
 
@@ -217,6 +245,7 @@ __all__ = [
     "ActionRequestNotFoundError",
     "ChangeEvidenceRequiredError",
     "ChangeExecutionLimitReachedError",
+    "ChangeGateBranchUnavailableError",
     "ChangeGateError",
     "ChangeGateUnavailableError",
     "ChangeReasonForbiddenError",

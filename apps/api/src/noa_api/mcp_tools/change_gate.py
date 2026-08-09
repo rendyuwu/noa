@@ -1,10 +1,18 @@
-"""The CHANGE gate: a `tools/call` opens a request, it never runs a change (T33).
+"""The CHANGE gate: a `tools/call` opens a request, it never runs a change (T33, T32).
 
 V16 splits the tool surface in two. A READ executes immediately and its `tool_runs` row is
 written around it by `ToolRunAuditMiddleware` (T73). A CHANGE does not execute at all: it
 runs its preflight in-process (C9, V17), calls `open_change_request` with the evidence that
-produced, and returns the approval surface T32 shapes. Nothing in this module can execute
-anything, and that is the point — the code path an LLM can reach ends at an INSERT.
+produced, and hands the result to `build_change_gate_response`. Nothing in this module can
+execute anything, and that is the point — the code path an LLM can reach ends at an INSERT
+and a URL.
+
+**Two halves, one module.** T33 writes the row; T32 shapes the answer. They live together
+because they are two steps of one call — a CHANGE tool's whole body is `open_change_request`
+then `build_change_gate_response` — and because the second takes the first's return value.
+`noa_api.mcp_tools.results` would otherwise be the home for a result shape, and it cannot be:
+it is imported by `noa_api.mcp_audit`, which this module imports, so the dependency would
+close a cycle.
 
 **Why a function and not a middleware.** Every other cross-cutting rule on the tool path is
 a `Middleware` precisely because a tool cannot forget one (V83b: RBAC, then audit). This one
@@ -42,10 +50,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import Any, Final
 from uuid import UUID
 
 import structlog
+from fastmcp.tools import ToolResult
+from mcp.types import EmbeddedResource, TextContent, TextResourceContents
+from pydantic import AnyUrl
 
 from core.approvals.context import (
     CONTEXT_ARGUMENTS_KEY,
@@ -54,6 +66,7 @@ from core.approvals.context import (
 )
 from core.approvals.errors import (
     ChangeEvidenceRequiredError,
+    ChangeGateBranchUnavailableError,
     ChangeGateUnavailableError,
     ChangeReasonForbiddenError,
 )
@@ -86,6 +99,53 @@ LOG_CHANGE_REQUEST_OPENED: Final = "mcp_change_request_opened"
 # The write failed and the change was refused. NOA declined to run something it could not
 # record as pending.
 LOG_CHANGE_GATE_WRITE_FAILED: Final = "mcp_change_gate_write_failed"
+
+# Where the approval card is served from, under `NOA_EMBED_BASE_URL`. The route itself is
+# `apps/web-embed/src/app/approvals/[id]/page.tsx` — two languages, so this constant and that
+# directory cannot be checked against each other by a compiler. Named here rather than
+# formatted inline so the one place it has to be edited is findable from the route's name.
+APPROVAL_CARD_PATH: Final = "/approvals"
+
+# The MCP resource identifier for an approval card. `ui://` is not decoration: LibreChat's
+# parser is what classifies a resource as a UI resource, and it classifies on this scheme
+# (`packages/api/src/mcp/parsers.ts:183` at pin `45cc53c4`, R31c). A resource without it
+# arrives as an ordinary attachment and never renders.
+UI_RESOURCE_URI_PREFIX: Final = "ui://noa/approval/"
+
+# The half of the pair that picks the render *mode*. mcp-ui `5.7.0` maps `text/uri-list` to
+# `externalUrl` -> `iframeRenderMode: 'src'`, and `text/html` to `rawHtml` -> `srcDoc` (R12).
+# Only the first puts the document on NOA's origin with `allow-same-origin`, so only the first
+# lets the `noa_session` cookie ride into the frame — MEASURED live 2026-08-08 against both
+# halves (R29, C17), where the `srcDoc` control could not read `document.cookie` at all.
+UI_RESOURCE_MIME_TYPE: Final = "text/uri-list"
+
+
+class ChangeGateBranch(StrEnum):
+    """V24's three shapes for a CHANGE tool result.
+
+    All three are named, including the one that does not exist yet, because "three branches"
+    is the invariant and a branch that is merely absent reads as a branch nobody thought of.
+    `build_change_gate_response` refuses `ELICITATION` rather than pretending — see
+    `ChangeGateBranchUnavailableError`.
+    """
+
+    # The plain address in the text block, and nothing else. This is what a client that
+    # renders no UI resource sees, and what remains if a LibreChat bump fails T59's
+    # re-verification (C21) — at which point it becomes the primary surface again.
+    LINK_OUT = "link_out"
+    # The iframe, plus the link-out text beside it. Both, never one (V24, V25).
+    UI_RESOURCE = "ui_resource"
+    # MCP elicitation. Future: it would move the decision into the client's own prompt, which
+    # is a different answer to "where does the operator type" and a different threat model
+    # for V22. Declared, not built.
+    ELICITATION = "elicitation"
+
+
+# The branch NOA ships, and it was **selected by measurement rather than assumed** (V24): T59
+# ran against LibreChat pin `45cc53c4` on 2026-08-08 and the `text/uri-list` resource rendered
+# as an iframe `src` on NOA's origin, with an in-frame authenticated `POST` returning 200
+# (R29). Swapping this constant is the whole upgrade path — nothing behind the gate changes.
+ACTIVE_CHANGE_GATE_BRANCH: Final = ChangeGateBranch.UI_RESOURCE
 
 logger = structlog.get_logger(__name__)
 
@@ -237,6 +297,112 @@ async def open_change_request(
     )
 
 
+def approval_card_url(action_request_id: UUID, *, embed_base_url: str) -> str:
+    """The address of one approval card (T32, V26).
+
+    **The id and nothing else.** No token, no tool name, no arguments: the tool result this
+    ends up in persists in LibreChat's MongoDB, so everything in this string is readable by a
+    LibreChat administrator forever (V26). Authorisation to see the card behind it is the
+    `noa_session` cookie plus V27's requester-match, evaluated when the card is fetched — the
+    URL is a name, not a key, and a URL that were a key would be one an operator could paste
+    into a chat.
+
+    `rstrip` even though `core.config` already strips trailing slashes from
+    `NOA_EMBED_BASE_URL`: this function is also called with literals in tests and by T56's
+    sibling surface later, and one doubled slash is the kind of thing that only shows up in
+    front of an operator.
+    """
+    return f"{embed_base_url.rstrip('/')}{APPROVAL_CARD_PATH}/{action_request_id}"
+
+
+def build_change_gate_response(
+    request: PendingChangeRequest,
+    *,
+    tool_name: str,
+    context: McpToolContext,
+    branch: ChangeGateBranch = ACTIVE_CHANGE_GATE_BRANCH,
+) -> ToolResult:
+    """Shape every CHANGE tool's result (T32 — V24, V25, V26).
+
+    One function for all of them, so the approval surface cannot be spelled one way in
+    `whm_suspend_account` and another in `pmg_whitelist`. A CHANGE tool's body is two calls:
+    `open_change_request` writes the row, this turns the row's id into the surface.
+
+    **The active branch ships both halves, and that is not belt-and-braces.** The iframe is
+    where an operator decides, and the plain address in the text block is what remains when
+    the frame does not load — V25 makes the link-out permanent rather than a fallback that
+    exists only on paper. It is an *address*, not a link, deliberately: T43 measured that a
+    `target="_blank"` clicked inside the frame opens nothing at all under `ToolCallInfo`'s
+    sandbox, silently, and that a tab it does open elsewhere inherits the frame's flags
+    (R32, V94). Text a human can copy is the one door upstream cannot withhold.
+
+    **What is not in here.** No arguments, no preflight evidence, no requester: all three are
+    on the row (`build_approval_context`) and the card reads them behind the operator's
+    cookie. Putting any of them here would publish them to the transcript, which is the thing
+    V26 assumes a LibreChat administrator can read. And nothing about *why* — that word is
+    born when an operator types it on the card, after this result has been rendered and
+    forgotten (C8, V15, V43), and V71 keeps it out of model-facing text for the same reason:
+    a model that is told the field exists is a model that can be talked into filling it.
+
+    No `structured_content`. R29 measured a content-only result end to end; an envelope
+    beside it would be a third place the URL lives and a shape nothing has rendered.
+    """
+    url = approval_card_url(request.action_request_id, embed_base_url=context.embed_base_url)
+    text = TextContent(
+        type="text",
+        text=_change_gate_text(request, tool_name=tool_name, url=url),
+    )
+
+    if branch is ChangeGateBranch.LINK_OUT:
+        return ToolResult(content=[text])
+    if branch is ChangeGateBranch.UI_RESOURCE:
+        return ToolResult(content=[text, _approval_ui_resource(request, url=url)])
+    raise ChangeGateBranchUnavailableError(
+        f"`{tool_name}` asked for the `{branch.value}` change-gate branch, which is declared "
+        "but not built (T32, V24)"
+    )
+
+
+def _change_gate_text(request: PendingChangeRequest, *, tool_name: str, url: str) -> str:
+    """The text block, identical on every branch that has one (V25).
+
+    One wording rather than one per branch, so "the text always carries the address" is a
+    single claim about a single string. It reads correctly whether or not a card rendered
+    beside it, which is exactly the case it has to cover.
+
+    Four things it says, and the last two are said to the model rather than to the operator:
+    nothing has run, here is the address, here is the deadline, and the outcome is read from
+    NOA rather than assumed (V23 — "may this run?" is answered by a row, never by a claim).
+    """
+    return (
+        f"Approval required. `{tool_name}` changes a live system, so NOA opened approval "
+        f"request {request.action_request_id} and ran nothing.\n\n"
+        f"Approve or deny on the NOA approval card: {url}\n"
+        "If the card does not open here, paste that address into a browser tab.\n\n"
+        f"The request expires at {request.expires_at.isoformat()}. Read the outcome with "
+        "`noa_get_action_result`; never report a change as done without it."
+    )
+
+
+def _approval_ui_resource(request: PendingChangeRequest, *, url: str) -> EmbeddedResource:
+    """The iframe half, in the shape the render gate measured (T59, R29, R31c, R12).
+
+    Three fields and all three are load-bearing together: the `ui://` scheme is what makes
+    LibreChat treat this as a UI resource at all, `text/uri-list` is what makes mcp-ui render
+    it as an iframe `src` instead of `srcDoc`, and the body is the URL because that is what a
+    uri-list *is*. Change any one and the card either does not render or renders on an opaque
+    origin where the session cookie cannot follow (C17).
+    """
+    return EmbeddedResource(
+        type="resource",
+        resource=TextResourceContents(
+            uri=AnyUrl(f"{UI_RESOURCE_URI_PREFIX}{request.action_request_id}"),
+            mimeType=UI_RESOURCE_MIME_TYPE,
+            text=url,
+        ),
+    )
+
+
 async def _write_pending(
     context: McpToolContext,
     *,
@@ -283,11 +449,18 @@ async def _write_pending(
 
 
 __all__ = [
+    "ACTIVE_CHANGE_GATE_BRANCH",
+    "APPROVAL_CARD_PATH",
     "FORBIDDEN_REASON_KEYS",
     "LOG_CHANGE_GATE_WRITE_FAILED",
     "LOG_CHANGE_REQUEST_OPENED",
+    "UI_RESOURCE_MIME_TYPE",
+    "UI_RESOURCE_URI_PREFIX",
+    "ChangeGateBranch",
     "PendingChangeRequest",
+    "approval_card_url",
     "assert_no_reason_argument",
     "build_approval_context",
+    "build_change_gate_response",
     "open_change_request",
 ]

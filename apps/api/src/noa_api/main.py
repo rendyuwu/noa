@@ -117,6 +117,10 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # `get_settings()` is called in exactly one place (T5) and the CHANGE gate (T33)
         # stamps `action_requests.expires_at` from this value.
         pending_ttl_seconds=settings.approval_pending_ttl_seconds,
+        # V26's address, resolved here for the same reason: the CHANGE gate (T32) builds every
+        # approval URL off this base, and a second `get_settings()` caller inside the gate is
+        # how one deployment ends up handing out two different origins.
+        embed_base_url=settings.noa_embed_base_url,
     )
     return AppRuntime(
         settings=settings,
