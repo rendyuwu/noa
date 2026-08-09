@@ -2,9 +2,9 @@
 
 Next.js 16 app served on the NOA origin. Hosts the approval card and the large-result table surface.
 
-Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45 and
-the approval card at §T.41. Still to come: polling and the receipt (§T.42), the 401 link-out (§T.43)
-and the table surface (§T.56).
+Scaffolded at `SPEC.md` §T.40; the session proxy landed at §T.44, the framing header at §T.45, the
+approval card at §T.41 and its polling loop at §T.42. Still to come: the receipt (the rest of §T.42,
+waiting on §T.36 and §T.38), the 401 link-out (§T.43) and the table surface (§T.56).
 The §T.59 render gate that used to block all of them cleared 2026-08-08 (R29): LibreChat puts the
 frame's `src` on this app's origin, the `noa_session` cookie rides in, and an in-frame `fetch` POST
 authenticates.
@@ -18,23 +18,54 @@ authenticates.
 
 ## The card
 
-`/approvals/[id]` is a **server** component. It reads the incoming `Cookie` header and fetches the
-card from the API server-side (`src/lib/approvals/detail.ts`), so the HTML that reaches the frame is
-already the authenticated card — no moment where an operator watches an empty box, and the CSRF
-token arrives as part of the render rather than through a second round trip a page could make
+`/approvals/[id]` reads the incoming `Cookie` header and fetches the card from the API **server-side**
+(`src/app/approvals/[id]/page.tsx` → `src/lib/approvals/detail.ts`), so the HTML that reaches the
+frame is already the authenticated card — no moment where an operator watches an empty box, and the
+CSRF token arrives as part of the render rather than through a second round trip a page could make
 without having been allowed to read the request first.
 
 The token comes from the card's own `GET /action-requests/{id}` (§T.46: there is no minting route),
 and the API sends `null` for anything already decided or expired — so a card with no live token
 renders no reason box and no buttons.
 
-The one client component is `src/app/approvals/[id]/decision-controls.tsx`: a reason `<textarea>` and
-two `<button type="button">` elements whose handlers POST via `fetch`. **There is no `<form>` in that
-tree**, and that is V80 rather than taste — the sandbox LibreChat applies to this frame omits
-`allow-forms` (R13, measured live at R29), so a native submit would do nothing at all. The browser
-lane proves it both ways: `e2e/approvals.browser.e2e.ts` clicks Approve inside a frame carrying that
-exact sandbox string and reads the upstream's hit counter, and a second document in the *same*
-sandbox shows a `fetch` arriving where a form submit does not.
+That first read seeds `src/app/approvals/[id]/card-view.tsx`, which renders everything and then
+keeps asking. A reason `<textarea>` and two `<button type="button">` elements POST the decision via
+`fetch` (`decision-controls.tsx`). **There is no `<form>` anywhere in that tree**, and that is V80
+rather than taste — the sandbox LibreChat applies to this frame omits `allow-forms` (R13, measured
+live at R29), so a native submit would do nothing at all. The browser lane proves it both ways:
+`e2e/approvals.browser.e2e.ts` clicks Approve inside a frame carrying that exact sandbox string and
+reads the upstream's hit counter, and a second document in the *same* sandbox shows a `fetch`
+arriving where a form submit does not.
+
+## Following the run (§T.42, V29)
+
+Approve returns 202 and the change runs somewhere else entirely; the state lives in the database,
+never in that connection. So the card re-reads its own row through the `/api/*` proxy
+(`src/lib/approvals/poll.ts`) until there is nothing left to wait for, and the outcome lands on the
+URL that asked the question (V34).
+
+| State | What happens |
+|---|---|
+| `PENDING` | re-read every 15s — the only change available is the expiry sweep (V32), and an expired card must stop offering a decision the door would refuse |
+| `APPROVED` + run `STARTED` | re-read every 2s — somebody clicked Approve and is watching |
+| `APPROVED` + run `COMPLETED`/`FAILED`, `DENIED`, `EXPIRED` | stop |
+| an unrecognised status | stop — a build that cannot say what a status means cannot say what would end it |
+
+A 401 or 404 discovered mid-poll replaces the card with the same explicit state the first read would
+have rendered (V38, V27): a session that expires under an open frame must not leave a live Approve
+button standing. A transient failure is the one answer that changes nothing — the card stays and the
+loop keeps going, because "NOA could not be reached just now" is not "there is nothing more to wait
+for".
+
+**The run poll is capped at 150 reads (~5 minutes) and the pending poll is not.** A `PENDING` request
+has a server-side terminator in the sweep; a `STARTED` run has none until §T.38's executor lands, so
+today's run would be polled for as long as the frame stays open. Giving up says *"NOA is still
+running this change. Reload this card to check again."* — never that it failed, because there is no
+evidence of that.
+
+The receipt (`action_receipts`) is the other half of §T.42 and is **not built**: it needs §T.36's
+table and §T.38's executor to have written one. What the card shows today is the run itself — status,
+finish time and result summary.
 
 Blankness of the reason is not judged here. V15 puts that gate on the endpoint (409
 `change_reason_required`, checked under the row lock against the same rule the database CHECK holds),
@@ -136,8 +167,9 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-Polling the run to a terminal state and rendering the receipt (§T.42), the "Sign in to NOA" link-out
-beside the 401 state (§T.43), and the large-result table surface (§T.56).
+The receipt (the rest of §T.42 — blocked on §T.36's `action_receipts` table and §T.38's executor),
+the "Sign in to NOA" link-out beside the 401 state (§T.43), and the large-result table surface
+(§T.56).
 
 This app has no login page, no LDAP form and no credential handling. A 401 already renders an explicit
 "cannot authenticate here" state with no reason box and no buttons (V38, V42); what §T.43 adds is the

@@ -52,10 +52,15 @@ export const APPROVAL_IDS = {
   decided: '9f1c2b7e-0000-4000-8000-000000000002',
   unauthorized: '9f1c2b7e-0000-4000-8000-000000000401',
   notFound: '9f1c2b7e-0000-4000-8000-000000000404',
+  /** The one card that moves between reads: an approved change whose run finishes (§T.42, V29). */
+  polling: '9f1c2b7e-0000-4000-8000-000000000003',
 } as const
 
 /** The token the stub puts on a PENDING card. The real one is HMAC-signed (V39, T37). */
 export const STUB_CSRF = 'v1.1786000000.stub-signature'
+
+/** What the polling card's run reports once it finishes. Asserted, so it lives in one place. */
+export const STUB_RUN_RESULT = 'Account acmeco suspended on alpha.'
 
 export default defineConfig({
   testDir: './e2e',
@@ -81,6 +86,8 @@ export default defineConfig({
         STUB_DECIDED_ID: APPROVAL_IDS.decided,
         STUB_UNAUTHORIZED_ID: APPROVAL_IDS.unauthorized,
         STUB_NOT_FOUND_ID: APPROVAL_IDS.notFound,
+        STUB_POLLING_ID: APPROVAL_IDS.polling,
+        STUB_RUN_RESULT,
         STUB_CSRF,
       },
     },

@@ -64,6 +64,26 @@ export type ApprovalCard = {
   csrf: string | null
 }
 
+/**
+ * One read of one card, however it turned out (§T.41, §T.42).
+ *
+ * Lives here rather than beside either reader because there are now two of them: the server-side
+ * load `lib/approvals/detail.ts` does before the page renders, and the browser-side poll
+ * `lib/approvals/poll.ts` repeats until the run is terminal (V29). Both answer the same four
+ * questions and the card component switches on the result once — a second union would be a second
+ * set of states for the same read, free to grow a fifth on one side only (V66).
+ *
+ * **Four kinds because four of them render differently.** A 401 is V38's "cannot authenticate
+ * here", a 404 is V27's single answer for absent / another operator's / a deleted requester's, and
+ * anything else is "could not load" — which is neither, and must never be shown as a card with
+ * empty fields.
+ */
+export type ApprovalCardLoad =
+  | { kind: 'card'; card: ApprovalCard }
+  | { kind: 'unauthenticated' }
+  | { kind: 'not-found' }
+  | { kind: 'unavailable'; status: number }
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }

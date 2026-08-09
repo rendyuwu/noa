@@ -28,6 +28,14 @@ const DECIDED_ID = process.env.STUB_DECIDED_ID ?? ''
 const UNAUTHORIZED_ID = process.env.STUB_UNAUTHORIZED_ID ?? ''
 const NOT_FOUND_ID = process.env.STUB_NOT_FOUND_ID ?? ''
 
+// The one card that MOVES between reads (§T.42, V29). Everything else this stub serves is a fixed
+// state; this id is how the browser lane can watch a run reach a terminal one.
+const POLLING_ID = process.env.STUB_POLLING_ID ?? ''
+const RUN_RESULT = process.env.STUB_RUN_RESULT ?? ''
+
+/** `GET` reads per id, so the polling card can answer differently the second time. */
+const reads = {}
+
 const CSRF = process.env.STUB_CSRF ?? 'v1.1786000000.stub-signature'
 const TOOL_RUN_ID = '5c2f1a90-0000-4000-8000-000000000001'
 
@@ -146,6 +154,28 @@ const server = createServer((request, response) => {
       json(response, 404, {
         error_code: 'action_request_not_found',
         message: 'That approval request does not exist, or it is not yours to decide.',
+      })
+      return
+    }
+
+    if (id === POLLING_ID) {
+      reads[id] = (reads[id] ?? 0) + 1
+      // STARTED for the page's own server-side read and for the first poll, terminal afterwards.
+      // Two reads of headroom so a spec can assert the in-flight state without racing the poll
+      // interval, and so the transition it then waits for is a real one rather than the first
+      // answer it ever saw.
+      const finished = reads[id] > 2
+
+      json(response, 200, {
+        ...cardBody(id, { pending: false }),
+        run: {
+          tool_run_id: TOOL_RUN_ID,
+          status: finished ? 'COMPLETED' : 'STARTED',
+          result_summary: finished ? RUN_RESULT : null,
+          created_at: '2026-08-08T09:30:00+00:00',
+          completed_at: finished ? '2026-08-08T09:30:12+00:00' : null,
+        },
+        seen_cookie: request.headers['cookie'] ?? null,
       })
       return
     }

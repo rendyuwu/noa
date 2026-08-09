@@ -6,6 +6,7 @@ import {
   CHAT_ORIGIN,
   MEASURED_SANDBOX,
   STUB_CSRF,
+  STUB_RUN_RESULT,
   UPSTREAM_ORIGIN,
 } from '../playwright.config'
 
@@ -213,6 +214,27 @@ test('a decided card shows the outcome and no live buttons (V34, V39)', async ({
   await expect(cardBody(card)).toContainText('no longer awaiting a decision')
   await expect(cardBody(card).getByRole('button')).toHaveCount(0)
   await expect(cardBody(card)).not.toContainText(STUB_CSRF)
+})
+
+test('the card follows its run to a terminal state, on the same URL (§T.42 — V29, V34)', async ({
+  page,
+}) => {
+  // V29's whole point in a real browser: the state lives in the database, so the frame re-reads the
+  // row rather than being told the outcome by whoever started it. Nothing here reloads, navigates
+  // or clicks — the only thing that happens between the two assertions is time.
+  const id = APPROVAL_IDS.polling
+  const card = await frameCard(page, id)
+
+  await expect(cardBody(card)).toContainText('STARTED')
+
+  // The stub answers STARTED twice and COMPLETED after that, so this is a transition the page had
+  // to go and fetch — not the first answer it ever saw.
+  await expect(cardBody(card)).toContainText('COMPLETED', { timeout: 20_000 })
+  await expect(cardBody(card)).toContainText(STUB_RUN_RESULT)
+
+  // And the reads came from the browser through §T.44's proxy, not only from the page's own
+  // server-side render: that first read is hit 1, so anything past it is the poll.
+  expect((await hits(page))[`GET /action-requests/${id}`]).toBeGreaterThan(1)
 })
 
 test('the card never renders the CSRF token as text (V26, V39)', async ({ page }) => {

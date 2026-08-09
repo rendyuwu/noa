@@ -1,5 +1,5 @@
 import { buildBackendUrl } from '@/lib/proxy/http'
-import { type ApprovalCard, parseApprovalCard } from '@/lib/approvals/card'
+import { type ApprovalCardLoad, parseApprovalCard } from '@/lib/approvals/card'
 
 /**
  * Loading one approval card, server-side (§T.41, §I.embed).
@@ -19,17 +19,13 @@ import { type ApprovalCard, parseApprovalCard } from '@/lib/approvals/card'
  * and this loader adds no header a caller could use to relay one — the same departure §T.44(d)
  * makes in the proxy.
  *
- * **Four outcomes, because four of them render differently.** A 401 is V38's "cannot authenticate
- * here", a 404 is V27's single answer for absent / another operator's / a deleted requester's, and
- * anything else is "could not load" — which is not the same as either, and must not be shown as a
- * card with empty fields.
+ * **Four outcomes, because four of them render differently** — `ApprovalCardLoad` says which, and it
+ * lives in `lib/approvals/card.ts` because the browser-side poll (§T.42) answers the same four
+ * questions and the card switches on the result once (V66). Re-exported here so this module still
+ * reads as the loader's whole contract.
  */
 
-export type ApprovalCardLoad =
-  | { kind: 'card'; card: ApprovalCard }
-  | { kind: 'unauthenticated' }
-  | { kind: 'not-found' }
-  | { kind: 'unavailable'; status: number }
+export type { ApprovalCardLoad } from '@/lib/approvals/card'
 
 /** What `loadApprovalCard` needs off the incoming request. */
 export type ApprovalCardRequest = {
