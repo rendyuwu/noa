@@ -234,7 +234,7 @@ Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19
 ### `whm_search_accounts` (§T.21)
 
 WHM has no server-side account search, so `listaccts` is fetched whole and the match runs
-in-process (`fetch_whm_accounts`, internal per C9/§V.17 — `whm_list_accounts` will share it).
+in-process (`fetch_whm_accounts`, internal per C9/§V.17 — `whm_list_accounts` shares it).
 Each row is reduced to the fields NOA speaks about by `core/integrations/whm/accounts.py`:
 `user`, `domain`, `email`, `contactemail`, `owner`, `suspended`, `suspendreason`, `suspendtime`,
 `is_locked`. Everything else WHM sends (`ip`, `plan`, disk counters, theme) is dropped — the
@@ -261,11 +261,40 @@ own bound and orders them reproducibly first. §V.85 is not §V.64 — that one 
 listing to the table surface, which is built (§T.56: rows parked in `tool_result_tables`, read
 back at `/tables/{token}` behind the operator's own session), while this one drops rows
 in-process because the operator asked for a limit. `whm_list_accounts` (§T.20) is the tool that
-will use it; the surface no longer waits on §T.59, which cleared 2026-08-08.
+uses it.
 
 The two rules meet at the cap §T.56 does apply: a parked table holds at most
 `RESULT_TABLE_MAX_ROWS` rows and stores the count before that cut beside them, so a capped page
 says so rather than reading as a complete one.
+
+### `whm_list_accounts` (§T.20)
+
+The other half of the account pair, split by **size** rather than by subject (§V.64). A search
+answers in the transcript; a whole listing does not — a dense server carries thousands of
+accounts — so this tool fetches the same `listaccts` through the same internal
+(`fetch_whm_accounts`), sorts the rows by username, parks them in `tool_result_tables` and
+answers with three things: a one-line summary naming the server that was **actually read**
+(the resolved row's name, not the `server_ref` the operator typed), the address of
+`/tables/{token}` as plain copyable text, and the iframe resource LibreChat renders.
+
+No rows, no sample row and no column value reach the model — that is the whole of §V.64, and a
+"preview" would be exactly the ops data it keeps out of LibreChat's MongoDB (§V.26).
+
+**No `limit` argument.** §V.85's cap exists because an operator asked for one; nothing is
+dropped on their behalf here. The only bound is the table's own
+(`RESULT_TABLE_MAX_ROWS`), applied at the write and reported in the text and in the result
+envelope. The rows are still sorted before they are handed over: the cap is a prefix and never
+a re-sort, and `listaccts` order is WHM's own.
+
+**A failure is the ordinary `{"ok": false, …}` envelope**, `choices` and all, even though the
+success is content blocks. A table that cannot be *parked* refuses the READ with
+`result_table_unavailable` rather than handing back an address with nothing behind it — a dead
+link in a transcript that persists is discovered later, by an operator, and a refusal is not.
+
+The result also carries a counts-only structured envelope (`ok`, `total_rows`, `stored_rows`,
+`truncated`). It exists for the audit trail: every READ is recorded (§V.45) and the run's
+status is read off that envelope, so a content-only answer would file every successful listing
+as a failure. It carries no rows, no token and no URL.
 
 `limit` is bounded twice: on the tool's JSON schema (`ge`/`le`, which is what refuses a bad call
 over MCP) and inside the tool (`limit_invalid`, which is what holds for an in-process call). A

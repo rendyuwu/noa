@@ -52,6 +52,7 @@ from noa_api.mcp_audit import (
     status_for_payload,
 )
 from noa_api.mcp_tools.whm_read import (
+    TOOL_WHM_LIST_ACCOUNTS,
     TOOL_WHM_LIST_SERVERS,
     TOOL_WHM_SEARCH_ACCOUNTS,
     whm_list_servers,
@@ -74,9 +75,11 @@ CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 # CHANGE branch, which has no registered tool behind it yet.
 CHANGE_TOOL = "whm_suspend_account"
 
-# Catalogued but not registered (T20) — what a stale client catalog or a prompt-injected
-# call names. Refused by the RBAC gate outside this middleware.
-UNREGISTERED_TOOL = "whm_list_accounts"
+# Catalogued but not registered (T30, `pmg_whitelist_list`) — what a stale client catalog or a
+# prompt-injected call names. Refused by the RBAC gate outside this middleware. It was
+# `whm_list_accounts` until T20 built that one, and a stand-in the registry knows would make
+# "an unregistered name writes no row" a claim about a tool that answers.
+UNREGISTERED_TOOL = "pmg_whitelist_list"
 
 
 @pytest.fixture
@@ -317,7 +320,7 @@ def test_a_call_refused_by_rbac_writes_no_row(scenario) -> None:
 def test_an_unregistered_name_writes_no_row(scenario) -> None:
     """V10's refusal is not an execution either, and the risk map is the second guard.
 
-    `whm_list_accounts` is catalogued but unbuilt (T20), so an `admin` bypass reaches the
+    `pmg_whitelist_list` is catalogued but unbuilt (T30), so an `admin` bypass reaches the
     gate with it. Neither the gate nor the risk map knows it, and it must not become an
     audit row for a tool that does not exist yet.
     """
@@ -369,6 +372,91 @@ def test_the_second_read_tool_is_audited_with_its_arguments(
     assert run.risk is ToolRisk.READ
     assert run.status is ToolRunStatus.COMPLETED
     assert run.args == {"server_ref": "alpha", "query": "acme", "limit": 5}
+
+
+async def test_a_large_read_is_recorded_completed_with_its_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """V20, V45: a READ that answers with a *surface* is still a READ that succeeded (T20).
+
+    The third shape of tool result, and the one this middleware could not read. Status and
+    summary both come off `structured_content`, and `status_for_payload` treats a missing
+    envelope as FAILED on purpose — a result that cannot be read as a success is not evidence
+    of one. `whm_list_accounts` answers with content blocks, because the address and the frame
+    are what an operator is handed (V25, V64); a content-only result would therefore have gone
+    into the audit trail as a failed call with an empty summary, for the one tool whose answer
+    is thousands of rows. So the table surface carries a counts envelope beside its blocks, and
+    this is the test that says why it exists.
+
+    Asserted on the counts as well as the status: an envelope of `{"ok": true}` alone would
+    pass the status half and leave `result_summary` saying nothing about what was read.
+    """
+    identities = FakeMcpIdentityRepository()
+    authorization = FakeAuthorizationRepository()
+    runs = FakeToolRunRepository()
+    cipher = build_tool_context().cipher
+    endpoint = whm_api_listing([whm_account("acme"), whm_account("beta")])
+    tools = build_tool_context(
+        servers=[whm_server("alpha", api_token=cipher.encrypt_text("whm-token"))],
+        authorization=authorization,
+        tool_runs=runs,
+        cipher=cipher,
+        whm_transport=endpoint.transport,
+    )
+
+    with mounted_app(monkeypatch, repository=identities, tool_context=tools.context) as fixture:
+        user = authorization.add_user("operator@example.com", roles=(ROLE_SUPPORT,))
+        authorization.grant(ROLE_SUPPORT, TOOL_WHM_LIST_ACCOUNTS)
+        plaintext, _ = identities.add_token(user_id=user.id, librechat_user_id=LIBRECHAT_USER)
+        session = open_session(fixture.client, plaintext)
+
+        result = session.call_tool(TOOL_WHM_LIST_ACCOUNTS, {"server_ref": "alpha"})
+
+    assert result.get("isError") is not True
+    run = runs.only
+    assert run.tool_name == TOOL_WHM_LIST_ACCOUNTS
+    assert run.risk is ToolRisk.READ
+    assert run.status is ToolRunStatus.COMPLETED
+    assert json.loads(run.result_summary or "{}") == {
+        "ok": True,
+        "total_rows": 2,
+        "stored_rows": 2,
+        "truncated": False,
+    }
+
+
+async def test_a_large_read_that_fails_is_recorded_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The negative control for the case above (V87).
+
+    Without it, "a table-answering READ is COMPLETED" would pass just as well against a
+    middleware that recorded every call as a success. `whm_list_accounts` refused a server_ref
+    it cannot resolve, so the failure travels as the ordinary envelope even though the success
+    would not have — which is the property `sanitize_tool_errors` is there to hold.
+    """
+    identities = FakeMcpIdentityRepository()
+    authorization = FakeAuthorizationRepository()
+    runs = FakeToolRunRepository()
+    tools = build_tool_context(
+        servers=[whm_server("alpha")],
+        authorization=authorization,
+        tool_runs=runs,
+    )
+
+    with mounted_app(monkeypatch, repository=identities, tool_context=tools.context) as fixture:
+        user = authorization.add_user("operator@example.com", roles=(ROLE_SUPPORT,))
+        authorization.grant(ROLE_SUPPORT, TOOL_WHM_LIST_ACCOUNTS)
+        plaintext, _ = identities.add_token(user_id=user.id, librechat_user_id=LIBRECHAT_USER)
+        session = open_session(fixture.client, plaintext)
+
+        session.call_tool(TOOL_WHM_LIST_ACCOUNTS, {"server_ref": "nowhere"})
+
+    run = runs.only
+    assert run.status is ToolRunStatus.FAILED
+    assert "host_not_found" in (run.result_summary or "")
+    # Nothing was parked either: the tool refused before it had rows to park.
+    assert tools.result_tables.stored == []
 
 
 async def test_a_change_tool_writes_no_row_here() -> None:

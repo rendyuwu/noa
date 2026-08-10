@@ -35,9 +35,10 @@ from __future__ import annotations
 
 import functools
 from collections.abc import Awaitable, Callable
-from typing import Any, ParamSpec
+from typing import Any, ParamSpec, TypeVar
 
 import structlog
+from fastmcp.tools import ToolResult
 
 from core.errors import NoaError
 
@@ -62,7 +63,18 @@ MESSAGE_TIMEOUT = "The tool timed out before the target system answered. Try aga
 
 ToolPayload = dict[str, Any]
 
+# What an exposed tool may answer with. Most answer the envelope above and let fastmcp turn it
+# into structured content. A tool whose answer is a *surface* — the large-READ table (T20, V64),
+# and the CHANGE gate when its tools land (T32) — returns content blocks itself, because the
+# order of those blocks is part of what the operator is told (V25).
+ToolAnswer = ToolResult | ToolPayload
+
 P = ParamSpec("P")
+
+# The success type of the tool being decorated. Named so `sanitize_tool_errors` can widen a
+# return type rather than flatten it: a tool that answers `ToolPayload` keeps answering
+# `ToolPayload`, and one that answers `ToolResult` is typed as "that, or a failure envelope".
+AnswerT = TypeVar("AnswerT")
 
 logger = structlog.get_logger(__name__)
 
@@ -93,8 +105,13 @@ def tool_failure(
 
 def sanitize_tool_errors(
     tool_name: str,
-) -> Callable[[Callable[P, Awaitable[ToolPayload]]], Callable[P, Awaitable[ToolPayload]]]:
+) -> Callable[[Callable[P, Awaitable[AnswerT]]], Callable[P, Awaitable[AnswerT | ToolPayload]]]:
     """Turn any exception out of a tool into a named structured failure (V19).
+
+    **The failure is always the envelope, whatever the success was.** A tool that answers with
+    content blocks (T20's table surface) still fails as `{"ok": False, ...}`, which is what
+    keeps one refusal shape in front of the model however the tool succeeds — and what lets
+    `status_for_payload` read a failure off any tool's result (V20).
 
     Three branches, narrowest first:
 
@@ -112,10 +129,10 @@ def sanitize_tool_errors(
     """
 
     def decorate(
-        tool: Callable[P, Awaitable[ToolPayload]],
-    ) -> Callable[P, Awaitable[ToolPayload]]:
+        tool: Callable[P, Awaitable[AnswerT]],
+    ) -> Callable[P, Awaitable[AnswerT | ToolPayload]]:
         @functools.wraps(tool)
-        async def sanitized(*args: P.args, **kwargs: P.kwargs) -> ToolPayload:
+        async def sanitized(*args: P.args, **kwargs: P.kwargs) -> AnswerT | ToolPayload:
             try:
                 return await tool(*args, **kwargs)
             except NoaError as exc:
@@ -151,6 +168,7 @@ __all__ = [
     "LOG_TOOL_FAILED",
     "MESSAGE_TIMEOUT",
     "MESSAGE_TOOL_EXECUTION_FAILED",
+    "ToolAnswer",
     "ToolPayload",
     "sanitize_tool_errors",
     "tool_failure",

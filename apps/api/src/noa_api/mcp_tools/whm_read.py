@@ -1,4 +1,4 @@
-"""WHM READ tools (T19 — `whm_list_servers`; T21 — `whm_search_accounts`).
+"""WHM READ tools: `whm_list_servers` (T19), `whm_list_accounts` (T20), `whm_search_accounts` (T21).
 
 `whm_list_servers` is exposed on purpose and it is the only `*_list_servers` that is
 (DECISIONS §6.6, owner-decided 2026-08-04): the model has to know which servers exist before
@@ -8,7 +8,14 @@ it can name one, while Proxmox and PMG nodes are few and named directly by the o
 `whm_search_accounts` is the discovery step in front of every account CHANGE: T22 and T23 take
 an exact `user`, and the operator has a domain or half a username. It answers over `listaccts`
 because WHM has no server-side account search — see `fetch_whm_accounts`, which is internal
-(C9, V17) and is also what `whm_list_accounts` (T20) will call.
+(C9, V17) and which `whm_list_accounts` shares.
+
+**The two account tools split by size, not by subject** (V64). A bounded search answers in the
+transcript; a whole listing does not, so `whm_list_accounts` parks its rows and answers with a
+summary and the address of the page that holds them (`noa_api.mcp_tools.table_surface`). That
+is the only tool here whose result is content blocks rather than the `{"ok": ...}` envelope —
+the order of those blocks is part of what the operator is told (V25) — and it is why
+`sanitize_tool_errors` widens a return type rather than fixing one.
 
 **What leaves the process is `to_safe_dict()`, never the row.** That method is
 `WHMServer`'s, it drops `api_token` and every SSH secret in favour of presence booleans
@@ -39,17 +46,21 @@ from pydantic import Field
 
 from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount, account_matches, normalize_whm_account_list
+from core.results.tables import TableColumn
 from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
+    ToolAnswer,
     ToolPayload,
     sanitize_tool_errors,
     tool_failure,
     tool_ok,
 )
+from noa_api.mcp_tools.table_surface import build_table_result, park_table_result
 
 TOOL_WHM_LIST_SERVERS = "whm_list_servers"
+TOOL_WHM_LIST_ACCOUNTS = "whm_list_accounts"
 TOOL_WHM_SEARCH_ACCOUNTS = "whm_search_accounts"
 
 # §T.21's bound. Also the schema's `ge`/`le`, so the two cannot drift apart.
@@ -69,6 +80,31 @@ DESCRIPTION_WHM_LIST_SERVERS = (
     "name and base URL. Use it to find the `server_ref` other WHM tools need, and prefer "
     "the id when two servers look alike. Read-only: it changes nothing."
 )
+
+DESCRIPTION_WHM_LIST_ACCOUNTS = (
+    "List every cPanel account on one WHM server. The rows do not come back in the "
+    "conversation: they are put on a page on NOA and the result carries its address, the "
+    "number of accounts, and whether the page is capped. Use `whm_search_accounts` instead "
+    "when the operator is looking for one account. Read-only: it changes nothing."
+)
+
+# The columns of a parked account listing, in the order they are rendered (T20, V64).
+#
+# Beside the whitelist they are read from rather than derived from a row: `listaccts` rows are
+# sparse — `normalize_whm_account_summary` omits a field WHM did not send — so a column list
+# built from the first row would drop a column every later row has. A test pins these keys
+# against what the normaliser can emit, so the two lists cannot drift apart (V66).
+WHM_ACCOUNT_TABLE_COLUMNS: list[TableColumn] = [
+    TableColumn(key="user", label="Account"),
+    TableColumn(key="domain", label="Primary domain"),
+    TableColumn(key="owner", label="Owner"),
+    TableColumn(key="email", label="Email"),
+    TableColumn(key="contactemail", label="Contact email"),
+    TableColumn(key="suspended", label="Suspended"),
+    TableColumn(key="is_locked", label="Suspension locked"),
+    TableColumn(key="suspendtime", label="Suspended at (epoch seconds)"),
+    TableColumn(key="suspendreason", label="Suspend reason"),
+]
 
 DESCRIPTION_WHM_SEARCH_ACCOUNTS = (
     "Search the cPanel accounts on one WHM server by username or domain, case-insensitively. "
@@ -95,6 +131,12 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
     Not exposed and not decorated with `sanitize_tool_errors`: its callers are exposed tools
     that already are, and a second boundary would turn a `NoaError` into a payload the caller
     then has to unwrap twice. `whm_list_accounts` (T20) is the other caller.
+
+    **The resolved server's name comes back with the accounts** (T20). `server_ref` is whatever
+    the operator typed — an id, a hostname, a name in another case — and the tool that reports
+    "these are the accounts on X" has to name the machine it actually read, not the string it
+    was handed. Resolution already happened here, so returning the answer costs nothing;
+    re-reading it in the caller would be a second resolution that could disagree with this one.
 
     Three refusals travel back as a payload rather than an exception, all of them information
     the model can act on (V18, V19):
@@ -123,6 +165,7 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
                 choices=resolution.choices,
             )
         client = context.whm_client_factory(resolution.server, cipher=context.secret_cipher)
+        server_name = resolution.server.name
 
     result = await client.list_accounts()
     if result.get("ok") is not True:
@@ -134,7 +177,76 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
             spoken or MESSAGE_LIST_ACCOUNTS_FAILED,
         )
 
-    return tool_ok(accounts=normalize_whm_account_list(result.get("accounts")))
+    return tool_ok(
+        server=server_name,
+        accounts=normalize_whm_account_list(result.get("accounts")),
+    )
+
+
+@sanitize_tool_errors(TOOL_WHM_LIST_ACCOUNTS)
+async def whm_list_accounts(*, server_ref: str, context: McpToolContext) -> ToolAnswer:
+    """Every cPanel account on one WHM server, parked on a page (T20 — V64, V85).
+
+    **The rows never enter the transcript.** A dense server carries thousands of accounts, and
+    a listing in front of the model costs tokens for a body no human reads there anyway — so
+    the rows go to `tool_result_tables` and the answer is a summary plus the address of the
+    page that renders them. That is the whole of V64, and it is why this tool answers with
+    content blocks while its sibling `whm_search_accounts` answers with the payload envelope:
+    a bounded search's rows *are* the answer, and a listing's rows are a surface.
+
+    **No `limit` argument, deliberately.** V85's cap exists because an operator asked for one;
+    here nothing is dropped on the operator's behalf. The only bound is the table's own
+    (`RESULT_TABLE_MAX_ROWS`), it is applied at the write, and it reports itself in the text
+    and in the envelope — which is the same invariant answered by the surface instead of by
+    the tool.
+
+    Sorted by username before it is handed over, all the same. `cap_rows` is a prefix and
+    never a re-sort — only the producer knows which order is reproducible for its source — and
+    `listaccts` order is WHM's own and undocumented, so a capped page would otherwise be an
+    arbitrary subset that changes between two identical calls (V85, T21's rule).
+
+    A failure comes back as the ordinary envelope, `choices` and all (V18, V19): a `server_ref`
+    that named nothing or several things, or a WHM that refused, is information the model can
+    act on. A table that cannot be *parked* raises instead, and `sanitize_tool_errors` turns it
+    into `result_table_unavailable` — fail-closed, because a result carrying the address of a
+    table that was never stored is a dead link in a transcript that persists (V26).
+    """
+    listed = await fetch_whm_accounts(server_ref=server_ref, context=context)
+    if listed.get("ok") is not True:
+        # Already a structured failure with its own code. Re-wrapping would rename the cause.
+        return listed
+
+    accounts = listed.get("accounts")
+    rows: list[WHMAccount] = sorted(
+        (account for account in (accounts if isinstance(accounts, list) else [])),
+        key=lambda account: str(account.get("user", "")),
+    )
+
+    parked = await park_table_result(
+        tool_name=TOOL_WHM_LIST_ACCOUNTS,
+        columns=WHM_ACCOUNT_TABLE_COLUMNS,
+        rows=rows,
+        context=context,
+    )
+    return build_table_result(
+        parked,
+        tool_name=TOOL_WHM_LIST_ACCOUNTS,
+        summary=_list_accounts_summary(listed.get("server")),
+        context=context,
+    )
+
+
+def _list_accounts_summary(server: object) -> str:
+    """The tool's own one-line answer; the surface adds the counts and the address.
+
+    The server is named because an operator with several WHM boxes needs to know which one was
+    read, and `whm_list_servers` already publishes every name to the same transcript (V26). A
+    resolution that somehow returned no name degrades to the generic sentence rather than
+    printing `None` at the top of an operator's page.
+    """
+    if isinstance(server, str) and server.strip():
+        return f"Every cPanel account on the WHM server {server}."
+    return "Every cPanel account on the WHM server that was read."
 
 
 @sanitize_tool_errors(TOOL_WHM_SEARCH_ACCOUNTS)
@@ -151,8 +263,8 @@ async def whm_search_accounts(
     comes back and the match runs in this process. That is the ported behaviour and it is also
     why `limit` matters: the tool result is what enters the transcript, and an unbounded answer
     on a shared server is thousands of rows (V64 is the answer for a genuinely large *listing*,
-    which is T20's problem, not this tool's — a bounded search needs no table surface, and the
-    surface itself is built: `noa_api.mcp_tools.table_surface`, T56).
+    which is `whm_list_accounts`' job above and not this tool's — a bounded search's answer
+    fits the transcript, so it needs no table surface).
 
     Two guards before any I/O, so a malformed call costs no round trip:
 
@@ -224,6 +336,27 @@ def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> dict
         return await whm_list_servers(context=context)
 
     @server.tool(
+        name=TOOL_WHM_LIST_ACCOUNTS,
+        description=DESCRIPTION_WHM_LIST_ACCOUNTS,
+        annotations={"readOnlyHint": True},
+    )
+    async def whm_list_accounts_tool(
+        server_ref: Annotated[
+            str,
+            Field(
+                description=(
+                    "Which WHM server: its id, its name in NOA, or its hostname. Call "
+                    "`whm_list_servers` first if the operator has not named one."
+                )
+            ),
+        ],
+    ) -> ToolAnswer:
+        # Annotated with the union on purpose: fastmcp derives no output schema from a return
+        # type that can be a `ToolResult`, which is what lets the success path answer with
+        # content blocks while a failure still answers with the envelope every tool shares.
+        return await whm_list_accounts(server_ref=server_ref, context=context)
+
+    @server.tool(
         name=TOOL_WHM_SEARCH_ACCOUNTS,
         description=DESCRIPTION_WHM_SEARCH_ACCOUNTS,
         annotations={"readOnlyHint": True},
@@ -264,12 +397,14 @@ def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> dict
 
     return {
         TOOL_WHM_LIST_SERVERS: ToolRisk.READ,
+        TOOL_WHM_LIST_ACCOUNTS: ToolRisk.READ,
         TOOL_WHM_SEARCH_ACCOUNTS: ToolRisk.READ,
     }
 
 
 __all__ = [
     "DEFAULT_SEARCH_LIMIT",
+    "DESCRIPTION_WHM_LIST_ACCOUNTS",
     "DESCRIPTION_WHM_LIST_SERVERS",
     "DESCRIPTION_WHM_SEARCH_ACCOUNTS",
     "ERROR_LIMIT_INVALID",
@@ -278,10 +413,13 @@ __all__ = [
     "MESSAGE_LIMIT_INVALID",
     "MESSAGE_QUERY_REQUIRED",
     "MIN_SEARCH_LIMIT",
+    "TOOL_WHM_LIST_ACCOUNTS",
     "TOOL_WHM_LIST_SERVERS",
     "TOOL_WHM_SEARCH_ACCOUNTS",
+    "WHM_ACCOUNT_TABLE_COLUMNS",
     "fetch_whm_accounts",
     "register_whm_read_tools",
+    "whm_list_accounts",
     "whm_list_servers",
     "whm_search_accounts",
 ]

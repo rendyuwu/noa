@@ -15,13 +15,22 @@ this file makes the same four claims about it, one surface over:
 - **the bound is stated in the text** (V85). A model reports what it was handed, so a capped
   table that did not say so becomes "there are twenty-five accounts" on a box with hundreds.
 
-And one this surface owes that the CHANGE gate does not: **no rows anywhere in the result**.
-The whole point of V64 is that the body never enters the transcript, and a "sample row" would
-be exactly the ops data it exists to keep out of LibreChat's MongoDB (V26).
+And two this surface owes that the CHANGE gate does not.
+
+**No rows anywhere in the result.** The whole point of V64 is that the body never enters the
+transcript, and a "sample row" would be exactly the ops data it exists to keep out of
+LibreChat's MongoDB (V26).
+
+**A counts envelope beside the blocks** (T20 — V20, V45). T32's gate answers with content
+alone, for two reasons, and only one of them survives the trip to a READ: a CHANGE call skips
+the audit middleware, so no reader is owed an envelope, while every READ is recorded and
+`status_for_payload` reads a missing envelope as FAILED. The reason that does survive — an
+envelope must not be a third place the URL lives — is asserted here too.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -242,6 +251,60 @@ def test_the_result_carries_no_reason_shaped_word() -> None:
 
     assert "reason" not in body
     assert "justif" not in body
+
+
+# --------------------------------------------------------------------------------------
+# The envelope beside the blocks (T20 — V20, V45), and what it must not carry (V26, V64)
+# --------------------------------------------------------------------------------------
+
+
+def test_the_result_carries_the_counts_as_a_success_envelope() -> None:
+    """V20, V45: `ToolRunAuditMiddleware` reads the run's status off this and nothing else.
+
+    The CHANGE gate answers with content alone because a CHANGE call skips the audit
+    middleware (V46) and no reader is owed an envelope. A READ has one, and
+    `status_for_payload` reads a missing envelope as FAILED — so a content-only table result
+    would put every successful large listing into the audit trail as a failure.
+    """
+    answer = result(build_tool_context(), total_rows=900, stored_rows=25, truncated=True)
+
+    assert answer.structured_content == {
+        "ok": True,
+        "total_rows": 900,
+        "stored_rows": 25,
+        "truncated": True,
+    }
+
+
+def test_the_envelope_states_both_counts_when_nothing_was_dropped() -> None:
+    """The negative control (V87): `truncated` is a stored fact, not a shape difference.
+
+    Without this, "a capped table says so" would pass against an envelope that always claims
+    truncation, and a reader could not tell a complete table from a capped one by its keys.
+    """
+    answer = result(build_tool_context(), total_rows=12, stored_rows=12)
+
+    assert answer.structured_content == {
+        "ok": True,
+        "total_rows": 12,
+        "stored_rows": 12,
+        "truncated": False,
+    }
+
+
+def test_the_envelope_carries_no_address_and_no_token() -> None:
+    """The half of T32(b)'s reason that does hold here (V26).
+
+    An envelope beside the blocks must not become a third place the URL lives: everything in a
+    tool result persists in LibreChat's MongoDB, and the address is already stated once in the
+    text and once in the resource.
+    """
+    tools = build_tool_context()
+    rendered = json.dumps(result(tools).structured_content)
+
+    assert DEFAULT_TOKEN not in rendered
+    assert TABLE_SURFACE_PATH not in rendered
+    assert EMBED_BASE_URL not in rendered
 
 
 async def test_no_row_reaches_the_tool_result() -> None:

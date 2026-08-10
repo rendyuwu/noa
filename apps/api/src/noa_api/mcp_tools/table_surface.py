@@ -30,6 +30,19 @@ the whole surface, the way the CHANGE gate's is.
 **Nothing about the rows reaches here.** No sample, no first record, no column values — the
 tool result persists in LibreChat's MongoDB (V26), and a "preview row" would be exactly the
 ops data V64 exists to keep out of it.
+
+**And a counts-only envelope beside them, unlike the CHANGE gate** (T20 — V20, V45). T32(b)
+returns content only, for two reasons: R29 measured a content-only result, and a CHANGE tool's
+call skips the audit middleware (V46), so *no reader is owed an envelope*. The second reason is
+false here. This surface is a READ, `ToolRunAuditMiddleware` records every READ, and it reads
+the run's status and summary off `structured_content` — where `None` is FAILED, because a
+result that cannot be read as a success is not evidence of one (`core.audit.summaries`). So a
+content-only large READ would be a successful call written into the audit trail as a failure
+with nothing in its summary, silently, for the one tool that answers with thousands of rows.
+
+What the envelope carries is the two counts and the flag, and nothing else: no rows (V64), no
+token, and **no URL** — the half of T32(b)'s reason that does hold here is that an envelope must
+not become a third place the address lives.
 """
 
 from __future__ import annotations
@@ -45,6 +58,7 @@ from core.results.errors import ResultTableUnavailableError
 from core.results.tables import ParkedTable, TableColumn, park_result_table
 from noa_api.mcp_request_auth import current_mcp_identity
 from noa_api.mcp_tools.context import McpToolContext, build_result_table_writer
+from noa_api.mcp_tools.results import ToolPayload, tool_ok
 from noa_api.mcp_tools.ui_resource import build_ui_resource, embed_url
 
 # Where the table surface is served from, under `NOA_EMBED_BASE_URL`. The route itself is
@@ -162,15 +176,34 @@ def build_table_result(
     this function adds what is true of every parked table: how many matched, whether the page
     is capped, where it is, and when it expires.
 
-    No `structured_content`, for T32's measured reason: R29 measured a content-only result,
-    and an envelope beside this would be a third place the URL lives.
+    The envelope is the counts and nothing else — see the module docstring for why this surface
+    has one where the CHANGE gate does not, and for why the URL is not in it.
     """
     url = table_surface_url(parked.token, embed_base_url=context.embed_base_url)
     return ToolResult(
         content=[
             TextContent(type="text", text=_table_result_text(parked, summary=summary, url=url)),
             build_ui_resource(uri=f"{UI_RESOURCE_URI_PREFIX}{parked.token}", url=url),
-        ]
+        ],
+        structured_content=table_result_envelope(parked),
+    )
+
+
+def table_result_envelope(parked: ParkedTable) -> ToolPayload:
+    """The counts a parked table's result carries as structured content (V20, V45, V85).
+
+    `tool_ok` rather than a dict literal, so this envelope is the one every other tool answers
+    with: `ok` is the field a status is read off, and a surface that spelled its own success
+    would be a surface the audit path records as a failure.
+
+    Both counts even when they agree, for `_rows_sentence`'s reason one representation over: a
+    reader that had to infer "not truncated" from equal numbers is a reader that reports a
+    capped table as a complete one the first time a key goes missing.
+    """
+    return tool_ok(
+        total_rows=parked.total_rows,
+        stored_rows=parked.stored_rows,
+        truncated=parked.truncated,
     )
 
 
@@ -216,5 +249,6 @@ __all__ = [
     "UI_RESOURCE_URI_PREFIX",
     "build_table_result",
     "park_table_result",
+    "table_result_envelope",
     "table_surface_url",
 ]

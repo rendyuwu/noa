@@ -18,8 +18,8 @@ Three rules hold for everything in here.
    granted — and, worse, one the admin bypass would still reach (V10).
 
 3. **Nothing here decides whether the caller may call it.** That is
-   `noa_api.mcp_rbac.RbacToolMiddleware` (V1), one gate for every tool, so a tool added in
-   T20 cannot forget it.
+   `noa_api.mcp_rbac.RbacToolMiddleware` (V1), one gate for every tool, so a tool added
+   later cannot forget it.
 
 4. **Nothing here records that it ran.** V45 wants a `tool_runs` row for every MCP READ, and
    `noa_api.mcp_audit.ToolRunAuditMiddleware` writes it (T73) — beside the RBAC gate, for
@@ -40,8 +40,8 @@ gate's write side (T33 — no CHANGE tool calls it yet), the decision endpoints 
 (T37, `noa_api.api.routes.action_requests`), pending expiry (T39, whose check-on-read T63
 is the first live caller of) and the post-approval executor with its reaper (T38,
 `core.approvals.execution`), the CHANGE gate's result shape (T32, `change_gate.py`) and the
-large-READ table surface's (T56, `table_surface.py` — no READ tool parks one yet, T20 and T30
-are the first that will). Still to come: the other nine of §I.mcp.
+large-READ table surface's (T56, `table_surface.py` — first parked by `whm_list_accounts` at
+T20, and by `pmg_whitelist_list` when T30 lands). Still to come: the other eight of §I.mcp.
 
 The executor's dispatch table lives here — `change_runners.build_change_runners` — and is
 **empty** until T22-T29 land. `registry.py` refuses at startup to expose a CHANGE tool with no
