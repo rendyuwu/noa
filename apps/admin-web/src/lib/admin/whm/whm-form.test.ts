@@ -1,0 +1,177 @@
+import { describe, expect, it } from 'vitest'
+
+import type { WhmServer } from './types'
+import {
+  EMPTY_WHM_FORM,
+  buildWhmCreatePayload,
+  buildWhmUpdatePayload,
+  clearWhmSecrets,
+  validateWhmServerForm,
+  whmFormStateFromServer,
+  type WhmServerFormState,
+} from './whm-form'
+
+const server: WhmServer = {
+  id: 'server-1',
+  name: 'web1',
+  base_url: 'https://whm.example.com:2087',
+  api_username: 'root',
+  ssh_username: 'ubuntu',
+  ssh_port: 2222,
+  ssh_host_key_fingerprint: 'SHA256:abc',
+  has_ssh_password: true,
+  has_ssh_private_key: false,
+  verify_ssl: true,
+}
+
+const form = (over: Partial<WhmServerFormState> = {}): WhmServerFormState => ({
+  ...EMPTY_WHM_FORM,
+  ...over,
+})
+
+describe('whmFormStateFromServer', () => {
+  it('seeds non-secret fields and leaves every secret blank', () => {
+    const seeded = whmFormStateFromServer(server)
+    expect(seeded.name).toBe('web1')
+    expect(seeded.apiUsername).toBe('root')
+    expect(seeded.sshUsername).toBe('ubuntu')
+    expect(seeded.sshPort).toBe('2222')
+    expect(seeded.enableSsh).toBe(true)
+    // Password-backed server opens in password auth mode.
+    expect(seeded.sshAuthMode).toBe('password')
+    // No secret is ever seeded from a server (the safe view carries none).
+    expect(seeded.apiToken).toBe('')
+    expect(seeded.sshPassword).toBe('')
+    expect(seeded.sshPrivateKey).toBe('')
+    expect(seeded.sshPrivateKeyPassphrase).toBe('')
+  })
+})
+
+describe('clearWhmSecrets', () => {
+  it('blanks every secret field but keeps non-secret input', () => {
+    const dirty = form({
+      name: 'web1',
+      apiToken: 'TOKEN',
+      sshPassword: 'PW',
+      sshPrivateKey: 'KEY',
+      sshPrivateKeyPassphrase: 'PASS',
+    })
+    const cleared = clearWhmSecrets(dirty)
+    expect(cleared.name).toBe('web1')
+    expect(cleared.apiToken).toBe('')
+    expect(cleared.sshPassword).toBe('')
+    expect(cleared.sshPrivateKey).toBe('')
+    expect(cleared.sshPrivateKeyPassphrase).toBe('')
+  })
+})
+
+describe('validateWhmServerForm', () => {
+  it('requires name, base URL, and API username', () => {
+    expect(validateWhmServerForm(form(), 'create')?.field).toBe('name')
+    expect(validateWhmServerForm(form({ name: 'a' }), 'create')?.field).toBe('baseUrl')
+    expect(validateWhmServerForm(form({ name: 'a', baseUrl: 'b' }), 'create')?.field).toBe(
+      'apiUsername',
+    )
+  })
+
+  it('requires an API token on create only', () => {
+    const base = form({ name: 'a', baseUrl: 'b', apiUsername: 'c' })
+    expect(validateWhmServerForm(base, 'create')?.field).toBe('apiToken')
+    // On update a blank token means "keep stored", so it is not required.
+    expect(validateWhmServerForm(base, 'update', server)).toBeNull()
+  })
+
+  it('rejects an out-of-range SSH port', () => {
+    const f = form({ name: 'a', baseUrl: 'b', apiUsername: 'c', apiToken: 't', enableSsh: true, sshPort: '70000', sshAuthMode: 'password', sshPassword: 'pw' })
+    expect(validateWhmServerForm(f, 'create')?.field).toBe('sshPort')
+  })
+
+  it('requires a new private key on create but not when one is already stored', () => {
+    const create = form({ name: 'a', baseUrl: 'b', apiUsername: 'c', apiToken: 't', enableSsh: true, sshAuthMode: 'private_key' })
+    expect(validateWhmServerForm(create, 'create')?.field).toBe('sshPrivateKey')
+
+    const stored: WhmServer = { ...server, has_ssh_password: false, has_ssh_private_key: true }
+    const update = form({ name: 'a', baseUrl: 'b', apiUsername: 'c', enableSsh: true, sshAuthMode: 'private_key' })
+    expect(validateWhmServerForm(update, 'update', stored)).toBeNull()
+  })
+})
+
+describe('buildWhmCreatePayload', () => {
+  it('sends the token and only-configured SSH fields', () => {
+    const payload = buildWhmCreatePayload(
+      form({
+        name: ' web1 ',
+        baseUrl: ' https://whm:2087 ',
+        apiUsername: ' root ',
+        apiToken: ' TOKEN ',
+        verifySsl: false,
+        enableSsh: true,
+        sshUsername: ' ubuntu ',
+        sshPort: '2222',
+        sshAuthMode: 'private_key',
+        sshPrivateKey: ' KEY ',
+        sshPrivateKeyPassphrase: ' PASS ',
+      }),
+    )
+    expect(payload).toEqual({
+      name: 'web1',
+      base_url: 'https://whm:2087',
+      api_username: 'root',
+      api_token: 'TOKEN',
+      verify_ssl: false,
+      ssh_username: 'ubuntu',
+      ssh_port: 2222,
+      ssh_private_key: 'KEY',
+      ssh_private_key_passphrase: 'PASS',
+    })
+  })
+
+  it('omits SSH entirely when SSH is disabled', () => {
+    const payload = buildWhmCreatePayload(
+      form({ name: 'web1', baseUrl: 'b', apiUsername: 'root', apiToken: 'T', enableSsh: false }),
+    )
+    expect(payload).toEqual({
+      name: 'web1',
+      base_url: 'b',
+      api_username: 'root',
+      api_token: 'T',
+      verify_ssl: true,
+    })
+  })
+})
+
+describe('buildWhmUpdatePayload', () => {
+  it('omits the token when left blank (keep stored) and clears SSH config when disabled', () => {
+    const payload = buildWhmUpdatePayload(
+      form({ name: 'web1', baseUrl: server.base_url, apiUsername: 'root', enableSsh: false }),
+      server,
+    )
+    expect(payload).not.toHaveProperty('api_token')
+    expect(payload).toEqual({
+      name: 'web1',
+      base_url: server.base_url,
+      api_username: 'root',
+      verify_ssl: true,
+      clear_ssh_configuration: true,
+    })
+  })
+
+  it('sends a replacement token only when a new value is entered', () => {
+    const payload = buildWhmUpdatePayload(
+      form({ name: 'web1', baseUrl: server.base_url, apiUsername: 'root', apiToken: 'NEW', enableSsh: true, sshAuthMode: 'password', sshUsername: 'ubuntu', sshPort: '2222' }),
+      server,
+    )
+    expect(payload.api_token).toBe('NEW')
+  })
+
+  it('switching from password to key clears the stored password', () => {
+    const payload = buildWhmUpdatePayload(
+      form({ name: 'web1', baseUrl: server.base_url, apiUsername: 'root', enableSsh: true, sshAuthMode: 'private_key', sshPrivateKey: 'KEY', sshUsername: 'ubuntu', sshPort: '2222' }),
+      server,
+    )
+    expect(payload.clear_ssh_password).toBe(true)
+    expect(payload.ssh_private_key).toBe('KEY')
+    // No passphrase entered → the stored one is explicitly cleared.
+    expect(payload.clear_ssh_private_key_passphrase).toBe(true)
+  })
+})
