@@ -243,7 +243,7 @@ Each row is reduced to the fields NOA speaks about by `core/integrations/whm/acc
 result lands in a LibreChat transcript that persists in their MongoDB (§V.26). A row with no
 `user` is dropped entirely: it is not an account any CHANGE tool could then be called on.
 
-**One of those fields is withheld from this tool's rows: `suspendreason`** (§T.22, C8). NOA
+**One of those fields is withheld from this tool's rows: `suspendreason`** (§T.22, C8, §V.96a). NOA
 writes the operator's approval reason into WHM's suspension note when it suspends an account,
 and WHM returns it on every later `listaccts` — so a search that reported the field would hand
 the model, by round trip, the one string C8 says it must never see. The normaliser still carries
@@ -339,9 +339,11 @@ tool name (`noa_api/mcp_tools/change_runners.py`). Three things about it:
 - **The suspension note is the operator's reason.** `load_authorized` reads
   `action_requests.reason` — non-blank by then, because T34's
   `ck_action_requests_decided_reason` refuses a decided row without one — and the runner sends it
-  as `suspendacct`'s `reason`. The runner does **not** echo it back in its payload: that payload
-  becomes `action_receipts.receipt_data`, which `noa_get_action_result` reads out to a model
-  (§V.76).
+  as `suspendacct`'s `reason`. The runner does **not** echo it back in its payload:
+  `tool_runs.result_summary` is derived from that payload and `noa_get_action_result` returns the
+  summary to a model, so an echo would reach the LLM through §V.45's audit row (§V.96b). Not
+  through the receipt — `core/approvals/results.py` leaves `include_receipt` at its default, so
+  that reader never joins `action_receipts` (§V.76).
 - **The change is re-read, and the read has three answers.** Suspended → done and verified. Still
   live → `postflight_failed`, because WHM accepted a call that did not take. The confirming read
   itself failing → `{"ok": true, "verified": false, "verification": "unavailable"}`, which is

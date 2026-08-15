@@ -42,6 +42,7 @@ from fastmcp.tools import ToolResult
 from mcp.types import EmbeddedResource, TextContent
 
 from core.approvals.execution import ChangeExecutionRequest
+from core.audit.summaries import result_summary
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ActionRequestStatus, ToolRisk
 from core.db.models import WHMServer
@@ -498,9 +499,18 @@ async def test_the_runner_sends_the_operator_reason_as_whms_suspension_note() ->
 
 
 async def test_the_runner_payload_never_carries_the_reason_back() -> None:
-    """V76: this payload becomes `action_receipts.receipt_data`, which `noa_get_action_result`
-    reads out to a model. A runner that echoed the note it just wrote would hand the LLM the one
-    field C8 keeps from it — by way of the receipt rather than by way of the tool schema."""
+    """V96b: `result_summary` is derived from this payload, and `noa_get_action_result` returns
+    the summary to a model — so a runner echoing the note it just wrote would hand the LLM the
+    one field C8 keeps from it, through V45's audit row rather than through a tool schema.
+
+    Asserted on the derived summary as well as on the payload, because the summary is the thing a
+    model actually reads: a payload assertion alone would still pass if `result_summary` ever
+    started composing its own text from fields this one happens not to carry.
+
+    **Not through the receipt** — `core/approvals/results.py` leaves `include_receipt` at its
+    default, so T63's reader never joins `action_receipts` (V76, T42's flag). Naming that door
+    here would point a future runner's author at the wrong field.
+    """
     api = whm_endpoint(listings=[[suspended_account()]])
     fixture, _ = suspend_context(api)
     runner = build_whm_suspend_runner(context=fixture.context)
@@ -509,6 +519,7 @@ async def test_the_runner_payload_never_carries_the_reason_back() -> None:
 
     assert REASON not in json.dumps(payload)
     assert SUSPEND_NOTE_ECHO not in json.dumps(payload)
+    assert REASON not in (result_summary(payload) or "")
 
 
 async def test_the_runner_acts_on_the_server_the_card_named() -> None:

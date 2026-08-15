@@ -39,8 +39,14 @@ writing the operator's own words onto the system being changed, and WHM's `suspe
 suspension-note field that would otherwise hold a NOA-authored placeholder. So `load_authorized`
 reads `action_requests.reason` and `ChangeExecutionRequest` carries it. Two bounds travel with
 it: nothing here branches on the string (the authorization was decided by `status = APPROVED`
-before it was read), and it must not come back in a runner's payload — that payload becomes
-`action_receipts.receipt_data`, which T63 reads out to a model (V76).
+before it was read), and it must not come back in a runner's payload — `result_summary` is
+derived from that payload and `noa_get_action_result` returns it to a model (V96b).
+
+Not through the receipt, which is the door it is tempting to name: `core.approvals.results`
+leaves `include_receipt` at its default, so T63's reader never joins `action_receipts` (V76,
+T42's flag). The receipt is read by the approval card and the admin audit surface, both of which
+are the operator's own. Naming the wrong door here would send the next runner's author to guard
+the wrong field.
 
 **Redacted arguments are refused, not executed.** `approval_context.arguments` is redacted at
 gate time (`noa_api.mcp_tools.change_gate.build_approval_context`), and redaction is by key
@@ -179,7 +185,7 @@ class ChangeExecutionRequest:
     # it where the target system has a place for it — WHM's suspension note (T22) — and nowhere
     # else. Two rules a runner carries with it: it is not an authorization (that was decided
     # before this value was read), and it must not come back in the runner's payload, which
-    # becomes `action_receipts.receipt_data` and is read by a model through T63 (V76).
+    # `result_summary` is derived from and `noa_get_action_result` hands to a model (V96b).
     reason: str
 
 
@@ -195,10 +201,10 @@ class ChangeRunner(Protocol):
     executor still catches, because a contract held only by discipline is held by nothing —
     but what it can record then is coarser than what the runner knew.
 
-    **A runner must not echo `request.reason` back in its payload.** That payload is stored as
-    the receipt's after-state and read out to a model by `noa_get_action_result` (T63, V76), so
-    an answer that repeats the note it just wrote would hand the LLM the one field C8 keeps
-    from it.
+    **A runner must not echo `request.reason` back in its payload.** `result_summary` is derived
+    from that payload (`core.audit.summaries`) and `noa_get_action_result` returns the summary to
+    a model, so an answer repeating the note it just wrote would hand the LLM the one field C8
+    keeps from it — through V45's audit row rather than through any tool schema (V96b).
     """
 
     async def __call__(self, request: ChangeExecutionRequest) -> dict[str, Any]: ...

@@ -35,11 +35,12 @@ the decision rests on.
 **The suspension note is the operator's reason.** WHM's `suspendacct` takes one, and C8's single
 field is the only text NOA has that belongs there — the LLM never authored it, never relayed it
 and never saw it, and it is read from `action_requests.reason` after the decision committed
-(`core.approvals.execution`). The consequence is deliberate and bounded: WHM echoes that note
-back as `suspendreason`, so `whm_search_accounts` withholds the field from the rows it returns to
-a model (`ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`), and nothing here puts it in a payload either —
-not the no-op answer, not the runner's. `whm_list_accounts`' parked table keeps the column,
-because that page is behind the operator's own cookie.
+(`core.approvals.execution`). What that costs is two return paths, and V96 closes both: WHM
+echoes the note back as `suspendreason`, so `whm_search_accounts` withholds the field from the
+rows it hands a model (`ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`); and `tool_runs.result_summary` is
+derived from the runner's payload and read back by `noa_get_action_result`, so neither payload
+here carries the note — not the no-op answer, not the runner's. `whm_list_accounts`' parked table
+keeps the column, because that page is behind the operator's own cookie.
 
 **Postflight, and its third answer.** A change WHM accepted is re-read to confirm it took. Two
 outcomes are obvious — suspended, or not suspended and therefore a failure — and the third is the
@@ -291,8 +292,8 @@ def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
             server_name = server.name
 
         # C8's single field, written where WHM keeps a suspension note. The operator typed it,
-        # the LLM never saw it, and it is not echoed back in the payload below — that payload
-        # becomes the receipt's after-state, which T63 reads out to a model (V76).
+        # the LLM never saw it, and it is not echoed back in the payload below — `result_summary`
+        # is derived from that payload and `noa_get_action_result` returns it to a model (V96b).
         mutation = await client.suspend_account(username=username, reason=request.reason)
         if mutation.get("ok") is not True:
             return _passthrough_failure(mutation, fallback=MESSAGE_SUSPEND_FAILED)
