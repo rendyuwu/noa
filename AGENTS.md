@@ -10,6 +10,8 @@ Code/commits/PRs: normal prose. Off switch: "stop caveman" / "normal mode".
 `SPEC.md` = working artifact. Read before edit. `FORMAT.md` = how to parse it.
 Cite by § — `§V.15`, `§T.32`, `C8`. Zero ambiguity.
 `DECISIONS.md` = why. ⊥ re-litigate decided items without new evidence.
+`docs/AS-BUILT.md` = cold archive. **⊥ read whole, ever** — 170 KB, single lines reach 15 KB.
+Slice by header only; protocol = "AS-BUILT read protocol" below, ∧ it BINDS.
 
 ## Repo
 
@@ -142,6 +144,33 @@ real mechanism before any §V ∨ doc calls it hardened. (C13, V69, V82, V84)
 - `FORMAT.md` — SPEC.md format + caveman encoding rules.
 - `docs/AS-BUILT.md` — cold archive, ⊥ loaded per session: as-built deviation detail for done §T
   rows, §B full narratives, consumed/superseded §R. Sub-clause addresses (`T38(g)`) resolve HERE.
-  A done task's as-built goes here, ⊥ back into `SPEC.md`.
+  A done task's as-built goes here, ⊥ back into `SPEC.md`. Read protocol below = HARD RULE.
 - `docs/integrations/` — per-system reference (WHM, Proxmox, PMG, yopass). Update in same change as
   the feature.
+
+## AS-BUILT read protocol — HARD RULE
+
+`docs/AS-BUILT.md` = 170 KB / ~45k tokens in 263 lines. ONE body line reaches 15 KB (~4k tokens).
+263 lines LIES about the size — line count is no license to open it. A whole-file read burns a
+third of a fresh context ∧ buys near-zero ∵ ~95% of it is unrelated to any one task.
+
+- **⊥ `Read` it without BOTH `offset` ∧ `limit`.** ⊥ `cat`, ⊥ `head`, ⊥ full-file `Read`,
+  ⊥ "skim it to get oriented", ⊥ "load it once, it will be cached". No free read exists.
+- **⊥ grep it in content mode.** `Grep` with `output_mode: "content"` returns the ENTIRE matched
+  body line — 4k tokens for a 1-word hit. Use `output_mode: "files_with_matches"` ∨ `"count"`, ∨ a
+  WINDOWED shell grep: `grep -n -o -m 5 '.\{0,120\}<term>.\{0,120\}' docs/AS-BUILT.md`.
+- Layout is fixed ∧ machine-sliceable: `## T<nn>` heading, blank, ONE body line, blank. 4 lines
+  per section.
+- Retrieval = 2 steps, always:
+  1. `grep -n '^## T38$' docs/AS-BUILT.md` → line N. (Header grep is safe — headers are short.)
+  2. `Read` `offset: N`, `limit: 3`. ⊥ widen `limit` "to see neighbours" — neighbours cost 4k each.
+- Enter ONLY when a cite resolves HERE (`T38(g)`, `T32(b)`) ∧ `SPEC.md`'s own line ⊥ answer the
+  question in hand. SPEC.md carries intent + cites ∧ that usually suffices. Default = stay out.
+- Need ≥3 sections, ∨ the target section is unknown → delegate to a subagent: it greps, reads its
+  slices, ∧ returns THE ANSWER. Archive prose ⊥ get pasted back into main context — pasting it is
+  the whole-file read wearing a different hat.
+- APPEND/EDIT same way: header-grep for the anchor, `Read` that slice (satisfies `Edit`'s read
+  gate), then `Edit` on the anchor line. ⊥ `Write` the file — `Write` wants a full prior `Read`,
+  which is the banned act.
+- Violating this is ⊥ recoverable mid-session: context spent ⊥ come back. When unsure whether a
+  slice is enough, take the slice ∧ grep again — 2 cheap reads beat 1 catastrophic one.
