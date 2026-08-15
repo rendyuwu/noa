@@ -105,6 +105,10 @@ the digest in the same body as the change it guards, and Proxmox refuses the wri
 moved in between. A digest-free config handed back to the caller would turn that fail-closed CAS
 into a blind overwrite of whatever another operator just did (§V.62's fail-closed discipline).
 
+**Whose read the digest comes from is a decision, and §T.28 made it**: the runner's own, taken
+milliseconds before the write — not the one the approval card was built from minutes earlier. See
+`proxmox_vm_nic` below for what a gate-time digest would cost.
+
 ## Sync or async, same endpoint
 
 A Proxmox config write answers either with a UPID string to poll, or with `data: null` because it
@@ -188,11 +192,63 @@ carries nothing read out of the cloud-init dump. That payload becomes `tool_runs
 and `noa_get_action_result` hands the summary to a model, so the crypt hash of the password NOA
 just set would otherwise reach the LLM through §V.45's audit row (C15, §V.49).
 
+## `proxmox_vm_nic` (CHANGE, §T.28)
+
+One tool with an `action` enum where `noa-old` had `proxmox_enable_vm_nic` and
+`proxmox_disable_vm_nic` (DECISIONS §9). Two halves again:
+
+- `core/integrations/proxmox/nic.py` — the `netN` codec. Here rather than in `mcp_tools/` because
+  the grammar is Proxmox's, and because both halves need it (§V.66).
+- `noa_api/mcp_tools/proxmox_nic.py` — the tool. Preflight in-process, opens the row, executes
+  nothing.
+- `noa_api/mcp_tools/proxmox_nic_runner.py` — the runner, reached only after an approval.
+
+**A rewrite is a whole-line write.** There is no "set the `link_down` field" call: the change is a
+write of the entire `netN` value, so a segment the codec drops is a segment deleted from a live
+VM. `set_link_down` keeps order, keeps unrecognised segments, and never emits a second
+`link_down`. Enabling **removes** the key rather than writing `link_down=0` — equivalent to
+Proxmox, and it makes a never-disabled NIC and a re-enabled one read identically. `link_down=0` is
+*up*, and a valueless `link_down` is *down*: Proxmox's truthiness, not Python's.
+
+**The digest is the runner's own, not the gate's** — the one place §T.28 departs from `noa-old`
+deliberately, and it is why the section above says the CAS window matters. There the digest was a
+*tool argument*: a preflight read it and the model handed it back on the change call, seconds
+apart. An approval gate turns those seconds into minutes, and a gate-time digest then has two
+costs an operator pays. Any unrelated edit to the VM — memory, a disk, a description — answers
+`digest_mismatch` **after** they typed a reason and pressed Approve. And writing back the
+gate-time `netN` value reverts a bridge or tag edit made in the meantime, silently, as a side
+effect of a change that was about the link state.
+
+So the runner re-reads the config, toggles `link_down` on the line **as it is now**, and writes
+under the digest from that same read. The compare-and-set window is its own read→write. What the
+approval window is checked against is the fact the operator actually approved — the NIC's **link
+state**:
+
+| At execution time | Outcome |
+|---|---|
+| still in the state the card described | the change runs |
+| already in the state that was asked for | `no_op` — somebody reached it first, and nothing is written |
+| the interface is gone | `net_not_found` — a line that no longer exists cannot be edited |
+
+**Which interface** (C10, §V.18): a VM with exactly one NIC has it inferred, and the card records
+`auto_selected: true` so the operator sees that NOA chose. Two or more without `net` named returns
+the list as `choices` rather than a pick — disabling the wrong interface is a machine cut off the
+network on the strength of a coin flip.
+
+**The postflight asks the change's own question** (§V.97): it re-reads the `netN` line and
+recomputes the link state from it, not from the task's exit status, which says only that Proxmox
+accepted a write. A read that cannot answer is `changed` + `verified: false` +
+`verification: unavailable` — never a bare `false` (§V.62, §V.86: unavailable is not verified, and
+not refuted either).
+
+**What the result carries**: the server, node, vmid, net, action, a link state and a verdict. Not
+the interface line, its MAC or its bridge — that payload becomes `tool_runs.result_summary` and
+`noa_get_action_result` hands it to a model (§V.45, §V.76, §V.26).
+
 ## Not built yet
 
 | Surface | Task |
 |---|---|
-| MCP tool `proxmox_vm_nic(action: enable\|disable)` (CHANGE) — single tool, enum action | §T.28 |
 | Internal reads `proxmox_get_vm_status_current` / `_config` / `_pending`, `proxmox_list_servers`, `proxmox_validate_server` | I.mcp |
 | Admin routes `/admin/proxmox/servers…` + `POST …/validate` | §T.54 |
 
@@ -213,6 +269,8 @@ what the missing methods were for.
   state so an operator can see whether a restart is owed.
 - NIC selection: when a VM has exactly one NIC, preflight may infer it; otherwise it must return
   the NIC list and refuse to guess (C10, §V.18). The CHANGE then uses the concrete `netN` key.
+  **Built at §T.28**, and the inference is recorded (`auto_selected`) rather than hidden — an
+  operator approving a change to a `netN` key they never typed should be able to see it.
 - libcrypt absent ⇒ the reset reports `verification: unavailable`, ⊥ a silent pass and ⊥ a
   mismatch. Verification-unavailable ≠ verified, and ≠ refuted (§V.62, §T.69). Built in
   `core/integrations/proxmox/cloudinit.py`: `CryptVerdict` has three values, and each unavailable
@@ -225,6 +283,7 @@ what the missing methods were for.
 - Package overview: `core/integrations/proxmox/__init__.py`
 - API client + credential factory: `core/integrations/proxmox/client.py`
 - Cloud-init reading + the crypt guard: `core/integrations/proxmox/cloudinit.py` (§T.69)
+- The `netN` codec: `core/integrations/proxmox/nic.py` (§T.28)
 - Server-ref resolution: `core/servers/proxmox_ref.py` over the shared
   `core/servers/reference.py` (§T.27 extracted the policy the three systems share, §V.66)
 - Tests: `apps/api/tests/test_proxmox_client.py` (failure classification, digest, credentials,
@@ -232,5 +291,8 @@ what the missing methods were for.
   `test_proxmox_cloudinit_crypt.py` (§T.69's three verdicts + the negative control),
   `test_proxmox_server_ref.py`, `test_proxmox_server_repository.py`,
   `test_proxmox_tools_reset_password.py` (the tool half),
-  `test_proxmox_reset_password_runner.py` (the runner half)
+  `test_proxmox_reset_password_runner.py` (the runner half),
+  `test_proxmox_nic_codec.py` (§T.28's grammar, no tool context),
+  `test_proxmox_tools_vm_nic.py` (the enum, the ambiguity refusals, the no-op),
+  `test_proxmox_nic_runner.py` (the re-read, the lost-update case, the postflight)
 - Secret delivery for §T.27: `docs/integrations/yopass.md`

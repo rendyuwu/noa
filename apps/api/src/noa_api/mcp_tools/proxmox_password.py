@@ -82,6 +82,22 @@ MESSAGE_USERNAME_REQUIRED: Final = (
 ERROR_INVALID_VMID: Final = "invalid_vmid"
 MESSAGE_INVALID_VMID: Final = "A VM id must be a positive whole number."
 
+# An approved change names a Proxmox endpoint that is no longer resolvable. Its own code rather
+# than `change_target`'s `whm_server_unavailable`: the code names the inventory an administrator
+# has to fix, and those are two different rows in two different tables. Distinct from the
+# tool-time resolution failures, which the model can fix by asking again — by the time this fires
+# an operator has already typed a reason and pressed Approve.
+#
+# Here rather than in `proxmox_password_runner`, where T27 first wrote it, because T28 made a
+# second Proxmox runner and this is the module both already import (V66) — and it is where
+# `change_target`'s docstring says the Proxmox pair lives. `proxmox_password_runner` re-exports
+# both names, so callers that reach for them there keep one import path.
+ERROR_SERVER_UNAVAILABLE: Final = "proxmox_server_unavailable"
+MESSAGE_SERVER_UNAVAILABLE: Final = (
+    "The Proxmox server this change was approved for is no longer available. Contact an "
+    "administrator."
+)
+
 # The VM has a cloud-init user and it is not the one asked for. Refused rather than gated: the
 # password would be set for `ciuser` while the delivered blob names somebody else, so the
 # operator would hand a customer a login that cannot work — and would have approved a card that
@@ -391,6 +407,7 @@ __all__ = [
     "ERROR_CLOUDINIT_USER_MISMATCH",
     "ERROR_INVALID_VMID",
     "ERROR_NODE_REQUIRED",
+    "ERROR_SERVER_UNAVAILABLE",
     "ERROR_USERNAME_REQUIRED",
     "EVIDENCE_NODE",
     "EVIDENCE_SERVER_ID",
@@ -400,6 +417,7 @@ __all__ = [
     "EVIDENCE_VMID",
     "MESSAGE_INVALID_VMID",
     "MESSAGE_NODE_REQUIRED",
+    "MESSAGE_SERVER_UNAVAILABLE",
     "MESSAGE_USERNAME_REQUIRED",
     "TOOL_PROXMOX_RESET_VM_PASSWORD",
     "VMCloudInitState",

@@ -14,9 +14,11 @@ uncatalogued name for the same reason (`noa_api.mcp_tools.registry`).
 T25 `whm_firewall_release_and_allow` from a second module and T26 `whm_firewall_allowlist_remove`
 from a third — which is the case the equality below is actually for, since a registrar and a
 runner-builder that live in different packages are where the two halves can drift apart. T27
-added `proxmox_reset_vm_password`, the first from a system other than WHM. T28 and T29 are still
-unbuilt. The probe that registers a CHANGE tool with no runner stays, because a predicate that
-now happens to be satisfied still has to separate (V87).
+added `proxmox_reset_vm_password`, the first from a system other than WHM, and T28
+`proxmox_vm_nic`, the first *second* CHANGE tool on one system — which is where a runner map
+keyed off the integration rather than the tool name would collide. T29 is still unbuilt. The
+probe that registers a CHANGE tool with no runner stays, because a predicate that now happens to
+be satisfied still has to separate (V87).
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ from core.db.lifecycle import ToolRisk
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools import registry
 from noa_api.mcp_tools.change_runners import build_change_runners
+from noa_api.mcp_tools.proxmox_nic import TOOL_PROXMOX_VM_NIC
 from noa_api.mcp_tools.proxmox_password import TOOL_PROXMOX_RESET_VM_PASSWORD
 from noa_api.mcp_tools.registry import (
     RegistryError,
@@ -60,7 +63,9 @@ def test_every_change_tool_is_registered_with_its_runner() -> None:
     assertion is worth having for; T26 is the first whose registrar and runner-builder are
     reached from two different aggregators, which is the same drift one level up; T27 is the
     first from a system other than WHM, so a runner map keyed off the wrong integration would
-    show here rather than at an approval.
+    show here rather than at an approval; T28 is the first system to contribute a *second* CHANGE
+    tool, which is where a runner map returning one entry per module rather than per tool name
+    would silently drop one.
     """
     context = build_tool_context().context
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
@@ -72,6 +77,7 @@ def test_every_change_tool_is_registered_with_its_runner() -> None:
         TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
         TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
         TOOL_PROXMOX_RESET_VM_PASSWORD,
+        TOOL_PROXMOX_VM_NIC,
     }
     assert set(build_change_runners(context=context)) == changes
 

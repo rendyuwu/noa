@@ -78,10 +78,12 @@ from noa_api.mcp_tools.change_target import (
 )
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.proxmox_password import (
+    ERROR_SERVER_UNAVAILABLE,
     EVIDENCE_NODE,
     EVIDENCE_SERVER_ID,
     EVIDENCE_USERNAME,
     EVIDENCE_VMID,
+    MESSAGE_SERVER_UNAVAILABLE,
     TOOL_PROXMOX_RESET_VM_PASSWORD,
     text_or_none,
 )
@@ -90,17 +92,6 @@ from noa_api.mcp_tools.results import (
     ToolPayload,
     tool_failure,
     tool_ok,
-)
-
-# The approved change names a Proxmox endpoint that is no longer resolvable. Its own code rather
-# than `change_target`'s `whm_server_unavailable`: the code names the inventory an administrator
-# has to fix, and those are two different rows in two different tables. Distinct from the
-# tool-time resolution failures, which the model can fix by asking again — by the time this fires
-# an operator has already typed a reason and pressed Approve.
-ERROR_SERVER_UNAVAILABLE: Final = "proxmox_server_unavailable"
-MESSAGE_SERVER_UNAVAILABLE: Final = (
-    "The Proxmox server this change was approved for is no longer available. Contact an "
-    "administrator."
 )
 
 # The evidence carries a value the runner cannot act on. Shares `change_target`'s code, because

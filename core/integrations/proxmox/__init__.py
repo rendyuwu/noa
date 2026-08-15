@@ -15,6 +15,9 @@ Modules:
                 took (T27, T69). Holds the crypt-compare and, critically, the third answer
                 `noa-old` did not have: **unavailable**, for a host whose libcrypt will not load
                 (V62 — verification-unavailable ≠ verified).
+- `nic`        — the `netN` codec: what one NIC line says, and how to flip its link state without
+                dropping a segment (T28). Here rather than in `mcp_tools/` because the grammar is
+                Proxmox's, and because `proxmox_vm_nic`'s two halves both need it (V66).
 
 There is no `errors.py` here, unlike WHM's: this layer returns dicts and raises nothing, because
 Proxmox needs no CLI over SSH. `SecretCipher` is injected rather than imported, following T15 —
@@ -43,15 +46,31 @@ from core.integrations.proxmox.cloudinit import (
     cloudinit_carries_password,
     verify_cloudinit_password,
 )
+from core.integrations.proxmox.nic import (
+    LINK_STATE_DOWN,
+    LINK_STATE_UP,
+    NetworkInterface,
+    find_nic,
+    list_nics,
+    net_link_state,
+    set_link_down,
+)
 
 __all__ = [
+    "LINK_STATE_DOWN",
+    "LINK_STATE_UP",
     "CloudInitPasswordVerification",
     "CryptVerdict",
+    "NetworkInterface",
     "ProxmoxClient",
     "ProxmoxClientFactory",
     "ProxmoxServerSecretLike",
     "build_proxmox_client",
     "build_proxmox_client_from_creds",
     "cloudinit_carries_password",
+    "find_nic",
+    "list_nics",
+    "net_link_state",
+    "set_link_down",
     "verify_cloudinit_password",
 ]
