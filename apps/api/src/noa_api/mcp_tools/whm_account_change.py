@@ -85,7 +85,7 @@ verification-unavailable is not verification.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Annotated, Any, Final
+from typing import Annotated, Final
 from uuid import UUID
 
 import structlog
@@ -97,6 +97,17 @@ from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount, normalize_whm_account_list
 from core.integrations.whm.client import WHMClient
 from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
+from noa_api.mcp_tools.change_target import (
+    # Hoisted to `change_target` at T25, when the firewall runner became the second caller of
+    # the same refusals and the same three status words (V66). Re-exported below, so every name
+    # this module already published keeps working from here.
+    ERROR_SERVER_UNAVAILABLE,
+    MESSAGE_SERVER_UNAVAILABLE,
+    STATUS_CHANGED,
+    STATUS_NO_OP,
+    VERIFICATION_UNAVAILABLE,
+    uuid_or_none,
+)
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
@@ -121,10 +132,6 @@ EVIDENCE_ACCOUNT = "account"
 
 ERROR_USERNAME_REQUIRED = "username_required"
 ERROR_ACCOUNT_NOT_FOUND = "account_not_found"
-# The approved change names a server that is no longer resolvable — deleted, or the evidence no
-# longer parses. Distinct from the tool-time resolution failures, which the model can fix by
-# asking again: by the time this fires an operator has already approved something.
-ERROR_SERVER_UNAVAILABLE = "whm_server_unavailable"
 # WHM accepted the mutation and the confirming read says it did not take.
 ERROR_POSTFLIGHT_FAILED = "postflight_failed"
 # The account's suspension is locked, and `unsuspendacct` refuses a locked account (T23). A
@@ -132,23 +139,12 @@ ERROR_POSTFLIGHT_FAILED = "postflight_failed"
 ERROR_SUSPENSION_LOCKED = "account_suspension_locked"
 
 MESSAGE_USERNAME_REQUIRED = "A cPanel account username is required."
-MESSAGE_SERVER_UNAVAILABLE = (
-    "The WHM server this change was approved for is no longer available. Contact an administrator."
-)
 MESSAGE_SUSPEND_FAILED = "WHM did not suspend the account."
 MESSAGE_UNSUSPEND_FAILED = "WHM did not unsuspend the account."
 MESSAGE_POSTFLIGHT_SUSPEND_FAILED = "WHM accepted the suspension but the account is not suspended."
 MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED = (
     "WHM accepted the unsuspension but the account is still suspended."
 )
-
-# The account was already in the state the change would produce when the preflight looked:
-# nothing was asked of an operator and nothing was changed.
-STATUS_NO_OP = "no_op"
-STATUS_CHANGED = "changed"
-
-# The postflight read could not answer. The change happened; whether it took is unconfirmed.
-VERIFICATION_UNAVAILABLE = "unavailable"
 
 # One structured event per call that found nothing to do, so "why is there no approval card" is
 # answerable from the logs. Identifiers only, never the account payload (V8).
@@ -642,7 +638,7 @@ async def _resolve_change_target(
     The database session closes before the caller's WHM round trips, T21's rule — and here it
     matters twice over, because the executor's own session is open for the whole of the call.
     """
-    server_id = _uuid_or_none(request.evidence.get(EVIDENCE_SERVER_ID))
+    server_id = uuid_or_none(request.evidence.get(EVIDENCE_SERVER_ID))
     account = request.evidence.get(EVIDENCE_ACCOUNT)
     username = account.get("user") if isinstance(account, dict) else None
     if server_id is None or not isinstance(username, str) or not username:
@@ -724,22 +720,6 @@ def _passthrough_failure(result: dict[str, object], *, fallback: str) -> ToolPay
     message = result.get("message")
     spoken = message if isinstance(message, str) and message.strip() else None
     return tool_failure(str(result.get("error_code") or ERROR_UNKNOWN), spoken or fallback)
-
-
-def _uuid_or_none(value: Any) -> UUID | None:
-    """The evidence's `server_id` as a `UUID`, or `None` when it is not one.
-
-    It round-tripped through JSONB as a string, and a value that no longer parses is a request
-    NOA refuses rather than guesses at.
-    """
-    if isinstance(value, UUID):
-        return value
-    if not isinstance(value, str):
-        return None
-    try:
-        return UUID(value)
-    except ValueError:
-        return None
 
 
 __all__ = [

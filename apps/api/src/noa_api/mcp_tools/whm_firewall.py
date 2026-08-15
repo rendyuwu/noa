@@ -31,6 +31,12 @@ Three things the result does that `noa-old`'s did not:
 - **Evidence is not repeated per backend.** The lines are labelled by their own content
   (`csf.deny`, `Imunify blacklist: …`), so a per-backend copy would double the transcript to say
   the same thing twice. Each backend entry carries its verdict, or the code its failure has.
+- **A comment NOA wrote is cut back out before a model reads it** (V96, added at T25). This tool
+  reads csf's and Imunify's own text straight into a transcript, and T25 writes the operator's
+  approval reason into the comment of every allow entry it creates — so without the cut, C8's one
+  field would come back through this result the way WHM's `suspendreason` came back through
+  `whm_search_accounts` (V96a). See `without_noa_comment_text` for what makes the cut possible
+  and what it costs.
 
 The tool holds no session while it talks to the server. The row is resolved and turned into an
 `SSHConnectionConfig` inside one session, which then closes: T21's rule, and the reason
@@ -44,9 +50,11 @@ row is the audit middleware's, beside the RBAC gate (V83b).
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Annotated
+from uuid import UUID
 
 from fastmcp import FastMCP
 from pydantic import Field
@@ -102,6 +110,20 @@ MESSAGE_INVALID_TARGET = "Target must be an IP address, a CIDR network, or a hos
 MESSAGE_CSF_GREP_FAILED = "CSF did not return the firewall entries for this target."
 MESSAGE_CSF_EMPTY = "CSF returned an empty response for this target."
 
+# The prefix NOA stamps onto every firewall comment it writes, and the thing that makes the
+# operator's reason findable again in text nobody else formats (T25, V96). It is not decoration:
+# csf stores a comment as free text at the tail of an entry and echoes it back through `csf -g`,
+# so a cut with no marker to aim at would either miss NOA's own comments or take LFD's evidence
+# with them.
+NOA_COMMENT_MARKER = "noa:"
+
+# `noa:` plus the action request's id, and nothing after it. Case-insensitive because csf and
+# Imunify both round-trip the comment through their own storage and neither promises case.
+_NOA_COMMENT_RE = re.compile(
+    rf"{NOA_COMMENT_MARKER}[0-9a-f]{{8}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{4}}-[0-9a-f]{{12}}",
+    re.IGNORECASE,
+)
+
 DESCRIPTION_WHM_PREFLIGHT_FIREWALL_ENTRIES = (
     "Check whether an IP, network or hostname is blocked or allowed on one WHM server, in both "
     "CSF and Imunify360. Use it before asking to release an address, and report the verdict and "
@@ -142,6 +164,53 @@ class BackendLookup:
 
 def _backend_failure(error_code: str, message: str) -> BackendLookup:
     return BackendLookup(ok=False, error_code=error_code, message=message)
+
+
+def noa_firewall_comment(action_request_id: UUID, *, reason: str) -> str:
+    """The comment NOA writes onto a firewall entry it creates (T25 — C8, V43, V96).
+
+    The operator's own words, behind a marker that says NOA wrote them. V43 permits the one
+    reason field to *leave* NOA — a firewall allow entry has a comment field whose only honest
+    content is why the address was allowed, and the alternative is a NOA-authored placeholder in
+    a record a human reads on the box. V96 is the other half: it has to be unreadable on every
+    path back to a model, and the only surface that answers a model here is this module's own
+    `matches`, which `without_noa_comment_text` cuts.
+
+    The marker is what makes that cut possible at all. It is written by NOA, so NOA knows where
+    the text it owns begins; a rule that guessed instead would have to decide whether the trailing
+    words of a `csf.deny` line are LFD's evidence or somebody's reason, and it would get that
+    wrong in one direction or the other.
+
+    The id travels with it for the human on the server: `noa:<id>` is what survives the cut, and
+    it is the address of the approval row where the reason is readable behind the operator's own
+    cookie (V27) rather than in a transcript (V26).
+    """
+    return f"{NOA_COMMENT_MARKER}{action_request_id} {reason}"
+
+
+def without_noa_comment_text(line: str) -> str:
+    """One evidence line with NOA's own comment text cut back to its marker (V96).
+
+    From the marker to the end of the line, because csf gives a comment **no closing boundary**:
+    it is free text at the tail of an entry, and a reason containing a bracket or a quote would
+    walk straight through any rule that tried to find the end of it. So the bound is stated
+    rather than hidden — a token csf placed *after* the comment is dropped with it. Imunify's
+    renderer puts its structured fields ahead of the comment for exactly this reason
+    (`core.integrations.whm.format_imunify_matches`), so on that side the cut costs nothing.
+
+    A line without the marker is returned unchanged, which is most of them: `csf.deny` entries,
+    LFD's own block reasons and Imunify's `smtpauth brute force` are the evidence this tool
+    exists to show, and they are nobody's approval reason.
+
+    Applied at the **surface that answers a model** and not in the parser (V96's shape, one
+    system over from `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`): the same lines reach the approval
+    card and the receipt through T25's evidence, and those are the operator's own surfaces —
+    a cut made in `parse_csf_grep_output` would take the reason off the two places that exist to
+    show it. The verdict is unaffected either way; it is computed from the full parse before
+    anything is cut.
+    """
+    match = _NOA_COMMENT_RE.search(line)
+    return line if match is None else line[: match.end()]
 
 
 async def csf_firewall_entries(config: SSHConnectionConfig, *, target: str) -> BackendLookup:
@@ -301,7 +370,16 @@ async def whm_preflight_firewall_entries(
 
     # Evidence in a fixed backend order, so two identical calls read alike. Each backend's own
     # lines are already ordered by the system that produced them (see `csf.total_matches`).
-    matches = [line for name in (BACKEND_CSF, BACKEND_IMUNIFY) for line in _lines(lookups, name)]
+    #
+    # Cut, because this list goes to a model and T25 writes the operator's approval reason into
+    # the comment of every allow entry it creates (V96). The count below is deliberately taken
+    # from the parsers rather than from this list: the cut shortens lines, it never drops one, so
+    # `total_matches` still answers "how many entries mention this address" (V85).
+    matches = [
+        without_noa_comment_text(line)
+        for name in (BACKEND_CSF, BACKEND_IMUNIFY)
+        for line in _lines(lookups, name)
+    ]
     total_matches = sum(lookup.total_matches for lookup in lookups.values())
 
     payload: ToolPayload = {
@@ -333,11 +411,16 @@ def _lines(lookups: dict[str, BackendLookup], backend: str) -> list[str]:
 
 
 def register_whm_firewall_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
-    """Register the WHM firewall tools on `server`; return each name with its risk (I.mcp, V20).
+    """Register the WHM firewall READ tool on `server`; return its name and risk (I.mcp, V20).
 
-    One entry today. T25 (`whm_firewall_release_and_allow`) and T26
-    (`whm_firewall_allowlist_remove`) are CHANGE tools and land here beside it, reusing the
-    lookups above as their in-process before-state (C9, V17, DECISIONS §6.5).
+    One entry, and it stays one. T25 (`whm_firewall_release_and_allow`) and T26
+    (`whm_firewall_allowlist_remove`) are CHANGE tools and register from
+    `noa_api.mcp_tools.whm_firewall_change` — a separate module because a CHANGE tool is two
+    halves (the tool and its post-approval runner) and both of them here would push one file past
+    C14's line budget with T26 still to come. What they share is *code*, not a file: the lookups
+    above are their in-process before-state (C9, V17, DECISIONS §6.5) and `noa_firewall_comment` /
+    `without_noa_comment_text` are the two ends of V96's bound, imported rather than re-spelled
+    (V66).
     """
 
     @server.tool(
@@ -381,6 +464,7 @@ __all__: list[str] = [
     "ERROR_TARGET_REQUIRED",
     "MESSAGE_INVALID_TARGET",
     "MESSAGE_TARGET_REQUIRED",
+    "NOA_COMMENT_MARKER",
     "TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES",
     "VERDICT_ALLOWLISTED",
     "VERDICT_BLOCKED",
@@ -391,6 +475,8 @@ __all__: list[str] = [
     "csf_firewall_entries",
     "gather_firewall_entries",
     "imunify_firewall_entries",
+    "noa_firewall_comment",
     "register_whm_firewall_tools",
     "whm_preflight_firewall_entries",
+    "without_noa_comment_text",
 ]

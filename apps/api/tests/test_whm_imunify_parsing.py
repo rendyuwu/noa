@@ -150,7 +150,26 @@ def test_matches_render_as_csf_shaped_evidence_lines() -> None:
 
     (line,) = format_imunify_matches(result.entries)
 
-    assert line == f"Imunify blacklist: {TARGET} (brute force) [expires: 1775225644]"
+    assert line == f"Imunify blacklist: {TARGET} [expires: 1775225644] (brute force)"
+
+
+def test_the_comment_is_the_last_field_on_the_line() -> None:
+    """T25, §V.96: the one field whose text NOA may have written goes last.
+
+    The surface that answers a model cuts NOA's own comment out of an evidence line, and csf
+    gives a comment no closing boundary — so the cut runs to the end of the line
+    (`noa_api.mcp_tools.whm_firewall.without_noa_comment_text`). Any structured field rendered
+    *after* the comment would be taken with it, silently. Asserted as an ordering rather than as
+    a whole line, because the claim is about position and would survive a wording change here.
+    """
+    result = parse_imunify_ip_list_response(
+        {"items": [_item(comment="office", expiration=1775225644)]}, TARGET
+    )
+
+    (line,) = format_imunify_matches(result.entries)
+
+    assert line.index("[expires:") < line.index("(office)")
+    assert line.endswith("(office)")
 
 
 def test_match_line_omits_absent_comment_and_expiry() -> None:

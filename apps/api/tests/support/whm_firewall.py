@@ -8,16 +8,23 @@ module missing from it means an unreplaced `ssh_exec` and a test that tries to o
 
 Its own module rather than `support/whm.py`, which owns the server row and nothing else
 (`test_support_layout.py` holds that line), and rather than `support/remote_exec.py`, which is
-about the transport and knows nothing about csf. T25 and T26 are the next callers.
+about the transport and knows nothing about csf. T25 is the second caller; T26 is the next.
 
 No live host and no live firewall: everything under test is command composition, output
 parsing, verdict combination and refusal shaping.
+
+**Two boxes, because a CHANGE asks a backend more than one thing.** `FakeFirewall` (T24) answers
+one query per backend and is what a READ needs. `FakeFirewallBox` (T25) dispatches on the
+sub-command — csf's `-g` / `-tr` / `-dr` / `-ta`, Imunify's `list` / `delete` / `add` — and reads
+come from a *queue*, because a CHANGE workflow reads the same backend twice and the whole point
+of the second read is that it answers differently from the first. A double with one answer
+cannot express that, and a test using one would pass against a postflight that never ran.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import replace
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import pytest
@@ -130,6 +137,139 @@ def both_backends(
     return FakeFirewall(csf=csf or csf_answer(), imunify=imunify or imunify_answer())
 
 
+# --- T25: a box that also accepts changes ---
+
+# csf's own sub-commands, as `noa-old` sends them and as `whm_firewall_change` still does.
+CSF_READ = "-g"
+CSF_TEMP_RELEASE = "-tr"
+CSF_DENY_RELEASE = "-dr"
+CSF_TEMP_ALLOW = "-ta"
+
+# Imunify's, read off the `ip-list local <step>` argument.
+IMUNIFY_READ = "list"
+IMUNIFY_DELETE = "delete"
+IMUNIFY_ADD = "add"
+
+# What each backend prints back for a mutation it accepted. csf answers in text and Imunify in
+# JSON, because that is what `require_csf_success` and `parse_imunify_json_output` are handed.
+CSF_MUTATION_OK = "csf: done"
+IMUNIFY_MUTATION_OK = json.dumps({"result": "success"})
+
+# What csf prints when the entry a release names is not in that list. **Exit 1**, and it is the
+# ordinary case rather than a failure: an address held by a temporary ban has no `csf.deny` line.
+CSF_NOT_IN_LIST = "csf: 203.0.113.10 not found in /etc/csf/csf.deny"
+
+# Imunify's own refusal for a delete of an entry it does not hold. Also ordinary.
+IMUNIFY_NOT_IN_LIST = json.dumps({"errors": ["IP is not in the list"]})
+
+
+def csf_step(command: str) -> str | None:
+    """Which csf sub-command a command string carries, or `None` when it is a probe."""
+    if CSF_BINARY not in command or is_probe(command):
+        return None
+    tokens = command.split()
+    index = next(i for i, token in enumerate(tokens) if token.endswith(CSF_BINARY))
+    return tokens[index + 1]
+
+
+def imunify_step(command: str) -> str | None:
+    """Which `ip-list local <step>` a command string carries, or `None` when it is a probe."""
+    if CSF_BINARY in command or is_probe(command):
+        return None
+    tokens = command.split()
+    return tokens[tokens.index("local") + 1]
+
+
+@dataclass
+class BackendScript:
+    """One backend's answers: a queue of reads, and one answer per mutation step.
+
+    `reads` is consumed in order and its **last entry repeats**, so a script says "blocked, then
+    allowlisted" in two entries and "always clean" in one — without a test having to count how
+    many times the code under test reads.
+
+    A mutation step with no scripted answer succeeds. That is the right default because the
+    interesting mutation cases are the failures, and spelling out three successes to reach one
+    failure is how a test stops saying what it is about.
+    """
+
+    reads: list[CommandResult]
+    mutations: dict[str, CommandResult] = field(default_factory=dict)
+    default_mutation: CommandResult = field(default_factory=lambda: command_result(stdout="ok"))
+
+    def read(self) -> CommandResult:
+        return self.reads.pop(0) if len(self.reads) > 1 else self.reads[0]
+
+    def mutation(self, step: str) -> CommandResult:
+        return self.mutations.get(step, self.default_mutation)
+
+
+def csf_backend(
+    *reads: CommandResult, mutations: dict[str, CommandResult] | None = None
+) -> BackendScript:
+    """A CSF that answers `-g` from `reads` and every mutation successfully unless scripted."""
+    return BackendScript(
+        reads=list(reads) or [csf_answer()],
+        mutations=mutations or {},
+        default_mutation=command_result(stdout=CSF_MUTATION_OK),
+    )
+
+
+def imunify_backend(
+    *reads: CommandResult, mutations: dict[str, CommandResult] | None = None
+) -> BackendScript:
+    """An Imunify that answers `list` from `reads` and every mutation successfully."""
+    return BackendScript(
+        reads=list(reads) or [imunify_answer()],
+        mutations=mutations or {},
+        default_mutation=command_result(stdout=IMUNIFY_MUTATION_OK),
+    )
+
+
+class FakeFirewallBox:
+    """One WHM box's answers to every command a firewall CHANGE tool can send (T25).
+
+    `csf=None` / `imunify=None` means the binary is not there: its probe fails, and the tool must
+    then never send it anything — the assertion below turns "drove an unavailable backend" into a
+    failure rather than a silently absent result. `sudo_denied` makes the probes fail the way a
+    missing sudoers entry does: present, but not runnable.
+    """
+
+    def __init__(
+        self,
+        *,
+        csf: BackendScript | None = None,
+        imunify: BackendScript | None = None,
+        sudo_denied: bool = False,
+    ) -> None:
+        self.csf = csf
+        self.imunify = imunify
+        self.sudo_denied = sudo_denied
+
+    def __call__(self, command: str) -> CommandResult:
+        script = self.csf if CSF_BINARY in command else self.imunify
+        if is_probe(command):
+            if self.sudo_denied:
+                return command_result(command=command, exit_code=1, stderr=SUDO_DENIED_STDERR)
+            if script is None:
+                return command_result(command=command, exit_code=127, stderr="command not found")
+            return command_result(command=command, exit_code=0, stdout="ok")
+
+        assert script is not None, f"drove an unavailable backend: {command}"
+        step = csf_step(command) if CSF_BINARY in command else imunify_step(command)
+        answer = script.read() if step in (CSF_READ, IMUNIFY_READ) else script.mutation(str(step))
+        return replace(answer, command=command)
+
+
+def working_box(
+    *,
+    csf: BackendScript | None = None,
+    imunify: BackendScript | None = None,
+) -> FakeFirewallBox:
+    """A box with both backends installed and accepting changes. The common case."""
+    return FakeFirewallBox(csf=csf or csf_backend(), imunify=imunify or imunify_backend())
+
+
 def preflight_server(name: str, *, cipher: SecretCipher, **columns: Any) -> WHMServer:
     """A `whm_servers` row whose SSH credentials really decrypt under `cipher`.
 
@@ -148,7 +288,7 @@ def preflight_server(name: str, *, cipher: SecretCipher, **columns: Any) -> WHMS
 def firewall_context(
     monkeypatch: pytest.MonkeyPatch,
     *,
-    firewall: FakeFirewall | None = None,
+    firewall: FakeFirewall | FakeFirewallBox | None = None,
     servers: list[Any] | None = None,
     ssh_username: str | None = None,
     cipher: SecretCipher | None = None,
@@ -174,22 +314,40 @@ __all__ = [
     "CSF_ALLOW_LINE",
     "CSF_CLEAN_OUTPUT",
     "CSF_DENY_LINE",
+    "CSF_DENY_RELEASE",
+    "CSF_MUTATION_OK",
+    "CSF_NOT_IN_LIST",
+    "CSF_READ",
+    "CSF_TEMP_ALLOW",
+    "CSF_TEMP_RELEASE",
     "CSF_UNREADABLE_OUTPUT",
     "FIREWALL_SSH_MODULES",
+    "IMUNIFY_ADD",
     "IMUNIFY_CLEAN",
+    "IMUNIFY_DELETE",
     "IMUNIFY_DROP",
+    "IMUNIFY_MUTATION_OK",
+    "IMUNIFY_NOT_IN_LIST",
+    "IMUNIFY_READ",
     "IMUNIFY_WHITE",
     "SERVER_NAME",
     "SSH_PASSWORD_PLAINTEXT",
     "SSH_PRIVATE_KEY_PLAINTEXT",
     "TARGET",
+    "BackendScript",
     "FakeFirewall",
+    "FakeFirewallBox",
     "both_backends",
     "csf_answer",
+    "csf_backend",
+    "csf_step",
     "firewall_context",
     "imunify_answer",
+    "imunify_backend",
     "imunify_body",
+    "imunify_step",
     "is_probe",
     "is_query",
     "preflight_server",
+    "working_box",
 ]

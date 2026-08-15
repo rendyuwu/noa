@@ -10,9 +10,12 @@ So the check happens where both facts meet, beside `assert_names_in_catalog`, wh
 uncatalogued name for the same reason (`noa_api.mcp_tools.registry`).
 
 **The guard was written before its first instance and is not vacuous any more.** T22 registered
-`whm_suspend_account` with the runner that performs it and T23 `whm_unsuspend_account` with its
-own; T25-T29 are still unbuilt. The probe that registers a CHANGE tool with no runner stays,
-because a predicate that now happens to be satisfied still has to separate (V87).
+`whm_suspend_account` with the runner that performs it, T23 `whm_unsuspend_account` with its own,
+and T25 `whm_firewall_release_and_allow` from a second module — which is the case the equality
+below is actually for, since a registrar and a runner-builder that live in different packages are
+where the two halves can drift apart. T26-T29 are still unbuilt. The probe that registers a
+CHANGE tool with no runner stays, because a predicate that now happens to be satisfied still has
+to separate (V87).
 """
 
 from __future__ import annotations
@@ -32,6 +35,7 @@ from noa_api.mcp_tools.whm_account_change import (
     TOOL_WHM_SUSPEND_ACCOUNT,
     TOOL_WHM_UNSUSPEND_ACCOUNT,
 )
+from noa_api.mcp_tools.whm_firewall_change import TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
 from support.servers import build_tool_context
 
 
@@ -48,13 +52,19 @@ def test_every_change_tool_is_registered_with_its_runner() -> None:
     `assert_change_runners_cover` only catches the second.
 
     An equality on both sets rather than a membership test, so T23's second pair had to be added
-    here to stay green — and so the next one does too (V66: one builder, both directions).
+    here to stay green — and so the next one does too (V66: one builder, both directions). T25 is
+    the first name whose two halves come from different modules, which is what the second
+    assertion is worth having for.
     """
     context = build_tool_context().context
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
     changes = {name for name, risk in registered.items() if risk is ToolRisk.CHANGE}
-    assert changes == {TOOL_WHM_SUSPEND_ACCOUNT, TOOL_WHM_UNSUSPEND_ACCOUNT}
+    assert changes == {
+        TOOL_WHM_SUSPEND_ACCOUNT,
+        TOOL_WHM_UNSUSPEND_ACCOUNT,
+        TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
+    }
     assert set(build_change_runners(context=context)) == changes
 
 

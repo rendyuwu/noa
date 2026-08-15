@@ -58,9 +58,15 @@ FIREWALL_FAN_OUT_SITES = {
     "core/integrations/whm/firewall_gate.py::run_on_usable_backends",
 }
 
+# Where the scan looks: a directory, or a glob. The tool-layer entry is a glob rather than a
+# filename so a firewall tool module written later is scanned without being listed here — T25
+# split the CHANGE tools into `whm_firewall_change.py`, and a literal path would have quietly
+# stopped covering the half of the firewall path where V57's harm actually lives. Deliberately
+# not the whole `mcp_tools` package: a PMG tool's fan-out is not this guard's business, and a
+# rule that failed for an unrelated module is a rule the next author routes around.
 FIREWALL_MODULES = (
     "core/integrations/whm",
-    "apps/api/src/noa_api/mcp_tools/whm_firewall.py",
+    "apps/api/src/noa_api/mcp_tools/whm_firewall*.py",
 )
 
 
@@ -234,10 +240,21 @@ def _gather_sites() -> set[str]:
 
 
 def _firewall_sources() -> list[Path]:
+    """Every `.py` on the firewall path, from a directory or a glob.
+
+    A glob that matches nothing would make this whole guard vacuous, so it is refused rather than
+    silently scanning less than it says it does (V87's shape: a predicate that cannot fail is not
+    a predicate).
+    """
     sources: list[Path] = []
     for entry in FIREWALL_MODULES:
         target = REPO_ROOT / entry
-        sources.extend(sorted(target.rglob("*.py")) if target.is_dir() else [target])
+        if target.is_dir():
+            sources.extend(sorted(target.rglob("*.py")))
+            continue
+        matched = sorted(REPO_ROOT.glob(entry))
+        assert matched, f"no firewall source matches `{entry}`"
+        sources.extend(matched)
     return sources
 
 

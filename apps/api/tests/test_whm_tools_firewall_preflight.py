@@ -31,6 +31,13 @@ the parser keeps twenty.
 **Nothing a result carries is credential material** (§V.2, §V.8), asserted against both the
 ciphertext in the column and the plaintext behind it — a leak of either into a LibreChat
 transcript (§V.26) is the same leak.
+
+**And, as of T25, nothing a result carries is the operator's approval reason** (§V.96). This tool
+reads csf's own lines into a transcript, and T25 writes that reason into the comment of every
+allow entry it creates — so this file is where the return path is closed, the way
+`test_whm_tools_search_accounts.py` is for WHM's `suspendreason`. The cut and its negative
+control are asserted together, because a rule that cut every line would pass the first assertion
+and destroy the evidence the tool exists for.
 """
 
 from __future__ import annotations
@@ -61,11 +68,13 @@ from noa_api.mcp_tools.whm_firewall import (
     ERROR_INVALID_RESPONSE,
     ERROR_INVALID_TARGET,
     ERROR_TARGET_REQUIRED,
+    NOA_COMMENT_MARKER,
     TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
     VERDICT_ALLOWLISTED,
     VERDICT_BLOCKED,
     VERDICT_NOT_FOUND,
     VERDICT_UNKNOWN,
+    noa_firewall_comment,
     whm_preflight_firewall_entries,
 )
 from support.mcp_identity import StubSession
@@ -656,6 +665,100 @@ async def test_an_uncapped_result_is_not_truncated(monkeypatch) -> None:  # type
     assert result["total_matches"] == 2
     assert len(result["matches"]) == 2
     assert result["truncated"] is False
+
+
+# --- V96: a comment NOA wrote does not come back through this tool ---
+#
+# T25 writes the operator's approval reason into the comment of every allow entry it creates
+# (C8, §V.43 — a firewall entry has a comment field whose only honest content is why the address
+# was allowed). This tool reads csf's and Imunify's own text straight into a transcript, so it is
+# the return path §V.96 closes, exactly as `whm_search_accounts` is for WHM's `suspendreason`.
+#
+# The cut is possible because NOA authored the comment and stamped a marker into it. What it
+# costs is stated rather than hidden: csf gives a comment no closing boundary, so anything after
+# the marker on that line goes with it.
+
+REASON_WRITTEN_OUT = "customer confirmed, ticket NOC-4471"
+
+
+def noa_commented_line(action_request_id: UUID, *, reason: str = REASON_WRITTEN_OUT) -> str:
+    """A `csf.allow` line as csf echoes one NOA created (T25)."""
+    comment = noa_firewall_comment(action_request_id, reason=reason)
+    return f"Found {TARGET} in /etc/csf/csf.allow ({comment})"
+
+
+async def test_a_comment_noa_wrote_is_cut_back_to_its_marker(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """§V.96: the one field C8 keeps from the LLM does not return through this result.
+
+    Asserted on the serialized result rather than on a key set, because the reason is not a field
+    here — it is text inside an evidence line, and a key comparison would pass over it (§V.87's
+    shape, which is why §V.96 says "on the SERIALIZED result").
+
+    The marker survives, and that is the point of having one: `noa:<id>` is the address of the
+    approval row where an operator can read the reason behind their own cookie (§V.27), which is
+    what a human on the server needs and what a model must not be handed.
+    """
+    action_request_id = uuid4()
+    fixture, _ = firewall_context(
+        monkeypatch,
+        firewall=FakeFirewall(csf=csf_answer(noa_commented_line(action_request_id))),
+    )
+
+    result = await preflight(fixture)
+
+    assert REASON_WRITTEN_OUT not in json.dumps(result)
+    assert result["matches"] == [
+        f"Found {TARGET} in /etc/csf/csf.allow ({NOA_COMMENT_MARKER}{action_request_id}"
+    ]
+    # The verdict is read from the full parse, before anything is cut.
+    assert result["combined_verdict"] == VERDICT_ALLOWLISTED
+
+
+async def test_a_line_noa_did_not_write_is_kept_intact(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """The cut's negative control (§V.87), and the reason it is marker-based rather than
+    positional.
+
+    LFD's own block reason and Imunify's `smtpauth brute force` are the evidence this tool exists
+    to show. A rule that cut the tail off every line would take them, and the operator would be
+    told "this address is blocked" with nothing about why — which is the state DECISIONS §6.5's
+    "block reason + log evidence" wording exists to prevent.
+    """
+    lfd_line = f"lfd: ({TARGET}) smtpauth brute force detected, blocking"
+    fixture, _ = firewall_context(
+        monkeypatch,
+        firewall=both_backends(
+            csf=csf_answer(f"{CSF_DENY_LINE}\n{lfd_line}"), imunify=imunify_answer(IMUNIFY_DROP)
+        ),
+    )
+
+    result = await preflight(fixture)
+
+    assert lfd_line in result["matches"]
+    assert CSF_DENY_LINE in result["matches"]
+    assert "smtpauth brute force" in json.dumps(result)
+
+
+async def test_the_cut_survives_a_reason_that_looks_like_a_delimiter(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Why the cut runs to the end of the line rather than to a closing bracket (§V.96).
+
+    An operator types prose, and prose contains brackets and quotes. A rule that stopped at the
+    first `)` would leave the tail of this reason in the transcript — which is the whole leak,
+    just shorter.
+    """
+    action_request_id = uuid4()
+    awkward = "ticket (NOC-4471) — customer 'acme' confirmed"
+    fixture, _ = firewall_context(
+        monkeypatch,
+        firewall=FakeFirewall(
+            csf=csf_answer(noa_commented_line(action_request_id, reason=awkward))
+        ),
+    )
+
+    result = await preflight(fixture)
+
+    assert "NOC-4471" not in json.dumps(result)
+    assert "acme" not in json.dumps(result)
+    assert str(action_request_id) in json.dumps(result)
 
 
 # --- V8, V26: nothing here is credential material ---

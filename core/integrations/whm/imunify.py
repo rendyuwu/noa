@@ -153,17 +153,26 @@ def imunify_entry_to_dict(entry: ImunifyIPEntry) -> dict[str, Any]:
 
 
 def format_imunify_matches(entries: list[ImunifyIPEntry]) -> list[str]:
-    """Render entries as evidence lines shaped like CSF's, so both backends read alike."""
+    """Render entries as evidence lines shaped like CSF's, so both backends read alike.
+
+    **The comment goes last, and that ordering is load-bearing as of T25.** A comment is the one
+    field on this line whose text NOA may itself have written — it is where a firewall entry NOA
+    created carries the operator's approval reason (C8, V43) — and the surface that answers a
+    *model* has to cut that text back out again (V96). csf gives no closing boundary for its own
+    comment, so the cut runs from NOA's marker to the end of the line; putting `[expires: …]`
+    ahead of the comment here is what keeps that cut from taking a second field with it. Swapping
+    these two back would silently shorten the evidence a model reads.
+    """
     matches: list[str] = []
     for entry in entries:
         purpose_label = "whitelist" if entry.purpose == "white" else "blacklist"
         parts = [f"Imunify {purpose_label}: {entry.ip}"]
 
-        if entry.comment:
-            parts.append(f"({entry.comment})")
-
         if entry.expiration:
             parts.append(f"[expires: {entry.expiration}]")
+
+        if entry.comment:
+            parts.append(f"({entry.comment})")
 
         matches.append(" ".join(parts))
 
