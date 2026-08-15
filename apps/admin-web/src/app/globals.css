@@ -1,0 +1,19 @@
+@import 'tailwindcss';
+@import '@gio/bigsu-tokens/theme.css';
+
+/*
+ * Tailwind v4 must scan the BIGSU package sources so the semantic-token
+ * utilities used inside the components are generated.
+ */
+@source '../../node_modules/@gio/bigsu-ui/dist';
+@source '../../node_modules/@gio/bigsu-app-shell/dist';
+@source '../../node_modules/@gio/bigsu-icons/dist';
+
+/*
+ * Wire the BIGSU font tokens to the self-hosted next/font/google variables
+ * declared in src/app/layout.tsx.
+ */
+@theme inline {
+  --font-sans: var(--font-pjs);
+  --font-mono: var(--font-jbm);
+}
