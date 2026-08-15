@@ -24,6 +24,11 @@ import httpx
 # What `listaccts` wraps its rows in: `{"data": {"acct": [...]}}` under a success `metadata`.
 LISTACCTS_PATH = "/json-api/listaccts"
 
+# The account CHANGE endpoints (T22, T23). Named here beside the read so a test asserting "the
+# gate ran nothing" can count requests to *this* path rather than to WHM in general.
+SUSPENDACCT_PATH = "/json-api/suspendacct"
+UNSUSPENDACCT_PATH = "/json-api/unsuspendacct"
+
 
 def whm_account(
     user: str,
@@ -57,13 +62,27 @@ def whm_api_failure_body(reason: str) -> dict[str, Any]:
     return {"metadata": {"result": 0, "reason": reason}}
 
 
+def whm_api_success_body() -> dict[str, Any]:
+    """A bare success — what `suspendacct` answers, with no `data` of its own."""
+    return {"metadata": {"result": 1, "reason": "OK"}}
+
+
 @dataclass
 class FakeWHMApi:
-    """A `MockTransport` answering `/json-api/*`, with every request recorded."""
+    """A `MockTransport` answering `/json-api/*`, with every request recorded.
+
+    `body` is the default answer for any path. `scripted` overrides it per path with a queue,
+    which is what a CHANGE workflow needs (T22): one endpoint answers *differently* on the
+    preflight read and the postflight read, and a single body cannot express "the account was
+    live, then it was suspended". The last entry of a queue repeats once the queue runs dry, so
+    a test only scripts the answers it is asserting on.
+    """
 
     body: dict[str, Any]
     status_code: int = 200
     requests: list[httpx.Request] = field(default_factory=list)
+    scripted: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    status_codes: dict[str, int] = field(default_factory=dict)
 
     @property
     def transport(self) -> httpx.MockTransport:
@@ -74,9 +93,22 @@ class FakeWHMApi:
         """The `Authorization` header of each captured request — `whm <user>:<token>`."""
         return [request.headers.get("Authorization", "") for request in self.requests]
 
+    def requests_to(self, path: str) -> list[httpx.Request]:
+        """Every captured request whose path is `path` — the counter a "nothing ran" assertion
+        needs, because a CHANGE call still reads `listaccts` for its preflight."""
+        return [request for request in self.requests if request.url.path == path]
+
     def _handle(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
-        return httpx.Response(self.status_code, json=self.body)
+        path = request.url.path
+        queue = self.scripted.get(path)
+        if queue:
+            # Keep the last scripted answer in place: a postflight that reads twice for its own
+            # reasons should not fall back to an unrelated default.
+            body = queue.pop(0) if len(queue) > 1 else queue[0]
+        else:
+            body = self.body
+        return httpx.Response(self.status_codes.get(path, self.status_code), json=body)
 
 
 def whm_api_listing(accounts: list[dict[str, Any]]) -> FakeWHMApi:
@@ -86,9 +118,12 @@ def whm_api_listing(accounts: list[dict[str, Any]]) -> FakeWHMApi:
 
 __all__ = [
     "LISTACCTS_PATH",
+    "SUSPENDACCT_PATH",
+    "UNSUSPENDACCT_PATH",
     "FakeWHMApi",
     "listaccts_body",
     "whm_account",
     "whm_api_failure_body",
     "whm_api_listing",
+    "whm_api_success_body",
 ]

@@ -15,34 +15,38 @@ callers get the same mapping. `noa_api.mcp_tools.registry` calls it to assert **
 registered CHANGE tool with no runner is a change an operator could approve and NOA could never
 run — and `noa_api.main` calls it to build the executor.
 
-**Empty today, and the emptiness is exercised.** T22-T29 are unbuilt, so nothing is registered
-here and the executor's `change_runner_unavailable` path is the reachable one. That is a named
-terminal failure with a receipt, not a run left `STARTED` forever, which is what makes shipping
-the executor before its first tool safe rather than a silent hole (T37(a)'s argument for the
-seam, one task on).
+**One runner today** (T22, `whm_suspend_account`). T23-T29 are unbuilt, so the executor's
+`change_runner_unavailable` path is still reachable for their names — a named terminal failure
+with a receipt, not a run left `STARTED` forever, which is what made shipping the executor
+before its first tool safe rather than a silent hole (T37(a)'s argument for the seam).
 
-**What a runner looks like when T22 lands.** A `ChangeRunner` takes a `ChangeExecutionRequest`
-— the tool name, the arguments the gate recorded, and the preflight evidence the operator
-approved against — and answers with the ordinary tool envelope
-(`noa_api.mcp_tools.results.tool_ok` / `tool_failure`). It should carry `sanitize_tool_errors`
-for the same reason the tool half does (V19): the executor records what it is handed, and a
-raise reaches the audit row as a coarser code than the integration layer already knew.
+**What a runner is.** A `ChangeRunner` takes a `ChangeExecutionRequest` — the tool name, the
+arguments the gate recorded, the preflight evidence the operator approved against, and the
+reason they typed (T22) — and answers with the ordinary tool envelope
+(`noa_api.mcp_tools.results.tool_ok` / `tool_failure`). Two rules it carries: it should not
+raise, because the executor records what it is handed and a raise arrives as a coarser code
+than the integration layer already knew (V19); and it must not echo the reason back in its
+payload, which becomes the receipt a model can read through T63 (V76).
+
+**Each system contributes its own map**, the way `noa_api.mcp_tools.registry` collects
+registrars: a runner belongs beside the tool that opens the request for it, so the before-state
+and the change that answers it cannot drift into two files.
 """
 
 from __future__ import annotations
 
 from core.approvals.execution import ChangeRunner
 from noa_api.mcp_tools.context import McpToolContext
+from noa_api.mcp_tools.whm_account_change import build_whm_account_change_runners
 
 
 def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
     """Tool name → the thing that performs that change once approved (T22-T29).
 
-    `context` is taken now rather than when the first runner arrives, because every runner will
-    need it — the session factory, the cipher, the server repositories — and a signature that
-    changed on the first registration would make T22 a wiring change as well as a tool.
+    `context` carries what every runner needs — the session factory, the cipher, the server
+    repositories — so a runner never reaches for its own copy of the world (C7, T15).
     """
-    return {}
+    return {**build_whm_account_change_runners(context=context)}
 
 
 __all__ = ["build_change_runners"]

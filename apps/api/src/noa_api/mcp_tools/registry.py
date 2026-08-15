@@ -52,6 +52,7 @@ from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.noa_read import register_noa_read_tools
 from noa_api.mcp_tools.pmg_read import register_pmg_read_tools
+from noa_api.mcp_tools.whm_account_change import register_whm_account_change_tools
 from noa_api.mcp_tools.whm_firewall import register_whm_firewall_tools
 from noa_api.mcp_tools.whm_read import register_whm_read_tools
 
@@ -65,6 +66,7 @@ def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str,
     """Register every exposed tool on `server`; return name → risk (I.mcp, V20)."""
     registered: dict[str, ToolRisk] = {
         **register_whm_read_tools(server, context=context),
+        **register_whm_account_change_tools(server, context=context),
         **register_whm_firewall_tools(server, context=context),
         **register_pmg_read_tools(server, context=context),
         **register_noa_read_tools(server, context=context),
@@ -93,11 +95,12 @@ def assert_change_runners_cover(
     consequence otherwise lands on an operator who has already typed a reason and pressed
     Approve, and it lands as a change that will not run.
 
-    Vacuous while T22-T29 are unbuilt — there are no CHANGE tools to cover — and written now
-    anyway, because a rule has to exist before its first instance or the first instance is what
-    discovers it (V85's discipline, T33(d)'s vacuous registry sweep). A probe test registers a
-    CHANGE tool without a runner to prove the predicate separates rather than merely never
-    firing (V87).
+    Written before its first instance existed, on the argument that a rule discovered by its
+    first instance is a rule that shipped late (V85's discipline, T33(d)'s vacuous registry
+    sweep). T22 is that first instance: `whm_suspend_account` is registered CHANGE and covered
+    by `build_whm_account_change_runners`. The probe test that registers a CHANGE tool with no
+    runner stays, because a predicate that now happens to be satisfied still has to separate
+    (V87).
     """
     uncovered = sorted(
         name for name, risk in registered.items() if risk is ToolRisk.CHANGE and name not in runners

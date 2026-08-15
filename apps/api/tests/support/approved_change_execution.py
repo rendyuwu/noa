@@ -31,7 +31,7 @@ from core.approvals.execution import (
 )
 from core.approvals.reaper import BoundedRows, StrandedRun
 from core.db.lifecycle import ToolRunStatus
-from support.action_decisions import APPROVAL_CONTEXT, CHANGE_TOOL, CONVERSATION_ID
+from support.action_decisions import APPROVAL_CONTEXT, CHANGE_TOOL, CONVERSATION_ID, REASON
 
 # The gate-time preflight as `APPROVAL_CONTEXT` carries it (T33's `build_approval_context`), so
 # a receipt's before-state is assertable against the same payload the card would show.
@@ -53,14 +53,21 @@ def authorized_change(
     tool_name: str = CHANGE_TOOL,
     arguments: dict[str, Any] | None = None,
     evidence: dict[str, Any] | None = None,
+    reason: str = REASON,
 ) -> AuthorizedChange:
-    """An approved request as `load_authorized` would return it."""
+    """An approved request as `load_authorized` would return it.
+
+    `reason` is non-blank by default because every row this stands in for is `APPROVED`, and
+    T34's `ck_action_requests_decided_reason` refuses a decided row without one. A test that
+    wants the empty string passes it (T22).
+    """
     return AuthorizedChange(
         action_request_id=action_request_id or uuid4(),
         tool_run_id=tool_run_id or uuid4(),
         tool_name=tool_name,
         arguments=ARGUMENTS if arguments is None else arguments,
         evidence=EVIDENCE if evidence is None else evidence,
+        reason=reason,
         conversation_ref=CONVERSATION_ID,
     )
 

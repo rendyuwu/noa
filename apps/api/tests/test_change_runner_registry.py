@@ -9,11 +9,10 @@ the change answers `change_runner_unavailable` and does not run.
 So the check happens where both facts meet, beside `assert_names_in_catalog`, which refuses an
 uncatalogued name for the same reason (`noa_api.mcp_tools.registry`).
 
-**The guard is vacuous today and the tests are not.** T22-T29 are unbuilt, so there are no
-CHANGE tools to cover and the predicate never fires in production. Written now anyway — a rule
-has to exist before its first instance, or the first instance is what discovers it (V85's
-discipline, T33(d)'s vacuous registry sweep) — and with a probe that proves the predicate
-separates rather than merely never firing (V87).
+**The guard was written before its first instance and is not vacuous any more.** T22 registered
+`whm_suspend_account` with the runner that performs it; T23-T29 are still unbuilt. The probe
+that registers a CHANGE tool with no runner stays, because a predicate that now happens to be
+satisfied still has to separate (V87).
 """
 
 from __future__ import annotations
@@ -29,6 +28,7 @@ from noa_api.mcp_tools.registry import (
     assert_change_runners_cover,
     register_mcp_tools,
 )
+from noa_api.mcp_tools.whm_account_change import TOOL_WHM_SUSPEND_ACCOUNT
 from support.servers import build_tool_context
 
 
@@ -37,15 +37,19 @@ async def noop_runner(request: object) -> dict[str, object]:
     return {"ok": True}
 
 
-def test_no_change_tool_is_registered_yet() -> None:
-    """The premise every other test in this file rests on, asserted rather than assumed.
+def test_the_first_change_tool_is_registered_with_its_runner() -> None:
+    """T22 is the guard's first real instance; before it, this file asserted the emptiness.
 
-    When T22 lands this goes red, which is the point: the file that says "the guard is vacuous"
-    has to stop saying it the moment it is not.
+    Two halves that live in different modules, asserted to name the same tool: a runner
+    registered under a name nothing exposes is as invisible as a tool with no runner, and
+    `assert_change_runners_cover` only catches the second.
     """
     context = build_tool_context().context
+    registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
-    assert build_change_runners(context=context) == {}
+    changes = {name for name, risk in registered.items() if risk is ToolRisk.CHANGE}
+    assert changes == {TOOL_WHM_SUSPEND_ACCOUNT}
+    assert set(build_change_runners(context=context)) == changes
 
 
 def test_a_change_tool_without_a_runner_fails_at_startup() -> None:
@@ -105,7 +109,9 @@ def test_the_real_registry_passes_the_guard() -> None:
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
     assert_change_runners_cover(registered, build_change_runners(context=context))
-    assert ToolRisk.CHANGE not in set(registered.values())
+    # And the guard is not passing because there is nothing to cover (V87): T22 registered a
+    # CHANGE tool, so this call has something to be right about.
+    assert ToolRisk.CHANGE in set(registered.values())
 
 
 def test_registering_a_change_tool_without_a_runner_raises_from_the_registry(

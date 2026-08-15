@@ -135,6 +135,12 @@ async def test_the_runner_is_handed_what_the_gate_recorded() -> None:
 
     Not re-gathered here, and not taken from anything the caller passed: what an operator
     approved against is what the change runs against.
+
+    **The reason travels too** (T22). It is not an authorization — that was settled by
+    `status = APPROVED` before this call — but WHM's `suspendacct` takes a suspension note, and
+    C8's single operator-typed field is the only text NOA has that belongs in one. What the
+    runner must not do with it is echo it back; that is asserted where the runner is, in
+    `test_whm_tools_suspend_account.py`.
     """
     authorized = authorized_change()
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized)
@@ -148,10 +154,11 @@ async def test_the_runner_is_handed_what_the_gate_recorded() -> None:
     assert call.tool_name == CHANGE_TOOL
     assert call.arguments == authorized.arguments
     assert call.evidence == EVIDENCE
+    assert call.reason == authorized.reason
 
 
 async def test_a_tool_with_no_runner_fails_the_run_by_name() -> None:
-    """The reachable path today: T22-T29 are unbuilt, so the registry is empty.
+    """Still reachable after T22: `whm_suspend_account` has a runner, T23-T29 do not.
 
     A named terminal failure rather than a run left `STARTED` until the reaper — which is what
     makes shipping the executor before its first CHANGE tool safe rather than a silent hole.

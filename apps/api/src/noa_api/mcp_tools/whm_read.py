@@ -106,6 +106,16 @@ WHM_ACCOUNT_TABLE_COLUMNS: list[TableColumn] = [
     TableColumn(key="suspendreason", label="Suspend reason"),
 ]
 
+# The account fields a *model* may not read, dropped from `whm_search_accounts`' rows (C8, T22).
+#
+# `suspendreason` is WHM's suspension note, and as of T22 NOA writes the operator's approval
+# reason into it — C8's single field, typed on the card. WHM echoes it back on every later
+# `listaccts`, so a search result carrying the field would put that reason in the transcript and
+# hand the LLM the one string C8 says it must never see. The parked table above keeps the column
+# on purpose: `/tables/{token}` is behind the operator's own cookie (V27), not in front of a
+# model.
+ACCOUNT_FIELDS_WITHHELD_FROM_MODEL = frozenset({"suspendreason"})
+
 DESCRIPTION_WHM_SEARCH_ACCOUNTS = (
     "Search the cPanel accounts on one WHM server by username or domain, case-insensitively. "
     "Use it to find the exact `user` an account tool needs before calling one; never guess a "
@@ -132,11 +142,14 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
     that already are, and a second boundary would turn a `NoaError` into a payload the caller
     then has to unwrap twice. `whm_list_accounts` (T20) is the other caller.
 
-    **The resolved server's name comes back with the accounts** (T20). `server_ref` is whatever
-    the operator typed — an id, a hostname, a name in another case — and the tool that reports
-    "these are the accounts on X" has to name the machine it actually read, not the string it
-    was handed. Resolution already happened here, so returning the answer costs nothing;
-    re-reading it in the caller would be a second resolution that could disagree with this one.
+    **The resolved server's name and id come back with the accounts** (T20, T22). `server_ref`
+    is whatever the operator typed — an id, a hostname, a name in another case — and the tool
+    that reports "these are the accounts on X" has to name the machine it actually read, not the
+    string it was handed. Resolution already happened here, so returning the answer costs
+    nothing; re-reading it in the caller would be a second resolution that could disagree with
+    this one. The id is what T22's CHANGE gate persists as evidence, so the change an operator
+    approves runs against the machine the card described rather than against a string resolved
+    again minutes later (V33).
 
     Three refusals travel back as a payload rather than an exception, all of them information
     the model can act on (V18, V19):
@@ -166,6 +179,7 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
             )
         client = context.whm_client_factory(resolution.server, cipher=context.secret_cipher)
         server_name = resolution.server.name
+        server_id = str(resolution.server.id)
 
     result = await client.list_accounts()
     if result.get("ok") is not True:
@@ -179,6 +193,7 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
 
     return tool_ok(
         server=server_name,
+        server_id=server_id,
         accounts=normalize_whm_account_list(result.get("accounts")),
     )
 
@@ -284,6 +299,12 @@ async def whm_search_accounts(
     Matches are sorted by username before the cut, also V85: "the first twenty" has to be
     reproducible, and `listaccts` order is WHM's own and not documented as stable, which would
     make a truncated answer an arbitrary subset that changes between calls.
+
+    **One field is withheld from the rows** (C8, T22): `suspendreason`. NOA writes the
+    operator's approval reason into WHM's suspension note when it suspends an account, and WHM
+    returns it on every later `listaccts` — so a search that reported the field would hand the
+    model, by round trip, the one string C8 says it must never see. See
+    `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`.
     """
     normalized_query = query.strip().lower()
     if not normalized_query:
@@ -309,10 +330,27 @@ async def whm_search_accounts(
     return tool_ok(
         # The operator's text, as typed — the normalised form is an implementation detail.
         query=query,
-        accounts=matches[:limit],
+        accounts=[_without_withheld_fields(account) for account in matches[:limit]],
         total_matches=len(matches),
         truncated=len(matches) > limit,
     )
+
+
+def _without_withheld_fields(account: WHMAccount) -> WHMAccount:
+    """One account row as a model may read it (C8, V26).
+
+    See `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`. Dropped here rather than in
+    `normalize_whm_account_summary`, because the normaliser feeds three callers and only this
+    one answers into a transcript: the parked table renders the column behind a cookie, and
+    T22's suspend preflight puts the whole summary on the approval card, which is the operator's
+    own surface. A field withheld from *everyone* would take it off the two surfaces that exist
+    to show it.
+    """
+    return {
+        key: value
+        for key, value in account.items()
+        if key not in ACCOUNT_FIELDS_WITHHELD_FROM_MODEL
+    }
 
 
 def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
@@ -403,6 +441,7 @@ def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> dict
 
 
 __all__ = [
+    "ACCOUNT_FIELDS_WITHHELD_FROM_MODEL",
     "DEFAULT_SEARCH_LIMIT",
     "DESCRIPTION_WHM_LIST_ACCOUNTS",
     "DESCRIPTION_WHM_LIST_SERVERS",

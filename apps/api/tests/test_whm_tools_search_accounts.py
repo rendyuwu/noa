@@ -34,6 +34,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from core.auth.tool_catalog import TOOL_CATALOG
+from core.integrations.whm.accounts import normalize_whm_account_summary
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.results import (
     ERROR_TIMEOUT,
@@ -297,6 +298,43 @@ async def test_the_schema_carries_no_reason_parameter() -> None:
     properties = tools[TOOL_WHM_SEARCH_ACCOUNTS].parameters["properties"]
 
     assert set(properties) == {"server_ref", "query", "limit"}
+
+
+async def test_a_suspension_note_never_reaches_the_model() -> None:
+    """C8 by round trip, and the reason this file changed at T22.
+
+    A schema with no reason parameter is only half the boundary. As of T22 NOA writes the
+    operator's approval reason into WHM's suspension note, WHM returns it as `suspendreason` on
+    every later `listaccts`, and this tool's rows go into the transcript — so a search would hand
+    the model the one string C8 says it must never see, by way of the system NOA just wrote it
+    to.
+
+    Asserted on the serialized result rather than on the row dict: what C8 bounds is what reaches
+    the model, and a field dropped from one place and kept in another is exactly the kind of
+    thing a key-set assertion alone would miss. The normaliser still carries the field, and
+    `whm_list_accounts`' parked table still renders it — that page is behind the operator's own
+    cookie (V27), which is where the reason may be read.
+    """
+    operator_words = "Customer confirmed the abuse ticket by phone."
+    fixture, _ = search_context(
+        accounts=[
+            whm_account(
+                "acme",
+                domain="acme.example.com",
+                suspended=1,
+                suspendreason=operator_words,
+            )
+        ]
+    )
+
+    result = await search(fixture, query="acme")
+
+    assert result["accounts"] == [{"user": "acme", "domain": "acme.example.com", "suspended": True}]
+    assert operator_words not in json.dumps(result)
+    # The whitelist itself is unchanged: the field is dropped for this surface, not for NOA.
+    assert "suspendreason" in normalize_whm_account_summary(
+        whm_account("acme", suspended=1, suspendreason=operator_words)
+    )
 
 
 # --- V18: which server did they mean? ---

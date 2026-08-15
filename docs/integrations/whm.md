@@ -225,7 +225,9 @@ despite the unique index, because Postgres uniqueness is case-sensitive and the 
 | Tool | Risk | Notes |
 |---|---|---|
 | `whm_list_servers` | READ | Every configured server, via `WHMServer.to_safe_dict()`. Exposed per DECISIONS §6.6 — the model needs to know which servers exist. The only `*_list_servers` that is exposed. |
+| `whm_list_accounts` | READ | `server_ref`. Every account on one server, parked at `/tables/{token}` — the rows never enter the transcript (§V.64). |
 | `whm_search_accounts` | READ | `server_ref` + `query` + `limit` (1–100, default 20). Case-insensitive substring of the account username **or** its domain. |
+| `whm_suspend_account` | **CHANGE** | `server_ref` + `username`. Opens an approval request and suspends nothing; the change runs after an operator decides (§V.16). No reason parameter, ever (C8). |
 | `whm_preflight_firewall_entries` | READ | `server_ref` + `target`. Asks CSF and Imunify360 what they hold for the target. Exposed per DECISIONS §6.5 — the one operator-facing preflight. |
 
 Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19,
@@ -240,6 +242,14 @@ Each row is reduced to the fields NOA speaks about by `core/integrations/whm/acc
 `is_locked`. Everything else WHM sends (`ip`, `plan`, disk counters, theme) is dropped — the
 result lands in a LibreChat transcript that persists in their MongoDB (§V.26). A row with no
 `user` is dropped entirely: it is not an account any CHANGE tool could then be called on.
+
+**One of those fields is withheld from this tool's rows: `suspendreason`** (§T.22, C8). NOA
+writes the operator's approval reason into WHM's suspension note when it suspends an account,
+and WHM returns it on every later `listaccts` — so a search that reported the field would hand
+the model, by round trip, the one string C8 says it must never see. The normaliser still carries
+it and `whm_list_accounts`' parked table still renders it: that page sits behind the operator's
+own session (§V.27), which is where the reason may be read. The list lives at
+`ACCOUNT_FIELDS_WITHHELD_FROM_MODEL` in `noa_api/mcp_tools/whm_read.py`.
 
 `suspended` and `is_locked` arrive as `0`/`1` or `"0"`/`"1"` depending on the cPanel version and
 are normalised to booleans — `"0"` is truthy in Python, so a raw read reports a live account as
@@ -300,6 +310,47 @@ as a failure. It carries no rows, no token and no URL.
 over MCP) and inside the tool (`limit_invalid`, which is what holds for an in-process call). A
 blank or whitespace-only `query` is `query_required` — §V.21's gate, and one a schema cannot
 express since `min_length` counts whitespace. Both guards run before any I/O.
+
+### `whm_suspend_account` (§T.22)
+
+**The first CHANGE tool**, and the one place a NOA-held reason leaves the process. A
+`tools/call` here changes nothing: it resolves the server and reads the account through the same
+internal the two READs use (`fetch_whm_accounts`, C9/§V.17), writes an `action_requests` row with
+that read as its evidence (§V.33/§V.35), and answers with the approval card's address plus the
+iframe (§V.24/§V.25). WHM's `suspendacct` is not called at all — the count of requests to that
+endpoint at gate time is zero, and that is what the tests assert rather than the shape of the
+payload.
+
+There is **no `reason` parameter** and nowhere to add one (C8, §V.15, §V.43). The gate refuses a
+reason-shaped argument under any of its spellings even for a direct in-process call.
+
+**An account that is already suspended opens no request.** The preflight is what discovers it, so
+the tool answers `{"ok": true, "status": "no_op", …}` and nothing is asked of an operator. That
+answer names the account and the server and carries nothing else — in particular not the account
+summary, which holds `suspendreason`.
+
+Once an operator approves, `core/approvals/execution.py` runs the **runner** registered for this
+tool name (`noa_api/mcp_tools/change_runners.py`). Three things about it:
+
+- **It acts on the server the card described.** `evidence["server_id"]`, not the `server_ref`
+  string the model passed: inventory can be edited between a request and its approval, and
+  re-resolving would be a second resolution that can disagree with the one the decision rests on
+  (§V.33).
+- **The suspension note is the operator's reason.** `load_authorized` reads
+  `action_requests.reason` — non-blank by then, because T34's
+  `ck_action_requests_decided_reason` refuses a decided row without one — and the runner sends it
+  as `suspendacct`'s `reason`. The runner does **not** echo it back in its payload: that payload
+  becomes `action_receipts.receipt_data`, which `noa_get_action_result` reads out to a model
+  (§V.76).
+- **The change is re-read, and the read has three answers.** Suspended → done and verified. Still
+  live → `postflight_failed`, because WHM accepted a call that did not take. The confirming read
+  itself failing → `{"ok": true, "verified": false, "verification": "unavailable"}`, which is
+  §V.62's rule one system over: verification-unavailable is not verification, and it is not a
+  failure either — reporting one would send an operator to re-suspend an account that may already
+  be suspended.
+
+A server that has been deleted between approval and execution is `whm_server_unavailable`, before
+the mutation rather than after it.
 
 ### `whm_preflight_firewall_entries` (§T.24)
 
@@ -384,7 +435,7 @@ lets the column be migrated in place.
 
 | Surface | Task |
 |---|---|
-| MCP tools: list accounts, suspend/unsuspend, release-and-allow, allowlist-remove | §T.20, §T.22–§T.23, §T.25–§T.26 |
+| MCP tools: unsuspend, release-and-allow, allowlist-remove | §T.23, §T.25–§T.26 |
 | Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
 | Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
 

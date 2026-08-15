@@ -186,6 +186,27 @@ async def test_an_approved_run_reaches_completed_with_a_receipt(factory) -> None
     assert receipts[0].tool_run_id == run_id
 
 
+async def test_the_operator_reason_travels_from_the_row_to_the_runner(factory) -> None:  # type: ignore[no-untyped-def]
+    """T22, C8: the note WHM's `suspendacct` receives is what the operator typed on the card.
+
+    The link this file owns is the SELECT. `test_whm_tools_suspend_account.py` proves the runner
+    puts `request.reason` on the wire, and `test_approved_change_execution.py` proves the service
+    passes it along — both against values a test handed them. Only here is the reason the one an
+    approval actually *wrote*: `build_live_decision_service` stores it under T34's
+    `ck_action_requests_decided_reason`, and `load_authorized` reads it back out of the row.
+    Without this, `load_authorized` could answer `""` and every other assertion in the chain
+    would still be green (V93's shape — a value is fetched or it is not).
+    """
+    _, request_id, run_id = await approved_change(factory)
+    runner = RecordingChangeRunner()
+
+    await execute(factory, action_request_id=request_id, tool_run_id=run_id, runner=runner)
+
+    assert runner.only_call.reason == REASON
+    # And the row still holds it: the executor reads the reason, it does not consume it.
+    assert (await read_request(factory, request_id)).reason == REASON
+
+
 async def test_the_receipt_carries_the_gates_evidence_as_its_before_state(factory) -> None:  # type: ignore[no-untyped-def]
     """C9/V17/V33: the before-state on the receipt is the preflight the *gate* persisted, so the
     operator's authorisation and the record of what happened describe one moment."""

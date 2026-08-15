@@ -28,12 +28,19 @@ against and not a second reading taken later. The after-state is what the runner
 the named reason there is none. A failure gets a receipt too: a receipt with a before-state
 and no after-state is the truthful record of a change that did not complete.
 
-**What actually performs the change is a runner, and there are none yet.** T22-T29 are
-unbuilt, so `ChangeRunner` implementations do not exist and the registry
-(`noa_api.mcp_tools.change_runners`) is empty. An unknown tool name is therefore the
-*reachable* path today and it fails closed: the run goes `FAILED` with
-`change_runner_unavailable`, which is a named outcome an operator can act on rather than a
-run that sits `STARTED` until the reaper takes it.
+**What actually performs the change is a runner.** T22 registered the first
+(`whm_suspend_account`); T23-T29 are still unbuilt, so an unknown tool name remains reachable
+and it fails closed: the run goes `FAILED` with `change_runner_unavailable`, which is a named
+outcome an operator can act on rather than a run that sits `STARTED` until the reaper takes it.
+
+**The operator's reason is carried to the runner, and it is a value rather than a permission**
+(T22). C8 bars the *LLM* from authoring, relaying or seeing a reason; it does not bar NOA from
+writing the operator's own words onto the system being changed, and WHM's `suspendacct` has a
+suspension-note field that would otherwise hold a NOA-authored placeholder. So `load_authorized`
+reads `action_requests.reason` and `ChangeExecutionRequest` carries it. Two bounds travel with
+it: nothing here branches on the string (the authorization was decided by `status = APPROVED`
+before it was read), and it must not come back in a runner's payload — that payload becomes
+`action_receipts.receipt_data`, which T63 reads out to a model (V76).
 
 **Redacted arguments are refused, not executed.** `approval_context.arguments` is redacted at
 gate time (`noa_api.mcp_tools.change_gate.build_approval_context`), and redaction is by key
@@ -131,8 +138,16 @@ class AuthorizedChange:
     *is* the authorization — there is no field here for a caller to check afterwards and
     forget to.
 
-    No `reason`, and nowhere to put one: the operator's words authorise the change and are
-    read by nothing that executes it (C8, V15, V43).
+    **`reason` is the operator's own words, and it is here on purpose** (T22). C8's boundary
+    is that the LLM never authors, relays or sees a reason; it does not say the reason may
+    not reach the system being changed. WHM's `suspendacct` takes a suspension note, and the
+    note an operator would want there is the one they typed on the card — so the field is
+    read from `action_requests.reason` and handed to the runner. It is a *value* here, never
+    an authorization: `load_authorized` already refused unless the row said `APPROVED`, and
+    nothing below branches on this string.
+
+    Non-optional, because the only rows that reach here are `APPROVED` and
+    `ck_action_requests_decided_reason` (T34) makes a decided row's reason non-blank.
     """
 
     action_request_id: UUID
@@ -140,6 +155,7 @@ class AuthorizedChange:
     tool_name: str
     arguments: dict[str, Any]
     evidence: dict[str, Any]
+    reason: str
     conversation_ref: str | None
 
 
@@ -159,6 +175,12 @@ class ChangeExecutionRequest:
     # against. A runner reads it rather than re-gathering, so the receipt's two halves describe
     # one decision.
     evidence: dict[str, Any]
+    # What the operator typed on the approval card (C8's single field, V15, V43). A runner uses
+    # it where the target system has a place for it — WHM's suspension note (T22) — and nowhere
+    # else. Two rules a runner carries with it: it is not an authorization (that was decided
+    # before this value was read), and it must not come back in the runner's payload, which
+    # becomes `action_receipts.receipt_data` and is read by a model through T63 (V76).
+    reason: str
 
 
 class ChangeRunner(Protocol):
@@ -172,6 +194,11 @@ class ChangeRunner(Protocol):
     timeout or an SSH failure arrives here as `ok: False` with the code that names it. The
     executor still catches, because a contract held only by discipline is held by nothing —
     but what it can record then is coarser than what the runner knew.
+
+    **A runner must not echo `request.reason` back in its payload.** That payload is stored as
+    the receipt's after-state and read out to a model by `noa_get_action_result` (T63, V76), so
+    an answer that repeats the note it just wrote would hand the LLM the one field C8 keeps
+    from it.
     """
 
     async def __call__(self, request: ChangeExecutionRequest) -> dict[str, Any]: ...
@@ -267,6 +294,12 @@ class SQLApprovedChangeExecutionRepository:
             tool_name=row.tool_name,
             arguments=arguments_from_context(context),
             evidence=evidence_from_context(context),
+            # Fetched deliberately, not incidentally (V93): a runner that has to write the
+            # operator's note onto the target system needs the value, and a projection that
+            # merely happened to load it would be a separation held by nothing. `or ""` is a
+            # type coercion and not a fallback — the row is `APPROVED`, so T34's
+            # `ck_action_requests_decided_reason` has already refused a blank one.
+            reason=row.reason or "",
             conversation_ref=row.conversation_ref,
         )
 
@@ -396,6 +429,7 @@ class ApprovedChangeExecutionService:
             tool_name=authorized.tool_name,
             arguments=dict(authorized.arguments),
             evidence=dict(authorized.evidence),
+            reason=authorized.reason,
         )
         try:
             return await runner(request)
