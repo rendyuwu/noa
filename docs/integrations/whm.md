@@ -228,6 +228,7 @@ despite the unique index, because Postgres uniqueness is case-sensitive and the 
 | `whm_list_accounts` | READ | `server_ref`. Every account on one server, parked at `/tables/{token}` — the rows never enter the transcript (§V.64). |
 | `whm_search_accounts` | READ | `server_ref` + `query` + `limit` (1–100, default 20). Case-insensitive substring of the account username **or** its domain. |
 | `whm_suspend_account` | **CHANGE** | `server_ref` + `username`. Opens an approval request and suspends nothing; the change runs after an operator decides (§V.16). No reason parameter, ever (C8). |
+| `whm_unsuspend_account` | **CHANGE** | `server_ref` + `username`. The mirror, and a separate grant: suspend and unsuspend carry opposite risk, so DECISIONS §9 leaves them two names rather than one `action` enum. Opens an approval request and lifts nothing. No reason parameter, ever (C8). |
 | `whm_preflight_firewall_entries` | READ | `server_ref` + `target`. Asks CSF and Imunify360 what they hold for the target. Exposed per DECISIONS §6.5 — the one operator-facing preflight. |
 
 Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19,
@@ -254,7 +255,8 @@ own session (§V.27), which is where the reason may be read. The list lives at
 `suspended` and `is_locked` arrive as `0`/`1` or `"0"`/`"1"` depending on the cPanel version and
 are normalised to booleans — `"0"` is truthy in Python, so a raw read reports a live account as
 suspended. `is_locked` falls back to the older `suspendlock`, including when `is_locked` is
-present and JSON-null.
+present and JSON-null — the field `whm_unsuspend_account`'s preflight reads to refuse a lift WHM
+would reject (§T.23).
 
 Three deliberate departures from `noa-old`'s version of this tool:
 
@@ -354,6 +356,49 @@ tool name (`noa_api/mcp_tools/change_runners.py`). Three things about it:
 A server that has been deleted between approval and execution is `whm_server_unavailable`, before
 the mutation rather than after it.
 
+### `whm_unsuspend_account` (§T.23)
+
+`whm_suspend_account`'s mirror, and everything between the two names is one implementation
+(§V.66): the same preflight (`collect_account_state` over `fetch_whm_accounts`), the same gate,
+the same resolution of the approved change onto a client, and one postflight that differs only in
+the value `suspended` must hold once the change took. **Not merged into one tool with an `action`
+enum** — DECISIONS §9 keeps the pair as two names because the two directions carry opposite risk,
+which is also what lets a role be granted one and not the other.
+
+Three states, and two of them open no approval request:
+
+- **not suspended** → `{"ok": true, "status": "no_op", …}`. There is nothing to lift, so there is
+  nothing for an operator to authorise. The suspend tool's no-op, running the other way.
+- **suspension locked** → `account_suspension_locked`, refused before a card exists. WHM's
+  `unsuspendacct` will not lift a locked suspension, so the request would buy an operator's
+  decision and then a failed run. The lock is on the summary the preflight already read
+  (`is_locked`, falling back to the older `suspendlock`).
+- **suspended and unlocked** → the approval request, the card address and the iframe, exactly as
+  for a suspension.
+
+The lock guard fires on a **positive** lock only. `listaccts` omits the field entirely on cPanel
+versions that do not have it, and refusing every unsuspension on those servers would cost more
+than the failure it prevents — so WHM's own refusal at execute time stays the authoritative
+answer. It arrives as `whm_api_error` carrying WHM's `reason`, which is the sentence that names
+what an administrator has to unlock; this guard is the cheap early half of it.
+
+**Nothing is written out to WHM but the username.** `unsuspendacct` has no note field, so the
+runner never reads `request.reason` and §V.96's return paths do not open on this side. The test
+asserts the outgoing query *exactly* rather than the absence of one key name, so a note parameter
+added later under any spelling goes red.
+
+What §V.96a does bite here is the read: an account being unsuspended is suspended right now, so
+its `listaccts` row carries `suspendreason` — the operator's own words from the suspension. That
+summary goes onto the approval row as evidence, where the card and §V.27's requester-match are
+its only readers (a model cannot reach it — `ActionResultView` has no field for evidence,
+§V.76). The two answers this tool puts in a *transcript* — the no-op and the locked refusal — are
+built from the username and the server name rather than from the summary, and both are asserted
+for the note.
+
+The postflight has the same three answers as the suspension's, with the direction reversed: no
+longer suspended → done and verified; still suspended → `postflight_failed`; the confirming read
+itself failing → `verification: "unavailable"` (§V.62).
+
 ### `whm_preflight_firewall_entries` (§T.24)
 
 Step 1 of the firewall flow (DECISIONS §6.5): *check whether an address is denied → release it →
@@ -437,7 +482,7 @@ lets the column be migrated in place.
 
 | Surface | Task |
 |---|---|
-| MCP tools: unsuspend, release-and-allow, allowlist-remove | §T.23, §T.25–§T.26 |
+| MCP tools: release-and-allow, allowlist-remove | §T.25–§T.26 |
 | Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
 | Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
 
@@ -450,8 +495,11 @@ when it fails.
 root-created token cannot mutate an account owned by another reseller, even with the
 "Everything" ACL. `noa-old` solved this with a `whm_server_tokens` table and an owner → token
 resolver. No such table exists here (§T.4 schema v1 is `whm_servers` only) and no §C or §V
-mentions it, so adding it is a spec change, not a build decision. §T.22/§T.23 will hit this on
-reseller-owned accounts.
+mentions it, so adding it is a spec change, not a build decision. §T.22 and §T.23 are both built
+now and both hit this on reseller-owned accounts: WHM refuses the mutation, the runner passes
+`whm_api_error` and WHM's own `reason` through to the receipt, and the change is recorded as not
+having happened — a named failure rather than a silent one, which is the most this repo can
+truthfully do without that table.
 
 **Never implement** (C22, management policy — not a technical limit): `whm_change_contact_email`,
 `whm_change_primary_domain`, `whm_check_binary_exists`, `whm_firewall_denylist_add_ttl`. The

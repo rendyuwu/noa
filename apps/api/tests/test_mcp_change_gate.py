@@ -16,11 +16,13 @@ Three levels, for three different claims:
   repository" and "a PENDING row exists that V23 can be answered from" are different claims,
   and only the second one is the invariant.
 
-**There is no mount-level test here, and that is a gap with a date on it.** No CHANGE tool is
-registered yet (T22-T29 are all `.`), so nothing reaches this gate through `tools/call`. The
-same shape as T73's CHANGE branch, which is driven at middleware level for the same reason
-(`test_mcp_tool_audit.py::test_a_change_tool_writes_no_row_here`). T22 is where the gate
-first runs over the real mount.
+**There is no mount-level test here, and that gap is closed elsewhere.** When this file was
+written no CHANGE tool was registered, so nothing reached the gate through `tools/call` — the
+same shape as T73's CHANGE branch, driven at middleware level for the same reason
+(`test_mcp_tool_audit.py::test_a_change_tool_writes_no_row_here`). T22 put the gate on the real
+mount and T23 added the second lane; those mount tests live beside their tools
+(`test_whm_tools_{suspend,unsuspend}_account.py`), because a mount lane asserts a tool's
+registration as much as this function.
 """
 
 from __future__ import annotations
@@ -276,10 +278,11 @@ async def test_a_nested_payload_key_is_not_a_reason() -> None:
 async def test_every_registered_change_tool_declares_no_reason_parameter() -> None:
     """C8 on the schema, swept over what the server actually exposes (V43).
 
-    Vacuous today — every registered tool is a READ (T22-T29 are all `.`) — and deliberately
-    written before the first CHANGE tool, for the reason V85 was: the rule has to exist
-    before the second instance, because the second is where nobody re-reads it. The case
-    below is what keeps this from passing as a tautology (V87).
+    Written while every registered tool was still a READ, for the reason V85 was: the rule has
+    to exist before the second instance, because the second is where nobody re-reads it. It
+    stopped being vacuous at T22 and covers two CHANGE tools since T23 — `build_mcp_server`
+    registers them, so the sweep is over the real surface. The case below is what keeps it from
+    passing as a tautology (V87).
     """
     tools = build_tool_context()
     server = build_mcp_server(tool_context=tools.context)

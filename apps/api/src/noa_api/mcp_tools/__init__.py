@@ -44,7 +44,8 @@ large-READ table surface's (T56, `table_surface.py` — parked by `whm_list_acco
 by `pmg_whitelist_list` at T30, which is where "one surface, not a per-tool special case"
 stopped being prose). Still to come: the other seven of §I.mcp, all CHANGE tools.
 
-The executor's dispatch table lives here — `change_runners.build_change_runners` — and is
-**empty** until T22-T29 land. `registry.py` refuses at startup to expose a CHANGE tool with no
-runner behind it, so the first CHANGE tool cannot ship half of itself.
+The executor's dispatch table lives here — `change_runners.build_change_runners` — and holds the
+CHANGE tools that exist (`whm_suspend_account` at T22, `whm_unsuspend_account` at T23), growing
+with T25-T29. `registry.py` refuses at startup to expose a CHANGE tool with no runner behind it,
+so a CHANGE tool cannot ship half of itself.
 """

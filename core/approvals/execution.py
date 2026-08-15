@@ -29,9 +29,10 @@ the named reason there is none. A failure gets a receipt too: a receipt with a b
 and no after-state is the truthful record of a change that did not complete.
 
 **What actually performs the change is a runner.** T22 registered the first
-(`whm_suspend_account`); T23-T29 are still unbuilt, so an unknown tool name remains reachable
-and it fails closed: the run goes `FAILED` with `change_runner_unavailable`, which is a named
-outcome an operator can act on rather than a run that sits `STARTED` until the reaper takes it.
+(`whm_suspend_account`) and T23 the second (`whm_unsuspend_account`); T25-T29 are still unbuilt,
+so an unknown tool name remains reachable and it fails closed: the run goes `FAILED` with
+`change_runner_unavailable`, which is a named outcome an operator can act on rather than a run
+that sits `STARTED` until the reaper takes it.
 
 **The operator's reason is carried to the runner, and it is a value rather than a permission**
 (T22). C8 bars the *LLM* from authoring, relaying or seeing a reason; it does not bar NOA from
@@ -41,6 +42,10 @@ reads `action_requests.reason` and `ChangeExecutionRequest` carries it. Two boun
 it: nothing here branches on the string (the authorization was decided by `status = APPROVED`
 before it was read), and it must not come back in a runner's payload — `result_summary` is
 derived from that payload and `noa_get_action_result` returns it to a model (V96b).
+
+It is carried for *every* approved change and read by the runners that have somewhere to put it.
+T23's `unsuspendacct` has no note field, so that runner never touches the value — which is what
+"a value, not a permission" looks like from the other side.
 
 Not through the receipt, which is the door it is tempting to name: `core.approvals.results`
 leaves `include_receipt` at its default, so T63's reader never joins `action_receipts` (V76,
@@ -403,7 +408,7 @@ class ApprovedChangeExecutionService:
 
         1. **arguments that were redacted** — see the module docstring. Refused before dispatch
            because the runner is what would act on the wrong values.
-        2. **no runner for this tool** — the reachable path today (T22-T29 unbuilt).
+        2. **no runner for this tool** — still reachable today, for the names T25-T29 own.
         3. **a runner that raised** — `NoaError` keeps its own `error_code`, the way V19's
            boundary passes one through, so an integration refusal such as
            `ssh_host_key_not_validated` still names the thing an admin has to fix. Anything

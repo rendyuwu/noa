@@ -158,7 +158,7 @@ async def test_the_runner_is_handed_what_the_gate_recorded() -> None:
 
 
 async def test_a_tool_with_no_runner_fails_the_run_by_name() -> None:
-    """Still reachable after T22: `whm_suspend_account` has a runner, T23-T29 do not.
+    """Still reachable: the WHM account pair has runners (T22, T23), T25-T29 do not.
 
     A named terminal failure rather than a run left `STARTED` until the reaper — which is what
     makes shipping the executor before its first CHANGE tool safe rather than a silent hole.

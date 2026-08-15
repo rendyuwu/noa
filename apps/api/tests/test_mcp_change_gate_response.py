@@ -21,9 +21,10 @@ Four invariants, and each has its own section below:
 - **C8 / V15 / V71** — the word an operator types on the card does not appear in text a model
   reads.
 
-No mount-level test here for the same reason `test_mcp_change_gate.py` has none: no CHANGE
-tool is registered yet (T22-T29 are all `.`), so nothing reaches this function through
-`tools/call`. T22 is where it first runs over the real mount.
+No mount-level test here for the same reason `test_mcp_change_gate.py` has none: when this file
+was written no CHANGE tool was registered, so nothing reached this function through `tools/call`.
+It first ran over the real mount at T22, and a second time at T23 — both lanes live beside their
+tools.
 """
 
 from __future__ import annotations

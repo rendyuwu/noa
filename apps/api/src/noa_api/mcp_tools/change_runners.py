@@ -15,14 +15,16 @@ callers get the same mapping. `noa_api.mcp_tools.registry` calls it to assert **
 registered CHANGE tool with no runner is a change an operator could approve and NOA could never
 run — and `noa_api.main` calls it to build the executor.
 
-**One runner today** (T22, `whm_suspend_account`). T23-T29 are unbuilt, so the executor's
-`change_runner_unavailable` path is still reachable for their names — a named terminal failure
-with a receipt, not a run left `STARTED` forever, which is what made shipping the executor
-before its first tool safe rather than a silent hole (T37(a)'s argument for the seam).
+**Two runners today** (T22 `whm_suspend_account`, T23 `whm_unsuspend_account`). T25-T29 are
+unbuilt, so the executor's `change_runner_unavailable` path is still reachable for their names —
+a named terminal failure with a receipt, not a run left `STARTED` forever, which is what made
+shipping the executor before its first tool safe rather than a silent hole (T37(a)'s argument for
+the seam).
 
 **What a runner is.** A `ChangeRunner` takes a `ChangeExecutionRequest` — the tool name, the
 arguments the gate recorded, the preflight evidence the operator approved against, and the
-reason they typed (T22) — and answers with the ordinary tool envelope
+reason they typed (T22; a runner whose target system has nowhere to put it simply does not read
+it, which is T23) — and answers with the ordinary tool envelope
 (`noa_api.mcp_tools.results.tool_ok` / `tool_failure`). Two rules it carries: it should not
 raise, because the executor records what it is handed and a raise arrives as a coarser code
 than the integration layer already knew (V19); and it must not echo the reason back in its

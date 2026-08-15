@@ -76,9 +76,9 @@ class AsyncioApprovedChangeExecutor:
     One per app, held on `AppRuntime` — a per-request executor would mean a per-request set of
     outstanding tasks, and nothing would be left to cancel them at shutdown.
 
-    `runners` is the tool-name → `ChangeRunner` map (`noa_api.mcp_tools.change_runners`). It is
-    empty until T22-T29 land, and an unknown name is a named terminal failure rather than a
-    silent one — see `core.approvals.execution`.
+    `runners` is the tool-name → `ChangeRunner` map (`noa_api.mcp_tools.change_runners`). It
+    covers the CHANGE tools that exist (T22, T23) and grows with T25-T29; an unknown name is a
+    named terminal failure rather than a silent one — see `core.approvals.execution`.
     """
 
     def __init__(

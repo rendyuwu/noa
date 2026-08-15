@@ -137,8 +137,9 @@ def build_runtime(settings: Settings) -> AppRuntime:
         tool_context=tool_context,
         # T38's real executor (V29, V30). Constructing it starts nothing: it owns tasks only
         # once an approval hands it a run, and `stop()` in the lifespan is what ends them.
-        # `build_change_runners` is empty until T22-T29 land, which the registry's coverage
-        # check makes a startup guarantee rather than a hope.
+        # `build_change_runners` covers the CHANGE tools that exist (T22, T23) and grows with
+        # T25-T29; that it covers *every* registered one is the registry's coverage check, which
+        # makes it a startup guarantee rather than a hope.
         approved_change_executor=AsyncioApprovedChangeExecutor(
             session_factory=session_factory,
             runners=build_change_runners(context=tool_context),

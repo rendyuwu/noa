@@ -10,9 +10,9 @@ So the check happens where both facts meet, beside `assert_names_in_catalog`, wh
 uncatalogued name for the same reason (`noa_api.mcp_tools.registry`).
 
 **The guard was written before its first instance and is not vacuous any more.** T22 registered
-`whm_suspend_account` with the runner that performs it; T23-T29 are still unbuilt. The probe
-that registers a CHANGE tool with no runner stays, because a predicate that now happens to be
-satisfied still has to separate (V87).
+`whm_suspend_account` with the runner that performs it and T23 `whm_unsuspend_account` with its
+own; T25-T29 are still unbuilt. The probe that registers a CHANGE tool with no runner stays,
+because a predicate that now happens to be satisfied still has to separate (V87).
 """
 
 from __future__ import annotations
@@ -28,7 +28,10 @@ from noa_api.mcp_tools.registry import (
     assert_change_runners_cover,
     register_mcp_tools,
 )
-from noa_api.mcp_tools.whm_account_change import TOOL_WHM_SUSPEND_ACCOUNT
+from noa_api.mcp_tools.whm_account_change import (
+    TOOL_WHM_SUSPEND_ACCOUNT,
+    TOOL_WHM_UNSUSPEND_ACCOUNT,
+)
 from support.servers import build_tool_context
 
 
@@ -37,18 +40,21 @@ async def noop_runner(request: object) -> dict[str, object]:
     return {"ok": True}
 
 
-def test_the_first_change_tool_is_registered_with_its_runner() -> None:
+def test_every_change_tool_is_registered_with_its_runner() -> None:
     """T22 is the guard's first real instance; before it, this file asserted the emptiness.
 
-    Two halves that live in different modules, asserted to name the same tool: a runner
+    Two halves that live in different modules, asserted to name the same tools: a runner
     registered under a name nothing exposes is as invisible as a tool with no runner, and
     `assert_change_runners_cover` only catches the second.
+
+    An equality on both sets rather than a membership test, so T23's second pair had to be added
+    here to stay green — and so the next one does too (V66: one builder, both directions).
     """
     context = build_tool_context().context
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
     changes = {name for name, risk in registered.items() if risk is ToolRisk.CHANGE}
-    assert changes == {TOOL_WHM_SUSPEND_ACCOUNT}
+    assert changes == {TOOL_WHM_SUSPEND_ACCOUNT, TOOL_WHM_UNSUSPEND_ACCOUNT}
     assert set(build_change_runners(context=context)) == changes
 
 

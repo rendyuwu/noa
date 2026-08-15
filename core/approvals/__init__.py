@@ -77,5 +77,5 @@ executor has an authorization instead of a caller, and a reaper has neither.
 
 What performs a change is not here either, and cannot be: a `ChangeRunner` is integration code
 that reaches WHM, Proxmox or PMG, and it is registered in `noa_api.mcp_tools.change_runners`
-(empty until T22-T29).
+(the WHM account pair at T22/T23; T25-T29 to come).
 """

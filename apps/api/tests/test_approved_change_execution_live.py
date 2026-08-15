@@ -263,7 +263,7 @@ async def test_a_failed_change_records_failed_and_still_writes_its_receipt(facto
 
 
 async def test_a_change_with_no_runner_is_terminal_rather_than_stuck(factory) -> None:  # type: ignore[no-untyped-def]
-    """Today's reachable path (T22-T29 unbuilt), and the reason it is safe to ship the executor
+    """Still reachable (T25-T29 unbuilt), and the reason it was safe to ship the executor
     first: the operator gets a named answer instead of a run that never moves."""
     _, request_id, run_id = await approved_change(factory)
 
