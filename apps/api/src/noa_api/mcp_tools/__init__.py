@@ -42,10 +42,19 @@ is the first live caller of) and the post-approval executor with its reaper (T38
 `core.approvals.execution`), the CHANGE gate's result shape (T32, `change_gate.py`) and the
 large-READ table surface's (T56, `table_surface.py` — parked by `whm_list_accounts` at T20 and
 by `pmg_whitelist_list` at T30, which is where "one surface, not a per-tool special case"
-stopped being prose). Still to come: the other seven of §I.mcp, all CHANGE tools.
+stopped being prose), the WHM CHANGE tools (`whm_suspend_account` T22, `whm_unsuspend_account`
+T23, `whm_firewall_release_and_allow` T25, `whm_firewall_allowlist_remove` T26) and the first
+Proxmox one (`proxmox_reset_vm_password` T27 — the first CHANGE whose subject is a value NOA
+generates and the model never sees, C15/V49). Still to come: `pmg_whitelist` (T29) and
+`proxmox_vm_nic` (T28).
+
+T27 is also the first tool whose two halves are two modules: `proxmox_password.py` opens the
+question and `proxmox_password_runner.py` performs the change. C14 forced the split and V22's
+boundary is where it falls — the dependency runs one way, so `registry.py` reaches the tool and
+`change_runners.py` reaches the runner with no cycle. T26 made the same move for the same reason
+one file over.
 
 The executor's dispatch table lives here — `change_runners.build_change_runners` — and holds the
-CHANGE tools that exist (`whm_suspend_account` at T22, `whm_unsuspend_account` at T23), growing
-with T25-T29. `registry.py` refuses at startup to expose a CHANGE tool with no runner behind it,
-so a CHANGE tool cannot ship half of itself.
+CHANGE tools that exist, growing with T28-T29. `registry.py` refuses at startup to expose a
+CHANGE tool with no runner behind it, so a CHANGE tool cannot ship half of itself.
 """

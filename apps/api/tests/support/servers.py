@@ -36,7 +36,12 @@ from uuid import UUID, uuid4
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.db.models import PMGServer, WHMServer
+from core.db.models import PMGServer, ProxmoxServer, WHMServer
+from core.integrations.proxmox.client import (
+    ProxmoxClient,
+    ProxmoxServerSecretLike,
+    build_proxmox_client,
+)
 from core.integrations.whm.client import WHMClient
 from core.integrations.whm.ssh import WHMServerSecretLike, build_whm_client
 from core.secrets.crypto import SecretCipher
@@ -58,9 +63,11 @@ CREATED_AT = datetime(2026, 8, 6, 9, 0, tzinfo=UTC)
 API_TOKEN = "enc:v1:fernet:whm-api-token"
 SSH_PASSWORD = "enc:v1:fernet:whm-ssh-password"
 SSH_PRIVATE_KEY = "enc:v1:fernet:whm-ssh-private-key"
+# Proxmox's own, distinct from WHM's so a leak assertion says which table it came off (T27).
+PROXMOX_API_TOKEN_SECRET = "enc:v1:fernet:proxmox-api-token-secret"
 
 # Every credential literal above, for a single "none of these leaked" assertion.
-SECRETS = (API_TOKEN, SSH_PASSWORD, SSH_PRIVATE_KEY)
+SECRETS = (API_TOKEN, SSH_PASSWORD, SSH_PRIVATE_KEY, PROXMOX_API_TOKEN_SECRET)
 
 FINGERPRINT = "SHA256:l3Rz6cS0nOtASecret+ItIsAPublicKeyDigest"
 
@@ -82,6 +89,16 @@ EMBED_BASE_URL = "https://embed.noa.test"
 # is reachable in a test without building five thousand rows.
 RESULT_TABLE_TTL_SECONDS = 1800
 RESULT_TABLE_MAX_ROWS = 25
+
+# The generated-password length these fixtures hand the tool path (T27, C15, V49). Not
+# `Settings`' 24, for the reason the four values above are not their production defaults: a
+# length asserted against the configured number cannot separate a generator that read the setting
+# from one that fell back to `_DEFAULT_PASSWORD_LENGTH`, which is also 24.
+SECRET_PASSWORD_LENGTH = 31
+
+# What the delivery double answers with. Fragment-shaped like a real yopass URL (V50) so a test
+# asserting the link reaches the operator is asserting the thing that is actually handed over.
+YOPASS_URL = "https://yopass.noa.test/#/s/2f1c0b4a-0000-4000-8000-00000000beef/PassPhrase123"
 
 
 def whm_server(
@@ -165,6 +182,44 @@ def pmg_server(
     return server
 
 
+def proxmox_server(
+    name: str,
+    *,
+    base_url: str | None = None,
+    server_id: UUID | None = None,
+    api_token_id: str = "root@pam!noa",  # noqa: S107 — a token *id*, ⊥ the secret
+    api_token_secret: str = PROXMOX_API_TOKEN_SECRET,
+    verify_ssl: bool = True,
+) -> ProxmoxServer:
+    """One `proxmox_servers` row, credentials included, ready to read (T27).
+
+    The same construction as `whm_server` and for the same reasons — a real mapped instance with
+    the three server-defaulted columns filled by hand — over the narrowest row of the three:
+    Proxmox is HTTP-only (I.ext), so there are no SSH columns and no host-key pin.
+
+    `api_token_secret` defaults to a ciphertext-*shaped* literal that does not decrypt. It exists
+    to be asserted absent from a tool result; a test that actually reaches Proxmox over HTTP
+    passes `cipher.encrypt_text(...)` so the real decrypt site runs — see `build_tool_context`.
+
+    `verify_ssl` defaults to `True` here and to `False` on the column (Proxmox ships a self-signed
+    cert), deliberately: a fixture that matched the server default could not tell a client that
+    read the row from one that fell back to it.
+    """
+    server = ProxmoxServer(
+        name=name,
+        base_url=base_url or f"https://{name}.example.net:8006",
+        api_token_id=api_token_id,
+        api_token_secret=api_token_secret,
+        verify_ssl=verify_ssl,
+    )
+    # Server-side defaults (`gen_random_uuid()`, `now()`) are not applied to an instance that
+    # never reached Postgres.
+    server.id = server_id or uuid4()
+    server.created_at = CREATED_AT
+    server.updated_at = CREATED_AT
+    return server
+
+
 class FakeWHMServerRepository:
     """In-memory `WHMServerReadRepository`.
 
@@ -212,6 +267,62 @@ class FakePMGServerRepository:
         return next((server for server in self.servers if server.id == server_id), None)
 
 
+class FakeProxmoxServerRepository:
+    """In-memory `ProxmoxServerReadRepository` (T27).
+
+    Sorted by name for the reason its two siblings are: the resolver's tie handling is asserted
+    against this order, and a double that returned insertion order would let a test pass against
+    a repository that does not.
+
+    Kept as a separate class rather than one generic double, matching the three production
+    repositories: `SQLProxmoxServerRepository` selects a different table, and a shared double
+    would stop being evidence that the tool asked Proxmox's inventory rather than WHM's.
+    """
+
+    def __init__(self, servers: Iterable[ProxmoxServer] = ()) -> None:
+        self.servers: list[ProxmoxServer] = list(servers)
+        self.reads = 0
+
+    async def list_servers(self) -> Sequence[ProxmoxServer]:
+        self.reads += 1
+        return sorted(self.servers, key=lambda server: server.name)
+
+    async def get_by_id(self, server_id: UUID) -> ProxmoxServer | None:
+        self.reads += 1
+        return next((server for server in self.servers if server.id == server_id), None)
+
+
+class RecordingSecretDelivery:
+    """A `SecretDelivery` that records what it was handed and answers a fixed URL (T27).
+
+    **A double of the delivery hop, and the one place these tests do not keep production code in
+    the path.** `test_yopass_store.py` covers `_yopass_store` itself — the PGPy encrypt, the
+    passphrase staying out of the request body, the fragment assembly — against an `httpx`
+    transport, so what is left for a runner test is *ordering*: was the secret stored before the
+    VM was touched (V62), and was it stored at all when the change failed early.
+
+    It records the password so a test can assert the plaintext is absent from every payload,
+    receipt and summary the change produced (V49) — an assertion that needs the value and must
+    not get it from the production code under test.
+    """
+
+    def __init__(self, *, url: str = YOPASS_URL, error: Exception | None = None) -> None:
+        self.url = url
+        self.error = error
+        self.calls: list[dict[str, str]] = []
+
+    async def __call__(self, *, username: str, password: str) -> str:
+        self.calls.append({"username": username, "password": password})
+        if self.error is not None:
+            raise self.error
+        return self.url
+
+    @property
+    def delivered_password(self) -> str | None:
+        """The password handed to delivery, or `None` if it was never reached."""
+        return self.calls[-1]["password"] if self.calls else None
+
+
 @dataclass
 class ToolFixture:
     """An `McpToolContext` over doubles, plus the doubles behind it."""
@@ -219,6 +330,8 @@ class ToolFixture:
     context: McpToolContext
     servers: FakeWHMServerRepository
     pmg_servers: FakePMGServerRepository
+    proxmox_servers: FakeProxmoxServerRepository
+    secret_delivery: RecordingSecretDelivery
     authorization: FakeAuthorizationRepository
     audit: RecordingAuditSink
     tool_runs: FakeToolRunRepository
@@ -233,6 +346,7 @@ def build_tool_context(
     *,
     servers: Iterable[WHMServer] = (),
     pmg_servers: Iterable[PMGServer] = (),
+    proxmox_servers: Iterable[ProxmoxServer] = (),
     authorization: FakeAuthorizationRepository | None = None,
     tool_runs: FakeToolRunRepository | None = None,
     action_requests: FakeActionRequestRepository | None = None,
@@ -243,8 +357,11 @@ def build_tool_context(
     embed_base_url: str = EMBED_BASE_URL,
     result_table_ttl_seconds: int = RESULT_TABLE_TTL_SECONDS,
     result_table_max_rows: int = RESULT_TABLE_MAX_ROWS,
+    secret_password_length: int = SECRET_PASSWORD_LENGTH,
+    secret_delivery: RecordingSecretDelivery | None = None,
     cipher: SecretCipher | None = None,
     whm_transport: httpx.AsyncBaseTransport | None = None,
+    proxmox_transport: httpx.AsyncBaseTransport | None = None,
 ) -> ToolFixture:
     """A production `McpToolContext` whose repositories are in-memory.
 
@@ -280,9 +397,17 @@ def build_tool_context(
     token runs the real decrypt (pass the same instance a row's `api_token` was encrypted
     with). `whm_transport` reaches `build_whm_client` — the production factory — so the real
     `WHMClient` and the real cipher stay in the path and only the socket is doubled.
+
+    `proxmox_transport` is the same seam one system over (T27), reaching `build_proxmox_client`.
+    `secret_delivery` is the one exception to "only the socket is doubled", and
+    `RecordingSecretDelivery` says why: `_yopass_store` has its own coverage against a transport,
+    and what a CHANGE runner test needs from delivery is the *order* it happened in and the value
+    it was handed.
     """
     server_repository = FakeWHMServerRepository(servers)
     pmg_repository = FakePMGServerRepository(pmg_servers)
+    proxmox_repository = FakeProxmoxServerRepository(proxmox_servers)
+    delivery = secret_delivery or RecordingSecretDelivery()
     authorization_repository = authorization or FakeAuthorizationRepository()
     tool_run_repository = tool_runs or FakeToolRunRepository()
     action_request_repository = action_requests or FakeActionRequestRepository()
@@ -301,6 +426,11 @@ def build_tool_context(
     def whm_client_factory(server: WHMServerSecretLike, *, cipher: SecretCipher) -> WHMClient:
         return build_whm_client(server, cipher=cipher, transport=whm_transport)
 
+    def proxmox_client_factory(
+        server: ProxmoxServerSecretLike, *, cipher: SecretCipher
+    ) -> ProxmoxClient:
+        return build_proxmox_client(server, cipher=cipher, transport=proxmox_transport)
+
     return ToolFixture(
         context=McpToolContext(
             session_factory=session_factory,
@@ -309,19 +439,25 @@ def build_tool_context(
             embed_base_url=embed_base_url,
             result_table_ttl_seconds=result_table_ttl_seconds,
             result_table_max_rows=result_table_max_rows,
+            secret_delivery=delivery,
+            secret_password_length=secret_password_length,
             authorization_repository_factory=lambda _session: authorization_repository,
             whm_server_repository_factory=lambda _session: server_repository,
             pmg_server_repository_factory=lambda _session: pmg_repository,
+            proxmox_server_repository_factory=lambda _session: proxmox_repository,
             tool_run_repository_factory=lambda _session: tool_run_repository,
             action_request_repository_factory=lambda _session: action_request_repository,
             action_result_repository_factory=lambda _session: action_result_repository,
             action_request_expiry_repository_factory=lambda _session: action_expiry_repository,
             result_table_writer_factory=lambda _session: result_table_writer,
             whm_client_factory=whm_client_factory,
+            proxmox_client_factory=proxmox_client_factory,
             audit_sink=audit,
         ),
         servers=server_repository,
         pmg_servers=pmg_repository,
+        proxmox_servers=proxmox_repository,
+        secret_delivery=delivery,
         authorization=authorization_repository,
         audit=audit,
         tool_runs=tool_run_repository,
@@ -336,17 +472,24 @@ def build_tool_context(
 __all__ = [
     "API_TOKEN",
     "CREATED_AT",
+    "EMBED_BASE_URL",
     "FINGERPRINT",
     "PENDING_TTL_SECONDS",
+    "PROXMOX_API_TOKEN_SECRET",
     "RESULT_TABLE_MAX_ROWS",
     "RESULT_TABLE_TTL_SECONDS",
     "SECRETS",
+    "SECRET_PASSWORD_LENGTH",
     "SSH_PASSWORD",
     "SSH_PRIVATE_KEY",
+    "YOPASS_URL",
     "FakePMGServerRepository",
+    "FakeProxmoxServerRepository",
     "FakeWHMServerRepository",
+    "RecordingSecretDelivery",
     "ToolFixture",
     "build_tool_context",
     "pmg_server",
+    "proxmox_server",
     "whm_server",
 ]

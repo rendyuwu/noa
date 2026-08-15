@@ -28,6 +28,7 @@ from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.noa_read import TOOL_NOA_GET_ACTION_RESULT
 from noa_api.mcp_tools.pmg_read import TOOL_PMG_WHITELIST_LIST, TOOL_PMG_WHITELIST_SEARCH
+from noa_api.mcp_tools.proxmox_password import TOOL_PROXMOX_RESET_VM_PASSWORD
 from noa_api.mcp_tools.registry import RegistryError, assert_names_in_catalog, register_mcp_tools
 from noa_api.mcp_tools.whm_account_change import (
     TOOL_WHM_SUSPEND_ACCOUNT,
@@ -60,18 +61,23 @@ REGISTERED_TOOLS = sorted(
         TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
         TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
         TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
+        TOOL_PROXMOX_RESET_VM_PASSWORD,
         TOOL_PMG_WHITELIST_SEARCH,
         TOOL_PMG_WHITELIST_LIST,
         TOOL_NOA_GET_ACTION_RESULT,
     ]
 )
 
-# A catalogued tool this build does not register yet (T27, `proxmox_reset_vm_password`).
+# A catalogued tool this build does not register yet (T28, `proxmox_vm_nic`).
 # Standing in for what a client holding a stale catalog, or a prompt-injected call, would name.
-# It was `whm_list_accounts` until T20 built that one and `pmg_whitelist_list` until T30 did —
-# the stand-in has to be a name the registry genuinely does not know, or this file asserts V10
-# against a tool that answers. Proxmox has no tool module at all, so this one moves last.
-UNREGISTERED_TOOL = "proxmox_reset_vm_password"
+# It was `whm_list_accounts` until T20 built that one, `pmg_whitelist_list` until T30 did and
+# `proxmox_reset_vm_password` until T27 did — the stand-in has to be a name the registry
+# genuinely does not know, or this file asserts V10 against a tool that answers. Two catalogued
+# names are still unbuilt (`proxmox_vm_nic`, `pmg_whitelist`), and when the last of them lands
+# this constant has nothing left to point at: at that moment the assertions that use it are the
+# ones to delete, ⊥ to re-point at a name outside the catalog, which is what `UNKNOWN_TOOL`
+# already covers.
+UNREGISTERED_TOOL = "proxmox_vm_nic"
 
 # Never in the catalog at all (V10).
 UNKNOWN_TOOL = "whm_delete_everything"

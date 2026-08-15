@@ -62,6 +62,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from types import TracebackType
+from typing import Protocol
 
 import httpx
 
@@ -571,4 +572,71 @@ def build_proxmox_client_from_creds(
     )
 
 
-__all__ = ["ProxmoxClient", "build_proxmox_client_from_creds"]
+class ProxmoxServerSecretLike(Protocol):
+    """The `proxmox_servers` columns this layer reads (`core.db.models.ProxmoxServer`).
+
+    A `Protocol` rather than the ORM class, the way `WHMServerSecretLike` is: it keeps `core/`'s
+    integration layer independent of the session that loaded the row, and lets a test pass a
+    plain object instead of constructing a mapped instance.
+
+    Narrower than WHM's by four SSH fields, because there are none on this table — Proxmox is an
+    HTTP API and nothing else (I.ext), so there is no second transport to authenticate.
+    """
+
+    base_url: str
+    api_token_id: str
+    api_token_secret: str
+    verify_ssl: bool
+
+
+def build_proxmox_client(
+    server: ProxmoxServerSecretLike,
+    *,
+    cipher: SecretCipher,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> ProxmoxClient:
+    """Row → authenticated Proxmox client (T27).
+
+    The twin of `build_whm_client` (T21) and here for its reason: a tool holds the row it
+    resolved and needs a client from *that* row, while the one decrypt site stays
+    `build_proxmox_client_from_creds` below it (C7).
+
+    `transport` is forwarded because it is the test seam, and it is a parameter rather than an
+    attribute a test reaches into afterwards. A tool test that swaps the transport keeps the real
+    client, the real cipher and the real decrypt site in the path — only the socket is doubled.
+    """
+    return build_proxmox_client_from_creds(
+        base_url=server.base_url,
+        api_token_id=server.api_token_id,
+        encrypted_token_secret=server.api_token_secret,
+        verify_ssl=server.verify_ssl,
+        cipher=cipher,
+        transport=transport,
+    )
+
+
+class ProxmoxClientFactory(Protocol):
+    """How the tool path asks for a Proxmox client (T27).
+
+    `build_proxmox_client` is the production implementation and the default everywhere. The
+    Protocol exists so `McpToolContext` can name the seam in a type instead of a
+    `Callable[..., ProxmoxClient]` that would accept any signature — `WHMClientFactory`'s
+    argument, one system over, and deliberately the same call shape so a reader of one recognises
+    the other.
+    """
+
+    def __call__(
+        self,
+        server: ProxmoxServerSecretLike,
+        *,
+        cipher: SecretCipher,
+    ) -> ProxmoxClient: ...
+
+
+__all__ = [
+    "ProxmoxClient",
+    "ProxmoxClientFactory",
+    "ProxmoxServerSecretLike",
+    "build_proxmox_client",
+    "build_proxmox_client_from_creds",
+]

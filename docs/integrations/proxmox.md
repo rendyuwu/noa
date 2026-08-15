@@ -122,8 +122,10 @@ present.
 
 One asymmetry, ported deliberately: `regenerate_qemu_cloudinit` returns a UPID but does **not**
 go through the task wrapper, so its result carries `data`, not `upid`. On `noa-old` the reset
-workflow verified by re-reading cloud-init rather than by waiting on that task. Whether to poll
-it is §T.27's call, not this layer's.
+workflow verified by re-reading cloud-init rather than by waiting on that task. **§T.27 answered
+that question and kept the asymmetry**: the reset polls the *config write*'s task and then
+re-reads cloud-init until the crypt compare agrees, which is a stronger check than waiting on the
+regeneration task would have been.
 
 ## Connection lifetime
 
@@ -151,15 +153,48 @@ three (admin validate service, tool-layer `client_for_server`, workflow postflig
 `maybe_decrypt_text`, so a row written before encryption still works, which is what lets the
 column be migrated in place.
 
+## `proxmox_reset_vm_password` (§T.27)
+
+Built 2026-08-15. Two halves either side of the approval gate (§V.22):
+
+- `noa_api/mcp_tools/proxmox_password.py` — the tool. Runs the preflight in-process (C9, §V.17),
+  opens an `action_requests` row, executes nothing.
+- `noa_api/mcp_tools/proxmox_password_runner.py` — the runner, reached only from
+  `core.approvals.execution` once an operator approved.
+
+**The order is the safety property** (§V.62): generate → deliver to yopass → write `cipassword` →
+poll the task → regenerate the drive → crypt-verify. A delivery failure aborts with the VM
+untouched.
+
+**Which failures hand over the yopass link.** The rule is: the link goes out exactly when NOA
+cannot rule out that the new password reached the VM.
+
+| Outcome | Link |
+|---|---|
+| yopass failed | no link — nothing was stored, nothing was written |
+| Proxmox refused the config write, or its task exited non-`OK` | **no link** — the VM never took the password, and the old credentials still work (§V.62's named residual case) |
+| regeneration failed, task poll timed out, verification unavailable, verification mismatched | **link ships** — the write was accepted, so withholding the only copy of a possibly-live credential is a lockout NOA created |
+
+`noa-old` withheld the link on the verification branches. That is the one behavioural correction
+to its flow beyond §T.69.
+
+**Refused, not gated**: a VM whose `ciuser` is set to somebody other than the requested
+`username`. The password would change `ciuser`'s credentials while the delivered blob named
+another account. A VM with **no** `ciuser` is allowed — Proxmox applies `cipassword` to the
+image's default account — and the card shows `ciuser: null` so the operator sees which case it is.
+
+**What the result carries**: the server, node, vmid, username, a verdict, and `yopass_url`. It
+carries nothing read out of the cloud-init dump. That payload becomes `tool_runs.result_summary`
+and `noa_get_action_result` hands the summary to a model, so the crypt hash of the password NOA
+just set would otherwise reach the LLM through §V.45's audit row (C15, §V.49).
+
 ## Not built yet
 
 | Surface | Task |
 |---|---|
-| MCP tool `proxmox_reset_vm_password` (CHANGE) — yopass-delivered, crypt-verified | §T.27 |
 | MCP tool `proxmox_vm_nic(action: enable\|disable)` (CHANGE) — single tool, enum action | §T.28 |
 | Internal reads `proxmox_get_vm_status_current` / `_config` / `_pending`, `proxmox_list_servers`, `proxmox_validate_server` | I.mcp |
 | Admin routes `/admin/proxmox/servers…` + `POST …/validate` | §T.54 |
-| `resolve_proxmox_server_ref` (UUID / name / host → candidates on ambiguity, C10/§V.18) | tool layer |
 
 **Never implement** (C22, management policy — not a technical limit):
 `proxmox_move_vms_between_pools`, `proxmox_preflight_move_vms_between_pools`,
@@ -173,17 +208,29 @@ what the missing methods were for.
 
 ## Caveats for the tools that will use this
 
-- A cloud-init password change is **not** an immediate in-guest reset. The guest may need a
-  restart or a stop/start cycle before it takes effect, and §T.27's receipt has to say so.
+- A cloud-init password change is **not** an immediate in-guest reset. The guest reads its
+  cloud-init drive at next boot, and §T.27's result message says so; the card carries the VM's run
+  state so an operator can see whether a restart is owed.
 - NIC selection: when a VM has exactly one NIC, preflight may infer it; otherwise it must return
   the NIC list and refuse to guess (C10, §V.18). The CHANGE then uses the concrete `netN` key.
-- libcrypt absent ⇒ the reset receipt states `verification_unavailable`, ⊥ a silent pass.
-  Verification-unavailable ≠ verified (§V.62, §T.69).
+- libcrypt absent ⇒ the reset reports `verification: unavailable`, ⊥ a silent pass and ⊥ a
+  mismatch. Verification-unavailable ≠ verified, and ≠ refuted (§V.62, §T.69). Built in
+  `core/integrations/proxmox/cloudinit.py`: `CryptVerdict` has three values, and each unavailable
+  one carries the cause (`crypt_library_unavailable`, `cloudinit_password_hash_absent`,
+  `crypt_refused_stored_hash`). `noa-old` answered a `bool` and collapsed all three into "does not
+  match", which reported a change that had in fact succeeded as one to repeat.
 
 ## Code references
 
 - Package overview: `core/integrations/proxmox/__init__.py`
 - API client + credential factory: `core/integrations/proxmox/client.py`
+- Cloud-init reading + the crypt guard: `core/integrations/proxmox/cloudinit.py` (§T.69)
+- Server-ref resolution: `core/servers/proxmox_ref.py` over the shared
+  `core/servers/reference.py` (§T.27 extracted the policy the three systems share, §V.66)
 - Tests: `apps/api/tests/test_proxmox_client.py` (failure classification, digest, credentials,
-  lifecycle), `test_proxmox_client_endpoints.py` (literal request contracts)
+  lifecycle), `test_proxmox_client_endpoints.py` (literal request contracts),
+  `test_proxmox_cloudinit_crypt.py` (§T.69's three verdicts + the negative control),
+  `test_proxmox_server_ref.py`, `test_proxmox_server_repository.py`,
+  `test_proxmox_tools_reset_password.py` (the tool half),
+  `test_proxmox_reset_password_runner.py` (the runner half)
 - Secret delivery for §T.27: `docs/integrations/yopass.md`

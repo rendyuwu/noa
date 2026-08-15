@@ -47,6 +47,7 @@ from core.auth.ldap_service import LDAPService
 from core.config import Settings, get_settings
 from core.db.session import create_engine, create_session_factory
 from core.secrets.crypto import SecretCipher
+from core.secrets.delivery import build_yopass_delivery
 from noa_api import __version__
 from noa_api.api.deps import (
     STATE_APPROVED_CHANGE_EXECUTOR,
@@ -127,6 +128,15 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # caller inside a tool is how two tools end up capping at two different counts.
         result_table_ttl_seconds=settings.result_table_ttl_seconds,
         result_table_max_rows=settings.result_table_max_rows,
+        # C15's delivery hop, bound once here for the reason every line above is: `_yopass_store`
+        # needs three settings and there is no settings singleton to reach for (T15). Absent
+        # `YOPASS_BASE_URL` is *not* a boot failure — the reset tool reports
+        # `yopass_not_configured` when an approved change reaches delivery, which is C15's own
+        # call and keeps a deployment that uses no Proxmox tools from being blocked by them.
+        secret_delivery=build_yopass_delivery(settings=settings),
+        # V49's length, resolved here rather than read inside the generator, so the two places
+        # that could answer "how long is a NOA-generated password" stay one.
+        secret_password_length=settings.secret_password_length,
     )
     return AppRuntime(
         settings=settings,

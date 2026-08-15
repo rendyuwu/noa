@@ -4,7 +4,7 @@ Copied from `noa-old` branch `MCP` rather than rewritten (C13, V69) — that bra
 `yopass.py` and `password.py` exist at all; `staging` has neither, and an agent porting from
 the branch DECISIONS §2 measured would find nothing to copy.
 
-Five modules, one job each:
+Six modules, one job each:
 
 - `errors` — `SecretCryptoError` / `YopassError` trees, both `NoaError` so the one shared
   handler shapes them (V73).
@@ -14,6 +14,8 @@ Five modules, one job each:
   LLM argument (C15, V49).
 - `yopass` — `_yopass_store()`: PGPy client-side encrypt, `POST /secret`, passphrase in the
   URL fragment so the yopass server can decrypt nothing (C15, V50).
+- `delivery` — `SecretDelivery`: the seam the tool path holds, with the three yopass settings
+  bound once at startup so `McpToolContext` carries a callable and not a `Settings` (T27, C7).
 - `redaction` — `redact_sensitive_data()`: one-way, by key name, for anything persisted or
   logged (T73, V8, V45).
 
@@ -38,6 +40,7 @@ the module docstring).
 """
 
 from core.secrets.crypto import ENCRYPTED_PREFIX, SecretCipher
+from core.secrets.delivery import SecretDelivery, build_yopass_delivery
 from core.secrets.errors import (
     SecretCryptoError,
     SecretDecryptError,
@@ -63,12 +66,14 @@ __all__ = [
     "SecretCipher",
     "SecretCryptoError",
     "SecretDecryptError",
+    "SecretDelivery",
     "SecretKeyUnavailableError",
     "YopassError",
     "YopassNotConfiguredError",
     "YopassStoreError",
     "_generate_password",
     "_yopass_store",
+    "build_yopass_delivery",
     "is_sensitive_key",
     "redact_sensitive_data",
 ]

@@ -15,12 +15,12 @@ callers get the same mapping. `noa_api.mcp_tools.registry` calls it to assert **
 registered CHANGE tool with no runner is a change an operator could approve and NOA could never
 run — and `noa_api.main` calls it to build the executor.
 
-**Four runners today** (T22 `whm_suspend_account`, T23 `whm_unsuspend_account`, T25
-`whm_firewall_release_and_allow`, T26 `whm_firewall_allowlist_remove`). T27-T29 are unbuilt, so
-the executor's `change_runner_unavailable` path is still reachable for their names — a named
-terminal failure with a receipt, not a run left `STARTED` forever, which is what made shipping
-the executor before its first tool safe rather than a silent hole (T37(a)'s argument for the
-seam).
+**Five runners today** (T22 `whm_suspend_account`, T23 `whm_unsuspend_account`, T25
+`whm_firewall_release_and_allow`, T26 `whm_firewall_allowlist_remove`, T27
+`proxmox_reset_vm_password`). T28 and T29 are unbuilt, so the executor's
+`change_runner_unavailable` path is still reachable for their names — a named terminal failure
+with a receipt, not a run left `STARTED` forever, which is what made shipping the executor before
+its first tool safe rather than a silent hole (T37(a)'s argument for the seam).
 
 **What a runner is.** A `ChangeRunner` takes a `ChangeExecutionRequest` — the tool name, the
 arguments the gate recorded, the preflight evidence the operator approved against, and the
@@ -40,6 +40,7 @@ from __future__ import annotations
 
 from core.approvals.execution import ChangeRunner
 from noa_api.mcp_tools.context import McpToolContext
+from noa_api.mcp_tools.proxmox_password_runner import build_proxmox_password_runners
 from noa_api.mcp_tools.whm_account_change import build_whm_account_change_runners
 from noa_api.mcp_tools.whm_firewall_allowlist import build_whm_firewall_allowlist_runners
 from noa_api.mcp_tools.whm_firewall_change import build_whm_firewall_change_runners
@@ -49,12 +50,14 @@ def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
     """Tool name → the thing that performs that change once approved (T22-T29).
 
     `context` carries what every runner needs — the session factory, the cipher, the server
-    repositories — so a runner never reaches for its own copy of the world (C7, T15).
+    repositories and, since T27, the secret-delivery seam — so a runner never reaches for its own
+    copy of the world (C7, T15).
     """
     return {
         **build_whm_account_change_runners(context=context),
         **build_whm_firewall_change_runners(context=context),
         **build_whm_firewall_allowlist_runners(context=context),
+        **build_proxmox_password_runners(context=context),
     }
 
 

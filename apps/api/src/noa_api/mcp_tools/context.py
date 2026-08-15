@@ -60,11 +60,17 @@ from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.auth.authorization_repository import SQLAuthorizationRepository
 from core.auth.authorization_service import AuthorizationService
 from core.auth.authorization_types import AuthorizationRepository
-from core.db.models import PMGServer, WHMServer
+from core.db.models import PMGServer, ProxmoxServer, WHMServer
+from core.integrations.proxmox.client import ProxmoxClientFactory, build_proxmox_client
 from core.integrations.whm.ssh import WHMClientFactory, build_whm_client
 from core.results.tables import SQLToolResultTableWriter, ToolResultTableWriter
 from core.secrets.crypto import SecretCipher
+from core.secrets.delivery import SecretDelivery
 from core.servers.pmg_repository import PMGServerReadRepository, SQLPMGServerRepository
+from core.servers.proxmox_repository import (
+    ProxmoxServerReadRepository,
+    SQLProxmoxServerRepository,
+)
 from core.servers.whm_repository import SQLWHMServerRepository, WHMServerReadRepository
 from noa_api.mcp_request_auth import McpSessionFactory
 
@@ -98,6 +104,17 @@ class McpToolContext:
     # the same reason, and with one of its own: a cap that could be forgotten at a wiring site
     # is a cap that silently becomes "all of them" for whichever tool wired it last.
     result_table_max_rows: int
+    # How a generated credential reaches the operator (T27, C15, V49). Required rather than
+    # defaulted, and it is the one field here that could not be a scalar: `_yopass_store` needs
+    # three settings, `McpToolContext` holds no `Settings` (T15 deleted the singleton
+    # `noa-old` imported), and `noa_api.main.build_runtime` is the single `get_settings()`
+    # caller (C7). So the configuration is bound into a callable once, at startup, and a tool
+    # asks for delivery rather than for a URL. `core.secrets.delivery` carries the argument.
+    secret_delivery: SecretDelivery
+    # `SECRET_PASSWORD_LENGTH` (C15, V49) — how long a server-side generated password is.
+    # Required for `pending_ttl_seconds`' reason: a default here would be a second answer to a
+    # question settings already answer, and the copy that drifts is the one nobody edits.
+    secret_password_length: int
     authorization_repository_factory: Callable[[AsyncSession], AuthorizationRepository] = (
         SQLAuthorizationRepository
     )
@@ -114,6 +131,14 @@ class McpToolContext:
     pmg_server_repository_factory: Callable[[AsyncSession], PMGServerReadRepository[PMGServer]] = (
         SQLPMGServerRepository
     )
+    # Same construction, third system (T27). Typed to `ProxmoxServer` rather than to
+    # `ProxmoxServerRowLike` for the reason the two above are: `proxmox_reset_vm_password`
+    # resolves an endpoint and then *calls* it, which needs the API token off the row that won
+    # the resolution — not a second read by id that could disagree with the list a tie was
+    # judged against.
+    proxmox_server_repository_factory: Callable[
+        [AsyncSession], ProxmoxServerReadRepository[ProxmoxServer]
+    ] = SQLProxmoxServerRepository
     tool_run_repository_factory: Callable[[AsyncSession], ToolRunRepository] = SQLToolRunRepository
     # The CHANGE gate's writer (T33). Beside the audit one and not folded into it: they write
     # different tables at different moments — this one before a change is authorised, that one
@@ -145,6 +170,10 @@ class McpToolContext:
     # in the same factory with an `httpx` transport, so the client, the cipher and the one
     # decrypt site all stay in the path and only the socket is doubled.
     whm_client_factory: WHMClientFactory = build_whm_client
+    # The Proxmox seam, one system over and on the same terms (T27): production builds a real
+    # client over a real socket, a tool test swaps in the same factory with an `httpx` transport,
+    # so the client, the cipher and the one decrypt site all stay in the path.
+    proxmox_client_factory: ProxmoxClientFactory = build_proxmox_client
     # A sink, even though the read path records nothing: `AuthorizationService` takes one,
     # and handing it a working sink rather than a stub means the day a tool records an event
     # it goes somewhere real instead of into a placeholder nobody re-checked.
@@ -159,6 +188,8 @@ def build_mcp_tool_context(
     embed_base_url: str,
     result_table_ttl_seconds: int,
     result_table_max_rows: int,
+    secret_delivery: SecretDelivery,
+    secret_password_length: int,
 ) -> McpToolContext:
     """Production wiring (T13's `create_app` calls this beside `build_mcp_auth_context`)."""
     return McpToolContext(
@@ -168,6 +199,8 @@ def build_mcp_tool_context(
         embed_base_url=embed_base_url,
         result_table_ttl_seconds=result_table_ttl_seconds,
         result_table_max_rows=result_table_max_rows,
+        secret_delivery=secret_delivery,
+        secret_password_length=secret_password_length,
     )
 
 

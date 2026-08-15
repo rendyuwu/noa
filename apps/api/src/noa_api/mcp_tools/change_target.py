@@ -25,6 +25,15 @@ approved request itself is no longer runnable, which is a NOA bug rather than an
 operator can fix on a server, and the sentence says so without naming the field (V8: the detail
 goes to the log, not to the card).
 
+**Only one of those two is universal, and T27 is where that showed.** The first Proxmox runner
+shares `change_evidence_unusable` exactly — same remedy, same sentence, no system in it — and
+does *not* share the server pair: `whm_server_unavailable` names the table an administrator has
+to go and look at, and `proxmox_servers` is a different one. So the code stays per-system
+(`noa_api.mcp_tools.proxmox_password.ERROR_SERVER_UNAVAILABLE`) and only the noun differs
+between the two sentences. Duplicating a constant whose *value* is the system's name is not what
+V66 is about; collapsing them would be, because it would make one code answer for two
+inventories.
+
 **The three status words are here for the same reason the codes are.** `changed`, `no_op` and
 `unavailable` land in `tool_runs.result_summary` and in a receipt an operator reads, so two
 runners spelling one of them differently is two vocabularies in one audit trail (V66). They were
