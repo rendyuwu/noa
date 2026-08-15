@@ -139,6 +139,50 @@ def test_blocked_beats_allowlisted_when_the_ip_is_in_both_lists() -> None:
     assert parse_csf_grep_output(output, target="203.0.113.10").verdict == "blocked"
 
 
+def test_an_allow_entry_is_reported_even_when_a_block_outranks_it() -> None:
+    """T26: the precedence above is what makes `allow_entry` a second field rather than a
+    re-reading of the first.
+
+    "What is this box doing to this address" and "is there still an allow entry for it" are two
+    questions, and an allowlist removal's postflight asks the second. Read off the verdict, a
+    removal that left `csf.allow` untouched on an address csf also denies would report as done —
+    the deny entry would be answering for it.
+    """
+    output = "Found 203.0.113.10 in /etc/csf/csf.allow\nFound 203.0.113.10 in /etc/csf/csf.deny\n"
+
+    parsed = parse_csf_grep_output(output, target="203.0.113.10")
+
+    assert parsed.verdict == "blocked"
+    assert parsed.allow_entry is True
+
+
+def test_no_allow_entry_is_reported_when_only_a_block_matches() -> None:
+    """The negative control (V87): without it, "an allow entry is reported" passes just as well
+    against a parser that reports one for every line it sees."""
+    output = "Found 203.0.113.10 in /etc/csf/csf.deny\n"
+
+    parsed = parse_csf_grep_output(output, target="203.0.113.10")
+
+    assert parsed.verdict == "blocked"
+    assert parsed.allow_entry is False
+
+
+def test_an_unparseable_answer_reports_no_allow_entry() -> None:
+    """`unknown` carries `allow_entry: False`, and that pairing is only safe because a caller
+    has to check `answered` first.
+
+    A backend that said nothing recognisable has not said there is no allow entry (V86). The
+    field cannot express that on its own, so `holds_allow_entry` skips unanswered backends and
+    every caller checks `unanswered_backends` before trusting an absence.
+    """
+    parsed = parse_csf_grep_output(
+        "203.0.113.10 in some shape we have no marker for\n", target="203.0.113.10"
+    )
+
+    assert parsed.verdict == "unknown"
+    assert parsed.allow_entry is False
+
+
 def test_unrecognised_output_is_unknown_not_not_found() -> None:
     """A parse regression must ⊥ read as a clean IP — `not_found` needs csf to have said so."""
     output = "203.0.113.10 appears somewhere we do not have a marker for\n"

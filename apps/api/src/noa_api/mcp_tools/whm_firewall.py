@@ -141,6 +141,12 @@ class BackendLookup:
     deliberately stricter than `ok`: CSF's `unknown` means "csf said something we do not
     recognise", which is not evidence that the address is clean (see
     `core.integrations.whm.csf`).
+
+    `allow_entry` is the one fact the verdict cannot carry (T26). Both backends resolve a
+    conflict block-first, so an address on a deny list *and* an allow list reports as blocked
+    and the allow entry disappears from the answer. An allowlist removal's postflight asks about
+    that entry and nothing else, and it is only meaningful where `answered` is true — a backend
+    that said nothing has not said there is no allow entry (V86).
     """
 
     ok: bool
@@ -149,6 +155,7 @@ class BackendLookup:
     total_matches: int = 0
     error_code: str | None = None
     message: str | None = None
+    allow_entry: bool = False
 
     @property
     def answered(self) -> bool:
@@ -237,6 +244,7 @@ async def csf_firewall_entries(config: SSHConnectionConfig, *, target: str) -> B
         verdict=parsed.verdict,
         matches=parsed.matches,
         total_matches=parsed.total_matches,
+        allow_entry=parsed.allow_entry,
     )
 
 
@@ -263,6 +271,7 @@ async def imunify_firewall_entries(config: SSHConnectionConfig, *, target: str) 
         verdict=parsed.verdict,
         matches=matches,
         total_matches=len(matches),
+        allow_entry=parsed.allow_entry,
     )
 
 
@@ -414,12 +423,13 @@ def register_whm_firewall_tools(server: FastMCP, *, context: McpToolContext) -> 
     """Register the WHM firewall READ tool on `server`; return its name and risk (I.mcp, V20).
 
     One entry, and it stays one. T25 (`whm_firewall_release_and_allow`) and T26
-    (`whm_firewall_allowlist_remove`) are CHANGE tools and register from
-    `noa_api.mcp_tools.whm_firewall_change` — a separate module because a CHANGE tool is two
-    halves (the tool and its post-approval runner) and both of them here would push one file past
-    C14's line budget with T26 still to come. What they share is *code*, not a file: the lookups
-    above are their in-process before-state (C9, V17, DECISIONS §6.5) and `noa_firewall_comment` /
-    `without_noa_comment_text` are the two ends of V96's bound, imported rather than re-spelled
+    (`whm_firewall_allowlist_remove`) are CHANGE tools and register from a module each —
+    `whm_firewall_change` and `whm_firewall_allowlist` — because a CHANGE tool is two halves (the
+    tool and its post-approval runner) and any two of the three here would push one file past
+    C14's line budget. What they share is *code*, not a file: the lookups above are their
+    in-process before-state (C9, V17, DECISIONS §6.5), `noa_firewall_comment` /
+    `without_noa_comment_text` are the two ends of V96's bound, and what the two CHANGE tools
+    share with each other is in `whm_firewall_change_common` — imported rather than re-spelled
     (V66).
     """
 

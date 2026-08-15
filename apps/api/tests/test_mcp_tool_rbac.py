@@ -34,6 +34,7 @@ from noa_api.mcp_tools.whm_account_change import (
     TOOL_WHM_UNSUSPEND_ACCOUNT,
 )
 from noa_api.mcp_tools.whm_firewall import TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES
+from noa_api.mcp_tools.whm_firewall_allowlist import TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE
 from noa_api.mcp_tools.whm_firewall_change import TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW
 from noa_api.mcp_tools.whm_read import (
     TOOL_WHM_LIST_ACCOUNTS,
@@ -58,6 +59,7 @@ REGISTERED_TOOLS = sorted(
         TOOL_WHM_UNSUSPEND_ACCOUNT,
         TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
         TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
+        TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
         TOOL_PMG_WHITELIST_SEARCH,
         TOOL_PMG_WHITELIST_LIST,
         TOOL_NOA_GET_ACTION_RESULT,

@@ -51,12 +51,20 @@ class ImunifyIPEntry:
 
 @dataclass(frozen=True)
 class ImunifyIPListResult:
-    """Parsed `ip-list` query: whether the IP is listed, how, and the rows behind it."""
+    """Parsed `ip-list` query: whether the IP is listed, how, and the rows behind it.
+
+    `allow_entry` is CSF's `allow_entry` one backend over, and it is here for the same reason
+    (T26): `drop` beats `white`, so an IP on both lists reports `blacklisted` and the `white`
+    row it also holds stops being visible in the verdict. An allowlist removal's postflight asks
+    exactly about that row, and reading it off the verdict would call a surviving whitelist entry
+    removed whenever a blacklist entry outranked it.
+    """
 
     found: bool
     verdict: ImunifyVerdict
     entries: list[ImunifyIPEntry]
     raw_counts: dict[str, Any] | None = None
+    allow_entry: bool = False
 
 
 def parse_imunify_ip_list_response(data: dict[str, Any], target_ip: str) -> ImunifyIPListResult:
@@ -123,12 +131,16 @@ def parse_imunify_ip_list_response(data: dict[str, Any], target_ip: str) -> Imun
 
     matching_entries = [e for e in entries if e.ip == target_ip]
 
+    # Read off the rows, not off the verdict below, which is about to discard it when a `drop`
+    # outranks it.
+    allow_entry = any(e.purpose == "white" for e in matching_entries)
+
     verdict: ImunifyVerdict = "not_found"
     if matching_entries:
         # `drop` wins, mirroring CSF's block-beats-allow precedence.
         if any(e.purpose == "drop" for e in matching_entries):
             verdict = "blacklisted"
-        elif any(e.purpose == "white" for e in matching_entries):
+        elif allow_entry:
             verdict = "whitelisted"
 
     return ImunifyIPListResult(
@@ -136,6 +148,7 @@ def parse_imunify_ip_list_response(data: dict[str, Any], target_ip: str) -> Imun
         verdict=verdict,
         entries=matching_entries,
         raw_counts=raw_counts,
+        allow_entry=allow_entry,
     )
 
 

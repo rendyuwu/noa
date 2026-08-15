@@ -62,6 +62,30 @@ def test_drop_beats_white_when_the_ip_is_in_both_lists() -> None:
     assert len(result.entries) == 2
 
 
+def test_a_white_entry_is_reported_even_when_a_drop_outranks_it() -> None:
+    """T26, and CSF's `allow_entry` one backend over.
+
+    The precedence above discards exactly the fact an allowlist removal's postflight asks for,
+    so it is carried beside the verdict rather than inferred from it: read off the verdict, a
+    surviving whitelist row on an IP Imunify also drops would report as removed.
+    """
+    result = parse_imunify_ip_list_response(
+        {"items": [_item(purpose="white"), _item(purpose="drop")]}, TARGET
+    )
+
+    assert result.verdict == "blacklisted"
+    assert result.allow_entry is True
+
+
+def test_no_allow_entry_is_reported_for_a_drop_only_ip() -> None:
+    """The negative control (V87): a parser that answered `True` for every row would pass the
+    case above and say nothing."""
+    result = parse_imunify_ip_list_response({"items": [_item(purpose="drop")]}, TARGET)
+
+    assert result.verdict == "blacklisted"
+    assert result.allow_entry is False
+
+
 def test_entries_for_other_ips_are_filtered_out() -> None:
     """`--by-ip` has been seen returning neighbours; a verdict off someone else's row is
     worse than no verdict."""

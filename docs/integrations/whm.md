@@ -230,6 +230,8 @@ despite the unique index, because Postgres uniqueness is case-sensitive and the 
 | `whm_suspend_account` | **CHANGE** | `server_ref` + `username`. Opens an approval request and suspends nothing; the change runs after an operator decides (§V.16). No reason parameter, ever (C8). |
 | `whm_unsuspend_account` | **CHANGE** | `server_ref` + `username`. The mirror, and a separate grant: suspend and unsuspend carry opposite risk, so DECISIONS §9 leaves them two names rather than one `action` enum. Opens an approval request and lifts nothing. No reason parameter, ever (C8). |
 | `whm_preflight_firewall_entries` | READ | `server_ref` + `target`. Asks CSF and Imunify360 what they hold for the target. Exposed per DECISIONS §6.5 — the one operator-facing preflight. |
+| `whm_firewall_release_and_allow` | **CHANGE** | `server_ref` + `target` (IPv4 only, §V.54) + `duration_minutes` (1–525600, required, no default, §V.77). Steps 2 and 3 of the firewall flow in one approval (DECISIONS §6.5). Opens an approval request and changes nothing. No reason parameter, ever (C8). |
+| `whm_firewall_allowlist_remove` | **CHANGE** | `server_ref` + `target` (IPv4 only). The undo path, kept a separate tool and a separate approval (DECISIONS §6.5). Answers `no_op` when the address is on no allow list. Opens an approval request and changes nothing. No reason parameter, ever (C8). |
 
 Both the RBAC gate (§V.1, `noa_api/mcp_rbac.py`) and error sanitization (§V.19,
 `noa_api/mcp_tools/results.py`) sit in front of every tool, so nothing below is per-tool code.
@@ -436,6 +438,93 @@ Three deliberate departures from `noa-old`'s version:
   case; this is the partial one.
 - **Evidence is not repeated per backend.** The lines already say which system produced them.
 
+A fourth departure landed at §T.25 and is about what comes *back*: a comment NOA wrote is cut
+out of `matches` before a model reads them. See "The operator's reason, out and back" below.
+
+### `whm_firewall_release_and_allow` (§T.25)
+
+Steps 2 and 3 of the flow, merged into one approval because they are almost always run together
+(DECISIONS §6.5). The tool opens an `action_requests` row and changes nothing; the runner on the
+far side of §V.22's boundary does the work after an operator decides.
+
+The runner sends, per usable backend and through `run_on_usable_backends`:
+
+| Backend | Commands, in order | Strict? |
+|---|---|---|
+| CSF | `-tr <ip>`, `-dr <ip>`, `-ta <ip> <ttl-seconds> <comment>` | The first two tolerate a non-zero exit; `-ta` does not |
+| Imunify | `ip-list local delete --purpose drop <ip>`, `ip-list local add --purpose white <ip> --comment <c> --expiration <epoch>` | The delete is tolerated; the add is not |
+
+**Release before allow**, because CSF resolves a conflict block-first: an allow written before
+the deny entry is removed buys nothing and reads as success. The removals are tolerated because
+"not in that list" is the ordinary case — most addresses are held by one backend, or by a
+temporary ban. A **sudo-rights** refusal is never tolerated (§V.55): sudoers can permit `csf -v`
+and refuse the write, and that is not an entry being absent.
+
+One instant feeds both backends — csf takes a TTL in seconds, Imunify an absolute epoch — and
+the after-state reports the resolved `expires_at` (§V.77).
+
+**Two outcomes, never collapsed** (DECISIONS §6.5). `released` and `allowlisted` are separate
+booleans with separate codes (`firewall_release_failed` / `firewall_allow_failed`), so a receipt
+cannot say "done" over a half-finished change. There is **no no-op**: the allow entry carries a
+TTL, so a repeat always moves the expiry.
+
+### `whm_firewall_allowlist_remove` (§T.26)
+
+The undo path, its own tool and its own approval (DECISIONS §6.5). `server_ref` + `target`, and
+no duration — there is no window to state.
+
+| Backend | Commands, in order | Strict? |
+|---|---|---|
+| CSF | `-tra <ip>`, `-ar <ip>` | Neither; both tolerate a non-zero exit |
+| Imunify | `ip-list local delete --purpose white <ip>` | No |
+
+Both csf commands are sent because an entry lives on the temporary allow list *or* the permanent
+one and NOA does not know which: §T.25 writes temporary entries, an operator's own hand-added
+ones are permanent. Nothing here is required to succeed — §T.25 could keep the `-ta` strict
+because that entry is the one the operator asked to *exist*, and a removal has no equivalent — so
+**the postflight is the only authority**. The sudo-rights exception above applies here too.
+
+**There is a no-op, and it is gated on a full answer.** An address on no allow list is already in
+the state the change would produce, so the tool answers instead of opening a card (§T.22, §T.23's
+rule). But "there is nothing to remove" is a claim about absence, and a backend that stayed
+silent has not made it — so one unanswered backend opens the card instead (§V.86).
+
+**"Is it still allowlisted?" is not the combined verdict.** Both backends resolve a conflict
+block-first, so an address on a deny list *and* an allow list reports `blocked` and the allow
+entry disappears from the verdict. Read that way, a removal that failed on a denied address would
+report as done, and the no-op would refuse to open a card for an address that plainly has an
+entry to delete. So both questions are asked of `allow_entry`, which `parse_csf_grep_output` and
+`parse_imunify_ip_list_response` carry beside the verdict.
+
+The runner answers `removed` — one boolean, because a removal is one claim — and omits it
+entirely when a usable backend did not answer the confirming read, reporting `status: changed`,
+`verified: false`, `verification: unavailable` and naming the silent backend (§V.86, §V.62's
+rule). An absent field beats a `false` nobody measured.
+
+### The operator's reason, out and back (§V.96)
+
+C8's single reason field is typed by an operator on the approval card. §V.43 lets it *leave* NOA
+where the target system has an honest place for it; §V.96 requires that it cannot come back to a
+model. On the firewall path that plays out in three places:
+
+- **§T.25 writes it**, behind a marker NOA authors: `noa:<action_request_id> <reason>`, on both
+  the csf allow entry's comment and Imunify's `--comment`.
+- **`whm_preflight_firewall_entries` cuts it back out** — `without_noa_comment_text`, from the
+  marker to the **end of the line**, because csf gives a comment no closing boundary and a reason
+  containing a bracket or a quote would walk through any rule that tried to find its end. The
+  stated cost: a token csf places after the comment goes with it, which is why
+  `format_imunify_matches` renders `[expires: …]` *before* the comment. The marker survives — it
+  is the address of the approval row where the reason is readable behind the operator's cookie.
+- **§T.26 writes nothing** — a removal takes no comment — but it deletes an entry that carries
+  one, so the same bound applies on the way back: a backend failure message is cut
+  (`backend_change_failure`), the postflight's `csf -g` lines are read for a verdict and never put
+  in the payload, and the **no-op answer** is built from the server name, the address and one
+  measured boolean rather than from the lines it was decided from.
+
+The cut is at the surfaces that answer a *model*, never in the parsers. The approval card and the
+receipt read the same lines and are the operator's own (§V.27, §V.76), so a cut in
+`parse_csf_grep_output` would take the reason off the two places that exist to show it.
+
 ## Error codes
 
 | Code | Raised by | Meaning |
@@ -445,10 +534,17 @@ Three deliberate departures from `noa-old`'s version:
 | `host_ambiguous` | `resolve_whm_server_ref` | Several match; `choices` carries the candidates. |
 | `query_required` | `whm_search_accounts` | Blank or whitespace-only search text (§V.21). |
 | `limit_invalid` | `whm_search_accounts` | `limit` outside 1–100 (§T.21). |
-| `target_required` | `whm_preflight_firewall_entries` | Blank or whitespace-only target (§V.21). |
+| `target_required` | Every firewall tool | Blank or whitespace-only target (§V.21). |
 | `invalid_target` | `whm_preflight_firewall_entries` | Not an IP, network or hostname (§V.54). |
+| `invalid_target` | Both firewall CHANGE tools | Not a single IPv4 address — they write rules (§V.54). |
+| `duration_invalid` | `whm_firewall_release_and_allow` | `duration_minutes` outside 1–525600, or not a whole number (§V.77). |
 | `no_firewall_backend` | `firewall_gate.require_usable_backends` | Neither backend could be run, on any firewall tool (§V.57, §T.68). |
 | `invalid_response` | `whm_preflight_firewall_entries` | `csf -g` exited 0 with nothing to read. |
+| `firewall_release_failed` | `whm_firewall_release_and_allow` runner | Still blocked after the release ran (§T.25). |
+| `firewall_allow_failed` | `whm_firewall_release_and_allow` runner | Released, but not on an allow list (§T.25). |
+| `firewall_allowlist_remove_failed` | `whm_firewall_allowlist_remove` runner | An allow entry is still there after the removal ran (§T.26). |
+| `change_evidence_unusable` | Both firewall runners | The approved row's evidence no longer carries a runnable target or duration (§V.33). |
+| `whm_server_unavailable` | Every CHANGE runner | The server row the change was approved against is gone (§V.33). |
 | `tool_not_permitted` | `RbacToolMiddleware` | Caller lacks the grant, or the name is not a registered tool (§V.1, §V.10). |
 | `tool_execution_failed` | `sanitize_tool_errors` | Unmapped exception out of a tool (§V.19). |
 | `timeout` | `sanitize_tool_errors` | `TimeoutError` out of a tool (§V.19). |
@@ -482,7 +578,6 @@ lets the column be migrated in place.
 
 | Surface | Task |
 |---|---|
-| MCP tools: release-and-allow, allowlist-remove | §T.25–§T.26 |
 | Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
 | Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
 
@@ -519,11 +614,18 @@ exposure. Re-adding any of them is an owner decision.
 - Shared SSH layer: `core/remote_exec/` (§T.14)
 - Server inventory + reference resolution: `core/servers/whm_repository.py`,
   `core/servers/whm_ref.py` (§T.19)
-- MCP tools: `apps/api/src/noa_api/mcp_tools/whm_read.py` (§T.19, §T.21),
-  `apps/api/src/noa_api/mcp_tools/whm_firewall.py` (§T.24)
-- Exposed READ tools: `apps/api/src/noa_api/mcp_tools/whm_read.py` (§T.19, §T.21)
+- Exposed READ tools: `apps/api/src/noa_api/mcp_tools/whm_read.py` (§T.19, §T.21),
+  `whm_firewall.py` (§T.24)
+- Account CHANGE tools + runners: `apps/api/src/noa_api/mcp_tools/whm_account_change.py`
+  (§T.22, §T.23)
+- Firewall CHANGE tools + runners: `apps/api/src/noa_api/mcp_tools/whm_firewall_change.py`
+  (§T.25), `whm_firewall_allowlist.py` (§T.26), with what the two share in
+  `whm_firewall_change_common.py`
+- Shared across every post-approval runner: `apps/api/src/noa_api/mcp_tools/change_target.py`
 - MCP tool + registry: `apps/api/src/noa_api/mcp_tools/{whm_read,registry,results,context}.py`
 - RBAC gate in front of every tool: `apps/api/src/noa_api/mcp_rbac.py` (§V.1)
 - Tests: `apps/api/tests/test_whm_{client,ssh_config,csf_parsing,imunify_parsing}.py`,
-  `test_whm_firewall_{cli,availability}.py`,
+  `test_whm_firewall_{cli,availability,gate}.py`,
+  `test_whm_tools_firewall_{preflight,release_and_allow,allowlist_remove}.py`,
+  `test_whm_firewall_{release,allowlist}_runner.py`,
   `test_whm_{server_ref,server_repository,tools_read}.py`, `test_mcp_tool_rbac.py`

@@ -139,11 +139,15 @@ def both_backends(
 
 # --- T25: a box that also accepts changes ---
 
-# csf's own sub-commands, as `noa-old` sends them and as `whm_firewall_change` still does.
+# csf's own sub-commands, as `noa-old` sends them and as the CHANGE tools still do. The last two
+# are T26's: `-tra` drops a temporary allow and `-ar` the `csf.allow` entry, which are the two
+# lists a release can have written to.
 CSF_READ = "-g"
 CSF_TEMP_RELEASE = "-tr"
 CSF_DENY_RELEASE = "-dr"
 CSF_TEMP_ALLOW = "-ta"
+CSF_TEMP_ALLOW_REMOVE = "-tra"
+CSF_ALLOW_REMOVE = "-ar"
 
 # Imunify's, read off the `ip-list local <step>` argument.
 IMUNIFY_READ = "list"
@@ -158,6 +162,17 @@ IMUNIFY_MUTATION_OK = json.dumps({"result": "success"})
 # What csf prints when the entry a release names is not in that list. **Exit 1**, and it is the
 # ordinary case rather than a failure: an address held by a temporary ban has no `csf.deny` line.
 CSF_NOT_IN_LIST = "csf: 203.0.113.10 not found in /etc/csf/csf.deny"
+
+# A `csf -g` line for an address that is on the allow list *and* the deny list. The verdict
+# resolves block-first and therefore reports `blocked`, which is why T26 asks `allow_entry`
+# instead — this fixture is what separates the two readings.
+CSF_ALLOW_AND_DENY_OUTPUT = f"{CSF_ALLOW_LINE}\n{CSF_DENY_LINE}"
+
+# An Imunify document holding both purposes for one address, for the same reason.
+IMUNIFY_WHITE_AND_DROP = imunify_body(
+    {"ip": TARGET, "purpose": "white", "comment": "office"},
+    {"ip": TARGET, "purpose": "drop", "comment": "smtpauth brute force"},
+)
 
 # Imunify's own refusal for a delete of an entry it does not hold. Also ordinary.
 IMUNIFY_NOT_IN_LIST = json.dumps({"errors": ["IP is not in the list"]})
@@ -311,7 +326,9 @@ def firewall_context(
 
 
 __all__ = [
+    "CSF_ALLOW_AND_DENY_OUTPUT",
     "CSF_ALLOW_LINE",
+    "CSF_ALLOW_REMOVE",
     "CSF_CLEAN_OUTPUT",
     "CSF_DENY_LINE",
     "CSF_DENY_RELEASE",
@@ -319,6 +336,7 @@ __all__ = [
     "CSF_NOT_IN_LIST",
     "CSF_READ",
     "CSF_TEMP_ALLOW",
+    "CSF_TEMP_ALLOW_REMOVE",
     "CSF_TEMP_RELEASE",
     "CSF_UNREADABLE_OUTPUT",
     "FIREWALL_SSH_MODULES",
@@ -330,6 +348,7 @@ __all__ = [
     "IMUNIFY_NOT_IN_LIST",
     "IMUNIFY_READ",
     "IMUNIFY_WHITE",
+    "IMUNIFY_WHITE_AND_DROP",
     "SERVER_NAME",
     "SSH_PASSWORD_PLAINTEXT",
     "SSH_PRIVATE_KEY_PLAINTEXT",

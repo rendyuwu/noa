@@ -23,6 +23,12 @@ Verdict precedence is deliberate and load-bearing for the release-and-allow flow
 block match wins over an allow match. An IP can appear in both `csf.deny` and `csf.allow` at
 once, and the operationally true statement is "still blocked".
 
+**`allow_entry` is reported beside the verdict because that precedence discards it** (T26).
+"What is this box doing to this address" and "is there still an allow entry for it" are two
+questions, and the second one is the whole of an allowlist removal's postflight. Answering it
+from the verdict would report a surviving `csf.allow` line as removed on any address a deny
+entry also matched — a change reported as done because a *different* list masked it.
+
 `not_found` requires positive evidence — csf's own "No matches found for …" line. An empty
 parse is `unknown`, never `not_found`: "CSF said nothing we recognise" and "CSF said this IP
 is clean" are different facts, and collapsing them would let a parse regression read as a
@@ -79,11 +85,20 @@ class CSFGrepParsed:
 
     `total_matches` counts the lines *before* `max_matches` cut them, so a caller can say the
     list is short rather than letting it read as complete (V85).
+
+    `allow_entry` is a second fact rather than a re-reading of the first, and it exists because
+    the verdict deliberately loses it: block beats allow, so an address in both `csf.deny` and
+    `csf.allow` is `blocked` and the allow line it was also found on stops being visible. That
+    is the right answer to "what is this box doing to this address" and the wrong one to "is
+    there still an allow entry here", which is what T26 asks after removing one. Reading the
+    removal's outcome off the verdict would report a still-present allow entry as removed
+    whenever a deny entry happened to outrank it.
     """
 
     verdict: CSFGrepVerdict
     matches: list[str]
     total_matches: int
+    allow_entry: bool = False
 
 
 def parse_csf_target(raw: str) -> CSFTarget:
@@ -192,10 +207,15 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
     matches = [line for line in lines if target_value in line]
     bounded = matches[: max_matches if max_matches > 0 else 0]
 
+    # Read off every match, not off the verdict below, which is about to discard it when a block
+    # outranks it. Taken from the full list rather than from `bounded`, for `total_matches`'
+    # reason: the cut shortens the evidence, it does not change what csf holds.
+    allow_entry = any(_is_allow_match(line) for line in matches)
+
     # Block beats allow: an IP present in both is, operationally, still blocked.
     if any(_is_block_match(line) for line in matches):
         verdict: CSFGrepVerdict = "blocked"
-    elif any(_is_allow_match(line) for line in matches):
+    elif allow_entry:
         verdict = "allowlisted"
     # `not_found` needs csf to have said so. Silence is `unknown`, not clean.
     elif matches and all(_is_not_found_match(line) for line in matches):
@@ -205,7 +225,12 @@ def _parse_csf_grep_lines(lines: list[str], *, target: str, max_matches: int = 2
     else:
         verdict = "unknown"
 
-    return CSFGrepParsed(verdict=verdict, matches=bounded, total_matches=len(matches))
+    return CSFGrepParsed(
+        verdict=verdict,
+        matches=bounded,
+        total_matches=len(matches),
+        allow_entry=allow_entry,
+    )
 
 
 def parse_csf_grep_output(output: str, *, target: str, max_matches: int = 20) -> CSFGrepParsed:

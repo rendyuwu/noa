@@ -1,11 +1,12 @@
-"""WHM firewall CHANGE tools: `whm_firewall_release_and_allow` (T25).
+"""`whm_firewall_release_and_allow` — the WHM firewall release CHANGE tool (T25).
 
 **Two steps of the operator's real job, merged into one approval** (DECISIONS §6.5,
 owner-confirmed 2026-08-04). The working pattern is *check whether an IP is denied → release it →
 allowlist it*, and steps 2 and 3 are almost always run together, so one card matches the real
 unit of work instead of asking twice for one decision. The check in front of it stays its own
 exposed tool (T24), because that verdict is what an operator reads before deciding to call this
-at all.
+at all. The undo path is a third module and a third name (T26, DECISIONS §6.5: "keep
+`whm_firewall_allowlist_remove` separate — it is the undo path, run on its own").
 
 Beside `whm_firewall.py` rather than inside it. A CHANGE tool is two halves on opposite sides of
 V22's boundary — a tool the LLM can reach that changes nothing, and a runner reachable only from
@@ -13,6 +14,13 @@ V22's boundary — a tool the LLM can reach that changes nothing, and a runner r
 budget. What is shared is code, not a file: `gather_firewall_entries` is the before-state (V66),
 and `noa_firewall_comment` / `without_noa_comment_text` are the two ends of V96's bound, which
 belong beside the READ surface that has to honour them.
+
+**What T26 became the second caller of moved to `whm_firewall_change_common.py`** — the
+before-state shape, `BackendChange`, the tolerated release commands, the evidence keys, and the
+resolution of a machine and address out of an approved row. Hoisted rather than imported from
+here, so the two tool modules are siblings instead of one depending on the other; re-exported
+below, so nothing that already named them here moved (the same shape `change_target` was hoisted
+in at T25).
 
 **The preflight is T24's, run in-process** (C9, V17). Not T24's *tool* — its internals: the same
 availability probe, the same dual-backend lookup, the same verdict combination. That evidence is
@@ -82,7 +90,7 @@ from pydantic import Field
 from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
 from core.db.lifecycle import ToolRisk
 from core.errors import NoaError
-from core.integrations.whm.availability import FirewallAvailability, check_firewall_binaries
+from core.integrations.whm.availability import check_firewall_binaries
 from core.integrations.whm.csf import parse_csf_target
 from core.integrations.whm.csf_cli import require_csf_success, run_csf_command
 from core.integrations.whm.firewall_gate import run_on_usable_backends
@@ -91,15 +99,6 @@ from core.integrations.whm.ssh import resolve_whm_ssh_config
 from core.remote_exec.types import SSHConnectionConfig
 from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
-from noa_api.mcp_tools.change_target import (
-    ERROR_EVIDENCE_UNUSABLE,
-    ERROR_SERVER_UNAVAILABLE,
-    MESSAGE_EVIDENCE_UNUSABLE,
-    MESSAGE_SERVER_UNAVAILABLE,
-    STATUS_CHANGED,
-    VERIFICATION_UNAVAILABLE,
-    uuid_or_none,
-)
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
@@ -119,7 +118,29 @@ from noa_api.mcp_tools.whm_firewall import (
     combine_firewall_verdict,
     gather_firewall_entries,
     noa_firewall_comment,
-    without_noa_comment_text,
+)
+from noa_api.mcp_tools.whm_firewall_change_common import (
+    # Hoisted to `whm_firewall_change_common` at T26, when the allowlist removal became the
+    # second caller of the same before-state, the same backend-answer shape and the same
+    # evidence resolution (V66). Re-exported below, so every name this module already published
+    # keeps working from here.
+    ERROR_EVIDENCE_UNUSABLE,
+    ERROR_SERVER_UNAVAILABLE,
+    EVIDENCE_FIREWALL,
+    EVIDENCE_SERVER_ID,
+    EVIDENCE_SERVER_NAME,
+    EVIDENCE_TARGET,
+    MESSAGE_EVIDENCE_UNUSABLE,
+    STATUS_CHANGED,
+    VERIFICATION_UNAVAILABLE,
+    BackendChange,
+    FirewallChangeTarget,
+    backend_change_failure,
+    firewall_state,
+    resolve_firewall_change_target,
+    tolerated_csf_step,
+    tolerated_imunify_step,
+    unanswered_backends,
 )
 
 TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW = "whm_firewall_release_and_allow"
@@ -130,16 +151,11 @@ TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW = "whm_firewall_release_and_allow"
 MIN_DURATION_MINUTES: Final = 1
 MAX_DURATION_MINUTES: Final = 525_600
 
-# The evidence keys this tool writes and its runner reads back. Its own set rather than the
-# account tools' (which happen to spell two of them the same way): the evidence shape is a
-# contract between one tool and one runner, and sharing a constant across two different contracts
-# is how a key ends up meaning two things. A misspelt key in JSONB reads as an absent one, which
-# is why they are constants at all (V66).
-EVIDENCE_SERVER_ID = "server_id"
-EVIDENCE_SERVER_NAME = "server"
-EVIDENCE_TARGET = "target"
+# The one evidence key this tool owns alone. The other four are the firewall pair's shared shape
+# (`whm_firewall_change_common`) — still deliberately not the account tools', which happen to
+# spell two of them the same way: a constant shared across two different contracts is how a key
+# ends up meaning two things.
 EVIDENCE_DURATION_MINUTES = "duration_minutes"
-EVIDENCE_FIREWALL = "firewall"
 
 ERROR_DURATION_INVALID = "duration_invalid"
 # The postflight says the address is still blocked: the deny entry outlived the release.
@@ -195,29 +211,12 @@ logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
-class BackendChange:
-    """What one backend did when asked to release and then allow an address.
-
-    `ok` is about the commands, not about the outcome — whether the entries are actually gone and
-    present is the postflight's answer, taken separately and from a fresh read. A backend that
-    could not be driven at all keeps the code that names the remedy (`ssh_sudo_required` and
-    `csf_command_failed` send an operator to different places).
-    """
-
-    ok: bool
-    error_code: str | None = None
-    message: str | None = None
-
-    def as_payload(self) -> ToolPayload:
-        """This backend's entry in the runner's answer."""
-        if self.ok:
-            return {"ok": True}
-        return {"ok": False, "error_code": self.error_code, "message": self.message}
-
-
-@dataclass(frozen=True)
 class _ReleaseTarget:
-    """The machine, address and window an approved release runs against, from the evidence."""
+    """The machine, address and window an approved release runs against, from the evidence.
+
+    `FirewallChangeTarget` plus the window, which is this tool's alone: the removal one module
+    over resolves the same machine and address and has no duration to carry.
+    """
 
     config: SSHConnectionConfig
     server_name: str
@@ -316,41 +315,6 @@ async def whm_firewall_release_and_allow(
     )
 
 
-def firewall_state(
-    lookups: Mapping[str, BackendLookup], *, availability: FirewallAvailability
-) -> ToolPayload:
-    """One dual-backend read, shaped as the before-state a card and a receipt show.
-
-    The same fields T24's tool answers with, and deliberately so: an operator authorising a
-    release is looking at the reading they would have got from the preflight, which is what makes
-    "one approval" honest about what it is approving (DECISIONS §6.5).
-
-    **Uncut**, unlike T24's own `matches`. These lines go onto `action_requests.approval_context`
-    and from there to the approval card and the receipt, both of which are the operator's own
-    surfaces behind their cookie (V27) — and `noa_get_action_result` reaches neither
-    (`ActionResultView` has no evidence field, and `core.approvals.results` never joins
-    `action_receipts`, V76). V96 withholds from the surface that answers a *model*; withholding
-    here would take the reason off the two places that exist to show it.
-    """
-    matches = [line for lookup in lookups.values() for line in lookup.matches]
-    total_matches = sum(lookup.total_matches for lookup in lookups.values())
-    state: ToolPayload = {
-        "available_backends": availability.as_tools_dict(),
-        # Present-but-denied ≠ absent: the operator is told to fix sudoers, not to install csf.
-        "sudo_required": availability.sudo_required,
-        "combined_verdict": combine_firewall_verdict(list(lookups.values())),
-        # V86: a verdict read from a subset says so, on the card as much as in a tool result.
-        "unanswered_backends": [name for name, lookup in lookups.items() if not lookup.answered],
-        "matches": matches,
-        # V85: the cut is csf's (`max_matches`), so the bound travels with the rows.
-        "total_matches": total_matches,
-        "truncated": total_matches > len(matches),
-    }
-    for name, lookup in lookups.items():
-        state[name] = lookup.as_payload()
-    return state
-
-
 # --- The runner: reachable only after an operator approved (V22's far side) ---
 
 
@@ -412,7 +376,12 @@ def build_whm_firewall_release_runner(*, context: McpToolContext) -> ChangeRunne
 
 
 def build_whm_firewall_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tools (T25; T26 lands beside it)."""
+    """Tool name → runner for this module's CHANGE tool (T25).
+
+    One entry, and it stays one: T26's removal contributes its own map from
+    `whm_firewall_allowlist`, the way each system's registrar does. Collecting it here instead
+    would make this module import the one that imports its shared machinery.
+    """
     return {
         TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW: build_whm_firewall_release_runner(context=context),
     }
@@ -421,7 +390,7 @@ def build_whm_firewall_change_runners(*, context: McpToolContext) -> dict[str, C
 def register_whm_firewall_change_tools(
     server: FastMCP, *, context: McpToolContext
 ) -> dict[str, ToolRisk]:
-    """Register the WHM firewall CHANGE tools; return each name with its risk (I.mcp, V20).
+    """Register the WHM firewall release tool; return its name with its risk (I.mcp, V20).
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
     call (T73) — it opens an approval request and executes nothing, and V46's row belongs to the
@@ -504,32 +473,24 @@ async def _csf_release_and_allow(
     them, and that code is what comes back.
     """
     try:
-        await _tolerated_csf_step(config, args=["-tr", target], target=target)
-        await _tolerated_csf_step(config, args=["-dr", target], target=target)
+        await _tolerated_csf(config, args=["-tr", target], target=target)
+        await _tolerated_csf(config, args=["-dr", target], target=target)
         allow = await run_csf_command(config, args=["-ta", target, str(duration_seconds), comment])
         require_csf_success(allow, default_message="CSF did not add the temporary allow entry.")
     except NoaError as exc:
-        return _backend_change_failure(exc.error_code, exc.message)
+        return backend_change_failure(exc.error_code, exc.message)
     return BackendChange(ok=True)
 
 
-async def _tolerated_csf_step(config: SSHConnectionConfig, *, args: list[str], target: str) -> None:
-    """One release command whose non-zero exit is an ordinary answer, not a failure.
-
-    Logged when it happens, so "the deny entry was already gone" stays distinguishable from "the
-    command could not run" after the fact. An SSH-level failure still raises — that one is not an
-    answer about the list, it is the absence of one.
-    """
-    result = await run_csf_command(config, args=args)
-    if result.exit_code != 0:
-        logger.info(
-            LOG_RELEASE_STEP_TOLERATED,
-            tool=TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
-            backend="csf",
-            step=args[0],
-            target=target,
-            exit_code=result.exit_code,
-        )
+async def _tolerated_csf(config: SSHConnectionConfig, *, args: list[str], target: str) -> None:
+    """`tolerated_csf_step` with this tool's name and log event bound to it."""
+    await tolerated_csf_step(
+        config,
+        args=args,
+        target=target,
+        tool=TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
+        event=LOG_RELEASE_STEP_TOLERATED,
+    )
 
 
 async def _imunify_release_and_allow(
@@ -542,10 +503,13 @@ async def _imunify_release_and_allow(
     an address blocked only by CSF is the common shape of this call. The add is required.
     """
     try:
-        await _tolerated_imunify_step(
+        await tolerated_imunify_step(
             config,
             args=["ip-list", "local", "delete", "--purpose", "drop", target, "--json"],
             target=target,
+            tool=TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
+            event=LOG_RELEASE_STEP_TOLERATED,
+            step="delete",
         )
         added = await run_imunify_command(
             config,
@@ -565,36 +529,8 @@ async def _imunify_release_and_allow(
         )
         parse_imunify_json_output(added)
     except NoaError as exc:
-        return _backend_change_failure(exc.error_code, exc.message)
+        return backend_change_failure(exc.error_code, exc.message)
     return BackendChange(ok=True)
-
-
-async def _tolerated_imunify_step(
-    config: SSHConnectionConfig, *, args: list[str], target: str
-) -> None:
-    """One Imunify release command whose own refusal is an ordinary answer (see above)."""
-    result = await run_imunify_command(config, args=args)
-    try:
-        parse_imunify_json_output(result)
-    except NoaError as exc:
-        logger.info(
-            LOG_RELEASE_STEP_TOLERATED,
-            tool=TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
-            backend="imunify",
-            step="delete",
-            target=target,
-            error_code=exc.error_code,
-        )
-
-
-def _backend_change_failure(error_code: str, message: str) -> BackendChange:
-    """A backend failure with NOA's own comment text cut out of it (V96).
-
-    A backend that refuses a command frequently quotes the command back, and the command NOA just
-    ran carries the operator's reason. This message reaches `result_summary`, which
-    `noa_get_action_result` returns to a model.
-    """
-    return BackendChange(ok=False, error_code=error_code, message=without_noa_comment_text(message))
 
 
 async def _resolve_release_target(
@@ -609,40 +545,27 @@ async def _resolve_release_target(
 
     Three refusals, all before anything is changed and each naming what an administrator should
     do: the address or the duration did not survive their JSONB round trip as usable values, the
-    evidence carries no usable server id, or the server row is gone. The duration is re-checked
-    against V77's bound rather than merely against its type — a value outside it would write an
-    allow entry nobody approved the length of.
+    evidence carries no usable server id, or the server row is gone. The first two of those are
+    the firewall pair's shared resolution (`resolve_firewall_change_target`); the duration is this
+    tool's own and is checked **first**, against V77's bound rather than merely against its type,
+    because a value outside it would write an allow entry nobody approved the length of — and
+    because refusing it before the database round trip keeps a malformed request off the pool.
 
     The database session closes before the SSH hops, T21's rule, and here it matters twice over:
     the executor's own session is open for the whole of the call.
     """
-    target = request.evidence.get(EVIDENCE_TARGET)
     duration_minutes = request.evidence.get(EVIDENCE_DURATION_MINUTES)
-    if (
-        not isinstance(target, str)
-        or not target.strip()
-        or not _duration_in_bounds(duration_minutes)
-    ):
+    if not _duration_in_bounds(duration_minutes):
         return tool_failure(ERROR_EVIDENCE_UNUSABLE, MESSAGE_EVIDENCE_UNUSABLE)
 
-    server_id = uuid_or_none(request.evidence.get(EVIDENCE_SERVER_ID))
-    if server_id is None:
-        return tool_failure(ERROR_SERVER_UNAVAILABLE, MESSAGE_SERVER_UNAVAILABLE)
-
-    async with context.session_factory() as session:
-        repository = context.whm_server_repository_factory(session)
-        server = await repository.get_by_id(server_id)
-        if server is None:
-            return tool_failure(ERROR_SERVER_UNAVAILABLE, MESSAGE_SERVER_UNAVAILABLE)
-        server_name = server.name
-        config = resolve_whm_ssh_config(
-            server, cipher=context.secret_cipher, require_host_key_fingerprint=True
-        )
+    resolved = await resolve_firewall_change_target(request.evidence, context=context)
+    if not isinstance(resolved, FirewallChangeTarget):
+        return resolved
 
     return _ReleaseTarget(
-        config=config,
-        server_name=server_name,
-        target=target.strip(),
+        config=resolved.config,
+        server_name=resolved.server_name,
+        target=resolved.target,
         duration_minutes=int(duration_minutes),  # type: ignore[arg-type]
     )
 
@@ -681,7 +604,7 @@ def _release_outcome(
         "expires_at": expires_at.isoformat(),
         "backends": {name: change.as_payload() for name, change in changes.items()},
     }
-    unanswered = [name for name, lookup in lookups.items() if not lookup.answered]
+    unanswered = unanswered_backends(lookups)
 
     broken = next((changes[name] for name in sorted(changes) if not changes[name].ok), None)
     if broken is not None:
@@ -771,5 +694,6 @@ __all__ = [
     "build_whm_firewall_release_runner",
     "firewall_state",
     "register_whm_firewall_change_tools",
+    "unanswered_backends",
     "whm_firewall_release_and_allow",
 ]

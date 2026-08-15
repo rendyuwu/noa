@@ -1,18 +1,17 @@
-"""Calling T25's two halves, and the box a runner test needs (T25).
+"""Calling the firewall CHANGE tools' two halves, and the box a runner test needs (T25, T26).
 
 `support/whm_firewall.py` owns the WHM box itself — the command answers, the availability
 probes, the transport double. This owns what a *test* needs to drive
-`whm_firewall_release_and_allow`: the call helpers for the tool and the runner, and the fixture
-shapes both lanes share.
+`whm_firewall_release_and_allow` (T25) and `whm_firewall_allowlist_remove` (T26): the call
+helpers for each tool and each runner, and the fixture shapes all four lanes share.
 
-Its own module because those lanes are two test files (`test_whm_tools_firewall_release_and_allow`
-and `test_whm_firewall_release_runner`), split so neither runs past C14's line budget, and
-helpers duplicated across two files are two helpers that drift (V66).
+Its own module because those lanes are four test files, split so none runs past C14's line
+budget, and helpers duplicated across files are helpers that drift (V66).
 
-The `ChangeExecutionRequest` here is assembled the way `core.approvals.execution` assembles one,
-because that is what the executor hands a runner — and its `arguments` deliberately name a
-different server from its evidence, so every runner test that resolves a target is also a V33
-assertion.
+The `ChangeExecutionRequest`s here are assembled the way `core.approvals.execution` assembles
+one, because that is what the executor hands a runner — and their `arguments` deliberately name
+a different server from their evidence, so every runner test that resolves a target is also a
+V33 assertion.
 """
 
 from __future__ import annotations
@@ -24,6 +23,10 @@ import pytest
 
 from core.approvals.execution import ChangeExecutionRequest
 from core.integrations.whm.csf_cli import CSF_BINARY
+from noa_api.mcp_tools.whm_firewall_allowlist import (
+    TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
+    whm_firewall_allowlist_remove,
+)
 from noa_api.mcp_tools.whm_firewall_change import (
     EVIDENCE_DURATION_MINUTES,
     EVIDENCE_FIREWALL,
@@ -38,7 +41,9 @@ from support.mcp_identity import authenticated_caller, http_request_context
 from support.servers import ToolFixture
 from support.whm_firewall import (
     CSF_ALLOW_LINE,
+    CSF_CLEAN_OUTPUT,
     CSF_DENY_LINE,
+    IMUNIFY_CLEAN,
     IMUNIFY_WHITE,
     SERVER_NAME,
     TARGET,
@@ -138,6 +143,83 @@ def imunify_commands(fake: Any) -> list[str]:
     return [command for command in changes(fake) if CSF_BINARY not in command]
 
 
+# --- T26: `whm_firewall_allowlist_remove` ---
+
+
+async def allowlist_remove(
+    fixture: ToolFixture,
+    *,
+    server_ref: str = SERVER_NAME,
+    target: str = TARGET,
+) -> tuple[Any, UUID]:
+    """Call T26's tool inside a real request context; return its answer and the caller's id.
+
+    The context is not decoration, for `release`'s reason: `open_change_request` reads the
+    requester from the authenticated identity rather than from an argument (V23, V27).
+    """
+    user, resolved = authenticated_caller()
+    with http_request_context({}, user=user):
+        answer = await whm_firewall_allowlist_remove(
+            server_ref=server_ref,
+            target=target,
+            context=fixture.context,
+        )
+    return answer, resolved
+
+
+def removal_request(
+    *,
+    server_id: UUID | str,
+    target: str = TARGET,
+    reason: str = REASON,
+    action_request_id: UUID | None = None,
+    server_ref: str = SERVER_NAME,
+) -> ChangeExecutionRequest:
+    """What `core.approvals.execution` hands T26's runner for an approved removal.
+
+    The before-state on the evidence is an *allowlisted* reading, because that is the state an
+    operator approves a removal against — and it carries NOA's marker and the reason T25 wrote,
+    since that is the entry being deleted and the reason V96 has to keep off the way back.
+
+    `reason` is on the request the way it is on every approved change (V43). This runner never
+    reads it, and the tests assert that it does not reappear.
+    """
+    # Resolved once: the marker on the evidence line has to be *this* request's, or a test
+    # asserting that the reason behind it never comes back would be aimed at a stranger's id.
+    request_id = action_request_id or uuid4()
+    return ChangeExecutionRequest(
+        action_request_id=request_id,
+        tool_run_id=uuid4(),
+        tool_name=TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE,
+        arguments={"server_ref": server_ref, "target": target},
+        evidence={
+            EVIDENCE_SERVER_ID: str(server_id),
+            EVIDENCE_SERVER_NAME: SERVER_NAME,
+            EVIDENCE_TARGET: target,
+            EVIDENCE_FIREWALL: {
+                "combined_verdict": "allowlisted",
+                "matches": [f"{CSF_ALLOW_LINE} noa:{request_id} {reason}"],
+            },
+        },
+        reason=reason,
+    )
+
+
+def removed_box(
+    *, csf_after: str = CSF_CLEAN_OUTPUT, imunify_after: str = IMUNIFY_CLEAN
+) -> FakeFirewallBox:
+    """A box for T26's **runner** lane, whose one read is the confirming one.
+
+    `released_box`' argument, one tool over: the runner reads exactly once and the point of that
+    read is that it happens after the change, so a one-entry queue holds the *after* state. The
+    default is a clean address — the removal took.
+    """
+    return FakeFirewallBox(
+        csf=csf_backend(csf_answer(csf_after)),
+        imunify=imunify_backend(imunify_answer(imunify_after)),
+    )
+
+
 def released_box(
     *, csf_after: str = CSF_ALLOW_LINE, imunify_after: str = IMUNIFY_WHITE
 ) -> FakeFirewallBox:
@@ -157,6 +239,7 @@ def released_box(
 
 __all__ = [
     "DURATION_MINUTES",
+    "allowlist_remove",
     "changes",
     "csf_commands",
     "execution_request",
@@ -164,4 +247,6 @@ __all__ = [
     "release",
     "release_context",
     "released_box",
+    "removal_request",
+    "removed_box",
 ]
