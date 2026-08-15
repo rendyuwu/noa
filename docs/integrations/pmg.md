@@ -281,20 +281,22 @@ Two deliberate departures from `noa-old` on the runner side:
 - **An add writes the normalised form**, because that is what membership was decided on and what
   the operator approved on the card.
 
-**The runner re-reads before it decides.** PMG has no compare-and-set token, so the approval
-window is checked against the *fact* the operator approved — is the address on the list? —
-re-measured at run time. An address somebody else whitelisted while the card sat pending is a
-`no_op`, not a failure.
+**The runner re-reads before it decides** (§V.98's fact half). PMG has no compare-and-set
+token, so the approval window is checked against the *fact* the operator approved — is the address
+on the list? — re-measured at run time. An address somebody else whitelisted while the card sat
+pending is a `no_op`, not a failure.
 
 **The postflight re-reads the list** (§V.97): not the `200 OK` on stdout, which only says PMG
 accepted a write. A read that cannot answer is `status: changed` with `verified: false` and
 `verification: unavailable` — never a bare `false` (§V.62's rule, §V.86).
 
-**One bound worth stating.** That postflight verifies PMG's **config**. `pmgconfig sync`'s own
-success is the only thing saying Postfix picked the change up, because NOA reads `mynetworks`
-through `pmgsh` and has no view of Postfix's live table. So a write that landed while the sync
-failed is reported as `pmg_sync_failed` rather than folded into the verdict: the entry is in the
-config and mail flow has not moved, and neither `changed` nor a bare failure says that.
+**One bound worth stating** (§V.99). That postflight verifies PMG's **config**. `pmgconfig
+sync`'s own success is the only thing saying Postfix picked the change up, because NOA reads
+`mynetworks` through `pmgsh` and has no view of Postfix's live table. So a write that landed while
+the sync failed is reported as `pmg_sync_failed` rather than folded into the verdict: the entry is
+in the config and mail flow has not moved, and neither `changed` nor a bare failure says that. For
+the same reason a refused `delete` stops the removal and never syncs — applying a partial removal
+is the whole one reported wrongly.
 
 **§V.96 has no instance here.** A `mynetworks` entry is a CIDR — no comment, no note, no
 description — so nothing C8 keeps from the LLM is written onto a PMG node and nothing NOA wrote
