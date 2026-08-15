@@ -11,7 +11,8 @@ runs, receipts). One of three deployables (C12), with its own `package.json`, lo
 deploy artifact. It shares no source with `apps/web-embed` — `eslint.config.mjs` holds that as a
 rule and `tests/import-firewall.test.ts` exercises the rule.
 
-Never framed: it sends `Content-Security-Policy: frame-ancestors 'none'` (V41, §T.49).
+Never framed: it sends `Content-Security-Policy: frame-ancestors 'none'` (V41, §T.49) — the rule is
+`config/framing.ts`, applied by `next.config.ts`'s `headers()`. See "Framing" below.
 
 ## Ported, not written
 
@@ -76,10 +77,36 @@ already set in the real environment wins over the file.
 `/healthz` is liveness only: it touches no dependency, so a backend outage is never reported as
 this app's. Readiness (`/readyz`, which does read `NOA_API_URL`) arrives with §T.50.
 
+## Framing
+
+`Content-Security-Policy: frame-ancestors 'none'` on every response (§T.49, V41). The rule is
+`config/framing.ts`; `next.config.ts` returns it from `headers()` as ONE entry on `/(.*)`, so the
+pages, `/healthz`, the 404 and the `/api/*` proxy §T.50 adds are covered by the mechanism rather
+than by each route remembering a guard.
+
+It has no configuration, which is the difference from the embed's copy: `apps/web-embed` names one
+legitimate parent through `NOA_LIBRECHAT_ORIGIN` (§T.45), and this app has none, so
+`buildFramingHeaders()` takes no argument and no variable in the shared repo-root `.env` reaches it.
+`tests/next-config-headers.test.ts` asserts the embed's variable means nothing here.
+
+No `X-Frame-Options`: `frame-ancestors` supersedes it wherever both are read, and one added later
+would be honoured *instead* of this header by a client that reads XFO first. Absence asserted, not
+assumed.
+
+`tests/framing-live.server.test.ts` boots `next dev` on an OS-assigned free port and reads the
+header off `/healthz`, `/` (a 307), `/admin/users` and a 404 — the mechanism §T.45 measured for the
+embed is the same one, but a sibling package's measurement is not evidence about this one (B2's
+lesson). Its readiness gate is a TCP connect, not a request to a route under test: a gate pointed at
+the subject turns the subject's failure into a timeout (V90). Mutations proven red before it landed:
+the value changed to `'self'`, the source narrowed to `/admin/:path*` (which leaves `/healthz`, `/`
+and the 404 bare), the header key renamed to `X-Frame-Options`, `headers()` dropped from the config,
+and the server itself never started — that last one fails the lane instead of skipping quietly.
+
 ## Checks
 
 ```bash
 pnpm install && pnpm lint && pnpm typecheck && pnpm test && pnpm build
+pnpm test:server   # the lane that boots a server; own config, excluded from `pnpm test`
 ```
 
 Package-level guards live in `tests/`: `pins.test.ts` (C2), `npmrc.test.ts` (registry routing),
@@ -87,6 +114,6 @@ Package-level guards live in `tests/`: `pins.test.ts` (C2), `npmrc.test.ts` (reg
 
 ## Not here yet
 
-`frame-ancestors 'none'` (§T.49), and the auth/session plumbing: the `/api/*` proxy route, the
-login page and `/readyz` (§T.50). The browser e2e specs that cover the admin verticals stayed in
-the old repo until then — they need the proxy and login route to have a target.
+The auth/session plumbing: the `/api/*` proxy route, the login page and `/readyz` (§T.50). The
+browser e2e specs that cover the admin verticals stayed in the old repo until then — they need the
+proxy and login route to have a target.

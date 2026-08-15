@@ -15,7 +15,8 @@
     "lint:fix": "eslint . --fix",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:server": "vitest run --config vitest.server.config.ts"
   },
   "dependencies": {
     "@gio/bigsu-app-shell": "1.0.3",

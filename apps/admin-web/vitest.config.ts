@@ -18,6 +18,9 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./vitest.setup.ts'],
-    exclude: ['node_modules/**', '.next/**'],
+    // `tests/**/*.server.test.ts` belongs to `vitest.server.config.ts` (`pnpm test:server`): those
+    // specs boot a dev server, which is minutes of runtime this lane should not own. Named here so
+    // a rename cannot quietly hand one to the wrong runner.
+    exclude: ['node_modules/**', '.next/**', 'tests/**/*.server.test.ts'],
   },
 })

@@ -98,7 +98,9 @@ uv run pytest -q
 Per web app: `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` where a browser lane
 exists (`apps/web-embed` boots its own dev server, a stub upstream for the proxy and card specs, and
 a parent page that frames the card the way LibreChat does; run `pnpm exec playwright install
-chromium` once).
+chromium` once). `apps/admin-web` has no browser lane yet; its `pnpm test:server` boots a dev server
+on a free port and reads the framing header off real responses (§T.49) — separate from `pnpm test`
+because it costs minutes.
 
 ## Conventions
 

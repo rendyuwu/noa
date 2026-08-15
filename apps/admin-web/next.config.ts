@@ -1,6 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import type { NextConfig } from 'next'
 
+import { buildFramingHeaders } from './config/framing'
 import { loadRootEnv } from './config/root-env'
 
 // This package is a standalone deploy artifact (C12). It is not part of a pnpm
@@ -20,6 +21,11 @@ const nextConfig: NextConfig = {
   turbopack: {
     root: projectRoot,
   },
+  // Nobody may frame this app (§T.49, V41). One entry on `/(.*)`, so the pages, `/healthz`, the 404
+  // and the `/api/*` proxy §T.50 will add are covered without each route remembering a guard for
+  // itself. Unlike the embed's copy (§T.45), nothing here is read from the environment: there is no
+  // legitimate parent to name, so no variable can widen this at build time or at runtime.
+  headers: async () => buildFramingHeaders(),
 }
 
 export default nextConfig
