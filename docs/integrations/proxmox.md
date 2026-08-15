@@ -105,9 +105,9 @@ the digest in the same body as the change it guards, and Proxmox refuses the wri
 moved in between. A digest-free config handed back to the caller would turn that fail-closed CAS
 into a blind overwrite of whatever another operator just did (§V.62's fail-closed discipline).
 
-**Whose read the digest comes from is a decision, and §T.28 made it**: the runner's own, taken
-milliseconds before the write — not the one the approval card was built from minutes earlier. See
-`proxmox_vm_nic` below for what a gate-time digest would cost.
+**Whose read the digest comes from is a decision, and §T.28 made it — §V.98 carries it**: the
+runner's own, taken milliseconds before the write, not the one the approval card was built from
+minutes earlier. See `proxmox_vm_nic` below for what a gate-time digest would cost.
 
 ## Sync or async, same endpoint
 
@@ -210,8 +210,9 @@ VM. `set_link_down` keeps order, keeps unrecognised segments, and never emits a 
 Proxmox, and it makes a never-disabled NIC and a re-enabled one read identically. `link_down=0` is
 *up*, and a valueless `link_down` is *down*: Proxmox's truthiness, not Python's.
 
-**The digest is the runner's own, not the gate's** — the one place §T.28 departs from `noa-old`
-deliberately, and it is why the section above says the CAS window matters. There the digest was a
+**The digest is the runner's own, not the gate's** (§V.98) — the one place §T.28 departs from
+`noa-old` deliberately, and it is why the section above says the CAS window matters. There the
+digest was a
 *tool argument*: a preflight read it and the model handed it back on the change call, seconds
 apart. An approval gate turns those seconds into minutes, and a gate-time digest then has two
 costs an operator pays. Any unrelated edit to the VM — memory, a disk, a description — answers
