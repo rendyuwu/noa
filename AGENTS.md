@@ -140,5 +140,8 @@ real mechanism before any §V ∨ doc calls it hardened. (C13, V69, V82, V84)
 - `SPEC.md` — goal, constraints, interfaces, invariants, tasks, bugs. Canonical.
 - `DECISIONS.md` — decision notes + measurements. Why, ⊥ what.
 - `FORMAT.md` — SPEC.md format + caveman encoding rules.
+- `docs/AS-BUILT.md` — cold archive, ⊥ loaded per session: as-built deviation detail for done §T
+  rows, §B full narratives, consumed/superseded §R. Sub-clause addresses (`T38(g)`) resolve HERE.
+  A done task's as-built goes here, ⊥ back into `SPEC.md`.
 - `docs/integrations/` — per-system reference (WHM, Proxmox, PMG, yopass). Update in same change as
   the feature.

@@ -41,11 +41,12 @@ ENCRYPTION_KEY_ENV_VAR = ENCRYPTION_KEY_FIELD.upper()
 LEGACY_ENCRYPTION_KEY_FIELD = "noa_db_secret_key"
 
 # Files that carry the rejected name legitimately, because their subject is the prohibition:
-# the two spec artifacts, and this module.
+# the spec artifacts, T67's as-built archive, and this module.
 LEGACY_NAME_ALLOWED_IN = frozenset(
     {
         "SPEC.md",
         "DECISIONS.md",
+        "docs/AS-BUILT.md",
         "apps/api/tests/test_config.py",
     }
 )

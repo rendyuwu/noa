@@ -106,6 +106,12 @@ Human skims fast too. Symbols unambiguous.
 Big project → more sections, not more files. grep ceremony kills agent speed.
 If SPEC.md > 500 lines, compact §B (old bugs drop oldest) before splitting.
 
+**One exception — cold archive.** `docs/AS-BUILT.md` holds history no command reads per
+invocation: as-built deviation detail for `x` tasks, full §B narratives, consumed §R findings.
+Live rows stay in SPEC.md and keep their ids; the archive keeps the sub-clause addresses
+(`T38(g)`) those rows cite. Rule: a row a command must READ stays; a row only a human
+re-litigating a past decision reads goes to the archive.
+
 ## WRITES
 
 | command | writes | section |
