@@ -20,14 +20,21 @@ are given the same id — the same join production makes through `users.id`.
 from __future__ import annotations
 
 import pytest
+from fastmcp.tools import ToolResult
+from mcp import types as mt
 
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.db.lifecycle import ToolRisk
 from core.db.models import ADMIN_ROLE_NAME
-from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
+from noa_api.mcp_rbac import (
+    ERROR_TOOL_NOT_PERMITTED,
+    MESSAGE_TOOL_NOT_PERMITTED,
+    RbacToolMiddleware,
+)
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.noa_read import TOOL_NOA_GET_ACTION_RESULT
 from noa_api.mcp_tools.pmg_read import TOOL_PMG_WHITELIST_LIST, TOOL_PMG_WHITELIST_SEARCH
+from noa_api.mcp_tools.pmg_whitelist import TOOL_PMG_WHITELIST
 from noa_api.mcp_tools.proxmox_nic import TOOL_PROXMOX_VM_NIC
 from noa_api.mcp_tools.proxmox_password import TOOL_PROXMOX_RESET_VM_PASSWORD
 from noa_api.mcp_tools.registry import RegistryError, assert_names_in_catalog, register_mcp_tools
@@ -43,7 +50,12 @@ from noa_api.mcp_tools.whm_read import (
     TOOL_WHM_LIST_SERVERS,
     TOOL_WHM_SEARCH_ACCOUNTS,
 )
-from support.mcp_identity import LIBRECHAT_USER, FakeMcpIdentityRepository
+from support.mcp_identity import (
+    LIBRECHAT_USER,
+    FakeMcpIdentityRepository,
+    authenticated_caller,
+    http_request_context,
+)
 from support.mcp_mount import McpSession, mounted_app, open_session
 from support.rbac import ROLE_SUPPORT, FakeAuthorizationRepository
 from support.servers import build_tool_context, whm_server
@@ -51,7 +63,8 @@ from support.servers import build_tool_context, whm_server
 # What this build registers, in the order `tools/list` sorts them. A literal rather than a set
 # derived from `register_mcp_tools`: an `admin` sees exactly this, so a tool added without
 # anyone noticing it became visible to every admin should fail here rather than be asserted
-# against itself. Grows with each of §T.20-31 and §T.63.
+# against itself. Grew with each of §T.20-31 and §T.63, and §T.29 closed it: this is now the
+# whole of `TOOL_CATALOG`, which is asserted below rather than left as a coincidence.
 REGISTERED_TOOLS = sorted(
     [
         TOOL_WHM_LIST_SERVERS,
@@ -66,22 +79,35 @@ REGISTERED_TOOLS = sorted(
         TOOL_PROXMOX_VM_NIC,
         TOOL_PMG_WHITELIST_SEARCH,
         TOOL_PMG_WHITELIST_LIST,
+        TOOL_PMG_WHITELIST,
         TOOL_NOA_GET_ACTION_RESULT,
     ]
 )
 
-# A catalogued tool this build does not register yet (T29, `pmg_whitelist`).
-# Standing in for what a client holding a stale catalog, or a prompt-injected call, would name.
-# It was `whm_list_accounts` until T20 built that one, `pmg_whitelist_list` until T30 did,
-# `proxmox_reset_vm_password` until T27 did and `proxmox_vm_nic` until T28 did — the stand-in has
-# to be a name the registry genuinely does not know, or this file asserts V10 against a tool that
-# answers. **One catalogued name is now unbuilt**, so when T29 lands this constant has nothing
-# left to point at: at that moment the assertions that use it are the ones to delete, ⊥ to
-# re-point at a name outside the catalog, which is what `UNKNOWN_TOOL` already covers.
-UNREGISTERED_TOOL = "pmg_whitelist"
+# **There is no catalogued-but-unregistered name left.** T29 registered `pmg_whitelist`, the
+# last one, so the stand-in this file carried through T20, T27, T28 and T30 has nothing to point
+# at any more. Its assertions are not simply deleted, which would leave V83(c) — the gate carries
+# the *registered* set and intersects with it — covered by nothing: they move to a probe that
+# builds the middleware with a registered set of its own
+# (`test_a_catalogued_tool_this_server_did_not_register_is_refused_in_noas_shape`). A predicate
+# that no longer separates against production is one to keep separating against a fixture, not
+# one to drop (V87, and `test_change_runner_registry`'s probe one guard over).
 
 # Never in the catalog at all (V10).
 UNKNOWN_TOOL = "whm_delete_everything"
+
+
+class _CallToolProbe:
+    """The one field `RbacToolMiddleware.on_call_tool` reads off a `MiddlewareContext`.
+
+    A stand-in rather than a real context because building one means building a fastmcp request
+    the gate never looks at: it reads `context.message.name` and hands the context to
+    `call_next`, which the probe below never lets run. Everything else in that path — the
+    identity, the authorization service, the intersection — is production.
+    """
+
+    def __init__(self, tool_name: str) -> None:
+        self.message = mt.CallToolRequestParams(name=tool_name, arguments={})
 
 
 @pytest.fixture
@@ -254,27 +280,61 @@ def test_an_admin_sees_every_registered_tool(scenario) -> None:
     assert sorted(session.tool_names()) == REGISTERED_TOOLS
 
 
-@pytest.mark.parametrize("tool_name", [UNREGISTERED_TOOL, UNKNOWN_TOOL])
-def test_an_admin_cannot_call_a_tool_that_is_not_registered(
-    scenario,
-    tool_name: str,
-) -> None:
-    """V10's second half, and the reason the two names give the same answer.
+def test_an_admin_cannot_call_a_tool_the_catalog_does_not_know(scenario) -> None:
+    """V10's second half: an admin bypasses the grant table, not existence.
 
-    `proxmox_reset_vm_password` is catalogued but unbuilt (T27); `whm_delete_everything` is
-    neither.
-    An admin's grant set is the whole *catalog*, so without the registered-name intersection
-    in `RbacToolMiddleware` the first of these would sail past the gate and come back as
-    fastmcp's `Unknown tool` — a different shape, and one that says which catalogued tools
-    exist yet. Both are refused with `tool_not_permitted` instead.
+    `whm_delete_everything` is in no catalog and no registry, and it comes back as
+    `tool_not_permitted` — the same code a missing grant gets, so the refusal is not an oracle
+    over which names exist (V83(d)).
     """
     sign_in, _ = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,))
 
-    result = session.call_tool(tool_name)
+    result = session.call_tool(UNKNOWN_TOOL)
 
     assert result["isError"] is True
     assert result["structuredContent"]["error_code"] == ERROR_TOOL_NOT_PERMITTED
+
+
+async def test_a_catalogued_tool_this_server_did_not_register_is_refused_in_noas_shape() -> None:
+    """V83(c)'s probe: the gate carries the registered set and intersects with it.
+
+    An `admin`'s grant set is the whole *catalog* (V10), so a catalogued name this build did not
+    register would sail past the permission check and reach fastmcp's own `Unknown tool` — a
+    different shape, and one that answers which catalogued tools are built yet. The intersection
+    in `RbacToolMiddleware._permitted_tools` is what stops that.
+
+    Driven against the middleware directly rather than the mount, because as of T29 the registry
+    and the catalog are the same fourteen names and production has no such gap left. Handing this
+    one an empty registered set is how the branch keeps separating — the same argument
+    `test_change_runner_registry`'s no-runner probe makes for a guard that now always passes
+    (V87). The identity still comes from `get_access_token()`'s own scope key, so what is
+    doubled here is the registered set and nothing about how the caller was resolved.
+
+    `call_next` raises: the point is that the tool is never dispatched, not that its answer was
+    discarded.
+    """
+    authorization = FakeAuthorizationRepository()
+    user = authorization.add_user("operator@example.com", roles=(ADMIN_ROLE_NAME,))
+    tools = build_tool_context(authorization=authorization)
+    gate = RbacToolMiddleware(context=tools.context, registered_tools=frozenset())
+    caller, _ = authenticated_caller(user_id=user.id)
+
+    async def call_next(_: object) -> ToolResult:
+        raise AssertionError("the gate dispatched a tool this server never registered")
+
+    with http_request_context({}, user=caller):
+        result = await gate.on_call_tool(
+            _CallToolProbe(TOOL_WHM_LIST_SERVERS),  # type: ignore[arg-type]
+            call_next,  # type: ignore[arg-type]
+        )
+
+    assert result.is_error is True
+    assert result.structured_content == {
+        "ok": False,
+        "error_code": ERROR_TOOL_NOT_PERMITTED,
+        "message": MESSAGE_TOOL_NOT_PERMITTED,
+    }
 
 
 # --- I.mcp: the registry ---
@@ -296,6 +356,20 @@ async def test_the_registry_reports_exactly_what_it_registered() -> None:
     listed = {tool.name for tool in await server.list_tools(run_middleware=False)}
 
     assert set(reported) == listed
+
+
+def test_the_registered_surface_is_the_whole_catalog() -> None:
+    """I.mcp's fourteen tools, and the reason this file no longer carries a stand-in (T29).
+
+    An equality, and it is meant to be brittle in one direction: a catalogued name added
+    without a registrar puts the gap back, and the thing that goes with a gap is the
+    catalogued-but-unregistered assertion this file used to make against production. Failing
+    here is how that gets noticed, rather than by an `admin` meeting fastmcp's `Unknown tool`.
+
+    The subset check below stays: `⊆` is the invariant (V10, C22), and this is a fact about
+    today's surface.
+    """
+    assert sorted(TOOL_CATALOG) == REGISTERED_TOOLS
 
 
 def test_every_registered_tool_name_is_in_the_catalog() -> None:

@@ -15,12 +15,15 @@ callers get the same mapping. `noa_api.mcp_tools.registry` calls it to assert **
 registered CHANGE tool with no runner is a change an operator could approve and NOA could never
 run — and `noa_api.main` calls it to build the executor.
 
-**Six runners today** (T22 `whm_suspend_account`, T23 `whm_unsuspend_account`, T25
-`whm_firewall_release_and_allow`, T26 `whm_firewall_allowlist_remove`, T27
-`proxmox_reset_vm_password`, T28 `proxmox_vm_nic`). T29 is unbuilt, so the executor's
-`change_runner_unavailable` path is still reachable for its name — a named terminal failure
-with a receipt, not a run left `STARTED` forever, which is what made shipping the executor before
-its first tool safe rather than a silent hole (T37(a)'s argument for the seam).
+**Seven runners, one per exposed CHANGE tool** (T22 `whm_suspend_account`, T23
+`whm_unsuspend_account`, T25 `whm_firewall_release_and_allow`, T26
+`whm_firewall_allowlist_remove`, T27 `proxmox_reset_vm_password`, T28 `proxmox_vm_nic`, T29
+`pmg_whitelist`). As of T29 the mapping covers the whole registered CHANGE surface, so
+`registry.assert_change_runners_cover` has nothing left to catch — which is a property to keep
+rather than a check to drop: the executor's `change_runner_unavailable` path stays, because a
+named terminal failure with a receipt is what makes the *next* CHANGE tool safe to register
+before its runner lands (T37(a)'s argument for the seam), and the registry check is what makes
+sure it never has to.
 
 **What a runner is.** A `ChangeRunner` takes a `ChangeExecutionRequest` — the tool name, the
 arguments the gate recorded, the preflight evidence the operator approved against, and the
@@ -40,6 +43,7 @@ from __future__ import annotations
 
 from core.approvals.execution import ChangeRunner
 from noa_api.mcp_tools.context import McpToolContext
+from noa_api.mcp_tools.pmg_whitelist_runner import build_pmg_whitelist_runners
 from noa_api.mcp_tools.proxmox_nic_runner import build_proxmox_nic_runners
 from noa_api.mcp_tools.proxmox_password_runner import build_proxmox_password_runners
 from noa_api.mcp_tools.whm_account_change import build_whm_account_change_runners
@@ -60,6 +64,7 @@ def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
         **build_whm_firewall_allowlist_runners(context=context),
         **build_proxmox_password_runners(context=context),
         **build_proxmox_nic_runners(context=context),
+        **build_pmg_whitelist_runners(context=context),
     }
 
 

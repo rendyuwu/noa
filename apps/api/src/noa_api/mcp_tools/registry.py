@@ -52,6 +52,7 @@ from noa_api.mcp_tools.change_runners import build_change_runners
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.noa_read import register_noa_read_tools
 from noa_api.mcp_tools.pmg_read import register_pmg_read_tools
+from noa_api.mcp_tools.pmg_whitelist import register_pmg_whitelist_tools
 from noa_api.mcp_tools.proxmox_nic import register_proxmox_nic_tools
 from noa_api.mcp_tools.proxmox_password import register_proxmox_password_tools
 from noa_api.mcp_tools.whm_account_change import register_whm_account_change_tools
@@ -77,6 +78,7 @@ def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str,
         **register_proxmox_password_tools(server, context=context),
         **register_proxmox_nic_tools(server, context=context),
         **register_pmg_read_tools(server, context=context),
+        **register_pmg_whitelist_tools(server, context=context),
         **register_noa_read_tools(server, context=context),
     }
     assert_names_in_catalog(frozenset(registered))

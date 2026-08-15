@@ -193,11 +193,11 @@ column be migrated in place.
 
 ## The exposed tools
 
-Two READs today, and they split by **size, not by subject** (§V.64): a membership question
-answers in the transcript, a whole whitelist does not. Both run the same internal read —
-`read_pmg_mynetworks` in `noa_api/mcp_tools/pmg_read.py` — which resolves the server inside one
-database session, closes it, then runs `pmgsh ls` and parses the output. Only what they do with
-the entries differs.
+Three: two READs and one CHANGE. The READs split by **size, not by subject** (§V.64) — a
+membership question answers in the transcript, a whole whitelist does not. All three run the same
+internal read — `read_pmg_mynetworks` in `noa_api/mcp_tools/pmg_read.py` — which resolves the
+server inside one database session, closes it, then runs `pmgsh ls` and parses the output. Only
+what they do with the entries differs.
 
 ### `pmg_whitelist_search`
 
@@ -244,18 +244,84 @@ Three things worth knowing:
   (`result_table_unavailable`) rather than answering with the address of a table that is not
   there.
 
+### `pmg_whitelist`
+
+`pmg_whitelist(server_ref, action, target)` (CHANGE, §T.29) adds one address to `mynetworks` or
+removes it. One tool with an `action` enum where `noa-old` had `pmg_whitelist_add` and
+`pmg_whitelist_remove` (DECISIONS §9); the recorded cost is that RBAC gets coarser — a role
+cannot be granted one direction without the other.
+
+It is in **two halves on either side of the approval boundary** (§V.22):
+`noa_api/mcp_tools/pmg_whitelist.py` runs the in-process preflight and opens an `action_requests`
+row and can change nothing, and `noa_api/mcp_tools/pmg_whitelist_runner.py` performs the change
+and is reachable only from `core/approvals/execution.py` after an operator approved. There is no
+`reason` parameter and nowhere to add one (C8, §V.15, §V.43).
+
+**Both spellings of the target travel everywhere.** `ipaddress` masks host bits, so
+`203.0.113.10/24` is a request about `203.0.113.0/24` — and where the search tool only *answers*
+about the masked form, this one **writes** it. The operator's own text and the normalised form are
+on the card, in the no-op sentence and in the result (§V.59).
+
+**Two no-ops, and neither opens a card**: `add` against an address already on the list, and
+`remove` against one that is not. There is nothing for an operator to authorise, and the answer is
+built from the node's name, the two spellings and one measured boolean rather than from the
+`pmgsh` output it was decided from (§V.26).
+
+**A read that cannot answer refuses.** PMG answers over one transport, so there is no partial case
+for §V.86 to bound: a failed `pmgsh ls` keeps its own code (`ssh_sudo_required` vs
+`pmgsh_command_failed`) and no card is opened.
+
+Two deliberate departures from `noa-old` on the runner side:
+
+- **A removal takes every matching line, each named by PMG's own spelling.** `mynetworks` can hold
+  `1.2.3.4` and `1.2.3.4/32` at once — one entry to a reader, two lines in the file. `noa-old`
+  deduplicated while parsing and sent one `delete` for the *normalised* form, which leaves the
+  duplicate standing and aims `pmgsh delete /config/mynetworks/<cidr>` at a path segment PMG may
+  never have printed. The runner deletes the token `pmgsh ls` emitted.
+- **An add writes the normalised form**, because that is what membership was decided on and what
+  the operator approved on the card.
+
+**The runner re-reads before it decides.** PMG has no compare-and-set token, so the approval
+window is checked against the *fact* the operator approved — is the address on the list? —
+re-measured at run time. An address somebody else whitelisted while the card sat pending is a
+`no_op`, not a failure.
+
+**The postflight re-reads the list** (§V.97): not the `200 OK` on stdout, which only says PMG
+accepted a write. A read that cannot answer is `status: changed` with `verified: false` and
+`verification: unavailable` — never a bare `false` (§V.62's rule, §V.86).
+
+**One bound worth stating.** That postflight verifies PMG's **config**. `pmgconfig sync`'s own
+success is the only thing saying Postfix picked the change up, because NOA reads `mynetworks`
+through `pmgsh` and has no view of Postfix's live table. So a write that landed while the sync
+failed is reported as `pmg_sync_failed` rather than folded into the verdict: the entry is in the
+config and mail flow has not moved, and neither `changed` nor a bare failure says that.
+
+**§V.96 has no instance here.** A `mynetworks` entry is a CIDR — no comment, no note, no
+description — so nothing C8 keeps from the LLM is written onto a PMG node and nothing NOA wrote
+can come back through a later READ. The runner never reads `request.reason`, and that is asserted
+against a sentinel on the payload, the summary, the receipt and every composed command. It is also
+why a backend failure message travels whole here while T26 cuts its own: csf quotes an entry NOA
+wrote a comment onto, and `pmgsh` has no comment to quote.
+
+| Code | Meaning |
+|---|---|
+| `invalid_whitelist_target` | Not an IP address or CIDR network. A hostname is refused, not resolved. |
+| `target_required` | Blank or whitespace-only target. |
+| `invalid_action` | Not `add` or `remove`. The schema publishes the enum; this is the body's own re-check. |
+| `pmg_server_unavailable` | The `pmg_servers` row named on the evidence is gone. Post-approval only. |
+| `change_evidence_unusable` | The approved request did not survive its JSONB round trip in runnable form. |
+| `pmg_sync_failed` | `pmgsh` wrote the entry and `pmgconfig sync` failed — config moved, Postfix did not. |
+| `postflight_failed` | The command was accepted and a fresh read says the list did not move. |
+
 ## Not built yet
 
 | Surface | Task |
 |---|---|
-| MCP tool `pmg_whitelist(action: add\|remove)` | §T.29 |
 | Admin routes `/admin/pmg/servers…` + `POST …/validate` | §T.54 |
 | `pmg_servers` create / update / delete (`core/servers/pmg_repository.py` is reads only) | §T.54 |
 
-`noa-old` exposed `pmg_whitelist_add` and `pmg_whitelist_remove` as two tools plus
-`pmg_list_servers` and `pmg_validate_server`. Here the pair collapses into one
-`pmg_whitelist(action: add|remove)` (DECISIONS §9), and the two server tools become internal
-functions (I.mcp) — they are not on the 14-tool exposed list.
+`noa-old` also exposed `pmg_list_servers` and `pmg_validate_server`. Here those two become
+internal functions (I.mcp) — they are not on the 14-tool exposed list.
 
 ## Code references
 
@@ -265,10 +331,13 @@ functions (I.mcp) — they are not on the 14-tool exposed list.
 - `mynetworks` parsing + normalisation: `core/integrations/pmg/mynetworks.py`
 - Errors: `core/integrations/pmg/errors.py`
 - Inventory + reference resolution: `core/servers/pmg_repository.py`, `core/servers/pmg_ref.py`
-- MCP tools: `apps/api/src/noa_api/mcp_tools/pmg_read.py`
+- MCP tools: `apps/api/src/noa_api/mcp_tools/pmg_read.py` (READ),
+  `apps/api/src/noa_api/mcp_tools/pmg_whitelist.py` (CHANGE, the gate half),
+  `apps/api/src/noa_api/mcp_tools/pmg_whitelist_runner.py` (CHANGE, the post-approval half)
 - Large-result table surface: `apps/api/src/noa_api/mcp_tools/table_surface.py`,
   `core/results/tables.py` (§T.56)
 - Shared SSH layer: `core/remote_exec/` (§T.14)
 - Tests: `apps/api/tests/test_pmg_ssh_config.py`, `test_pmg_pmgsh_cli.py`,
   `test_pmg_mynetworks.py`, `test_pmg_server_ref.py`, `test_pmg_server_repository.py`,
-  `test_pmg_tools_whitelist_search.py`, `test_pmg_tools_whitelist_list.py`
+  `test_pmg_tools_whitelist_search.py`, `test_pmg_tools_whitelist_list.py`,
+  `test_pmg_tools_whitelist.py`, `test_pmg_whitelist_runner.py`
