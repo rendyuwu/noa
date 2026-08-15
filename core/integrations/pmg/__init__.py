@@ -29,9 +29,10 @@ caller, where the refusal names the PMG server.
 `mynetworks` is the only PMG endpoint this layer touches (V58). Everything it exposes is a read
 or a write against `/config/mynetworks`, plus the version probe T54's validate route uses.
 
-Consumers: the PMG tools `pmg_whitelist` (T29), `pmg_whitelist_list` (T30) and
-`pmg_whitelist_search` (T31 — the one that exists), plus the admin server CRUD + validate
-routes (T54). Reference doc: `docs/integrations/pmg.md`.
+Consumers: the PMG READ tools `pmg_whitelist_search` (T31) and `pmg_whitelist_list` (T30),
+which share one read of `mynetworks` and differ only in what they do with the entries; the
+CHANGE tool `pmg_whitelist` (T29, still to come); and the admin server CRUD + validate routes
+(T54). Reference doc: `docs/integrations/pmg.md`.
 
 Not ported from `MCP`: `pmg/server_ref.py` — reference resolution is inventory, not integration,
 so PMG's landed in `core/servers/pmg_ref.py` at T31 exactly where WHM's did at T19 — and
@@ -44,6 +45,7 @@ from core.integrations.pmg.mynetworks import (
     find_matching_entries,
     normalize_cidr,
     parse_mynetworks_entries,
+    sort_entries,
 )
 from core.integrations.pmg.pmgsh_cli import (
     MYNETWORKS_PATH,
@@ -96,4 +98,5 @@ __all__ = [
     "run_pmgconfig_sync_restart",
     "run_pmgsh_command",
     "run_pmgsh_json",
+    "sort_entries",
 ]

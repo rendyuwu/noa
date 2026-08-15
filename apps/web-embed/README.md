@@ -123,8 +123,9 @@ from one of them (V66, V94).
 `/tables/[token]` is where a large READ's rows are read. A tool whose answer is a listing —
 `whm_list_accounts` (§T.20), `pmg_whitelist_list` (§T.30) — parks the rows in `tool_result_tables`
 and answers the model with a short summary plus this page's address, so the body costs no tokens and
-never enters a transcript LibreChat's administrator can read (V26). `whm_list_accounts` is built and
-is this route's first producer; `pmg_whitelist_list` follows at §T.30.
+never enters a transcript LibreChat's administrator can read (V26). Both are built:
+`whm_list_accounts` was this route's first producer, and `pmg_whitelist_list` is the second — a
+different system, a different transport, the same page and no per-tool branch anywhere in it.
 
 Read the same way the card is: the page is a **server component**, it forwards the incoming `Cookie`
 header (`src/lib/tables/detail.ts`), and the HTML that reaches the frame is already the operator's
@@ -240,9 +241,9 @@ Playwright needs a browser once: `pnpm exec playwright install chromium`.
 
 ## Still to come
 
-Nothing of this app's own. `/tables/[token]` has a producer in production as of §T.20
-(`whm_list_accounts`); the second one, §T.30 `pmg_whitelist_list`, is an API-side row that is not
-built yet.
+Nothing of this app's own. `/tables/[token]` has had a producer in production since §T.20
+(`whm_list_accounts`) and a second since §T.30 (`pmg_whitelist_list`) — both API-side, and neither
+needed a change here.
 
 This app has no login page, no LDAP form and no credential handling, and nothing in it navigates the
 frame (V38, V42, §T.43) — see *When NOA does not know who you are* above.

@@ -27,7 +27,7 @@ from core.db.models import ADMIN_ROLE_NAME
 from noa_api.mcp_rbac import ERROR_TOOL_NOT_PERMITTED
 from noa_api.mcp_server import build_mcp_server
 from noa_api.mcp_tools.noa_read import TOOL_NOA_GET_ACTION_RESULT
-from noa_api.mcp_tools.pmg_read import TOOL_PMG_WHITELIST_SEARCH
+from noa_api.mcp_tools.pmg_read import TOOL_PMG_WHITELIST_LIST, TOOL_PMG_WHITELIST_SEARCH
 from noa_api.mcp_tools.registry import RegistryError, assert_names_in_catalog, register_mcp_tools
 from noa_api.mcp_tools.whm_firewall import TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES
 from noa_api.mcp_tools.whm_read import (
@@ -51,15 +51,17 @@ REGISTERED_TOOLS = sorted(
         TOOL_WHM_SEARCH_ACCOUNTS,
         TOOL_WHM_PREFLIGHT_FIREWALL_ENTRIES,
         TOOL_PMG_WHITELIST_SEARCH,
+        TOOL_PMG_WHITELIST_LIST,
         TOOL_NOA_GET_ACTION_RESULT,
     ]
 )
 
-# A catalogued tool this build does not register yet (T30, `pmg_whitelist_list`). Standing in
-# for what a client holding a stale catalog, or a prompt-injected call, would name. It was
-# `whm_list_accounts` until T20 built that one — the stand-in has to be a name the registry
-# genuinely does not know, or this file asserts V10 against a tool that answers.
-UNREGISTERED_TOOL = "pmg_whitelist_list"
+# A catalogued tool this build does not register yet (T27, `proxmox_reset_vm_password`).
+# Standing in for what a client holding a stale catalog, or a prompt-injected call, would name.
+# It was `whm_list_accounts` until T20 built that one and `pmg_whitelist_list` until T30 did —
+# the stand-in has to be a name the registry genuinely does not know, or this file asserts V10
+# against a tool that answers. Proxmox has no tool module at all, so this one moves last.
+UNREGISTERED_TOOL = "proxmox_reset_vm_password"
 
 # Never in the catalog at all (V10).
 UNKNOWN_TOOL = "whm_delete_everything"
@@ -227,7 +229,7 @@ def test_an_admin_sees_every_registered_tool(scenario) -> None:
 
     The list is the *intersection* of the catalog and what is registered, which is why this
     asserts against the registered set rather than against `TOOL_CATALOG` — the remaining
-    catalogued names have no implementation yet (T22-T30).
+    catalogued names have no implementation yet (T22-T29).
     """
     sign_in, _ = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,))
@@ -242,7 +244,8 @@ def test_an_admin_cannot_call_a_tool_that_is_not_registered(
 ) -> None:
     """V10's second half, and the reason the two names give the same answer.
 
-    `pmg_whitelist_list` is catalogued but unbuilt (T30); `whm_delete_everything` is neither.
+    `proxmox_reset_vm_password` is catalogued but unbuilt (T27); `whm_delete_everything` is
+    neither.
     An admin's grant set is the whole *catalog*, so without the registered-name intersection
     in `RbacToolMiddleware` the first of these would sail past the gate and come back as
     fastmcp's `Unknown tool` — a different shape, and one that says which catalogued tools

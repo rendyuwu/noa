@@ -7,6 +7,12 @@ the model costs tokens for a body no human reads there anyway. So the rows go to
 `tool_result_tables` (`core.results.tables`) and the tool answers with a summary plus the
 address of the page that renders them.
 
+**Two producers, and nothing here is either of theirs**: `whm_list_accounts` (T20) over HTTP
+and `pmg_whitelist_list` (T30) over SSH hand rows to the same two calls, declare their own
+columns and their own order, and add no branch to this module. That is what V64 means by a
+shared capability rather than a per-tool special case, and the second producer is what turned
+it from a claim into something a test can fail.
+
 **Two calls, like the CHANGE gate next door.** `park_table_result` writes the row and hands
 back the token and the counts; `build_table_result` turns those into the tool result. Split
 for the reason T32/T33 are: the first touches the database and the second is pure, so the

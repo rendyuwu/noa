@@ -42,17 +42,30 @@ defect):
   could make the id column get parsed in its place.
 - **Duplicates are kept.** `noa-old` deduplicated by normalised form while parsing. Two
   spellings of one address in `mynetworks` are a fact about the whitelist, and a search that
-  drops one reports a list its own source does not have. A caller that wants unique CIDRs (T30)
-  can collapse them where the collapsing is visible.
+  drops one reports a list its own source does not have. `pmg_whitelist_list` (T30) keeps them
+  too, for the same reason one layer up: a listing that collapses two identical lines describes
+  a file PMG does not have, and a removal (T29) has to know both lines are there.
 
 Entries keep `cidr` — the token exactly as PMG printed it — beside `normalized`. That is the
 evidence an operator reads: the two differ whenever the whitelist stores a bare host, and only
 the raw form tells them what is actually in the file.
+
+## Order
+
+Parsing preserves PMG's own, and `sort_entries` is opt-in beside it, because the two callers
+owe different things. `pmg_whitelist_search` (T31) reports *membership*: it hands back the
+entries that matched, in the order the file holds them, and re-ordering there would only make
+one fact harder to check against the box. `pmg_whitelist_list` (T30) reports a *listing* that
+may be capped by the table surface, and V85's ordering clause lands on the producer —
+`core.results.tables.cap_rows` keeps a prefix and never re-sorts, so an unsorted listing would
+make a capped page an arbitrary subset that changes between two identical calls. `pmgsh ls`
+prints in whatever order PMG stores, which is documented nowhere.
 """
 
 from __future__ import annotations
 
 import ipaddress
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 
@@ -105,6 +118,31 @@ def parse_mynetworks_entries(output: str) -> list[MynetworksEntry]:
     return entries
 
 
+def _entry_sort_key(entry: MynetworksEntry) -> tuple[int, int, int, str]:
+    """A total order over entries that `ipaddress` objects cannot give directly.
+
+    An `IPv4Network` and an `IPv6Network` do not compare, so the address family leads and the
+    address itself travels as an integer rather than as an object. The prefix length breaks a
+    tie between a network and a host route inside it (`10.0.0.0/8` before `10.0.0.0/32`), and
+    the raw `cidr` breaks the last one — two spellings of the same entry are kept (they are a
+    fact about the whitelist), so without it their order would be the input's.
+
+    `normalized` always parses: it came out of `normalize_cidr`.
+    """
+    network = ipaddress.ip_network(entry.normalized, strict=False)
+    return (network.version, int(network.network_address), network.prefixlen, entry.cidr)
+
+
+def sort_entries(entries: Sequence[MynetworksEntry]) -> list[MynetworksEntry]:
+    """Entries in an order that is the same for the same whitelist, every call (V85).
+
+    For the listing tool, not the search: see the module docstring. Numeric rather than
+    lexicographic, because an operator reading a page of CIDRs reads them as addresses —
+    `10.9.0.0/24` sorts before `10.10.0.0/24` here and after it as text.
+    """
+    return sorted(entries, key=_entry_sort_key)
+
+
 def find_matching_entries(
     entries: list[MynetworksEntry], *, normalized_target: str
 ) -> list[MynetworksEntry]:
@@ -123,4 +161,5 @@ __all__ = [
     "find_matching_entries",
     "normalize_cidr",
     "parse_mynetworks_entries",
+    "sort_entries",
 ]

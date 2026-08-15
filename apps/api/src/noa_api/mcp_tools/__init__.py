@@ -33,15 +33,16 @@ Three rules hold for everything in here.
    that row's `status`, never from an argument and never from an LLM claim (V23); the
    decision itself arrives as a cookie POST from a NOA-origin document (V22, T37).
 
-Landed: `whm_list_servers` (T19), `whm_search_accounts` (T21),
-`whm_preflight_firewall_entries` (T24), `pmg_whitelist_search` (T31),
+Landed: `whm_list_servers` (T19), `whm_list_accounts` (T20), `whm_search_accounts` (T21),
+`whm_preflight_firewall_entries` (T24), `pmg_whitelist_search` (T31), `pmg_whitelist_list` (T30),
 `noa_get_action_result` (T63 — `noa_read.py`, the read side of the approval loop), the CHANGE
 gate's write side (T33 — no CHANGE tool calls it yet), the decision endpoints that answer it
 (T37, `noa_api.api.routes.action_requests`), pending expiry (T39, whose check-on-read T63
 is the first live caller of) and the post-approval executor with its reaper (T38,
 `core.approvals.execution`), the CHANGE gate's result shape (T32, `change_gate.py`) and the
-large-READ table surface's (T56, `table_surface.py` — first parked by `whm_list_accounts` at
-T20, and by `pmg_whitelist_list` when T30 lands). Still to come: the other eight of §I.mcp.
+large-READ table surface's (T56, `table_surface.py` — parked by `whm_list_accounts` at T20 and
+by `pmg_whitelist_list` at T30, which is where "one surface, not a per-tool special case"
+stopped being prose). Still to come: the other seven of §I.mcp, all CHANGE tools.
 
 The executor's dispatch table lives here — `change_runners.build_change_runners` — and is
 **empty** until T22-T29 land. `registry.py` refuses at startup to expose a CHANGE tool with no

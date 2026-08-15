@@ -1,4 +1,4 @@
-"""Doubles for the PMG integration layer and the PMG tool path (T18, T31).
+"""Doubles for the PMG integration layer and the PMG tool path (T18, T30, T31).
 
 `FakePMGServer` is a `PMGServerSecretLike`-shaped dataclass, for the layer that turns a row into
 an `SSHConnectionConfig`. Its credential defaults are plaintext, because those tests are about
@@ -37,6 +37,7 @@ from support.remote_exec import (
     command_result,
     install_fake_ssh_exec,
 )
+from support.result_tables import FakeToolResultTableWriter
 from support.secrets import build_cipher
 from support.servers import ToolFixture, build_tool_context, pmg_server
 
@@ -101,12 +102,17 @@ def whitelist_context(
     servers: list[PMGServer] | None = None,
     ssh_username: str | None = None,
     cipher: SecretCipher | None = None,
+    result_tables: FakeToolResultTableWriter | None = None,
 ) -> tuple[ToolFixture, FakeSSH]:
     """A tool context whose PMG node is reachable only through one recorded `ssh_exec`.
 
     `ssh_username=None` resolves to `root`, which is the plain command shape; the escalation
     case passes one. A test supplying its own `servers` passes the `cipher` it encrypted them
     with, or the fixture would hold a key those rows do not open under.
+
+    `result_tables` is `pmg_whitelist_list`'s seam (T30): the default double records what was
+    parked, and a test passes its own to make the insert fail. The fixture always has one, so
+    the listing tool works here without any test asking for it.
     """
     resolved_cipher = cipher or build_cipher()
     rows = (
@@ -114,7 +120,9 @@ def whitelist_context(
         if servers is not None
         else [whitelist_server(SERVER_NAME, cipher=resolved_cipher, ssh_username=ssh_username)]
     )
-    fixture = build_tool_context(pmg_servers=rows, cipher=resolved_cipher)
+    fixture = build_tool_context(
+        pmg_servers=rows, cipher=resolved_cipher, result_tables=result_tables
+    )
     reply = answer if answer is not None else command_result(stdout=mynetworks_output())
     fake = install_fake_ssh_exec(monkeypatch, pmgsh_cli_mod, lambda _command: reply)
     return fixture, fake

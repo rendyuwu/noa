@@ -75,11 +75,12 @@ CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 # CHANGE branch, which has no registered tool behind it yet.
 CHANGE_TOOL = "whm_suspend_account"
 
-# Catalogued but not registered (T30, `pmg_whitelist_list`) — what a stale client catalog or a
-# prompt-injected call names. Refused by the RBAC gate outside this middleware. It was
-# `whm_list_accounts` until T20 built that one, and a stand-in the registry knows would make
-# "an unregistered name writes no row" a claim about a tool that answers.
-UNREGISTERED_TOOL = "pmg_whitelist_list"
+# Catalogued but not registered (T27, `proxmox_reset_vm_password`) — what a stale client catalog
+# or a prompt-injected call names. Refused by the RBAC gate outside this middleware. It was
+# `whm_list_accounts` until T20 built that one and `pmg_whitelist_list` until T30 did, and a
+# stand-in the registry knows would make "an unregistered name writes no row" a claim about a
+# tool that answers.
+UNREGISTERED_TOOL = "proxmox_reset_vm_password"
 
 
 @pytest.fixture
@@ -320,8 +321,8 @@ def test_a_call_refused_by_rbac_writes_no_row(scenario) -> None:
 def test_an_unregistered_name_writes_no_row(scenario) -> None:
     """V10's refusal is not an execution either, and the risk map is the second guard.
 
-    `pmg_whitelist_list` is catalogued but unbuilt (T30), so an `admin` bypass reaches the
-    gate with it. Neither the gate nor the risk map knows it, and it must not become an
+    `proxmox_reset_vm_password` is catalogued but unbuilt (T27), so an `admin` bypass reaches
+    the gate with it. Neither the gate nor the risk map knows it, and it must not become an
     audit row for a tool that does not exist yet.
     """
     sign_in, runs, _ = scenario

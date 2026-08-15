@@ -23,6 +23,7 @@ from core.integrations.pmg.mynetworks import (
     find_matching_entries,
     normalize_cidr,
     parse_mynetworks_entries,
+    sort_entries,
 )
 from support.pmg import mynetworks_output
 
@@ -156,6 +157,56 @@ def test_a_repeated_cidr_never_makes_the_id_column_stand_in_for_the_address() ->
     entries = parse_mynetworks_entries("1 1.2.3.4/32\n10.0.0.9 1.2.3.4/32\n")
 
     assert [entry.cidr for entry in entries] == ["1.2.3.4/32", "1.2.3.4/32"]
+
+
+# --- V85: a listing's order, which parsing deliberately does not impose ---
+
+
+def test_entries_sort_by_address_rather_than_by_text() -> None:
+    """§V.85's ordering clause, for `pmg_whitelist_list` (T30).
+
+    `10.9.0.0/24` belongs before `10.10.0.0/24`, and sorting the strings puts it after. That is
+    the whole reason this is a key rather than `sorted(entries, key=lambda e: e.normalized)`.
+    """
+    entries = parse_mynetworks_entries(mynetworks_output("10.10.0.0/24", "10.9.0.0/24"))
+
+    assert [entry.cidr for entry in sort_entries(entries)] == ["10.9.0.0/24", "10.10.0.0/24"]
+
+
+def test_a_network_sorts_before_a_host_route_inside_it() -> None:
+    """Same address, two prefixes: the tie breaks on the prefix length, widest first, so a
+    supernet and the hosts under it read down the page in the order an operator expects."""
+    entries = parse_mynetworks_entries(mynetworks_output("10.0.0.0/32", "10.0.0.0/8"))
+
+    assert [entry.cidr for entry in sort_entries(entries)] == ["10.0.0.0/8", "10.0.0.0/32"]
+
+
+def test_mixed_families_sort_without_raising() -> None:
+    """An `IPv4Network` and an `IPv6Network` do not compare, so a key that sorted the objects
+    themselves would raise on any whitelist holding both — and `mynetworks` routinely does.
+    IPv4 leads, because the family is the first element of the key."""
+    entries = parse_mynetworks_entries(
+        mynetworks_output("2001:db8::/32", "10.0.0.0/8", "2001:db8::1")
+    )
+
+    assert [entry.cidr for entry in sort_entries(entries)] == [
+        "10.0.0.0/8",
+        "2001:db8::/32",
+        "2001:db8::1",
+    ]
+
+
+def test_sorting_keeps_both_spellings_of_a_repeated_entry() -> None:
+    """The cut a table applies is a prefix, so dropping a duplicate here would drop a line
+    `mynetworks` really holds — and the raw spelling breaks the last tie, so the pair has a
+    defined order rather than the input's."""
+    entries = parse_mynetworks_entries(mynetworks_output("1.2.3.4/32", "1.2.3.4"))
+
+    assert [entry.cidr for entry in sort_entries(entries)] == ["1.2.3.4", "1.2.3.4/32"]
+
+
+def test_sorting_an_empty_whitelist_is_an_empty_list() -> None:
+    assert sort_entries([]) == []
 
 
 # --- V59: exact membership, never containment ---

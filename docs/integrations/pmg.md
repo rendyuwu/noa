@@ -191,7 +191,15 @@ place for PMG — `resolve_pmg_ssh_config`, taking an injected `SecretCipher` �
 `maybe_decrypt_text`, so a row written before encryption still works. That is what lets the
 column be migrated in place.
 
-## The exposed tool
+## The exposed tools
+
+Two READs today, and they split by **size, not by subject** (§V.64): a membership question
+answers in the transcript, a whole whitelist does not. Both run the same internal read —
+`read_pmg_mynetworks` in `noa_api/mcp_tools/pmg_read.py` — which resolves the server inside one
+database session, closes it, then runs `pmgsh ls` and parses the output. Only what they do with
+the entries differs.
+
+### `pmg_whitelist_search`
 
 `pmg_whitelist_search(server_ref, target)` (READ, §T.31) answers whether one address is on one
 node's `mynetworks` list. It is the discovery step in front of `pmg_whitelist(action)` (§T.29):
@@ -210,12 +218,37 @@ false` against zero parsed entries is a different fact from `exists: false` agai
 hundred, and `pmgsh ls` output alone cannot tell an empty `mynetworks` from a format NOA no
 longer recognises.
 
+### `pmg_whitelist_list`
+
+`pmg_whitelist_list(server_ref)` (READ, §T.30) lists the whole whitelist — and the entries do
+**not** come back in the conversation. They are parked in `tool_result_tables` and the result
+carries a one-line summary, the number of entries, whether the page is capped, and the address
+of `/tables/{token}` on NOA's own origin (§V.64, §T.56). It is that surface's second producer
+after `whm_list_accounts`, and it added nothing to it: a tool hands over rows, its own columns
+and its own order, and the surface does the rest.
+
+Two columns are rendered — PMG's own spelling and the normalised CIDR — because they differ
+whenever `mynetworks` stores a bare host, and only the raw one says what is in the file.
+
+Three things worth knowing:
+
+- **Sorted by address before it is handed over** (§V.85). The table's cap keeps a prefix and
+  never re-sorts, and `pmgsh ls` prints in whatever order PMG stores, so without this a capped
+  page would be an arbitrary subset that differs between two identical calls. Numerically, not
+  as text: `10.9.0.0/24` belongs before `10.10.0.0/24`.
+- **Duplicate lines are listed twice.** `mynetworks` really holds both, and a removal has to
+  take each.
+- **No `limit` argument.** The only bound is the table's own (`RESULT_TABLE_MAX_ROWS`), it
+  is applied at the write, and it is stated both in the text the model reads and on the page
+  the operator opens. A table that could not be written **refuses the READ**
+  (`result_table_unavailable`) rather than answering with the address of a table that is not
+  there.
+
 ## Not built yet
 
 | Surface | Task |
 |---|---|
-| MCP tools `pmg_whitelist(action)` and `pmg_whitelist_list` | §T.29, §T.30 |
-| `pmg_whitelist_list` using the table surface (§V.64) | §T.30 — the surface itself is built (§T.56) |
+| MCP tool `pmg_whitelist(action: add\|remove)` | §T.29 |
 | Admin routes `/admin/pmg/servers…` + `POST …/validate` | §T.54 |
 | `pmg_servers` create / update / delete (`core/servers/pmg_repository.py` is reads only) | §T.54 |
 
@@ -232,8 +265,10 @@ functions (I.mcp) — they are not on the 14-tool exposed list.
 - `mynetworks` parsing + normalisation: `core/integrations/pmg/mynetworks.py`
 - Errors: `core/integrations/pmg/errors.py`
 - Inventory + reference resolution: `core/servers/pmg_repository.py`, `core/servers/pmg_ref.py`
-- MCP tool: `apps/api/src/noa_api/mcp_tools/pmg_read.py`
+- MCP tools: `apps/api/src/noa_api/mcp_tools/pmg_read.py`
+- Large-result table surface: `apps/api/src/noa_api/mcp_tools/table_surface.py`,
+  `core/results/tables.py` (§T.56)
 - Shared SSH layer: `core/remote_exec/` (§T.14)
 - Tests: `apps/api/tests/test_pmg_ssh_config.py`, `test_pmg_pmgsh_cli.py`,
   `test_pmg_mynetworks.py`, `test_pmg_server_ref.py`, `test_pmg_server_repository.py`,
-  `test_pmg_tools_whitelist_search.py`
+  `test_pmg_tools_whitelist_search.py`, `test_pmg_tools_whitelist_list.py`
