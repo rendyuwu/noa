@@ -61,9 +61,10 @@ NOA: MCP server for hosting-infrastructure operations. Exposes 14 RBAC-gated too
 | `/admin/users/{id}/roles` | PUT | Replace user roles |
 | `/admin/users/{id}/tokens` | GET/POST | List tokens / mint new (plaintext once) |
 | `/admin/users/{id}/tokens/{token_id}` | DELETE | Revoke token |
-| `/admin/roles` | GET/POST | List/create roles |
-| `/admin/roles/{name}` | DELETE | Delete role |
-| `/admin/roles/{name}/tools` | GET/PUT | Get/set tool permissions |
+| `/admin/roles` | GET/POST | List/create roles. `admin` VISIBLE in list (real `roles` row, V7) ∧ refused on ∀ write (403 `reserved_role`, V13); internal `user:` roles excluded in the statement (V75). POST idempotent — re-create = 200, ⊥ event, ⊥ commit |
+| `/admin/roles/{name}` | DELETE | Delete role. 403 `reserved_role`, 404 `admin_role_not_found`. Grants + assignments go by `ON DELETE CASCADE` (V14). `{name}` ⊥ a `UUID` path param ⇒ 400 `invalid_role_name` runs on READS too (`GET /roles/..%2Fadmin/tools` = 400, ⊥ 404) — keeps the 400/404 split from naming what the validator accepts |
+| `/admin/roles/{name}/tools` | GET/PUT | Get/set tool permissions. `name=admin` → GET answers the WHOLE catalog, ⊥ `[]` (V10 bypasses the grant table ⇒ `[]` renders permits-nothing while permitting everything); PUT 403 `reserved_role`. PUT refuses unknown names as a SET → 400 `unknown_tools`, offenders in `detail` ⊥ body (V8), existing grants untouched (V100). Answer = grants as STORED after the write (strip, de-dup, sort, re-read), ⊥ echo of the body |
+| `/admin/tools` | GET | Tool catalog — ∀ name a grant may name (V10). Vocabulary of `PUT /roles/{name}/tools`, read off the SAME `AuthorizationService` that validates that write ⇒ offered set ⊥ drift from accepted set (V66). Admin-only ⇒ V83(d)'s one-code-∀-causes rule ⊥ bind here (it binds the MCP surface); C22 names ∉ catalog ⇒ ∉ here |
 | `/admin/audit/tool-runs` | GET | Query tool runs (READ+CHANGE); filters: toolName, status, conversationRef, requestedByEmail, from/to date, cursor pagination |
 | `/admin/audit/tool-runs/{id}` | GET | Tool run detail: args (redacted), result summary, timing |
 | `/admin/whm/servers` | GET/POST | List/create WHM servers |
@@ -353,7 +354,7 @@ T48|x|Admin web: PORT from `noa-old/apps/web-bigsu/src/app/(protected)/admin/` �
 T49|x|Admin web: framing headers — `Content-Security-Policy: frame-ancestors 'none'`|V41
 T50|x|Admin web: auth/session plumbing — proxy API calls, `noa_session` cookie. Login page redirect. Login POST ! be JS `fetch` if it is to work in a tab opened by CLICKING the 401 card's link-out — that tab inherits the frame's sandbox ∧ `allow-forms` ⊥ in it (R32, V94). A native `<form>` login still works for an operator who COPIES the address|I.admin-web,V94,R32
 T51|x|Admin: user management — list, enable/disable, delete, assign roles. 4 routes, ∀ behind `require_admin`: `GET /admin/users`, `PATCH`+`DELETE /admin/users/{user_id}`, `PUT /admin/users/{user_id}/roles`. ⊥ create (§I.admin-api: users born at login, V7). AS BUILT: `docs/AS-BUILT.md` §T51 — T9's engine gained its transaction boundary (⊥ commit ⇒ ∀ write answered 200 over a rollback; `commit()` into Protocol + SQL class, last statement of 6 mutations, ∀ guard raises BEFORE it)|I.admin-api,V4,V6,V7,V8,V10,V11,V12,V13,V14,V73,V75,T9
-T52|x|Admin: role management CRUD — list, create, delete, set tool permissions. `admin` role reserved|I.admin-api,V13
+T52|x|Admin: role management CRUD — list, create, delete, set tool permissions. `admin` role reserved. 6 routes, ∀ behind `require_admin`: `GET`+`POST /admin/roles`, `DELETE /admin/roles/{name}`, `GET`+`PUT /admin/roles/{name}/tools`, `GET /admin/tools`. AS BUILT: `docs/AS-BUILT.md` §T52 — route layer only, ⊥ policy moved (T9's engine already held ∀ guard, ∀ audit event ∧ — after T51 — `commit()`); `GET /admin/tools` shipped ∉ §I.admin-api ∧ this amend adds the row|I.admin-api,V8,V10,V13,V14,V66,V73,V100,T9,T51
 T53|.|Admin: token management — list tokens per user, mint (show-once plaintext), revoke|I.admin-api,V2
 T54|.|Admin: server management — WHM/Proxmox/PMG CRUD + validate (SSH connect, fingerprint capture, TOFU refresh)|I.admin-api
 T55|.|Admin: audit — tool runs list (filters: toolName, status, conversationRef, user, date range, cursor pagination), detail view (args redacted, result summary, timing)|I.admin-api,V45,V47
