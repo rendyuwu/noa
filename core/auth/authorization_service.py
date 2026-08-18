@@ -25,6 +25,15 @@ Three rules the implementation is shaped around:
    invariants about the data, so they hold for any caller — a future CLI or migration
    script included. `noa-old` had them here too, but re-derived each HTTP status in every
    route; here the error class carries it (V73).
+4. **Every mutation commits, and the commit is the last thing it does** (T51). V14 says a
+   permission update takes effect immediately, which is only true of a write that ended its
+   transaction: the repository flushes and `noa_api.api.deps.get_db_session` never commits,
+   so a service that left the boundary to its caller would have five routes answering 200
+   over a rollback. Here, as in `AuthService.authenticate` and
+   `ActionDecisionService.approve`, the service owns it — and because every guard raises
+   *before* the commit, a refused change persists nothing. The audit event is recorded first,
+   so the change and the record of it land in the same transaction (once a `SQLAdminAuditSink`
+   exists — the structlog sink is outside it by nature).
 
 Departures from `noa-old`, each with a test:
 
@@ -171,10 +180,13 @@ class AuthorizationService:
         self._reject_reserved_role(role_name)
 
         if await self._repository.role_exists(role_name):
+            # No write, so no event and no commit: re-creating an existing role changes
+            # nothing, and a commit here would be a transaction boundary around a read.
             return role_name
 
         created = await self._repository.ensure_role(role_name)
         await self._record(EVENT_ROLE_CREATED, actor_email, created, {"role": created})
+        await self._repository.commit()
         return created
 
     async def delete_role(self, name: str, *, actor_email: str | None = None) -> None:
@@ -191,6 +203,7 @@ class AuthorizationService:
             raise RoleNotFoundError(f"role `{role_name}` does not exist")
 
         await self._record(EVENT_ROLE_DELETED, actor_email, role_name, {"role": role_name})
+        await self._repository.commit()
 
     async def get_role_tools(self, name: str) -> list[str]:
         """Tool grants held by a role.
@@ -230,6 +243,7 @@ class AuthorizationService:
         await self._record(
             EVENT_ROLE_TOOLS_UPDATED, actor_email, role_name, {"role": role_name, "tools": stored}
         )
+        await self._repository.commit()
         return stored
 
     # --- User administration (V12, V13) ---
@@ -269,6 +283,7 @@ class AuthorizationService:
             str(user_id),
             {"target_user_id": str(user_id), "roles": authorized.roles},
         )
+        await self._repository.commit()
         return authorized
 
     async def set_user_active(
@@ -335,6 +350,10 @@ class AuthorizationService:
                 "revoked_mcp_tokens": revoked_tokens,
             },
         )
+        # The status flip, the token revoke and the event are one transaction, ended here
+        # (T51). Both guards above raise before it, so a refused disable revokes nothing and
+        # persists nothing.
+        await self._repository.commit()
         return authorized
 
     async def delete_user(
@@ -377,6 +396,7 @@ class AuthorizationService:
             str(user_id),
             {"target_user_id": str(user_id), "email": snapshot.email},
         )
+        await self._repository.commit()
         return snapshot
 
     # --- Internals ---

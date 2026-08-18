@@ -14,9 +14,12 @@ Ported from `noa-old` branch `MCP` (`core/auth/authorization_repository.py` +
    T9 could read them, V66). `noa-old` used a mixin; composition keeps T8's class
    untouched and reads the same.
 
-Every method takes the caller's `AsyncSession` and flushes rather than commits. The
-transaction boundary belongs to the request (see `noa_api.api.deps`), so a role rename and
-its audit event land together or not at all.
+Every method takes the caller's `AsyncSession` and flushes rather than commits, so a role
+rename and everything that follows it land together or not at all. `commit()` (T51) is the
+one method that ends the transaction, and `AuthorizationService` is its only caller: T9
+shipped without it because it had no HTTP caller, which meant the first route to reach this
+class would have answered 200 and persisted nothing. `SQLAuthRepository.commit` is the same
+method one taxonomy over, for the same reason (T8).
 """
 
 from __future__ import annotations
@@ -262,6 +265,18 @@ class SQLAuthorizationRepository:
         result = await self._session.execute(delete(McpToken).where(McpToken.user_id == user_id))
         await self._session.flush()
         return int(result.rowcount or 0)
+
+    # --- Transaction boundary (T51) ---
+
+    async def commit(self) -> None:
+        """End the transaction every method above flushed into.
+
+        Delegated to the session rather than to `SQLAuthRepository.commit`, even though that
+        method exists and this class composes that object: both would commit the *same*
+        session, so routing through it would only add a hop that reads like the two classes
+        have separate transactions. They do not — one request, one session, one commit.
+        """
+        await self._session.commit()
 
 
 __all__ = ["SQLAuthorizationRepository"]

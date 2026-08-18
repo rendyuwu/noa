@@ -712,3 +712,68 @@ async def test_audit_event_carries_no_credentials(rbac: RbacFixture) -> None:
     payload = repr(rbac.audit.events[-1])
     for forbidden in ("password", "secret", "token", "hash"):
         assert forbidden not in payload.lower()
+
+
+# --- T51: the transaction boundary (V14's premise) ---
+
+
+async def test_every_mutation_commits_exactly_once(rbac: RbacFixture) -> None:
+    """T51: a write that never ends its transaction takes effect never (V14).
+
+    The same six mutations the audit test walks, counted instead of listed: the repository
+    flushes and nothing else commits on the request path, so a mutation added without a
+    `commit()` would answer 200 over a rollback. One commit each, not one per statement —
+    a disable, its token revoke and its event are one unit of work.
+    """
+    admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
+    rbac.repository.add_user(OTHER_ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
+    target = rbac.repository.add_user(OPERATOR_EMAIL, mcp_tokens=2)
+
+    await rbac.service.create_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
+    await rbac.service.set_role_tools(ROLE_SUPPORT, [TOOL_READ], actor_email=ADMIN_EMAIL)
+    await rbac.service.set_user_roles(
+        target.id, [ROLE_SUPPORT], actor_email=ADMIN_EMAIL, actor_user_id=admin.id
+    )
+    await rbac.service.set_user_active(
+        target.id, is_active=False, actor_email=ADMIN_EMAIL, actor_user_id=admin.id
+    )
+    await rbac.service.delete_user(target.id, actor_email=ADMIN_EMAIL, actor_user_id=admin.id)
+    await rbac.service.delete_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
+
+    assert rbac.repository.commits == 6
+
+    # Reads end no transaction, for the same reason they log no event.
+    await rbac.service.list_roles()
+    await rbac.service.get_permitted_tools(admin.id)
+
+    assert rbac.repository.commits == 6
+
+
+async def test_an_idempotent_create_role_commits_nothing(rbac: RbacFixture) -> None:
+    """Re-creating an existing role changes nothing, so there is nothing to commit."""
+    await rbac.service.create_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
+    assert rbac.repository.commits == 1
+
+    await rbac.service.create_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
+
+    assert rbac.repository.commits == 1
+
+
+async def test_a_refused_mutation_commits_nothing(rbac: RbacFixture) -> None:
+    """Every guard raises before the commit, so a refusal leaves the row as it was.
+
+    The committed snapshot is the assertion surface: the disable flips nothing here, but a
+    future refusal ordered *after* a write would pass a "row unchanged" check on the mutable
+    dict alone and fail this one (`support.rbac`'s snapshot, `FakeAuthRepository`'s trick).
+    """
+    admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,), mcp_tokens=3)
+
+    with pytest.raises(SelfDeactivateAdminError):
+        await rbac.service.set_user_active(
+            admin.id, is_active=False, actor_email=ADMIN_EMAIL, actor_user_id=admin.id
+        )
+
+    assert rbac.repository.commits == 0
+    assert rbac.repository.committed_users == {}
+    assert rbac.repository.users[admin.id].is_active is True
+    assert rbac.repository.mcp_tokens[admin.id] == 3

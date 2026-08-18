@@ -15,17 +15,18 @@ the assertion surface.
 `RecordingAuditSink` keeps every event, so V14's "admin changes produce audit events" is
 asserted per operation instead of inferred from a log line nobody parses.
 
-`admin_probe_app` mounts one throwaway route behind `require_admin`. T9 ships no `/admin`
-routes — T51-T55 own those — but V13's "non-admin users → 403 on admin endpoints" is a
-property of the dependency, and this is the smallest thing that proves the dependency
-enforces it.
+`admin_probe_app` mounts one throwaway route behind `require_admin`, because V13's "non-admin
+users → 403 on admin endpoints" is a property of the *dependency* and this is the smallest
+thing that proves the dependency enforces it. It stays after T51 shipped the first real
+`/admin` routes: the property should hold for a route nobody has written yet. The harness for
+the shipped routes is `support.admin`, which puts this repository behind them.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -103,6 +104,12 @@ class FakeAuthorizationRepository:
         # Read counters — see the module docstring (V6, V14).
         self.user_reads = 0
         self.grant_reads = 0
+        # Commit counter and snapshot (T51). Same trick as `FakeAuthRepository`: a double that
+        # only mutated dicts cannot tell a written row from a committed one, and "a refused
+        # disable persists nothing" is a claim about the second.
+        self.commits = 0
+        self.committed_users: dict[UUID, FakeUserRecord] = {}
+        self.committed_user_roles: dict[UUID, set[str]] = {}
 
     # --- Reads on the permission path ---
 
@@ -191,17 +198,33 @@ class FakeAuthorizationRepository:
         `test_rbac_repository.py`."""
         return self.mcp_tokens.pop(user_id, 0)
 
+    # --- Transaction boundary (T51) ---
+
+    async def commit(self) -> None:
+        """Snapshot every row, so a test can separate "written" from "committed"."""
+        self.commits += 1
+        self.committed_users = {user_id: replace(user) for user_id, user in self.users.items()}
+        self.committed_user_roles = {
+            user_id: set(names) for user_id, names in self.user_roles.items()
+        }
+
     # --- Test helpers ---
 
     def add_user(
         self,
         email: str,
         *,
+        user_id: UUID | None = None,
         is_active: bool = True,
         roles: tuple[str, ...] = (),
         mcp_tokens: int = 0,
     ) -> FakeUserRecord:
-        user = FakeUserRecord(id=uuid4(), email=email, display_name=email, is_active=is_active)
+        """Add a `users` row. `user_id` is passed when a caller needs it to match another
+        double's id — `support.admin` mirrors the signed-in actor into both repositories so
+        V12's self-deactivate and self-delete guards are reachable from HTTP."""
+        user = FakeUserRecord(
+            id=user_id or uuid4(), email=email, display_name=email, is_active=is_active
+        )
         self.users[user.id] = user
         for role in roles:
             self.roles.add(role)

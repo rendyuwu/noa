@@ -359,3 +359,19 @@ def test_auth_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> N
     paths = set(main.create_app().openapi()["paths"])
 
     assert {"/auth/login", "/auth/logout", "/auth/me", "/health"} <= paths
+
+
+def test_admin_user_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> None:
+    """T51: the `/admin/users` router is wired in `create_app`, not only in `support.admin`.
+
+    The gap this closes is real: `test_admin_user_routes.py` builds its own app, so an
+    `include_router` line missing from `create_app` would leave every one of those tests green
+    while the panel got a 404 from the deployed API.
+    """
+    schema = main.create_app().openapi()["paths"]
+
+    assert {"/admin/users", "/admin/users/{user_id}", "/admin/users/{user_id}/roles"} <= set(schema)
+    # The methods §I.admin-api names, so a route added under the wrong verb is caught here too.
+    assert set(schema["/admin/users"]) == {"get"}
+    assert set(schema["/admin/users/{user_id}"]) == {"patch", "delete"}
+    assert set(schema["/admin/users/{user_id}/roles"]) == {"put"}

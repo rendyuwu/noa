@@ -58,6 +58,7 @@ from noa_api.api.deps import (
 )
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
+from noa_api.api.routes.admin_users import router as admin_users_router
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.api.routes.result_tables import router as result_tables_router
 from noa_api.mcp_request_auth import build_mcp_auth_context
@@ -219,7 +220,7 @@ def build_lifespan(
 def create_app() -> FastAPI:
     """Build the FastAPI app with the MCP server mounted at `/mcp` (T13, I.mcp).
 
-    Router set still to land: `/admin` (T51-T55).
+    Router set still to land: the rest of `/admin` — roles, tokens, servers, audit (T52-T55).
 
     Three things about the mount are load-bearing:
 
@@ -269,6 +270,10 @@ def create_app() -> FastAPI:
     # decision routes rather than inside them: a parked listing has nothing to authorise, and
     # the service behind this one can write nothing at all.
     app.include_router(result_tables_router)
+    # Admin user management (T51, I.admin-api). Every route behind `require_admin` (V13) and
+    # therefore behind V6's row re-read: the panel's own surface, never the LLM's — the MCP mount
+    # below cannot reach it, and this router holds no tool.
+    app.include_router(admin_users_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

@@ -106,6 +106,14 @@ class AuthorizationRepository(Protocol):
     # second repository would need a second transaction to go wrong in.
     async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int: ...
 
+    # --- Transaction boundary (T51) ---
+
+    # Every method above flushes; this is what makes the flush durable. On the repository
+    # rather than in a route because the service is what knows a mutation succeeded — see
+    # `AuthorizationService`'s docstring, and `AuthRepository.commit` for the same shape one
+    # taxonomy over (T8, V66).
+    async def commit(self) -> None: ...
+
 
 __all__ = [
     "AuthorizationRepository",

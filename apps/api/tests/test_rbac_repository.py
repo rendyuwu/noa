@@ -418,3 +418,42 @@ async def test_service_resolves_permissions_over_real_sql(session: AsyncSession)
     await repository.update_user_active(operator.id, is_active=False)
 
     assert await service.get_permitted_tools(operator.id) == set()
+
+
+# --- T51: the transaction boundary, with a witness ---
+
+
+async def test_commit_makes_a_disable_outlive_the_request(
+    session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """T51: flushed is not persisted, and only a second connection can tell the difference.
+
+    The repository flushes; `commit()` is what the `/admin/users` routes need in order to mean
+    anything, because `noa_api.api.deps.get_db_session` never commits. Inside this session both
+    look identical — the flushed row reads back changed either way — so the assertion is made
+    from a *separate* session.
+
+    `colleague` is the negative control (V89's shape, one mechanism over): the same write through
+    the repository alone, checked before anything commits, so a green result here cannot come
+    from an observer that simply reads its own session or one that cannot see a change at all.
+    """
+    service = AuthorizationService(
+        repository=SQLAuthorizationRepository(session), audit_sink=RecordingAuditSink()
+    )
+    target = await make_user(session, EMAIL, roles=(ROLE_SUPPORT,))
+    colleague = await make_user(session, OTHER_EMAIL, roles=(ROLE_SUPPORT,))
+    # Commit the two users, so the disables below are the only writes under test.
+    await session.commit()
+
+    async def observed_active(user_id: object) -> bool:
+        async with session_factory() as observer:
+            result = await observer.execute(sa.select(User.is_active).where(User.id == user_id))
+            return bool(result.scalar_one())
+
+    # Negative control: flush only.
+    await SQLAuthorizationRepository(session).update_user_active(colleague.id, is_active=False)
+    assert await observed_active(colleague.id) is True
+
+    await service.set_user_active(target.id, is_active=False, actor_email=ADMIN_EMAIL)
+
+    assert await observed_active(target.id) is False
