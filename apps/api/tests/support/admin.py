@@ -1,4 +1,4 @@
-"""An app carrying the real `/admin` routes, over in-memory doubles (T51, T52).
+"""An app carrying the real `/admin` and `/me` routes, over in-memory doubles (T51, T52, T53).
 
 Same split every route test in this suite uses: the router, `require_admin`,
 `require_session_user`, the real `AuthService`, the real `AuthorizationService`, the real
@@ -6,19 +6,24 @@ Same split every route test in this suite uses: the router, `require_admin`,
 So a 403 here is the shipped 403, a 409 is the shipped 409, and the V12 guards run for real.
 `SQLAuthorizationRepository` gets its own live-database coverage in `test_rbac_repository.py`.
 
-**Two repositories, one identity.** The session path resolves the caller through
-`support.auth`'s `FakeAuthRepository`, while the admin routes read and write
-`support.rbac`'s `FakeAuthorizationRepository` — the same split production has, where
-`AuthService` and `AuthorizationService` hold different repositories over one session.
-`sign_in` therefore writes the actor into *both*, under one id. Without that, `actor_user_id`
-could never equal a target's id and V12's self-deactivate, self-delete and self-demote refusals
-would be unreachable from HTTP — the tests would pass while asserting nothing.
+**Three repositories, one identity.** The session path resolves the caller through
+`support.auth`'s `FakeAuthRepository`, the admin routes read and write `support.rbac`'s
+`FakeAuthorizationRepository`, and T53's token routes read and write
+`support.mcp_tokens`'s `FakeMcpTokenRepository` — the same split production has, where three
+services hold different repositories over one session. `sign_in` and `add_target` therefore
+write each user into *all three*, under one id. Without that, `actor_user_id` could never equal
+a target's id and V12's self-deactivate, self-delete and self-demote refusals would be
+unreachable from HTTP — the tests would pass while asserting nothing — and every token route
+would answer 404 `user_not_found` for a user the panel can see.
 
-**Both admin routers are mounted, not one per harness.** T52's role routes and T51's user routes
+**Every router is mounted, not one per harness.** T52's role routes and T51's user routes
 share the actor, the gate and one `AuthorizationService` over one repository, and V14's
 "permission updates take effect immediately" is a claim that spans them: a `PUT
 /admin/roles/{name}/tools` has to be visible in the very next `GET /admin/users`. Two harnesses
 could not express that without a second repository, i.e. without the thing being asserted.
+T53's routers join for a second reason: `/me/mcp-tokens` is gated by `require_session_user`
+while `/admin/users/{id}/tokens` is gated by `require_admin`, and the difference between them
+is only observable when one signed-in actor can try both.
 """
 
 from __future__ import annotations
@@ -33,6 +38,7 @@ from fastapi.testclient import TestClient
 
 from core.auth.authorization_service import AuthorizationService
 from core.auth.jwt_service import JWTService
+from core.auth.mcp_token_service import McpTokenService
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.config import Settings
 from core.db.models import ADMIN_ROLE_NAME
@@ -43,10 +49,13 @@ from noa_api.api.deps import (
     STATE_SETTINGS,
     get_auth_service,
     get_authorization_service,
+    get_mcp_token_service,
 )
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_users import router as admin_users_router
+from noa_api.api.routes.mcp_tokens import admin_router as admin_tokens_router
+from noa_api.api.routes.mcp_tokens import me_router as me_tokens_router
 from support.auth import (
     COOKIE_NAME,
     FakeAuthRepository,
@@ -54,6 +63,7 @@ from support.auth import (
     build_settings,
     override_auth_service_factory,
 )
+from support.mcp_tokens import FakeMcpTokenRepository
 from support.rbac import (
     FakeAuthorizationRepository,
     FakeUserRecord,
@@ -67,6 +77,12 @@ OPERATOR_EMAIL = "operator@example.com"
 USERS_PATH = "/admin/users"
 ROLES_PATH = "/admin/roles"
 TOOLS_PATH = "/admin/tools"
+ME_TOKENS_PATH = "/me/mcp-tokens"
+
+
+def admin_tokens_path(user_id: UUID) -> str:
+    """`/admin/users/{user_id}/tokens` — spelled once so a route rename lands in one place."""
+    return f"{USERS_PATH}/{user_id}/tokens"
 
 
 @dataclass
@@ -93,6 +109,7 @@ class AdminHarness:
     jwt_service: JWTService
     auth_repository: FakeAuthRepository
     repository: FakeAuthorizationRepository
+    token_repository: FakeMcpTokenRepository
     audit: RecordingAuditSink
     notifier: RecordingToolListNotifier
 
@@ -103,11 +120,12 @@ class AdminHarness:
         roles: tuple[str, ...] = (ADMIN_ROLE_NAME,),
         mcp_tokens: int = 0,
     ) -> SignedInUser:
-        """Put an active user's session cookie on the client, mirrored into both doubles."""
+        """Put an active user's session cookie on the client, mirrored into all three doubles."""
         session_row = self.auth_repository.add_active_user(email, roles=roles)
         record = self.repository.add_user(
             email, user_id=session_row.id, roles=roles, mcp_tokens=mcp_tokens
         )
+        self.token_repository.add_user(session_row.id)
         issued = self.jwt_service.create_access_token(email=email, user_id=session_row.id)
         self.client.cookies.set(COOKIE_NAME, issued.token)
         return SignedInUser(id=session_row.id, email=email, session=session_row, record=record)
@@ -121,9 +139,27 @@ class AdminHarness:
         mcp_tokens: int = 0,
     ) -> FakeUserRecord:
         """A user the admin routes act on. No session: they never sign in."""
-        return self.repository.add_user(
+        record = self.repository.add_user(
             email, is_active=is_active, roles=roles, mcp_tokens=mcp_tokens
         )
+        self.token_repository.add_user(record.id)
+        return record
+
+    def mint_token(self, user_id: UUID, *, label: str | None = None) -> dict[str, object]:
+        """`POST /admin/users/{id}/tokens` → the whole body, plaintext included (T53)."""
+        response = self.client.post(admin_tokens_path(user_id), json={"label": label})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        assert isinstance(body, dict)
+        return body
+
+    def list_tokens(self, user_id: UUID) -> list[dict[str, object]]:
+        """`GET /admin/users/{id}/tokens` → the `tokens` array (T53)."""
+        response = self.client.get(admin_tokens_path(user_id))
+        assert response.status_code == 200, response.text
+        tokens = response.json()["tokens"]
+        assert isinstance(tokens, list)
+        return tokens
 
     def grant(self, role_name: str, *tool_names: str) -> None:
         """Give a role tool grants, through the same shape the SQL stores them in."""
@@ -163,16 +199,18 @@ def admin_harness(
     settings: Settings | None = None,
     known_tools: frozenset[str] = TOOL_CATALOG,
 ) -> Iterator[AdminHarness]:
-    """An app with the `/admin/users` and `/admin/roles` routes, wired to in-memory doubles.
+    """An app with the `/admin` and `/me` routes, wired to in-memory doubles.
 
-    Two dependency overrides and nothing else: `get_auth_service` (so the cookie resolves
-    without Postgres or LDAP) and `get_authorization_service` (so the routes read the fake
-    RBAC repository). `require_admin` itself is never overridden — it is the thing under test on
-    every route.
+    Three dependency overrides and nothing else: `get_auth_service` (so the cookie resolves
+    without Postgres or LDAP), `get_authorization_service` (so the routes read the fake RBAC
+    repository) and `get_mcp_token_service` (so T53's routes read the fake token repository).
+    `require_admin` and `require_session_user` are never overridden — they are the thing under
+    test on every route.
     """
     resolved_settings = settings or build_settings()
     auth_repository = FakeAuthRepository()
     repository = FakeAuthorizationRepository()
+    token_repository = FakeMcpTokenRepository()
     audit = RecordingAuditSink()
     # T66/V74. Shares the repository's ordered `calls` log, so a route test can assert the
     # notification followed the commit — the property that keeps a client from being told to
@@ -184,6 +222,8 @@ def admin_harness(
     install_error_handling(app)
     app.include_router(admin_users_router)
     app.include_router(admin_roles_router)
+    app.include_router(admin_tokens_router)
+    app.include_router(me_tokens_router)
 
     # The same attributes `noa_api.main.lifespan` writes, minus the engine no test here needs.
     setattr(app.state, STATE_SETTINGS, resolved_settings)
@@ -200,6 +240,13 @@ def admin_harness(
         known_tools=known_tools,
         tool_list_notifier=notifier,
     )
+    # One audit sink across both services, like production's: an assertion about "the admin
+    # trail" reads one ordered log, and a token event landing in a second list would be
+    # invisible to a test that walks the first.
+    app.dependency_overrides[get_mcp_token_service] = lambda: McpTokenService(
+        repository=token_repository,
+        audit_sink=audit,
+    )
 
     with TestClient(app) as client:
         yield AdminHarness(
@@ -209,6 +256,7 @@ def admin_harness(
             jwt_service=jwt_service,
             auth_repository=auth_repository,
             repository=repository,
+            token_repository=token_repository,
             audit=audit,
             notifier=notifier,
         )
@@ -216,6 +264,7 @@ def admin_harness(
 
 __all__ = [
     "ADMIN_EMAIL",
+    "ME_TOKENS_PATH",
     "OPERATOR_EMAIL",
     "ROLES_PATH",
     "TOOLS_PATH",
@@ -223,4 +272,5 @@ __all__ = [
     "AdminHarness",
     "SignedInUser",
     "admin_harness",
+    "admin_tokens_path",
 ]

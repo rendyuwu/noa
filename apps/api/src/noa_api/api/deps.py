@@ -44,6 +44,8 @@ from core.auth.errors import AuthSessionInvalidError
 from core.auth.jwt_service import JWTService
 from core.auth.ldap_service import LDAPService
 from core.auth.login_rate_limiter import LoginRateLimiter
+from core.auth.mcp_token_repository import SQLMcpTokenRepository
+from core.auth.mcp_token_service import McpTokenService
 from core.auth.tool_list_notifications import ToolListChangedNotifier
 from core.config import Settings
 from core.db.models import ADMIN_ROLE_NAME
@@ -333,6 +335,32 @@ def get_authorization_service(
 AuthorizationServiceDep = Annotated[AuthorizationService, Depends(get_authorization_service)]
 
 
+def get_mcp_token_service(session: SessionDep, settings: SettingsDep) -> McpTokenService:
+    """Mint / list / revoke for `mcp_tokens`, wired to this request's session (T10, T53).
+
+    Built per request like `AuthorizationService` above, and for the same reason: the write and
+    its audit event share one transaction, and the service commits that transaction itself
+    (V100) because `get_db_session` does not.
+
+    No tool-list notifier, unlike the RBAC engine beside it. Minting or revoking a credential
+    changes *who* a caller is, never *what* their roles permit, so there is no catalog for a
+    connected client to refetch — and V1's per-call re-check is what makes a revoked token stop
+    working, on the next request, with nothing to announce.
+
+    `mcp_token_ttl_seconds` is `None` by default (T5), which means the row lives until someone
+    deletes it. That is the primary retirement path by design: V4's LDAP revalidation and admin
+    revoke retire a credential, an expiry is only an extra bound.
+    """
+    return McpTokenService(
+        repository=SQLMcpTokenRepository(session),
+        audit_sink=StructlogAdminAuditSink(),
+        ttl_seconds=settings.mcp_token_ttl_seconds,
+    )
+
+
+McpTokenServiceDep = Annotated[McpTokenService, Depends(get_mcp_token_service)]
+
+
 async def require_admin(current_user: SessionUserDep) -> SessionUser:
     """Gate every `/admin` route on the `admin` role (V13).
 
@@ -363,6 +391,7 @@ __all__ = [
     "AuthorizationServiceDep",
     "JWTServiceDep",
     "LDAPServiceDep",
+    "McpTokenServiceDep",
     "ResultTableServiceDep",
     "SessionDep",
     "SessionUserDep",
@@ -376,6 +405,7 @@ __all__ = [
     "get_db_session",
     "get_jwt_service",
     "get_ldap_service",
+    "get_mcp_token_service",
     "get_result_table_service",
     "get_session_factory",
     "get_settings_dep",

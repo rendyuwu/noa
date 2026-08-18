@@ -43,7 +43,6 @@ in the engine's taxonomy.
 
 from __future__ import annotations
 
-from datetime import datetime
 from uuid import UUID
 
 from fastapi import APIRouter, status
@@ -53,19 +52,9 @@ from core.auth.authorization_types import AuthorizedUser
 from core.db.models import is_internal_role
 from noa_api.api.admin_errors import DirectGrantsDisabledError
 from noa_api.api.deps import AdminUserDep, AuthorizationServiceDep
+from noa_api.api.serialization import iso_or_none
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-def _iso(value: datetime | None) -> str | None:
-    """Timestamps as ISO-8601 strings, `None` preserved.
-
-    Explicit rather than left to FastAPI's datetime encoder so the wire format is decided here
-    and not by a serializer setting — the panel parses these with `formatDate` /
-    `formatRelativeTime`, and `last_login_at: null` is what its "Pending" status is derived from
-    (`apps/admin-web/src/lib/admin/users/user-status.ts`).
-    """
-    return value.isoformat() if value is not None else None
 
 
 class AdminUserResponse(BaseModel):
@@ -129,14 +118,19 @@ class DeleteUserResponse(BaseModel):
 
 
 def _to_user_response(user: AuthorizedUser) -> AdminUserResponse:
-    """Shape one `AuthorizedUser` for the wire. See the module docstring for the two omissions."""
+    """Shape one `AuthorizedUser` for the wire. See the module docstring for the two omissions.
+
+    `iso_or_none` keeps `null` as `null` rather than collapsing it to a string, which the panel
+    depends on: `last_login_at: null` is where its "Pending" status comes from
+    (`apps/admin-web/src/lib/admin/users/user-status.ts`).
+    """
     return AdminUserResponse(
         id=str(user.user_id),
         email=user.email,
         display_name=user.display_name,
         is_active=user.is_active,
-        created_at=_iso(user.created_at),
-        last_login_at=_iso(user.last_login_at),
+        created_at=iso_or_none(user.created_at),
+        last_login_at=iso_or_none(user.last_login_at),
         roles=[role for role in user.roles if not is_internal_role(role)],
         tools=user.tools,
     )

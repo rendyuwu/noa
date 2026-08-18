@@ -9,6 +9,10 @@ the mint/list/revoke rules are exercised for real — only the SQL is faked.
 is the point: a double that dropped the digest could not prove the service never leaks it,
 because there would be nothing to leak. The tests assert on `stored_hashes` directly.
 
+It also records commits (T53, V100). An in-memory double has no rollback, so "the row is
+there" is true whether or not a boundary exists; `commits` and `committed` are what let a test
+assert that a mutation ended in a commit and that a refused one ended in none.
+
 `RecordingAuditSink` is reused from `support.rbac` rather than reimplemented (V66).
 """
 
@@ -47,6 +51,12 @@ class FakeMcpTokenRepository:
         self.users: set[UUID] = set()
         self.tokens: dict[UUID, StoredToken] = {}
         self._clock = NOW
+        # Commit counter and snapshot (T53, V100). The same trick `FakeAuthorizationRepository`
+        # uses: an in-memory double cannot roll back, so without recording *what was committed*
+        # a test cannot tell a written row from a durable one — which is exactly the difference
+        # B10 turned out to hinge on.
+        self.commits = 0
+        self.committed: dict[UUID, StoredToken] = {}
 
     # --- Protocol ---
 
@@ -88,16 +98,40 @@ class FakeMcpTokenRepository:
         del self.tokens[token_id]
         return True
 
+    async def commit(self) -> None:
+        """Snapshot every row, so a test can separate "written" from "committed" (V100)."""
+        self.commits += 1
+        self.committed = dict(self.tokens)
+
     # --- Test helpers ---
 
-    def add_user(self) -> UUID:
-        user_id = uuid4()
-        self.users.add(user_id)
-        return user_id
+    def add_user(self, user_id: UUID | None = None) -> UUID:
+        """Register a `users` row.
+
+        `user_id` is passed when a caller needs it to match another double's id —
+        `support.admin` mirrors every user it creates into this repository so the token routes
+        and the RBAC routes act on one identity.
+        """
+        resolved = user_id or uuid4()
+        self.users.add(resolved)
+        return resolved
 
     @property
     def stored_hashes(self) -> list[str]:
         return [stored.token_hash for stored in self.tokens.values()]
+
+    @property
+    def stored_values(self) -> list[str]:
+        """Every string this repository holds, for a "the plaintext is nowhere" assertion."""
+        return [
+            str(value)
+            for stored in self.tokens.values()
+            for value in (
+                stored.token_hash,
+                stored.view.token_prefix,
+                stored.view.label,
+            )
+        ]
 
 
 @dataclass

@@ -10,6 +10,11 @@ A scratch database is created, migrated with `alembic upgrade head`, and dropped
 
 One end-to-end case sits at the bottom: the real `McpTokenService` over this repository, so
 V2's mint→list→revoke cycle is proved once against real SQL and not only against a double.
+
+Below that, the two cases T53 added (V100). They are here rather than with the route tests
+because the property is invisible to a double: an in-memory repository cannot roll back, so
+"flushed" and "committed" read identically. Only a second connection separates them, and that
+is what B10 turned out to hinge on.
 """
 
 from __future__ import annotations
@@ -28,7 +33,7 @@ from core.auth.mcp_token_service import (
     generate_mcp_token,
     hash_mcp_token,
 )
-from core.db.models import User
+from core.db.models import McpToken, User
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.mcp_tokens import LABEL, OTHER_LABEL
 from support.rbac import RecordingAuditSink
@@ -303,3 +308,92 @@ async def test_service_mints_lists_and_revokes_over_real_sql(session: AsyncSessi
     await service.revoke(user.id, minted.token.id, actor_email=EMAIL)
 
     assert await service.list_for_user(user.id) == []
+
+
+# --- T53: the transaction boundary, with a witness (V100) ---
+
+
+async def test_commit_makes_a_mint_outlive_the_request(
+    session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """V100: flushed is not persisted, and only a second connection can tell the difference.
+
+    The repository flushes; `commit()` is what `POST /admin/users/{id}/tokens` needs in order to
+    mean anything, because `noa_api.api.deps.get_db_session` never commits. Inside this session
+    both look identical — the flushed row reads back either way — so the assertion is made from
+    a *separate* session. Without the boundary the route would answer 200 with a plaintext and
+    the row would vanish at teardown: the operator holds a credential that authenticates
+    nothing, and nothing anywhere reports an error.
+
+    The direct `insert` is the negative control (V87, and B10's own shape): the same write
+    through the repository alone, checked before anything commits, so a green result here
+    cannot come from an observer that reads its own session or one that can see nothing at all.
+    """
+    service = McpTokenService(
+        repository=SQLMcpTokenRepository(session), audit_sink=RecordingAuditSink()
+    )
+    user = await make_user(session, EMAIL)
+    colleague = await make_user(session, OTHER_EMAIL)
+    # Commit the two users, so the token writes below are the only ones under test.
+    await session.commit()
+
+    async def observed_token_ids(user_id: object) -> set[object]:
+        async with session_factory() as observer:
+            result = await observer.execute(
+                sa.select(McpToken.id).where(McpToken.user_id == user_id)
+            )
+            return set(result.scalars().all())
+
+    # Negative control: flush only.
+    flushed = await SQLMcpTokenRepository(session).insert(
+        user_id=colleague.id,
+        token_hash=hash_mcp_token(generate_mcp_token()),
+        token_prefix=PREFIX,
+        label=OTHER_LABEL,
+        expires_at=None,
+    )
+    assert await observed_token_ids(colleague.id) == set()
+
+    minted = await service.mint(user.id, label=LABEL, actor_email=EMAIL)
+
+    assert await observed_token_ids(user.id) == {minted.token.id}
+    # The control's row is now visible too — the mint's commit ended the shared transaction.
+    # Asserted so the control's silence above is read as "not yet committed", never as "this
+    # observer cannot see inserts".
+    assert flushed.id in await observed_token_ids(colleague.id)
+
+
+async def test_commit_makes_a_revoke_outlive_the_request(
+    session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """V100(b): the same boundary on the write that *removes* a credential.
+
+    The dangerous direction. An uncommitted revoke answers 200, the panel stops listing the
+    token, and the row — with every request it authenticates — survives the request that
+    deleted it.
+    """
+    service = McpTokenService(
+        repository=SQLMcpTokenRepository(session), audit_sink=RecordingAuditSink()
+    )
+    user = await make_user(session, EMAIL)
+    colleague = await make_user(session, OTHER_EMAIL)
+    minted = await service.mint(user.id, label=LABEL, actor_email=EMAIL)
+    theirs = await service.mint(colleague.id, label=OTHER_LABEL, actor_email=EMAIL)
+
+    async def observed_token_ids(user_id: object) -> set[object]:
+        async with session_factory() as observer:
+            result = await observer.execute(
+                sa.select(McpToken.id).where(McpToken.user_id == user_id)
+            )
+            return set(result.scalars().all())
+
+    assert await observed_token_ids(user.id) == {minted.token.id}
+
+    # Negative control: the identical delete through the repository alone, flush only.
+    assert await SQLMcpTokenRepository(session).delete_for_user(colleague.id, theirs.token.id)
+    assert await observed_token_ids(colleague.id) == {theirs.token.id}
+
+    await service.revoke(user.id, minted.token.id, actor_email=EMAIL)
+
+    assert await observed_token_ids(user.id) == set()
+    assert await observed_token_ids(colleague.id) == set()

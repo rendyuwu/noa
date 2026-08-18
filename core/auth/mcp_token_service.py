@@ -25,11 +25,18 @@ Three properties the implementation is shaped around:
    and `/admin/users/{id}/tokens/{token_id}` (T53) both call `revoke(user_id, token_id)`,
    so neither can delete a row belonging to someone else by guessing an id, and a foreign
    id answers exactly as an unknown one does (existence ⊥ leak, the V27/V76 principle).
+4. **Every mutation commits, and the commit is the last thing it does** (T53, V100). Added
+   with the routes rather than at T10, and the gap in between is the lesson: the repository
+   flushed, `noa_api.api.deps.get_db_session` never commits, and no test could see the
+   difference because a flushed row reads back identically inside its own session. B10 found
+   the same hole in T9's engine. Both guards raise before the commit, so a refused mint
+   persists nothing.
 
 Deliberately NOT here, each owned by a later task: TOFU binding of `librechat_user_id` and
 LDAP staleness revalidation (T11, V3/V4 — mint leaves the column NULL, which is the
-precondition C20 requires), `resolve_mcp_identity` (T12, V5), cascade revoke on admin
-disable (T11, V4), and the HTTP routes (T53).
+precondition C20 requires), `resolve_mcp_identity` (T12, V5), and cascade revoke on admin
+disable (T11, V4). The HTTP routes landed at T53
+(`noa_api.api.routes.mcp_tokens`) and hold no policy — every rule is here.
 """
 
 from __future__ import annotations
@@ -134,6 +141,10 @@ class McpTokenRepository(Protocol):
 
     `delete_for_user` takes both ids rather than one: the scoping is part of the query,
     not a check the caller may forget (V2, and the V27/V76 principle for the 404 shape).
+
+    `commit` is on the Protocol rather than left to the caller (T53, V100). The alternative —
+    a route that commits after calling the service — puts the boundary on the *subset of
+    mutations today's caller happens to reach*, which is precisely the trap V100(b) names.
     """
 
     async def user_exists(self, user_id: UUID) -> bool: ...
@@ -151,6 +162,8 @@ class McpTokenRepository(Protocol):
     async def list_for_user(self, user_id: UUID) -> list[McpTokenView]: ...
 
     async def delete_for_user(self, user_id: UUID, token_id: UUID) -> bool: ...
+
+    async def commit(self) -> None: ...
 
 
 class McpTokenService:
@@ -206,6 +219,11 @@ class McpTokenService:
         )
 
         await self._record(EVENT_MCP_TOKEN_MINTED, actor_email, view)
+        # Last statement, after both guards and after the audit event (V100(a)): a refused mint
+        # persists nothing, and the plaintext is not handed back until the row it hashes to is
+        # durable. Returning one over an uncommitted row is worse than failing — the operator
+        # pastes a credential into a config and it authenticates nothing, with no error anywhere.
+        await self._repository.commit()
         return MintedMcpToken(plaintext=plaintext, token=view)
 
     # --- List (V2) ---
@@ -247,6 +265,10 @@ class McpTokenService:
             token_id=token_id,
             user_id=user_id,
         )
+        # V100(b): the *class* of mutations commits, not the one a route reaches first. An
+        # uncommitted revoke is the dangerous half of the pair — the panel would report the
+        # credential gone while the row, and every request it authenticates, survives.
+        await self._repository.commit()
 
     # --- Internals ---
 

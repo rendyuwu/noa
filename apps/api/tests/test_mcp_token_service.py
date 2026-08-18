@@ -391,3 +391,92 @@ def test_error_body_omits_internal_detail_for_token_errors() -> None:
 
     assert body == {"error_code": "mcp_token_not_found", "message": error.message}
     assert "deadbeef" not in str(body)
+
+
+# --- V100: the transaction boundary this service owns (T53) ---
+
+
+async def test_mint_commits_once_and_last() -> None:
+    """V100(a): the commit is the last statement, so the plaintext is not handed back until
+    the row it hashes to is durable.
+
+    `committed` rather than `tokens` is the assertion surface: the double cannot roll back, so
+    the mutable dict holds the row whether or not a boundary exists — which is precisely why
+    B10 went unnoticed for two tasks.
+    """
+    fixture = build_token_service()
+    user_id = fixture.repository.add_user()
+
+    minted = await fixture.service.mint(user_id, actor_email=ACTOR)
+
+    assert fixture.repository.commits == 1
+    assert list(fixture.repository.committed) == [minted.token.id]
+
+
+async def test_revoke_commits_once_and_last() -> None:
+    """V100(b): the *class* of mutations commits, not the one a caller reaches first.
+
+    The dangerous half of the pair: an uncommitted revoke reports the credential gone while the
+    row, and every request it authenticates, survives.
+    """
+    fixture = build_token_service()
+    user_id = fixture.repository.add_user()
+    minted = await fixture.service.mint(user_id, actor_email=ACTOR)
+
+    await fixture.service.revoke(user_id, minted.token.id, actor_email=ACTOR)
+
+    assert fixture.repository.commits == 2
+    assert fixture.repository.committed == {}
+
+
+async def test_a_refused_mint_commits_nothing() -> None:
+    """V100(a): the `user_exists` guard raises before any write, so nothing persists."""
+    fixture = build_token_service()
+
+    with pytest.raises(UserNotFoundError):
+        await fixture.service.mint(uuid4(), actor_email=ACTOR)
+
+    assert fixture.repository.commits == 0
+    assert fixture.repository.committed == {}
+    assert fixture.repository.tokens == {}
+
+
+async def test_a_refused_label_commits_nothing_and_writes_no_row() -> None:
+    """The second guard, between the user lookup and the insert (V100(a)).
+
+    Ordered deliberately: a validator moved *after* `insert` would leave a row behind for every
+    over-long label a panel ever submitted, while still answering 400.
+    """
+    fixture = build_token_service()
+    user_id = fixture.repository.add_user()
+
+    with pytest.raises(InvalidTokenLabelError):
+        await fixture.service.mint(user_id, label="x" * (MAX_LABEL_LENGTH + 1), actor_email=ACTOR)
+
+    assert fixture.repository.commits == 0
+    assert fixture.repository.tokens == {}
+
+
+async def test_a_refused_revoke_commits_nothing() -> None:
+    """A token id that matched nothing deleted nothing, so there is no transaction to end."""
+    fixture = build_token_service()
+    user_id = fixture.repository.add_user()
+    await fixture.service.mint(user_id, actor_email=ACTOR)
+    committed_before = dict(fixture.repository.committed)
+
+    with pytest.raises(McpTokenNotFoundError):
+        await fixture.service.revoke(user_id, uuid4(), actor_email=ACTOR)
+
+    assert fixture.repository.commits == 1  # the mint's, and no second one
+    assert fixture.repository.committed == committed_before
+
+
+async def test_a_read_owns_no_transaction_boundary() -> None:
+    """`list_for_user` commits nothing: a read that ended a transaction would end whatever the
+    caller had open around it."""
+    fixture = build_token_service()
+    user_id = fixture.repository.add_user()
+
+    await fixture.service.list_for_user(user_id)
+
+    assert fixture.repository.commits == 0

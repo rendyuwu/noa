@@ -418,6 +418,32 @@ def test_admin_role_routes_are_mounted_on_the_real_app(pinned_settings: Settings
     assert set(schema["/admin/tools"]) == {"get"}
 
 
+def test_mcp_token_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> None:
+    """T53: both token routers are wired in `create_app`, not only in `support.admin`.
+
+    The same gap T51 and T52 closed, and it costs more here: `test_mcp_token_routes.py` builds
+    its own app, so a missing `include_router` line would leave every one of those tests green
+    while an operator had no way to obtain the credential §I.mcp's whole surface authenticates
+    with — and no error to read, only a 404 on a path the panel believed in.
+
+    Both prefixes in one assertion because they are one feature under two gates: `/admin/...`
+    behind `require_admin`, `/me/...` behind `require_session_user`. A router included twice
+    under one prefix, or one of the pair dropped, shows up in the verb sets below.
+    """
+    schema = main.create_app().openapi()["paths"]
+
+    assert {
+        "/admin/users/{user_id}/tokens",
+        "/admin/users/{user_id}/tokens/{token_id}",
+        "/me/mcp-tokens",
+        "/me/mcp-tokens/{token_id}",
+    } <= set(schema)
+    assert set(schema["/admin/users/{user_id}/tokens"]) == {"get", "post"}
+    assert set(schema["/admin/users/{user_id}/tokens/{token_id}"]) == {"delete"}
+    assert set(schema["/me/mcp-tokens"]) == {"get", "post"}
+    assert set(schema["/me/mcp-tokens/{token_id}"]) == {"delete"}
+
+
 # --- T66: the tool-list notifier reaches the engine (V74) ---
 
 

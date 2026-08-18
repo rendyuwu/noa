@@ -7,8 +7,10 @@ not because the SQL is unrelated:
 
 - `SQLMcpTokenRepository` (T10) — the admin CRUD path. Like T9's
   `SQLAuthorizationRepository`, every method takes the caller's `AsyncSession` and flushes
-  rather than commits: the transaction boundary belongs to the request (see
-  `noa_api.api.deps`), so a mint and its audit event land together or not at all.
+  rather than commits, so a mint and its audit event land together or not at all. `commit()`
+  (T53) is the boundary itself: `noa_api.api.deps.get_db_session` never commits, so without
+  it a mint would return a plaintext over a transaction that rolls back at teardown and the
+  operator would hold a credential authenticating nothing (V100, B10's shape one table over).
 - `SQLMcpIdentityRepository` (T11) — the MCP request path. It runs outside FastAPI's
   dependency graph, inside `verify_token`, where there is no request transaction to join.
   It therefore owns its session and exposes `commit()`, which `McpIdentityResolver` calls
@@ -109,6 +111,17 @@ class SQLMcpTokenRepository:
         )
         await self._session.flush()
         return bool(result.rowcount)
+
+    async def commit(self) -> None:
+        """Make this request's token writes durable (T53, V100).
+
+        Delegated to the session rather than to `SQLMcpIdentityRepository.commit` below, even
+        though both classes wrap a session and both commit: they are handed *different*
+        sessions on purpose — this one joins the request's transaction, that one owns the
+        verify path's. Routing one through the other would tie two transactions that must stay
+        independent.
+        """
+        await self._session.commit()
 
 
 @dataclass(frozen=True)

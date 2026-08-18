@@ -62,6 +62,8 @@ from noa_api.api.routes.action_requests import router as action_requests_router
 from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_users import router as admin_users_router
 from noa_api.api.routes.auth import router as auth_router
+from noa_api.api.routes.mcp_tokens import admin_router as admin_tokens_router
+from noa_api.api.routes.mcp_tokens import me_router as me_tokens_router
 from noa_api.api.routes.result_tables import router as result_tables_router
 from noa_api.mcp_notifications import McpSessionRegistry, McpToolListChangedNotifier
 from noa_api.mcp_request_auth import build_mcp_auth_context
@@ -301,6 +303,15 @@ def create_app() -> FastAPI:
     # tools a role grants, so it is the write V14's "immediately" is about — and the surface a
     # prompt-injected tool name must never reach, which the MCP mount below cannot do.
     app.include_router(admin_roles_router)
+    # MCP token management (T53, I.admin-api). The routes that issue the credential §I.mcp's
+    # whole surface authenticates with — so they are the one admin surface whose output is a
+    # secret, and the reason `MintedTokenResponse` is the only model in this app carrying a
+    # plaintext (V2).
+    app.include_router(admin_tokens_router)
+    # The self-service half of the same pair. Behind `require_session_user` rather than
+    # `require_admin`: the id it acts on is the session's, never the request's, so an operator
+    # can reach their own credentials and no one else's (V6).
+    app.include_router(me_tokens_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
