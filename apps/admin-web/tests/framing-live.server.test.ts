@@ -23,9 +23,22 @@ const APP_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const NEXT_BIN = path.join(APP_ROOT, 'node_modules', '.bin', 'next')
 
 // Every kind of response this app produces: a route handler, a redirect from a page, a page inside
-// the protected shell, and a path that routes to nothing. One `headers()` entry on `/(.*)` has to
-// cover all four — a page-shaped pattern would leave `/healthz` and the 404 bare.
-const PATHS = ['/healthz', '/', '/admin/users', '/this-route-does-not-exist']
+// the protected shell, a page outside it, the same-origin API proxy, and a path that routes to
+// nothing. One `headers()` entry on `/(.*)` has to cover all six — a page-shaped pattern would
+// leave `/healthz`, `/api/*` and the 404 bare.
+//
+// `/login` and `/api/auth/me` joined the list at §T.50, and they are the two this app most needs
+// covered: the login route is the address `NOA_SIGN_IN_URL` sends an operator to from inside a
+// LibreChat frame, so it is the one page an attacker has a reason to try to frame, and the proxy is
+// the surface that would carry an operator's cookie if anyone succeeded.
+const PATHS = [
+  '/healthz',
+  '/',
+  '/admin/users',
+  '/login',
+  '/api/auth/me',
+  '/this-route-does-not-exist',
+]
 
 const BOOT_TIMEOUT_MS = 180_000
 const REQUEST_TIMEOUT_MS = 180_000

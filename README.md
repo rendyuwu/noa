@@ -99,8 +99,9 @@ Per web app: `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` whe
 exists (`apps/web-embed` boots its own dev server, a stub upstream for the proxy and card specs, and
 a parent page that frames the card the way LibreChat does; run `pnpm exec playwright install
 chromium` once). `apps/admin-web` has no browser lane yet; its `pnpm test:server` boots a dev server
-on a free port and reads the framing header off real responses (§T.49) — separate from `pnpm test`
-because it costs minutes.
+on a free port and reads real responses off the wire — the framing header (§T.49) and the `/api/*`
+proxy hop against a recording stub upstream (§T.50) — separate from `pnpm test` because it costs
+minutes.
 
 ## Conventions
 
