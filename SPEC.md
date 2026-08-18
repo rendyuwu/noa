@@ -353,7 +353,7 @@ T48|x|Admin web: PORT from `noa-old/apps/web-bigsu/src/app/(protected)/admin/` �
 T49|x|Admin web: framing headers — `Content-Security-Policy: frame-ancestors 'none'`|V41
 T50|x|Admin web: auth/session plumbing — proxy API calls, `noa_session` cookie. Login page redirect. Login POST ! be JS `fetch` if it is to work in a tab opened by CLICKING the 401 card's link-out — that tab inherits the frame's sandbox ∧ `allow-forms` ⊥ in it (R32, V94). A native `<form>` login still works for an operator who COPIES the address|I.admin-web,V94,R32
 T51|x|Admin: user management — list, enable/disable, delete, assign roles. 4 routes, ∀ behind `require_admin`: `GET /admin/users`, `PATCH`+`DELETE /admin/users/{user_id}`, `PUT /admin/users/{user_id}/roles`. ⊥ create (§I.admin-api: users born at login, V7). AS BUILT: `docs/AS-BUILT.md` §T51 — T9's engine gained its transaction boundary (⊥ commit ⇒ ∀ write answered 200 over a rollback; `commit()` into Protocol + SQL class, last statement of 6 mutations, ∀ guard raises BEFORE it)|I.admin-api,V4,V6,V7,V8,V10,V11,V12,V13,V14,V73,V75,T9
-T52|.|Admin: role management CRUD — list, create, delete, set tool permissions. `admin` role reserved|I.admin-api,V13
+T52|x|Admin: role management CRUD — list, create, delete, set tool permissions. `admin` role reserved|I.admin-api,V13
 T53|.|Admin: token management — list tokens per user, mint (show-once plaintext), revoke|I.admin-api,V2
 T54|.|Admin: server management — WHM/Proxmox/PMG CRUD + validate (SSH connect, fingerprint capture, TOFU refresh)|I.admin-api
 T55|.|Admin: audit — tool runs list (filters: toolName, status, conversationRef, user, date range, cursor pagination), detail view (args redacted, result summary, timing)|I.admin-api,V45,V47

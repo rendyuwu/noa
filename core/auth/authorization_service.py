@@ -167,8 +167,26 @@ class AuthorizationService:
     # --- Roles (V13) ---
 
     async def list_roles(self) -> list[str]:
-        """Assignable roles. Internal `user:` roles are excluded (V13, V75)."""
+        """Assignable roles. Internal `user:` roles are excluded (V13, V75).
+
+        `admin` is included: it is a real `roles` row (`AuthService._provision` writes it for
+        a bootstrap admin) and hiding it would leave the panel unable to show who holds the
+        one role it cannot grant tools to. Editing and deleting it are refused instead (V13).
+        """
         return await self._repository.list_assignable_role_names()
+
+    async def list_tools(self) -> list[str]:
+        """Every tool name a grant may name (V10, T52).
+
+        The vocabulary of `set_role_tools`, read off the same `_known_tools` that validates a
+        write — so what the panel offers and what the service accepts cannot drift apart. A
+        route asking `core.auth.tool_catalog` directly would be a second answer to the
+        question this service already owns (V66), and would miss a construction-time
+        `known_tools` override.
+
+        A read: no event, no commit.
+        """
+        return sorted(self._known_tools)
 
     async def create_role(self, name: str, *, actor_email: str | None = None) -> str:
         """Create a role. Idempotent, and records an event only when it created one.

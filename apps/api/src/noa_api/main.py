@@ -58,6 +58,7 @@ from noa_api.api.deps import (
 )
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
+from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_users import router as admin_users_router
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.api.routes.result_tables import router as result_tables_router
@@ -274,6 +275,10 @@ def create_app() -> FastAPI:
     # therefore behind V6's row re-read: the panel's own surface, never the LLM's — the MCP mount
     # below cannot reach it, and this router holds no tool.
     app.include_router(admin_users_router)
+    # Admin role management (T52, I.admin-api). Same gate, same reasoning: it decides which
+    # tools a role grants, so it is the write V14's "immediately" is about — and the surface a
+    # prompt-injected tool name must never reach, which the MCP mount below cannot do.
+    app.include_router(admin_roles_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

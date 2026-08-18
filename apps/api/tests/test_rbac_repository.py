@@ -28,7 +28,13 @@ from core.auth.authorization_repository import SQLAuthorizationRepository
 from core.auth.authorization_service import AuthorizationService
 from core.auth.mcp_token_repository import SQLMcpTokenRepository
 from core.auth.mcp_token_service import generate_mcp_token, hash_mcp_token
-from core.db.models import ADMIN_ROLE_NAME, INTERNAL_ROLE_PREFIX, User
+from core.db.models import (
+    ADMIN_ROLE_NAME,
+    INTERNAL_ROLE_PREFIX,
+    Role,
+    RoleToolPermission,
+    User,
+)
 from support.database import MUTATED_TABLES, migrated_database, truncate
 from support.rbac import (
     ROLE_NOC,
@@ -457,3 +463,45 @@ async def test_commit_makes_a_disable_outlive_the_request(
     await service.set_user_active(target.id, is_active=False, actor_email=ADMIN_EMAIL)
 
     assert await observed_active(target.id) is False
+
+
+# --- T52: the same boundary, on the write that grants a tool ---
+
+
+async def test_commit_makes_a_role_grant_outlive_the_request(
+    session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """T52: `PUT /admin/roles/{name}/tools` is the write V14's "immediately" is about.
+
+    The same shape as the disable above and for the same reason (B10, V100): the repository
+    flushes, `noa_api.api.deps.get_db_session` never commits, and inside one session a flushed
+    grant reads back exactly like a committed one. So the observer is a *separate* session.
+
+    `noc` is the negative control — the identical write through the repository alone, checked
+    before anything commits — because "the observer saw no grant" also passes for an observer
+    that can see nothing at all (V87).
+    """
+    service = AuthorizationService(
+        repository=SQLAuthorizationRepository(session), audit_sink=RecordingAuditSink()
+    )
+    await SQLAuthorizationRepository(session).ensure_role(ROLE_SUPPORT)
+    await SQLAuthorizationRepository(session).ensure_role(ROLE_NOC)
+    # Commit the two roles, so the grants below are the only writes under test.
+    await session.commit()
+
+    async def observed_grants(role_name: str) -> list[str]:
+        async with session_factory() as observer:
+            result = await observer.execute(
+                sa.select(RoleToolPermission.tool_name)
+                .join(Role, Role.id == RoleToolPermission.role_id)
+                .where(Role.name == role_name)
+            )
+            return sorted(str(name) for name in result.scalars().all())
+
+    # Negative control: flush only.
+    await SQLAuthorizationRepository(session).replace_role_tool_permissions(ROLE_NOC, [TOOL_READ])
+    assert await observed_grants(ROLE_NOC) == []
+
+    await service.set_role_tools(ROLE_SUPPORT, [TOOL_READ], actor_email=ADMIN_EMAIL)
+
+    assert await observed_grants(ROLE_SUPPORT) == [TOOL_READ]

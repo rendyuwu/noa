@@ -1,4 +1,4 @@
-"""An app carrying the real `/admin/users` routes, over in-memory doubles (T51).
+"""An app carrying the real `/admin` routes, over in-memory doubles (T51, T52).
 
 Same split every route test in this suite uses: the router, `require_admin`,
 `require_session_user`, the real `AuthService`, the real `AuthorizationService`, the real
@@ -13,6 +13,12 @@ So a 403 here is the shipped 403, a 409 is the shipped 409, and the V12 guards r
 `sign_in` therefore writes the actor into *both*, under one id. Without that, `actor_user_id`
 could never equal a target's id and V12's self-deactivate, self-delete and self-demote refusals
 would be unreachable from HTTP — the tests would pass while asserting nothing.
+
+**Both admin routers are mounted, not one per harness.** T52's role routes and T51's user routes
+share the actor, the gate and one `AuthorizationService` over one repository, and V14's
+"permission updates take effect immediately" is a claim that spans them: a `PUT
+/admin/roles/{name}/tools` has to be visible in the very next `GET /admin/users`. Two harnesses
+could not express that without a second repository, i.e. without the thing being asserted.
 """
 
 from __future__ import annotations
@@ -39,6 +45,7 @@ from noa_api.api.deps import (
     get_authorization_service,
 )
 from noa_api.api.errors import install_error_handling
+from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_users import router as admin_users_router
 from support.auth import (
     COOKIE_NAME,
@@ -53,6 +60,8 @@ ADMIN_EMAIL = "admin@example.com"
 OPERATOR_EMAIL = "operator@example.com"
 
 USERS_PATH = "/admin/users"
+ROLES_PATH = "/admin/roles"
+TOOLS_PATH = "/admin/tools"
 
 
 @dataclass
@@ -125,6 +134,22 @@ class AdminHarness:
     def user_in_list(self, email: str) -> dict[str, object]:
         return next(user for user in self.list_users() if user["email"] == email)
 
+    def list_roles(self) -> list[str]:
+        """`GET /admin/roles` → the `roles` array (T52)."""
+        response = self.client.get(ROLES_PATH)
+        assert response.status_code == 200, response.text
+        roles = response.json()["roles"]
+        assert isinstance(roles, list)
+        return roles
+
+    def role_tools(self, role_name: str) -> list[str]:
+        """`GET /admin/roles/{name}/tools` → the `tools` array (T52)."""
+        response = self.client.get(f"{ROLES_PATH}/{role_name}/tools")
+        assert response.status_code == 200, response.text
+        tools = response.json()["tools"]
+        assert isinstance(tools, list)
+        return tools
+
 
 @contextmanager
 def admin_harness(
@@ -132,7 +157,7 @@ def admin_harness(
     settings: Settings | None = None,
     known_tools: frozenset[str] = TOOL_CATALOG,
 ) -> Iterator[AdminHarness]:
-    """An app with only the `/admin/users` routes, wired to in-memory doubles.
+    """An app with the `/admin/users` and `/admin/roles` routes, wired to in-memory doubles.
 
     Two dependency overrides and nothing else: `get_auth_service` (so the cookie resolves
     without Postgres or LDAP) and `get_authorization_service` (so the routes read the fake
@@ -148,6 +173,7 @@ def admin_harness(
     app = FastAPI()
     install_error_handling(app)
     app.include_router(admin_users_router)
+    app.include_router(admin_roles_router)
 
     # The same attributes `noa_api.main.lifespan` writes, minus the engine no test here needs.
     setattr(app.state, STATE_SETTINGS, resolved_settings)
@@ -177,6 +203,8 @@ def admin_harness(
 __all__ = [
     "ADMIN_EMAIL",
     "OPERATOR_EMAIL",
+    "ROLES_PATH",
+    "TOOLS_PATH",
     "USERS_PATH",
     "AdminHarness",
     "SignedInUser",

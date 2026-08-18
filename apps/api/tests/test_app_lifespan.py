@@ -375,3 +375,28 @@ def test_admin_user_routes_are_mounted_on_the_real_app(pinned_settings: Settings
     assert set(schema["/admin/users"]) == {"get"}
     assert set(schema["/admin/users/{user_id}"]) == {"patch", "delete"}
     assert set(schema["/admin/users/{user_id}/roles"]) == {"put"}
+
+
+def test_admin_role_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> None:
+    """T52: the `/admin/roles` router is wired in `create_app`, not only in `support.admin`.
+
+    Same gap T51 closed one router over: `test_admin_role_routes.py` builds its own app, so a
+    missing `include_router` line would leave every one of those tests green while the panel's
+    Roles page got a 404 from the deployed API.
+
+    `/admin/tools` is asserted here too. It is the one route in this set §I.admin-api does not
+    yet name — `noa-old` shipped it on its user router and the port dropped it — so until that
+    row lands, this assertion is what records that NOA serves it.
+    """
+    schema = main.create_app().openapi()["paths"]
+
+    assert {
+        "/admin/roles",
+        "/admin/roles/{name}",
+        "/admin/roles/{name}/tools",
+        "/admin/tools",
+    } <= set(schema)
+    assert set(schema["/admin/roles"]) == {"get", "post"}
+    assert set(schema["/admin/roles/{name}"]) == {"delete"}
+    assert set(schema["/admin/roles/{name}/tools"]) == {"get", "put"}
+    assert set(schema["/admin/tools"]) == {"get"}

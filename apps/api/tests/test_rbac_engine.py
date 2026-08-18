@@ -107,6 +107,27 @@ def test_catalog_membership_is_exact_not_normalized() -> None:
     assert not is_known_tool(f" {TOOL_READ} ")
 
 
+async def test_list_tools_answers_the_services_own_catalog(rbac: RbacFixture) -> None:
+    """T52: the vocabulary a grant may name, off the same set that validates a write (V10).
+
+    Read against a *narrowed* `known_tools`, not the default: an implementation that returned
+    `TOOL_CATALOG` directly would pass an equality with the default and hand a caller names
+    `set_role_tools` refuses.
+    """
+    narrowed = build_service(known_tools=frozenset({TOOL_READ}))
+
+    assert await rbac.service.list_tools() == sorted(TOOL_CATALOG)
+    assert await narrowed.service.list_tools() == [TOOL_READ]
+
+
+async def test_list_tools_commits_nothing(rbac: RbacFixture) -> None:
+    """A read ends no transaction, for the same reason it logs no event (V14, V100)."""
+    await rbac.service.list_tools()
+
+    assert rbac.repository.commits == 0
+    assert rbac.audit.events == []
+
+
 # --- Permission resolution (V10, V11) ---
 
 

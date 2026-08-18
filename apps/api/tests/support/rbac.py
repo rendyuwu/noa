@@ -110,6 +110,11 @@ class FakeAuthorizationRepository:
         self.commits = 0
         self.committed_users: dict[UUID, FakeUserRecord] = {}
         self.committed_user_roles: dict[UUID, set[str]] = {}
+        # Role state is snapshotted too (T52). The role routes' writes land here and nowhere
+        # else, so without these a "the refused grant write persisted nothing" assertion could
+        # only read the mutable dict — which cannot tell a written row from a committed one.
+        self.committed_roles: set[str] = set()
+        self.committed_role_tools: dict[str, set[str]] = {}
 
     # --- Reads on the permission path ---
 
@@ -206,6 +211,10 @@ class FakeAuthorizationRepository:
         self.committed_users = {user_id: replace(user) for user_id, user in self.users.items()}
         self.committed_user_roles = {
             user_id: set(names) for user_id, names in self.user_roles.items()
+        }
+        self.committed_roles = set(self.roles)
+        self.committed_role_tools = {
+            role_name: set(tools) for role_name, tools in self.role_tools.items()
         }
 
     # --- Test helpers ---
