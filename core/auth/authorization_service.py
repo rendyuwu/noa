@@ -34,6 +34,15 @@ Three rules the implementation is shaped around:
    *before* the commit, a refused change persists nothing. The audit event is recorded first,
    so the change and the record of it land in the same transaction (once a `SQLAdminAuditSink`
    exists — the structlog sink is outside it by nature).
+5. **The MCP catalog notification is the one thing that happens *after* the commit** (T66,
+   V74). Every mutation that can move an operator's effective tool set tells the connected
+   MCP sessions of the affected users, through `ToolListChangedNotifier`. Ordering is the
+   whole design: a notification sent before the commit invites a client to refetch a catalog
+   built from rows that may still roll back, and a refused write — which raises before the
+   commit — must announce nothing at all. It is also the one step allowed to fail silently.
+   R30 measured that LibreChat ignores the notification entirely at the pinned commit, so
+   what makes a revoked grant safe is V1's execution-time re-check, not this; a notifier
+   fault must not turn a committed permission change into a 500.
 
 Departures from `noa-old`, each with a test:
 
@@ -51,9 +60,11 @@ Departures from `noa-old`, each with a test:
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from typing import Final
 from uuid import UUID
+
+import structlog
 
 from core.audit.admin_events import (
     EVENT_ROLE_CREATED,
@@ -85,6 +96,10 @@ from core.auth.authorization_types import (
     AuthorizedUser,
 )
 from core.auth.tool_catalog import TOOL_CATALOG
+from core.auth.tool_list_notifications import (
+    NullToolListChangedNotifier,
+    ToolListChangedNotifier,
+)
 from core.db.models import ADMIN_ROLE_NAME, INTERNAL_ROLE_PREFIX, is_internal_role
 
 # `roles.name` is `String(100)` (T4). Validated here so an over-long name is a 400 rather
@@ -99,6 +114,13 @@ DETAIL_ROLE_NAME_BLANK = "role name is blank after stripping"
 DETAIL_ROLE_NAME_TOO_LONG = f"role name exceeds {MAX_ROLE_NAME_LENGTH} characters"
 DETAIL_ROLE_NAME_CHARS = "role name has characters outside [A-Za-z0-9_-]"
 
+# T66: the notifier swallowed an exception after a committed write. Logged at error because
+# nothing else records it — the operator's change succeeded and their 200 says so, so this
+# line is the only trace that a connected client was not told (V74).
+LOG_TOOL_LIST_NOTIFY_FAILED = "tool_list_changed_notify_failed"
+
+logger = structlog.get_logger(__name__)
+
 
 class AuthorizationService:
     """Permission resolution and role administration."""
@@ -109,9 +131,16 @@ class AuthorizationService:
         repository: AuthorizationRepository,
         audit_sink: AdminAuditSink,
         known_tools: Iterable[str] = TOOL_CATALOG,
+        tool_list_notifier: ToolListChangedNotifier | None = None,
     ) -> None:
         self._repository = repository
         self._audit = audit_sink
+        # T66/V74. Defaults to the null notifier rather than being required, because this
+        # service is constructed in places with no MCP session to notify — the MCP tool path's
+        # own instance, a future CLI, a migration script. The cost of that default is that a
+        # forgotten production wiring would be silent, so the wiring is asserted separately
+        # (`test_app_lifespan.py`); see `core.auth.tool_list_notifications`.
+        self._tool_list_notifier = tool_list_notifier or NullToolListChangedNotifier()
         # Snapshotted at construction, which is safe because the catalog is static for the
         # process (see `core.auth.tool_catalog`). When T13 makes it registry-derived, this
         # becomes a call instead — the service is constructed per request either way.
@@ -205,6 +234,10 @@ class AuthorizationService:
         created = await self._repository.ensure_role(role_name)
         await self._record(EVENT_ROLE_CREATED, actor_email, created, {"role": created})
         await self._repository.commit()
+        # No T66 notification, and the omission is the correct answer rather than an oversight
+        # (V74). A role is born with zero grants and zero holders, so no operator's effective
+        # tool set moved. Telling every session to refetch here would be noise a client that
+        # honoured the notification would pay for.
         return created
 
     async def delete_role(self, name: str, *, actor_email: str | None = None) -> None:
@@ -217,11 +250,20 @@ class AuthorizationService:
         role_name = self._validate_role_name(name)
         self._reject_reserved_role(role_name)
 
+        # **Read the holders before the delete, not after.** The assignments go by
+        # `ON DELETE CASCADE`, so once the row is gone there is nobody left to find and T66's
+        # notification would reach an empty audience — a bug indistinguishable from "nobody
+        # held that role" (V74). `delete_role` is also the existence check, so this runs before
+        # it and costs one wasted query on the 404 path; an absent role has no holders, so the
+        # answer is `[]` and nothing is announced.
+        holders = await self._repository.list_user_ids_with_role(role_name)
+
         if not await self._repository.delete_role(role_name):
             raise RoleNotFoundError(f"role `{role_name}` does not exist")
 
         await self._record(EVENT_ROLE_DELETED, actor_email, role_name, {"role": role_name})
         await self._repository.commit()
+        await self._notify_tool_list_changed(holders)
 
     async def get_role_tools(self, name: str) -> list[str]:
         """Tool grants held by a role.
@@ -261,7 +303,11 @@ class AuthorizationService:
         await self._record(
             EVENT_ROLE_TOOLS_UPDATED, actor_email, role_name, {"role": role_name, "tools": stored}
         )
+        # Read after the write is fine here, unlike `delete_role`: replacing a role's *grants*
+        # leaves its assignments untouched, so the holder set is the same before and after.
+        holders = await self._repository.list_user_ids_with_role(role_name)
         await self._repository.commit()
+        await self._notify_tool_list_changed(holders)
         return stored
 
     # --- User administration (V12, V13) ---
@@ -302,6 +348,8 @@ class AuthorizationService:
             {"target_user_id": str(user_id), "roles": authorized.roles},
         )
         await self._repository.commit()
+        # One user: replacement changes what *they* resolve to and nothing else (V74).
+        await self._notify_tool_list_changed([user_id])
         return authorized
 
     async def set_user_active(
@@ -372,6 +420,12 @@ class AuthorizationService:
         # (T51). Both guards above raise before it, so a refused disable revokes nothing and
         # persists nothing.
         await self._repository.commit()
+        # Notified on both directions of the flip, not only on disable (V11, V74): enabling an
+        # account moves its effective tool set from empty to whatever its roles grant, which is
+        # as much a catalog change as losing it. A disabled operator may still hold an open
+        # session — their tokens are gone, so it cannot outlive its next request, but until then
+        # it is showing rows the gate would refuse.
+        await self._notify_tool_list_changed([user_id])
         return authorized
 
     async def delete_user(
@@ -415,6 +469,10 @@ class AuthorizationService:
             {"target_user_id": str(user_id), "email": snapshot.email},
         )
         await self._repository.commit()
+        # The row is gone and the tokens went with it, so this session is finished either way.
+        # Told anyway: "your catalog is empty now" is the honest last word, and leaving one
+        # mutation out of the mechanism is how the next reader concludes the emit is optional.
+        await self._notify_tool_list_changed([user_id])
         return snapshot
 
     # --- Internals ---
@@ -507,6 +565,37 @@ class AuthorizationService:
             last_login_at=user.last_login_at,
         )
 
+    async def _notify_tool_list_changed(self, user_ids: Collection[UUID]) -> None:
+        """Tell `user_ids`' MCP sessions their tool catalog moved (T66 — V74).
+
+        Called *after* `commit()` by every mutation that can change an effective tool set, and
+        called nowhere else. Three properties, each of them the reason this is a method rather
+        than five inline `await`s:
+
+        - **Never raises.** The write has committed; the operator's change succeeded and their
+          200 is already true. An exception here would report a successful permission change as
+          a failure and invite them to repeat it. V74 makes the emit best-effort in so many
+          words — the control that keeps a stale catalog safe is V1's execution-time re-check,
+          and R30 measured that the pinned client ignores this notification anyway.
+        - **Empty is a no-op, not an empty announcement.** `create_role` affects nobody, and a
+          role nobody holds affects nobody; short-circuiting keeps the notifier from having to
+          decide what an empty audience means.
+        - **The swallowed failure is logged.** Nothing else records it: the request answered
+          200, so without this line a client left un-notified is invisible.
+        """
+        if not user_ids:
+            return
+
+        try:
+            await self._tool_list_notifier.notify(user_ids)
+        # Broad on purpose — see the docstring: best-effort by decision, and the write is done.
+        except Exception as exc:
+            logger.error(
+                LOG_TOOL_LIST_NOTIFY_FAILED,
+                user_count=len(user_ids),
+                error_type=type(exc).__name__,
+            )
+
     async def _record(
         self,
         event_type: str,
@@ -526,6 +615,7 @@ class AuthorizationService:
 
 
 __all__ = [
+    "LOG_TOOL_LIST_NOTIFY_FAILED",
     "MAX_ROLE_NAME_LENGTH",
     "ROLE_NAME_PATTERN",
     "AuthorizationService",

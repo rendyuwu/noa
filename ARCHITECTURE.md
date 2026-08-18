@@ -47,6 +47,51 @@ Its distinguishing surface is absent too: `Mcp-Method` / `Mcp-Name` headers and 
 nothing to bound today; the stale-catalog risk is held by the execution-time RBAC re-check (V1)
 rather than by cache-hint ceilings that do not yet exist.
 
+## A revoked grant stays visible in LibreChat until the connection is rebuilt
+
+**This one is operator-facing, so read it as an operational fact rather than a design note.**
+
+When an admin removes a tool from a role in NOA, the operator's chat client keeps *showing* that
+tool. It does not disappear from the model's list of available tools, and it does not disappear
+when the operator starts a new conversation. It disappears when the MCP connection itself is
+rebuilt — a LibreChat restart, or whatever that deployment does to reconnect its MCP servers.
+
+**Calling it does not work, and that is the guarantee.** The revocation is authoritative the
+moment it commits. NOA re-resolves permissions from the database on every `tools/call` (V1), so a
+tool that is displayed but revoked answers `tool_not_permitted` and never runs. Displayed is not
+permitted; what an operator sees in a stale catalog is a label, not an authorization.
+
+**Why it stays visible.** NOA does emit the protocol's `notifications/tools/list_changed` when a
+permission changes, to every connected session of every affected operator (§T.66). LibreChat
+ignores it. That was measured at pin `45cc53c4`, two ways that agree (§R.30):
+
+- **On the wire, NOA's side works.** With a session's standalone GET stream open, the emit put
+  `{"method":"notifications/tools/list_changed","jsonrpc":"2.0"}` on that stream.
+- **In LibreChat, nothing happened.** The same emit inside a chat turn drew no request at all —
+  the turn's JSON-RPC methods read `initialize`, `notifications/initialized`, `ping`,
+  `tools/list`, `tools/call`, and stop. The source agrees: `connection.ts:1852` registers a
+  handler for `ResourceListChangedNotificationSchema` only, and `ToolListChangedNotificationSchema`
+  has zero hits tree-wide.
+
+Ignoring it is harmless — no error, no disconnect — so NOA keeps emitting: it is protocol-correct,
+costs almost nothing, and a later client may honour it. But it buys nothing today, and the honest
+statement of the consequence is the paragraph at the top of this section rather than "permission
+changes propagate immediately".
+
+There is also nothing to bound the staleness with. Cache hints (`ttlMs`, `cacheScope`) arrive with
+the `2026-07-28` era, which is out of reach at this pin — see the section above — so a ceiling on
+how long a client may display a revoked tool is not available to configure. V74 says so explicitly,
+and leans on the execution-time re-check instead.
+
+**What to tell an operator who reports it.** The tool they can see but not call is not a broken
+grant and not a NOA fault; their client's catalog is stale and their next call will be refused, as
+it should be. If a clean list matters — a demo, an audit walkthrough — rebuild the MCP connection.
+
+Enforced by `apps/api/tests/test_mcp_tool_list_changed.py`, which asserts the refusal behind the
+production write path and deliberately asserts *nothing* about whether the client refetched: that
+would be a claim about someone else's code, red on an upstream whim (V69, and §B.2's inert control
+for the shape it takes when it goes wrong).
+
 ## `fastmcp==3.4.5`, not 4.x
 
 The server dependency is pinned exact, and the bound is deliberate in both directions.
@@ -95,6 +140,9 @@ Prose is not the control. The tests are:
 - `apps/api/tests/test_mcp_mount.py` — negotiation against the real mount over three cases: the era
   LibreChat's client asks for, an older v1.x client's era, and an unsupported ask falling back to a
   version the client still accepts.
+- `apps/api/tests/test_mcp_tool_list_changed.py` — the stale-catalog section above: who NOA notifies
+  on a permission change, that the emit reaches a real `ServerSession`, and that a revoked tool is
+  refused at execution while the client's captured catalog still names it.
 
 The harness in `apps/api/tests/support/mcp_mount.py` asks for what LibreChat asks for, deliberately.
 An earlier version of these tests appeared to prove the era only because the harness requested it —

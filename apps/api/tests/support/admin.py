@@ -54,7 +54,12 @@ from support.auth import (
     build_settings,
     override_auth_service_factory,
 )
-from support.rbac import FakeAuthorizationRepository, FakeUserRecord, RecordingAuditSink
+from support.rbac import (
+    FakeAuthorizationRepository,
+    FakeUserRecord,
+    RecordingAuditSink,
+    RecordingToolListNotifier,
+)
 
 ADMIN_EMAIL = "admin@example.com"
 OPERATOR_EMAIL = "operator@example.com"
@@ -89,6 +94,7 @@ class AdminHarness:
     auth_repository: FakeAuthRepository
     repository: FakeAuthorizationRepository
     audit: RecordingAuditSink
+    notifier: RecordingToolListNotifier
 
     def sign_in(
         self,
@@ -168,6 +174,10 @@ def admin_harness(
     auth_repository = FakeAuthRepository()
     repository = FakeAuthorizationRepository()
     audit = RecordingAuditSink()
+    # T66/V74. Shares the repository's ordered `calls` log, so a route test can assert the
+    # notification followed the commit — the property that keeps a client from being told to
+    # refetch a catalog built from rows that may still roll back.
+    notifier = RecordingToolListNotifier(calls=repository.calls)
     jwt_service = JWTService(resolved_settings)
 
     app = FastAPI()
@@ -185,7 +195,10 @@ def admin_harness(
         settings=resolved_settings, repository=auth_repository, jwt_service=jwt_service
     )
     app.dependency_overrides[get_authorization_service] = lambda: AuthorizationService(
-        repository=repository, audit_sink=audit, known_tools=known_tools
+        repository=repository,
+        audit_sink=audit,
+        known_tools=known_tools,
+        tool_list_notifier=notifier,
     )
 
     with TestClient(app) as client:
@@ -197,6 +210,7 @@ def admin_harness(
             auth_repository=auth_repository,
             repository=repository,
             audit=audit,
+            notifier=notifier,
         )
 
 

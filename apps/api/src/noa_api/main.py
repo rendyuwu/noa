@@ -55,6 +55,7 @@ from noa_api.api.deps import (
     STATE_LDAP_SERVICE,
     STATE_SESSION_FACTORY,
     STATE_SETTINGS,
+    STATE_TOOL_LIST_NOTIFIER,
 )
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
@@ -62,6 +63,7 @@ from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_users import router as admin_users_router
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.api.routes.result_tables import router as result_tables_router
+from noa_api.mcp_notifications import McpSessionRegistry, McpToolListChangedNotifier
 from noa_api.mcp_request_auth import build_mcp_auth_context
 from noa_api.mcp_server import MCP_MOUNT_PATH, build_mcp_http_app
 from noa_api.mcp_tools.change_runners import build_change_runners
@@ -104,6 +106,12 @@ class AppRuntime:
     # T38's background half of V30: the runs a died-mid-call process left STARTED. Same shape,
     # same loop, same lifespan ownership as the sweeper above.
     stranded_run_reaper: StrandedRunReaper
+    # T66's two halves of V74, held together because they are one object seen from two sides:
+    # the MCP mount's middleware writes the register, and the admin surface's notifier reads it.
+    # Built here for the same reason the tool context is — two registers would be two worlds
+    # configured alike, and the failure would be silent (an emit to nobody).
+    mcp_session_registry: McpSessionRegistry
+    tool_list_notifier: McpToolListChangedNotifier
 
 
 def build_runtime(settings: Settings) -> AppRuntime:
@@ -140,6 +148,10 @@ def build_runtime(settings: Settings) -> AppRuntime:
         # that could answer "how long is a NOA-generated password" stay one.
         secret_password_length=settings.secret_password_length,
     )
+    # T66/V74. One register per app, and the notifier over it, so the MCP middleware and the
+    # admin routes share it. Constructing both opens nothing and starts nothing: the register is
+    # an empty dict of weak sets until a client connects.
+    mcp_session_registry = McpSessionRegistry()
     return AppRuntime(
         settings=settings,
         engine=engine,
@@ -173,6 +185,8 @@ def build_runtime(settings: Settings) -> AppRuntime:
             reap_after_seconds=settings.approval_stranded_run_reap_after_seconds,
             batch_size=settings.approval_stranded_run_reap_batch_size,
         ),
+        mcp_session_registry=mcp_session_registry,
+        tool_list_notifier=McpToolListChangedNotifier(registry=mcp_session_registry),
     )
 
 
@@ -193,6 +207,9 @@ def build_lifespan(
         setattr(app.state, STATE_LDAP_SERVICE, runtime.ldap_service)
         setattr(app.state, STATE_SESSION_FACTORY, runtime.session_factory)
         setattr(app.state, STATE_APPROVED_CHANGE_EXECUTOR, runtime.approved_change_executor)
+        # T66/V74: what `get_authorization_service` hands the RBAC engine, so a committed
+        # permission change reaches the MCP sessions the mount registered.
+        setattr(app.state, STATE_TOOL_LIST_NOTIFIER, runtime.tool_list_notifier)
 
         # V32's terminality without traffic (T39) and V30's reaper (T38). Started here rather
         # than at construction because the tasks belong to the running loop, and stopped before
@@ -253,6 +270,11 @@ def create_app() -> FastAPI:
         # map is derived from it too, and two contexts would be two worlds configured alike —
         # the failure mode `AppRuntime` exists to prevent one field over.
         tool_context=runtime.tool_context,
+        # T66/V74: the same register the notifier on `app.state` reads. Passing the runtime's
+        # object rather than letting the mount build its own is the whole point — a second
+        # register would be written by the middleware and read by nobody, and the emit would
+        # reach zero sessions with nothing failing.
+        session_registry=runtime.mcp_session_registry,
     )
 
     app = FastAPI(

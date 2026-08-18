@@ -71,6 +71,10 @@ class AuthorizationRepository(Protocol):
 
     async def list_users(self) -> list[AuthorizationUserRecord]: ...
 
+    # T66's audience. Not on the permission path — it answers "whose catalog did this write
+    # move?", which is a question about who to *tell*, never about who may call what.
+    async def list_user_ids_with_role(self, role_name: str) -> list[UUID]: ...
+
     # --- Roles and grants ---
 
     async def list_assignable_role_names(self) -> list[str]: ...

@@ -24,7 +24,7 @@ the shipped routes is `support.admin`, which puts this repository behind them.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -104,6 +104,10 @@ class FakeAuthorizationRepository:
         # Read counters — see the module docstring (V6, V14).
         self.user_reads = 0
         self.grant_reads = 0
+        # An ordered log this repository shares with `RecordingToolListNotifier` (T66). The
+        # notification's *position* relative to the commit is the assertion, and two independent
+        # counters cannot express an order.
+        self.calls: list[str] = []
         # Commit counter and snapshot (T51). Same trick as `FakeAuthRepository`: a double that
         # only mutated dicts cannot tell a written row from a committed one, and "a refused
         # disable persists nothing" is a claim about the second.
@@ -134,6 +138,16 @@ class FakeAuthorizationRepository:
 
     async def list_users(self) -> list[FakeUserRecord]:
         return sorted(self.users.values(), key=lambda user: user.email)
+
+    async def list_user_ids_with_role(self, role_name: str) -> list[UUID]:
+        """T66's notification audience (V74).
+
+        Mirrors the SQL exactly, including what it does *not* filter: a disabled user still
+        appears, because their catalog moved too and their session may still be open. Derived
+        from `user_roles` rather than from a second dict, so a test that assigns a role through
+        the service reaches this the same way production does.
+        """
+        return sorted(user_id for user_id, roles in self.user_roles.items() if role_name in roles)
 
     # --- Roles and grants ---
 
@@ -208,6 +222,11 @@ class FakeAuthorizationRepository:
     async def commit(self) -> None:
         """Snapshot every row, so a test can separate "written" from "committed"."""
         self.commits += 1
+        # T66: the notification must follow the commit, never precede it — a client told to
+        # refetch before the transaction ends could read rows that then roll back. Recorded on a
+        # shared log with `RecordingToolListNotifier` so the *order* is assertable, which a
+        # counter on each side separately could not be.
+        self.calls.append("commit")
         self.committed_users = {user_id: replace(user) for user_id, user in self.users.items()}
         self.committed_user_roles = {
             user_id: set(names) for user_id, names in self.user_roles.items()
@@ -266,6 +285,42 @@ class RecordingAuditSink:
         return [event.event_type for event in self.events]
 
 
+class RecordingToolListNotifier:
+    """`ToolListChangedNotifier` that keeps every audience for assertion (T66, V74).
+
+    Records the *audiences*, not a count, because T66's questions are about who: a role's grant
+    change reaches its holders, a disable reaches one account, a role creation reaches nobody. A
+    counter would pass against a broadcast.
+
+    `calls` is the ordered log it shares with `FakeAuthorizationRepository`, so
+    "the notification followed the commit" is assertable rather than assumed.
+
+    `fail_with` makes the failure path reachable: V74's emit is best-effort, and a notifier that
+    raises must not turn a committed permission change into a 500.
+    """
+
+    def __init__(
+        self,
+        *,
+        calls: list[str] | None = None,
+        fail_with: Exception | None = None,
+    ) -> None:
+        self.audiences: list[list[UUID]] = []
+        self.calls = calls if calls is not None else []
+        self._fail_with = fail_with
+
+    async def notify(self, user_ids: Collection[UUID]) -> None:
+        self.audiences.append(sorted(user_ids))
+        self.calls.append("notify")
+        if self._fail_with is not None:
+            raise self._fail_with
+
+    @property
+    def notified(self) -> list[UUID]:
+        """Every id told, across all calls, sorted and de-duplicated."""
+        return sorted({user_id for audience in self.audiences for user_id in audience})
+
+
 @dataclass
 class RbacFixture:
     """The service under test plus the doubles behind it."""
@@ -273,25 +328,35 @@ class RbacFixture:
     service: AuthorizationService
     repository: FakeAuthorizationRepository
     audit: RecordingAuditSink
+    notifier: RecordingToolListNotifier
 
 
 def build_service(
     *,
     repository: FakeAuthorizationRepository | None = None,
     audit: RecordingAuditSink | None = None,
+    notifier: RecordingToolListNotifier | None = None,
     known_tools: frozenset[str] = TOOL_CATALOG,
 ) -> RbacFixture:
-    """A real `AuthorizationService` over in-memory doubles."""
+    """A real `AuthorizationService` over in-memory doubles.
+
+    The notifier shares the repository's `calls` log (T66), so any test built here can assert
+    that a notification followed the commit rather than preceded it — including the tests that
+    were written before T66 existed and now cover the ordering for free.
+    """
     resolved_repository = repository or FakeAuthorizationRepository()
     resolved_audit = audit or RecordingAuditSink()
+    resolved_notifier = notifier or RecordingToolListNotifier(calls=resolved_repository.calls)
     return RbacFixture(
         service=AuthorizationService(
             repository=resolved_repository,
             audit_sink=resolved_audit,
             known_tools=known_tools,
+            tool_list_notifier=resolved_notifier,
         ),
         repository=resolved_repository,
         audit=resolved_audit,
+        notifier=resolved_notifier,
     )
 
 
@@ -356,6 +421,7 @@ __all__ = [
     "FakeUserRecord",
     "RbacFixture",
     "RecordingAuditSink",
+    "RecordingToolListNotifier",
     "admin_probe_app",
     "build_service",
 ]

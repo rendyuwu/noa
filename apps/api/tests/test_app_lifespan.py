@@ -12,7 +12,8 @@ so it exercises the state wiring without needing a database.
 
 from __future__ import annotations
 
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
@@ -24,10 +25,16 @@ from core.approvals.expiry import PendingExpirySweeper
 from core.approvals.reaper import StrandedRunReaper
 from core.auth.errors import AuthConfigurationError
 from core.auth.jwt_service import JWTService
+from core.auth.tool_list_notifications import NullToolListChangedNotifier
 from core.config import Settings
 from noa_api import main
-from noa_api.api.deps import STATE_JWT_SERVICE
+from noa_api.api.deps import (
+    STATE_JWT_SERVICE,
+    STATE_TOOL_LIST_NOTIFIER,
+    get_tool_list_notifier,
+)
 from noa_api.api.routes.auth import router as auth_router
+from noa_api.mcp_notifications import McpToolListChangedNotifier
 from support.auth import build_settings
 
 # Port 1 is privileged and nothing listens there, so the DSN is well-formed and
@@ -370,11 +377,20 @@ def test_admin_user_routes_are_mounted_on_the_real_app(pinned_settings: Settings
     """
     schema = main.create_app().openapi()["paths"]
 
-    assert {"/admin/users", "/admin/users/{user_id}", "/admin/users/{user_id}/roles"} <= set(schema)
+    assert {
+        "/admin/users",
+        "/admin/users/{user_id}",
+        "/admin/users/{user_id}/roles",
+        # T65's withdrawn route. Asserted here for the same reason as the rest: it answers 410
+        # by design, and a 410 the deployed API never serves is indistinguishable from the 404
+        # it would serve instead — which is the one thing V75's status choice rules out.
+        "/admin/users/{user_id}/tools",
+    } <= set(schema)
     # The methods §I.admin-api names, so a route added under the wrong verb is caught here too.
     assert set(schema["/admin/users"]) == {"get"}
     assert set(schema["/admin/users/{user_id}"]) == {"patch", "delete"}
     assert set(schema["/admin/users/{user_id}/roles"]) == {"put"}
+    assert set(schema["/admin/users/{user_id}/tools"]) == {"put"}
 
 
 def test_admin_role_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> None:
@@ -400,3 +416,74 @@ def test_admin_role_routes_are_mounted_on_the_real_app(pinned_settings: Settings
     assert set(schema["/admin/roles/{name}"]) == {"delete"}
     assert set(schema["/admin/roles/{name}/tools"]) == {"get", "put"}
     assert set(schema["/admin/tools"]) == {"get"}
+
+
+# --- T66: the tool-list notifier reaches the engine (V74) ---
+
+
+def test_the_app_publishes_the_real_tool_list_notifier(pinned_settings: Settings) -> None:
+    """T66/V74: `app.state` carries the MCP notifier, not the null one.
+
+    This is the gap every other T66 test leaves open. `AuthorizationService` defaults its
+    notifier to `NullToolListChangedNotifier`, so a `create_app` that forgot to publish the real
+    one would emit nothing at all — and *no* unit test would fail, because V74 makes the emit
+    best-effort and silence is its success case. The wiring is the only place that can be
+    checked.
+    """
+    app = main.create_app()
+
+    with TestClient(app):
+        notifier = getattr(app.state, STATE_TOOL_LIST_NOTIFIER)
+
+    assert isinstance(notifier, McpToolListChangedNotifier)
+
+
+def test_the_mount_and_the_admin_surface_share_one_session_register(
+    pinned_settings: Settings,
+) -> None:
+    """T66/V74: the register the MCP middleware writes is the one the notifier reads.
+
+    Two objects here would be the worst kind of bug in this feature: the middleware would
+    register every session, the notifier would find none, every emit would reach zero clients,
+    and nothing anywhere would fail. Identity is the assertion — `is`, not a count.
+    """
+    runtime = main.build_runtime(pinned_settings)
+
+    assert runtime.tool_list_notifier.registry is runtime.mcp_session_registry
+
+
+def test_building_the_app_registers_no_session(pinned_settings: Settings) -> None:
+    """The register is empty until a client connects — it starts nothing and holds nothing."""
+    runtime = main.build_runtime(pinned_settings)
+
+    assert runtime.mcp_session_registry.user_ids() == []
+
+
+def test_the_notifier_dependency_resolves_the_published_object(pinned_settings: Settings) -> None:
+    """`get_authorization_service` reaches the *same* notifier the lifespan published.
+
+    The admin route tests override `get_authorization_service` wholesale, so this dependency is
+    not exercised by any of them — and it is the only link between the engine's emit and the
+    register the MCP mount writes. Asserted by identity, because a second notifier over a second
+    register would emit to nobody without failing.
+    """
+    app = main.create_app()
+
+    with TestClient(app):
+        resolved = get_tool_list_notifier(cast("Any", SimpleNamespace(app=app)))
+
+    assert resolved is getattr(app.state, STATE_TOOL_LIST_NOTIFIER)
+
+
+def test_a_wrongly_typed_notifier_on_state_is_refused_loudly() -> None:
+    """The null notifier — or anything else — on `app.state` is a startup bug, not a silent one.
+
+    `_from_state`'s type guard is what catches it. Without the check, V74's best-effort emit means
+    the wrong object here would surface as "no client was ever notified", which is indistinguishable
+    from a correct deployment nobody was connected to.
+    """
+    app = FastAPI()
+    setattr(app.state, STATE_TOOL_LIST_NOTIFIER, NullToolListChangedNotifier())
+
+    with pytest.raises(RuntimeError, match=r"app\.state\.tool_list_notifier is "):
+        get_tool_list_notifier(cast("Any", SimpleNamespace(app=app)))

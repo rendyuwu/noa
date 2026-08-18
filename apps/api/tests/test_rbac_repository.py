@@ -280,6 +280,75 @@ async def test_replace_user_assignable_roles_skips_names_with_no_role(
     assert await repository.get_role_names(user.id) == []
 
 
+# --- T66's notification audience (V74) ---
+
+
+async def test_list_user_ids_with_role_finds_exactly_the_holders(
+    session: AsyncSession, repository: SQLAuthorizationRepository
+) -> None:
+    """The join really selects by role name, against real SQL (T66, V74).
+
+    Two holders and a non-holder, so the query is a selection rather than "every row in
+    `user_roles`" — which is what a `SELECT` missing its `WHERE` would return, and what an
+    in-memory double cannot catch.
+    """
+    holder = await make_user(session, EMAIL, roles=(ROLE_SUPPORT,))
+    other_holder = await make_user(session, OTHER_EMAIL, roles=(ROLE_SUPPORT, ROLE_NOC))
+    bystander = await make_user(session, ADMIN_EMAIL, roles=(ROLE_NOC,))
+
+    holders = await repository.list_user_ids_with_role(ROLE_SUPPORT)
+
+    assert sorted(holders) == sorted([holder.id, other_holder.id])
+    assert bystander.id not in holders
+
+
+async def test_list_user_ids_with_role_includes_a_disabled_holder(
+    session: AsyncSession, repository: SQLAuthorizationRepository
+) -> None:
+    """No `is_active` filter, deliberately (V11, V74).
+
+    A disabled operator holds no permissions, but may still hold an open MCP session until their
+    next request — and their catalog moved too. Filtering here would make the notification's
+    audience disagree with the set of sessions that could be displaying stale rows.
+    """
+    disabled = await make_user(session, EMAIL, is_active=False, roles=(ROLE_SUPPORT,))
+
+    assert await repository.list_user_ids_with_role(ROLE_SUPPORT) == [disabled.id]
+
+
+async def test_list_user_ids_with_role_is_empty_for_an_absent_role(
+    session: AsyncSession, repository: SQLAuthorizationRepository
+) -> None:
+    """A role nobody holds, and a role that does not exist, both answer `[]` rather than raise.
+
+    `delete_role` reads this *before* its own existence check, so the 404 path reaches it with a
+    name that has no row.
+    """
+    await make_user(session, EMAIL, roles=(ROLE_NOC,))
+    await repository.ensure_role(ROLE_SUPPORT)
+
+    assert await repository.list_user_ids_with_role(ROLE_SUPPORT) == []
+    assert await repository.list_user_ids_with_role("role-that-never-existed") == []
+
+
+async def test_a_deleted_roles_holders_are_gone_from_the_join(
+    session: AsyncSession, repository: SQLAuthorizationRepository
+) -> None:
+    """The cascade this query races, proved against real SQL (T66, V74).
+
+    `AuthorizationService.delete_role` reads its audience before the delete precisely because of
+    this: `ON DELETE CASCADE` takes the `user_roles` rows with the role, so afterwards the join
+    finds nobody. A service that read in the other order would notify an empty audience and look
+    like a role nobody held.
+    """
+    holder = await make_user(session, EMAIL, roles=(ROLE_SUPPORT,))
+    assert await repository.list_user_ids_with_role(ROLE_SUPPORT) == [holder.id]
+
+    assert await repository.delete_role(ROLE_SUPPORT) is True
+
+    assert await repository.list_user_ids_with_role(ROLE_SUPPORT) == []
+
+
 # --- User administration (V12) ---
 
 

@@ -213,6 +213,12 @@ def build_authorization_service(
     snapshots its repository and the repository holds a session. A long-lived service would
     pin one connection for the life of the process and answer every later question through
     it.
+
+    **No `tool_list_notifier`** (T66), so this instance takes the null one. The MCP path asks
+    this service questions and writes no permission — a notification is something a *write*
+    emits, and there is no write here to emit one. Handing the real notifier in anyway would
+    put the emit within reach of the bearer-token side of the app, which is the boundary V22
+    draws for the decision path and worth respecting here for free.
     """
     return AuthorizationService(
         repository=context.authorization_repository_factory(session),

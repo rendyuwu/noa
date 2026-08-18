@@ -47,6 +47,7 @@ from starlette.middleware import Middleware
 
 from noa_api.mcp_audit import ToolRunAuditMiddleware
 from noa_api.mcp_auth import NoaTokenVerifier
+from noa_api.mcp_notifications import McpSessionRegistry, McpSessionRegistryMiddleware
 from noa_api.mcp_rbac import RbacToolMiddleware
 from noa_api.mcp_request_auth import McpAuthContext, McpAuthErrorMiddleware
 from noa_api.mcp_tools.context import McpToolContext
@@ -62,7 +63,12 @@ MCP_MOUNT_PATH = "/mcp"
 MCP_APP_PATH = "/"
 
 
-def build_mcp_server(*, tool_context: McpToolContext, auth: AuthProvider | None = None) -> FastMCP:
+def build_mcp_server(
+    *,
+    tool_context: McpToolContext,
+    auth: AuthProvider | None = None,
+    session_registry: McpSessionRegistry | None = None,
+) -> FastMCP:
     """The FastMCP server: its tools, its RBAC gate and its authentication provider.
 
     One server per app rather than a module-level singleton: `create_app()` is called more
@@ -71,9 +77,11 @@ def build_mcp_server(*, tool_context: McpToolContext, auth: AuthProvider | None 
 
     `auth=None` builds an unauthenticated server. Nothing in production passes that — V1
     requires every MCP request to resolve a user — but the default keeps a tool-registry
-    test from having to construct a token verifier it will not use.
+    test from having to construct a token verifier it will not use. `session_registry=None`
+    follows the same rule for T66: no register, no session middleware, and a server that
+    announces nothing (V74's emit is best-effort by decision, so its absence breaks nothing).
 
-    Four things happen here and all four belong together (T19, T73):
+    Five things happen here and all five belong together (T19, T66, T73):
 
     - **Tools are registered** (`register_mcp_tools`, T19-T31 and T63). That call is also
       the guard that every exposed name is in `TOOL_CATALOG`, so a name no role can be
@@ -106,21 +114,37 @@ def build_mcp_server(*, tool_context: McpToolContext, auth: AuthProvider | None 
         RbacToolMiddleware(context=tool_context, registered_tools=frozenset(registered))
     )
     server.add_middleware(ToolRunAuditMiddleware(context=tool_context, tool_risks=registered))
+    if session_registry is not None:
+        # Added last, so it is the innermost of the three (`_run_middleware` composes over
+        # `reversed(self.middleware)`). Position is not load-bearing the way RBAC-before-audit
+        # is — this one decides nothing and refuses nothing — but innermost is the honest
+        # place for it: a message that was refused by the gate above still came from a real
+        # session holding a real catalog, and `on_message` runs on the way in regardless.
+        server.add_middleware(McpSessionRegistryMiddleware(registry=session_registry))
     return server
 
 
 def build_mcp_http_app(
-    *, auth_context: McpAuthContext, tool_context: McpToolContext
+    *,
+    auth_context: McpAuthContext,
+    tool_context: McpToolContext,
+    session_registry: McpSessionRegistry | None = None,
 ) -> StarletteWithLifespan:
     """The mountable Streamable HTTP app, authenticated per T11/T12 (R6, V1, V3).
 
     Returns a Starlette app whose `lifespan` starts the session manager. It has to run:
     without it `StreamableHTTPASGIApp` has no session manager and every request fails at
     the transport. `noa_api.main` combines it with the app's own lifespan (R6).
+
+    `session_registry` is T66's half: the register the admin surface reads to find the sessions
+    a permission change concerns (V74). It is passed in rather than created here because the
+    *other* end of it — `McpToolListChangedNotifier` on `app.state` — has to be the same object,
+    and a register built inside this function would be one the admin routes could never reach.
     """
     server = build_mcp_server(
         tool_context=tool_context,
         auth=NoaTokenVerifier(context=auth_context),
+        session_registry=session_registry,
     )
 
     return server.http_app(

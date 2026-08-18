@@ -89,6 +89,28 @@ class SQLAuthorizationRepository:
         result = await self._session.execute(select(User).order_by(User.email.asc()))
         return list(result.scalars().all())
 
+    async def list_user_ids_with_role(self, role_name: str) -> list[UUID]:
+        """Ids of the users holding `role_name` — T66's notification audience (V74).
+
+        Not a permission read, despite the shape: nothing decides anything from this. It
+        answers "whose tool catalog did a grant change move?", so the emit reaches the
+        operators it concerns rather than every open session.
+
+        No `is_active` filter, and no join to `users` at all. A disabled operator holds no
+        permissions (V11) but may still hold a live MCP session until their next request, and
+        their catalog moved too — telling them is the point. Filtering here would make the
+        emit's audience disagree with the set of sessions that could be showing stale rows.
+
+        Ordered for a reproducible answer, since the caller logs a count.
+        """
+        result = await self._session.execute(
+            select(UserRole.user_id)
+            .join(Role, Role.id == UserRole.role_id)
+            .where(Role.name == role_name)
+            .order_by(UserRole.user_id.asc())
+        )
+        return list(result.scalars().all())
+
     # --- Roles and grants ---
 
     async def list_assignable_role_names(self) -> list[str]:

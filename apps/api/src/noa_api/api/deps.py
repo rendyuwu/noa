@@ -44,9 +44,11 @@ from core.auth.errors import AuthSessionInvalidError
 from core.auth.jwt_service import JWTService
 from core.auth.ldap_service import LDAPService
 from core.auth.login_rate_limiter import LoginRateLimiter
+from core.auth.tool_list_notifications import ToolListChangedNotifier
 from core.config import Settings
 from core.db.models import ADMIN_ROLE_NAME
 from core.results.tables import ResultTableService, SQLToolResultTableReader
+from noa_api.mcp_notifications import McpToolListChangedNotifier
 
 # `app.state` keys, written by the lifespan in `noa_api.main`.
 STATE_SETTINGS: Final = "settings"
@@ -54,6 +56,7 @@ STATE_JWT_SERVICE: Final = "jwt_service"
 STATE_LDAP_SERVICE: Final = "ldap_service"
 STATE_SESSION_FACTORY: Final = "session_factory"
 STATE_APPROVED_CHANGE_EXECUTOR: Final = "approved_change_executor"
+STATE_TOOL_LIST_NOTIFIER: Final = "tool_list_notifier"
 
 DETAIL_NO_SESSION_COOKIE = "no `noa_session` cookie on the request"
 
@@ -284,8 +287,27 @@ def get_result_table_service(session: SessionDep) -> ResultTableService:
 ResultTableServiceDep = Annotated[ResultTableService, Depends(get_result_table_service)]
 
 
-def get_authorization_service(session: SessionDep) -> AuthorizationService:
-    """The RBAC engine wired to this request's session (T9).
+def get_tool_list_notifier(request: Request) -> ToolListChangedNotifier:
+    """T66's emitter, holding the MCP session register the mount writes (V74).
+
+    Long-lived and read off `app.state`, unlike the audit sink beside it: the register it reads
+    is written by the MCP middleware over the life of the process, so a per-request notifier
+    would be one holding an empty register and every emit would reach nobody — silently, since
+    V74 makes the notification best-effort.
+
+    `ToolListChangedNotifier` is a plain `Protocol`, so `_from_state`'s `isinstance` guard
+    cannot check it. The concrete class is named instead, which is the stronger check anyway:
+    what this dependency must not do is hand back the *null* notifier, and a structural check
+    would accept it.
+    """
+    return _from_state(request, STATE_TOOL_LIST_NOTIFIER, McpToolListChangedNotifier)
+
+
+def get_authorization_service(
+    session: SessionDep,
+    tool_list_notifier: Annotated[ToolListChangedNotifier, Depends(get_tool_list_notifier)],
+) -> AuthorizationService:
+    """The RBAC engine wired to this request's session (T9, T66).
 
     Built per request, like `AuthService`, so a role change and its audit event share one
     transaction. The audit sink is constructed here rather than kept on `app.state` because
@@ -295,10 +317,16 @@ def get_authorization_service(session: SessionDep) -> AuthorizationService:
     The tool catalog is left at its default (`core.auth.tool_catalog.TOOL_CATALOG`, V10).
     T13 mounted the FastMCP server but registers no tools, so the live registry is empty;
     the swap to a registry-derived catalog belongs with T19-T31/T63, when there is one.
+
+    The notifier is the one collaborator that is *not* request-scoped, and the asymmetry is
+    T66's whole shape: a permission change is a transaction, and telling the MCP sessions about
+    it is not part of that transaction — it happens after the commit, over connections that
+    outlive this request (V74).
     """
     return AuthorizationService(
         repository=SQLAuthorizationRepository(session),
         audit_sink=StructlogAdminAuditSink(),
+        tool_list_notifier=tool_list_notifier,
     )
 
 
@@ -351,6 +379,7 @@ __all__ = [
     "get_result_table_service",
     "get_session_factory",
     "get_settings_dep",
+    "get_tool_list_notifier",
     "require_admin",
     "require_session_user",
 ]
