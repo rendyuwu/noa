@@ -1,4 +1,4 @@
-"""An app carrying the real `/admin` and `/me` routes, over in-memory doubles (T51, T52, T53).
+"""An app carrying the real `/admin` and `/me` routes, over in-memory doubles (T51-T54).
 
 Same split every route test in this suite uses: the router, `require_admin`,
 `require_session_user`, the real `AuthService`, the real `AuthorizationService`, the real
@@ -24,11 +24,17 @@ could not express that without a second repository, i.e. without the thing being
 T53's routers join for a second reason: `/me/mcp-tokens` is gated by `require_session_user`
 while `/admin/users/{id}/tokens` is gated by `require_admin`, and the difference between them
 is only observable when one signed-in actor can try both.
+
+T54's three server routers join for a third: `require_admin` is a parameter on all fifteen of
+their handlers, and "every admin route is admin-only" is a claim about the whole surface — a
+test that walks it needs the whole surface mounted under one actor. Their write repositories
+are `support.server_admin`'s, their CRUD services are the **real** ones over those, and only
+the validate services are stubbed (that module records why).
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from uuid import UUID
@@ -41,7 +47,18 @@ from core.auth.jwt_service import JWTService
 from core.auth.mcp_token_service import McpTokenService
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.config import Settings
-from core.db.models import ADMIN_ROLE_NAME
+from core.db.models import ADMIN_ROLE_NAME, PMGServer, ProxmoxServer, WHMServer
+from core.servers.admin_service import (
+    PMGServerAdminService,
+    ProxmoxServerAdminService,
+    WHMServerAdminService,
+)
+from core.servers.errors import (
+    PMGServerNotFoundError,
+    ProxmoxServerNotFoundError,
+    WHMServerNotFoundError,
+)
+from core.servers.validation import ServerValidationResult
 from noa_api.api.deps import (
     STATE_JWT_SERVICE,
     STATE_LDAP_SERVICE,
@@ -50,9 +67,18 @@ from noa_api.api.deps import (
     get_auth_service,
     get_authorization_service,
     get_mcp_token_service,
+    get_pmg_server_admin_service,
+    get_pmg_server_validation_service,
+    get_proxmox_server_admin_service,
+    get_proxmox_server_validation_service,
+    get_whm_server_admin_service,
+    get_whm_server_validation_service,
 )
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.admin_roles import router as admin_roles_router
+from noa_api.api.routes.admin_servers import pmg_router as admin_pmg_servers_router
+from noa_api.api.routes.admin_servers import proxmox_router as admin_proxmox_servers_router
+from noa_api.api.routes.admin_servers import whm_router as admin_whm_servers_router
 from noa_api.api.routes.admin_users import router as admin_users_router
 from noa_api.api.routes.mcp_tokens import admin_router as admin_tokens_router
 from noa_api.api.routes.mcp_tokens import me_router as me_tokens_router
@@ -70,6 +96,13 @@ from support.rbac import (
     RecordingAuditSink,
     RecordingToolListNotifier,
 )
+from support.secrets import build_cipher
+from support.server_admin import (
+    FakePMGServerAdminRepository,
+    FakeProxmoxServerAdminRepository,
+    FakeWHMServerAdminRepository,
+    RecordingValidationService,
+)
 
 ADMIN_EMAIL = "admin@example.com"
 OPERATOR_EMAIL = "operator@example.com"
@@ -78,6 +111,9 @@ USERS_PATH = "/admin/users"
 ROLES_PATH = "/admin/roles"
 TOOLS_PATH = "/admin/tools"
 ME_TOKENS_PATH = "/me/mcp-tokens"
+WHM_SERVERS_PATH = "/admin/whm/servers"
+PROXMOX_SERVERS_PATH = "/admin/proxmox/servers"
+PMG_SERVERS_PATH = "/admin/pmg/servers"
 
 
 def admin_tokens_path(user_id: UUID) -> str:
@@ -112,6 +148,14 @@ class AdminHarness:
     token_repository: FakeMcpTokenRepository
     audit: RecordingAuditSink
     notifier: RecordingToolListNotifier
+    # T54's three verticals. The write repositories are what the routes mutate; the validation
+    # services are stubs (see `support.server_admin.RecordingValidationService` for why).
+    whm_servers: FakeWHMServerAdminRepository
+    proxmox_servers: FakeProxmoxServerAdminRepository
+    pmg_servers: FakePMGServerAdminRepository
+    whm_validation: RecordingValidationService
+    proxmox_validation: RecordingValidationService
+    pmg_validation: RecordingValidationService
 
     def sign_in(
         self,
@@ -192,12 +236,32 @@ class AdminHarness:
         assert isinstance(tools, list)
         return tools
 
+    def list_servers(self, path: str) -> list[dict[str, object]]:
+        """`GET` one of the three server lists → the `servers` array (T54)."""
+        response = self.client.get(path)
+        assert response.status_code == 200, response.text
+        servers = response.json()["servers"]
+        assert isinstance(servers, list)
+        return servers
+
+    def create_server(self, path: str, body: dict[str, object]) -> dict[str, object]:
+        """`POST` one of the three server lists → the created row (T54). Asserts 201."""
+        response = self.client.post(path, json=body)
+        assert response.status_code == 201, response.text
+        server = response.json()["server"]
+        assert isinstance(server, dict)
+        return server
+
 
 @contextmanager
 def admin_harness(
     *,
     settings: Settings | None = None,
     known_tools: frozenset[str] = TOOL_CATALOG,
+    whm_rows: Sequence[WHMServer] | None = None,
+    proxmox_rows: Sequence[ProxmoxServer] | None = None,
+    pmg_rows: Sequence[PMGServer] | None = None,
+    validation_result: ServerValidationResult | None = None,
 ) -> Iterator[AdminHarness]:
     """An app with the `/admin` and `/me` routes, wired to in-memory doubles.
 
@@ -218,12 +282,34 @@ def admin_harness(
     notifier = RecordingToolListNotifier(calls=repository.calls)
     jwt_service = JWTService(resolved_settings)
 
+    whm_servers = FakeWHMServerAdminRepository(whm_rows or ())
+    proxmox_servers = FakeProxmoxServerAdminRepository(proxmox_rows or ())
+    pmg_servers = FakePMGServerAdminRepository(pmg_rows or ())
+    whm_validation = RecordingValidationService(
+        result=validation_result or ServerValidationResult(ok=True, message="ok"),
+        not_found=WHMServerNotFoundError,
+        known_ids=[row.id for row in whm_servers.servers],
+    )
+    proxmox_validation = RecordingValidationService(
+        result=validation_result or ServerValidationResult(ok=True, message="ok"),
+        not_found=ProxmoxServerNotFoundError,
+        known_ids=[row.id for row in proxmox_servers.servers],
+    )
+    pmg_validation = RecordingValidationService(
+        result=validation_result or ServerValidationResult(ok=True, message="ok"),
+        not_found=PMGServerNotFoundError,
+        known_ids=[row.id for row in pmg_servers.servers],
+    )
+
     app = FastAPI()
     install_error_handling(app)
     app.include_router(admin_users_router)
     app.include_router(admin_roles_router)
     app.include_router(admin_tokens_router)
     app.include_router(me_tokens_router)
+    app.include_router(admin_whm_servers_router)
+    app.include_router(admin_proxmox_servers_router)
+    app.include_router(admin_pmg_servers_router)
 
     # The same attributes `noa_api.main.lifespan` writes, minus the engine no test here needs.
     setattr(app.state, STATE_SETTINGS, resolved_settings)
@@ -247,6 +333,23 @@ def admin_harness(
         repository=token_repository,
         audit_sink=audit,
     )
+    # T54. The CRUD services are the **real** ones over fake repositories and the real cipher,
+    # so encrypt-on-write, the name check, the audit event and the commit call all run — the
+    # same split every other service above uses. Only the validate services are stubs, and
+    # `support.server_admin.RecordingValidationService` records why.
+    cipher = build_cipher()
+    app.dependency_overrides[get_whm_server_admin_service] = lambda: WHMServerAdminService(
+        repository=whm_servers, cipher=cipher, audit_sink=audit
+    )
+    app.dependency_overrides[get_proxmox_server_admin_service] = lambda: ProxmoxServerAdminService(
+        repository=proxmox_servers, cipher=cipher, audit_sink=audit
+    )
+    app.dependency_overrides[get_pmg_server_admin_service] = lambda: PMGServerAdminService(
+        repository=pmg_servers, cipher=cipher, audit_sink=audit
+    )
+    app.dependency_overrides[get_whm_server_validation_service] = lambda: whm_validation
+    app.dependency_overrides[get_proxmox_server_validation_service] = lambda: proxmox_validation
+    app.dependency_overrides[get_pmg_server_validation_service] = lambda: pmg_validation
 
     with TestClient(app) as client:
         yield AdminHarness(
@@ -259,6 +362,12 @@ def admin_harness(
             token_repository=token_repository,
             audit=audit,
             notifier=notifier,
+            whm_servers=whm_servers,
+            proxmox_servers=proxmox_servers,
+            pmg_servers=pmg_servers,
+            whm_validation=whm_validation,
+            proxmox_validation=proxmox_validation,
+            pmg_validation=pmg_validation,
         )
 
 
@@ -266,9 +375,12 @@ __all__ = [
     "ADMIN_EMAIL",
     "ME_TOKENS_PATH",
     "OPERATOR_EMAIL",
+    "PMG_SERVERS_PATH",
+    "PROXMOX_SERVERS_PATH",
     "ROLES_PATH",
     "TOOLS_PATH",
     "USERS_PATH",
+    "WHM_SERVERS_PATH",
     "AdminHarness",
     "SignedInUser",
     "admin_harness",

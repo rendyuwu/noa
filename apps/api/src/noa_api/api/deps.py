@@ -50,6 +50,25 @@ from core.auth.tool_list_notifications import ToolListChangedNotifier
 from core.config import Settings
 from core.db.models import ADMIN_ROLE_NAME
 from core.results.tables import ResultTableService, SQLToolResultTableReader
+from core.secrets.crypto import SecretCipher
+from core.servers.admin_repository import (
+    SQLPMGHostKeyPinRepository,
+    SQLPMGServerAdminRepository,
+    SQLProxmoxServerAdminRepository,
+    SQLWHMHostKeyPinRepository,
+    SQLWHMServerAdminRepository,
+)
+from core.servers.admin_service import (
+    PMGServerAdminService,
+    ProxmoxServerAdminService,
+    WHMServerAdminService,
+)
+from core.servers.proxmox_repository import SQLProxmoxServerRepository
+from core.servers.validation import (
+    PMGServerValidationService,
+    ProxmoxServerValidationService,
+    WHMServerValidationService,
+)
 from noa_api.mcp_notifications import McpToolListChangedNotifier
 
 # `app.state` keys, written by the lifespan in `noa_api.main`.
@@ -59,6 +78,8 @@ STATE_LDAP_SERVICE: Final = "ldap_service"
 STATE_SESSION_FACTORY: Final = "session_factory"
 STATE_APPROVED_CHANGE_EXECUTOR: Final = "approved_change_executor"
 STATE_TOOL_LIST_NOTIFIER: Final = "tool_list_notifier"
+# S105: an `app.state` attribute name, not a credential — the cipher it names holds the key.
+STATE_SECRET_CIPHER: Final = "secret_cipher"  # noqa: S105
 
 DETAIL_NO_SESSION_COOKIE = "no `noa_session` cookie on the request"
 
@@ -361,6 +382,143 @@ def get_mcp_token_service(session: SessionDep, settings: SettingsDep) -> McpToke
 McpTokenServiceDep = Annotated[McpTokenService, Depends(get_mcp_token_service)]
 
 
+def get_secret_cipher(request: Request) -> SecretCipher:
+    """The app's one `SecretCipher`, built in `build_runtime` (C7, V48, V52).
+
+    Long-lived and read off `app.state` like `JWTService`: a per-request cipher would re-derive
+    a Fernet key on every call, and a bad key would surface as a 500 on the first server save
+    rather than as a failure to boot. The MCP tool path holds this same instance through
+    `McpToolContext`, so a credential written by the admin routes and read by a tool cannot be
+    encrypted under two different keys.
+    """
+    return _from_state(request, STATE_SECRET_CIPHER, SecretCipher)
+
+
+SecretCipherDep = Annotated[SecretCipher, Depends(get_secret_cipher)]
+
+
+def get_whm_server_admin_service(
+    session: SessionDep,
+    cipher: SecretCipherDep,
+) -> WHMServerAdminService:
+    """WHM inventory CRUD, wired to this request's session (T54, V14, V100).
+
+    Built per request like `AuthorizationService` and `McpTokenService`, and for the same
+    reason: the write and its audit event share one transaction, and the service commits that
+    transaction itself because `get_db_session` does not (V100).
+
+    `SQLWHMServerAdminRepository` — not the read repository the MCP tool path gets. The tool
+    path resolves a server reference and must not hold an object that can delete one, which is
+    the split `get_approval_card_service` makes one table over.
+    """
+    return WHMServerAdminService(
+        repository=SQLWHMServerAdminRepository(session),
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+def get_proxmox_server_admin_service(
+    session: SessionDep,
+    cipher: SecretCipherDep,
+) -> ProxmoxServerAdminService:
+    """Proxmox inventory CRUD, wired to this request's session (T54, V14, V100)."""
+    return ProxmoxServerAdminService(
+        repository=SQLProxmoxServerAdminRepository(session),
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+def get_pmg_server_admin_service(
+    session: SessionDep,
+    cipher: SecretCipherDep,
+) -> PMGServerAdminService:
+    """PMG inventory CRUD, wired to this request's session (T54, V14, V100)."""
+    return PMGServerAdminService(
+        repository=SQLPMGServerAdminRepository(session),
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+WHMServerAdminServiceDep = Annotated[WHMServerAdminService, Depends(get_whm_server_admin_service)]
+ProxmoxServerAdminServiceDep = Annotated[
+    ProxmoxServerAdminService, Depends(get_proxmox_server_admin_service)
+]
+PMGServerAdminServiceDep = Annotated[PMGServerAdminService, Depends(get_pmg_server_admin_service)]
+
+
+def get_whm_server_validation_service(
+    request: Request,
+    cipher: SecretCipherDep,
+) -> WHMServerValidationService:
+    """WHM's reachability probe (T54, V82).
+
+    **Takes the session factory, not this request's session**, unlike the three CRUD services
+    above — and this is the one dependency in this file that deliberately does not use
+    `SessionDep`. A validate opens a socket to somebody else's host, and holding a pooled
+    connection across that hop is how a slow server becomes a database outage (T21's rule);
+    `core.approvals.expiry`'s sweeper draws its own sessions for the same reason. The service
+    reads its row in one short session, closes it, does the network work, and opens a second
+    session only when there is a host key to store.
+
+    `SQLWHMHostKeyPinRepository` is the narrowest thing this can be handed: it reads one row and
+    writes one column. A reachability probe must not be able to rewrite a credential — the
+    argument `get_approval_card_service` makes about a render path that must not grant an
+    authorization.
+    """
+    return WHMServerValidationService(
+        session_factory=get_session_factory(request),
+        repository_factory=SQLWHMHostKeyPinRepository,
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+def get_proxmox_server_validation_service(
+    request: Request,
+    cipher: SecretCipherDep,
+) -> ProxmoxServerValidationService:
+    """Proxmox's reachability probe (T54).
+
+    Same session discipline as WHM's above, and a strictly weaker repository:
+    `SQLProxmoxServerRepository` is the `SELECT`-only read repository, because Proxmox has no
+    SSH path and therefore no host key to pin (I.ext). This validate writes nothing at all, and
+    the type says so.
+    """
+    return ProxmoxServerValidationService(
+        session_factory=get_session_factory(request),
+        repository_factory=SQLProxmoxServerRepository,
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+def get_pmg_server_validation_service(
+    request: Request,
+    cipher: SecretCipherDep,
+) -> PMGServerValidationService:
+    """PMG's reachability probe (T54, V58, V82). Same shape as WHM's, one table over."""
+    return PMGServerValidationService(
+        session_factory=get_session_factory(request),
+        repository_factory=SQLPMGHostKeyPinRepository,
+        cipher=cipher,
+        audit_sink=StructlogAdminAuditSink(),
+    )
+
+
+WHMServerValidationServiceDep = Annotated[
+    WHMServerValidationService, Depends(get_whm_server_validation_service)
+]
+ProxmoxServerValidationServiceDep = Annotated[
+    ProxmoxServerValidationService, Depends(get_proxmox_server_validation_service)
+]
+PMGServerValidationServiceDep = Annotated[
+    PMGServerValidationService, Depends(get_pmg_server_validation_service)
+]
+
+
 async def require_admin(current_user: SessionUserDep) -> SessionUser:
     """Gate every `/admin` route on the `admin` role (V13).
 
@@ -392,10 +550,17 @@ __all__ = [
     "JWTServiceDep",
     "LDAPServiceDep",
     "McpTokenServiceDep",
+    "PMGServerAdminServiceDep",
+    "PMGServerValidationServiceDep",
+    "ProxmoxServerAdminServiceDep",
+    "ProxmoxServerValidationServiceDep",
     "ResultTableServiceDep",
+    "SecretCipherDep",
     "SessionDep",
     "SessionUserDep",
     "SettingsDep",
+    "WHMServerAdminServiceDep",
+    "WHMServerValidationServiceDep",
     "get_action_decision_service",
     "get_action_request_expiry_service",
     "get_approval_card_service",
@@ -406,10 +571,17 @@ __all__ = [
     "get_jwt_service",
     "get_ldap_service",
     "get_mcp_token_service",
+    "get_pmg_server_admin_service",
+    "get_pmg_server_validation_service",
+    "get_proxmox_server_admin_service",
+    "get_proxmox_server_validation_service",
     "get_result_table_service",
+    "get_secret_cipher",
     "get_session_factory",
     "get_settings_dep",
     "get_tool_list_notifier",
+    "get_whm_server_admin_service",
+    "get_whm_server_validation_service",
     "require_admin",
     "require_session_user",
 ]

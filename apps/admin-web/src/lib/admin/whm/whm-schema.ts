@@ -23,16 +23,3 @@ export function buildWhmServerFormSchema(
       }
     })
 }
-
-// Zod schema for the reseller-token dialog (issue #108). The token itself is
-// write-only and NOT part of the validated shape here (it is optional on rotate,
-// required on create) — it is validated in the submit handler and never stored.
-// Owner and API username charset/uniqueness stay authoritative on the backend
-// (WHM_SERVER_TOKEN_OWNER_EXISTS, "valid WHM username", 400/409). react-hook-form
-// drives this through zodResolver, same as the Users/Roles verticals.
-export const resellerTokenSchema = z.object({
-  ownerUsername: z.string().trim().min(1, 'Owner username is required'),
-  apiUsername: z.string().trim().min(1, 'API username is required'),
-})
-
-export type ResellerTokenValues = z.infer<typeof resellerTokenSchema>

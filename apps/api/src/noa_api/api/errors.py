@@ -3,7 +3,8 @@
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
 `core.auth.mcp_token_errors`, `core.auth.mcp_auth_errors`, `core.secrets.errors`,
-`core.integrations.whm.errors`, `core.integrations.pmg.errors`, `core.approvals.errors`, and
+`core.integrations.whm.errors`, `core.integrations.pmg.errors`, `core.approvals.errors`,
+`core.servers.errors`, and
 — for the one refusal no core service can reach — `noa_api.api.admin_errors`),
 so routes raise and this
 decides the status code. Routes
@@ -111,6 +112,15 @@ from core.results.errors import (
     ResultTableUnavailableError,
 )
 from core.secrets.errors import SecretCryptoError, YopassError, YopassNotConfiguredError
+from core.servers.errors import (
+    PMGServerNameExistsError,
+    PMGServerNotFoundError,
+    ProxmoxServerNameExistsError,
+    ProxmoxServerNotFoundError,
+    ServerInventoryError,
+    WHMServerNameExistsError,
+    WHMServerNotFoundError,
+)
 from noa_api.api.admin_errors import DirectGrantsDisabledError
 from noa_api.api.request_context import (
     REQUEST_ID_HEADER,
@@ -199,25 +209,50 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # Bare `McpAuthError`: a request problem, not "NOA is down". Same subclass-tree test
     # guards this from becoming the default for a class added later.
     McpAuthError: status.HTTP_400_BAD_REQUEST,
+    # --- Server inventory admin CRUD (T54) ---
+    # 404 for an absent row on all three tables, and per-system codes rather than one shared
+    # `server_not_found`: three panel pages over three tables, and "which inventory" is the
+    # first question a log reader asks (`core.servers.errors` carries the reasoning).
+    WHMServerNotFoundError: status.HTTP_404_NOT_FOUND,
+    ProxmoxServerNotFoundError: status.HTTP_404_NOT_FOUND,
+    PMGServerNotFoundError: status.HTTP_404_NOT_FOUND,
+    # 409, not 422: the submitted name is a valid server name, and it is the state of the
+    # table that refuses it. `name` is `unique=True` on all three (T4) *and* what
+    # `resolve_*_server_ref` matches an operator's word against (V18).
+    WHMServerNameExistsError: status.HTTP_409_CONFLICT,
+    ProxmoxServerNameExistsError: status.HTTP_409_CONFLICT,
+    PMGServerNameExistsError: status.HTTP_409_CONFLICT,
+    # Bare `ServerInventoryError`: a refusal about one row, so 409 by decision rather than by
+    # falling through to a 503 that would read as "NOA is down". The same subclass-tree test
+    # every taxonomy above has guards this from becoming the default for a later class.
+    ServerInventoryError: status.HTTP_409_CONFLICT,
     # --- Remote execution (T14) ---
     # 502: a host NOA depends on refused, timed out, or presented an unexpected host key.
     # Mapped now so it does not take `FALLBACK_STATUS` — 503 reads as "authentication is
     # unclassified and NOA may be down", which is the wrong answer for a working NOA and a
     # broken remote. One entry for the whole SSH surface because `SSHExecutionError` carries
-    # the specific `error_code`; T54 owns the validate routes and refines per code there
-    # (`ssh_timeout` → 504, `ssh_not_configured`/`ssh_host_key_not_validated` → 409).
+    # the specific `error_code`.
+    #
+    # T54 does **not** refine this per code, contrary to what this comment predicted at T14.
+    # Its validate route catches the whole tree and answers **200** with
+    # `{ok:false, error_code, message}`: an operator pressing Validate asked "does this server
+    # answer?", and "no, `ssh_timeout`" is that question's *answer*, not a failure of the
+    # request. The panel reads `result.ok` for exactly that reason
+    # (`apps/admin-web/.../whm-status.ts::deriveWhmValidationStatus`), so a 502 there would
+    # throw at the transport and render as an unhandled error instead of a red status chip.
+    # This 502 therefore covers the *tool* paths only, where the tools sanitise per V19.
     SSHExecutionError: status.HTTP_502_BAD_GATEWAY,
     # --- WHM firewall backends (T16) ---
     # 502, same reading as `SSHExecutionError`: NOA works, csf or imunify360-agent on the
     # remote did not answer usably. One entry for the tree — `CSFCLIError` and
     # `ImunifyCLIError` inherit via the MRO walk, and which backend failed is already in
-    # `error_code`. T54's validate route is the HTTP caller; the tools sanitise per V19.
+    # `error_code`. T54's validate route answers 200 with `ok:false` instead (see above).
     WHMFirewallCLIError: status.HTTP_502_BAD_GATEWAY,
     # --- PMG `pmgsh` CLI (T18) ---
     # 502, same reading again: NOA works, `pmgsh`/`pmgconfig` on the PMG node did not answer
     # usably. One entry for the whole surface — `PMGSHCLIError` carries the specific
-    # `error_code`, including the `SSHExecutionError` codes it converts. T54's validate route is
-    # the HTTP caller; the tools sanitise per V19.
+    # `error_code`, including the `SSHExecutionError` codes it converts. T54's validate route
+    # answers 200 with `ok:false` instead (see above).
     PMGSHCLIError: status.HTTP_502_BAD_GATEWAY,
     # --- Secrets (T15) ---
     # 500: NOA cannot read or write its own ciphertext. The operator's request was fine and

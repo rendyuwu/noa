@@ -59,7 +59,7 @@ export function WhmServersPage() {
       <PageHeader
         breadcrumb={[{ label: 'Administration', href: '/admin' }, { label: 'WHM servers' }]}
         title="WHM servers"
-        description="Manage WHM API and SSH credentials, validation, and per-reseller token routing. Secrets are stored encrypted and never displayed after save."
+        description="Manage WHM API and SSH credentials and validate connectivity. Secrets are stored encrypted and never displayed after save."
       />
 
       <div className="mt-6 flex flex-col gap-4">

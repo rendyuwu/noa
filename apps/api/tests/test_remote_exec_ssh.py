@@ -24,9 +24,7 @@ What each group protects:
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Callable
-from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import Any
 
@@ -42,6 +40,7 @@ from core.remote_exec.ssh import (
 )
 from core.remote_exec.types import SSHConnectionConfig
 from noa_api.api.errors import FALLBACK_STATUS, error_body, status_for
+from support.remote_exec import loopback_ssh_config, loopback_ssh_server
 
 _LVE_BANNER = (
     "***************************************************************************\n"
@@ -255,77 +254,10 @@ async def test_ssh_exec_without_stored_fingerprint_never_connects(
 # `known_hosts=None` is the one value that silently switches host-key validation off — asyncssh
 # sets `_trusted_host_keys = None` and skips the block that would call the callback. These tests
 # stand on a real server precisely because a fake handshake cannot tell the two apart.
-
-
-@dataclass
-class _RecordingSSHServer(asyncssh.SSHServer):
-    """A loopback server that remembers whether a client ever got as far as authenticating."""
-
-    auth_attempts: list[str] = field(default_factory=list)
-
-    def begin_auth(self, username: str) -> bool:
-        self.auth_attempts.append(username)
-        return True
-
-    def password_auth_supported(self) -> bool:
-        return True
-
-    def validate_password(self, username: str, password: str) -> bool:
-        self.auth_attempts.append(f"{username}:{password}")
-        return True
-
-
-@dataclass
-class _LoopbackSSH:
-    port: int
-    host_key_fingerprint: str
-    auth_attempts: list[str]
-
-
-@asynccontextmanager
-async def _loopback_ssh_server(*, stdout: str = "live-output") -> AsyncIterator[_LoopbackSSH]:
-    """A real SSH server on 127.0.0.1 with a throwaway host key.
-
-    Ed25519 keygen and a loopback socket, so this costs milliseconds. Everything the pin
-    claims — rejection during key exchange, before auth — is only observable here.
-    """
-    host_key = asyncssh.generate_private_key("ssh-ed25519")
-    attempts: list[str] = []
-
-    def _server_factory() -> _RecordingSSHServer:
-        server = _RecordingSSHServer(auth_attempts=attempts)
-        return server
-
-    def _process_factory(process: Any) -> None:
-        process.stdout.write(stdout)
-        process.exit(0)
-
-    server = await asyncssh.create_server(
-        _server_factory,
-        "127.0.0.1",
-        0,
-        server_host_keys=[host_key],
-        process_factory=_process_factory,
-    )
-    try:
-        yield _LoopbackSSH(
-            port=server.sockets[0].getsockname()[1],
-            host_key_fingerprint=host_key.get_fingerprint("sha256"),
-            auth_attempts=attempts,
-        )
-    finally:
-        server.close()
-        await server.wait_closed()
-
-
-def _live_config(server: _LoopbackSSH, *, fingerprint: str | None) -> SSHConnectionConfig:
-    return SSHConnectionConfig(
-        host="127.0.0.1",
-        port=server.port,
-        username="noa-ops",
-        password=_SSH_PASSWORD,
-        host_key_fingerprint=fingerprint,
-    )
+#
+# The server itself lives in `support/remote_exec.py` as of T54: its validate flow decides *when*
+# a pin gets written and needs the same real handshake, and two copies of the rig are two things
+# that can silently stop overlapping with reality (V89's reason, one mechanism over).
 
 
 async def test_wrong_host_key_is_rejected_by_a_real_handshake_before_auth() -> None:
@@ -335,10 +267,10 @@ async def test_wrong_host_key_is_rejected_by_a_real_handshake_before_auth() -> N
     would also raise `ssh_host_key_mismatch` — after the SSH password had already been handed
     to whatever answered the socket. Rejection has to land in key exchange.
     """
-    async with _loopback_ssh_server(stdout="attacker-controlled") as server:
+    async with loopback_ssh_server(stdout="attacker-controlled") as server:
         with pytest.raises(SSHExecutionError) as excinfo:
             await ssh_exec(
-                _live_config(server, fingerprint=_OTHER_FINGERPRINT),
+                loopback_ssh_config(server, fingerprint=_OTHER_FINGERPRINT),
                 command="csf -g 1.2.3.4",
                 timeout_seconds=10.0,
             )
@@ -350,9 +282,9 @@ async def test_wrong_host_key_is_rejected_by_a_real_handshake_before_auth() -> N
 
 async def test_matching_host_key_runs_the_command_over_a_real_handshake() -> None:
     """The pin must not be so strict it rejects the host it was taken from."""
-    async with _loopback_ssh_server(stdout="csf: 1.2.3.4 not found\n") as server:
+    async with loopback_ssh_server(stdout="csf: 1.2.3.4 not found\n") as server:
         result = await ssh_exec(
-            _live_config(server, fingerprint=server.host_key_fingerprint),
+            loopback_ssh_config(server, fingerprint=server.host_key_fingerprint),
             command="csf -g 1.2.3.4",
             timeout_seconds=10.0,
         )
@@ -363,9 +295,9 @@ async def test_matching_host_key_runs_the_command_over_a_real_handshake() -> Non
 
 async def test_get_host_fingerprint_captures_the_key_a_real_server_presents() -> None:
     """TOFU stays unpinned, and now reports the key the handshake actually validated."""
-    async with _loopback_ssh_server() as server:
+    async with loopback_ssh_server() as server:
         fingerprint = await ssh_get_host_fingerprint(
-            _live_config(server, fingerprint=None), timeout_seconds=10.0
+            loopback_ssh_config(server, fingerprint=None), timeout_seconds=10.0
         )
 
     assert fingerprint == server.host_key_fingerprint

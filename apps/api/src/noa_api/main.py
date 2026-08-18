@@ -53,6 +53,7 @@ from noa_api.api.deps import (
     STATE_APPROVED_CHANGE_EXECUTOR,
     STATE_JWT_SERVICE,
     STATE_LDAP_SERVICE,
+    STATE_SECRET_CIPHER,
     STATE_SESSION_FACTORY,
     STATE_SETTINGS,
     STATE_TOOL_LIST_NOTIFIER,
@@ -60,6 +61,9 @@ from noa_api.api.deps import (
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
 from noa_api.api.routes.admin_roles import router as admin_roles_router
+from noa_api.api.routes.admin_servers import pmg_router as admin_pmg_servers_router
+from noa_api.api.routes.admin_servers import proxmox_router as admin_proxmox_servers_router
+from noa_api.api.routes.admin_servers import whm_router as admin_whm_servers_router
 from noa_api.api.routes.admin_users import router as admin_users_router
 from noa_api.api.routes.auth import router as auth_router
 from noa_api.api.routes.mcp_tokens import admin_router as admin_tokens_router
@@ -212,6 +216,10 @@ def build_lifespan(
         # T66/V74: what `get_authorization_service` hands the RBAC engine, so a committed
         # permission change reaches the MCP sessions the mount registered.
         setattr(app.state, STATE_TOOL_LIST_NOTIFIER, runtime.tool_list_notifier)
+        # T54: the *same* cipher the MCP tool path holds through `McpToolContext`, not a second
+        # one built per request. A credential the admin routes encrypt and a tool decrypts has
+        # to be under one key, and one construction site is how that stays true (C7, V48).
+        setattr(app.state, STATE_SECRET_CIPHER, runtime.secret_cipher)
 
         # V32's terminality without traffic (T39) and V30's reaper (T38). Started here rather
         # than at construction because the tasks belong to the running loop, and stopped before
@@ -240,7 +248,7 @@ def build_lifespan(
 def create_app() -> FastAPI:
     """Build the FastAPI app with the MCP server mounted at `/mcp` (T13, I.mcp).
 
-    Router set still to land: the rest of `/admin` — roles, tokens, servers, audit (T52-T55).
+    Router set still to land: the audit half of `/admin` (T55).
 
     Three things about the mount are load-bearing:
 
@@ -312,6 +320,15 @@ def create_app() -> FastAPI:
     # `require_admin`: the id it acts on is the session's, never the request's, so an operator
     # can reach their own credentials and no one else's (V6).
     app.include_router(me_tokens_router)
+    # Server inventory: WHM, Proxmox, PMG (T54, I.admin-api). Three routers because they are
+    # three tables, one module because they share the validate answer shape and the field
+    # validators (`routes/admin_servers.py`). Same `require_admin` gate as the rest of `/admin`,
+    # and the only admin surface that opens a connection to a third-party host — which is why
+    # its validate services draw their own sessions rather than this request's (see
+    # `noa_api.api.deps.get_whm_server_validation_service`).
+    app.include_router(admin_whm_servers_router)
+    app.include_router(admin_proxmox_servers_router)
+    app.include_router(admin_pmg_servers_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

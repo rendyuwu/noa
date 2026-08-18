@@ -135,6 +135,13 @@ stripping ∧ `sudo -n` hardened there. **Host-key pinning ∧ TOFU refresh were
 `known_hosts=None` = asyncssh's off switch, port inherited a dead pin, fixed here (B2, V82).
 Upstream provenance ⊥ evidence a control works: ported security control ! land with a test vs the
 real mechanism before any §V ∨ doc calls it hardened. (C13, V69, V82, V84)
+**Same rule caught the REFRESH half (T54)** — upstream WHM validate captured ∧ OVERWROTE the pin
+EVERY run ⇒ pin worth nothing, any admin pressing Validate silently re-trusts whatever answers.
+NOA pins ONCE: ⊥ pin → capture, store ONLY if the probe after it passes; stored pin ≠ presented
+→ `ssh_host_key_mismatch`, ⊥ re-pin. Rotation = 2 deliberate acts (clear, then validate). Test =
+real `asyncssh` on loopback + `auth_attempts == []`
+(`apps/api/tests/test_server_host_key_validation.py`). Upstream's PMG had the tighter shape ∧ its
+WHM ⊥ — port the tighter one, ⊥ the first one read.
 
 ## Docs map
 

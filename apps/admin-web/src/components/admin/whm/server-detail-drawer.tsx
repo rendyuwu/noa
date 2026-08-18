@@ -25,8 +25,6 @@ import {
   getWhmTlsBadge,
 } from '@/lib/admin/whm/whm-status'
 
-import { ResellerTokensSection } from './reseller-tokens-section'
-
 export type ServerDetailDrawerProps = {
   server: WhmServer | null
   validateResult: ValidateWhmServerResponse | undefined
@@ -41,8 +39,8 @@ export type ServerDetailDrawerProps = {
 // Contextual detail for one WHM server (issue #108). A Drawer inspects/edits
 // alongside the list; a blocking decision (delete) escalates to ConfirmDialog.
 // The drawer is controlled — open whenever a server is selected — and its inner
-// content is keyed by server id so switching rows re-seeds the reseller-token
-// sub-controller. No secret is ever displayed; only presence/derived state.
+// content is keyed by server id so switching rows re-mounts it from scratch.
+// No secret is ever displayed; only presence/derived state.
 export function ServerDetailDrawer({ server, ...rest }: ServerDetailDrawerProps) {
   return (
     <Drawer open={server !== null} onOpenChange={(open) => (open ? undefined : rest.onCloseAction())}>
@@ -144,15 +142,13 @@ function ServerDetailContent({
             />
           </dl>
         </section>
-
-        <ResellerTokensSection serverId={server.id} />
       </div>
 
       <DrawerFooter>
         <ConfirmDialog
           tone="danger"
           title="Delete server?"
-          description={`This permanently deletes the ${server.name} server configuration from NOA, including its stored credentials and reseller tokens. This cannot be undone.`}
+          description={`This permanently deletes the ${server.name} server configuration from NOA, including its stored credentials. This cannot be undone.`}
           confirmLabel="Delete server"
           onConfirm={confirmDelete}
           trigger={

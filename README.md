@@ -124,3 +124,12 @@ passes `known_hosts=None`, which is asyncssh's documented off switch, so the por
 that accepted any host key until it was fixed here (§B.2, §V.82). Upstream provenance is not
 evidence that a control works: a ported security control needs a test against the real mechanism
 before any doc calls it hardened.
+
+The same rule caught the *refresh* half at §T.54. Upstream's WHM validate captured whatever key
+answered and overwrote the stored pin on every run, which makes the pin worth nothing — any admin
+pressing Validate silently re-trusted whatever was on the other end of the address. NOA pins
+**once**: a row with no fingerprint gets one captured and stored only if the probe that follows it
+passes, and a stored pin that no longer matches answers `ssh_host_key_mismatch` instead of being
+refreshed. A legitimate key rotation is a deliberate two-step — clear the fingerprint, then
+validate. Its test stands on a real `asyncssh` server on loopback and asserts the server recorded
+zero authentication attempts (`apps/api/tests/test_server_host_key_validation.py`).

@@ -117,6 +117,38 @@ describe('jsonOrThrow', () => {
     expect(reportClientError).not.toHaveBeenCalled()
   })
 
+  it("surfaces NOA's `message`, which is the field its error envelope actually carries", async () => {
+    // The API's envelope is { error_code, message, request_id } — `detail` is the internal
+    // diagnostic and is deliberately kept out of response bodies (§V.8). Reading only `detail`
+    // rendered every refusal as "Request failed (409)".
+    const res = new Response(
+      JSON.stringify({
+        error_code: 'whm_server_name_exists',
+        message: 'A WHM server with that name already exists. Choose a different name.',
+        request_id: 'req-409',
+      }),
+      { status: 409, headers: { 'content-type': 'application/json' } },
+    )
+
+    await expect(jsonOrThrow(res)).rejects.toMatchObject({
+      status: 409,
+      detail: 'A WHM server with that name already exists. Choose a different name.',
+      errorCode: 'whm_server_name_exists',
+      requestId: 'req-409',
+    })
+  })
+
+  it('still falls back to the status line when a body carries neither field', async () => {
+    // The negative control: without it, "the message was surfaced" would pass against a
+    // helper that surfaced anything at all.
+    const res = new Response(JSON.stringify({ error_code: 'whm_server_not_found' }), {
+      status: 404,
+      headers: { 'content-type': 'application/json' },
+    })
+
+    await expect(jsonOrThrow(res)).rejects.toMatchObject({ detail: 'Request failed (404)' })
+  })
+
   it('falls back to the x-request-id header when request_id is absent', async () => {
     const res = new Response(JSON.stringify({ detail: 'Forbidden' }), {
       status: 403,

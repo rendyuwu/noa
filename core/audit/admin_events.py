@@ -45,6 +45,31 @@ EVENT_USER_ROLES_UPDATED = "admin_user_roles_updated"
 EVENT_MCP_TOKEN_MINTED = "admin_mcp_token_minted"  # noqa: S105
 EVENT_MCP_TOKEN_REVOKED = "admin_mcp_token_revoked"  # noqa: S105
 
+# T54, server inventory. `pmg_server_created` / `_deleted` / `_validated` are `noa-old`'s
+# strings verbatim (its `PMGServerService._create_audit_log` was the only one of the three
+# verticals that wrote real audit rows; WHM and Proxmox logged unstructured lines). The other
+# nine follow that spelling rather than inventing a second one, so a query over this trail
+# reads `<system>_server_<verb>` for all three tables.
+#
+# `_validated` is in the trail beside the three mutations for a reason worth stating: a
+# validate is the only operator action that can *write* a host-key pin (V82), and "who pinned
+# this key, and when" is the question a mismatch six months later turns into.
+#
+# Payloads carry ids, names, hosts, ports and booleans. Never an API token, never an SSH
+# credential, never a fingerprint's surrounding secret material (V8).
+EVENT_WHM_SERVER_CREATED = "whm_server_created"
+EVENT_WHM_SERVER_UPDATED = "whm_server_updated"
+EVENT_WHM_SERVER_DELETED = "whm_server_deleted"
+EVENT_WHM_SERVER_VALIDATED = "whm_server_validated"
+EVENT_PROXMOX_SERVER_CREATED = "proxmox_server_created"
+EVENT_PROXMOX_SERVER_UPDATED = "proxmox_server_updated"
+EVENT_PROXMOX_SERVER_DELETED = "proxmox_server_deleted"
+EVENT_PROXMOX_SERVER_VALIDATED = "proxmox_server_validated"
+EVENT_PMG_SERVER_CREATED = "pmg_server_created"
+EVENT_PMG_SERVER_UPDATED = "pmg_server_updated"
+EVENT_PMG_SERVER_DELETED = "pmg_server_deleted"
+EVENT_PMG_SERVER_VALIDATED = "pmg_server_validated"
+
 # The log event name every sink writes under, so a query filters on one key and reads
 # `event_type` for the specific change.
 LOG_EVENT = "admin_audit"
@@ -109,12 +134,24 @@ class StructlogAdminAuditSink:
 __all__ = [
     "EVENT_MCP_TOKEN_MINTED",
     "EVENT_MCP_TOKEN_REVOKED",
+    "EVENT_PMG_SERVER_CREATED",
+    "EVENT_PMG_SERVER_DELETED",
+    "EVENT_PMG_SERVER_UPDATED",
+    "EVENT_PMG_SERVER_VALIDATED",
+    "EVENT_PROXMOX_SERVER_CREATED",
+    "EVENT_PROXMOX_SERVER_DELETED",
+    "EVENT_PROXMOX_SERVER_UPDATED",
+    "EVENT_PROXMOX_SERVER_VALIDATED",
     "EVENT_ROLE_CREATED",
     "EVENT_ROLE_DELETED",
     "EVENT_ROLE_TOOLS_UPDATED",
     "EVENT_USER_DELETED",
     "EVENT_USER_ROLES_UPDATED",
     "EVENT_USER_STATUS_UPDATED",
+    "EVENT_WHM_SERVER_CREATED",
+    "EVENT_WHM_SERVER_DELETED",
+    "EVENT_WHM_SERVER_UPDATED",
+    "EVENT_WHM_SERVER_VALIDATED",
     "LOG_EVENT",
     "AdminAuditEvent",
     "AdminAuditSink",

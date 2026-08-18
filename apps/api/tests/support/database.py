@@ -62,6 +62,10 @@ MUTATED_TABLES = (
     "mcp_tokens",
     "whm_servers",
     "pmg_servers",
+    # Added at T54, which is the first task that writes it. Missing until then was harmless
+    # only because nothing inserted a Proxmox row; a table absent from this tuple leaks state
+    # between tests in the same module.
+    "proxmox_servers",
     "tool_runs",
     "action_requests",
     "action_receipts",

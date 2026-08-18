@@ -251,7 +251,26 @@ the interface line, its MAC or its bridge — that payload becomes `tool_runs.re
 | Surface | Task |
 |---|---|
 | Internal reads `proxmox_get_vm_status_current` / `_config` / `_pending`, `proxmox_list_servers`, `proxmox_validate_server` | I.mcp |
-| Admin routes `/admin/proxmox/servers…` + `POST …/validate` | §T.54 |
+
+## Admin surface (§T.54)
+
+Five routes under `/admin/proxmox/servers`, all behind `require_admin` (§V.13): `GET` / `POST`
+on the collection, `PATCH` / `DELETE` on `{id}`, and `POST {id}/validate`. `api_token_secret` is
+never returned — the safe view reports `has_api_token_secret` (§V.2, §V.8) — and the service
+encrypts on the way in (§C.7, §V.48).
+
+**The narrowest of the three verticals, and the table says why**: Proxmox is an HTTP API and
+nothing else, so there is no SSH block, no host key to pin, and the validate flow writes
+nothing at all. Its service reads through the `SELECT`-only read repository, so the absence of a
+write path is structural rather than a rule it follows.
+
+`POST …/validate` probes `GET /api2/json/version`, the cheapest authenticated call the API
+offers. A refusal is a **200 with `ok: false`** and the client's own normalised code, not a 502:
+the operator asked whether the endpoint answers.
+
+`verify_ssl` defaults **off** here — on both the request model and the column (§T.4) — because
+Proxmox ships a self-signed certificate and defaulting on would make every fresh row fail
+validation for a reason that is not a misconfiguration.
 
 **Never implement** (C22, management policy — not a technical limit):
 `proxmox_move_vms_between_pools`, `proxmox_preflight_move_vms_between_pools`,
@@ -287,6 +306,9 @@ what the missing methods were for.
 - The `netN` codec: `core/integrations/proxmox/nic.py` (§T.28)
 - Server-ref resolution: `core/servers/proxmox_ref.py` over the shared
   `core/servers/reference.py` (§T.27 extracted the policy the three systems share, §V.66)
+- Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
+  `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
+  `core/servers/validation.py` (§T.54)
 - Tests: `apps/api/tests/test_proxmox_client.py` (failure classification, digest, credentials,
   lifecycle), `test_proxmox_client_endpoints.py` (literal request contracts),
   `test_proxmox_cloudinit_crypt.py` (§T.69's three verdicts + the negative control),

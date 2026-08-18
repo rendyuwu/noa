@@ -2,19 +2,26 @@
 
 These started in `support/whm.py` (T16). None of them is WHM-specific — they are about
 `core/remote_exec`: a resolved `SSHConnectionConfig`, a `CommandResult`, and a stand-in for
-`ssh_exec`. PMG (T18) is the second caller and T54's validate routes will be the third, so they
+`ssh_exec`. PMG (T18) is the second caller and T54's validate routes are the third, so they
 live here (V66, exactly the move `support/secrets.py` made for `build_cipher` at T17). This is
 their one home — the re-export `support/whm.py` carried through T18 is gone as of T72.
 
-No live host: the layers under test are command composition, output parsing and failure
-classification — none of which needs a socket.
+Mostly no live host: the layers under test are command composition, output parsing and failure
+classification — none of which needs a socket. **The exception is the loopback `asyncssh` server
+at the bottom**, which is not a double at all and moved here at T54 for the reason recorded
+beside it: the host-key pin is only observable against a real key exchange (B2, V82), and two
+copies of the server that proves it are two copies that can stop proving it.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import AsyncIterator, Callable, Iterable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from types import ModuleType
+from typing import Any
+
+import asyncssh
 
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
 
@@ -113,15 +120,117 @@ def install_fake_ssh_exec(
     return install_fake_ssh_exec_in(monkeypatch, [module], handler)
 
 
+# --- A real SSH server on loopback (T14, T54, V82) ---
+#
+# **The one rig in this file that is not a double**, and the reason it is here rather than in
+# the test file that first needed it. B2 shipped because the pin's test called
+# `validate_host_public_key` itself: that proves the callback works when something calls it,
+# and what was broken was that nothing did. Only a real key exchange can tell the difference,
+# and only a real server can report that it was never asked to authenticate anybody.
+#
+# `test_remote_exec_ssh.py` (T14) owns the pin itself; `test_server_host_key_validation.py`
+# (T54) owns the trust-on-first-use rule that decides *when* a pin is written. Both need the
+# same server, so it lives here — the move T39 made for the concurrency rig rather than copying
+# it, and V89's reason: two copies of the thing that holds a property are two things that can
+# silently stop holding it.
+
+
+@dataclass
+class RecordingSSHServer(asyncssh.SSHServer):
+    """A loopback server that remembers whether a client ever got as far as authenticating.
+
+    `auth_attempts` staying empty is the assertion V82 is really about: a pin compared *after*
+    the connection would raise the same error, having already handed the password to whatever
+    answered the socket.
+    """
+
+    auth_attempts: list[str] = field(default_factory=list)
+
+    def begin_auth(self, username: str) -> bool:
+        self.auth_attempts.append(username)
+        return True
+
+    def password_auth_supported(self) -> bool:
+        return True
+
+    def validate_password(self, username: str, password: str) -> bool:
+        self.auth_attempts.append(f"{username}:{password}")
+        return True
+
+
+@dataclass
+class LoopbackSSH:
+    """Where the server is listening, which key it presents, and what it was asked."""
+
+    port: int
+    host_key_fingerprint: str
+    auth_attempts: list[str]
+
+
+@asynccontextmanager
+async def loopback_ssh_server(*, stdout: str = "live-output") -> AsyncIterator[LoopbackSSH]:
+    """A real SSH server on 127.0.0.1 with a throwaway host key.
+
+    Ed25519 keygen and a loopback socket, so this costs milliseconds. Everything the pin
+    claims — rejection during key exchange, before auth — is only observable here.
+    """
+    host_key = asyncssh.generate_private_key("ssh-ed25519")
+    attempts: list[str] = []
+
+    def _server_factory() -> RecordingSSHServer:
+        return RecordingSSHServer(auth_attempts=attempts)
+
+    def _process_factory(process: Any) -> None:
+        process.stdout.write(stdout)
+        process.exit(0)
+
+    server = await asyncssh.create_server(
+        _server_factory,
+        "127.0.0.1",
+        0,
+        server_host_keys=[host_key],
+        process_factory=_process_factory,
+    )
+    try:
+        yield LoopbackSSH(
+            port=server.sockets[0].getsockname()[1],
+            host_key_fingerprint=host_key.get_fingerprint("sha256"),
+            auth_attempts=attempts,
+        )
+    finally:
+        server.close()
+        await server.wait_closed()
+
+
+def loopback_ssh_config(
+    server: LoopbackSSH,
+    *,
+    fingerprint: str | None,
+    username: str = "noa-ops",
+) -> SSHConnectionConfig:
+    """A config aimed at `server`, pinned to `fingerprint` (or unpinned for TOFU)."""
+    return SSHConnectionConfig(
+        host="127.0.0.1",
+        port=server.port,
+        username=username,
+        password=SSH_PASSWORD,
+        host_key_fingerprint=fingerprint,
+    )
+
+
 __all__ = [
     "PINNED_FINGERPRINT",
     "SSH_PASSWORD",
     "SUDO_DENIED_STDERR",
     "SUDO_MISSING_BINARY_STDERR",
     "FakeSSH",
+    "LoopbackSSH",
     "RecordedRun",
+    "RecordingSSHServer",
     "command_result",
     "install_fake_ssh_exec",
     "install_fake_ssh_exec_in",
+    "loopback_ssh_config",
+    "loopback_ssh_server",
     "ssh_config",
 ]

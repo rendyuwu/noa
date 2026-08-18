@@ -12,6 +12,7 @@ import { reportClientError } from '@/lib/observability/error-reporting'
 // 401 anywhere triggers the shared session-expiry flow.
 
 type ErrorPayload = {
+  message?: unknown
   detail?: unknown
   error_code?: unknown
   request_id?: unknown
@@ -101,12 +102,22 @@ export const fetchWithAuth = async (
 }
 
 // Parse a JSON response, throwing a typed ApiError that preserves the stable
-// backend detail/error_code/request_id (request id falls back to the
+// backend message/error_code/request_id (request id falls back to the
 // x-request-id header) on any non-OK status.
+//
+// `message` is read before `detail`, and it is what NOA actually sends: its error
+// envelope is { error_code, message, request_id } and `detail` is the *internal*
+// diagnostic, deliberately kept out of response bodies (§V.8). Reading only
+// `detail` meant every refusal across the Users, Roles, Tokens and Servers
+// verticals rendered as "Request failed (409)" instead of the wording the API
+// guarantees. `detail` stays in the chain for any surface that still sends one.
 export const jsonOrThrow = async <T>(response: Response): Promise<T> => {
   const payload = (await response.json().catch(() => ({}))) as ErrorPayload
   if (!response.ok) {
-    const detail = asString(payload?.detail) ?? `Request failed (${response.status})`
+    const detail =
+      asString(payload?.message) ??
+      asString(payload?.detail) ??
+      `Request failed (${response.status})`
     const errorCode = asString(payload?.error_code) ?? asString(payload?.errorCode)
     const requestId =
       asString(payload?.request_id) ??

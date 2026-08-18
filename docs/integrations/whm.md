@@ -574,14 +574,34 @@ happens in exactly two places, both taking an injected `SecretCipher`:
 Both use `maybe_decrypt_text`, so a row written before encryption still works — that is what
 lets the column be migrated in place.
 
-## Not built yet
+## Admin surface (§T.54)
 
-| Surface | Task |
-|---|---|
-| Admin routes `/admin/whm/servers…` + `POST …/validate` (SSH connect, fingerprint capture, TOFU refresh) | §T.54 |
-| Write CRUD on `whm_servers` (`create` / `update` / `delete`) — §T.19 ported the reads only | §T.54 |
+Five routes under `/admin/whm/servers`, all behind `require_admin` (§V.13):
+`GET` / `POST` on the collection, `PATCH` / `DELETE` on `{id}`, and `POST {id}/validate`. No
+response carries `api_token` or an SSH credential — the safe view reports `has_api_token`,
+`has_ssh_password` and `has_ssh_private_key` instead (§V.2, §V.8), and the service encrypts on
+the way in so the stored columns are `enc:v1:fernet:…` (§C.7, §V.48).
 
-Audit is no longer on that list: §V.45's `tool_runs` row is written for every MCP READ by
+**`POST …/validate` checks the API token first, then SSH if the row carries credentials.** A row
+with no SSH credentials validates green on the API alone: SSH is what the firewall tools need,
+and a WHM server used only for account reads is a legitimate configuration. Unreachability is a
+**200 with `ok: false`** and the raised code (`ssh_timeout`, `ssh_auth_failed`,
+`ssh_host_key_mismatch`, …) — the operator asked whether the server answers, and "no" is that
+question's answer.
+
+**The host key is pinned once, and a mismatch refuses.** A row with no stored fingerprint gets
+one captured out of the handshake (`ssh_get_host_fingerprint`) and stored **only if the probe
+that follows it passes** — so a failed validate leaves no pin behind. A row whose stored pin no
+longer matches answers `ssh_host_key_mismatch` and is **not** re-pinned: `noa-old`'s WHM service
+overwrote the pin on every validate, which made the pin worth nothing, and §V.69 forbids
+shipping a ported security control without a test against the real mechanism
+(`apps/api/tests/test_server_host_key_validation.py`, a live `asyncssh` server).
+
+A legitimate key rotation is therefore two operator actions: `PATCH` with
+`clear_ssh_host_key_fingerprint: true` (or edit `base_url` / `ssh_port`, which invalidates the
+pin because a pin belongs to one `(host, port)` pair), then Validate.
+
+Audit is no longer on the not-built list: §V.45's `tool_runs` row is written for every MCP READ by
 `ToolRunAuditMiddleware`, beside the RBAC gate (§T.73, §V.83b), so each WHM READ tool below
 records requester, redacted arguments, a truncated result summary and timing — including
 when it fails.
@@ -590,8 +610,11 @@ when it fails.
 root-created token cannot mutate an account owned by another reseller, even with the
 "Everything" ACL. `noa-old` solved this with a `whm_server_tokens` table and an owner → token
 resolver. No such table exists here (§T.4 schema v1 is `whm_servers` only) and no §C or §V
-mentions it, so adding it is a spec change, not a build decision. §T.22 and §T.23 are both built
-now and both hit this on reseller-owned accounts: WHM refuses the mutation, the runner passes
+mentions it, so adding it is a spec change, not a build decision. §T.54 removed the ported
+panel's dead reseller-token surface (the drawer section, its dialog and its five API calls) for
+the reason §T.65 removed the direct-grant controls: a button aimed at a route that does not
+exist reads as a broken deployment. §T.22 and §T.23 are both built now and both hit this on
+reseller-owned accounts: WHM refuses the mutation, the runner passes
 `whm_api_error` and WHM's own `reason` through to the receipt, and the change is recorded as not
 having happened — a named failure rather than a silent one, which is the most this repo can
 truthfully do without that table.
@@ -614,6 +637,9 @@ exposure. Re-adding any of them is an owner decision.
 - Shared SSH layer: `core/remote_exec/` (§T.14)
 - Server inventory + reference resolution: `core/servers/whm_repository.py`,
   `core/servers/whm_ref.py` (§T.19)
+- Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
+  `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
+  `core/servers/validation.py`, `core/servers/naming.py`, `core/servers/errors.py` (§T.54)
 - Exposed READ tools: `apps/api/src/noa_api/mcp_tools/whm_read.py` (§T.19, §T.21),
   `whm_firewall.py` (§T.24)
 - Account CHANGE tools + runners: `apps/api/src/noa_api/mcp_tools/whm_account_change.py`

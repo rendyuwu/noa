@@ -12,26 +12,6 @@ vi.mock('@/lib/admin/whm/use-whm-servers', () => ({
   useWhmServers: () => state.controller,
 }))
 
-// The reseller-tokens sub-controller mounts inside the drawer; stub it so the
-// page test stays focused on the servers surface.
-vi.mock('@/lib/admin/whm/use-reseller-tokens', () => ({
-  useResellerTokens: () => ({
-    tokens: [],
-    loading: false,
-    loadError: null,
-    hasLoaded: false,
-    load: vi.fn(),
-    reload: vi.fn(),
-    validateResultById: {},
-    validateBusyId: null,
-    deleteBusyId: null,
-    createToken: vi.fn(),
-    rotateToken: vi.fn(),
-    deleteToken: vi.fn(),
-    validateToken: vi.fn(),
-  }),
-}))
-
 const serverA: WhmServer = {
   id: '11111111-1111-4111-8111-111111111111',
   name: 'alpha',

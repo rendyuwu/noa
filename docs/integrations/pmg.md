@@ -36,8 +36,10 @@ ported, see §B.2; §V.69 no longer claims it).
   rather than falling through the default, so a typo cannot become a silent connection to 22.
 - `ssh_username` NULL or blank means connect as `root`; anything else gets `sudo -n` (§V.55).
 - The host-key fingerprint must already be pinned on the server row before any tool command
-  runs. Only the admin validate flow (§T.54) connects unpinned, and only to capture the value it
-  is about to store.
+  runs. Only the admin validate flow (§T.54) connects unpinned, and only **when the row carries
+  no pin yet** — a stored fingerprint that no longer matches answers `ssh_host_key_mismatch`
+  rather than being refreshed, so an operator has to clear it deliberately before a new key can
+  be trusted.
 - **The caller resolves the row into an `SSHConnectionConfig` and the command layer takes that**
   (§T.31). `run_pmgsh_command` and everything beside it take a resolved config, not a
   `pmg_servers` row plus a cipher, so a tool resolves once, closes its database session, and
@@ -315,12 +317,29 @@ wrote a comment onto, and `pmgsh` has no comment to quote.
 | `pmg_sync_failed` | `pmgsh` wrote the entry and `pmgconfig sync` failed — config moved, Postfix did not. |
 | `postflight_failed` | The command was accepted and a fresh read says the list did not move. |
 
-## Not built yet
+## Admin surface (§T.54)
 
-| Surface | Task |
-|---|---|
-| Admin routes `/admin/pmg/servers…` + `POST …/validate` | §T.54 |
-| `pmg_servers` create / update / delete (`core/servers/pmg_repository.py` is reads only) | §T.54 |
+Five routes under `/admin/pmg/servers`, all behind `require_admin` (§V.13): `GET` / `POST` on
+the collection, `PATCH` / `DELETE` on `{id}`, and `POST {id}/validate`. No response carries an
+SSH credential (§V.2, §V.8) and the service encrypts on the way in (§C.7, §V.48). Unlike WHM's,
+these rows have no `base_url` and no `verify_ssl`: `ssh_host` is required and the pinned host key
+is the whole transport-security story.
+
+`ssh_host_key_fingerprint` is writable here, on both create and update, because the panel's PMG
+form exposes the field — an operator who already holds a node's key may pin it before NOA has
+ever connected. Its *shape* is not validated: a wrong value fails loudly at the next connection
+with `ssh_host_key_mismatch`, which names the remedy, whereas a format rule would refuse a
+legitimate value the day `asyncssh` spells a digest differently.
+
+**`POST …/validate` runs two commands**, `pmgsh get /version` then a read of
+`/config/mynetworks` — a node that authenticates but cannot read `mynetworks` would otherwise
+validate green and fail on the first whitelist call. Unreachability is a **200 with
+`ok: false`** and the raised code. The host-key rule is WHM's, from the same function: capture
+once, store only after the probe passes, and refuse rather than re-pin on a mismatch.
+
+A row with no SSH credentials is still creatable — an admin filling in a host before the key
+arrives is a legitimate order of operations, and `resolve_pmg_ssh_config` answers
+`ssh_not_configured` in the meantime, which names the remedy.
 
 `noa-old` also exposed `pmg_list_servers` and `pmg_validate_server`. Here those two become
 internal functions (I.mcp) — they are not on the 14-tool exposed list.
@@ -333,6 +352,9 @@ internal functions (I.mcp) — they are not on the 14-tool exposed list.
 - `mynetworks` parsing + normalisation: `core/integrations/pmg/mynetworks.py`
 - Errors: `core/integrations/pmg/errors.py`
 - Inventory + reference resolution: `core/servers/pmg_repository.py`, `core/servers/pmg_ref.py`
+- Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
+  `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
+  `core/servers/validation.py` (§T.54)
 - MCP tools: `apps/api/src/noa_api/mcp_tools/pmg_read.py` (READ),
   `apps/api/src/noa_api/mcp_tools/pmg_whitelist.py` (CHANGE, the gate half),
   `apps/api/src/noa_api/mcp_tools/pmg_whitelist_runner.py` (CHANGE, the post-approval half)
