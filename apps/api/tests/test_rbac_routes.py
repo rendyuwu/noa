@@ -1,4 +1,4 @@
-"""`require_admin` and the authorization status mapping (T9 — V12, V13, V73).
+"""`require_admin` and the authorization status mapping (T9, T65 — V12, V13, V73, V75).
 
 T9 ships no `/admin` routes (T51-T55 own those), but two of its cited invariants are HTTP
 properties: V13's "non-admin users → 403 on admin endpoints" and V12's "admin self-delete →
@@ -33,6 +33,7 @@ from core.auth.authorization_errors import (
     UserNotFoundError,
 )
 from core.db.models import ADMIN_ROLE_NAME
+from noa_api.api.admin_errors import DirectGrantsDisabledError
 from noa_api.api.errors import FALLBACK_STATUS, STATUS_BY_ERROR, error_body, status_for
 from support.rbac import PROBE_PATH, ROLE_SUPPORT, admin_probe_app
 
@@ -166,6 +167,27 @@ def test_every_authorization_error_is_mapped_explicitly() -> None:
             status.HTTP_404_NOT_FOUND,
             status.HTTP_409_CONFLICT,
         }
+
+
+def test_direct_grants_disabled_is_410_and_is_not_an_authorization_error() -> None:
+    """T65/V75's refusal, and the reason it sits outside the tree above.
+
+    Two assertions, and the second is what keeps the first honest. `status_for` must answer 410
+    — a withdrawn capability, not a missing row and not a permission the caller lacks. But the
+    tree test above asserts every `AuthorizationError` maps into {400, 403, 404, 409}, and that
+    closed set is the assertion: it is what stops a permission problem answering "service
+    unavailable". Had this class been added to that tree, the set would have had to open to
+    admit 410 and the guard would have been weakened to fit one error. So it derives from
+    `NoaError` directly, and this test pins that — a later edit that "tidies" it into the
+    taxonomy fails here rather than quietly loosening the tree.
+    """
+    assert status_for(DirectGrantsDisabledError()) == status.HTTP_410_GONE
+    assert not issubclass(DirectGrantsDisabledError, AuthorizationError)
+    assert status.HTTP_410_GONE not in {
+        status_for(klass.__new__(klass))
+        for klass in STATUS_BY_ERROR
+        if issubclass(klass, AuthorizationError)
+    }
 
 
 def test_authorization_error_codes_are_unique() -> None:

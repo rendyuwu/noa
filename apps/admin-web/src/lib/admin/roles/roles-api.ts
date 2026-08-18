@@ -1,12 +1,7 @@
 import { coerceRoleNames, coerceStringArray } from '@/lib/admin/shared/coerce'
 import { fetchWithAuth, jsonOrThrow } from '@/lib/auth/fetch-helper'
 
-import type {
-  AdminRoleToolsResponse,
-  AdminRolesResponse,
-  AdminToolsResponse,
-  DirectGrantsMigrationResponse,
-} from './types'
+import type { AdminRoleToolsResponse, AdminRolesResponse, AdminToolsResponse } from './types'
 
 // Transport for the admin Roles vertical (issue #107). Every call goes through
 // the shared fetchWithAuth + jsonOrThrow helpers, so a 401 triggers the session-
@@ -85,9 +80,7 @@ export async function setRoleTools(roleName: string, tools: string[]): Promise<v
   await jsonOrThrow(response)
 }
 
-// POST the legacy direct-grant migration. Returns the server's summary payload
-// (shape normalised by summarizeDirectGrantsMigration). Safe to run repeatedly.
-export async function migrateDirectGrants(): Promise<DirectGrantsMigrationResponse> {
-  const response = await fetchWithAuth('/admin/migrations/direct-grants', { method: 'POST' })
-  return jsonOrThrow<DirectGrantsMigrationResponse>(response)
-}
+// There is no direct-grant migration call. `noa-old` shipped one; NOA has no
+// per-user grant table for it to read and no endpoint for it to reach (T65).
+// Permissions flow role → user only, and the withdrawn per-user route answers
+// 410 `direct_tool_grants_disabled` (V75).

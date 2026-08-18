@@ -33,6 +33,12 @@ per endpoint.
   subquery.
 - `direct_tools`. `noa-old`'s response carried it; V75 disables direct per-user grants (410,
   T65), so there is no field to fill and no key to send.
+
+**The fifth route refuses rather than acts.** `PUT /admin/users/{user_id}/tools` answers 410
+`direct_tool_grants_disabled` (V75, T65). It exists because `noa-old` shipped it and the ported
+panel knew the address; it refuses because permissions flow role → user only and NOA's schema
+holds no user-level grant table. See `noa_api.api.admin_errors` for why the error class is not
+in the engine's taxonomy.
 """
 
 from __future__ import annotations
@@ -40,11 +46,12 @@ from __future__ import annotations
 from datetime import datetime
 from uuid import UUID
 
-from fastapi import APIRouter
+from fastapi import APIRouter, status
 from pydantic import BaseModel
 
 from core.auth.authorization_types import AuthorizedUser
 from core.db.models import is_internal_role
+from noa_api.api.admin_errors import DirectGrantsDisabledError
 from noa_api.api.deps import AdminUserDep, AuthorizationServiceDep
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -230,6 +237,38 @@ async def set_user_roles(
     return UpdateUserResponse(user=_to_user_response(user))
 
 
+@router.put("/users/{user_id}/tools", status_code=status.HTTP_410_GONE)
+async def set_user_tools(
+    user_id: UUID,
+    admin_user: AdminUserDep,
+) -> None:
+    """Direct per-user tool grants are gone: 410 `direct_tool_grants_disabled` (T65 — V75).
+
+    **No request body, deliberately.** A handler that declared `SetUserToolsRequest` — as
+    `noa-old`'s did, only to discard it — would let FastAPI validate before the refusal, so a
+    caller who sent `{"tools": 3}` would get a 422 saying their *field* was wrong about a route
+    that will never accept any field. The refusal is about the route, and it has to be
+    unconditional to read that way.
+
+    **No `AuthorizationServiceDep` either.** Nothing is looked up: `user_id` is not checked for
+    existence, so an unknown id answers 410 rather than 404. That is not laziness about the
+    404 — it is the same rule V27 spells out for a different table. A status that varied with
+    whether the row existed would make this route an existence oracle for `users`, and it would
+    make a caller believe the grant might have worked for a *real* user.
+
+    `AdminUserDep` stays, so `require_admin` runs first and a non-admin gets 403 (V13). Ordering
+    matters in one direction only: the 410 is public knowledge, but the routes around it are
+    admin-only, and a surface that answered 410 to anyone would say which paths exist here.
+
+    `status_code=410` is declared on the decorator as well as raised, so the OpenAPI schema the
+    panel reads names it. The body is the shared envelope (V8, V73) — the raise is what produces
+    it, and the annotated `None` return is unreachable.
+    """
+    raise DirectGrantsDisabledError(
+        f"direct tool grants refused for `{user_id}` (V75: permissions flow role → user)"
+    )
+
+
 __all__ = [
     "AdminUserResponse",
     "AdminUsersResponse",
@@ -241,5 +280,6 @@ __all__ = [
     "list_users",
     "router",
     "set_user_roles",
+    "set_user_tools",
     "update_user_active",
 ]

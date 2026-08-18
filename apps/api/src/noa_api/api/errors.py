@@ -3,7 +3,8 @@
 Every `NoaError` subclass carries its own `error_code` and operator-facing `message` (see
 `core.errors`, `core.auth.errors`, `core.auth.authorization_errors`,
 `core.auth.mcp_token_errors`, `core.auth.mcp_auth_errors`, `core.secrets.errors`,
-`core.integrations.whm.errors`, `core.integrations.pmg.errors`, `core.approvals.errors`),
+`core.integrations.whm.errors`, `core.integrations.pmg.errors`, `core.approvals.errors`, and
+— for the one refusal no core service can reach — `noa_api.api.admin_errors`),
 so routes raise and this
 decides the status code. Routes
 that build their own `HTTPException` per failure are how two callers end up returning
@@ -110,6 +111,7 @@ from core.results.errors import (
     ResultTableUnavailableError,
 )
 from core.secrets.errors import SecretCryptoError, YopassError, YopassNotConfiguredError
+from noa_api.api.admin_errors import DirectGrantsDisabledError
 from noa_api.api.request_context import (
     REQUEST_ID_HEADER,
     RequestContextMiddleware,
@@ -158,6 +160,13 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # test asserts every subclass is mapped above, so reaching this line means a new class
     # arrived without a decision.
     AuthorizationError: status.HTTP_403_FORBIDDEN,
+    # --- Withdrawn capabilities (T65) ---
+    # 410, and it sits outside the authorization group on purpose: `DirectGrantsDisabledError`
+    # is not an `AuthorizationError`, because that tree's own test pins its statuses to
+    # {400, 403, 404, 409} and the pin is the assertion (see `noa_api.api.admin_errors`). 410
+    # rather than 404 or 403: the route existed in `noa-old`, the capability is withdrawn
+    # permanently, and neither "missing" nor "not allowed" says that.
+    DirectGrantsDisabledError: status.HTTP_410_GONE,
     # --- MCP tokens (T10) ---
     # 404 for a token that is absent *or* another user's: the lookup is scoped by user id,
     # so the two cases answer identically and the response is not an enumeration oracle

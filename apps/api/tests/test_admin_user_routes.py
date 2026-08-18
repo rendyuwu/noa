@@ -1,11 +1,16 @@
-"""`/admin/users` over HTTP (T51 — V4, V6, V8, V10, V11, V12, V13, V14, V73, V75).
+"""`/admin/users` over HTTP (T51, T65 — V4, V6, V8, V10, V11, V12, V13, V14, V73, V75).
 
 `test_rbac_engine.py` owns the policy: what the last-active-admin guard decides, what an
 internal role does to a replacement, how many tokens a disable revokes. This file owns what
-only a request can prove — that all four routes are behind `require_admin`, that a refusal
+only a request can prove — that every route is behind `require_admin`, that a refusal
 arrives with the status and `error_code` the shared handler assigns, that the body carries the
 shape the ported panel already parses, and that a successful write ends its transaction while a
 refused one does not.
+
+**T65's fifth route lives here too**, because it is a property of this surface and nothing else:
+`PUT /admin/users/{id}/tools` answers 410 `direct_tool_grants_disabled` (V75). It has no engine
+half to test — there is no user-level grant table and no service method — so the route *is* the
+whole implementation.
 
 `support.admin.admin_harness` runs the real router, the real `require_admin`, the real
 `AuthorizationService` and the shared error handler; only SQL and LDAP are faked. So a 403 here
@@ -41,13 +46,23 @@ from support.admin import ADMIN_EMAIL, OPERATOR_EMAIL, USERS_PATH, AdminHarness,
 from support.rbac import INTERNAL_ROLE, ROLE_NOC, ROLE_SUPPORT, TOOL_CHANGE, TOOL_READ
 
 # The four routes T51 ships, as (method, path suffix, body). Parametrized rather than repeated
-# so a fifth route added without its own gate test fails the ones below (V13).
+# so a route added without its own gate test fails the ones below (V13).
 ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "", None),
     ("PATCH", "/{user_id}", {"is_active": False}),
     ("DELETE", "/{user_id}", None),
     ("PUT", "/{user_id}/roles", {"roles": []}),
 )
+
+# T65's route, kept separate from `ROUTES` because it never answers 200: direct per-user grants
+# are withdrawn, so an admin gets 410 (V75). It shares the *gate* assertions below — being
+# refused is not being ungated, and a 410 served to a non-admin would say this path exists.
+REFUSING_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
+    ("PUT", "/{user_id}/tools", {"tools": []}),
+)
+
+# Every route on the router, for the two gate tests that hold regardless of the answer.
+ALL_ROUTES = ROUTES + REFUSING_ROUTES
 
 USER_KEYS = {
     "id",
@@ -82,11 +97,11 @@ def test_an_admin_reaches_every_user_route(
     assert response.status_code == status.HTTP_200_OK, response.text
 
 
-@pytest.mark.parametrize(("method", "suffix", "body"), ROUTES)
+@pytest.mark.parametrize(("method", "suffix", "body"), ALL_ROUTES)
 def test_every_user_route_refuses_a_non_admin(
     method: str, suffix: str, body: dict[str, Any] | None
 ) -> None:
-    """V13: authenticated, holds a role, still refused — on all four.
+    """V13: authenticated, holds a role, still refused — on all five.
 
     The target id is random on purpose: the gate must decide before anything is looked up, so a
     non-admin cannot use the 403/404 split to learn which ids exist.
@@ -100,7 +115,7 @@ def test_every_user_route_refuses_a_non_admin(
     assert response.json()["error_code"] == "admin_access_required"
 
 
-@pytest.mark.parametrize(("method", "suffix", "body"), ROUTES)
+@pytest.mark.parametrize(("method", "suffix", "body"), ALL_ROUTES)
 def test_every_user_route_refuses_a_missing_cookie(
     method: str, suffix: str, body: dict[str, Any] | None
 ) -> None:
@@ -447,6 +462,115 @@ def test_a_role_change_is_visible_on_the_very_next_list() -> None:
         assert harness.user_in_list(OPERATOR_EMAIL)["tools"] == []
 
         harness.client.put(f"{USERS_PATH}/{target.id}/roles", json={"roles": [ROLE_SUPPORT]})
+
+        assert harness.user_in_list(OPERATOR_EMAIL)["tools"] == [TOOL_READ]
+
+
+# --- PUT /admin/users/{id}/tools: withdrawn (T65 — V75) ---
+
+
+def _put_tools(harness: AdminHarness, user_id: UUID, **kwargs: Any):
+    return harness.client.put(f"{USERS_PATH}/{user_id}/tools", **kwargs)
+
+
+def test_setting_user_tools_directly_is_410_direct_tool_grants_disabled() -> None:
+    """V75: permissions flow role → user, so there is no per-user grant to write.
+
+    410 rather than 404 or 403 — the route existed in `noa-old` and the capability behind it is
+    withdrawn permanently, which is the one thing neither of the others says. The `error_code` is
+    `noa-old`'s string verbatim, because the ported panel branches on it.
+    """
+    with admin_harness() as harness:
+        harness.sign_in()
+        target = harness.add_target()
+
+        response = _put_tools(harness, target.id, json={"tools": [TOOL_READ]})
+
+        # Nothing was written and nothing was ended: a refusal, not a no-op write.
+        assert harness.repository.commits == 0
+        assert harness.audit.events == []
+
+    assert response.status_code == status.HTTP_410_GONE
+    assert response.json()["error_code"] == "direct_tool_grants_disabled"
+
+
+def test_the_410_holds_for_a_user_that_does_not_exist() -> None:
+    """No existence oracle, and no "it might have worked for a real user" either.
+
+    Every other route on this router answers 404 for an unknown id. This one must not: a status
+    that varied with whether the row existed would make the withdrawn route a probe for `users`,
+    and would tell a caller their request was refused for the *target* rather than at all.
+    """
+    with admin_harness() as harness:
+        harness.sign_in()
+
+        known = harness.add_target()
+        for_known = _put_tools(harness, known.id, json={"tools": []})
+        for_unknown = _put_tools(harness, uuid4(), json={"tools": []})
+
+    assert for_unknown.status_code == for_known.status_code == status.HTTP_410_GONE
+    assert for_unknown.json()["error_code"] == for_known.json()["error_code"]
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "why"),
+    [
+        ({"json": {"tools": ["nope"]}}, "a tool outside the catalog"),
+        ({"json": {"tools": "not-a-list"}}, "the wrong type for the field"),
+        ({"json": {"unexpected": True}}, "no `tools` field at all"),
+        ({"content": b"{not json"}, "a body that is not JSON"),
+        ({}, "no body"),
+    ],
+)
+def test_the_410_needs_no_valid_body(kwargs: dict[str, Any], why: str) -> None:
+    """The refusal is about the route, so it cannot be dodged into a 422.
+
+    `noa-old`'s handler declared a request model and then discarded it, which means FastAPI
+    validated first: `{"tools": 3}` answered 422 about a *field* on a route that will never
+    accept any field. Every body here is 410, including none.
+    """
+    with admin_harness() as harness:
+        harness.sign_in()
+        target = harness.add_target()
+
+        response = _put_tools(harness, target.id, **kwargs)
+
+    assert response.status_code == status.HTTP_410_GONE, f"{why}: {response.text}"
+    assert response.json()["error_code"] == "direct_tool_grants_disabled"
+
+
+def test_the_410_body_carries_the_shared_envelope() -> None:
+    """V8, V73: the withdrawn route answers in the same shape as every other failure.
+
+    It raises rather than returning a response of its own, so `request_id` and `x-request-id`
+    come from the shared handler — a route that built its own body is how one surface ends up
+    without the id an operator quotes.
+    """
+    with admin_harness() as harness:
+        harness.sign_in()
+        target = harness.add_target()
+
+        response = _put_tools(harness, target.id, json={"tools": []})
+
+    body = response.json()
+    assert set(body) == {"error_code", "message", "request_id"}
+    assert response.headers[REQUEST_ID_HEADER] == body["request_id"]
+    # V8: the diagnostic names the id, the body does not.
+    assert str(target.id) not in response.text
+
+
+def test_the_410_leaves_the_users_effective_tools_alone() -> None:
+    """The refusal changes nothing — asserted on the next read rather than on the 410.
+
+    Without this the route could answer 410 *after* writing, and every assertion above would
+    still pass.
+    """
+    with admin_harness() as harness:
+        harness.sign_in()
+        target = harness.add_target(roles=(ROLE_SUPPORT,))
+        harness.grant(ROLE_SUPPORT, TOOL_READ)
+
+        _put_tools(harness, target.id, json={"tools": [TOOL_CHANGE]})
 
         assert harness.user_in_list(OPERATOR_EMAIL)["tools"] == [TOOL_READ]
 

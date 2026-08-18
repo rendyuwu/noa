@@ -11,11 +11,9 @@ vi.mock('@/lib/admin/roles/use-roles', () => ({
   useRoles: () => state.controller,
 }))
 
-// The migration action calls the API directly; stub the network boundary so the
-// page test stays focused on composition.
-vi.mock('@/lib/admin/roles/roles-api', () => ({
-  migrateDirectGrants: vi.fn().mockResolvedValue({}),
-}))
+// No `roles-api` mock. Nothing this page renders calls the transport directly any
+// more — the controller owns every request, and it is mocked above (T65 removed the
+// migration action, the one component that reached past it).
 
 function makeController(over: Partial<RolesController> = {}): RolesController {
   return {
@@ -112,10 +110,14 @@ describe('RolesPage', () => {
     expect(within(dialog).getByLabelText('Role name')).toBeInTheDocument()
   })
 
-  it('confirms before migrating legacy direct grants', () => {
+  // T65 / V75: the ported panel's direct-grant migration control is gone, because
+  // NOA has no per-user grant table and no migration endpoint. Asserted as an
+  // absence rather than simply deleting the old test: without this, re-adding the
+  // button would go unnoticed until an operator clicked it and got a 404.
+  it('offers no legacy direct-grant migration', () => {
     render(<RolesPage />)
-    fireEvent.click(screen.getByRole('button', { name: /migrate direct grants/i }))
-    expect(screen.getByRole('dialog', { name: 'Migrate legacy direct grants?' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /migrate direct grants/i })).toBeNull()
+    expect(screen.queryByText(/direct.grant/i)).toBeNull()
   })
 
   it('renders the detail drawer when a role is selected', () => {

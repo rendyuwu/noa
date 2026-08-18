@@ -12,7 +12,8 @@ export type AdminUser = {
   is_active?: boolean
   roles?: string[]
   tools?: string[]
-  direct_tools?: string[]
+  // No `direct_tools`. `noa-old`'s response carried it; NOA's `AdminUserResponse`
+  // does not send it, because V75 disables direct per-user grants (410, T65).
 }
 
 export type AdminUsersResponse = {

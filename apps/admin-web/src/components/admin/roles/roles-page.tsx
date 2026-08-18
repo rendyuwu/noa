@@ -8,17 +8,22 @@ import { BigsuIcon } from '@gio/bigsu-icons'
 import { useRoles } from '@/lib/admin/roles/use-roles'
 
 import { CreateRoleDialog } from './create-role-dialog'
-import { MigrateGrantsAction } from './migrate-grants-action'
 import { RoleDetailDrawer } from './role-detail-drawer'
 import { roleColumns } from './role-columns'
 import type { RoleRow } from './role-row'
 
 // The Roles administration page (issue #107), built on the proven Users
 // composition: PageHeader, FilterBar, DataTable, with the detail Drawer and the
-// create/migrate actions hosted alongside. Filtering is client-side over the
+// create action hosted alongside. Filtering is client-side over the
 // loaded list (small, admin-only dataset); the table ships loading, empty,
 // error/retry, sort, row actions, and full monospace role identifiers. The
 // controller owns every race guard.
+//
+// The legacy direct-grant migration control that shipped with the ported panel
+// is gone (T65). NOA has no per-user grant table and no migration endpoint —
+// permissions flow role → user only, and `PUT /admin/users/{id}/tools` answers
+// 410 `direct_tool_grants_disabled` (V75). A button posting to a route that does
+// not exist is worse than no button: it reads as a capability.
 export function RolesPage() {
   const {
     roles,
@@ -55,7 +60,7 @@ export function RolesPage() {
       <PageHeader
         breadcrumb={[{ label: 'Administration', href: '/admin' }, { label: 'Roles' }]}
         title="Roles"
-        description="Manage roles, their tool allowlists, and legacy direct-grant migration."
+        description="Manage roles and their tool allowlists."
       />
 
       <div className="mt-6 flex flex-col gap-4">
@@ -69,7 +74,6 @@ export function RolesPage() {
             }}
             onClear={hasFilters ? clearFilters : undefined}
           />
-          <MigrateGrantsAction disabled={loading} onMigrated={() => void reload()} />
           <Button variant="secondary" onClick={() => void reload()} disabled={loading}>
             <BigsuIcon name="refresh" size="sm" aria-hidden />
             Refresh

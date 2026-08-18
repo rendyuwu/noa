@@ -21,7 +21,6 @@ export type AdminRoleToolsResponse = {
   tools: string[]
 }
 
-// The direct-grant migration endpoint returns a free-form summary object; the
-// exact key casing varies, so it is normalised at read time (see
-// migration-summary.ts) rather than typed field-by-field here.
-export type DirectGrantsMigrationResponse = Record<string, unknown>
+// No `DirectGrantsMigrationResponse`: the endpoint it typed does not exist in NOA
+// (T65). V75 makes per-user grants a 410, so there is nothing to migrate and no
+// summary shape to normalise.

@@ -259,14 +259,14 @@ function UserDetailContent({
             )}
           />
 
+          {/*
+            One tool list, not two. The ported drawer also rendered "Legacy direct
+            grants" from `direct_tools`, a field NOA's API does not send: V75 makes
+            per-user grants a 410 and `AdminUserResponse` has no such key (T51, T65).
+            A block that can only ever render empty is a capability the operator is
+            invited to look for.
+          */}
           <ToolsList label="Effective tools" tools={coerceStringArray(user.tools)} />
-          {coerceStringArray(user.direct_tools).length > 0 ? (
-            <ToolsList
-              label="Legacy direct grants"
-              tools={coerceStringArray(user.direct_tools)}
-              description="Granted directly to this user (legacy). Direct grants are no longer editable here."
-            />
-          ) : null}
         </form>
       </div>
 
