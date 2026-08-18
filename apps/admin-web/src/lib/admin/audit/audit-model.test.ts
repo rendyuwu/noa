@@ -1,13 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  activeActionFilterCount,
+  TOOL_RUN_QUERY_KEYS,
   activeToolFilterCount,
-  buildActionQuery,
   buildToolRunQuery,
   normalizeDateRange,
 } from './audit-model'
-import { DEFAULT_ACTION_FILTERS, DEFAULT_TOOL_FILTERS } from './types'
+import { DEFAULT_TOOL_FILTERS } from './types'
+
+// The API-facing half of the audit list (T55). What matters here is that the
+// query string the panel builds uses the parameter names the API accepts —
+// `apps/api/tests/test_admin_audit_routes.py::FILTER_QUERIES` walks the same
+// seven — so the offered set and the accepted set are each asserted once instead
+// of drifting apart silently. A filter the API ignores is a control that appears
+// to work and does not.
 
 describe('normalizeDateRange', () => {
   it('expands a from day to the UTC day start and a to day to the UTC day end', () => {
@@ -21,59 +27,79 @@ describe('normalizeDateRange', () => {
   })
 })
 
-describe('buildActionQuery', () => {
+describe('buildToolRunQuery', () => {
   it('always sets the limit and includes the cursor when paging', () => {
-    const query = buildActionQuery(DEFAULT_ACTION_FILTERS, 'CURSOR')
-    const params = new URLSearchParams(query)
+    const params = new URLSearchParams(buildToolRunQuery(DEFAULT_TOOL_FILTERS, 'CURSOR'))
     expect(params.get('limit')).toBe('50')
     expect(params.get('cursor')).toBe('CURSOR')
   })
 
-  it('serializes every active filter with the API aliases', () => {
-    const query = buildActionQuery(
-      {
-        ...DEFAULT_ACTION_FILTERS,
-        toolName: 'whm_create_account',
-        status: 'APPROVED',
-        terminalPhase: 'completed',
-        threadId: 'thread-1',
-        requestedByEmail: 'ops@example.com',
-        fromDate: '2026-07-01',
-        toDate: '2026-07-02',
-      },
-      null,
+  it('serializes every filter under the parameter name the API accepts', () => {
+    const params = new URLSearchParams(
+      buildToolRunQuery(
+        {
+          toolName: 'whm_list_accounts',
+          status: 'FAILED',
+          risk: 'CHANGE',
+          conversationRef: 'conv-77',
+          requestedByEmail: 'ops@example.com',
+          fromDate: '2026-07-01',
+          toDate: '2026-07-02',
+        },
+        null,
+      ),
     )
-    const params = new URLSearchParams(query)
-    expect(params.get('toolName')).toBe('whm_create_account')
-    expect(params.get('status')).toBe('APPROVED')
-    expect(params.get('terminalPhase')).toBe('completed')
-    expect(params.get('threadId')).toBe('thread-1')
+
+    expect(params.get('toolName')).toBe('whm_list_accounts')
+    expect(params.get('status')).toBe('FAILED')
+    expect(params.get('risk')).toBe('CHANGE')
+    expect(params.get('conversationRef')).toBe('conv-77')
     expect(params.get('requestedByEmail')).toBe('ops@example.com')
     expect(params.get('from')).toBe('2026-07-01T00:00:00.000Z')
     expect(params.get('to')).toBe('2026-07-02T23:59:59.999Z')
     expect(params.has('cursor')).toBe(false)
   })
-})
 
-describe('buildToolRunQuery', () => {
-  it('serializes the risk filter and omits inactive fields', () => {
-    const query = buildToolRunQuery({ ...DEFAULT_TOOL_FILTERS, risk: 'CHANGE' }, null)
-    const params = new URLSearchParams(query)
-    expect(params.get('risk')).toBe('CHANGE')
-    expect(params.has('status')).toBe(false)
+  it('sends exactly the documented key set when every filter is active', () => {
+    const params = new URLSearchParams(
+      buildToolRunQuery(
+        {
+          toolName: 'a',
+          status: 'FAILED',
+          risk: 'READ',
+          conversationRef: 'c',
+          requestedByEmail: 'e',
+          fromDate: '2026-07-01',
+          toDate: '2026-07-02',
+        },
+        null,
+      ),
+    )
+
+    // The count is asserted too: a key added to the builder without being added
+    // to TOOL_RUN_QUERY_KEYS — i.e. without anybody checking the API takes it —
+    // fails here rather than being ignored by the server at runtime.
+    expect(TOOL_RUN_QUERY_KEYS).toHaveLength(7)
+    expect([...params.keys()].sort()).toEqual(['limit', ...TOOL_RUN_QUERY_KEYS].sort())
+  })
+
+  it('omits inactive and whitespace-only filters', () => {
+    const params = new URLSearchParams(
+      buildToolRunQuery({ ...DEFAULT_TOOL_FILTERS, toolName: '   ' }, null),
+    )
+    expect([...params.keys()]).toEqual(['limit'])
   })
 })
 
-describe('active filter counts', () => {
-  it('counts only the populated action filters', () => {
-    expect(activeActionFilterCount(DEFAULT_ACTION_FILTERS)).toBe(0)
+describe('activeToolFilterCount', () => {
+  it('counts only the populated filters', () => {
+    expect(activeToolFilterCount(DEFAULT_TOOL_FILTERS)).toBe(0)
     expect(
-      activeActionFilterCount({ ...DEFAULT_ACTION_FILTERS, status: 'APPROVED', toolName: 'x' }),
+      activeToolFilterCount({ ...DEFAULT_TOOL_FILTERS, risk: 'READ', conversationRef: 'c' }),
     ).toBe(2)
   })
 
-  it('counts only the populated tool-run filters', () => {
-    expect(activeToolFilterCount(DEFAULT_TOOL_FILTERS)).toBe(0)
-    expect(activeToolFilterCount({ ...DEFAULT_TOOL_FILTERS, risk: 'READ' })).toBe(1)
+  it('ignores whitespace, so a stray space does not read as a filtered list', () => {
+    expect(activeToolFilterCount({ ...DEFAULT_TOOL_FILTERS, toolName: '  ' })).toBe(0)
   })
 })

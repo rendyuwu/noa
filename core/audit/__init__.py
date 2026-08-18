@@ -1,6 +1,6 @@
 """Audit trails (C12, V14, V46).
 
-Four modules, and the shapes differ deliberately:
+Six modules, and the shapes differ deliberately:
 
 - `admin_events` — audit events for admin changes (T9, V14). A sink, written into structlog,
   no table.
@@ -16,6 +16,14 @@ Four modules, and the shapes differ deliberately:
   and shared with the executor at T38, because both record the same field from the same shape
   (V66).
 
+- `tool_run_reads` — the *reader* over the same table (T55, V45, V47): the admin audit list and
+  detail. Split from `tool_runs` by what it can do — no `commit`, no statement that is not a
+  `SELECT` — because the two are reached from opposite sides of V22's boundary. It is what turns
+  V45's "queryable in admin audit" from prose into a statement.
+- `cursor` — keyset continuation tokens for that list, ported from `noa-old` per C13.
+- `errors` — the audit surface's two refusals (T55), `NoaError` subclasses so `noa_api.api.errors`
+  maps them and the routes raise instead of shaping a response (V73).
+
 The first two are separate because they are written from different paths — the admin API and
 the MCP tool path — and only one of them persists. `receipts` is not written from either: its
 callers sit behind the approval boundary V22 draws, on a background task rather than a request.
@@ -28,6 +36,12 @@ from core.audit.admin_events import (
 )
 from core.audit.receipts import ActionReceiptRepository, SQLActionReceiptRepository
 from core.audit.summaries import result_summary, status_for_payload
+from core.audit.tool_run_reads import (
+    SQLToolRunAuditReader,
+    ToolRunAuditFilters,
+    ToolRunAuditReader,
+    ToolRunAuditService,
+)
 from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 
 __all__ = [
@@ -35,8 +49,12 @@ __all__ = [
     "AdminAuditEvent",
     "AdminAuditSink",
     "SQLActionReceiptRepository",
+    "SQLToolRunAuditReader",
     "SQLToolRunRepository",
     "StructlogAdminAuditSink",
+    "ToolRunAuditFilters",
+    "ToolRunAuditReader",
+    "ToolRunAuditService",
     "ToolRunRepository",
     "result_summary",
     "status_for_payload",

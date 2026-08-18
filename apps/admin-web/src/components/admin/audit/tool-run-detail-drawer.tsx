@@ -21,12 +21,21 @@ import type { AuditToolRunDetail, AuditToolRunListItem } from '@/lib/admin/audit
 import { AuditStatusCell } from './audit-status-cell'
 import { AuditIdRow, DetailRow } from './audit-detail-rows'
 
-// Contextual detail for one tool run (issue #111). A Drawer inspects a run
-// alongside the list without losing it — audit history is read-only, so there
-// is no edit or delete affordance here. Technical identifiers (thread, run,
-// action) render full and monospace. The arguments block is server-redacted
-// before it reaches the client, so sensitive tool arguments never appear in the
-// DOM, and there is no export path off this panel.
+// Contextual detail for one tool run (T55). A Drawer inspects a run alongside
+// the list without losing it — the audit trail is append-only and its writers
+// are elsewhere, so there is no edit or delete affordance here. Technical
+// identifiers render full and monospace, never truncated, so an operator can
+// copy and grep them.
+//
+// The arguments block is redacted by the API at the moment the row is *written*,
+// so sensitive tool arguments never reach the DOM, and there is no export path
+// off this panel.
+//
+// Three ported rows are gone with the columns behind them: "Thread" (NOA has no
+// threads), "Action request" (an approved change's run links the other way) and
+// "Error" — a sanitised error code lands in `resultSummary`, which is why T35
+// left `tool_runs` without an `error` column. "Conversation ref" takes the first
+// slot: a grouping label, null unless LibreChat supplies one.
 export function ToolRunDetailDrawer({
   row,
   detail,
@@ -91,7 +100,6 @@ function ToolRunDetailContent({
           />
           <DetailRow label="Duration" value={formatDuration(row.durationMs)} />
           <DetailRow label="Result" value={row.resultSummary || '—'} />
-          <DetailRow label="Error" value={row.error || '—'} />
         </dl>
 
         <section className="flex flex-col gap-2 border-t border-border-default pt-5">
@@ -99,9 +107,9 @@ function ToolRunDetailContent({
             Identifiers
           </span>
           <dl className="flex flex-col gap-2 text-sm">
-            <AuditIdRow label="Thread" value={row.threadId} />
             <AuditIdRow label="Tool run" value={row.toolRunId} />
-            <AuditIdRow label="Action request" value={row.actionRequestId} />
+            <AuditIdRow label="Conversation ref" value={row.conversationRef} />
+            <AuditIdRow label="Requester" value={detail?.requestedByUserId} />
           </dl>
         </section>
 

@@ -1,16 +1,33 @@
-import type { ActionFilters, ToolRunFilters } from './types'
+import type { ToolRunFilters } from './types'
 import { AUDIT_PAGE_SIZE } from './types'
 
-// Query construction + filter accounting for the audit surfaces (issue #111).
-// The API is server-paged (cursor) and server-filtered, so the page keeps its
-// filter state here and hands the built query string to the transport. Date
-// inputs are day-granular in the UI but the API expects ISO instants, so a
+// Query construction + filter accounting for the audit list (T55). The API is
+// server-paged (keyset cursor) and server-filtered, so the page keeps its filter
+// state here and hands the built query string to the transport.
+//
+// TOOL_RUN_QUERY_KEYS is the whole set of parameters the API accepts — the same
+// seven `apps/api/tests/test_admin_audit_routes.py::FILTER_QUERIES` walks, plus
+// `limit` and `cursor`. Kept as a named list so the offered set and the accepted
+// set are each written once and can be checked against each other, rather than
+// drifting apart across a dozen call sites.
+//
+// Date inputs are day-granular in the UI but the API takes ISO instants, so a
 // `from` day becomes the start of that UTC day and a `to` day the end of it.
 
-export function normalizeDateRange(filters: {
-  fromDate: string
-  toDate: string
-}): { from?: string; to?: string } {
+export const TOOL_RUN_QUERY_KEYS = [
+  'toolName',
+  'status',
+  'risk',
+  'conversationRef',
+  'requestedByEmail',
+  'from',
+  'to',
+] as const
+
+export function normalizeDateRange(filters: { fromDate: string; toDate: string }): {
+  from?: string
+  to?: string
+} {
   const fromDate = filters.fromDate.trim()
   const toDate = filters.toDate.trim()
   const result: { from?: string; to?: string } = {}
@@ -25,18 +42,6 @@ export function normalizeDateRange(filters: {
   return result
 }
 
-export function activeActionFilterCount(filters: ActionFilters): number {
-  return [
-    filters.fromDate,
-    filters.toDate,
-    filters.toolName,
-    filters.status,
-    filters.terminalPhase,
-    filters.threadId,
-    filters.requestedByEmail,
-  ].filter((value) => value.trim()).length
-}
-
 export function activeToolFilterCount(filters: ToolRunFilters): number {
   return [
     filters.fromDate,
@@ -44,24 +49,9 @@ export function activeToolFilterCount(filters: ToolRunFilters): number {
     filters.toolName,
     filters.status,
     filters.risk,
-    filters.threadId,
+    filters.conversationRef,
     filters.requestedByEmail,
   ].filter((value) => value.trim()).length
-}
-
-export function buildActionQuery(filters: ActionFilters, cursor: string | null): string {
-  const params = new URLSearchParams()
-  params.set('limit', String(AUDIT_PAGE_SIZE))
-  if (cursor) params.set('cursor', cursor)
-  if (filters.toolName.trim()) params.set('toolName', filters.toolName.trim())
-  if (filters.status.trim()) params.set('status', filters.status.trim())
-  if (filters.terminalPhase.trim()) params.set('terminalPhase', filters.terminalPhase.trim())
-  if (filters.threadId.trim()) params.set('threadId', filters.threadId.trim())
-  if (filters.requestedByEmail.trim()) params.set('requestedByEmail', filters.requestedByEmail.trim())
-  const { from, to } = normalizeDateRange(filters)
-  if (from) params.set('from', from)
-  if (to) params.set('to', to)
-  return params.toString()
 }
 
 export function buildToolRunQuery(filters: ToolRunFilters, cursor: string | null): string {
@@ -71,8 +61,9 @@ export function buildToolRunQuery(filters: ToolRunFilters, cursor: string | null
   if (filters.toolName.trim()) params.set('toolName', filters.toolName.trim())
   if (filters.status.trim()) params.set('status', filters.status.trim())
   if (filters.risk.trim()) params.set('risk', filters.risk.trim())
-  if (filters.threadId.trim()) params.set('threadId', filters.threadId.trim())
-  if (filters.requestedByEmail.trim()) params.set('requestedByEmail', filters.requestedByEmail.trim())
+  if (filters.conversationRef.trim()) params.set('conversationRef', filters.conversationRef.trim())
+  if (filters.requestedByEmail.trim())
+    params.set('requestedByEmail', filters.requestedByEmail.trim())
   const { from, to } = normalizeDateRange(filters)
   if (from) params.set('from', from)
   if (to) params.set('to', to)

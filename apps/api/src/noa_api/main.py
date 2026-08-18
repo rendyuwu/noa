@@ -60,6 +60,7 @@ from noa_api.api.deps import (
 )
 from noa_api.api.errors import install_error_handling
 from noa_api.api.routes.action_requests import router as action_requests_router
+from noa_api.api.routes.admin_audit import router as admin_audit_router
 from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_servers import pmg_router as admin_pmg_servers_router
 from noa_api.api.routes.admin_servers import proxmox_router as admin_proxmox_servers_router
@@ -329,6 +330,11 @@ def create_app() -> FastAPI:
     app.include_router(admin_whm_servers_router)
     app.include_router(admin_proxmox_servers_router)
     app.include_router(admin_pmg_servers_router)
+    # The audit trail (T55, I.admin-api). Reads `tool_runs` and nothing else — the writers are
+    # the MCP tool path (T73) and the approval executor (T37, T38), all on the far side of V22's
+    # boundary, and the service this router holds has no `commit` to write with. It closes V45's
+    # last clause: the rows have existed since T73 and until now nothing could ask about them.
+    app.include_router(admin_audit_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

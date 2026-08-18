@@ -35,6 +35,7 @@ from core.approvals.decisions import (
 )
 from core.approvals.expiry import ActionRequestExpiryService, SQLActionRequestExpiryRepository
 from core.audit.admin_events import StructlogAdminAuditSink
+from core.audit.tool_run_reads import SQLToolRunAuditReader, ToolRunAuditService
 from core.auth.auth_repository import SQLAuthRepository, SQLLoginRateLimitRepository
 from core.auth.auth_service import AuthService, SessionUser
 from core.auth.authorization_errors import AdminAccessRequiredError
@@ -310,6 +311,24 @@ def get_result_table_service(session: SessionDep) -> ResultTableService:
 ResultTableServiceDep = Annotated[ResultTableService, Depends(get_result_table_service)]
 
 
+def get_tool_run_audit_service(session: SessionDep) -> ToolRunAuditService:
+    """What the admin audit surface reads `tool_runs` through (T55, V45, V47).
+
+    A *reader*, the third of them on this session dependency and for the same reason as the two
+    above: `SQLToolRunAuditReader` has no `commit` and issues no statement that is not a `SELECT`.
+    The writers of that table sit on the other side of V22's boundary — the MCP tool path (T73)
+    and the approval executor (T37, T38) — and none of them is reachable from here.
+
+    No settings and no clock: the page bound is a module constant shared with the route's
+    `Query(le=…)` (`core.audit.tool_run_reads.MAX_PAGE_SIZE`), and nothing on this path is judged
+    against "now" — unlike the card and the table surface, where a deadline is part of the read.
+    """
+    return ToolRunAuditService(repository=SQLToolRunAuditReader(session))
+
+
+ToolRunAuditServiceDep = Annotated[ToolRunAuditService, Depends(get_tool_run_audit_service)]
+
+
 def get_tool_list_notifier(request: Request) -> ToolListChangedNotifier:
     """T66's emitter, holding the MCP session register the mount writes (V74).
 
@@ -559,6 +578,7 @@ __all__ = [
     "SessionDep",
     "SessionUserDep",
     "SettingsDep",
+    "ToolRunAuditServiceDep",
     "WHMServerAdminServiceDep",
     "WHMServerValidationServiceDep",
     "get_action_decision_service",
@@ -580,6 +600,7 @@ __all__ = [
     "get_session_factory",
     "get_settings_dep",
     "get_tool_list_notifier",
+    "get_tool_run_audit_service",
     "get_whm_server_admin_service",
     "get_whm_server_validation_service",
     "require_admin",

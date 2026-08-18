@@ -1,41 +1,23 @@
 import type { BadgeVariant, StatusChipStatus } from '@gio/bigsu-ui'
 
-import type { AuditActionRequestListItem } from './types'
-
-// Presentation mapping for the audit surfaces (issue #111). Two rules from the
-// acceptance criteria drive this module:
+// Presentation mapping for the audit list (T55). Two rules drive this module:
 //
 //  1. Workflow statuses render through StatusChip's fixed 11-value vocabulary.
 //     Non-workflow descriptors (tool risk) render through Badge.
-//  2. Reviewed BIGSU StatusChip mappings — not the raw domain enum, and not the
-//     API's own label. The confirmation projection (GH #104) maps an APPROVED /
-//     EXECUTING confirmation to "In Progress", but "In Progress" is NOT one of
-//     the 11 standard StatusChip statuses. Copying it would be a compile error
-//     and a vocabulary drift, so we correct the conflict here: an APPROVED
-//     action-request with no terminal receipt is shown as the nearest standard
-//     status, "Approved" (a decision was made). The real terminal outcome, when
-//     one exists, always comes from the receipt's terminalPhase and wins.
+//  2. The mapping is reviewed here rather than copied from the domain enum, so a
+//     value BIGSU has no standard status for cannot reach a StatusChip: an
+//     unrecognised status falls back to a neutral Badge instead of a type error
+//     or an invented chip.
+//
+// `resolveActionStatus` lived here for the ported action-requests tab, which
+// read a `terminalPhase` off a receipt route NOA does not serve. It went with
+// that tab (T55).
 
 export type AuditStatusView =
   | { kind: 'status'; status: StatusChipStatus }
   | { kind: 'badge'; label: string; variant: BadgeVariant }
 
 const asStatus = (status: StatusChipStatus): AuditStatusView => ({ kind: 'status', status })
-
-// Resolve an action-request row to its StatusChip. The receipt's terminal phase
-// is the authoritative outcome and takes precedence over the request status.
-export function resolveActionStatus(item: AuditActionRequestListItem): AuditStatusView {
-  const phase = (item.terminalPhase ?? '').trim().toLowerCase()
-  if (phase === 'completed') return asStatus('Completed')
-  if (phase === 'failed') return asStatus('Failed')
-  if (phase === 'denied') return asStatus('Rejected')
-
-  const status = (item.status ?? '').trim().toUpperCase()
-  if (status === 'PENDING') return asStatus('Pending')
-  if (status === 'APPROVED') return asStatus('Approved')
-  if (status === 'DENIED') return asStatus('Rejected')
-  return { kind: 'badge', label: status || 'Unknown', variant: 'neutral' }
-}
 
 // Resolve a tool-run row to its StatusChip. A STARTED run is executing (live),
 // which maps to the "Active" lifecycle status — there is no "Running" standard

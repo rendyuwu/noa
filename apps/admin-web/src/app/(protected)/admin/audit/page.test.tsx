@@ -16,9 +16,7 @@ vi.mock('@/lib/auth/use-verified-auth', () => ({
 }))
 
 vi.mock('@/components/admin/audit/audit-admin-page', () => ({
-  AuditAdminPage: ({ initialTab }: { initialTab?: string }) => (
-    <div data-testid="audit-page">{initialTab}</div>
-  ),
+  AuditAdminPage: () => <div data-testid="audit-page">tool runs</div>,
 }))
 
 import AdminAuditRoute from './page'
@@ -41,9 +39,11 @@ describe('/admin/audit route gate', () => {
     expect(state.lastOptions).toEqual({ requireAdmin: true })
   })
 
-  it('renders the audit page defaulting to the action-requests tab', () => {
+  it('renders the audit page for a verified admin', () => {
+    // One view and no props: the tab argument went with the action-requests tab
+    // (T55), so this route has nothing left to choose.
     render(<AdminAuditRoute />)
-    expect(screen.getByTestId('audit-page')).toHaveTextContent('action-requests')
+    expect(screen.getByTestId('audit-page')).toBeInTheDocument()
   })
 
   it('shows a loading placeholder while verifying', () => {

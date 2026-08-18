@@ -61,6 +61,11 @@ from core.approvals.errors import (
     ChangeReasonRequiredError,
     DecisionCsrfInvalidError,
 )
+from core.audit.errors import (
+    InvalidAuditCursorError,
+    ToolRunAuditError,
+    ToolRunNotFoundError,
+)
 from core.auth.authorization_errors import (
     AdminAccessRequiredError,
     AuthorizationError,
@@ -187,6 +192,17 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # Bare `McpTokenError`: a request problem, not an infrastructure answer. Same
     # subclass-tree test as above guards this from becoming the default.
     McpTokenError: status.HTTP_400_BAD_REQUEST,
+    # --- Admin audit reads (T55) ---
+    # 404 for a run that does not exist *and* for an id that is not a UUID: this surface is
+    # admin-only (V13), so the reason is not secrecy — a 422 for a malformed id would describe
+    # what the validator accepts rather than what exists (`core.audit.errors`, T63(e)).
+    ToolRunNotFoundError: status.HTTP_404_NOT_FOUND,
+    # The caller sent a page token NOA cannot decode. 400 rather than 422: the envelope is the
+    # shared one (V73), not FastAPI's validation-error list, which is what `noa-old` raised here.
+    InvalidAuditCursorError: status.HTTP_400_BAD_REQUEST,
+    # Bare `ToolRunAuditError`: a request problem, not "the audit trail is down". Same
+    # subclass-tree test as above guards this from becoming the default for a later class.
+    ToolRunAuditError: status.HTTP_400_BAD_REQUEST,
     # --- MCP request-path authentication (T11, T12) ---
     # The credential did not authenticate the caller. 401 across all four: absent,
     # unknown, expired and wrong-binding share a remedy (present a valid token of your

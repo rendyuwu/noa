@@ -5,62 +5,13 @@ import {
   formatDuration,
   formatJson,
   humanizeToolName,
-  resolveActionStatus,
   resolveRiskBadge,
   resolveToolRunStatus,
 } from './audit-format'
-import type { AuditActionRequestListItem } from './types'
 
-function actionItem(over: Partial<AuditActionRequestListItem>): AuditActionRequestListItem {
-  return {
-    actionRequestId: 'a',
-    threadId: 't',
-    toolName: 'whm_create_account',
-    risk: 'CHANGE',
-    status: 'PENDING',
-    createdAt: '2026-07-01T00:00:00.000Z',
-    updatedAt: '2026-07-01T00:00:00.000Z',
-    hasReceipt: false,
-    ...over,
-  }
-}
-
-describe('resolveActionStatus', () => {
-  it('maps a completed terminal phase to the Completed StatusChip', () => {
-    const view = resolveActionStatus(actionItem({ terminalPhase: 'completed', status: 'APPROVED' }))
-    expect(view).toEqual({ kind: 'status', status: 'Completed' })
-  })
-
-  it('lets the terminal phase win over the request status', () => {
-    // An APPROVED request whose receipt failed reads as Failed, not Approved.
-    const view = resolveActionStatus(actionItem({ terminalPhase: 'failed', status: 'APPROVED' }))
-    expect(view).toEqual({ kind: 'status', status: 'Failed' })
-  })
-
-  it('corrects the API "In Progress" conflict: APPROVED without a receipt renders Approved', () => {
-    const view = resolveActionStatus(actionItem({ status: 'APPROVED', terminalPhase: null }))
-    expect(view).toEqual({ kind: 'status', status: 'Approved' })
-  })
-
-  it('maps PENDING and DENIED to standard statuses', () => {
-    expect(resolveActionStatus(actionItem({ status: 'PENDING' }))).toEqual({
-      kind: 'status',
-      status: 'Pending',
-    })
-    expect(resolveActionStatus(actionItem({ status: 'DENIED' }))).toEqual({
-      kind: 'status',
-      status: 'Rejected',
-    })
-  })
-
-  it('falls back to a neutral Badge for an unknown status', () => {
-    expect(resolveActionStatus(actionItem({ status: 'WEIRD', terminalPhase: null }))).toEqual({
-      kind: 'badge',
-      label: 'WEIRD',
-      variant: 'neutral',
-    })
-  })
-})
+// Presentation mapping for the audit list (T55). `resolveActionStatus` and its
+// cases went with the action-requests tab: they read a `terminalPhase` off a
+// receipt route NOA does not serve.
 
 describe('resolveToolRunStatus', () => {
   it('maps the standard tool-run statuses through StatusChip', () => {

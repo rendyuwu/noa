@@ -30,6 +30,12 @@ their handlers, and "every admin route is admin-only" is a claim about the whole
 test that walks it needs the whole surface mounted under one actor. Their write repositories
 are `support.server_admin`'s, their CRUD services are the **real** ones over those, and only
 the validate services are stubbed (that module records why).
+
+T55's audit router joins for that third reason, and adds nothing else to the harness: its service
+is the **real** `ToolRunAuditService` over `support.tool_run_audit`'s in-memory reader, so the page
+bound, the cursor minting and the payload shape all run for real. What is *not* modelled there is
+filtering — that lives in the SQL, and `support.tool_run_audit` records why a Python copy of it
+would be a test agreeing with a double.
 """
 
 from __future__ import annotations
@@ -42,6 +48,7 @@ from uuid import UUID
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from core.audit.tool_run_reads import ToolRunAuditService
 from core.auth.authorization_service import AuthorizationService
 from core.auth.jwt_service import JWTService
 from core.auth.mcp_token_service import McpTokenService
@@ -71,10 +78,12 @@ from noa_api.api.deps import (
     get_pmg_server_validation_service,
     get_proxmox_server_admin_service,
     get_proxmox_server_validation_service,
+    get_tool_run_audit_service,
     get_whm_server_admin_service,
     get_whm_server_validation_service,
 )
 from noa_api.api.errors import install_error_handling
+from noa_api.api.routes.admin_audit import router as admin_audit_router
 from noa_api.api.routes.admin_roles import router as admin_roles_router
 from noa_api.api.routes.admin_servers import pmg_router as admin_pmg_servers_router
 from noa_api.api.routes.admin_servers import proxmox_router as admin_proxmox_servers_router
@@ -103,6 +112,7 @@ from support.server_admin import (
     FakeWHMServerAdminRepository,
     RecordingValidationService,
 )
+from support.tool_run_audit import FakeToolRunAuditReader
 
 ADMIN_EMAIL = "admin@example.com"
 OPERATOR_EMAIL = "operator@example.com"
@@ -114,6 +124,7 @@ ME_TOKENS_PATH = "/me/mcp-tokens"
 WHM_SERVERS_PATH = "/admin/whm/servers"
 PROXMOX_SERVERS_PATH = "/admin/proxmox/servers"
 PMG_SERVERS_PATH = "/admin/pmg/servers"
+TOOL_RUNS_PATH = "/admin/audit/tool-runs"
 
 
 def admin_tokens_path(user_id: UUID) -> str:
@@ -156,6 +167,9 @@ class AdminHarness:
     whm_validation: RecordingValidationService
     proxmox_validation: RecordingValidationService
     pmg_validation: RecordingValidationService
+    # T55. The audit trail this harness serves; a test appends items to it directly, because the
+    # writers that fill the real table are on the MCP side of V22's boundary.
+    tool_runs: FakeToolRunAuditReader
 
     def sign_in(
         self,
@@ -258,6 +272,7 @@ def admin_harness(
     *,
     settings: Settings | None = None,
     known_tools: frozenset[str] = TOOL_CATALOG,
+    tool_runs: FakeToolRunAuditReader | None = None,
     whm_rows: Sequence[WHMServer] | None = None,
     proxmox_rows: Sequence[ProxmoxServer] | None = None,
     pmg_rows: Sequence[PMGServer] | None = None,
@@ -300,6 +315,7 @@ def admin_harness(
         not_found=PMGServerNotFoundError,
         known_ids=[row.id for row in pmg_servers.servers],
     )
+    audit_reader = tool_runs or FakeToolRunAuditReader()
 
     app = FastAPI()
     install_error_handling(app)
@@ -310,6 +326,7 @@ def admin_harness(
     app.include_router(admin_whm_servers_router)
     app.include_router(admin_proxmox_servers_router)
     app.include_router(admin_pmg_servers_router)
+    app.include_router(admin_audit_router)
 
     # The same attributes `noa_api.main.lifespan` writes, minus the engine no test here needs.
     setattr(app.state, STATE_SETTINGS, resolved_settings)
@@ -350,6 +367,11 @@ def admin_harness(
     app.dependency_overrides[get_whm_server_validation_service] = lambda: whm_validation
     app.dependency_overrides[get_proxmox_server_validation_service] = lambda: proxmox_validation
     app.dependency_overrides[get_pmg_server_validation_service] = lambda: pmg_validation
+    # T55. The **real** service over the in-memory reader: the page bound, the cursor minting and
+    # the payload shape are the shipped ones, and only the SQL is doubled.
+    app.dependency_overrides[get_tool_run_audit_service] = lambda: ToolRunAuditService(
+        repository=audit_reader
+    )
 
     with TestClient(app) as client:
         yield AdminHarness(
@@ -368,6 +390,7 @@ def admin_harness(
             whm_validation=whm_validation,
             proxmox_validation=proxmox_validation,
             pmg_validation=pmg_validation,
+            tool_runs=audit_reader,
         )
 
 
@@ -379,6 +402,7 @@ __all__ = [
     "PROXMOX_SERVERS_PATH",
     "ROLES_PATH",
     "TOOLS_PATH",
+    "TOOL_RUNS_PATH",
     "USERS_PATH",
     "WHM_SERVERS_PATH",
     "AdminHarness",
