@@ -111,6 +111,10 @@ minutes.
 - Env vars holding lists use JSON arrays, e.g. `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 - `NOA_SECRET_ENCRYPTION_KEY` encrypts server credentials, not the database. The name says so on
   purpose.
+- `NOA_EMBED_BASE_URL` and `NOA_API_URL` are required outside development: their `localhost`
+  defaults are refused at startup (§V.95). Both are addresses handed onward — the approval URL to
+  an operator, the proxy target to a web app — and unlike a missing secret, a wrong address raises
+  nothing at first use. It just resolves nowhere.
 
 ## Reference repo
 

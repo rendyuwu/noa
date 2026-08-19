@@ -16,17 +16,28 @@ from pydantic import ValidationError
 
 from core.config import (
     DEFAULT_POSTGRES_URL,
+    DEV_DEFAULT_API_URL,
+    DEV_DEFAULT_EMBED_BASE_URL,
     MIN_JWT_SECRET_LENGTH,
     Settings,
     get_settings,
     resolve_env_file,
 )
 
+# The two operator-facing addresses a production deployment has to state (V95), and the field
+# each one sets. Kept as a pair so the guard's coverage and the tests' coverage move together.
+PROD_EMBED_BASE_URL = "https://embed.noa.internal"
+PROD_API_URL = "https://noa.internal"
+
 PROD_REQUIRED = {
     "environment": "production",
     "auth_jwt_secret": "x" * MIN_JWT_SECRET_LENGTH,
     "noa_secret_encryption_key": Fernet.generate_key().decode(),
     "ldap_server_uri": "ldaps://ldap.example.com:636",
+    # V95: a production build that leaves these on their dev defaults is refused, so every
+    # production fixture below has to state them — which is the guard working, not noise.
+    "noa_embed_base_url": PROD_EMBED_BASE_URL,
+    "noa_api_url": PROD_API_URL,
 }
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -192,6 +203,81 @@ def test_secrets_are_not_exposed_by_repr() -> None:
     assert "ldap-bind-password" not in rendered
     assert settings.secret_encryption_key not in rendered
     assert "**********" in rendered
+
+
+# --- V95: operator-facing addresses ---
+
+
+@pytest.mark.parametrize(
+    ("field", "env_var", "value"),
+    [
+        ("noa_embed_base_url", "NOA_EMBED_BASE_URL", DEV_DEFAULT_EMBED_BASE_URL),
+        ("noa_embed_base_url", "NOA_EMBED_BASE_URL", f"{DEV_DEFAULT_EMBED_BASE_URL}/"),
+        ("noa_api_url", "NOA_API_URL", DEV_DEFAULT_API_URL),
+        ("noa_api_url", "NOA_API_URL", f"{DEV_DEFAULT_API_URL}/"),
+    ],
+)
+def test_dev_default_address_rejected_in_production(field: str, env_var: str, value: str) -> None:
+    """V95: the laptop address is a startup failure outside development.
+
+    The trailing-slash rows are not padding: `_normalize_base_url` runs first, so a deployment
+    that pasted the `.env.example` line with a slash on the end is on the default too, and a
+    guard comparing the raw string would wave it through.
+
+    Pinned to `ValidationError` and to the env var's own name — a bare `Exception` match would
+    pass on an unrelated `TypeError` and quietly stop testing the guard.
+    """
+    with pytest.raises(ValidationError, match=f"{env_var} is still the development default"):
+        build_production(**{field: value})
+
+
+def test_explicit_addresses_boot_in_production() -> None:
+    """V95 refuses the *default*, not the field: a stated address boots and survives intact."""
+    settings = build_production()
+
+    assert settings.noa_embed_base_url == PROD_EMBED_BASE_URL
+    assert settings.noa_api_url == PROD_API_URL
+
+
+def test_dev_default_addresses_boot_in_development() -> None:
+    """The negative control (V87): without it, "it raised" is all the suite knows.
+
+    A guard that refused the localhost address in *every* environment would pass the two tests
+    above and break a fresh clone — the case that has to stay green is this one.
+    """
+    settings = build(environment="development")
+
+    assert settings.noa_embed_base_url == DEV_DEFAULT_EMBED_BASE_URL
+    assert settings.noa_api_url == DEV_DEFAULT_API_URL
+
+
+def test_refused_addresses_are_the_field_defaults() -> None:
+    """V95's guard has to refuse what an unset var actually produces, not a lookalike string.
+
+    Without this the rejection tests are tautological: they hand the guard the constant the
+    guard compares against, and both could drift away from the field default together, leaving
+    a deployment that forgot the var booting clean — the exact failure V95 exists to stop.
+    """
+    fields = Settings.model_fields
+
+    assert fields["noa_embed_base_url"].default == DEV_DEFAULT_EMBED_BASE_URL
+    assert fields["noa_api_url"].default == DEV_DEFAULT_API_URL
+
+
+def test_both_missing_addresses_are_named_in_one_message() -> None:
+    """A deploy that forgot both learns both at once, not one boot at a time."""
+    with pytest.raises(ValidationError) as caught:
+        build(
+            environment="production",
+            auth_jwt_secret="x" * MIN_JWT_SECRET_LENGTH,
+            noa_secret_encryption_key=Fernet.generate_key().decode(),
+            ldap_server_uri="ldaps://ldap.example.com:636",
+        )
+
+    message = str(caught.value)
+
+    assert "NOA_EMBED_BASE_URL" in message
+    assert "NOA_API_URL" in message
 
 
 # --- C4: LDAP transport ---

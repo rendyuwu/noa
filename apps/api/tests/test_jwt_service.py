@@ -62,11 +62,17 @@ def build_service(**overrides: object) -> JWTService:
 
 
 def build_production_service(**overrides: object) -> JWTService:
-    """Production settings need the secrets V52/V53 demand outside dev."""
+    """Production settings need the secrets V52/V53 demand outside dev.
+
+    And the addresses V95 demands: both default to localhost, and outside development a
+    default is a startup failure rather than a value.
+    """
     return build_service(
         environment="production",
         noa_secret_encryption_key=Fernet.generate_key().decode(),
         ldap_server_uri="ldaps://ldap.example.com:636",
+        noa_embed_base_url="https://embed.noa.internal",
+        noa_api_url="https://noa.internal",
         **overrides,
     )
 

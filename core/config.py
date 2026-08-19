@@ -10,6 +10,9 @@ startup rather than mid-request:
 - `NOA_SECRET_ENCRYPTION_KEY` required in production, auto-generated in dev (V52).
   It encrypts server credentials, not the database — the name says so (C7).
 - `AUTH_JWT_SECRET` required in production, ≥32 chars, auto-generated in dev (V53).
+- `NOA_EMBED_BASE_URL` and `NOA_API_URL` refuse their development default outside
+  development: both addresses are handed onward — one to an operator, one to a web
+  app's proxy — and a laptop address is wrong silently, not loudly (V95).
 - `ldap://` refused in production unless explicitly allowed; dev LDAP bypass
   refused outside development/test (C4).
 
@@ -40,6 +43,15 @@ REPO_MARKER = "AGENTS.md"
 DEFAULT_POSTGRES_URL = "postgresql+asyncpg://noa:noa@localhost:5432/noa"
 
 MIN_JWT_SECRET_LENGTH = 32
+
+# Development defaults for the two settings whose value leaves this process as an address
+# somebody else has to resolve: the approval URL an operator opens (V26) and the target the
+# web apps' server-side proxies forward to. Named here rather than written inline on the
+# fields below because `_validate_operator_addresses` refuses exactly these values outside
+# development (V95) — one constant per address keeps the default and the guard from drifting
+# apart, which is the only way that guard could go quietly vacuous.
+DEV_DEFAULT_EMBED_BASE_URL = "http://localhost:3001"
+DEV_DEFAULT_API_URL = "http://localhost:8000"
 
 
 def resolve_env_file(*, start: Path, cwd: Path) -> Path | None:
@@ -206,12 +218,14 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000", "http://localhost:3001"]
     )
     api_cors_allow_credentials: bool = True
-    # Base of the approval URL handed to the operator (V26: carries an id only).
-    noa_embed_base_url: str = "http://localhost:3001"
+    # Base of the approval URL handed to the operator (V26: carries an id only). The default
+    # is refused outside development (V95) — see `_validate_operator_addresses`.
+    noa_embed_base_url: str = DEV_DEFAULT_EMBED_BASE_URL
     # LibreChat origin allowed to frame the embed app (V41).
     noa_librechat_origin: str = "https://chat.noa.internal"
-    # Server-side proxy target for the web apps; browsers never call the API direct.
-    noa_api_url: str = "http://localhost:8000"
+    # Server-side proxy target for the web apps; browsers never call the API direct. Default
+    # refused outside development, same rule and same reason as the embed base above (V95).
+    noa_api_url: str = DEV_DEFAULT_API_URL
 
     # --- yopass (C15, V50) ---
     # Absent -> the reset tool reports `yopass_not_configured`; the app still boots.
@@ -268,7 +282,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_environment_rules(self) -> Settings:
-        """Secrets and transport rules, per environment (V52, V53, C4)."""
+        """Secrets, addresses and transport rules, per environment (V52, V53, V95, C4)."""
         if self.is_development:
             # Local dev runs over plain HTTP, so a Secure cookie would never be sent.
             self.auth_session_cookie_secure = False
@@ -280,6 +294,7 @@ class Settings(BaseSettings):
         self._validate_cookie_transport()
         self._resolve_jwt_secret()
         self._resolve_encryption_key()
+        self._validate_operator_addresses()
         self._validate_ldap_transport()
         return self
 
@@ -350,6 +365,43 @@ class Settings(BaseSettings):
             ) from exc
 
         self.noa_secret_encryption_key = SecretStr(key)
+
+    def _validate_operator_addresses(self) -> None:
+        """V95: an address that reaches an operator or a browser cannot keep its dev default.
+
+        The rule sits beside the secret rules above because the failure mode is the one
+        environment rules exist for — a deploy that never set the var boots clean. It is
+        *distinct* from V52/V53 because of how the two fail: a missing secret is loud at
+        first use, while a wrong address is not an error anywhere. `NOA_EMBED_BASE_URL` on
+        its default hands every operator `http://localhost:3001/approvals/<id>`, an address
+        that resolves on one laptop and silently nowhere else; the operator sees a dead link
+        in a chat transcript and the process sees nothing at all.
+
+        A startup warning would not do: a line in a container log is read after somebody
+        says "the button does nothing", which is the incident this refuses to have.
+
+        Every offender is collected into one message rather than raising on the first, so a
+        deployment that forgot both vars learns both in one boot instead of two.
+        """
+        if self.is_development:
+            return
+
+        offenders = [
+            f"{field.upper()} is still the development default ({dev_default})"
+            for field, dev_default in (
+                ("noa_embed_base_url", DEV_DEFAULT_EMBED_BASE_URL),
+                ("noa_api_url", DEV_DEFAULT_API_URL),
+            )
+            if getattr(self, field) == dev_default
+        ]
+
+        if offenders:
+            raise ValueError(
+                "; ".join(offenders) + ". These addresses are handed onward — the approval "
+                "URL to an operator, the proxy target to a web app — so a localhost value "
+                "outside development/test environments resolves nowhere and fails silently. "
+                "Set them to the deployment's real origins (V95)"
+            )
 
     def _validate_ldap_transport(self) -> None:
         """C4: LDAP carries a service-account bind — TLS unless explicitly waived."""
