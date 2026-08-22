@@ -40,6 +40,10 @@ dev = [
   "pytest==9.1.1",
   "pytest-asyncio==1.4.0",
   "ruff==0.16.1",
+  # Parses `librechat.yaml` and the config block of `docs/integrations/librechat.md` so V88's
+  # three keys are bound by test rather than by prose (V84c, T57). Declared rather than leaned
+  # on as a transitive: a test whose parser can vanish in someone else's bump is not a binding.
+  "pyyaml==6.0.3",
 ]
 
 [build-system]

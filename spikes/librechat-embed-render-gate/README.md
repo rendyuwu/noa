@@ -12,11 +12,11 @@ command rather than an afternoon.
 
 | File | Role |
 |---|---|
-| `verify_librechat_pin.sh` | E1: the clone is the pin, and the shipped `@mcp-ui/client` bytes still map `text/uri-list` → iframe `src` with `allow-same-origin` and without `allow-forms` |
+| `verify_librechat_pin.sh` | E1: `V88`'s config keys are still in the YAML and in `docs/integrations/librechat.md`, the clone is the pin, and the shipped `@mcp-ui/client` bytes still map `text/uri-list` → iframe `src` with `allow-same-origin` and without `allow-forms` |
 | `noa_embed_probe_server.py` | NOA's real app plus a probe MCP mount and the NOA-origin frame page that measures whether the session cookie arrives |
 | `mint_mcp_token.py` | mints the bearer token LibreChat authenticates with (`T10`, `V2`); no `/admin` or `/me` route exists yet |
 | `browser_probe.mjs` | E2-E5: drives LibreChat in Chromium, reads the verdicts out of the frame, writes `evidence/` |
-| `librechat.yaml` | the MCP server entry, including the two settings `C24` forces (`startup: false`, `requiresOAuth: false`) |
+| `librechat.yaml` | the MCP server entry, including the three settings `C24` forces (`startup: false`, `requiresOAuth: false`, and NOA's host in `mcpSettings.allowedDomains`) — `V88`, and the operator-facing version of it is [`docs/integrations/librechat.md`](../../docs/integrations/librechat.md) |
 | `harness.env` | NOA settings for the run. Development values, no key material (`C11`) |
 
 ## Prerequisites
