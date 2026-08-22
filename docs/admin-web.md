@@ -51,11 +51,19 @@ here: `bigsu.biznetgio.pt` resolves to an internal-only address, so a runner on 
 cannot install `@gio/*` at all. The build must run on a runner inside the Biznet Gio network.
 
 CI for this repo is maintained on company GitLab (`master`/`staging`) out of band; this file states
-the requirement, it does not add a workflow. Runner expectations: Node 20 LTS, pnpm via Corepack
+the requirement, it does not add a workflow. Runner expectations: **Node 22**, pnpm via Corepack
 (the `packageManager` field pins the version), an ephemeral workspace per job, no registry
 credential in the pipeline, and internal-runner jobs restricted to protected branches — a runner
 with routable access to the internal registry that also runs untrusted merge requests is a
 poisoning target.
+
+Node 22 and not the "Node 20 LTS" this line used to say: those two clauses contradicted each
+other. `engines.node` allows `>=20.9.0` and `next@16.3.0` agrees, so 20 runs the built app — but
+the pinned pnpm 11.x declares `engines.node: >=22.13`, and on Node 20 `pnpm install` dies with
+`ERR_UNKNOWN_BUILTIN_MODULE: No such built-in module: node:sqlite` before resolving a single
+package. Measured at §T.60 while building this app's image; `apps/api/tests/test_deployment.py`
+now holds the floor, and holds it to pnpm 11 specifically, so a pnpm major bump has to re-measure
+rather than inherit.
 
 Credential-free metadata read, from an internal-capable environment:
 
@@ -75,10 +83,13 @@ already set in the real environment wins over the file.
   `NOA_SIGN_IN_URL` at `http://localhost:3000/login`.
 
 `/healthz` is liveness only: it touches no dependency, so a backend outage is never reported as
-this app's. There is still no readiness probe, and §T.50 did not add one: a `/readyz` that reads
-`NOA_API_URL` has to define readiness across two deployables, which is a deployment decision and
-belongs with §T.60. An earlier draft of this file promised it here; the promise was never in
-`SPEC.md` §T.50, and the row is the source (V84).
+this app's. There is **no readiness probe, and there will not be one** — §T.60 decided it rather
+than deferring it further. A `/readyz` that reads `NOA_API_URL` would make this app's readiness a
+function of another deployable's health, so a rolling API restart pulls both web apps out of
+rotation at once, and this app does not need the API to serve the error and 401 states an operator
+sees during exactly that window. Readiness that means something is expressed as ordering instead:
+`docs/deployment.md`. An earlier draft of this file promised the probe here; the promise was never
+in `SPEC.md` §T.50, and the row is the source (V84).
 
 ## Session and the API hop (§T.50)
 
@@ -176,7 +187,8 @@ Package-level guards live in `tests/`: `pins.test.ts` (C2), `npmrc.test.ts` (reg
 - **The admin API routes the ported pages call** (§T.51–§T.55). The pages, hooks and their tests are
   here and the proxy now carries them; several of the `§I.admin-api` endpoints behind them are not
   built yet.
-- **A readiness probe.** See "Config and health" — `/readyz` is §T.60's, not §T.50's.
+- **A readiness probe.** Not coming. §T.60 decided against one and recorded why — see "Config and
+  health" above and `docs/deployment.md`.
 - **Browser e2e for the admin verticals.** They stayed in the old repo. §T.50 gives them a target
   (the proxy and the login route), but this package has no Playwright lane: `apps/web-embed` owns
   the browser lane today, and adding one here is its own decision with its own dependency and CI

@@ -1,0 +1,46 @@
+# Build context for the admin panel image (§T.60). Context is this directory (C12).
+#
+# `node_modules` is excluded and then re-introduced from the `deps` stage: a host `node_modules`
+# is both the largest thing here and the one most likely to hold a platform-specific binary that
+# does not match the image.
+#
+# NOTHING that TypeScript compiles is excluded, and that is the rule rather than an oversight.
+# `tsconfig.json` includes `**/*.ts` and `**/*.tsx` across the whole package, and `next build`
+# runs that same type check — so `tests/`, `config/*.test.ts` and the vitest configs are all in
+# the program. An earlier draft of this file excluded `tests/` and the build failed with
+# `TS2307: Cannot find module '../../../../tests/support/approval-card'` from a spec colocated in
+# `src/` (MEASURED at §T.60, in the sibling embed image). Dropping those files would not have
+# fixed it honestly either: it would have made the image's type check a smaller program than the
+# one `pnpm typecheck` runs, which turns the build into a weaker gate that still reads as green.
+
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Secrets never enter a layer (C11). Config arrives from the environment at boot.
+.env
+.env.*
+
+# Test OUTPUT, not test source.
+test-results/
+playwright-report/
+
+# Prose only — nothing here is in the TypeScript program.
+AGENTS.md
+CLAUDE.md
+README.md
+.claude/
+
+# Docker's own files.
+Dockerfile
+.dockerignore
+
+# Editor / OS / logs.
+.vscode/
+.idea/
+.mcp.json
+*.swp
+*.log
+.DS_Store
+Thumbs.db

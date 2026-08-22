@@ -9,6 +9,10 @@ Integration and operations reference.
   `apps/api/tests/test_librechat_config_doc.py` rather than merely written down (§V.88).
 - `admin-web.md` — the BIGSU admin panel: what was ported and what deviates, BIGSU registry access
   and the internal-runner requirement it forces on CI, config and health (§T.47, §T.48).
+- `deployment.md` — the three images and their build contexts, build-time versus runtime
+  configuration, the domain and session-cookie layout, the local compose stack, and the
+  single-replica and readiness decisions (§T.60). Its machine-readable blocks are asserted by
+  `apps/api/tests/test_deployment.py` rather than merely written down.
 
 Rule carried over from the old repo: when a WHM, Proxmox, or PMG feature changes, update the
 matching file in `integrations/` in the same change.

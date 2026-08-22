@@ -1,0 +1,42 @@
+# Build context for the embed image (§T.60). Context is this directory (C12).
+#
+# Same shape as `apps/admin-web/.dockerignore`, including the rule that matters most: nothing
+# TypeScript compiles is excluded. `tsconfig.json` includes `**/*.ts`/`**/*.tsx` for the whole
+# package and `next build` runs that check, so `tests/`, `e2e/*.browser.e2e.ts`, `config/*.test.ts`
+# and the vitest/playwright configs are all in the program. Excluding `tests/` here is what
+# produced `TS2307: Cannot find module '../../../../tests/support/approval-card'` at §T.60 —
+# and excluding the specs instead would have quietly made the image's type check a smaller
+# program than `pnpm typecheck`, which is a weaker gate that still reads as green.
+
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+
+# Secrets never enter a layer (C11). Config arrives from the environment at boot, except the
+# framing origin, which is a build argument — see the Dockerfile.
+.env
+.env.*
+
+# Test OUTPUT, not test source.
+test-results/
+playwright-report/
+.playwright-cli/
+
+# Prose only — nothing here is in the TypeScript program.
+AGENTS.md
+CLAUDE.md
+README.md
+
+# Docker's own files.
+Dockerfile
+.dockerignore
+
+# Editor / OS / logs.
+.vscode/
+.idea/
+.mcp.json
+*.swp
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,60 @@
+# Build context for the API image (§T.60). Its context is the repo root, because `noa-api` is a
+# uv workspace member and `noa-core` is the workspace root — see `apps/api/Dockerfile`.
+#
+# Two entries here are load-bearing rather than housekeeping:
+#   * `.env` and friends — C11 keeps secrets out of git; an image layer is just as permanent and
+#     rather harder to inspect. The API takes its configuration from the environment at boot.
+#   * the two web packages — C12 makes them separate deploy artifacts with their own contexts.
+#     Excluding them means the API image physically cannot pick up a file from either one.
+
+# --- Secrets (C11) ---
+.env
+.env.*
+!.env.example
+
+# --- Separate deploy artifacts (C12) ---
+apps/admin-web/
+apps/web-embed/
+
+# --- Not part of any image ---
+.git/
+.github/
+.gitlab-ci.yml
+apps/api/tests/
+docs/
+spikes/
+tmp/
+.artifacts/
+
+# --- Local build/tooling output ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+node_modules/
+*.log
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.mcp.json
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- Docker's own files (never needed inside an image) ---
+Dockerfile
+**/Dockerfile
+.dockerignore
+**/.dockerignore
+docker-compose.yml
+docker-compose.*.yml

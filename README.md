@@ -64,7 +64,8 @@ carries the full rationale, the re-open triggers, and the tests that hold them (
 - Python `>=3.11,<3.13`. The upper bound is load-bearing: `pgpy` 0.6.0 imports the stdlib `imghdr`
   module, removed in 3.13, at import time (C1).
 - `uv` for Python dependency management.
-- Node.js 20+ and `pnpm` for the two web apps.
+- Node.js **22** and `pnpm` for the two web apps. `engines.node` allows 20 and the built apps run
+  there, but the pinned pnpm 11.x needs `>=22.13` and `pnpm install` fails outright on 20 (§T.60).
 - Postgres 16.
 
 ## Setup
@@ -84,6 +85,25 @@ uv run uvicorn noa_api.main:app --reload --port 8000
 ```
 
 Web apps use `pnpm install` and `pnpm dev` in their own directories.
+
+## Deployment
+
+One image per deployable (C12), and the build contexts differ: the API builds from the repo root
+because it is a uv workspace member, each web app builds from its own directory because the two
+share no source.
+
+```bash
+docker compose up -d postgres          # Postgres only — no image builds
+docker compose --profile apps up -d    # Postgres, migrations, all three apps
+```
+
+`docs/deployment.md` is the reference: images and contexts, which settings are baked at build time
+versus read at runtime, the `*.noa.internal` domain layout the session cookie requires, why the
+API runs as a single replica, and why there is no readiness probe. Two things to know before a
+first build — the admin panel image only builds inside the Biznet Gio network (`@gio/*` is on an
+internal-only registry), and the embed image takes `NOA_LIBRECHAT_ORIGIN` as a **build argument**,
+because `frame-ancestors` is compiled into the standalone output and no runtime variable can move
+it (V41).
 
 ## Checks
 
