@@ -226,13 +226,17 @@ endpoints for both probe kinds on the web tier and gate the API rollout on the m
 
 ## Not in this repo
 
-- **CI and orchestrator manifests — on a branch, not on `main`.** `.gitlab-ci.yml` and
-  `k8s/{staging,production}/` live on `ci/gitlab` and are absent from `main` **by design**
-  (§T.61, §T.75): the GitHub remote is public and is the pull-request surface, while GitLab
-  `master`/`staging` carry `main` plus that overlay. So a reader on `main` who greps for a pipeline
-  and finds none is reading the repository correctly, and no real secret ever passes through a
-  clone whose only remote is the public one (C11, V68). `docs/admin-web.md` records the
+- **CI and orchestrator manifests — on `master` and `staging`, not on `main`.** `.gitlab-ci.yml`
+  and `k8s/{staging,production}/` live on those two branches and are absent from `main` **by
+  design** (§T.61, §T.75): the GitHub remote is public and is the pull-request surface, while
+  GitLab `master` and `staging` carry `main` plus that overlay. So a reader on `main` who greps for
+  a pipeline and finds none is reading the repository correctly. `docs/admin-web.md` records the
   internal-runner requirement the BIGSU registry forces.
+
+  Those two refs are the only ones that mean anything downstream: every pipeline job is filtered
+  to them, and the ArgoCD Applications — the owner's, configured in ArgoCD rather than here —
+  watch them and nothing else. A third branch holding the overlay would therefore build nothing
+  and sync nothing, which is why the overlay sits on `master` and `staging` directly.
 - Configuration reaches a deployed pod through those ConfigMaps and Secrets — one ConfigMap per
   deployable and a single Secret the API alone mounts — which is what `.env.example` says at the
   top and why no image bakes a `.env` (C11; every `.dockerignore` here excludes it). Note that
