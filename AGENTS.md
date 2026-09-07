@@ -57,6 +57,13 @@ uv run pytest -q -k rbac
 Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`,
 `pnpm typecheck`, `pnpm test`.
 
+CI = company GitLab (`gitlab.biznetgio.pt:simondayce/noa`, branches `master` ∧ `staging`),
+maintained by owner out of band; that remote is ⊥ configured in this clone. GitHub `origin`
+(`rendyuwu/noa`) = working/PR surface, ⊥ CI surface ⇒ **⊥ add ∨ edit `.github/workflows/*` unless
+asked** — a CI task = requirements the GitLab pipeline ! satisfy, ⊥ Actions files to author here.
+Runner ! sit INSIDE the Biznet Gio network ∵ `bigsu.biznetgio.pt` resolves internal-only ⇒ a public
+runner ⊥ install `@gio/*` at all. Detail: `docs/admin-web.md` §"Registry access and CI". (T61)
+
 ## Hard boundaries — break these ∧ design dies
 
 - **Reason** = one field, operator-typed in approval card. CHANGE tool schemas ⊥ carry reason param

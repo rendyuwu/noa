@@ -25,12 +25,12 @@ version: 1.3.0
 # resolves into private address space — which every internal host does.
 mcpSettings:
   allowedDomains:
-    - noa.internal
+    - noa-api.simondayce.my.id
 
 mcpServers:
   noa:
     type: streamable-http
-    url: https://noa.internal/mcp/
+    url: https://noa-api.simondayce.my.id/mcp/
     timeout: 60000
     # Measured, not preference. Both stop a silent, total failure — see below.
     startup: false
@@ -48,9 +48,22 @@ mcpServers:
       X-Noa-Conversation-Ref: "{{LIBRECHAT_BODY_CONVERSATIONID}}"
 ```
 
-### `url` — the trailing slash is deliberate
+### `url` — the host is a deployment property, the trailing slash is not
 
-NOA mounts the MCP sub-app at `/mcp` and the app answers at `/mcp/`
+The **host** above is one deployment's, not a fact about NOA (§V.40, §T.75). Deployed, NOA's API
+answers at `noa-api.simondayce.my.id` (staging: `noa-api-staging.simondayce.my.id`); the local
+development stack and the render-gate rig both run at `noa.internal`. Substitute your own and keep
+the two occurrences in step — `url` and `mcpSettings.allowedDomains` name the same host, and
+`apps/api/tests/test_librechat_config_doc.py` derives the required allowlist entry from `url`'s own
+host precisely so that an allowlist naming a *different* NOA host cannot read as a covering one.
+
+One host, not four: LibreChat talks to the API alone. `noa-admin.simondayce.my.id` and
+`noa-embed.simondayce.my.id` are the browser's, and `chat.simondayce.my.id` is LibreChat's own —
+which has to sit under the same registrable parent as the embed or the `noa_session` cookie never
+rides into the approval iframe (§V.40, C17).
+
+The **trailing slash** is not a deployment choice. NOA mounts the MCP sub-app at `/mcp` and the app
+answers at `/mcp/`
 (`MCP_MOUNT_PATH`/`MCP_APP_PATH`, `apps/api/src/noa_api/mcp_server.py`, §T.13). The bare path is
 not broken: Starlette answers it with a 307, which preserves method and body, so a client that
 follows redirects works. It just pays a redirect on **every** call. Write the slash.
@@ -81,7 +94,8 @@ not to attempt one.
 
 ### `mcpSettings.allowedDomains` — the SSRF guard
 
-Without it, LibreChat enables SSRF protection and refuses the URL before any request is made:
+Without it, LibreChat enables SSRF protection and refuses the URL before any request is made. The
+refusal as measured on the rig, whose host is `noa.internal` rather than the deployed one above:
 `Domain "http://noa.internal:8000" is not allowed`. At the pinned commit `allowedAddresses` accepts
 neither a CIDR nor a loopback literal (its schema is host:port pairs in private space), so the
 domain list is the only lever (§R.31b). Naming an internal MCP host's domain is what a real

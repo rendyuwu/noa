@@ -110,13 +110,32 @@ Three names, which is what §T.60's row specifies, because the admin panel share
 and differs only by port. Cookies ignore ports, so V40 holds; the browser never calls FastAPI
 directly anyway (AGENTS.md), so the two ports never collide over a route.
 
-**Production needs a fourth name.** Behind TLS there is one port, so `noa.internal` cannot serve
-both the API (`https://noa.internal/mcp`, §I.mcp) and the admin panel. Give the panel
-`admin.noa.internal` and point `NOA_SIGN_IN_URL` at `https://admin.noa.internal/login`. That is a
-§T.60 decision and the one place this file goes past the row's own three-name list; the alternative
-— a path prefix on `noa.internal` — was not taken, because it puts the admin panel and the MCP
-endpoint on one origin and makes `frame-ancestors 'none'` versus the embed's allowlist a
-per-path property instead of a per-origin one.
+**The parent domain above is development's, not NOA's.** V40 fixes a *property* — every
+operator-facing origin under one registrable parent, and the cookie scoped to that parent — and
+names `.noa.internal` only as what development uses. Deployed, the parent is
+`.simondayce.my.id` (§T.75):
+
+| | staging | production |
+|---|---|---|
+| API (`/mcp`, `/admin`, `/auth`) | `noa-api-staging.simondayce.my.id` | `noa-api.simondayce.my.id` |
+| admin panel | `noa-admin-staging.simondayce.my.id` | `noa-admin.simondayce.my.id` |
+| embed (approval card) | `noa-embed-staging.simondayce.my.id` | `noa-embed.simondayce.my.id` |
+| LibreChat (not this repo) | `chat.simondayce.my.id` | `chat.simondayce.my.id` |
+
+`AUTH_SESSION_COOKIE_DOMAIN=.simondayce.my.id` in both, and TLS terminates at the ingress
+(`simondayce-my-id-tls`) so `AUTH_SESSION_COOKIE_SECURE=true` holds. LibreChat sits under the same
+parent deliberately: the operator reaches the approval card *through* the chat document and signs in
+on the admin origin, so a chat host outside the parent breaks the cookie's ride before any
+`frame-ancestors` question is reached.
+
+**A deployment needs a fourth name**, and it is a name rather than a path. Behind TLS there is one
+port, so the API's host cannot also serve the admin panel; `NOA_SIGN_IN_URL` points at
+`https://noa-admin.simondayce.my.id/login`. That is a §T.60 decision and the one place this file
+goes past that row's own three-name list. The alternative — a path prefix on the API host — was not
+taken, because it puts the admin panel and the MCP endpoint on one origin and makes
+`frame-ancestors 'none'` versus the embed's allowlist a per-path property instead of a per-origin
+one. In development the same split is by port instead, which costs nothing because cookies ignore
+ports (V40) and the browser never calls FastAPI directly.
 
 After the hosts line, set three values in the repo-root `.env` to match:
 
@@ -207,9 +226,15 @@ endpoints for both probe kinds on the web tier and gate the API rollout on the m
 
 ## Not in this repo
 
-- **CI.** Maintained on company GitLab (`master`/`staging`) out of band. `docs/admin-web.md`
-  records the internal-runner requirement the BIGSU registry forces; this file does not add a
-  pipeline.
-- **Orchestrator manifests.** No Kubernetes or Helm artifacts. Production supplies configuration
-  through ConfigMaps and Secrets, which is what `.env.example` says at the top and why no image
-  bakes a `.env` (C11 — every `.dockerignore` here excludes it).
+- **CI and orchestrator manifests — on a branch, not on `main`.** `.gitlab-ci.yml` and
+  `k8s/{staging,production}/` live on `ci/gitlab` and are absent from `main` **by design**
+  (§T.61, §T.75): the GitHub remote is public and is the pull-request surface, while GitLab
+  `master`/`staging` carry `main` plus that overlay. So a reader on `main` who greps for a pipeline
+  and finds none is reading the repository correctly, and no real secret ever passes through a
+  clone whose only remote is the public one (C11, V68). `docs/admin-web.md` records the
+  internal-runner requirement the BIGSU registry forces.
+- Configuration reaches a deployed pod through those ConfigMaps and Secrets — one ConfigMap per
+  deployable and a single Secret the API alone mounts — which is what `.env.example` says at the
+  top and why no image bakes a `.env` (C11; every `.dockerignore` here excludes it). Note that
+  `NOA_LIBRECHAT_ORIGIN` is *not* among them: it is baked at build (V41) and a ConfigMap key would
+  read as the lever that moves it while doing nothing at all (V101).

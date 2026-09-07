@@ -50,8 +50,11 @@ committed and none should be added. The consequence for CI, measured in the old 
 here: `bigsu.biznetgio.pt` resolves to an internal-only address, so a runner on the public internet
 cannot install `@gio/*` at all. The build must run on a runner inside the Biznet Gio network.
 
-CI for this repo is maintained on company GitLab (`master`/`staging`) out of band; this file states
-the requirement, it does not add a workflow. Runner expectations: **Node 22**, pnpm via Corepack
+CI for this repo is maintained on company GitLab (`gitlab.biznetgio.pt:simondayce/noa`, branches
+`master` and `staging`) out of band; this file states the requirement, it does not add a workflow.
+The GitHub remote (`origin`, `rendyuwu/noa`) is the working and pull-request surface, not the CI
+surface, so `.github/workflows/*` is not where a CI requirement gets satisfied — treat §T.61 as a
+specification the GitLab pipeline must meet. Runner expectations: **Node 22**, pnpm via Corepack
 (the `packageManager` field pins the version), an ephemeral workspace per job, no registry
 credential in the pipeline, and internal-runner jobs restricted to protected branches — a runner
 with routable access to the internal registry that also runs untrusted merge requests is a
@@ -96,8 +99,9 @@ in `SPEC.md` §T.50, and the row is the source (V84).
 The browser never calls FastAPI directly (AGENTS.md). Every call goes to `/api/*` on this origin,
 and `src/app/api/[...path]/route.ts` forwards it server-side to `NOA_API_URL` with the httpOnly
 `noa_session` cookie the registrable domain put here (V40). `Set-Cookie` rides back with its
-`Domain=.noa.internal` attribute untouched — rewriting it would confine the session to whichever
-origin answered, and the embed's approval card would stop seeing the same login.
+`Domain` attribute untouched — whatever the deployment's parent is (`.noa.internal` in development,
+`.simondayce.my.id` deployed) — because rewriting it would confine the session to whichever origin
+answered, and the embed's approval card would stop seeing the same login.
 
 `Authorization` is dropped outbound. Bearer tokens are MCP-only and LibreChat's server sends them,
 never a browser (C5), so `/api/mcp/` being reachable on this origin is reachable-and-inert rather
