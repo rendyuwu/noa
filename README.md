@@ -98,7 +98,8 @@ docker compose --profile apps up -d    # Postgres, migrations, all three apps
 ```
 
 `docs/deployment.md` is the reference: images and contexts, which settings are baked at build time
-versus read at runtime, the `*.noa.internal` domain layout the session cookie requires, why the
+versus read at runtime, the one-registrable-parent domain layout the session cookie requires
+(`*.noa.internal` in development, `*.simondayce.my.id` deployed — V40), why the
 API runs as a single replica, and why there is no readiness probe. Two things to know before a
 first build — the admin panel image only builds inside the Biznet Gio network (`@gio/*` is on an
 internal-only registry), and the embed image takes `NOA_LIBRECHAT_ORIGIN` as a **build argument**,

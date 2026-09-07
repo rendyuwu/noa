@@ -26,6 +26,7 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 import yaml
@@ -50,8 +51,17 @@ REQUIRED_HEADERS: dict[str, str] = {
     "X-Noa-Conversation-Ref": "{{LIBRECHAT_BODY_CONVERSATIONID}}",
 }
 
-# The host §R.31b measured the SSRF refusal against.
-REQUIRED_DOMAIN = "noa.internal"
+# §R.31b measured the SSRF refusal against `noa.internal`. The allowlist is nonetheless checked
+# against the host of the entry's OWN `url`, not against that constant, for two reasons:
+#
+#   * The host is a deployment property (§V.40, §T.75), not a fact about NOA. The rig this file
+#     also checks runs on `noa.internal`; a deployed `librechat.yaml` names
+#     `noa-api.simondayce.my.id`. One predicate has to fit both artifacts or the pair stops being
+#     "two artifacts, one predicate" and becomes two truths (§V.84a).
+#   * A fixed constant passes a config whose allowlist names one NOA host while `url` points at
+#     another — which is precisely the misconfiguration this key exists to stop, since LibreChat
+#     refuses the URL it was actually given. §V.66's rule, one file over: the offered set must not
+#     drift from the accepted set.
 
 # §T.13: the mount answers at `/mcp/` and 307s the bare path. Pinned behaviourally by
 # `test_mcp_mount.py::test_the_endpoint_is_mounted_at_mcp`; asserted here as prose the doc owes.
@@ -144,8 +154,13 @@ def config_problems(config: Any) -> list[str]:
         problems.append("`requiresOAuth: false` missing — a correct 401 reads as OAuth (§R.31a)")
 
     domains = (document.get("mcpSettings") or {}).get("allowedDomains") or []
-    if REQUIRED_DOMAIN not in domains:
-        problems.append(f"{REQUIRED_DOMAIN!r} not in mcpSettings.allowedDomains (§R.31b)")
+    url_host = urlsplit(url).hostname if isinstance(url, str) else None
+    if url_host is None:
+        problems.append(f"url {url!r} carries no host to allowlist (§R.31b)")
+    elif url_host not in domains:
+        problems.append(
+            f"{url_host!r} — the url's own host — not in mcpSettings.allowedDomains (§R.31b)"
+        )
 
     headers = entry.get("headers") or {}
     authorization = headers.get("Authorization")
@@ -211,6 +226,11 @@ def _mutate(config: dict[str, Any], mutation: str) -> dict[str, Any]:
         del entry["requiresOAuth"]
     elif mutation == "no-allowlist":
         broken["mcpSettings"]["allowedDomains"] = []
+    elif mutation == "allowlist-names-another-host":
+        # The hole a fixed `REQUIRED_DOMAIN` left open: an allowlist naming *a* plausible NOA host
+        # while `url` points at a different one. LibreChat refuses the URL it was handed, so a
+        # non-empty allowlist is not the same fact as a covering one.
+        broken["mcpSettings"]["allowedDomains"] = ["noa-api.example.invalid"]
     elif mutation == "user-header-dropped":
         del entry["headers"]["X-Noa-LibreChat-User"]
     elif mutation == "conversation-header-blank":
@@ -230,6 +250,7 @@ def _mutate(config: dict[str, Any], mutation: str) -> dict[str, Any]:
         "startup-absent",
         "requires-oauth-absent",
         "no-allowlist",
+        "allowlist-names-another-host",
         "user-header-dropped",
         "conversation-header-blank",
         "url-without-slash",
