@@ -117,6 +117,15 @@ taken from the session, not the request). Either way the plaintext is shown once
 not escalation — the token carries no scope of its own, and every permission resolves off
 `users.id` per call, so an operator with no roles mints a credential that can call nothing.
 
+Where an operator does it (§T.76): the NOA admin panel, **My MCP tokens** (`/me/tokens`) — the
+sidebar entry every verified operator sees, admin or not. An admin managing someone else's tokens
+uses the Users table's **MCP tokens** row action (`/admin/users/{userId}/tokens`); it is the same
+panel against the admin routes. Mint, give the token a label naming where it will live, then copy
+the value straight into this `NOA_MCP_TOKEN` field. **The plaintext is shown once and is not
+recoverable** (§V.103): closing the dialog discards it, no screen shows it again, and no route can
+return it. Lose it and the fix is to mint another and revoke the old one — which is exactly what
+the row's **Revoke** action does.
+
 First use **binds** the token to one LibreChat account (TOFU, C20, §V.3): the token row starts with
 `librechat_user_id` NULL, the first call carrying `X-Noa-LibreChat-User` binds it, and every later
 call must present the same value. One token, one operator, one LibreChat account.
