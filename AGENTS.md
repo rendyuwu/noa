@@ -57,12 +57,37 @@ uv run pytest -q -k rbac
 Web apps, each in own dir: `pnpm install`, `pnpm dev`, `pnpm build`, `pnpm lint`,
 `pnpm typecheck`, `pnpm test`.
 
-CI = company GitLab (`gitlab.biznetgio.pt:simondayce/noa`, branches `master` ∧ `staging`),
-maintained by owner out of band; that remote is ⊥ configured in this clone. GitHub `origin`
-(`rendyuwu/noa`) = working/PR surface, ⊥ CI surface ⇒ **⊥ add ∨ edit `.github/workflows/*` unless
-asked** — a CI task = requirements the GitLab pipeline ! satisfy, ⊥ Actions files to author here.
-Runner ! sit INSIDE the Biznet Gio network ∵ `bigsu.biznetgio.pt` resolves internal-only ⇒ a public
-runner ⊥ install `@gio/*` at all. Detail: `docs/admin-web.md` §"Registry access and CI". (T61)
+## Remotes ∧ branches
+
+2 remotes, ∧ they are ⊥ interchangeable:
+
+- `origin` = GitHub `rendyuwu/noa`, **PUBLIC**. Working/PR surface, ⊥ CI surface ⇒ **⊥ add ∨ edit
+  `.github/workflows/*` unless asked** — a CI task = requirements the GitLab pipeline ! satisfy,
+  ⊥ Actions files to author here. `main` tracks it.
+- `gitlab` = `git@gitlab.biznetgio.pt:simondayce/noa.git`, PRIVATE, owner-maintained. CI surface,
+  branches `master` ∧ `staging` ∧ nothing else. Runner ! sit INSIDE the Biznet Gio network ∵
+  `bigsu.biznetgio.pt` resolves internal-only ⇒ a public runner ⊥ install `@gio/*` at all. Detail:
+  `docs/admin-web.md` §"Registry access and CI". (T61)
+
+**⊥ push `master` ∨ `staging` to `origin`. EVER.** They carry `k8s/*/secret-api.yaml` FILLED —
+Fernet key, JWT secret, DB ∧ LDAP bind passwords — ∧ `origin` is public. NAME the remote on every
+push of those 2: ⊥ bare `git push`, ⊥ rely on a default. A leak here is ⊥ recoverable — deleting the
+branch after ⊥ unpublish what was already cached ∨ indexed. (C11, V68, T75)
+
+`master` ∧ `staging` = `main` + the CI/deploy overlay (`.gitlab-ci.yml`, `k8s/{staging,production}/`,
+`scripts/ci/`, `artifacts.env`, ∧ the 2 tests that read them). ⊥ an authoring branch, ever: ∀ job
+filters `only: [staging, master]` ∧ the owner's Argo watches those 2 refs ⇒ a 3rd builds nothing ∧
+syncs nothing.
+
+Main-track work reaches them by **`git cherry-pick -x`**, ⊥ by merging `main` forward. PR #1 landed
+via GitHub's REBASE strategy ⇒ `main` holds rewritten SHAs whose originals still sit on those 2
+branches, ∧ `git merge main` would replay patches already present there.
+
+The 2 branches are ⊥ byte-identical, BY DESIGN: each one's `update_manifest` renders only ITS OWN
+env dir ⇒ `master` carries `k8s/production/deployment-*.yaml` at `master-<sha>` while `staging`
+carries `k8s/staging/*` at `staging-<sha>`. ∀ else ! match. Those deploy commits land on the branch
+that TRIGGERED them ∧ carry `[ci skip]` ⇒ `git fetch gitlab` ∧ fast-forward BOTH before committing
+again, ∨ the next push is a non-fast-forward.
 
 ## Hard boundaries — break these ∧ design dies
 
