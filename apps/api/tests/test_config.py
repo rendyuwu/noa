@@ -63,6 +63,30 @@ LEGACY_NAME_ALLOWED_IN = frozenset(
 )
 
 
+@pytest.fixture(autouse=True)
+def _process_env_cannot_reach_these_tests(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Make this module's docstring true, rather than nearly true.
+
+    `_env_file=None` silences the dotenv *file* and nothing else: pydantic-settings still reads
+    `os.environ`, so every "default" asserted below was really "whatever the shell happened to
+    export". On a developer's machine that is usually nothing and the tests pass; in CI the pytest
+    lane exports `POSTGRES_URL` pointing at its Postgres service container, and
+    `test_dev_defaults_are_usable_without_any_env` compared that address against the dev default
+    and failed — the one environment where the assertion was actually being tested.
+
+    Worse than the failure is the shape of it: locally the exported DSN and the default are the
+    same string, so the test passed by coincidence rather than by isolation, and would have gone
+    on passing while measuring nothing.
+
+    Cleared by field name in both spellings because the settings lookup is case-insensitive. Tests
+    that want a variable set still set it: `monkeypatch` applies in call order, so a `setenv` in
+    the test body lands after this.
+    """
+    for field in Settings.model_fields:
+        monkeypatch.delenv(field.upper(), raising=False)
+        monkeypatch.delenv(field.lower(), raising=False)
+
+
 def build(**overrides: object) -> Settings:
     """Construct settings from explicit values only — no `.env`, no process env."""
     return Settings(_env_file=None, **overrides)  # type: ignore[arg-type]
@@ -514,6 +538,26 @@ def test_field_names_map_to_documented_env_vars(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setenv("APPROVAL_MAX_INFLIGHT_PER_USER", "7")
 
     assert Settings(_env_file=None).approval_max_inflight_per_user == 7
+
+
+def test_the_process_env_is_what_the_isolation_holds_back() -> None:
+    """The negative control for `_process_env_cannot_reach_these_tests` (§V.87).
+
+    Reproduces the CI failure exactly — the pytest lane's own service DSN — inside a monkeypatch
+    that lands after the autouse fixture. If `Settings` ever stopped reading `os.environ`, this
+    goes red and the fixture above becomes ceremony that should be deleted rather than kept.
+
+    Its own `monkeypatch` instance on purpose: sharing the fixture's would make the order this
+    test is asserting about invisible.
+    """
+    service_dsn = "postgresql+asyncpg://noa:noa@postgres:5432/noa"
+    assert service_dsn != DEFAULT_POSTGRES_URL, "this control needs a value the default is not"
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("POSTGRES_URL", service_dsn)
+        assert build().postgres_url_str == service_dsn
+
+    assert build().postgres_url_str == DEFAULT_POSTGRES_URL
 
 
 def test_env_example_documents_every_required_var() -> None:
