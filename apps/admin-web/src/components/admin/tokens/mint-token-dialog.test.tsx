@@ -413,7 +413,7 @@ describe('MintTokenDialog — sink reachability controls', () => {
     expect(looksLikeTokenPlaintext(setItem.mock.calls)).toBe(false)
   })
 
-  it('a plaintext in the address bar IS seen, so the URL check can fail', () => {
+  it('the URL check can fail: a history write IS seen', () => {
     try {
       // §V105's other branch: rather than delete the URL assertion, give it a
       // control. This is the one URL sink jsdom implements, and the shape a leak
@@ -429,7 +429,7 @@ describe('MintTokenDialog — sink reachability controls', () => {
     expect(urlSink()).toEqual(CLEAN_URL)
   })
 
-  it('both halves of the DOM probe are load-bearing, and it separates', () => {
+  it('each DOM probe half catches what the other cannot, and it separates', () => {
     // Attribute-only: `innerHTML` sees it, an input scan cannot.
     const { rerender, unmount } = render(<div title={PLAINTEXT} />)
     expect(looksLikeTokenPlaintext(document.body.innerHTML)).toBe(true)

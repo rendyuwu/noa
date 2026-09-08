@@ -106,9 +106,11 @@ describe('/admin/users/[userId]/tokens', () => {
     render(<AdminUserTokensRoute />)
     await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
 
-    // The scope the page HANDS the controller, which is what decides the path
-    // every request takes. The empty-state wording below distinguishes self from
-    // user and nothing more: a page passing the wrong id renders identically.
+    // The scope the page HANDS the controller. The union is the only thing that
+    // builds a path, so this picks between §V2's two mint surfaces — admin FOR
+    // an operator vs operator for themself — and a wrong id here mints against
+    // the wrong account. The empty-state wording below separates self from user
+    // and nothing more: a page passing the wrong id renders identically.
     expect(state.useTokens).toHaveBeenCalledWith({ kind: 'user', userId: 'user-7' })
     expect(screen.getByText(/authenticate to NOA as this user/i)).toBeInTheDocument()
   })
