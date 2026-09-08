@@ -2,7 +2,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { ESLint } from 'eslint'
-import { describe, expect, it } from 'vitest'
+import { beforeAll, describe, expect, it } from 'vitest'
 
 /**
  * The import firewall in `eslint.config.mjs` (C12, C13, V69, §T.48).
@@ -24,8 +24,9 @@ import { describe, expect, it } from 'vitest'
 const APP_ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 const FIXTURE = path.join(APP_ROOT, 'src', 'import-firewall-fixture.ts')
 
+const eslint = new ESLint({ cwd: APP_ROOT })
+
 async function restrictedImportMessages(source: string): Promise<string[]> {
-  const eslint = new ESLint({ cwd: APP_ROOT })
   const [result] = await eslint.lintText(source, { filePath: FIXTURE })
 
   return (result?.messages ?? [])
@@ -34,6 +35,21 @@ async function restrictedImportMessages(source: string): Promise<string[]> {
 }
 
 describe('C12/C13 — the import firewall rejects the boundaries it names', () => {
+  // The first `lintText` in this file loads the whole flat config — Next's plugin,
+  // typescript-eslint, the rest — and measured here that first call costs ~1.2s
+  // against ~20ms for every call after it. Left implicit, that one-off is charged
+  // to whichever case runs first, which then fails on the 5s default while
+  // measuring nothing about the boundary it names: CI timed out on
+  // `refuses ../../web-embed/src/lib/proxy/routes` and passed on retry.
+  //
+  // So the load is paid here, where a timeout says "the linter was slow to start"
+  // instead of "the firewall is broken", and where the budget can be generous
+  // without loosening the assertions. The cases below keep the 5s default and now
+  // run in tens of milliseconds.
+  beforeAll(async () => {
+    await restrictedImportMessages('export default 1\n')
+  }, 60_000)
+
   it.each([
     ['../../web-embed/src/lib/proxy/routes', 'apps/web-embed'],
     ['../../../noa-old/apps/web-bigsu/src/lib/nav', 'noa-old'],
