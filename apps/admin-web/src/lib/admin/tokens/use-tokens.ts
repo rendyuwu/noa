@@ -25,6 +25,11 @@ import type { McpToken, MintedToken, TokenScope } from './types'
 //    current scope are not returned at all, and a mutation only applies to state
 //    while the stamp still matches the scope it was dispatched for.
 //
+// The stamp is also what makes a mutation dispatched BEFORE the scope on screen
+// settled a dead end, so every mutation ends by re-reading a scope that still
+// has no stamp — see `settleCurrentScope`, and §V104 for why half a guard is
+// worse than none.
+//
 // The redirect (401) case is swallowed: fetchWithAuth has already cleared
 // identity and started the session-expiry navigation.
 
@@ -81,6 +86,12 @@ export function useTokens(scope: TokenScope): TokensController {
   const loadSeq = useRef(0)
   const mutationEpoch = useRef(0)
   const scopeRef = useRef(scope)
+  // A ref shadow of `state.scopeKey`, written wherever that field is written.
+  // The mutation callbacks have to know whether the scope on screen has any
+  // settled row set describing it, and they cannot read `state`: adding it to
+  // their dependency arrays would rebuild `mint`/`revoke` on every load, and a
+  // closure captured at an older render would answer for the wrong one.
+  const settledKey = useRef(INITIAL.scopeKey)
 
   // No dependency array on purpose, and declared before the load effect so it
   // runs first on the same commit: the ref must follow the caller's scope
@@ -100,6 +111,7 @@ export function useTokens(scope: TokenScope): TokensController {
     try {
       const tokens = await fetchTokens(target)
       if (seq !== loadSeq.current || epoch !== mutationEpoch.current) return
+      settledKey.current = targetKey
       setState({ scopeKey: targetKey, tokens, loading: false, loadError: null })
     } catch (error) {
       if (seq !== loadSeq.current || epoch !== mutationEpoch.current) return
@@ -108,6 +120,10 @@ export function useTokens(scope: TokenScope): TokensController {
       // is on its way out anyway.
       if (isAuthRedirectError(error)) return
       const message = toMessage(error, 'Unable to load MCP tokens')
+      // A load error IS a settled description of the scope — the panel renders
+      // it with a Retry, which is usable. Only a load that never answered for
+      // this scope leaves nothing behind.
+      settledKey.current = targetKey
       setState((prev) => ({
         scopeKey: targetKey,
         tokens: prev.scopeKey === targetKey ? prev.tokens : EMPTY_TOKENS,
@@ -135,6 +151,29 @@ export function useTokens(scope: TokenScope): TokensController {
     await reloadScope(scopeRef.current)
   }, [reloadScope])
 
+  // Recovery every mutation owes, and the whole of §V104: a guard that CANCELS
+  // in-flight work has to guarantee that work is re-issued. A mutation
+  // dispatched before the scope on screen ever settled leaves the panel with
+  // nothing describing it — the load it invalidated by epoch declines to write
+  // a row set, and the mutation's own write is gated on a stamp that scope
+  // never received. `settled` below then stays false forever: `loading: true`,
+  // no rows, no error, and the load effect will not re-fire because
+  // `[key, runLoad]` did not change. Worse, the one control that would recover
+  // it is `disabled={loading}` — disabled by the state it would fix. So
+  // re-read, and let the server's list be the answer: the same move the 404
+  // revoke makes below, for the same reason — the controller must not describe
+  // a scope it has not read.
+  //
+  // It asks about `scopeRef`, not about the mutation's own target, because that
+  // covers the second shape of the same defect: a mutation for the PREVIOUS
+  // scope settling while the new scope's load is still out bumps the epoch that
+  // makes that load decline, and the scope on screen is the one left blank.
+  const settleCurrentScope = useCallback(async () => {
+    const target = scopeRef.current
+    if (settledKey.current === scopeKey(target)) return
+    await reloadScope(target)
+  }, [reloadScope])
+
   useEffect(() => {
     // A scope change re-enters here with a new key. `loading` for a scope that
     // has not settled is derived below, so there is no synchronous set here.
@@ -158,7 +197,7 @@ export function useTokens(scope: TokenScope): TokensController {
         const minted = await apiMintToken(target, label)
         mutationEpoch.current += 1
         // The ROW joins the list. The plaintext does not, and this is the whole
-        // of A12/V103 in one line: a secret written into controller state is
+        // of §V103 in one line: a secret written into controller state is
         // re-readable for as long as the controller lives, so it is only ever
         // this function's return value, owned by the one component that shows it.
         //
@@ -170,15 +209,22 @@ export function useTokens(scope: TokenScope): TokensController {
             ? { ...prev, loading: false, tokens: [minted.token, ...prev.tokens] }
             : prev,
         )
+        // Dispatched, not awaited — mint is the one caller that does not wait.
+        // The plaintext is readable exactly once and is unrecoverable, so this
+        // return must not sit behind a second round trip that could be slow or
+        // never answer. The re-read lands on its own and the table catches up.
+        void settleCurrentScope()
         return { ok: true, minted }
       } catch (error) {
         mutationEpoch.current += 1
         stopLoading()
+        // A 401 is already navigating; a re-read would only earn another one.
         if (isAuthRedirectError(error)) return REDIRECTING
+        void settleCurrentScope()
         return { ok: false, message: toMessage(error, 'Unable to mint a token') }
       }
     },
-    [stopLoading],
+    [settleCurrentScope, stopLoading],
   )
 
   const revoke = useCallback(
@@ -195,6 +241,7 @@ export function useTokens(scope: TokenScope): TokensController {
             ? { ...prev, loading: false, tokens: prev.tokens.filter((row) => row.id !== tokenId) }
             : prev,
         )
+        await settleCurrentScope()
         return { ok: true }
       } catch (error) {
         mutationEpoch.current += 1
@@ -202,15 +249,19 @@ export function useTokens(scope: TokenScope): TokensController {
         if (isAuthRedirectError(error)) return REDIRECTING
         if (error instanceof ApiError && error.status === 404) {
           // Do not drop the row on inference. Re-read, and let the server's list
-          // be the reason it is or is not there (A17). Skipped when the scope
-          // moved: those rows are already invalidated by the stamp.
+          // be the reason it is or is not there (§V104: the re-read is
+          // authoritative, not a local patch). Skipped when the scope
+          // moved: those rows are already invalidated by the stamp, so the
+          // recovery re-reads whatever replaced them instead.
           if (scopeKey(scopeRef.current) === targetKey) await reloadScope(target)
+          else await settleCurrentScope()
           return { ok: false, message: TOKEN_ABSENT_MESSAGE }
         }
+        await settleCurrentScope()
         return { ok: false, message: toMessage(error, 'Unable to revoke the token') }
       }
     },
-    [reloadScope, stopLoading],
+    [reloadScope, settleCurrentScope, stopLoading],
   )
 
   // Only a settled load for THIS scope is allowed to describe the UI. Anything

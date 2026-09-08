@@ -75,7 +75,7 @@ async function mounted(scope: TokenScope = SELF) {
 
 // The detector is `./token-plaintext`, shared with the dialog lane, and its own
 // specs prove it still separates a plaintext from a `token_prefix` (V87). What
-// stays here is the reachability control inside the A12 test: this file's `false`
+// stays here is the reachability control §V103 demands: this file's `false`
 // assertions only mean something if the same call is shown answering `true` for
 // the value that was actually minted.
 
@@ -216,7 +216,7 @@ describe('mutation versus refresh (V89)', () => {
   })
 })
 
-describe('mint (A12 — the plaintext is never controller state)', () => {
+describe('mint (§V103 — the plaintext is never controller state)', () => {
   it('returns the plaintext, and keeps only the row', async () => {
     const { result } = await mounted()
     const minted: MintedToken = { token: tokenC, plaintext: PLAINTEXT }
@@ -232,9 +232,9 @@ describe('mint (A12 — the plaintext is never controller state)', () => {
     // Newest first, matching the order the list endpoint returns.
     expect(ids(result.current.tokens)).toEqual(['C', 'A', 'B'])
 
-    // The whole of A12: nothing token-shaped is reachable through the controller
-    // after a successful mint — and the same call demonstrably sees the value
-    // that WAS minted, so the two `false`s are the controller's doing.
+    // The whole of §V103 here: nothing token-shaped is reachable through the
+    // controller after a successful mint — and the same call demonstrably sees
+    // the value that WAS minted, so the two `false`s are the controller's doing.
     expect(looksLikeTokenPlaintext(minted)).toBe(true)
     expect(looksLikeTokenPlaintext(result.current)).toBe(false)
     expect(looksLikeTokenPlaintext(result.current.tokens)).toBe(false)
@@ -282,7 +282,7 @@ describe('mint (A12 — the plaintext is never controller state)', () => {
   })
 })
 
-describe('revoke (A17 — a 404 is not knowledge)', () => {
+describe('revoke (§V104 — a 404 is not knowledge, the re-read is)', () => {
   const notFound = () =>
     new ApiError(404, 'MCP token not found', { errorCode: 'mcp_token_not_found' })
 
@@ -361,7 +361,7 @@ describe('revoke (A17 — a 404 is not knowledge)', () => {
   })
 })
 
-describe('scope tag (A17 — rows belong to the scope they loaded under)', () => {
+describe('scope tag — rows belong to the scope they loaded under', () => {
   it('invalidates the rows the moment the scope changes, before the new load answers', async () => {
     const view = await mounted(U1)
     expect(ids(view.result.current.tokens)).toEqual(['A', 'B'])
