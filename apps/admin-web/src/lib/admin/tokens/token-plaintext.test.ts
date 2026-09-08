@@ -42,8 +42,8 @@ describe('what it must see', () => {
 
   it('finds one in an Error message or stack, which JSON.stringify alone would miss', () => {
     // `message` is non-enumerable: `JSON.stringify(new Error(x))` is `{}`. This
-    // is the realistic route into console.error (A10), so it is the case that
-    // matters most.
+    // is the realistic route into console.error, which §V103 names among the
+    // sinks the plaintext must never reach, so it is the case that matters most.
     expect(JSON.stringify(new Error(PLAINTEXT))).toBe('{}')
     expect(looksLikeTokenPlaintext(new Error(PLAINTEXT))).toBe(true)
     expect(looksLikeTokenPlaintext(new ApiError(500, `mint failed for ${PLAINTEXT}`))).toBe(true)
@@ -59,6 +59,55 @@ describe('what it must see', () => {
     const node: Record<string, unknown> = { plaintext: PLAINTEXT }
     node.self = node
     expect(looksLikeTokenPlaintext(node)).toBe(true)
+
+    // And the cycle is reached FIRST here, so this is the stronger form: a
+    // repeat visit has to collapse and let the walk continue, not abort it.
+    const cycleFirst: Record<string, unknown> = {}
+    cycleFirst.self = cycleFirst
+    cycleFirst.token = PLAINTEXT
+    expect(looksLikeTokenPlaintext(cycleFirst)).toBe(true)
+  })
+
+  it('follows an Error `cause`, at any depth and whatever it holds', () => {
+    // `cause` is non-enumerable for exactly the reason `message` is, and it is
+    // the idiomatic way a wrapped failure carries the thing that went wrong.
+    const wrapped = new Error('mint failed', { cause: new Error(PLAINTEXT) })
+    expect(JSON.stringify(wrapped)).toBe('{}')
+    expect(looksLikeTokenPlaintext(wrapped)).toBe(true)
+
+    expect(looksLikeTokenPlaintext(new Error('failed', { cause: { plaintext: PLAINTEXT } }))).toBe(
+      true,
+    )
+    const chain = new Error('a', { cause: new Error('b', { cause: new Error(PLAINTEXT) }) })
+    expect(looksLikeTokenPlaintext(chain)).toBe(true)
+  })
+
+  it('reads the children of an AggregateError', () => {
+    const both = new AggregateError([new Error('first failed'), new Error(PLAINTEXT)], 'all failed')
+    expect(looksLikeTokenPlaintext(both)).toBe(true)
+  })
+
+  it('opens a Map and a Set, which stringify to {} entirely', () => {
+    expect(JSON.stringify(new Map([['token', PLAINTEXT]]))).toBe('{}')
+    expect(looksLikeTokenPlaintext(new Map([['token', PLAINTEXT]]))).toBe(true)
+    // Keys too: a cache keyed by the credential leaks it just as thoroughly.
+    expect(looksLikeTokenPlaintext(new Map([[PLAINTEXT, 'minted']]))).toBe(true)
+    expect(looksLikeTokenPlaintext(new Set(['unrelated', PLAINTEXT]))).toBe(true)
+  })
+
+  it('ignores toJSON, which hides fields before any replacer could see them', () => {
+    // `JSON.stringify` calls `toJSON` FIRST, so this hole cannot be closed from
+    // inside a replacer at all. The detector is searching, not rendering, and a
+    // value's opinion about its own display has no bearing on what it holds.
+    const masked = { plaintext: PLAINTEXT, toJSON: () => ({ plaintext: '[redacted]' }) }
+    expect(JSON.stringify(masked)).toBe('{"plaintext":"[redacted]"}')
+    expect(looksLikeTokenPlaintext(masked)).toBe(true)
+  })
+
+  it('survives a BigInt in the graph, which makes stringify throw outright', () => {
+    const graph = { attempt: 1n, minted: { plaintext: PLAINTEXT } }
+    expect(() => JSON.stringify(graph)).toThrow(TypeError)
+    expect(looksLikeTokenPlaintext(graph)).toBe(true)
   })
 })
 
@@ -74,5 +123,31 @@ describe('what it must not see', () => {
     expect(looksLikeTokenPlaintext(undefined)).toBe(false)
     expect(looksLikeTokenPlaintext(42)).toBe(false)
     expect(looksLikeTokenPlaintext('This token is no longer present')).toBe(false)
+  })
+
+  it('stays quiet on every newly walked path when what it finds is safe', () => {
+    // The see-cases above are only worth their assertions if the same paths can
+    // answer false: a walk that returned true for any Error, Map or Set would
+    // pass all of them and separate nothing.
+    expect(looksLikeTokenPlaintext(new Error('mint failed', { cause: new Error(PREFIX) }))).toBe(
+      false,
+    )
+    expect(looksLikeTokenPlaintext(new AggregateError([new Error(PREFIX)], 'all failed'))).toBe(
+      false,
+    )
+    expect(looksLikeTokenPlaintext(new Map([[PREFIX, 'noa_abcd']]))).toBe(false)
+    expect(looksLikeTokenPlaintext(new Set([PREFIX, 'laptop']))).toBe(false)
+    expect(looksLikeTokenPlaintext({ attempt: 1n, token_prefix: PREFIX })).toBe(false)
+    expect(looksLikeTokenPlaintext({ token_prefix: PREFIX, toJSON: () => PREFIX })).toBe(false)
+  })
+
+  it('terminates on a cause cycle rather than recursing forever', () => {
+    // `cause` is followed, so a cycle through it has to be collapsed by the same
+    // WeakSet that guards ordinary references. Without that this test hangs; the
+    // suite timeout, not the assertion, would be what reported it.
+    const outer = new Error('outer')
+    const inner = new Error('inner', { cause: outer })
+    outer.cause = inner
+    expect(looksLikeTokenPlaintext(outer)).toBe(false)
   })
 })

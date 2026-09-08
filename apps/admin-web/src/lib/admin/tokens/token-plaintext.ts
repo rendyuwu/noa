@@ -12,50 +12,101 @@
 // `token_prefix` (marker + 8 characters) must NOT match, or every assertion
 // built on this fires on a row that is safe to render.
 //
-// ONE home because two lanes assert with it — the controller's "never in state"
-// and the dialog's per-sink not-logged proofs. Two copies of a detector drift,
-// and a detector that has quietly stopped matching passes every not-logged test
+// ONE home (V66) because two lanes assert with it — the controller's "never in
+// state" and the dialog's per-sink not-logged proofs. Two copies drift, and a
+// detector that has quietly stopped matching passes every not-logged test
 // ever written while seeing nothing. That failure is silent, which is exactly
 // why the pattern is exported: a test can assert the detector still separates.
 
 export const TOKEN_PLAINTEXT_PATTERN = /noa_[A-Za-z0-9_-]{43}/
 
-// Expand what `JSON.stringify` would otherwise swallow. An `Error`'s `message`
-// and `stack` are non-enumerable, so a plain stringify of one is `{}` — a
-// detector fed a thrown error would report clean while the secret sat in the
-// message. That is the realistic route into `console.error`, so it is the case
-// this replacer exists for. Repeated object references collapse rather than
-// throwing on a cycle: the first visit already serialised that object's
-// contents, so nothing reachable goes unseen.
-function expandForSearch(): (key: string, value: unknown) => unknown {
-  const seen = new WeakSet<object>()
-  return (_key: string, value: unknown): unknown => {
+// This is a WALK, not a serialisation, and that is the whole design.
+//
+// The obvious implementation is `JSON.stringify` with a replacer that expands
+// what a plain stringify swallows. It cannot be made to see:
+//
+//  - `cause`. Non-enumerable for exactly the same reason `message` is, so
+//    `new Error('mint failed', { cause: new Error(PLAINTEXT) })` serialises to
+//    `{}` — and `cause` is the idiomatic way a wrapped failure carries the
+//    thing that actually went wrong.
+//  - `AggregateError.errors`, non-enumerable the same way.
+//  - the contents of a `Map` or a `Set`, which stringify to `{}`.
+//  - anything behind a `toJSON`, because `JSON.stringify` calls `toJSON` BEFORE
+//    the replacer runs. No replacer can close that one from the inside.
+//  - any graph containing a `BigInt`: stringify THROWS, and a catch-all falls
+//    back to `String(value)` — `'[object Object]'` — reporting clean.
+//
+// Each of those was measured carrying a real plaintext and reported clean. So
+// the search does not serialise at all: it walks the value graph and tests the
+// strings it finds. `toJSON` is ignored on purpose — this is searching, not
+// rendering, and a value's own opinion about how it should be displayed has no
+// bearing on what it is holding.
+
+// Fields an `Error` keeps NON-enumerable, so neither a spread nor
+// `Object.entries` can reach them. `cause` recurses through the same branch, so
+// a chain of any depth is followed; `errors` is how an `AggregateError` holds
+// its children, and it is an array the walk already handles. Reading `errors`
+// off every error rather than testing for `AggregateError` keeps one code path:
+// a plain error answers `undefined`, which searches to nothing.
+const ERROR_FIELDS = ['name', 'message', 'stack', 'cause', 'errors'] as const
+
+function walk(value: unknown, seen: WeakSet<object>): boolean {
+  if (typeof value === 'string') return TOKEN_PLAINTEXT_PATTERN.test(value)
+  if (value === null || typeof value !== 'object') {
+    // `String` is total over the remaining primitives — including `bigint` and
+    // `symbol`, which `JSON.stringify` and template interpolation both throw
+    // on. A function stringifies to its source, which is searched too.
+    return TOKEN_PLAINTEXT_PATTERN.test(String(value))
+  }
+
+  // A repeat visit collapses rather than throwing: the first visit already
+  // searched everything reachable through this object, so nothing goes unseen
+  // and a cycle terminates.
+  if (seen.has(value)) return false
+  seen.add(value)
+
+  try {
+    if (Array.isArray(value)) return value.some((item) => walk(item, seen))
+
+    if (value instanceof Map) {
+      for (const [entryKey, entryValue] of value) {
+        if (walk(entryKey, seen) || walk(entryValue, seen)) return true
+      }
+      return false
+    }
+
+    if (value instanceof Set) {
+      for (const member of value) {
+        if (walk(member, seen)) return true
+      }
+      return false
+    }
+
+    const record = value as Record<string, unknown>
     if (value instanceof Error) {
-      // Spread first, then the three non-enumerable fields: an ApiError's own
-      // `detail` / `status` / `errorCode` come along, and `message` / `stack`
-      // are read off the error rather than left to the spread, which cannot
-      // reach them.
-      return { ...value, name: value.name, message: value.message, stack: value.stack }
+      for (const field of ERROR_FIELDS) {
+        if (walk(record[field], seen)) return true
+      }
+      // and then its own enumerable fields below: an ApiError's `detail`,
+      // `status` and `errorCode` are ordinary properties.
     }
-    if (typeof value === 'object' && value !== null) {
-      if (seen.has(value)) return '[circular]'
-      seen.add(value)
+
+    for (const [entryKey, entryValue] of Object.entries(record)) {
+      // Keys as well as values. A secret used as a key is as leaked as one used
+      // as a value, and a `Map` keyed by plaintext is a real shape.
+      if (TOKEN_PLAINTEXT_PATTERN.test(entryKey) || walk(entryValue, seen)) return true
     }
-    return value
+    return false
+  } catch {
+    // A throwing accessor hides that one node, not the whole search: the walk
+    // resumes at the caller's next sibling instead of reporting clean because
+    // something exotic sat in the middle of the graph.
+    return false
   }
 }
 
 // Anything a caller might hand a sink: a string, a serialised spy call list, an
 // `Error`, a controller's state, `document.body.innerHTML`.
-function searchable(value: unknown): string {
-  if (typeof value === 'string') return value
-  try {
-    return JSON.stringify(value, expandForSearch()) ?? String(value)
-  } catch {
-    return String(value)
-  }
-}
-
 export function looksLikeTokenPlaintext(value: unknown): boolean {
-  return TOKEN_PLAINTEXT_PATTERN.test(searchable(value))
+  return walk(value, new WeakSet<object>())
 }
