@@ -7,10 +7,18 @@ import type { VerifiedUser } from '@/lib/auth/use-verified-auth'
 
 import { UsersPage } from './users-page'
 
-const state = vi.hoisted(() => ({ controller: null as unknown as UsersController }))
+const state = vi.hoisted(() => ({
+  controller: null as unknown as UsersController,
+  push: vi.fn(),
+}))
 
 vi.mock('@/lib/admin/users/use-users', () => ({
   useUsers: () => state.controller,
+}))
+// The "MCP tokens" row action navigates to a route (§T76), so the page now
+// reads the router.
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: state.push, replace: vi.fn() }),
 }))
 
 const userA: AdminUser = {
@@ -54,6 +62,7 @@ function makeController(over: Partial<UsersController> = {}): UsersController {
 }
 
 beforeEach(() => {
+  vi.clearAllMocks()
   state.controller = makeController()
 })
 
@@ -131,6 +140,20 @@ describe('UsersPage', () => {
     render(<UsersPage me={me} />)
     fireEvent.click(screen.getByRole('button', { name: /refresh/i }))
     expect(state.controller.reload).toHaveBeenCalled()
+  })
+
+  it('offers an MCP tokens row action that opens that user’s tokens route', async () => {
+    render(<UsersPage me={me} />)
+    const triggers = screen.getAllByRole('button', { name: 'Row actions' })
+    fireEvent.keyDown(triggers[0]!, { key: 'Enter', code: 'Enter' })
+
+    const menu = await screen.findByRole('menu')
+    const items = within(menu).getAllByRole('menuitem')
+    // Non-destructive, so it sits before any destructive entry ever added here.
+    expect(items.map((item) => item.textContent)).toEqual(['View details', 'MCP tokens'])
+
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'MCP tokens' }))
+    expect(state.push).toHaveBeenCalledWith(`/admin/users/${userA.id}/tokens`)
   })
 
   it('renders the detail drawer when a user is selected', () => {

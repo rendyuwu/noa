@@ -6,6 +6,11 @@ import type { VerifiedUser } from '@/lib/auth/use-verified-auth'
 
 import { UserDetailDrawer, type UserDetailDrawerProps } from './user-detail-drawer'
 
+// The drawer links out to the tokens route (§T76) rather than embedding a
+// second table, so it now reads the router.
+const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
+vi.mock('next/navigation', () => ({ useRouter: () => nav }))
+
 const member: AdminUser = {
   id: 'member-1',
   email: 'grace@example.com',
@@ -161,5 +166,19 @@ describe('UserDetailDrawer', () => {
     const dialogAfter = screen.getByRole('dialog')
     expect(within(dialogAfter).getByRole('button', { name: /remove admin/i })).toBeInTheDocument()
     expect(within(dialogAfter).getByRole('button', { name: /remove member/i })).toBeInTheDocument()
+  })
+
+  it('links out to the user’s MCP tokens route instead of embedding a second table', () => {
+    renderDrawer()
+
+    const dialog = screen.getByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'MCP tokens' }))
+    expect(nav.push).toHaveBeenCalledWith(`/admin/users/${member.id}/tokens`)
+
+    // One primary action in the drawer, still: the link is an outline button.
+    const primaries = Array.from(dialog.querySelectorAll('button')).filter((button) =>
+      button.classList.contains('bg-action-primary'),
+    )
+    expect(primaries.map((button) => button.textContent)).toEqual(['Save roles'])
   })
 })

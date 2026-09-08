@@ -1,8 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Controller, useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { BigsuIcon } from '@gio/bigsu-icons'
 import {
   Button,
   ConfirmDialog,
@@ -98,6 +100,7 @@ function UserDetailContent({
   onSetActiveAction,
   onDeleteAction,
 }: Omit<UserDetailDrawerProps, 'user' | 'onCloseAction'> & { user: AdminUser }) {
+  const router = useRouter()
   const [statusBusy, setStatusBusy] = useState(false)
 
   const self = isSelf(user, me.id)
@@ -231,6 +234,30 @@ function UserDetailContent({
             <dd className="text-text-primary">{formatRelativeTime(user.last_login_at)}</dd>
           </div>
         </dl>
+
+        {/*
+          A link out, not a second list (§T76). Rendering the token table here
+          would put a DataTable with its own loading/empty/error states and a
+          mint dialog inside a 360px panel, and would give this drawer a second
+          action competing with "Save roles". The tokens route owns all of that.
+        */}
+        <section className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-xs font-medium uppercase tracking-wide text-text-secondary">
+              MCP tokens
+            </span>
+            <p className="text-sm text-text-secondary">
+              Credentials this user&rsquo;s LibreChat sessions authenticate with.
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => router.push(`/admin/users/${user.id}/tokens`)}
+          >
+            <BigsuIcon name="security" size="sm" aria-hidden />
+            MCP tokens
+          </Button>
+        </section>
 
         <form id="user-roles-form" onSubmit={submitRoles} className="flex flex-col gap-6">
           <Controller

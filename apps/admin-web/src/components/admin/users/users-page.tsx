@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { PageHeader } from '@gio/bigsu-app-shell'
 import { Button, DataTable, FilterBar, Select } from '@gio/bigsu-ui'
 import { BigsuIcon } from '@gio/bigsu-icons'
@@ -38,6 +39,7 @@ export function UsersPage({ me }: { me: VerifiedUser }) {
     removeUser,
   } = useUsers()
 
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [status, setStatus] = useState('all')
 
@@ -105,6 +107,14 @@ export function UsersPage({ me }: { me: VerifiedUser }) {
               label: 'View details',
               icon: 'externalLink',
               onSelect: () => selectUser(user.id),
+            },
+            {
+              // A route, not a drawer section (§T76): a token list has its own
+              // loading, empty, error and pagination states, and a mint dialog
+              // that must not open inside a 360px panel.
+              label: 'MCP tokens',
+              icon: 'security',
+              onSelect: () => router.push(`/admin/users/${user.id}/tokens`),
             },
           ]}
           pagination={{ pageSize: 10 }}

@@ -1,0 +1,103 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { render, screen, waitFor, within } from '@testing-library/react'
+
+import type { AdminUser } from '@/lib/admin/users/types'
+import type { TokensController } from '@/lib/admin/tokens/use-tokens'
+import type { VerifiedAuthState } from '@/lib/auth/use-verified-auth'
+
+import AdminUserTokensRoute from './page'
+
+const state = vi.hoisted(() => ({
+  auth: null as unknown as VerifiedAuthState,
+  controller: null as unknown as TokensController,
+  params: { userId: 'user-7' } as Record<string, string>,
+  fetchUsers: vi.fn(),
+}))
+
+vi.mock('next/navigation', () => ({ useParams: () => state.params }))
+vi.mock('@/lib/auth/use-verified-auth', () => ({ useVerifiedAuth: () => state.auth }))
+vi.mock('@/lib/admin/tokens/use-tokens', () => ({ useTokens: () => state.controller }))
+vi.mock('@/lib/admin/users/users-api', () => ({ fetchUsers: state.fetchUsers }))
+
+const target: AdminUser = { id: 'user-7', email: 'grace@example.com', roles: ['member'] }
+
+const admin = {
+  id: 'me-1',
+  email: 'root@example.com',
+  is_active: true,
+  roles: ['admin'],
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  state.params = { userId: 'user-7' }
+  state.auth = { status: 'ready', user: admin, isAdmin: true }
+  state.controller = {
+    tokens: [],
+    loading: false,
+    loadError: null,
+    reload: vi.fn(),
+    mint: vi.fn(),
+    revoke: vi.fn(),
+  }
+  state.fetchUsers.mockResolvedValue([target])
+})
+
+describe('/admin/users/[userId]/tokens', () => {
+  it('shows the loading skeleton while the admin gate is still resolving', () => {
+    state.auth = { status: 'loading', user: null, isAdmin: false }
+    render(<AdminUserTokensRoute />)
+
+    expect(screen.getByLabelText('Loading page')).toBeInTheDocument()
+    // The label lookup must not fire before the gate answers.
+    expect(state.fetchUsers).not.toHaveBeenCalled()
+  })
+
+  it('renders ForbiddenView for a verified non-admin (A20)', () => {
+    state.auth = { status: 'forbidden', user: { ...admin, roles: [] }, isAdmin: false }
+    render(<AdminUserTokensRoute />)
+
+    expect(screen.getByRole('heading', { level: 1, name: /don’t have access/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /mint token/i })).not.toBeInTheDocument()
+  })
+
+  it('ends the breadcrumb on the page title and names the user (A21)', async () => {
+    render(<AdminUserTokensRoute />)
+
+    await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
+    const crumbs = within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getAllByRole('listitem')
+    expect(crumbs.map((crumb) => crumb.textContent)).toEqual([
+      'Administration',
+      'Users',
+      target.email,
+      'MCP tokens',
+    ])
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('MCP tokens')
+  })
+
+  it('falls back to the monospace id when the user is not in the list', async () => {
+    state.fetchUsers.mockResolvedValue([])
+    render(<AdminUserTokensRoute />)
+
+    await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
+    // The list is a label, not an authority: the tokens request's own 404 is.
+    const crumbs = within(screen.getByRole('navigation', { name: 'Breadcrumb' })).getAllByRole('listitem')
+    expect(crumbs.map((crumb) => crumb.textContent)).toContain('user-7')
+    expect(screen.getAllByRole('button', { name: /mint token/i }).length).toBeGreaterThan(0)
+  })
+
+  it('keeps the page usable when the label lookup fails outright', async () => {
+    state.fetchUsers.mockRejectedValue(new Error('boom'))
+    render(<AdminUserTokensRoute />)
+
+    await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('MCP tokens')
+    expect(screen.getAllByRole('button', { name: /mint token/i }).length).toBeGreaterThan(0)
+  })
+
+  it('mounts the panel in the user scope', async () => {
+    render(<AdminUserTokensRoute />)
+    await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
+    expect(screen.getByText(/authenticate to NOA as this user/i)).toBeInTheDocument()
+  })
+})
