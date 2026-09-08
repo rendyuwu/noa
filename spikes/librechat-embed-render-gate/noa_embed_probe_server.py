@@ -65,7 +65,6 @@ from noa_api.main import build_lifespan, build_runtime
 from noa_api.mcp_auth import NoaTokenVerifier
 from noa_api.mcp_request_auth import McpAuthErrorMiddleware, build_mcp_auth_context
 from noa_api.mcp_server import MCP_MOUNT_PATH, build_mcp_http_app
-from noa_api.mcp_tools.context import build_mcp_tool_context
 
 # Where LibreChat points its `mcpServers.noa` entry, and the path inside the sub-app once
 # Starlette has stripped the mount prefix — same pairing, and same reason, as `mcp_server`.
@@ -76,7 +75,7 @@ PROBE_APP_PATH = "/"
 # (`chat.noa.internal`), same registrable domain — which is the whole point: `SameSite=Lax`
 # makes the session cookie a same-site cookie here, and V40 says the deployment is built that
 # way. Overridable so a re-run on other hostnames does not need an edit.
-EMBED_ORIGIN = "http://embed.noa.internal:8000"
+EMBED_ORIGIN = os.environ.get("NOA_EMBED_PROBE_ORIGIN", "http://embed.noa.internal:8000")
 
 # Where the JSON-RPC method log lands. Under `.runtime/` beside the harness, which is
 # gitignored — it is a measurement, not an artifact worth keeping in the tree.
@@ -339,12 +338,11 @@ def create_probe_app() -> FastAPI:
         directory=runtime.ldap_service,
         settings=runtime.settings,
     )
-    tool_context = build_mcp_tool_context(
-        session_factory=runtime.session_factory,
-        secret_cipher=runtime.secret_cipher,
-    )
-
-    mcp_app = build_mcp_http_app(auth_context=auth_context, tool_context=tool_context)
+    # The tool context comes off the runtime rather than being rebuilt here. `build_runtime`
+    # already wires one, and every setting it takes is a keyword `build_mcp_tool_context`
+    # requires; a second call site is a second thing to update whenever that list grows, which
+    # is exactly how this harness stopped booting between runs.
+    mcp_app = build_mcp_http_app(auth_context=auth_context, tool_context=runtime.tool_context)
     probe_app = build_probe_mcp_app(auth=NoaTokenVerifier(context=auth_context))
 
     app = FastAPI(

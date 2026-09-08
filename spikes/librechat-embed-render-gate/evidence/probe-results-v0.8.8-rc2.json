@@ -1,0 +1,148 @@
+{
+  "startedAt": "2026-09-08T14:56:46.175Z",
+  "stages": {
+    "librechat-session": {
+      "userId": "6aa020e1be9d27f8205eb97d",
+      "email": "operator@noa.internal"
+    },
+    "agent": {
+      "id": "agent_O3YaiQM8yTb81gh7X-AAs",
+      "model": "claude-sonnet-5",
+      "tools": [
+        "embed_probe_uri_list_mcp_noa",
+        "embed_probe_html_mcp_noa",
+        "embed_probe_notify_tools_changed_mcp_noa"
+      ]
+    },
+    "noa-login": {
+      "status": 200,
+      "body": "{\"user\":{\"id\":\"34c20721-9aaf-4329-8dcb-9f276603e144\",\"email\":\"operator@noa.internal\",\"display_name\":\"operator@noa.internal\",\"is_active\":true,\"roles\":[\"admin\"]}}"
+    },
+    "noa-cookie": {
+      "name": "noa_session",
+      "value": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJvcGVyYXRvckBub2EuaW50ZXJuYWwiLCJ1aWQiOiIzNGMyMDcyMS05YWFmLTQzMjktOGRjYi05ZjI3NjYwM2UxNDQiLCJpYXQiOjE3ODg4Nzk0MDcsImV4cCI6MTc4ODg4MzAwN30.OgSgsTSLade84xausC3hIavhBW5GtWbI8Mp9MwWVjjw",
+      "domain": ".noa.internal",
+      "path": "/",
+      "expires": 1788883007.632788,
+      "httpOnly": true,
+      "secure": false,
+      "sameSite": "Lax"
+    },
+    "librechat-ui-login": {
+      "url": "http://chat.noa.internal:3081/c/new"
+    },
+    "uri-list": {
+      "frames": [
+        {
+          "src": "assets/silence.mp3",
+          "hasSrcdoc": false,
+          "srcdocLength": 0,
+          "sandbox": null,
+          "csp": null,
+          "referrerPolicy": null
+        }
+      ],
+      "probes": []
+    },
+    "html-control": {
+      "frames": [
+        {
+          "src": null,
+          "hasSrcdoc": true,
+          "srcdocLength": 2713,
+          "sandbox": "allow-scripts",
+          "csp": null,
+          "referrerPolicy": null
+        },
+        {
+          "src": "assets/silence.mp3",
+          "hasSrcdoc": false,
+          "srcdocLength": 0,
+          "sandbox": null,
+          "csp": null,
+          "referrerPolicy": null
+        }
+      ],
+      "probes": [
+        {
+          "frameUrl": "about:srcdoc",
+          "mode": "srcdoc",
+          "origin": "null",
+          "cookieVisible": "threw: SecurityError: Failed to read the 'cookie' property from 'Document': The document is sandboxed and lacks the 'allow-same-origin' flag.",
+          "me": "threw: TypeError: Failed to fetch",
+          "decide": "threw: TypeError: Failed to fetch",
+          "documentOrigin": "null"
+        }
+      ]
+    },
+    "notify": {
+      "methodsAfterPrompt": [
+        {
+          "at": 1788879525.44,
+          "method": "initialize"
+        },
+        {
+          "at": 1788879525.452,
+          "method": "notifications/initialized"
+        },
+        {
+          "at": 1788879525.471,
+          "method": "ping"
+        },
+        {
+          "at": 1788879525.494,
+          "method": "tools/list"
+        },
+        {
+          "at": 1788879527.17,
+          "method": "tools/call"
+        },
+        {
+          "at": 1788879527.202,
+          "method": "tools/list"
+        }
+      ],
+      "toolsListAfterNotification": true,
+      "note": "NOA emitted notifications/tools/list_changed from inside the tool call. A tools/list arriving afterwards would mean LibreChat honours it."
+    }
+  },
+  "failures": [
+    {
+      "name": "no-frame:Show me the approval card. Call the uri-",
+      "detail": "TimeoutError: page.waitForSelector: Timeout 90000ms exceeded."
+    },
+    {
+      "name": "an iframe was rendered with src on NOA origin",
+      "detail": "[{\"src\":\"assets/silence.mp3\",\"hasSrcdoc\":false,\"srcdocLength\":0,\"sandbox\":null,\"csp\":null,\"referrerPolicy\":null}]"
+    },
+    {
+      "name": "that iframe carries no srcdoc",
+      "detail": null
+    },
+    {
+      "name": "sandbox grants allow-same-origin",
+      "detail": "(none)"
+    },
+    {
+      "name": "the frame document reported its state",
+      "detail": "[]"
+    },
+    {
+      "name": "frame document sits on the NOA embed origin",
+      "detail": null
+    },
+    {
+      "name": "session cookie is not readable from script (httpOnly holds)",
+      "detail": null
+    },
+    {
+      "name": "GET /auth/me from inside the frame is authenticated",
+      "detail": null
+    },
+    {
+      "name": "POST /embed-probe/decide from inside the frame is authenticated (V22 path)",
+      "detail": null
+    }
+  ],
+  "finishedAt": "2026-09-08T14:59:26.720Z"
+}
