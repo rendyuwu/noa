@@ -25,21 +25,28 @@ export type UsersAndRoles = {
   roles: string[]
 }
 
-// Load the list and the role catalogue together — the page needs both to render
-// the table and drive role assignment. Roles are de-duplicated and sorted so the
-// assignment control is stable between loads.
+// Load just the list. Split out of fetchUsersAndRoles for the admin MCP tokens
+// page (§T76), which needs one user's email for its breadcrumb and has no role
+// assignment control to feed — pulling `/admin/roles` for it would be a request
+// whose answer is discarded.
+export async function fetchUsers(): Promise<AdminUser[]> {
+  const response = await fetchWithAuth('/admin/users')
+  const payload = await jsonOrThrow<AdminUsersResponse>(response)
+  return Array.isArray(payload.users) ? payload.users : []
+}
+
+// Load the list and the role catalogue together — the Users page needs both to
+// render the table and drive role assignment. Both requests are still issued
+// before either is awaited. Roles are de-duplicated and sorted so the assignment
+// control is stable between loads.
 export async function fetchUsersAndRoles(): Promise<UsersAndRoles> {
-  const [usersResponse, rolesResponse] = await Promise.all([
-    fetchWithAuth('/admin/users'),
-    fetchWithAuth('/admin/roles'),
+  const [users, rolesPayload] = await Promise.all([
+    fetchUsers(),
+    fetchWithAuth('/admin/roles').then((response) =>
+      jsonOrThrow<AdminRolesResponse>(response),
+    ),
   ])
 
-  const [usersPayload, rolesPayload] = await Promise.all([
-    jsonOrThrow<AdminUsersResponse>(usersResponse),
-    jsonOrThrow<AdminRolesResponse>(rolesResponse),
-  ])
-
-  const users = Array.isArray(usersPayload.users) ? usersPayload.users : []
   const roles = Array.from(new Set(coerceRoleNames(rolesPayload.roles))).sort((a, b) =>
     a.localeCompare(b),
   )

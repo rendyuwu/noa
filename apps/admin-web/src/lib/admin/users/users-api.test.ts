@@ -6,6 +6,7 @@ import {
   coerceRoleNames,
   coerceStringArray,
   deleteUser,
+  fetchUsers,
   fetchUsersAndRoles,
   setUserActive,
   setUserRoles,
@@ -48,6 +49,24 @@ describe('coercers', () => {
       'member',
     ])
     expect(coerceRoleNames(undefined)).toEqual([])
+  })
+})
+
+describe('fetchUsers', () => {
+  it('hits /admin/users and nothing else — the tokens page has no role control to feed', () => {
+    mockFetch.mockResolvedValue(jsonResponse({ users: [{ id: '1', email: 'a@x.io' }] }))
+
+    return fetchUsers().then((users) => {
+      expect(users).toHaveLength(1)
+      expect(mockFetch).toHaveBeenCalledTimes(1)
+      expect(mockFetch).toHaveBeenCalledWith('/admin/users')
+      expect(mockFetch).not.toHaveBeenCalledWith('/admin/roles')
+    })
+  })
+
+  it('answers an empty list, not a crash, when the payload has no array', async () => {
+    mockFetch.mockResolvedValue(jsonResponse({}))
+    await expect(fetchUsers()).resolves.toEqual([])
   })
 })
 

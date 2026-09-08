@@ -10,6 +10,10 @@ import {
   isSelf,
 } from './user-status'
 
+// `formatRelativeTime` itself moved to `admin/shared/relative-time.ts` (§T76) and
+// is covered there. What stays here is the re-export: Users call sites import it
+// from this module, so the seam has to keep working.
+
 const user = (over: Partial<AdminUser> = {}): AdminUser => ({
   id: 'u1',
   email: 'user@example.com',
@@ -68,14 +72,10 @@ describe('self and admin guards', () => {
   })
 })
 
-describe('formatRelativeTime', () => {
-  it('returns Never for missing or invalid values', () => {
+describe('formatRelativeTime re-export', () => {
+  it('is the shared implementation, reachable from user-status', async () => {
+    const shared = await import('@/lib/admin/shared/relative-time')
+    expect(formatRelativeTime).toBe(shared.formatRelativeTime)
     expect(formatRelativeTime(null)).toBe('Never')
-    expect(formatRelativeTime('not-a-date')).toBe('Never')
-  })
-
-  it('describes a recent timestamp in relative terms', () => {
-    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString()
-    expect(formatRelativeTime(twoHoursAgo)).toBe('2 hours ago')
   })
 })

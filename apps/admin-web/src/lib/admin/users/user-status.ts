@@ -3,6 +3,12 @@ import type { StatusChipStatus } from '@gio/bigsu-ui'
 import { coerceStringArray } from './users-api'
 import type { AdminUser } from './types'
 
+// Relative-time rendering moved to the shared admin layer (§T76) so the MCP
+// token tables render `Never` exactly as the Users table does. Re-exported here
+// so existing Users call sites keep importing it from user-status — the same
+// pattern `users-api.ts:14` uses for the coercers.
+export { formatRelativeTime } from '@/lib/admin/shared/relative-time'
+
 // User status + guard helpers (issue #106). These are pure so the race-free hook,
 // the table columns, and the detail drawer all derive the same verdict, and so
 // the awkward cases (last-admin, self-action, pending) are unit-tested directly.
@@ -57,25 +63,3 @@ export function formatDate(value: unknown): string {
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-export function formatRelativeTime(value: unknown): string {
-  if (typeof value !== 'string' || !value) return 'Never'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Never'
-
-  const diffMs = Date.now() - date.getTime()
-  if (diffMs < 0) return 'Just now'
-
-  const seconds = Math.floor(diffMs / 1000)
-  if (seconds < 60) return 'Just now'
-
-  const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes} minute${minutes === 1 ? '' : 's'} ago`
-
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} hour${hours === 1 ? '' : 's'} ago`
-
-  const days = Math.floor(hours / 24)
-  if (days < 7) return `${days} day${days === 1 ? '' : 's'} ago`
-
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
