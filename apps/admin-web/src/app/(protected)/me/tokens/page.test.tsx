@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, within } from '@testing-library/react'
 
 import { AuthUserProvider } from '@/lib/auth/auth-context'
@@ -39,8 +39,15 @@ beforeEach(() => {
   }
 })
 
+// The no-second-auth-call test spies `globalThis.fetch`. It calls through, so
+// leaving it in place is harmless today — but a spy that outlives its test is a
+// trap for whoever adds the next one, and this file had nothing to take it down.
+afterEach(() => {
+  vi.restoreAllMocks()
+})
+
 describe('/me/tokens', () => {
-  it('renders for a verified user with no admin role and no second auth call (A19)', () => {
+  it('renders for a verified user with no admin role and no second auth call', () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch')
     renderRoute()
 
@@ -50,7 +57,7 @@ describe('/me/tokens', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 
-  it('ends the breadcrumb on the page title (A21)', () => {
+  it('ends the breadcrumb on the page title', () => {
     renderRoute()
 
     const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })

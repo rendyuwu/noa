@@ -12,10 +12,10 @@ import { ApiError } from '@/lib/auth/fetch-helper'
 
 import { MintTokenDialog } from './mint-token-dialog'
 
-// Every sink a minted plaintext could reach is spied here, and every spy is
-// shown catching something real (A11a–A11d). A spy that can see nothing passes
-// every not-logged assertion ever written, so the reachability controls are not
-// optional extras — they are what makes the negative results mean anything.
+// Every sink a minted plaintext could reach is spied here, and every spy is shown
+// catching something real — the controls in the last describe block. A spy wired
+// to nothing passes every not-logged assertion ever written; those controls are
+// what make the negative results mean something. (§V103 per-sink, §V105 sinks.)
 const toast = vi.hoisted(() => ({
   success: vi.fn(),
   warning: vi.fn(),
@@ -57,7 +57,7 @@ let setItem: ReturnType<typeof vi.spyOn>
 
 // The dialog is controlled by its host, so the host is modelled rather than
 // faked: `open` really goes false on Done / Cancel / Escape, which is what makes
-// the clearing assertions (A6) about the shipped code and not the test.
+// the clearing assertions about the shipped code and not the test.
 function Harness({
   mint,
   onOpenChange,
@@ -111,11 +111,26 @@ const primaryButtons = () =>
     button.classList.contains('bg-action-primary'),
   )
 
+// The "cleared when the render site closes" probe (§V103). `innerHTML` is what
+// §V103 specifies and the stronger half — a plaintext parked in any attribute
+// (`title`, `data-*`, `aria-label`) is in the markup and nowhere else. Not a
+// SUPERSET though, so the input scan stays: the Label field is an uncontrolled
+// react-hook-form input, and what is typed into one lives as a DOM property with
+// no attribute to serialise (MEASURED — innerHTML blind, scan sees it). Both
+// halves are pinned below; `textContent` goes — /[A-Za-z0-9_-]/ never escapes.
 const plaintextInDom = (): boolean =>
-  looksLikeTokenPlaintext(document.body.textContent) ||
+  looksLikeTokenPlaintext(document.body.innerHTML) ||
   Array.from(document.querySelectorAll('input, textarea')).some((el) =>
     looksLikeTokenPlaintext((el as HTMLInputElement).value),
   )
+
+// The address-bar sink as one value, so the history-write control below
+// exercises the assertion's own expressions rather than a paraphrase of them.
+const urlSink = () => ({
+  search: window.location.search,
+  hrefCarriesPlaintext: looksLikeTokenPlaintext(window.location.href),
+})
+const CLEAN_URL = { search: '', hrefCarriesPlaintext: false }
 
 // A mint that runs through the REAL transport, so the reporting sink
 // (fetch-helper.ts:89,129 → error-reporting.ts:69) is genuinely entered. This
@@ -137,6 +152,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.restoreAllMocks()
+  // `restoreAllMocks` does not undo `stubGlobal`, and unstubbing at the end of a
+  // body only runs when that body gets there — a stubbed `fetch` surviving one
+  // failure turns it into a cascade that names the wrong test.
+  vi.unstubAllGlobals()
   window.localStorage.clear()
 })
 
@@ -150,7 +169,7 @@ describe('MintTokenDialog — form step', () => {
     expect(mint).not.toHaveBeenCalled()
   })
 
-  it('keeps one primary Button in each of the two steps (A18)', async () => {
+  it('keeps one primary Button in each of the two steps', async () => {
     const mint = vi.fn().mockResolvedValue({ ok: true, minted })
     openDialog(mint)
 
@@ -212,13 +231,13 @@ describe('MintTokenDialog — form step', () => {
 })
 
 describe('MintTokenDialog — show-once plaintext', () => {
-  it('toasts the label and the prefix, never the value (A7, A11a)', async () => {
+  it('toasts the label and the prefix, never the value', async () => {
     const mint = vi.fn().mockResolvedValue({ ok: true, minted })
     openDialog(mint)
     await mintWithLabel(mint, 'Laptop')
 
     await waitFor(() => expect(toast.success).toHaveBeenCalled())
-    // A11a — the reachability control for this spy set: the success toast DOES
+    // The reachability control for this spy set: the success toast DOES
     // carry real content, so "no plaintext seen" is not "nothing seen".
     expect(toast.success).toHaveBeenCalledWith('MCP token created', {
       description: `${PREFIX} · Laptop`,
@@ -226,7 +245,7 @@ describe('MintTokenDialog — show-once plaintext', () => {
     expect(looksLikeTokenPlaintext(toastCalls())).toBe(false)
   })
 
-  it('keeps every toast clean on the failure path too (A7)', async () => {
+  it('keeps every toast clean on the failure path too', async () => {
     const mint = vi.fn().mockResolvedValue({ ok: false, message: 'Label rejected' })
     openDialog(mint)
     await mintWithLabel(mint, 'Laptop')
@@ -235,12 +254,15 @@ describe('MintTokenDialog — show-once plaintext', () => {
     expect(looksLikeTokenPlaintext(toastCalls())).toBe(false)
   })
 
-  it('discards the value on Done and re-opens on an empty form step (A6)', async () => {
+  it('discards the value on Done and re-opens on an empty form step', async () => {
     const mint = vi.fn().mockResolvedValue({ ok: true, minted })
     openDialog(mint)
     await mintWithLabel(mint, 'Laptop')
 
     expect(await screen.findByLabelText('Token')).toHaveValue(PLAINTEXT)
+    // The probe separates on the real render — without this line the assertion
+    // below would read the same against a probe that sees nothing.
+    expect(plaintextInDom()).toBe(true)
     fireEvent.click(screen.getByRole('button', { name: 'Done' }))
 
     await waitFor(() => expect(plaintextInDom()).toBe(false))
@@ -252,7 +274,7 @@ describe('MintTokenDialog — show-once plaintext', () => {
     expect(plaintextInDom()).toBe(false)
   })
 
-  it('discards the value on Escape as well (A6)', async () => {
+  it('discards the value on Escape as well', async () => {
     const mint = vi.fn().mockResolvedValue({ ok: true, minted })
     openDialog(mint)
     await mintWithLabel(mint, 'Laptop')
@@ -263,7 +285,7 @@ describe('MintTokenDialog — show-once plaintext', () => {
     await waitFor(() => expect(plaintextInDom()).toBe(false))
   })
 
-  it('never navigates or writes to storage between mint and close (A9)', async () => {
+  it('never navigates or writes to storage between mint and close', async () => {
     const mint = vi.fn().mockResolvedValue({ ok: true, minted })
     openDialog(mint)
 
@@ -281,11 +303,14 @@ describe('MintTokenDialog — show-once plaintext', () => {
     expect(nav.push).not.toHaveBeenCalled()
     expect(nav.replace).not.toHaveBeenCalled()
     expect(looksLikeTokenPlaintext(setItem.mock.calls)).toBe(false)
-    expect(window.location.search).toBe('')
-    expect(looksLikeTokenPlaintext(window.location.href)).toBe(false)
+    // The address bar (§V103: not in a URL), bounded as the control below
+    // measures — this sees a client-side history write, nothing else. A native
+    // GET from Enter in a form field is invisible under jsdom, so it is asserted
+    // structurally instead in minted-token-panel.test.tsx:88. (§V105.)
+    expect(urlSink()).toEqual(CLEAN_URL)
   })
 
-  it('hands its host nothing that carries the value (A12)', async () => {
+  it('hands its host nothing that carries the value', async () => {
     const outcome: MintOutcome = { ok: true, minted }
     const onOpenChange = vi.fn()
     const mint = vi.fn().mockResolvedValue(outcome)
@@ -305,7 +330,7 @@ describe('MintTokenDialog — show-once plaintext', () => {
     expect(looksLikeTokenPlaintext(onOpenChange.mock.calls)).toBe(false)
   })
 
-  it('never reaches the console on a successful mint (A8)', async () => {
+  it('never reaches the console on a successful mint', async () => {
     const mint = vi.fn().mockResolvedValue({ ok: true, minted })
     openDialog(mint)
     await mintWithLabel(mint, 'Laptop')
@@ -318,7 +343,7 @@ describe('MintTokenDialog — show-once plaintext', () => {
 })
 
 describe('MintTokenDialog — sink reachability controls', () => {
-  it('A11b — a 500 mint IS reported, carrying the status and no plaintext', async () => {
+  it('a 500 mint IS reported, carrying the status and no plaintext', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue(
@@ -338,10 +363,9 @@ describe('MintTokenDialog — sink reachability controls', () => {
     // never anything token-shaped.
     expect(JSON.stringify(consoleError.mock.calls)).toContain('500')
     expect(looksLikeTokenPlaintext(consoleError.mock.calls)).toBe(false)
-    vi.unstubAllGlobals()
   })
 
-  it('A10 — a mint that throws produces an Error with no plaintext in it', async () => {
+  it('a mint that throws produces an Error with no plaintext in it', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
     const mint = vi.fn(mintThroughTransport)
@@ -355,10 +379,15 @@ describe('MintTokenDialog — sink reachability controls', () => {
     expect(looksLikeTokenPlaintext(consoleError.mock.calls)).toBe(false)
     await waitFor(() => expect(toast.danger).toHaveBeenCalled())
     expect(looksLikeTokenPlaintext(toastCalls())).toBe(false)
-    vi.unstubAllGlobals()
   })
 
-  it('A11c — the router spy sees a real navigation from the drawer link', () => {
+  // Read this one for what it is. Nothing under `src/components/admin/tokens` or
+  // `src/lib/admin/tokens` imports `next/navigation` — only this test file mocks
+  // it — so "the router was not called" holds by CONSTRUCTION. The control proves
+  // the spy is wired to the module the app would navigate through, so a later
+  // edit that does reach for the router shows up; it is not evidence of a risk
+  // the dialog could otherwise take.
+  it('the router spy sees a real navigation from the drawer link', () => {
     const props = {
       user: { id: 'member-1', email: 'grace@example.com', roles: ['member'], is_active: true },
       me: { id: 'me-1', email: 'root@example.com', is_active: true, roles: ['admin'] },
@@ -375,12 +404,46 @@ describe('MintTokenDialog — sink reachability controls', () => {
     expect(nav.push).toHaveBeenCalledWith('/admin/users/member-1/tokens')
   })
 
-  it('A11d — the storage setter spy sees a real write', () => {
+  it('the storage setter spy sees a real write', () => {
     setStoredUser({ id: 'me-1', email: 'root@example.com', roles: ['admin'] })
 
     expect(setItem).toHaveBeenCalled()
     expect(setItem.mock.calls[0]?.[0]).toBe('web-bigsu:auth-user')
-    // …and the same spy, seeing that, saw nothing token-shaped in A9.
+    // …and the same spy, seeing that, saw nothing token-shaped above.
     expect(looksLikeTokenPlaintext(setItem.mock.calls)).toBe(false)
+  })
+
+  it('a plaintext in the address bar IS seen, so the URL check can fail', () => {
+    try {
+      // §V105's other branch: rather than delete the URL assertion, give it a
+      // control. This is the one URL sink jsdom implements, and the shape a leak
+      // would take here — App Router navigations land in `window.history`, and
+      // Next documents `pushState` as a supported way to set the URL. It bounds
+      // the claim too: `location.assign`, writing `location.search` and a native
+      // `<form method="get">` submit are all refused by jsdom (MEASURED).
+      window.history.pushState({}, '', `/me/tokens?token=${PLAINTEXT}`)
+      expect(urlSink()).toEqual({ search: `?token=${PLAINTEXT}`, hrefCarriesPlaintext: true })
+    } finally {
+      window.history.pushState({}, '', '/')
+    }
+    expect(urlSink()).toEqual(CLEAN_URL)
+  })
+
+  it('both halves of the DOM probe are load-bearing, and it separates', () => {
+    // Attribute-only: `innerHTML` sees it, an input scan cannot.
+    const { rerender, unmount } = render(<div title={PLAINTEXT} />)
+    expect(looksLikeTokenPlaintext(document.body.innerHTML)).toBe(true)
+    expect(plaintextInDom()).toBe(true)
+
+    // Property-only, how an uncontrolled field carries what was typed into it —
+    // the dialog's own Label input. Markup does NOT hold it, so dropping the
+    // input scan as redundant would blind the probe to a real carrier.
+    rerender(<input />)
+    screen.getByRole<HTMLInputElement>('textbox').value = PLAINTEXT
+    expect(looksLikeTokenPlaintext(document.body.innerHTML)).toBe(false)
+    expect(plaintextInDom()).toBe(true)
+
+    unmount()
+    expect(plaintextInDom()).toBe(false)
   })
 })

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor, within } from '@testing-library/react'
 
 import type { AdminUser } from '@/lib/admin/users/types'
+import type { TokenScope } from '@/lib/admin/tokens/types'
 import type { TokensController } from '@/lib/admin/tokens/use-tokens'
 import type { VerifiedAuthState } from '@/lib/auth/use-verified-auth'
 
@@ -12,11 +13,16 @@ const state = vi.hoisted(() => ({
   controller: null as unknown as TokensController,
   params: { userId: 'user-7' } as Record<string, string>,
   fetchUsers: vi.fn(),
+  // A spy, not `() => state.controller`: the argument is the whole point. Sending
+  // a self action to an admin path is covered at the transport
+  // (tokens-api.test.ts:64-81), but nothing else proves this page hands that
+  // transport the scope it read from the URL.
+  useTokens: vi.fn<(scope: TokenScope) => TokensController>(),
 }))
 
 vi.mock('next/navigation', () => ({ useParams: () => state.params }))
 vi.mock('@/lib/auth/use-verified-auth', () => ({ useVerifiedAuth: () => state.auth }))
-vi.mock('@/lib/admin/tokens/use-tokens', () => ({ useTokens: () => state.controller }))
+vi.mock('@/lib/admin/tokens/use-tokens', () => ({ useTokens: state.useTokens }))
 vi.mock('@/lib/admin/users/users-api', () => ({ fetchUsers: state.fetchUsers }))
 
 const target: AdminUser = { id: 'user-7', email: 'grace@example.com', roles: ['member'] }
@@ -40,6 +46,7 @@ beforeEach(() => {
     mint: vi.fn(),
     revoke: vi.fn(),
   }
+  state.useTokens.mockImplementation(() => state.controller)
   state.fetchUsers.mockResolvedValue([target])
 })
 
@@ -53,7 +60,7 @@ describe('/admin/users/[userId]/tokens', () => {
     expect(state.fetchUsers).not.toHaveBeenCalled()
   })
 
-  it('renders ForbiddenView for a verified non-admin (A20)', () => {
+  it('renders ForbiddenView for a verified non-admin', () => {
     state.auth = { status: 'forbidden', user: { ...admin, roles: [] }, isAdmin: false }
     render(<AdminUserTokensRoute />)
 
@@ -61,7 +68,7 @@ describe('/admin/users/[userId]/tokens', () => {
     expect(screen.queryByRole('button', { name: /mint token/i })).not.toBeInTheDocument()
   })
 
-  it('ends the breadcrumb on the page title and names the user (A21)', async () => {
+  it('ends the breadcrumb on the page title and names the user', async () => {
     render(<AdminUserTokensRoute />)
 
     await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
@@ -95,9 +102,27 @@ describe('/admin/users/[userId]/tokens', () => {
     expect(screen.getAllByRole('button', { name: /mint token/i }).length).toBeGreaterThan(0)
   })
 
-  it('mounts the panel in the user scope', async () => {
+  it('mounts the panel in the user scope it read from the route', async () => {
     render(<AdminUserTokensRoute />)
     await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
+
+    // The scope the page HANDS the controller, which is what decides the path
+    // every request takes. The empty-state wording below distinguishes self from
+    // user and nothing more: a page passing the wrong id renders identically.
+    expect(state.useTokens).toHaveBeenCalledWith({ kind: 'user', userId: 'user-7' })
     expect(screen.getByText(/authenticate to NOA as this user/i)).toBeInTheDocument()
+  })
+
+  it('takes that id from the route segment, not from a constant', async () => {
+    state.params = { userId: 'user-9' }
+    render(<AdminUserTokensRoute />)
+    await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
+
+    // The control for the assertion above: change the segment and the scope
+    // follows it, so 'user-7' passing there is the page reading `useParams()`
+    // rather than the fixture and the expectation agreeing by coincidence.
+    expect(state.useTokens).toHaveBeenCalledWith({ kind: 'user', userId: 'user-9' })
+    expect(state.useTokens).not.toHaveBeenCalledWith({ kind: 'user', userId: 'user-7' })
+    expect(state.useTokens).not.toHaveBeenCalledWith({ kind: 'self' })
   })
 })
