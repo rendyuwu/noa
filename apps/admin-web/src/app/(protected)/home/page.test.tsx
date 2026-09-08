@@ -38,9 +38,9 @@ beforeEach(() => {
   nav.push.mockReset()
 })
 
-// A23 — `/` stays a server 307 (pinned in `tests/framing-live.server.test.ts`)
+// `/` stays a server 307 (pinned in `tests/framing-live.server.test.ts`)
 // and lands here; this is where the role decides the destination.
-describe('/home dispatch (A23)', () => {
+describe('/home dispatch', () => {
   it('sends an admin to the first admin vertical', () => {
     renderAs(['admin'])
     expect(nav.replace).toHaveBeenCalledWith('/admin/users')

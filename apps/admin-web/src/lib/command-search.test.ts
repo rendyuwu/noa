@@ -14,7 +14,7 @@ describe('command-search source', () => {
     expect(asAdmin).toContain('Administration')
   })
 
-  // A22 — the entry carries no `roles`, so it survives the filter for a user with
+  // The entry carries no `roles`, so it survives the filter for a user with
   // no roles at all, while every `/admin/…` entry is still dropped. Both halves
   // matter: an entry visible to everyone is only correct if the gate still works.
   it('shows the MCP tokens page to a user with no roles, and no admin page with it', () => {

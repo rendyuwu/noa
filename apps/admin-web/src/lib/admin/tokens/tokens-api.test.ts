@@ -52,10 +52,10 @@ beforeEach(() => {
   mockFetch.mockReset()
 })
 
-// A1 — the scope union is the only thing that picks a path, and it has to pick
+// The scope union is the only thing that picks a path, and it has to pick
 // the same one for all three verbs. A self action reaching an admin path (or the
-// reverse) is the failure this pins (R10).
-describe('tokenBasePath (A1)', () => {
+// reverse) is the failure this pins.
+describe('tokenBasePath', () => {
   it('maps each scope to its router prefix', () => {
     expect(tokenBasePath(SELF)).toBe('/me/mcp-tokens')
     expect(tokenBasePath(USER)).toBe('/admin/users/u1/tokens')
@@ -93,11 +93,11 @@ describe('fetchTokens', () => {
   })
 })
 
-// A2 — the label is trimmed and a blank one is sent as null. The service
+// The label is trimmed and a blank one is sent as null. The service
 // normalises blanks itself (`_validate_label`, mcp_token_service.py:276-290);
 // this asserts the client sends what an unnamed token MEANS rather than leaning
 // on that.
-describe('mintToken (A2)', () => {
+describe('mintToken', () => {
   beforeEach(() => {
     mockFetch.mockResolvedValue(jsonResponse({ token: row, plaintext: 'noa_secret' }))
   })
@@ -133,8 +133,8 @@ describe('mintToken (A2)', () => {
   })
 })
 
-// A3 — revoke = delete; `{ok: true}` is the whole result.
-describe('revokeToken (A3)', () => {
+// Revoke = delete; `{ok: true}` is the whole result.
+describe('revokeToken', () => {
   it('resolves on { ok: true }', async () => {
     mockFetch.mockResolvedValue(jsonResponse({ ok: true }))
     await expect(revokeToken(USER, 't1')).resolves.toBeUndefined()
@@ -154,9 +154,9 @@ describe('revokeToken (A3)', () => {
   })
 })
 
-// A4 — the backend's wording is what the operator reads. `jsonOrThrow` prefers
+// The backend's wording is what the operator reads. `jsonOrThrow` prefers
 // `message`, which is the field NOA's error envelope actually carries (V8).
-describe('error surfacing (A4)', () => {
+describe('error surfacing', () => {
   it('preserves the backend message and error_code on a 400 invalid_token_label', async () => {
     mockFetch.mockResolvedValue(
       jsonResponse(

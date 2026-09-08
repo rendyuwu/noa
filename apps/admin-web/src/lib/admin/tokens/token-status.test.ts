@@ -20,9 +20,9 @@ afterEach(() => {
   vi.useRealTimers()
 })
 
-// A15 — the BIGSU vocabulary has no `Expired`, so an expired token is `Inactive`,
+// The BIGSU vocabulary has no `Expired`, so an expired token is `Inactive`,
 // the same mapping a deactivated user gets.
-describe('deriveTokenStatus (A15)', () => {
+describe('deriveTokenStatus', () => {
   it('is Active while nothing has retired the row', () => {
     expect(deriveTokenStatus(token({ expires_at: null }))).toBe('Active')
   })

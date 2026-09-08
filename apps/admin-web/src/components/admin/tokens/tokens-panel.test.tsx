@@ -79,7 +79,7 @@ beforeEach(() => {
 })
 
 describe('TokensPanel — structure and states', () => {
-  it('puts mint and refresh in the toolbar row, with exactly one primary (A18)', () => {
+  it('puts mint and refresh in the toolbar row, with exactly one primary', () => {
     render(<TokensPanel scope={{ kind: 'self' }} />)
 
     expect(screen.getByRole('button', { name: /mint token/i })).toBeInTheDocument()
@@ -87,7 +87,7 @@ describe('TokensPanel — structure and states', () => {
     expect(primaryButtons().map((button) => button.textContent)).toEqual(['Mint token'])
   })
 
-  it('renders the prefix through createIdColumn and the status through StatusChip (A14)', () => {
+  it('renders the prefix through createIdColumn and the status through StatusChip', () => {
     render(<TokensPanel scope={{ kind: 'self' }} />)
 
     const prefix = screen.getByText(live.token_prefix)
@@ -106,7 +106,7 @@ describe('TokensPanel — structure and states', () => {
     expect(screen.getAllByText('Never').length).toBeGreaterThan(0)
   })
 
-  it('ships the empty state with a way out (A13)', () => {
+  it('ships the empty state with a way out', () => {
     state.controller = makeController({ tokens: [] })
     render(<TokensPanel scope={{ kind: 'self' }} />)
 
@@ -116,7 +116,7 @@ describe('TokensPanel — structure and states', () => {
     expect(primaryButtons()).toHaveLength(1)
   })
 
-  it('ships the error state with a working retry (A13)', () => {
+  it('ships the error state with a working retry', () => {
     state.controller = makeController({ loadError: 'Unable to load MCP tokens' })
     render(<TokensPanel scope={{ kind: 'self' }} />)
 
@@ -125,7 +125,7 @@ describe('TokensPanel — structure and states', () => {
     expect(state.controller.reload).toHaveBeenCalled()
   })
 
-  it('ships the loading state and blocks a duplicate refresh (A13)', () => {
+  it('ships the loading state and blocks a duplicate refresh', () => {
     state.controller = makeController({ loading: true, tokens: [] })
     render(<TokensPanel scope={{ kind: 'self' }} />)
 
@@ -135,7 +135,7 @@ describe('TokensPanel — structure and states', () => {
     expect(screen.queryByText('No MCP tokens yet')).not.toBeInTheDocument()
   })
 
-  it('ships search and pagination (A13)', () => {
+  it('ships search and pagination', () => {
     const many = Array.from({ length: 12 }, (_, index) =>
       makeToken({
         id: `id-${index}`,
@@ -164,7 +164,7 @@ describe('TokensPanel — structure and states', () => {
   })
 })
 
-describe('TokensPanel — revoke (A16)', () => {
+describe('TokensPanel — revoke', () => {
   it('offers revoke last, marked destructive', async () => {
     render(<TokensPanel scope={{ kind: 'self' }} />)
     const menu = await openRowActions()
@@ -198,8 +198,9 @@ describe('TokensPanel — revoke (A16)', () => {
   })
 
   it('keeps the confirmation open when the revoke fails', async () => {
-    // The A17 wording is the controller's; assert the constant so a reword
-    // cannot leave this test passing against a string nobody ships.
+    // The neutral "token is no longer present" wording is the controller's;
+    // assert the constant so a reword cannot leave this test passing against a
+    // string nobody ships.
     const revoke = vi.fn().mockResolvedValue({ ok: false, message: TOKEN_ABSENT_MESSAGE })
     state.controller = makeController({ revoke })
     render(<TokensPanel scope={{ kind: 'self' }} />)
