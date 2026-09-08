@@ -9,6 +9,15 @@ Code/commits/PRs: normal prose. Off switch: "stop caveman" / "normal mode".
 
 `SPEC.md` = working artifact. Read before edit. `FORMAT.md` = how to parse it.
 Cite by § — `§V.15`, `§T.32`, `C8`. Zero ambiguity.
+**Cite ONLY what is IN GIT.** `.omc/` is gitignored (`.gitignore:47`, 0 files tracked) ⇒ a plan's own
+numbering (`A9`, `A17`) resolves to NOTHING for the next reader ∧ for the next session. ⊥ a broken
+link — a broken link leaves a trail; a bare `A17` leaves the reader unable to discover what was even
+lost. Applies to ∀ committed surface: code comments, commit messages, `SPEC.md`, `docs/`. Write the
+RULE inline instead, ∨ cite the §V/§T row carrying it — spend the extra clause. Briefing a subagent:
+translate plan numbering BEFORE it becomes the vocabulary they write into permanent files. Nothing
+catches this — a bad import fails `tsc`, a bad `§V` cite a human reading `SPEC.md` catches, a bad
+plan-number NOTHING catches. Precision ∧ durability feel like one virtue from inside a session ∧ are
+⊥ (V105's rule, one surface over: a reference that ⊥ resolve is ⊥ evidence, it only READS as one).
 `DECISIONS.md` = why. ⊥ re-litigate decided items without new evidence.
 `docs/AS-BUILT.md` = cold archive. **⊥ read whole, ever** — 170 KB, single lines reach 15 KB.
 Slice by header only; protocol = "AS-BUILT read protocol" below, ∧ it BINDS.
