@@ -4,13 +4,25 @@ import { buildCommandGroups, permittedPageCommands } from '@/lib/command-search'
 
 describe('command-search source', () => {
   it('lists role-gated pages only when permitted', () => {
-    // Every page in this app is administration (§I.admin-web), so a non-admin
-    // sees an empty palette rather than a shorter one. The old repo's ungated
-    // chat entry is gone with the surface it pointed at.
-    expect(permittedPageCommands(['user'])).toEqual([])
+    // Administration was once the whole of this app; §T76 added `/me/tokens`,
+    // which any verified operator may use. So a non-admin's palette is now the
+    // ungated entry and nothing else — shorter, not empty.
+    const asUser = permittedPageCommands(['user']).map((c) => c.href)
+    expect(asUser).toEqual(['/me/tokens'])
 
     const asAdmin = permittedPageCommands(['admin']).map((c) => c.label)
     expect(asAdmin).toContain('Administration')
+  })
+
+  // A22 — the entry carries no `roles`, so it survives the filter for a user with
+  // no roles at all, while every `/admin/…` entry is still dropped. Both halves
+  // matter: an entry visible to everyone is only correct if the gate still works.
+  it('shows the MCP tokens page to a user with no roles, and no admin page with it', () => {
+    const commands = permittedPageCommands([])
+
+    expect(commands.map((c) => c.href)).toEqual(['/me/tokens'])
+    expect(commands[0]?.label).toBe('My MCP tokens')
+    expect(commands.some((c) => c.href.startsWith('/admin/'))).toBe(false)
   })
 
   it('flattens the gated children too, so a deep page is reachable', () => {

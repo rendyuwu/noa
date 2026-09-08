@@ -10,9 +10,11 @@ import { Button, ErrorState, LoadingSkeleton, bigsuToast } from '@gio/bigsu-ui'
 // (404), and unexpected-error. Actionable failures always render an inline
 // recovery path here — they are never toast-only.
 
-// Where "home" goes now that administration is the whole app (§I.admin-web).
-// The first admin vertical rather than `/admin`, which has no page of its own.
-const HOME_HREF = '/admin/users'
+// Where "home" goes. `/home` is the role-aware dispatcher (§T76): it sends an
+// admin to the first admin vertical and everyone else to their own MCP tokens,
+// so this escape works for a non-admin too. Pointing it at `/admin/users`
+// answered a 403 with a link to another 403.
+const HOME_HREF = '/home'
 
 // Chrome-less centered shell for the terminal states (rendered before or
 // outside the AppShell, so it owns the page `main` landmark).
@@ -45,10 +47,15 @@ function StateBadge({
 // Recovery action shared by the terminal states so a user is never stranded.
 // A full navigation is deliberate: these states render outside (or before) the
 // router-driven shell, so a hard link home is the robust escape.
+//
+// Labelled for where it GOES, not for what is behind it: `/home` sends an admin
+// and a non-admin to different places, so naming one of them would be wrong for
+// the other — and a 403 offering "back to administration" is the case that made
+// the old wording wrong (§T76).
 function HomeButton() {
   return (
     <Button variant="secondary" onClick={() => window.location.assign(HOME_HREF)}>
-      Back to administration
+      Back to home
     </Button>
   )
 }

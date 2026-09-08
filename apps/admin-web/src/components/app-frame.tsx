@@ -65,7 +65,9 @@ export function AppFrame({
           activeHref: pathname,
           userRoles: roles,
           linkComponent: SidebarLink,
-          homeHref: '/admin/users',
+          // The role-aware dispatcher (§T76) — the shell logo has to land a
+          // non-admin somewhere they are permitted to be.
+          homeHref: '/home',
         }}
         topBar={{
           appName: 'NOA',

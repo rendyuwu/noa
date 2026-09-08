@@ -4,7 +4,10 @@
 // origin, back into a login loop, or into the API/callback surface is rejected
 // and the caller falls back to the default landing.
 
-export const DEFAULT_RETURN_TO = '/admin/users'
+// `/home` rather than a vertical: it is the role-aware dispatcher (§T76), so a
+// post-login landing sends an admin to `/admin/users` and everyone else to
+// `/me/tokens`. The previous default sent every non-admin straight into a 403.
+export const DEFAULT_RETURN_TO = '/home'
 const LOGIN_PATH = '/login'
 
 // Matches any ASCII control character (0x00-0x1F) used to smuggle newlines/tabs

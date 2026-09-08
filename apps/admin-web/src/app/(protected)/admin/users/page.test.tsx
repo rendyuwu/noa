@@ -58,10 +58,13 @@ describe('/admin/users route gate', () => {
   })
 
   it('shows the 403 state to a verified non-admin, never a blank page', () => {
-    // Role-denied resolves to a state instead of a redirect: every route in
-    // this app is admin-only, so a redirect would only land on another one.
-    // Rendering nothing would leave the operator inside the shell with no
-    // explanation for the empty page.
+    // Role-denied resolves to a state instead of a redirect. Since §T76 there
+    // IS somewhere else to send them — `/me/tokens`, via `/home` — but a
+    // redirect would answer a refusal by silently moving the operator, leaving
+    // them to guess why the page they asked for is not the page they got. The
+    // 403 state names the refusal and offers that route as a choice instead
+    // (its "Back to home" button). Rendering nothing would leave them inside
+    // the shell with no explanation for the empty page.
     state.value = { status: 'forbidden', user: { ...admin, roles: [] }, isAdmin: false }
     render(<AdminUsersRoute />)
     expect(screen.getByRole('heading', { name: /have access/i })).toBeInTheDocument()

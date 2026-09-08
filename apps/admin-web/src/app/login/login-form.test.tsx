@@ -170,7 +170,9 @@ describe('§T.50 — after the verdict', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    await waitFor(() => expect(nav.push).toHaveBeenCalledWith('/admin/users'))
+    // The fallback is `DEFAULT_RETURN_TO`, which §T76 repointed to the role-aware dispatcher:
+    // landing every rejected returnTo on `/admin/users` sent non-admins to a 403.
+    await waitFor(() => expect(nav.push).toHaveBeenCalledWith('/home'))
   })
 
   it('shows the vague refusal on bad credentials and never navigates (V8)', async () => {

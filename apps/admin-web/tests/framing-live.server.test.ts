@@ -123,8 +123,8 @@ afterAll(() => {
 
 async function get(pathname: string): Promise<Response> {
   return await fetch(`${baseUrl}${pathname}`, {
-    // `/` redirects to `/admin/users` (§I.admin-web). Followed, the redirect's own headers would
-    // never be looked at, and the redirect is a response this app sends.
+    // `/` redirects to `/home` (§T76 — the role-aware dispatcher). Followed, the redirect's own
+    // headers would never be looked at, and the redirect is a response this app sends.
     redirect: 'manual',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
@@ -155,7 +155,14 @@ describe('§T.49 — every response carries the framing header', () => {
   it('covers a redirect and a 404, not only the pages', async () => {
     // Names the two responses a page-shaped `source` pattern would miss, so a narrowed pattern
     // fails as itself rather than as a header assertion somewhere in the list above.
-    expect((await get('/')).status).toBe(307)
+    const root = await get('/')
+    expect(root.status).toBe(307)
+    // §T76 moved the target from `/admin/users` to the role-aware dispatcher. It stays a SERVER
+    // redirect: making `/` a client page to do the dispatch would delete the only redirect this
+    // lane covers, and the header assertions above would stop being exercised on one.
+    // Resolved against the base so the assertion holds whether Next answers with a relative path
+    // or an absolute URL — what is pinned is the destination, not the header's spelling.
+    expect(new URL(root.headers.get('location') ?? '', baseUrl).pathname).toBe('/home')
     expect((await get('/this-route-does-not-exist')).status).toBe(404)
   }, REQUEST_TIMEOUT_MS)
 })

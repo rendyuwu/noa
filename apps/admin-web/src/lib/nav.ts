@@ -6,9 +6,12 @@ import type { NavItem } from '@gio/bigsu-app-shell'
 // nav item never grants or denies access.
 //
 // The old repo's first entry was the chat assistant; that surface left NOA, so
-// administration is the whole of this app (§I.admin-web). A non-admin therefore
-// sees an empty sidebar here, which is correct: there is nothing in this
-// deployable for them.
+// administration was once the whole of this app (§I.admin-web) and a non-admin
+// saw an empty sidebar. That is no longer true: §T76 added `/me/tokens`, where
+// any verified operator mints the MCP token LibreChat asks them to paste into
+// `customUserVars`. It carries no `roles` — the API reads the operator's id off
+// their session, so there is nothing here to gate — and it is this deployable's
+// only non-admin surface.
 export const NAV_ITEMS: NavItem[] = [
   {
     label: 'Administration',
@@ -24,5 +27,13 @@ export const NAV_ITEMS: NavItem[] = [
       { label: 'PMG servers', href: '/admin/pmg', roles: ['admin'] },
       { label: 'Audit', href: '/admin/audit', roles: ['admin'] },
     ],
+  },
+  // Last so an admin's sidebar still opens on their work. For everyone else this
+  // is the entire sidebar.
+  {
+    label: 'My MCP tokens',
+    href: '/me/tokens',
+    icon: 'security',
+    section: 'Account',
   },
 ]

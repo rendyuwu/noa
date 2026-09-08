@@ -14,16 +14,19 @@ describe('shared application states', () => {
     vi.restoreAllMocks()
   })
 
+  // The escape is labelled "Back to home" since §T76: it leads to `/home`, which
+  // dispatches by role, so wording that named the admin surface was wrong for
+  // exactly the operator most likely to be reading a 403.
   it('403 explains the refusal and offers a route home (never a dead end)', () => {
     render(<ForbiddenView />)
     expect(screen.getByRole('heading', { name: /don’t have access/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /back to administration/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /back to home/i })).toBeInTheDocument()
   })
 
   it('404 offers a route home', () => {
     render(<NotFoundView />)
     expect(screen.getByRole('heading', { name: /page not found/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /back to administration/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /back to home/i })).toBeInTheDocument()
   })
 
   it('pending-approval is a distinct state with a sign-out escape', () => {
