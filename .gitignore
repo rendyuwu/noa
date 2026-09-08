@@ -43,6 +43,9 @@ pnpm-debug.log*
 *.swp
 .mcp.json
 
+# --- Agent tooling (local session state, never shared) ---
+.omc/
+
 # --- OS ---
 .DS_Store
 Thumbs.db
