@@ -49,6 +49,7 @@ from noa_api.mcp_tools.whm_read import (
     MAX_SEARCH_LIMIT,
     MIN_SEARCH_LIMIT,
     TOOL_WHM_SEARCH_ACCOUNTS,
+    fetch_whm_accounts,
     whm_search_accounts,
 )
 from support.servers import SECRETS, ToolFixture, build_tool_context, whm_server
@@ -121,6 +122,84 @@ async def test_it_returns_the_matching_accounts_with_their_operational_fields() 
         "total_matches": 1,
         "truncated": False,
     }
+
+
+async def test_fetch_whm_accounts_carries_the_resolved_credential_facts() -> None:
+    """§V106, §V108: the internal function carries `api_username` and `host` off the row
+    that just won resolution, so the CHANGE module's preflight compare and the audit trail
+    get them at 0 extra round trips. Both are asserted by value, not just by key presence —
+    a control that only proved the keys existed would pass against an empty string.
+
+    This is the *internal* half of the boundary — see
+    `test_whm_search_accounts_does_not_forward_api_username_or_host` below for the exposed
+    half, which must not let either field reach a transcript. The `host` fallback's other
+    branch is `test_fetch_whm_accounts_falls_back_to_the_raw_base_url_when_it_does_not_parse`.
+    """
+    fixture, _ = search_context(
+        servers=[whm_server(SERVER_NAME, base_url="https://alpha.example.net:2087")]
+    )
+
+    result = await fetch_whm_accounts(server_ref=SERVER_NAME, context=fixture.context)
+
+    assert result["ok"] is True
+    assert result["api_username"] == "root"
+    assert result["host"] == "alpha.example.net"
+
+
+class _StubWHMClient:
+    """Answers `list_accounts` without touching the network.
+
+    `host = hostname_of(base_url) or base_url`'s fallback branch needs a `base_url` that
+    defeats `urlsplit`'s hostname parsing — but that same malformed string also defeats
+    httpx's own routing (there is no absolute URL httpx will route without an actual host,
+    verified: `MockTransport` never even sees the request). So proving the fallback branch
+    needs the WHM call doubled one layer further in than the transport; this class is that
+    double, and the only thing it stands in for is the round trip, not the host computation
+    under test.
+    """
+
+    async def list_accounts(self) -> dict[str, Any]:
+        return {"ok": True, "accounts": []}
+
+
+async def test_fetch_whm_accounts_falls_back_to_the_raw_base_url_when_it_does_not_parse() -> None:
+    """The other branch of `host = hostname_of(base_url) or base_url` (§V86): a `base_url`
+    `urlsplit` cannot find a hostname in still produces *something* — the raw string —
+    rather than `None`. A card/receipt field that silently read blank here would be worse
+    than one carrying the unparsed URL verbatim.
+    """
+    unparseable_base_url = "https://user:pass@"
+    fixture, _ = search_context(servers=[whm_server(SERVER_NAME, base_url=unparseable_base_url)])
+    context = replace(
+        fixture.context,
+        whm_client_factory=lambda server, *, cipher: _StubWHMClient(),
+    )
+
+    result = await fetch_whm_accounts(server_ref=SERVER_NAME, context=context)
+
+    assert result["ok"] is True
+    assert result["host"] == unparseable_base_url
+
+
+async def test_whm_search_accounts_does_not_forward_api_username_or_host() -> None:
+    """The exposed half of the boundary above: `whm_search_accounts` picks `accounts` back
+    out of `fetch_whm_accounts`' payload and builds its own `tool_ok(...)`, so the two
+    credential facts `fetch_whm_accounts` carries for §V106/§V108 never reach this tool's
+    answer — and never a LibreChat transcript (§V26).
+
+    Asserted against the whole serialized payload, not a top-level key check: a leak nested
+    inside `accounts[i]`, or under any future key, would still pass `"host" not in result`
+    while failing this. Same assertion shape as this test's sibling on the list tool,
+    `test_it_does_not_forward_api_username_or_host` in `test_whm_tools_list_accounts.py`, so
+    the rule holds at the same strength on both tools rather than a weaker one on this side.
+    """
+    fixture, _ = search_context(accounts=[whm_account("acme")])
+
+    result = await search(fixture, query="acme")
+    serialized = json.dumps(result, default=str)
+
+    assert "api_username" not in serialized
+    assert "host" not in serialized
 
 
 async def test_it_matches_username_and_domain_case_insensitively() -> None:

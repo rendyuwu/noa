@@ -40,10 +40,13 @@ class WHMServerRowLike(Protocol):
     resolution matches on identity, never on credentials, so a double built for a resolver
     test cannot accidentally be handed to something that would decrypt it.
 
-    `to_safe_dict()` is included because it is the *only* sanctioned way to render a row
-    outward: `WHMServer.to_safe_dict` drops `api_token` and every SSH secret, replacing them
-    with presence booleans (V2, V8). Requiring it here means a tool cannot serialize a row
-    any other way without changing this Protocol first.
+    `to_safe_dict()` is declared here for the admin view's sake, not this module's: the one
+    MCP tool that used to render a row through this Protocol via `to_safe_dict`,
+    `whm_list_servers` (T19), answers `core.servers.whm_ref.describe()` now — id, name,
+    `base_url`, none of `to_safe_dict`'s admin extras (V110). `WHMServer.to_safe_dict` still
+    drops `api_token` and every SSH secret in favour of presence booleans (V2, V8); it is
+    just reached directly on the concrete row by the admin routes now
+    (`api/routes/admin_servers.py`), not through this Protocol.
     """
 
     id: UUID

@@ -13,6 +13,11 @@ the repository raise, because that is where a real failure comes from: a dropped
 a timeout, a bug. The two mappings V19 names are asserted by code, and a `NoaError` is
 asserted to keep its own code — collapsing `ssh_host_key_mismatch` into
 `tool_execution_failed` would strip the one string that says what to fix.
+
+**The listing answers `describe()`, never `to_safe_dict()`** (V110), and a
+`is_reseller_credential = true` row is left out of it — visibility only, not authorization
+(V109(a)): the same row still resolves through `resolve_whm_server_ref`, which is what keeps
+the account CHANGE path V106 depends on reachable.
 """
 
 from __future__ import annotations
@@ -27,6 +32,7 @@ import pytest
 
 from core.auth.tool_catalog import TOOL_CATALOG
 from core.remote_exec.errors import SSHExecutionError
+from core.servers.whm_ref import resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_TIMEOUT,
@@ -87,8 +93,8 @@ async def test_the_server_list_carries_no_api_token_and_no_ssh_credential() -> N
     """Every stored secret is absent from the serialized result.
 
     Asserted against the whole JSON rather than key by key: a future column added to
-    `to_safe_dict` would slip past a key allowlist, and the thing that must hold is that
-    the *values* never appear, wherever they are nested.
+    the row would slip past a key allowlist, and the thing that must hold is that the
+    *values* never appear, wherever they are nested.
     """
     fixture = build_tool_context(servers=[whm_server("alpha")])
 
@@ -97,12 +103,35 @@ async def test_the_server_list_carries_no_api_token_and_no_ssh_credential() -> N
 
     for secret in SECRETS:
         assert secret not in serialized
-    # The presence booleans survive, so an admin can still see the server is configured.
+
+
+async def test_the_server_list_answers_describe_not_the_admin_view() -> None:
+    """V110: the payload is `describe()`'s 3 fields, none of `to_safe_dict`'s admin extras.
+
+    Named individually rather than only diffed against an allowlist: a later change that
+    routes `to_safe_dict()` back into this tool should fail on the specific field it
+    reintroduces, not just on "the key set changed".
+    """
+    fixture = build_tool_context(servers=[whm_server("alpha")])
+
+    result = await whm_list_servers(context=fixture.context)
+
     [server] = result["servers"]
-    assert server["has_api_token"] is True
-    assert server["has_ssh_password"] is True
-    assert "api_token" not in server
-    assert "ssh_password" not in server
+    assert set(server.keys()) == {"id", "name", "base_url"}
+    for admin_only_field in (
+        "api_username",
+        "has_api_token",
+        "verify_ssl",
+        "is_reseller_credential",
+        "ssh_username",
+        "ssh_port",
+        "ssh_host_key_fingerprint",
+        "has_ssh_password",
+        "has_ssh_private_key",
+        "created_at",
+        "updated_at",
+    ):
+        assert admin_only_field not in server
 
 
 async def test_inventory_is_read_on_every_call() -> None:
@@ -114,6 +143,66 @@ async def test_inventory_is_read_on_every_call() -> None:
     await whm_list_servers(context=fixture.context)
 
     assert fixture.servers.reads == 2
+
+
+# --- V109(a): a reseller-credential row is hidden here, not everywhere ---
+
+
+async def test_a_reseller_credential_row_is_absent_from_the_listing() -> None:
+    """`is_reseller_credential = true` hides a row from `whm_list_servers`' output.
+
+    The listing problem V109(a) exists for: 16 clusters x ~7 rows is 112 candidates in a
+    transcript, and only the root row per cluster is a useful name for the model to read.
+
+    Named `name == api_username` (V109(b)) — the admin write refuses a `true` row any other
+    way, so a fixture that skipped the pairing would test a shape production cannot hold.
+    """
+    reseller_row = whm_server(
+        "web08cpnpool01", api_username="web08cpnpool01", is_reseller_credential=True
+    )
+    fixture = build_tool_context(servers=[reseller_row, whm_server("root1")])
+
+    result = await whm_list_servers(context=fixture.context)
+
+    assert [server["name"] for server in result["servers"]] == ["root1"]
+
+
+async def test_a_non_reseller_row_is_listed() -> None:
+    """Negative control for the filter above: without it, filtering everything out would
+    also pass a naive `is not True` check (V87 — a listing with nothing hidden proves
+    nothing about the filter itself)."""
+    fixture = build_tool_context(servers=[whm_server("root1")])
+
+    result = await whm_list_servers(context=fixture.context)
+
+    assert [server["name"] for server in result["servers"]] == ["root1"]
+
+
+async def test_a_reseller_credential_row_still_resolves_by_id_name_and_hostname() -> None:
+    """V106's compare needs this row reachable — hiding it from the *listing* must not hide
+    it from *resolution*, or the account CHANGE path becomes unreachable for every account
+    such a row owns.
+
+    Named `name == api_username` (V109(b)), same as the sibling test above: the row this
+    proves reachable is a row the admin write can actually create, not a shape that is only
+    ever hidden and never held. `server_ref = owner` (V106) resolves by exactly this pairing.
+    """
+    reseller_row = whm_server(
+        "web08cpnpool01",
+        api_username="web08cpnpool01",
+        is_reseller_credential=True,
+        base_url="https://cluster1.example.net:2087",
+    )
+    fixture = build_tool_context(servers=[reseller_row])
+
+    by_id = await resolve_whm_server_ref(str(reseller_row.id), repository=fixture.servers)
+    by_name = await resolve_whm_server_ref("web08cpnpool01", repository=fixture.servers)
+    by_host = await resolve_whm_server_ref("cluster1.example.net", repository=fixture.servers)
+
+    for resolution in (by_id, by_name, by_host):
+        assert resolution.ok is True
+        assert resolution.server is not None
+        assert resolution.server.id == reseller_row.id
 
 
 # --- V19: the error boundary ---

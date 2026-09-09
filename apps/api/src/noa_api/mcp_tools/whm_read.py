@@ -17,11 +17,13 @@ is the only tool here whose result is content blocks rather than the `{"ok": ...
 the order of those blocks is part of what the operator is told (V25) — and it is why
 `sanitize_tool_errors` widens a return type rather than fixing one.
 
-**What leaves the process is `to_safe_dict()`, never the row.** That method is
-`WHMServer`'s, it drops `api_token` and every SSH secret in favour of presence booleans
-(V2, V8), and it is on `WHMServerRowLike` so this module cannot reach past it. The result
-lands in a LibreChat transcript that persists in their MongoDB (V26), which is the reason
-the rule is "no credential material", not "no plaintext password".
+**What leaves the process for `whm_list_servers` is `describe()`, never the row.** That
+function is `core.servers.whm_ref`'s and answers id, name and `base_url` only — the three
+fields that let a model construct a `server_ref` — and none of `to_safe_dict()`'s admin
+extras (`api_username`, presence booleans, the SSH fields, two timestamps), which is a
+different render for a different reader (V110). The result lands in a LibreChat transcript
+that persists in their MongoDB (V26), which is the reason the rule is "no credential
+material and no admin metadata either", not "no plaintext password".
 
 Two split responsibilities, both deliberate:
 
@@ -47,7 +49,8 @@ from pydantic import Field
 from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount, account_matches, normalize_whm_account_list
 from core.results.tables import TableColumn
-from core.servers.whm_ref import resolve_whm_server_ref
+from core.servers.reference import hostname_of
+from core.servers.whm_ref import describe, resolve_whm_server_ref
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
     ERROR_UNKNOWN,
@@ -126,13 +129,26 @@ DESCRIPTION_WHM_SEARCH_ACCOUNTS = (
 
 @sanitize_tool_errors(TOOL_WHM_LIST_SERVERS)
 async def whm_list_servers(*, context: McpToolContext) -> ToolPayload:
-    """Every configured WHM server, credential-free (T19, V8)."""
+    """Every configured WHM server a model may pick from, credential-free (T19, V110).
+
+    Answers `describe()` — id, `name`, `base_url` — not `to_safe_dict()`. The latter is the
+    **admin** view (11 fields: `api_username`, `has_api_token`, `verify_ssl`, 3 SSH fields, 2
+    presence bools, 2 timestamps) and not one of those extras is read by a model choosing a
+    server; at scale the gap is thousands of tokens spent on fields nobody here uses (V110).
+
+    A row with `is_reseller_credential = true` is left out (V109(a)) — visibility only, not
+    authorization: the same row stays a valid `resolve_whm_server_ref` candidate by id, name
+    and hostname, and stays fully visible in the admin UI. Filtering it out of *resolution*
+    too would make the account CHANGE path V106 depends on unreachable.
+    """
     async with context.session_factory() as session:
         repository = context.whm_server_repository_factory(session)
         servers = await repository.list_servers()
-        # Serialized inside the session: `to_safe_dict` reads mapped attributes, and a
+        # Serialized inside the session: `describe()` reads mapped attributes, and a
         # detached instance would raise on a lazy refresh once the session closed.
-        return tool_ok(servers=[server.to_safe_dict() for server in servers])
+        return tool_ok(
+            servers=[describe(server) for server in servers if not server.is_reseller_credential]
+        )
 
 
 async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> ToolPayload:
@@ -150,6 +166,21 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
     this one. The id is what T22's CHANGE gate persists as evidence, so the change an operator
     approves runs against the machine the card described rather than against a string resolved
     again minutes later (V33).
+
+    **The resolved row's `api_username` and host come back too, for the same reason** (§V106,
+    §V108). V106's preflight compare needs `api_username` to check against the account's
+    `owner`, and V108's card/receipt/`tool_runs` need the host — both are already on the row
+    that just won resolution, so returning them here costs the 0 extra round trips V106 asks
+    for; reading them again in the CHANGE module would be a second, disagreeable resolution.
+    `host` is `hostname_of(base_url)`, falling back to the raw `base_url` when that does not
+    parse — a card field that silently read blank on an unparseable URL would be worse than
+    one carrying the raw string (V86: silence is not evidence).
+
+    Only `fetch_whm_accounts` itself carries these two: `whm_list_accounts` and
+    `whm_search_accounts` (T20, T21) pick `accounts` and `server` out of this payload and
+    build their own `tool_ok(...)`, so today neither exposed tool forwards `api_username` or
+    `host` into a transcript. That is a property of those two callers, not of this function,
+    and it is pinned by test rather than assumed.
 
     Three refusals travel back as a payload rather than an exception, all of them information
     the model can act on (V18, V19):
@@ -180,6 +211,8 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
         client = context.whm_client_factory(resolution.server, cipher=context.secret_cipher)
         server_name = resolution.server.name
         server_id = str(resolution.server.id)
+        api_username = resolution.server.api_username
+        host = hostname_of(resolution.server.base_url) or resolution.server.base_url
 
     result = await client.list_accounts()
     if result.get("ok") is not True:
@@ -194,6 +227,8 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
     return tool_ok(
         server=server_name,
         server_id=server_id,
+        api_username=api_username,
+        host=host,
         accounts=normalize_whm_account_list(result.get("accounts")),
     )
 

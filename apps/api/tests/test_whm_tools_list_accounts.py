@@ -216,6 +216,27 @@ async def test_no_account_row_reaches_the_tool_result() -> None:
     assert "sentinel.example.com" not in serialized
 
 
+async def test_it_does_not_forward_api_username_or_host() -> None:
+    """The exposed half of the internal/exposed boundary at `fetch_whm_accounts` (§V106,
+    §V108): that internal function carries `api_username` and `host` off the resolved row,
+    but this tool reads only `accounts` and `server` back out of its payload — so neither
+    credential fact reaches this tool's answer, and never a LibreChat transcript (§V26).
+
+    Asserted against the whole serialized result, not a top-level key check, so a leak
+    nested inside a row or under any future key still fails this. Same assertion shape as
+    this test's sibling on the search tool,
+    `test_whm_search_accounts_does_not_forward_api_username_or_host` in
+    `test_whm_tools_search_accounts.py` — the rule holds at the same strength on both.
+    """
+    fixture, _ = listing_context(accounts=[whm_account("acme")])
+
+    answer, _ = await listing(fixture)
+    serialized = answer.model_dump_json()
+
+    assert "api_username" not in serialized
+    assert "host" not in serialized
+
+
 async def test_the_result_carries_no_credential_material() -> None:
     """V2, V8, V26: neither the ciphertext in the column nor the plaintext behind it."""
     fixture, _ = listing_context(accounts=[whm_account("acme", plan="business")])
