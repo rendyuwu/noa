@@ -19,6 +19,7 @@ because T38 is what makes it do anything.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import AsyncIterator, Iterator
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
@@ -61,6 +62,16 @@ SCRATCH_DB = "noa_action_decisions_test"
 
 OPERATOR_EMAIL = "operator@example.com"
 OTHER_EMAIL = "second-operator@example.com"
+
+# One reseller credential, standing in for §V108's four identity fields (the row's name, its
+# `api_username`, its host and the account's owner). Named after the credential because that is
+# what a reseller row is named after (V109(b)).
+RESELLER = "web08cpnpool01"
+
+# Planted in the evidence under a key `SENSITIVE_KEYS` names, to prove the audit row's reader is
+# a whitelist rather than a copy. Nothing in production puts a token there — the point is that
+# the reader would not carry one if something did (V8).
+PLANTED_TOKEN = "planted-api-token-value"
 
 
 @pytest.fixture(scope="module")
@@ -129,6 +140,123 @@ async def test_approval_writes_the_change_tool_run(factory) -> None:
     assert run.args == APPROVAL_CONTEXT["arguments"]
     assert run.completed_at is None
     assert executor.only.tool_run_id == run.id
+
+
+async def test_an_approved_change_records_the_credential_it_acted_as_beside_its_arguments(
+    factory,
+) -> None:
+    """§V108: the audit row names the identity, not only the machine.
+
+    A privileged write whose credential is not recorded is not auditable, and `tool_runs` is
+    the table the audit surface reads (`admin_audit.py`) — `action_receipts` carries the same
+    four fields for a different reader, and a fact reachable only through a join nobody
+    performs is recorded rather than reported.
+
+    The four come out of the gate's stored evidence by **whitelist**
+    (`core.approvals.context.AUDIT_IDENTITY_KEYS`), which is the half worth testing: `evidence`
+    is a free-form preflight payload whose shape each CHANGE tool decides, so a passthrough
+    would copy whatever a future tool records into a second table. The evidence below carries
+    two things that must not travel — an account summary that belongs on the card, and a
+    token-shaped value under the very key `SENSITIVE_KEYS` names — and neither may appear in
+    the row.
+
+    The additive half is asserted one test up: `test_approval_writes_the_change_tool_run` uses
+    an `APPROVAL_CONTEXT` whose evidence names none of the four and still expects `args` to
+    equal the arguments exactly.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    action_request_id = await open_request(
+        factory,
+        requested_by_user_id=user_id,
+        approval_context={
+            "arguments": {"server_ref": RESELLER, "username": "acmeco"},
+            "requester": {"email": OPERATOR_EMAIL, "librechat_user_id": "librechat-user-1"},
+            "evidence": {
+                "server": RESELLER,
+                "api_username": RESELLER,
+                "host": "web08.example.net",
+                "owner": RESELLER,
+                "account": {"user": "acmeco", "suspended": False},
+                "api_token": PLANTED_TOKEN,
+            },
+        },
+    )
+
+    async with factory() as session:
+        service, _ = build_live_decision_service(session)
+        await service.approve(
+            action_request_id=action_request_id, caller_user_id=user_id, reason=REASON
+        )
+
+    runs = await read_runs(factory)
+    assert len(runs) == 1
+    args = runs[0].args
+
+    assert args["credential"] == {
+        "server": RESELLER,
+        "api_username": RESELLER,
+        "host": "web08.example.net",
+        "owner": RESELLER,
+    }
+    # What was asked for is still exactly what was asked for: the identity is beside the
+    # arguments, never merged into them (`ActionResultView` reads that half, V76).
+    assert args["server_ref"] == RESELLER
+    assert args["username"] == "acmeco"
+    assert set(args) == {"server_ref", "username", "credential"}
+    assert PLANTED_TOKEN not in json.dumps(args)
+    assert "account" not in json.dumps(args)
+
+
+async def test_a_change_that_names_a_machine_but_no_credential_records_only_its_arguments(
+    factory,
+) -> None:
+    """The additive half of §V108, against evidence a real tool actually writes.
+
+    This is the test the review found wanting, and the reason it was wanting is worth keeping:
+    `evidence["server"]` is not the WHM account pair's alone. `proxmox_nic`, `proxmox_password`,
+    `pmg_whitelist` and both WHM firewall tools all write it for the machine they act on, so a
+    whitelist keyed on "any of the four" gave every one of those approvals an
+    `args["credential"]` holding a machine name — a block labelled credential with no credential
+    in it, which is the precise misreading the nested key exists to prevent. The old fixture
+    could not see it, because its evidence shape (`{account, suspended, domain}`) is one no tool
+    produces: a control that cannot separate because its fixture does not represent the subject.
+
+    So the evidence below is `proxmox_nic`'s, key for key (`mcp_tools/proxmox_nic.py`), and the
+    claim is that such an approval's audit row is byte-identical to what it was before §V108:
+    the arguments, and no `credential` key at all. `api_username` is what gates the block, and
+    nothing but the account pair records one.
+    """
+    user_id = await insert_user(factory, OPERATOR_EMAIL)
+    arguments = {"server_ref": "pve-01", "node": "pve", "vmid": 120, "action": "disconnect"}
+    action_request_id = await open_request(
+        factory,
+        requested_by_user_id=user_id,
+        approval_context={
+            "arguments": arguments,
+            "requester": {"email": OPERATOR_EMAIL, "librechat_user_id": "librechat-user-1"},
+            "evidence": {
+                "server_id": str(uuid4()),
+                "server": "pve-01",
+                "node": "pve",
+                "vmid": 120,
+                "net": "net0",
+                "action": "disconnect",
+                "nic": {"key": "net0", "auto_selected": True},
+                "vm": {"name": "web-01", "status": "running"},
+            },
+        },
+    )
+
+    async with factory() as session:
+        service, _ = build_live_decision_service(session)
+        await service.approve(
+            action_request_id=action_request_id, caller_user_id=user_id, reason=REASON
+        )
+
+    runs = await read_runs(factory)
+    assert len(runs) == 1
+    assert runs[0].args == arguments
+    assert "credential" not in runs[0].args
 
 
 async def test_the_decision_row_is_the_authorization_after_approval(factory) -> None:
@@ -262,6 +390,11 @@ async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> 
     means, and it is false the instant `FOR UPDATE` is removed. The outcomes are asserted too,
     but a win count alone can come out right for the wrong reason.
 
+    **Which transaction reads first is arranged, not raced.** `second` waits for `first`'s lock
+    before it reads, and `first` holds until `second` has queued — see `hold_the_lock`. Gating
+    only the second half, as this test did until §T78's review, left `asyncio.gather` to decide
+    who locked first, and the losing order made the assertion raise instead of fail.
+
     The `tool_runs` count is the harm this prevents: two rows would mean the same production
     change was authorised, and handed to the executor, twice.
     """
@@ -269,14 +402,27 @@ async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> 
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
     journal: list[str] = []
+    first_locked = asyncio.Event()
     second_reading = asyncio.Event()
 
     async def hold_the_lock() -> None:
-        """Stay inside the first transaction until the second has reached for the row."""
+        """Announce the lock, then stay inside the first transaction until the second queues.
+
+        Two handshakes, and the first one is what B5 was missing. `asyncio.gather` starts both
+        coroutines and orders nothing: each one's first await is a pool checkout, so if `first`
+        needed a new connection while `second`'s was already pooled, `second` took the row lock
+        first, committed unopposed, and `first` raised `AlreadyDecided` and never journalled
+        `first:committed` — at which point the ordering assertion below raised `ValueError` from
+        `list.index` rather than failing. A test whose arrangement is a race cannot assert an
+        order (V89, and the reason a §B row exists for it).
+        """
+        first_locked.set()
         await second_reading.wait()
         await asyncio.sleep(HANDOVER_GRACE_SECONDS)
 
     async def announce_read() -> None:
+        """Wait until the first transaction holds the row, and only then queue behind it."""
+        await first_locked.wait()
         second_reading.set()
 
     async def first() -> Exception | None:
@@ -336,15 +482,19 @@ async def test_an_unlocked_read_of_the_same_row_does_not_wait(factory) -> None:
     would land there — if, say, the harness simply never overlapped the two transactions.
     This runs the identical handshake with a plain `SELECT` in place of the locked one and
     shows it returns *while* the first transaction is still holding the row: the ordering the
-    test above forbids is reachable, so forbidding it says something.
+    test above forbids is reachable, so forbidding it says something. Identical includes the
+    arrangement — the reader waits for the holder's lock before it reads, or "it did not wait"
+    would be a claim about a read that never overlapped anything.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
     journal: list[str] = []
+    first_locked = asyncio.Event()
     second_reading = asyncio.Event()
 
     async def hold_the_lock() -> None:
+        first_locked.set()
         await second_reading.wait()
         await asyncio.sleep(HANDOVER_GRACE_SECONDS)
 
@@ -364,6 +514,10 @@ async def test_an_unlocked_read_of_the_same_row_does_not_wait(factory) -> None:
             await repository.commit()
 
     async def unlocked_reader() -> None:
+        # Same two handshakes as the test above, for the same reason: a reader that ran before
+        # the holder ever locked would satisfy the assertion below without demonstrating
+        # anything, which is the control failing open.
+        await first_locked.wait()
         second_reading.set()
         journal.append("second:reading")
         async with factory() as session:

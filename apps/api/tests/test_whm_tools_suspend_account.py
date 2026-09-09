@@ -61,6 +61,7 @@ from noa_api.mcp_tools.whm_account_change import (
     ERROR_SERVER_UNAVAILABLE,
     ERROR_USERNAME_REQUIRED,
     EVIDENCE_ACCOUNT,
+    EVIDENCE_OWNER,
     EVIDENCE_SERVER_ID,
     EVIDENCE_SERVER_NAME,
     STATUS_CHANGED,
@@ -99,6 +100,14 @@ from support.whm_api import (
 SERVER_NAME = "alpha"
 ACCOUNT = "acmeco"
 
+# Who WHM says owns the account, and it has to equal the row's `api_username` or the preflight
+# refuses before a card exists (§V106): cPanel gates an account write on ownership, so an
+# account with no owner is one NOA cannot prove this credential may change. `whm_server`'s
+# credential is `root`, and root owning accounts directly is the measured case — 56 of the 451
+# rows on the host §R.33 was taken from. `test_whm_account_owner_gate.py` is where the mismatch
+# and the unreported-owner refusals are asserted; here the owner is fixture, not subject.
+OWNER = "root"
+
 # The plaintext behind the row's `api_token`, encrypted into the column so a header assertion
 # proves a decrypt rather than a passthrough.
 WHM_API_TOKEN = "whm-api-token-plaintext"
@@ -111,7 +120,7 @@ SUSPEND_NOTE_ECHO = "operator words WHM would echo back"
 
 def live_account(**extra: Any) -> dict[str, Any]:
     """One `listaccts` row for a running account, as WHM sends it (`suspended` as `0`)."""
-    return whm_account(ACCOUNT, domain="acme.example.com", suspended=0, **extra)
+    return whm_account(ACCOUNT, domain="acme.example.com", suspended=0, owner=OWNER, **extra)
 
 
 def suspended_account(**extra: Any) -> dict[str, Any]:
@@ -121,6 +130,7 @@ def suspended_account(**extra: Any) -> dict[str, Any]:
         domain="acme.example.com",
         suspended=1,
         suspendreason=SUSPEND_NOTE_ECHO,
+        owner=OWNER,
         **extra,
     )
 
@@ -200,6 +210,9 @@ def execution_request(
         evidence={
             EVIDENCE_SERVER_ID: str(server_id),
             EVIDENCE_SERVER_NAME: SERVER_NAME,
+            # The runner re-compares this against the row's live `api_username` (§V106, V33),
+            # so evidence without it is an approved change NOA refuses to run.
+            EVIDENCE_OWNER: OWNER,
             EVIDENCE_ACCOUNT: {"user": username, "suspended": False},
         },
         reason=reason,

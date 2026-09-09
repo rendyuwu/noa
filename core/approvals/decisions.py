@@ -62,7 +62,12 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.clock import as_utc, now_utc
-from core.approvals.context import CONTEXT_ARGUMENTS_KEY, arguments_from_context
+from core.approvals.context import (
+    AUDIT_CREDENTIAL_KEY,
+    CONTEXT_ARGUMENTS_KEY,
+    arguments_from_context,
+    audit_identity_from_context,
+)
 from core.approvals.errors import (
     ActionRequestAlreadyDecidedError,
     ActionRequestExpiredError,
@@ -124,8 +129,31 @@ class LockedActionRequest:
         `core.approvals.context` owns the key and the extraction rule, because T63 reads the
         same payload for `noa_get_action_result` and two readers of one JSONB column with two
         spellings of its key is one spelling too many (V66).
+
+        Unchanged by §V108, deliberately: this is the value a **model** can reach, through
+        `ActionResultView.arguments` (V76), so the credential the change acts as is added to the
+        audit row next door rather than merged in here.
         """
         return arguments_from_context(self.approval_context)
+
+    @property
+    def audit_arguments(self) -> dict[str, Any]:
+        """What `tool_runs.args` records for an approved change (V47, §V108).
+
+        The gate's redacted arguments, plus — under one nested key, so nothing here reads as a
+        tool parameter — which credential the change will act as. A privileged write whose
+        credential is not recorded is not auditable, and `tool_runs` is the table the audit
+        surface reads; `action_receipts` carries the same fields for a different reader, and a
+        fact reachable only through a join nobody performs is recorded rather than reported.
+
+        Additive by construction: `audit_identity_from_context` answers `{}` unless the evidence
+        names an `api_username`, so every CHANGE tool that does not record a credential — the
+        firewall pair, the Proxmox pair, PMG's whitelist, all of which do record a `server` —
+        writes exactly what it wrote before, and no tool can widen this row by recording more.
+        """
+        identity = audit_identity_from_context(self.approval_context)
+        arguments = self.redacted_arguments
+        return arguments if not identity else {**arguments, AUDIT_CREDENTIAL_KEY: identity}
 
 
 @dataclass(frozen=True)
@@ -369,7 +397,10 @@ class ActionDecisionService:
             # `decided_by_user_id`: the decider is the requester, one identity, not two.
             requested_by_user_id=caller_user_id,
             conversation_ref=locked.conversation_ref,
-            args=locked.redacted_arguments,
+            # The arguments, plus which credential this change acts as (§V108). See
+            # `LockedActionRequest.audit_arguments`: `redacted_arguments` is what a model can
+            # reach and is left alone.
+            args=locked.audit_arguments,
         )
         await self._repository.write_decision(
             action_request_id=locked.action_request_id,

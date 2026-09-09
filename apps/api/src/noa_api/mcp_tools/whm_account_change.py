@@ -49,6 +49,21 @@ refusing every unsuspend on those servers would cost more than the failure it pr
 refusal at execute time stays the authoritative one — it arrives as `whm_api_error` carrying
 WHM's `reason`, which names the remedy — and this guard is the cheap early half of it.
 
+**A credential that does not own the account is refused before a card exists**, the same argument
+one step harder, and `whm_account_owner_gate` holds all of it: cPanel gates an account write on
+*ownership* rather than on the token's ACL (§R.33), so the preflight compares the account's
+`owner` against the resolved row's `api_username`. Two things this module decides rather than
+that one. The guard sits in `_open_account_change`, the single door both tools reach
+`open_change_request` through, so a third account CHANGE tool cannot be written without it; and
+it runs **again** in the runner, off the stored evidence, because a row is editable between a
+request and its decision (V33) and repointing `api_username` after the card was rendered would
+otherwise substitute the acting identity silently.
+
+**The card and the receipt name the credential, not just the machine** (§V108): the row's
+`name`, its `api_username`, the host out of its `base_url`, and the account's `owner`. A
+privileged write whose credential is not recorded is not auditable, and what an audit needs is
+which identity acted — a username, never the token (V8).
+
 **A runner acts on the server the card described, not on the operator's word.** `server_ref` is
 whatever the model passed, and inventory can be edited between a request and its approval;
 `evidence["server_id"]` is the machine the preflight actually read and the operator actually saw
@@ -74,7 +89,12 @@ cannot reach it: `ActionResultView` has no field for evidence, V76). What is not
 construction is this tool's own answers, which do land in a transcript (V26) — so the no-op and
 the locked refusal are built from the username and the server name, never from the summary.
 
-**Postflight, and its third answer.** A change WHM accepted is re-read to confirm it took. Two
+**Postflight, and its third answer.** A change WHM accepted is re-read to confirm it took, and it
+is re-read **through the credential that wrote it**: the identity that performed the change is the
+one that confirms it. A reseller token's `listaccts` sees its own accounts (77 of 77 on the
+measured host, §R.33) and its own account is the only one in question, so moving the confirming
+read to a root credential "so it can see everything" would answer "did it take" from an identity
+that did not perform the write. One `_ChangeTarget`, one client, all three phases. Two
 outcomes are obvious — the account reached the state that was asked for, or it did not and the
 change is therefore a failure — and the third is the one worth naming: the mutation succeeded and
 the confirming read did not answer. That is recorded as a change that happened and was *not
@@ -116,6 +136,23 @@ from noa_api.mcp_tools.results import (
     sanitize_tool_errors,
     tool_failure,
     tool_ok,
+)
+from noa_api.mcp_tools.whm_account_owner_gate import (
+    # Hoisted at T78, when the runner became the second caller of the same refusal — the shape
+    # `change_target` was hoisted in. Re-exported below, so every name this module publishes
+    # keeps working from here.
+    ERROR_ACCOUNT_OWNER_UNKNOWN,
+    ERROR_WRONG_CREDENTIAL_FOR_OWNER,
+    EVIDENCE_API_USERNAME,
+    EVIDENCE_HOST,
+    EVIDENCE_OWNER,
+    EVIDENCE_UNRECORDED,
+    LOG_OWNERSHIP_REFUSED,
+    SITE_PREFLIGHT,
+    SITE_RUNNER,
+    classify_ownership,
+    recorded,
+    refuse_unproven_ownership,
 )
 from noa_api.mcp_tools.whm_read import MESSAGE_LIST_ACCOUNTS_FAILED, fetch_whm_accounts
 
@@ -162,23 +199,40 @@ DESCRIPTION_WHM_SUSPEND_ACCOUNT = (
     "Suspend one cPanel account on one WHM server. This changes a live system, so it does not "
     "run when you call it: NOA checks the account, opens an approval request, and answers with "
     "the address of a card where an operator decides. Call `whm_search_accounts` first to get "
-    "the exact username; never guess one. Read the outcome with `noa_get_action_result`, and "
-    "never report the account as suspended without it."
+    "the exact username and the account's `owner`; never guess either. `server_ref` is the "
+    "credential for that owner, not the machine — see its own description; WHM only lets an "
+    "account's owner suspend it. Read the outcome with "
+    "`noa_get_action_result`, and never report the account as suspended without it."
 )
 
 DESCRIPTION_WHM_UNSUSPEND_ACCOUNT = (
     "Lift the suspension on one cPanel account on one WHM server. This changes a live system, "
     "so it does not run when you call it: NOA checks the account, opens an approval request, "
     "and answers with the address of a card where an operator decides. Call "
-    "`whm_search_accounts` first to get the exact username; never guess one. Read the outcome "
-    "with `noa_get_action_result`, and never report the account as active without it."
+    "`whm_search_accounts` first to get the exact username and the account's `owner`; never "
+    "guess either. `server_ref` is the credential for that owner, not the machine — see its own "
+    "description; WHM only lets an account's owner lift its suspension. Read the outcome with "
+    "`noa_get_action_result`, and never report the "
+    "account as active without it."
 )
 
 # Both tools take the same `server_ref`, and it means the same thing in both. One string so the
 # two schemas cannot drift into describing one argument two ways (V66).
+#
+# It does **not** mean what it means on the read tools, and this is where a model learns that
+# (§V106). Both branches are stated because neither covers the other: reseller rows are named
+# after their credential (V109(b)) and hidden from `whm_list_servers` (V109(a)), while the root
+# rows cannot all be called `root` — so for the 56 of 451 measured `owner=root` accounts (§R.33)
+# the machine's own row is the answer. `refuse_unproven_ownership` carries the rest, including
+# why "pass the owner" alone would be false.
 SERVER_REF_DESCRIPTION: Final = (
-    "Which WHM server: its id, its name in NOA, or its hostname. Call `whm_list_servers` first "
-    "if the operator has not named one."
+    "Which WHM credential performs the change. For an account change that is the credential "
+    "whose API username is the account's OWNER — read `owner` off `whm_search_accounts` first. "
+    "If the owner is a reseller, NOA holds a server named exactly after it, so pass that owner "
+    "name (those rows are not in `whm_list_servers`, so you will not have seen it there). If "
+    "the owner is `root`, the machine's own row is the credential: pass its id, name or "
+    "hostname from `whm_list_servers`. WHM refuses an account write from any other credential, "
+    "so a wrong value here buys a refusal rather than an approval request."
 )
 
 logger = structlog.get_logger(__name__)
@@ -254,6 +308,15 @@ async def collect_account_state(
 
     The match is exact on `user`. A CHANGE that guessed which account an operator meant is what
     C10 exists to prevent, and `whm_search_accounts` is the discovery step in front of it.
+
+    **The credential comes back beside the account.** `api_username` and the host are the row's,
+    captured by `fetch_whm_accounts` off the row that won resolution rather than read again
+    here; `owner` is the account's, lifted out of the summary onto the payload because the
+    ownership compare and the audit trail both ask for it by name and neither should have to
+    know the shape of a `listaccts` row (§V106, §V108). Raw as their sources gave them —
+    `None` when a source did not answer — because the compare has to be able to tell a name it
+    could not read from one it read and disliked; the word for a non-answer is written where
+    the evidence is built.
     """
     listed = await fetch_whm_accounts(server_ref=server_ref, context=context)
     if listed.get("ok") is not True:
@@ -271,6 +334,9 @@ async def collect_account_state(
         **{
             EVIDENCE_SERVER_ID: listed.get(EVIDENCE_SERVER_ID),
             EVIDENCE_SERVER_NAME: listed.get(EVIDENCE_SERVER_NAME),
+            EVIDENCE_API_USERNAME: listed.get(EVIDENCE_API_USERNAME),
+            EVIDENCE_HOST: listed.get(EVIDENCE_HOST),
+            EVIDENCE_OWNER: account.get(EVIDENCE_OWNER),
             EVIDENCE_ACCOUNT: account,
         }
     )
@@ -606,13 +672,46 @@ async def _open_account_change(
     that decided there was something to approve (V33, V35). `server_ref` is recorded as the model
     passed it, because the arguments are a record of what was asked for; what the change will
     actually run against is `evidence["server_id"]` (V33, `_resolve_change_target`).
+
+    **The ownership compare is here rather than in each tool** (§V106). This is the one door both
+    account CHANGE tools reach `open_change_request` through, so putting the guard at the door
+    makes "no card is opened for a credential that cannot perform the change" a property of the
+    mechanism instead of a line two tools each have to remember — and a third account CHANGE
+    tool inherits it by calling this function at all.
+
+    Ownership is **proven** here or the change is refused (§V106, V86): three of the four
+    verdicts stop at this line, the two unreported ones included.
+
+    The evidence names the credential as well as the machine (§V108). `owner` and `api_username`
+    go in straight rather than defensively: a card is only built past the guard above, which
+    proved both readable. The account summary keeps its own `owner` too — the flat key is what
+    the card labels and what the runner compares, the summary is what WHM said.
     """
+    owner = state.get(EVIDENCE_OWNER)
+    api_username = state.get(EVIDENCE_API_USERNAME)
+    ownership = classify_ownership(owner=owner, api_username=api_username)
+    if not ownership.is_proven:
+        return refuse_unproven_ownership(
+            ownership=ownership,
+            tool_name=tool_name,
+            site=SITE_PREFLIGHT,
+            username=username,
+            owner=owner,
+            api_username=api_username,
+            server_ref=server_ref,
+            server_name=state.get(EVIDENCE_SERVER_NAME),
+            server_id=state.get(EVIDENCE_SERVER_ID),
+        )
+
     opened = await open_change_request(
         tool_name=tool_name,
         arguments={"server_ref": server_ref, "username": username},
         evidence={
             EVIDENCE_SERVER_ID: state.get(EVIDENCE_SERVER_ID),
             EVIDENCE_SERVER_NAME: state.get(EVIDENCE_SERVER_NAME),
+            EVIDENCE_API_USERNAME: api_username,
+            EVIDENCE_HOST: recorded(state.get(EVIDENCE_HOST)),
+            EVIDENCE_OWNER: owner,
             EVIDENCE_ACCOUNT: state[EVIDENCE_ACCOUNT],
         },
         context=context,
@@ -631,9 +730,22 @@ async def _resolve_change_target(
     Re-resolving the string here would be a second resolution that can disagree with the one the
     decision rests on.
 
-    Two ways it refuses, both `whm_server_unavailable` and both before any mutation: the evidence
-    no longer carries a usable id or username (it round-tripped through JSONB, and a value that
-    no longer parses is a request NOA refuses rather than guesses at), or the server row is gone.
+    Two ways it refuses on the identity of the machine, both `whm_server_unavailable` and both
+    before any mutation: the evidence no longer carries a usable id or username (it round-tripped
+    through JSONB, and a value that no longer parses is a request NOA refuses rather than guesses
+    at), or the server row is gone.
+
+    **A third refuses on the identity of the credential** (§V106). The row's `api_username` is
+    read here, now, and compared against the `owner` the card was built from: a row is editable
+    between a request and its decision (V33), so the credential this change would run as need
+    not be the one the operator authorised — repointing `api_username` at another reseller after
+    the card was rendered would otherwise be a silent substitution of the acting identity. The
+    live value is the one that can be wrong, so the live value is the one that is checked.
+
+    It refuses on an **unproven** verdict too, including a row whose evidence carries no `owner`
+    — one opened before this key existed. An approval authorises a change to *this* account by
+    *that* credential, and evidence that cannot say whether the pair holds does not carry the
+    authorisation forward (V86).
 
     The database session closes before the caller's WHM round trips, T21's rule — and here it
     matters twice over, because the executor's own session is open for the whole of the call.
@@ -644,13 +756,33 @@ async def _resolve_change_target(
     if server_id is None or not isinstance(username, str) or not username:
         return tool_failure(ERROR_SERVER_UNAVAILABLE, MESSAGE_SERVER_UNAVAILABLE)
 
+    owner = request.evidence.get(EVIDENCE_OWNER)
     async with context.session_factory() as session:
         repository = context.whm_server_repository_factory(session)
         server = await repository.get_by_id(server_id)
         if server is None:
             return tool_failure(ERROR_SERVER_UNAVAILABLE, MESSAGE_SERVER_UNAVAILABLE)
+        api_username = server.api_username
         client = context.whm_client_factory(server, cipher=context.secret_cipher)
         server_name = server.name
+
+    ownership = classify_ownership(owner=owner, api_username=api_username)
+    if not ownership.is_proven:
+        return refuse_unproven_ownership(
+            ownership=ownership,
+            tool_name=request.tool_name,
+            site=SITE_RUNNER,
+            username=username,
+            owner=owner,
+            api_username=api_username,
+            # What the model asked for, as the gate recorded it (T33). The resolved row's name
+            # is a reseller's `api_username` by V109(b) and stays out of the answer; it goes to
+            # the log instead.
+            server_ref=request.arguments.get("server_ref"),
+            server_name=server_name,
+            server_id=str(server_id),
+            action_request_id=str(request.action_request_id),
+        )
 
     return _ChangeTarget(client=client, username=username, server_name=server_name)
 
@@ -726,13 +858,20 @@ __all__ = [
     "DESCRIPTION_WHM_SUSPEND_ACCOUNT",
     "DESCRIPTION_WHM_UNSUSPEND_ACCOUNT",
     "ERROR_ACCOUNT_NOT_FOUND",
+    "ERROR_ACCOUNT_OWNER_UNKNOWN",
     "ERROR_POSTFLIGHT_FAILED",
     "ERROR_SERVER_UNAVAILABLE",
     "ERROR_SUSPENSION_LOCKED",
     "ERROR_USERNAME_REQUIRED",
+    "ERROR_WRONG_CREDENTIAL_FOR_OWNER",
     "EVIDENCE_ACCOUNT",
+    "EVIDENCE_API_USERNAME",
+    "EVIDENCE_HOST",
+    "EVIDENCE_OWNER",
     "EVIDENCE_SERVER_ID",
     "EVIDENCE_SERVER_NAME",
+    "EVIDENCE_UNRECORDED",
+    "LOG_OWNERSHIP_REFUSED",
     "LOG_SUSPEND_NO_OP",
     "LOG_SUSPEND_UNVERIFIED",
     "LOG_UNSUSPEND_LOCKED",
@@ -752,6 +891,7 @@ __all__ = [
     "build_whm_account_change_runners",
     "build_whm_suspend_runner",
     "build_whm_unsuspend_runner",
+    "classify_ownership",
     "collect_account_state",
     "match_account",
     "register_whm_account_change_tools",

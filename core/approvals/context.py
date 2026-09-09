@@ -6,7 +6,8 @@ writer and several readers, and the keys are the whole of it:
 
 - `noa_api.mcp_tools.change_gate.build_approval_context` writes it (T33);
 - `core.approvals.decisions.LockedActionRequest` reads the arguments into an approved change's
-  audit row (T37, V47);
+  audit row (T37, V47), and beside them the four identity fields §V108 requires that row to
+  name — the only reader that takes anything out of `evidence` by whitelist;
 - `core.approvals.results` reads them again for `noa_get_action_result` (T63);
 - T41's card reads all three;
 - `core.approvals.execution` reads the arguments *and* the evidence, because an approved
@@ -48,6 +49,53 @@ CONTEXT_REQUESTER_KEY: Final = "requester"
 CONTEXT_EVIDENCE_KEY: Final = "evidence"
 
 
+# Where the identity fields land inside `tool_runs.args` for an approved change (§V108). One
+# nested key rather than four flat ones, because `args` is otherwise "whichever tool's own
+# parameters" (T35) and an auditor must not read `api_username` as something a model passed.
+AUDIT_CREDENTIAL_KEY: Final = "credential"
+
+# The evidence keys that go under it — a WHITELIST, never a passthrough. `evidence` is a
+# free-form preflight payload whose shape each CHANGE tool decides, so copying it wholesale
+# would put whatever a future tool records into a second table, including an account summary
+# that belongs on the card and nowhere else. Four names, matching §V108's four: the row's name,
+# its API username, its host, and the account's owner.
+AUDIT_IDENTITY_KEYS: Final[tuple[str, ...]] = ("server", "api_username", "host", "owner")
+
+# The one that decides whether there is a credential to record at all. Not "any of the four":
+# `server` is the evidence key five other CHANGE tools already write for the machine they act on
+# (the two firewall tools, the two Proxmox tools and PMG's whitelist), so keying off the whole
+# set would give every one of them a block labelled `credential` holding a machine name — the
+# exact misreading the nested key exists to prevent. `api_username` answers "which identity
+# acted", and only a tool that records one has a credential worth naming.
+AUDIT_CREDENTIAL_REQUIRED_KEY: Final = "api_username"
+
+
+def audit_identity_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any]:
+    """Which credential an approved change acts as, off the evidence the gate stored (§V108).
+
+    A privileged write whose credential is not recorded is not auditable, and `tool_runs` is the
+    table the audit surface reads — `action_receipts` answers a different reader, and a fact that
+    needs a join nobody performs is recorded rather than reported.
+
+    `{}` unless the evidence names an `api_username`, which today is the WHM account CHANGE pair
+    and nothing else. That gate is the difference between "additive" and "a `credential` block on
+    every approval in the system" — see `AUDIT_CREDENTIAL_REQUIRED_KEY` for why the `server` key
+    cannot carry it.
+
+    Non-blank strings only. A blank is absence, the rule `core.integrations.whm.accounts` states
+    one layer down, and a field present-but-empty must not read as a recorded identity.
+    """
+    evidence = evidence_from_context(approval_context)
+    if not _named(evidence.get(AUDIT_CREDENTIAL_REQUIRED_KEY)):
+        return {}
+    return {key: evidence[key] for key in AUDIT_IDENTITY_KEYS if _named(evidence.get(key))}
+
+
+def _named(value: object) -> bool:
+    """Whether `value` is a name rather than an absence — non-blank `str` (V86)."""
+    return isinstance(value, str) and bool(value.strip())
+
+
 def arguments_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any]:
     """The tool arguments as the gate redacted them, or `{}` (V8, V33).
 
@@ -75,9 +123,13 @@ def evidence_from_context(approval_context: Mapping[str, Any]) -> dict[str, Any]
 
 
 __all__ = [
+    "AUDIT_CREDENTIAL_KEY",
+    "AUDIT_CREDENTIAL_REQUIRED_KEY",
+    "AUDIT_IDENTITY_KEYS",
     "CONTEXT_ARGUMENTS_KEY",
     "CONTEXT_EVIDENCE_KEY",
     "CONTEXT_REQUESTER_KEY",
     "arguments_from_context",
+    "audit_identity_from_context",
     "evidence_from_context",
 ]

@@ -103,6 +103,16 @@ class AuditToolRunDetailResponse(AuditToolRunListItemResponse):
     call took no arguments; the column's server default says the same thing (T35), because "took
     none" and "not recorded" must not read alike in an audit view.
 
+    One key in there is **not** a parameter: an approved CHANGE that acts as a named credential
+    carries `credential`, holding which identity acted — the server row's name, its
+    `api_username`, its host and the account's owner (§V108,
+    `core.approvals.context.AUDIT_IDENTITY_KEYS`). It is nested under its own key precisely so it
+    cannot be read as something a model passed. Absent for every change that does not record an
+    `api_username`, which today is every tool but the WHM account pair: a firewall or Proxmox
+    change records the machine it acted on and no identity, and a block labelled `credential`
+    holding a machine name would be worse than no block. Never the API token, which is redacted
+    by key name before any write and is not on that whitelist in the first place (V8).
+
     `requestedByUserId` is `null` once the operator's row is deleted (`SET NULL`, T35) — the run
     survives its requester, which is the whole reason that FK is not a cascade.
     """
