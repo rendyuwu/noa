@@ -43,11 +43,18 @@ const RETRY_NOTES: Record<string, string> = {
 export function SignInNotice({
   signInUrl,
   onRetry,
+  frameOrigin,
 }: {
   /** `null` when no usable address is configured (`lib/sign-in.ts`) — then no link is rendered. */
   signInUrl: string | null
   /** Re-reads the subject. Resolves to whatever the read answered, so this notice can report it. */
   onRetry: () => Promise<{ kind: string }>
+  /**
+   * Passed straight through to `Notice`, which measures this state and asks the host for a frame it
+   * fits in. It matters most here: the printed address below is the door the sandbox cannot withhold
+   * (V94), and a frame too short to show it leaves that door off screen.
+   */
+  frameOrigin: string | null
 }) {
   const [retrying, setRetrying] = useState(false)
   const [note, setNote] = useState<string | null>(null)
@@ -72,6 +79,7 @@ export function SignInNotice({
     <Notice
       title="Cannot authenticate here"
       body="NOA does not recognise this session. Sign in to NOA in a new tab, then try again — this page cannot sign you in."
+      frameOrigin={frameOrigin}
     >
       <div className={styles.actions}>
         {signInUrl ? (

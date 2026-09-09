@@ -5,9 +5,13 @@
  * eslint firewall refuses `@gio/*` (§T.40 as built), and adopting BIGSU on the embed would be a
  * deliberate change to that rather than an import.
  *
- * Compact because the frame LibreChat gives this document is small and fixed-height, and
- * self-scrolling because a document that outgrows its frame has to own the overflow — the parent
- * cannot, and an iframe that clips its Approve button is a card nobody can answer.
+ * Compact because the frame LibreChat gives this document is small, and self-scrolling because a
+ * document that outgrows its frame has to own the overflow — the parent cannot, and an iframe that
+ * clips its Approve button is a card nobody can answer.
+ *
+ * The card also asks the host for a frame as tall as its content (`components/frame-sizer.tsx`), so
+ * in the normal case the scrolling below is the fallback rather than the experience. It stays the
+ * fallback: the height is a request, and a host is free to ignore it.
  */
 
 .card {
@@ -18,6 +22,25 @@
   /* The scroll container. `100dvh` rather than `100vh`: the frame is the viewport here. */
   max-height: 100dvh;
   overflow-y: auto;
+  /*
+   * The gutter is reserved whether or not the scrollbar is showing, and that is what kills the
+   * self-sizing oscillation rather than damping it (`components/frame-sizer.tsx`): the card asks
+   * for a frame as tall as its content, the taller frame REMOVES the scrollbar, that widens the
+   * content box by ~15px, wrapped lines fit, the measurement shrinks, the frame shrinks, and the
+   * scrollbar comes back. `.factValue` is monospace with `word-break: break-word`, which is exactly
+   * the content that gains or loses a whole line on a 15px width change. With the gutter reserved
+   * the width term is constant and the reflow step never happens.
+   *
+   * It costs 15px of content width on every platform, and on one whose scrollbars are overlays —
+   * this lane's headless browser, and macOS by default — it buys nothing for that, because a
+   * scrollbar takes no layout space there and the width term was already constant (measured in
+   * `e2e/frame-size-card.browser.e2e.ts`); kept because an operator reads this in a desktop browser,
+   * where a scrollbar does take layout space and the loop above is real.
+   *
+   * No floor is needed on this stylesheet, unlike the table's: this box scrolls the whole card, so
+   * there is no inner region for flex resolution to collapse.
+   */
+  scrollbar-gutter: stable;
 }
 
 .header {

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { UPSTREAM_ORIGIN } from '../playwright.config'
+
 /**
  * The session hop, in a real browser (§T.44, V40).
  *
@@ -14,7 +16,10 @@ import { expect, test } from '@playwright/test'
  * hop to the API at all.
  */
 
-const UPSTREAM = 'http://127.0.0.1:8099'
+// The stub's own address, off the config that starts it rather than repeated here (V66). It was a
+// literal until the harness ports became overridable, at which point the copy pointed at whatever
+// else happened to be on 8099 and this file's `/__hits` reads came back as somebody's HTML.
+const UPSTREAM = UPSTREAM_ORIGIN
 const ID = '9f1c2b7e-0000-4000-8000-000000000000'
 
 type EchoedRequest = { status: number; body: { cookie: string | null; authorization: string | null } }

@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ResultTable, ResultTableLoad } from '@/lib/tables/table'
 
@@ -41,8 +41,16 @@ const TABLE: ResultTable = {
   expiresAt: '2026-08-10T09:00:00+00:00',
 }
 
-function renderView(load: ResultTableLoad, signInUrl: string | null = 'https://noa.test/sign-in') {
-  return render(<TableView initial={load} signInUrl={signInUrl} />)
+function renderView(
+  load: ResultTableLoad,
+  signInUrl: string | null = 'https://noa.test/sign-in',
+  // No frame origin by default, which switches the frame sizer off: these specs are about what the
+  // surface renders, and the sizer's rules have their own lane
+  // (`src/components/frame-sizer.test.tsx`). One spec below passes an origin, because "this page
+  // mounts a sizer at all" is a claim about this file's subject.
+  frameOrigin: string | null = null,
+) {
+  return render(<TableView initial={load} signInUrl={signInUrl} frameOrigin={frameOrigin} />)
 }
 
 function tableLoad(overrides: Partial<ResultTable> = {}): ResultTableLoad {
@@ -169,5 +177,21 @@ describe('the states that are not a table', () => {
 
     expect(screen.getByRole('heading', { name: /could not load this table/i })).toBeDefined()
     expect(screen.queryByRole('table')).toBeNull()
+  })
+
+  it('asks the host for a frame the listing fits in', () => {
+    // The wiring, and only the wiring: that this surface mounts a sizer and that a height leaves
+    // the document. The bound on that number, and the rows the scroller hides that go into it, are
+    // the sizer's own rules (`src/components/frame-sizer.test.tsx`); jsdom computes no layout, so
+    // there is nothing here for a height assertion to be about.
+    const post = vi.spyOn(window.parent, 'postMessage')
+    renderView(tableLoad(), null, 'https://chat.noa.internal')
+
+    expect(post).toHaveBeenCalledTimes(1)
+    const [message, target] = post.mock.calls[0]!
+    expect((message as { type: string }).type).toBe('ui-size-change')
+    expect(target).toBe('https://chat.noa.internal')
+
+    post.mockRestore()
   })
 })

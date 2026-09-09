@@ -1,6 +1,7 @@
 import { headers } from 'next/headers'
 
 import { loadApprovalCard } from '@/lib/approvals/detail'
+import { resolveFrameTargetOrigin } from '@/lib/embed/frame-origin'
 import { resolveSignInUrl } from '@/lib/sign-in'
 
 import { CardView } from './card-view'
@@ -26,6 +27,13 @@ import { CardView } from './card-view'
  * comes from a server-side variable with no `NEXT_PUBLIC_*` twin, so the page reads it and passes it
  * down. Resolved per request rather than in `next.config.ts`, because `output: 'standalone'` never
  * runs that config at runtime — the framing header is baked there on purpose (V41), and this is not.
+ *
+ * **The frame origin follows that precedent with one difference worth naming.** The card asks the
+ * host to size its frame (`components/frame-sizer.tsx`) and the message needs a target origin, which
+ * is the same value the `frame-ancestors` header carries (V41) — so unlike the sign-in address, this
+ * one *does* have a build-time twin it has to agree with, and a request-time read can disagree with
+ * it. `lib/embed/frame-origin.ts` holds both halves of that: why the read is wrapped, and what a
+ * disagreement looks like from an operator's side.
  */
 
 // Reading `headers()` already opts this route out of prerendering; saying so as well means a
@@ -42,6 +50,7 @@ export default async function ApprovalCardPage({ params }: { params: Promise<{ i
       initial={await loadApprovalCard(id, { cookie })}
       actionRequestId={id}
       signInUrl={resolveSignInUrl(process.env)}
+      frameOrigin={resolveFrameTargetOrigin(process.env)}
     />
   )
 }

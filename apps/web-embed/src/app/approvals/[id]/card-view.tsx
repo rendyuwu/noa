@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   type ApprovalCard,
@@ -10,8 +10,10 @@ import {
   statusLabel,
 } from '@/lib/approvals/card'
 import { fetchApprovalCard, isRunning, isStalled, isTerminal, pollIntervalMs } from '@/lib/approvals/poll'
+import { CARD_FRAME_POLICY } from '@/lib/embed/frame-size'
 
 import { DecisionControls } from './decision-controls'
+import { FrameSizer } from '@/components/frame-sizer'
 import { Notice } from '@/components/notice'
 import { SignInNotice } from '@/components/sign-in-notice'
 import styles from './card.module.css'
@@ -38,6 +40,14 @@ import styles from './card.module.css'
  * beside it (`sign-in-notice.tsx`), which is a link-out and a retry and never a form in the frame
  * (V42). A transient failure is the one answer that changes nothing: the card stays, the loop stays,
  * because "NOA could not be reached just now" is not "there is nothing more to wait for".
+ *
+ * **It asks the host for a frame it fits in** (`components/frame-sizer.tsx`). The box LibreChat
+ * opens with is small and fixed, and this card has to be worth one screenshot: one shot, no
+ * scrolling, legible at the frame's width. So the card measures itself and posts its content
+ * height, which the host applies verbatim — measured, and there is no host-side clamp, so the
+ * ceiling in `lib/embed/frame-size.ts` is a rail this app holds rather than one the host holds for
+ * it. Every state below that is a section appearing (the Execution block, the receipt) is also a
+ * new height, which is why the measurement is re-taken on render rather than once at mount.
  *
  * This is a client component and everything it renders is inside it, so the card has exactly one
  * renderer. A live region updated separately from a server-rendered one would be two descriptions
@@ -168,34 +178,53 @@ function Outcome({ receipt }: { receipt: ApprovalReceipt }) {
   )
 }
 
-function Card({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
+function Card({
+  card,
+  stalled,
+  frameOrigin,
+}: {
+  card: ApprovalCard
+  stalled: boolean
+  frameOrigin: string | null
+}) {
+  const scrollContainer = useRef<HTMLElement>(null)
+
   return (
-    <main className={styles.card}>
-      <header className={styles.header}>
-        <h1 className={styles.tool}>{card.toolName}</h1>
-        <p className={styles.status}>{statusLabel(card.status)}</p>
-      </header>
+    <>
+      <main className={styles.card} ref={scrollContainer}>
+        <header className={styles.header}>
+          <h1 className={styles.tool}>{card.toolName}</h1>
+          <p className={styles.status}>{statusLabel(card.status)}</p>
+        </header>
 
-      <Provenance card={card} />
-      <KeyValues title="Arguments" values={card.arguments} />
-      {/* The in-process preflight (C9, V17): the before-state this card exists to show, and the
-          one thing on the row the model is never told (`core.approvals.results`). Off the receipt
-          once there is one — see `Outcome` for why that is one heading and not two. */}
-      <KeyValues title="Before state" values={card.receipt?.before ?? card.evidence} />
-      <Run card={card} stalled={stalled} />
-      {card.receipt ? <Outcome receipt={card.receipt} /> : null}
+        <Provenance card={card} />
+        <KeyValues title="Arguments" values={card.arguments} />
+        {/* The in-process preflight (C9, V17): the before-state this card exists to show, and the
+            one thing on the row the model is never told (`core.approvals.results`). Off the receipt
+            once there is one — see `Outcome` for why that is one heading and not two. */}
+        <KeyValues title="Before state" values={card.receipt?.before ?? card.evidence} />
+        <Run card={card} stalled={stalled} />
+        {card.receipt ? <Outcome receipt={card.receipt} /> : null}
 
-      {canDecide(card) && card.csrf ? (
-        <DecisionControls actionRequestId={card.actionRequestId} csrf={card.csrf} />
-      ) : (
-        // No reason box and no buttons once nothing may be decided (V38's family): a live
-        // Approve button over a decided or expired request is an action that was never
-        // available, shown as one that was refused.
-        <p className={styles.empty}>
-          This request is no longer awaiting a decision, so it cannot be answered from here.
-        </p>
-      )}
-    </main>
+        {canDecide(card) && card.csrf ? (
+          <DecisionControls actionRequestId={card.actionRequestId} csrf={card.csrf} />
+        ) : (
+          // No reason box and no buttons once nothing may be decided (V38's family): a live
+          // Approve button over a decided or expired request is an action that was never
+          // available, shown as one that was refused.
+          <p className={styles.empty}>
+            This request is no longer awaiting a decision, so it cannot be answered from here.
+          </p>
+        )}
+      </main>
+      {/* Outside `main` deliberately: a sizer that was a flex child of the box it measures would
+          collect a `gap` of its own and change the number it reports. */}
+      <FrameSizer
+        container={scrollContainer}
+        policy={CARD_FRAME_POLICY}
+        targetOrigin={frameOrigin}
+      />
+    </>
   )
 }
 
@@ -203,6 +232,7 @@ export function CardView({
   initial,
   actionRequestId,
   signInUrl,
+  frameOrigin,
 }: {
   initial: ApprovalCardLoad
   /**
@@ -215,6 +245,12 @@ export function CardView({
   actionRequestId: string
   /** Where an operator signs in, or `null` when nothing usable is configured (`lib/sign-in.ts`). */
   signInUrl: string | null
+  /**
+   * The origin the host frames this card from, or `null` when there is not a trustworthy one
+   * (`lib/embed/frame-origin.ts`). `null` means the frame keeps whatever height the host gave it
+   * and the card scrolls itself, which is what it does today.
+   */
+  frameOrigin: string | null
 }) {
   const [live, setLive] = useState<LiveCard>({ load: initial, runPolls: 0 })
 
@@ -270,14 +306,24 @@ export function CardView({
   const { load, runPolls } = live
 
   if (load.kind === 'card') {
-    return <Card card={load.card} stalled={isStalled(load.card, runPolls)} />
+    return (
+      <Card
+        card={load.card}
+        stalled={isStalled(load.card, runPolls)}
+        frameOrigin={frameOrigin}
+      />
+    )
   }
 
+  // Every state below is a notice, and each one carries `frameOrigin` for the same reason the card
+  // above does: it measures itself and asks the host for a frame it fits in. The 401 is the one that
+  // needs it — its printed address is the escape hatch V94 makes the rule, and at the box the host
+  // opens with that address started below the fold (`components/notice.tsx`).
   if (load.kind === 'unauthenticated') {
     // V38, V42: an explicit state, never a blank card and never a live Approve button — and §T.43's
     // way out of it, which is a top-level link-out plus a retry. This app has no login page and no
     // LDAP form, and nothing in that notice navigates the frame.
-    return <SignInNotice signInUrl={signInUrl} onRetry={retryRead} />
+    return <SignInNotice signInUrl={signInUrl} onRetry={retryRead} frameOrigin={frameOrigin} />
   }
 
   if (load.kind === 'not-found') {
@@ -287,6 +333,7 @@ export function CardView({
       <Notice
         title="Request not available"
         body="This approval request does not exist, or it is not yours to decide."
+        frameOrigin={frameOrigin}
       />
     )
   }
@@ -295,6 +342,7 @@ export function CardView({
     <Notice
       title="Could not load this request"
       body="NOA could not be reached, or answered unexpectedly. Reload this card; contact an administrator if it continues."
+      frameOrigin={frameOrigin}
     />
   )
 }

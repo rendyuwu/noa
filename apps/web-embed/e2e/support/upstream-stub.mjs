@@ -39,6 +39,28 @@ const RECOVERS_ID = process.env.STUB_RECOVERS_ID ?? ''
 const RUN_RESULT = process.env.STUB_RUN_RESULT ?? ''
 const RECEIPT_AFTER = process.env.STUB_RECEIPT_AFTER ?? ''
 
+/**
+ * The card whose values REFLOW, for the oscillation the self-sizing could have shipped.
+ *
+ * `.factValue` is monospace with `word-break: break-word`, so its line count depends on the width
+ * of the card's content box — and that width changes by the width of a scrollbar when the frame
+ * grows past the content. That is the loop: taller frame, no overflow, scrollbar removed, box
+ * wider, wrapped lines fit, measurement drops, frame shrinks, scrollbar back.
+ *
+ * The lengths are staggered on purpose, so at least one value sits near a line boundary at the
+ * frame's width instead of all of them wrapping comfortably in the middle of a line.
+ */
+const REFLOW_ID = process.env.STUB_REFLOW_ID ?? ''
+
+function reflowArguments() {
+  const unit = 'noa-reflow-probe-value-'
+  const argument = {}
+  for (const [index, length] of [74, 116, 158, 200].entries()) {
+    argument[`payload_${index}`] = unit.repeat(12).slice(0, length)
+  }
+  return argument
+}
+
 /** `GET` reads per id, so the polling card can answer differently the second time. */
 const reads = {}
 
@@ -59,14 +81,32 @@ const TABLE_NOT_FOUND_TOKEN = process.env.STUB_TABLE_NOT_FOUND_TOKEN ?? ''
 const TABLE_NEEDS_COOKIE_TOKEN = process.env.STUB_TABLE_NEEDS_COOKIE_TOKEN ?? ''
 const TABLE_TOTAL_ROWS = Number(process.env.STUB_TABLE_TOTAL_ROWS ?? 1240)
 
+/**
+ * The listing whose size started the self-sizing work: every matched row on one page.
+ *
+ * A real count rather than a round one. At the row height `table.module.css` produces — 0.8125rem
+ * type on a 1.5 line-height with `--noa-space-2` of vertical padding, about 36px — this is on the
+ * order of 15,000px of natural height, which the host would apply verbatim. What the browser lane
+ * asks of it is that the request stays bounded and the rows keep scrolling inside the frame.
+ */
+const TABLE_LONG_TOKEN = process.env.STUB_TABLE_LONG_TOKEN ?? ''
+const TABLE_LONG_ROWS = Number(process.env.STUB_TABLE_LONG_ROWS ?? 438)
+
 /** Two rows, whatever the total says — a capped page holds fewer rows than it matched (V85). */
 const TABLE_ROWS = [
   { user: 'acmeco', domain: 'acme.example' },
   { user: 'betaco', domain: 'beta.example' },
 ]
 
+function longTableRows() {
+  return Array.from({ length: TABLE_LONG_ROWS }, (_unused, index) => ({
+    user: `account-${String(index).padStart(4, '0')}`,
+    domain: `site-${String(index).padStart(4, '0')}.example`,
+  }))
+}
+
 /** The body the API's `GET /tables/{token}` sends (§I.embed, V64, V85). */
-function tableBody(token, { truncated }) {
+function tableBody(token, { truncated, rows = TABLE_ROWS }) {
   return {
     token,
     tool_name: 'whm_list_accounts',
@@ -74,11 +114,11 @@ function tableBody(token, { truncated }) {
       { key: 'user', label: 'Account' },
       { key: 'domain', label: 'Primary domain' },
     ],
-    rows: TABLE_ROWS,
+    rows,
     // The count before the cut when capped, and the rows themselves when not: the two states V85
     // separates, served as two tokens so a spec can assert the page tells them apart.
-    total_rows: truncated ? TABLE_TOTAL_ROWS : TABLE_ROWS.length,
-    stored_rows: TABLE_ROWS.length,
+    total_rows: truncated ? TABLE_TOTAL_ROWS : rows.length,
+    stored_rows: rows.length,
     truncated,
     created_at: '2026-08-09T09:00:00+00:00',
     expires_at: '2126-08-10T09:00:00+00:00',
@@ -233,6 +273,14 @@ const server = createServer((request, response) => {
       return
     }
 
+    if (id === REFLOW_ID) {
+      json(response, 200, {
+        ...cardBody(id, { pending: true }),
+        arguments: reflowArguments(),
+      })
+      return
+    }
+
     if (id === NOT_FOUND_ID) {
       json(response, 404, {
         error_code: 'action_request_not_found',
@@ -305,7 +353,10 @@ const server = createServer((request, response) => {
     }
 
     json(response, 200, {
-      ...tableBody(token, { truncated: token === TABLE_TRUNCATED_TOKEN }),
+      ...tableBody(token, {
+        truncated: token === TABLE_TRUNCATED_TOKEN,
+        rows: token === TABLE_LONG_TOKEN ? longTableRows() : TABLE_ROWS,
+      }),
       // Echoed for the same reason the card body echoes it: a spec can then assert the operator's
       // cookie reached the API through the page's own server-side read.
       seen_cookie: request.headers['cookie'] ?? null,

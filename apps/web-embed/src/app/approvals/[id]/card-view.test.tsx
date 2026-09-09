@@ -38,9 +38,22 @@ function load(body: Record<string, unknown>): ApprovalCardLoad {
  * The id comes from the page's own URL parameter rather than off the card (§T.43): a 401 answer
  * carries no card, and a retry offered from that state has to know what to re-read.
  */
-function renderCardView(initial: ApprovalCardLoad, signInUrl: string | null = SIGN_IN) {
+function renderCardView(
+  initial: ApprovalCardLoad,
+  signInUrl: string | null = SIGN_IN,
+  // No frame origin by default, which switches the frame sizer off: these specs are about the
+  // loop, and the sizer's own rules have their own lane (`src/components/frame-sizer.test.tsx`).
+  // One spec below passes an origin, because "the card renders a sizer at all" is a claim about
+  // this file's subject and nothing else would catch its removal.
+  frameOrigin: string | null = null,
+) {
   return render(
-    <CardView initial={initial} actionRequestId={CARD_ID} signInUrl={signInUrl} />,
+    <CardView
+      initial={initial}
+      actionRequestId={CARD_ID}
+      signInUrl={signInUrl}
+      frameOrigin={frameOrigin}
+    />,
   )
 }
 
@@ -340,6 +353,21 @@ describe('CardView', () => {
     expect(container.querySelector('form')).toBeNull()
     await tick(POLL_INTERVAL_PENDING_MS)
     expect(container.querySelector('form')).toBeNull()
+  })
+
+  it('asks the host for a frame the card fits in', async () => {
+    // The wiring, and only the wiring: that this surface mounts a sizer and that a height leaves
+    // the document. What the number must be, when it may change, and when it must stop are the
+    // sizer's own rules and are asserted in `src/components/frame-sizer.test.tsx`; what nothing
+    // else would catch is this component quietly losing its sizer in an edit.
+    const post = vi.spyOn(window.parent, 'postMessage')
+    stubPolls(() => Response.json(cardBody()))
+    renderCardView(load(cardBody()), SIGN_IN, 'https://chat.noa.internal')
+
+    expect(post).toHaveBeenCalledTimes(1)
+    const [message, target] = post.mock.calls[0]!
+    expect((message as { type: string }).type).toBe('ui-size-change')
+    expect(target).toBe('https://chat.noa.internal')
   })
 
   it.each([

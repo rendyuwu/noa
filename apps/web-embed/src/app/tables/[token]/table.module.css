@@ -4,10 +4,14 @@
  * Hand-written, reading the tokens `src/app/globals.css` defines — no design system here, the
  * eslint firewall refuses `@gio/*` (§T.40 as built).
  *
- * Self-scrolling in both directions, unlike the card: the frame LibreChat gives this document is
- * small and fixed-height, and a listing is wide as well as long. A table that clipped its own
- * columns would be a page an operator cannot read the right-hand side of, and the parent frame
- * cannot scroll on its behalf.
+ * Self-scrolling in both directions, unlike the card: a listing is wide as well as long, and a
+ * table that clipped its own columns would be a page an operator cannot read the right-hand side
+ * of, while the parent frame cannot scroll on its behalf.
+ *
+ * The frame is no longer fixed-height — the page asks the host to make it as tall as its content up
+ * to a stated ceiling (`components/frame-sizer.tsx`, `lib/embed/frame-size.ts`) — but every rule
+ * below still has to hold in the frame the host opens with, and in whatever frame a host that
+ * ignores the message leaves behind.
  */
 
 .page {
@@ -16,7 +20,40 @@
   gap: var(--noa-space-3);
   padding: var(--noa-space-4);
   max-height: 100dvh;
-  overflow: hidden;
+  /*
+   * `auto`, not `hidden`. This element is the flex container, so when `.scroller` refuses to shrink
+   * below its floor the total can exceed the frame — and `hidden` would CLIP the overflow rather
+   * than scroll it. What sits last in flow is the expiry line, the sentence that tells an operator
+   * whether this parked listing is still valid, so clipping is the one thing this box must not do:
+   * answering "no rows" with "no expiry" is not a fix.
+   *
+   * In the normal case nothing overflows, because the page asks the host for a frame it fits in
+   * (`components/frame-sizer.tsx`) and this scrollbar never appears. It is the degraded path — a
+   * host that stops honouring the message — that this line is for.
+   */
+  overflow: auto;
+  /*
+   * The gutter is reserved whether or not a scrollbar is showing, and that is what kills the
+   * self-sizing oscillation rather than damping it: a frame that grows until its content fits
+   * REMOVES the scrollbar, which widens the content box by ~15px, which lets wrapped lines fit,
+   * which shrinks the measurement, which shrinks the frame, which brings the scrollbar back. With
+   * the gutter reserved the width term is constant and the reflow step never happens.
+   *
+   * The wrapping text on this surface is the header and the footer, not the rows: cells are
+   * `white-space: nowrap`, but `.tool` is `word-break: break-all` and both `.bound` and `.footer`
+   * wrap — so this element's width does change this page's line count, and the declaration is
+   * load-bearing. Measured, sweeping the bound line from 40 to 200 characters: seven lengths in that
+   * range make the page one whole line (about 20px) taller with the gutter reserved than without.
+   * None of the fixtures the browser lane serves sits on one of those boundaries — the capped page's
+   * bound is two lines at either width, and its total is 271px both ways — so no assertion about a
+   * posted height can hold this line, and `e2e/frame-size.browser.e2e.ts` asserts the computed value
+   * instead.
+   *
+   * It carries the same cost as the card's: 15px of content width everywhere, buying nothing on a
+   * platform whose scrollbars are overlays and never take layout space (measured in
+   * `e2e/frame-size-card.browser.e2e.ts`), and kept for the desktop browsers where they do.
+   */
+  scrollbar-gutter: stable;
 }
 
 .header {
@@ -53,6 +90,37 @@
   overflow: auto;
   border: 1px solid var(--noa-border);
   border-radius: var(--noa-radius);
+  /*
+   * The floor, and the whole reason a 438-row listing showed no rows at all.
+   *
+   * This element is a flex child of `.page`, `flex-shrink: 1` is the initial value, and a flex item
+   * whose own `overflow` is not `visible` has an automatic minimum size of zero — so in a frame
+   * shorter than the page, flex resolution was free to shrink the rows to nothing while the header
+   * and the footer kept their content minimum. An explicit floor is what refuses that.
+   *
+   * 7rem is the sticky column-name row plus about two data rows at this stylesheet's metrics (~34px
+   * for the heading row, ~36px for a data row): the smallest box in which this surface is still a
+   * listing rather than a heading over nothing.
+   */
+  min-height: 7rem;
+  /*
+   * And nothing in the other direction: no `flex-grow`, and the absence is measured rather than
+   * assumed. `.page` has `max-height: 100dvh` and no definite height, so its used height is its
+   * content height — and a flex container at `height: auto` has no positive free space to hand out.
+   * At pinned 320px and 640px frames, `flex-grow: 1` and `flex-grow: 0` give this box the same
+   * geometry to the pixel (112px tall, the expiry line ending at 255px in both).
+   *
+   * Giving it an effect would take `min-height: 100dvh` on `.page`, and that changes what this page
+   * ASKS ITS HOST FOR from its content height to the host's frame height: measured, a two-row
+   * listing in a 640px frame then posts 640 instead of 271 and renders this element 481px tall
+   * around two rows. An empty bordered box is a worse answer than the whitespace it removes, and the
+   * posted number is `lib/embed/frame-size.ts`'s contract. Slack under a short page belongs to the
+   * host.
+   *
+   * No `scrollbar-gutter` here either, unlike `.page`: these cells are `white-space: nowrap`, so
+   * this box's own width cannot change a line count and cannot feed the oscillation. A reserved
+   * gutter would be a permanent empty strip beside a table that already scrolls sideways.
+   */
 }
 
 .table {

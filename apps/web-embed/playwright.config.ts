@@ -10,15 +10,40 @@ import { defineConfig, devices } from '@playwright/test'
 // else started passes by accident on a developer's machine and fails in CI.
 const BASE_URL = process.env.EMBED_BASE_URL ?? 'http://localhost:3001'
 
+/**
+ * A port for one of the two servers this harness stands up itself.
+ *
+ * Overridable, unlike 3001 above. That one is the contract — the API builds approval URLs from it
+ * and the cookie is domain-scoped (V40) — while these two are private to this file: the stub
+ * upstream and the stand-in parent are addressed only through the constants exported below, so a
+ * different number changes nothing any spec asserts. They are overridable because `webServer`
+ * refuses to start on a port something else holds, and a machine that has something else on 8099
+ * would otherwise be a machine where this whole lane is skipped rather than run — which is the
+ * shape V102 refuses one layer up: a suite reporting its own absence as success. Measured: a
+ * developer box here had an unrelated static server parked on 8099 for days.
+ *
+ * **The defaults are the run that matters, and nothing in this repository sets either variable.**
+ * So CI is a default-port run by construction, and this is an escape hatch for one developer box
+ * rather than a configuration surface: a green run with an override set is evidence about the
+ * specs, and no evidence at all that the two default numbers are free on the machine that runs
+ * them next.
+ * Anyone who needed the override on their own box should say so, because the collision is a fact
+ * about that box and not about this file.
+ */
+function harnessPort(variable: string, fallback: number): number {
+  const value = Number(process.env[variable])
+  return Number.isInteger(value) && value > 0 && value < 65_536 ? value : fallback
+}
+
 // The proxy's upstream for e2e (§T.44). A stub, not the real API: what these specs
 // ask about is the hop, and a real API would make Postgres or LDAP being down read
 // as a broken proxy.
-const UPSTREAM_PORT = 8099
+const UPSTREAM_PORT = harnessPort('NOA_E2E_UPSTREAM_PORT', 8099)
 
 // The stand-in for LibreChat: a page that frames the embed (§T.45). Reached under two hostnames
 // that both resolve here, so the parent origin is the only variable between the allowed case and
 // the refused one.
-const PARENT_PORT = 8110
+const PARENT_PORT = harnessPort('NOA_E2E_PARENT_PORT', 8110)
 
 // The origin the framing specs treat as LibreChat's (§T.45, V41). `http`, not the deployed
 // `https://chat.noa.internal`: this harness serves plain HTTP, and an https parent framing an http
@@ -80,6 +105,15 @@ export const APPROVAL_IDS = {
    * and what a retry can never escape. This one is the operator who went and signed in.
    */
   recovers: '9f1c2b7e-0000-4000-8000-000000000402',
+  /**
+   * The card whose long monospace values re-wrap when the frame's width changes.
+   *
+   * The fixture for the oscillation self-sizing could have shipped: a scrollbar appearing and
+   * disappearing moves the content box by its own width, and `.factValue` gains or loses a whole
+   * line on that. Its own id because every other card here is short enough that the loop never
+   * starts, which would make a convergence spec pass without measuring anything.
+   */
+  reflow: '9f1c2b7e-0000-4000-8000-000000000005',
 } as const
 
 /**
@@ -106,11 +140,27 @@ export const TABLE_TOKENS = {
    * cookie dropped, which is a test that cannot fail for the reason it was written (V87).
    */
   needsCookie: 'e2e-table-cookie-000000000000000000000003',
+  /**
+   * The whole listing whose size started the self-sizing work: 438 rows, none dropped.
+   *
+   * Not the capped token above, deliberately — a capped page holds two rows and would ask for a
+   * short frame, so it cannot say anything about the bound on a long one.
+   */
+  long: 'e2e-table-long-00000000000000000000000438',
 } as const
 
 /** What a capped table reports (§T.56, V85). Asserted, so the numbers live in one place. */
 export const STUB_TABLE_TOTAL_ROWS = 1240
 export const STUB_TABLE_STORED_ROWS = 2
+
+/**
+ * How many rows the long listing carries (§T.56).
+ *
+ * The count from the complaint the frame-sizing work answers, not a round number: at the ~36px row
+ * height `table.module.css` produces this is on the order of 15,000px of natural page height, and
+ * the host applies whatever height it is sent verbatim.
+ */
+export const STUB_TABLE_LONG_ROWS = 438
 
 /** The token the stub puts on a PENDING card. The real one is HMAC-signed (V39, T37). */
 export const STUB_CSRF = 'v1.1786000000.stub-signature'
@@ -153,6 +203,7 @@ export default defineConfig({
         STUB_NOT_FOUND_ID: APPROVAL_IDS.notFound,
         STUB_POLLING_ID: APPROVAL_IDS.polling,
         STUB_RECOVERS_ID: APPROVAL_IDS.recovers,
+        STUB_REFLOW_ID: APPROVAL_IDS.reflow,
         STUB_RUN_RESULT,
         STUB_RECEIPT_AFTER,
         STUB_CSRF,
@@ -160,6 +211,8 @@ export default defineConfig({
         STUB_TABLE_UNAUTHORIZED_TOKEN: TABLE_TOKENS.unauthorized,
         STUB_TABLE_NOT_FOUND_TOKEN: TABLE_TOKENS.notFound,
         STUB_TABLE_NEEDS_COOKIE_TOKEN: TABLE_TOKENS.needsCookie,
+        STUB_TABLE_LONG_TOKEN: TABLE_TOKENS.long,
+        STUB_TABLE_LONG_ROWS: String(STUB_TABLE_LONG_ROWS),
         STUB_TABLE_TOTAL_ROWS: String(STUB_TABLE_TOTAL_ROWS),
       },
     },

@@ -20,6 +20,20 @@
   padding: var(--noa-space-4);
   max-height: 100dvh;
   overflow-y: auto;
+  /*
+   * The reserved gutter, for the same reason as `card.module.css` and `app/tables/[token]`'s: this
+   * box now asks the host for a frame as tall as itself (`notice.tsx`), and a frame that grows until
+   * its content fits removes the scrollbar, widens the content box by ~15px, lets wrapped lines fit,
+   * shrinks the measurement, and brings the scrollbar back. `.noticeAddress` is monospace with
+   * `word-break: break-all` — a URL in a narrow frame, and exactly the content that gains or loses a
+   * whole line on a 15px width change — so this surface has the same reflow term the card has. With
+   * the gutter reserved the width is constant and the step never happens.
+   *
+   * It carries the same cost as the card's: 15px of content width everywhere, buying nothing on a
+   * platform whose scrollbars are overlays and never take layout space (measured in
+   * `e2e/frame-size-card.browser.e2e.ts`), and kept for the desktop browsers where they do.
+   */
+  scrollbar-gutter: stable;
 }
 
 .noticeTitle {

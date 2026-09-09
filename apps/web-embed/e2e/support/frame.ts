@@ -39,11 +39,40 @@ export function pendingId(suffix: string): string {
   return `9f1c2b7e-0000-4000-8000-0000000${suffix.padStart(5, '0')}`
 }
 
+/**
+ * The box `@mcp-ui/client` was measured opening with, and the state the self-sizing exists to escape.
+ *
+ * Here rather than in one spec file because both frame-size lanes pin it — the table's and the
+ * card's — and a second copy would be a second number free to drift from the one the sizing is
+ * actually measured against (V66).
+ */
+export const HOST_OPENING_HEIGHT = 150
+
+/**
+ * How the parent opens the box, for the specs that are about the box (`framing-parent.mjs`).
+ *
+ * Both fields default to the frame §T.45 pinned, so a spec that does not mention them measures the
+ * same frame it always did: 640px tall, and resized when the document asks — which is what the
+ * measured host does with a `ui-size-change`.
+ */
+export type FrameBox = {
+  /** The height the iframe opens with, before any message. */
+  height?: number
+  /** `false` makes the parent ignore a size change: the degraded path, a host that never grew. */
+  autosize?: boolean
+}
+
 /** The parent page LibreChat stands in for, framing `src` under one of the two measured sandboxes. */
-export function parentUrl(src: string, sandbox: string = MEASURED_SANDBOX): string {
+export function parentUrl(
+  src: string,
+  sandbox: string = MEASURED_SANDBOX,
+  box: FrameBox = {},
+): string {
   const parent = new URL(CHAT_ORIGIN)
   parent.searchParams.set('src', src)
   parent.searchParams.set('sandbox', sandbox)
+  if (box.height !== undefined) parent.searchParams.set('height', String(box.height))
+  if (box.autosize === false) parent.searchParams.set('autosize', '0')
   return parent.toString()
 }
 
@@ -51,8 +80,9 @@ export async function frameCard(
   page: Page,
   id: string,
   sandbox: string = MEASURED_SANDBOX,
+  box: FrameBox = {},
 ): Promise<FrameLocator> {
-  await page.goto(parentUrl(`${EMBED_ORIGIN}/approvals/${id}`, sandbox))
+  await page.goto(parentUrl(`${EMBED_ORIGIN}/approvals/${id}`, sandbox, box))
   return page.frameLocator('#card')
 }
 
@@ -67,8 +97,9 @@ export async function frameTable(
   page: Page,
   token: string,
   sandbox: string = MEASURED_SANDBOX,
+  box: FrameBox = {},
 ): Promise<FrameLocator> {
-  await page.goto(parentUrl(`${EMBED_ORIGIN}/tables/${token}`, sandbox))
+  await page.goto(parentUrl(`${EMBED_ORIGIN}/tables/${token}`, sandbox, box))
   return page.frameLocator('#card')
 }
 
@@ -84,6 +115,40 @@ export async function framedDocument(page: Page): Promise<Frame> {
   const frame = await element.contentFrame()
   if (frame === null) throw new Error('#card has no content frame')
   return frame
+}
+
+/**
+ * Every height the framed document has asked the parent for, in order.
+ *
+ * Read off the parent rather than off a page event: what a spec needs to know is what the *host*
+ * accepted, and the host's own gate is `event.source === iframe.contentWindow`. A count taken
+ * inside the frame would include messages the host discarded.
+ */
+export async function sizePosts(page: Page): Promise<number[]> {
+  return await page.evaluate(() =>
+    ((window as unknown as { __sizePosts: { height: number }[] }).__sizePosts ?? []).map(
+      (payload) => payload.height,
+    ),
+  )
+}
+
+/**
+ * What the parent did with a posted height: the number it applied, and the box that resulted.
+ *
+ * Two numbers, because they differ by 4px and the reason is not this app's arithmetic: an iframe
+ * carries `border: 2px inset` from the UA stylesheet, so its laid-out box is its height plus its
+ * own borders. `applied` is the inline style the host writes — the same place `@mcp-ui/client` was
+ * measured writing it — and is the value a round-trip claim is about. `rendered` is there so a spec
+ * cannot pass against a frame that was collapsed by something else.
+ */
+export async function frameBox(page: Page): Promise<{ applied: number; rendered: number }> {
+  return await page.evaluate(() => {
+    const frame = document.getElementById('card')
+    return {
+      applied: Number.parseFloat(frame?.style.height ?? '') || 0,
+      rendered: frame?.getBoundingClientRect().height ?? 0,
+    }
+  })
 }
 
 /** What the stub upstream was asked for, by `METHOD path`. */

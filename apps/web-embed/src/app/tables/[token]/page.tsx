@@ -1,5 +1,6 @@
 import { headers } from 'next/headers'
 
+import { resolveFrameTargetOrigin } from '@/lib/embed/frame-origin'
 import { resolveSignInUrl } from '@/lib/sign-in'
 import { loadResultTable } from '@/lib/tables/detail'
 
@@ -25,6 +26,11 @@ import { TableView } from './table-view'
  * it: it comes from a server-side variable with no `NEXT_PUBLIC_*` twin, so the page reads it and
  * passes it down. Per request rather than in `next.config.ts`, because `output: 'standalone'` never
  * runs that config at runtime — the framing header is baked there on purpose (V41), and this is not.
+ *
+ * **The frame origin rides down the same way**, for the sizing message this surface posts
+ * (`components/frame-sizer.tsx`). Unlike the sign-in address it has a build-time twin — the
+ * `frame-ancestors` header (V41) — that it must agree with; `lib/embed/frame-origin.ts` says why the
+ * request-time read is wrapped and what a disagreement looks like from an operator's side.
  */
 
 // Reading `headers()` already opts this route out of prerendering; saying so as well means a future
@@ -44,6 +50,7 @@ export default async function ResultTablePage({
     <TableView
       initial={await loadResultTable(token, { cookie })}
       signInUrl={resolveSignInUrl(process.env)}
+      frameOrigin={resolveFrameTargetOrigin(process.env)}
     />
   )
 }

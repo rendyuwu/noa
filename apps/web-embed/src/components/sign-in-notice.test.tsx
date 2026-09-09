@@ -44,6 +44,11 @@ function clickRetry(): void {
   fireEvent.click(screen.getByRole('button', { name: /try again/i }))
 }
 
+/** What the frame sizer this notice mounts reports it is doing, or `undefined` if none is mounted. */
+function sizerState(container: HTMLElement): string | null | undefined {
+  return container.querySelector('[data-noa-frame-size]')?.getAttribute('data-noa-frame-size')
+}
+
 describe('SignInNotice', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
@@ -58,7 +63,7 @@ describe('SignInNotice', () => {
     // Never a blank card and never a live Approve button: the operator is told what is wrong and
     // given the two things that can fix it.
     const { onRetry } = retryStub('unauthenticated')
-    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     expect(screen.getByRole('heading').textContent).toContain('Cannot authenticate here')
     expect(screen.getByRole('link', { name: /sign in to noa/i })).toBeTruthy()
@@ -69,7 +74,7 @@ describe('SignInNotice', () => {
 
   it('opens the sign-in in a new top-level document, never in the frame (V42, §T.43)', () => {
     const { onRetry } = retryStub('unauthenticated')
-    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     const link = screen.getByRole('link', { name: /sign in to noa/i })
 
@@ -86,7 +91,7 @@ describe('SignInNotice', () => {
     // `allow-popups` is absent at one of LibreChat's two render sites, and there the click above
     // opens nothing and says nothing. The printed address is the door that does not depend on it.
     const { onRetry } = retryStub('unauthenticated')
-    const { container } = render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    const { container } = render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     expect(container.textContent).toContain('copy this address')
     // Twice on the card on purpose: once as the link's target, once as text to copy.
@@ -97,7 +102,7 @@ describe('SignInNotice', () => {
     // The separating case, and the reason `resolveSignInUrl` returns `null` rather than a default: a
     // link to a host nobody deployed reads as an action that was refused (`canDecide`'s judgement).
     const { onRetry } = retryStub('unauthenticated')
-    const { container } = render(<SignInNotice signInUrl={null} onRetry={onRetry} />)
+    const { container } = render(<SignInNotice signInUrl={null} onRetry={onRetry} frameOrigin={null} />)
 
     expect(container.querySelector('a')).toBeNull()
     expect(container.textContent).not.toContain('copy this address')
@@ -108,7 +113,7 @@ describe('SignInNotice', () => {
 
   it('carries no form, no input and nothing that submits (V42, V80)', () => {
     const { onRetry } = retryStub('unauthenticated')
-    const { container } = render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    const { container } = render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     expect(container.querySelector('form')).toBeNull()
     expect(container.querySelector('input')).toBeNull()
@@ -119,7 +124,7 @@ describe('SignInNotice', () => {
 
   it('re-reads on Try again, exactly once per click', async () => {
     const { onRetry } = retryStub('unauthenticated')
-    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     clickRetry()
     await vi.waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
@@ -131,7 +136,7 @@ describe('SignInNotice', () => {
     // A button with no feedback reads as a broken one. The answer that leaves this notice on screen
     // is the answer that has to be reported.
     const { onRetry } = retryStub('unauthenticated')
-    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     clickRetry()
 
@@ -144,7 +149,7 @@ describe('SignInNotice', () => {
     // The separating case for the note above: "could not be asked" and "asked and refused" send an
     // operator to different people.
     const { onRetry } = retryStub('unavailable')
-    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     clickRetry()
 
@@ -163,7 +168,7 @@ describe('SignInNotice', () => {
           release = resolve
         }),
     )
-    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     clickRetry()
 
@@ -191,7 +196,7 @@ describe('SignInNotice', () => {
             release = resolve
           }),
       )
-    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} />)
+    render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 
     clickRetry()
     await vi.waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
@@ -201,5 +206,35 @@ describe('SignInNotice', () => {
 
     release({ kind: 'unauthenticated' })
     await vi.waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
+  })
+
+  it('measures itself, so the printed address is not left below the fold (V94)', () => {
+    // This state's way out is the address as TEXT, because the sandbox at one of LibreChat's two
+    // render sites withholds the link (R13, R32). At the 150px box the host opens with, that address
+    // began below the fold — reachable by scrolling, and off screen all the same. So the notice asks
+    // for a frame it fits in, like the card and the table do.
+    //
+    // What jsdom can hold is the wiring: a sizer is mounted, and the origin the page resolved is the
+    // origin it was given. Whether the frame that results puts the address on screen is a layout
+    // claim and lives in `e2e/frame-size-card.browser.e2e.ts`; the arithmetic and the message live
+    // in `frame-sizer.test.tsx`.
+    const { onRetry } = retryStub('unauthenticated')
+    const { container } = render(
+      <SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin="https://chat.example" />,
+    )
+
+    expect(sizerState(container)).toBe('measuring')
+  })
+
+  it('leaves the notice exactly as it was when no origin is trustworthy', () => {
+    // The separating case: `null` is a supported state, not a failure. Nothing is posted and the
+    // notice still scrolls itself, which is what it did before it measured anything.
+    const { onRetry } = retryStub('unauthenticated')
+    const { container } = render(
+      <SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />,
+    )
+
+    expect(sizerState(container)).toBe('no-target-origin')
+    expect(screen.getByText(SIGN_IN)).toBeTruthy()
   })
 })
