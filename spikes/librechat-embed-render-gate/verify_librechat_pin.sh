@@ -77,11 +77,74 @@ if grep -q 'allow-forms' "$installed/dist/index.mjs"; then
 fi
 pass "shipped bytes never mention allow-forms (V80 premise holds)"
 
+# V69: the shipped @mcp-ui/client bytes, not the repo source, are what actually runs — same
+# standard as the text/uri-list and allow-forms checks above. V69's own subject is a ported SSH
+# host-key control; its RULE — upstream provenance is not evidence a control works, so a control
+# needs a test against the real mechanism — is applied here one surface over, to shipped bytes
+# versus the source they were published from. The real mechanism is what npm installed.
+#
+# Frame sizing needs TWO things from these bytes, and either check alone is blind to the other:
+#
+#   1. `ui-size-change` — the postMessage the frame-sizing work reads to learn the rendered UI's
+#      size. Drop the handler and sizing dies inside the library, where a read of LibreChat's own
+#      source (R12) would never catch it.
+#   2. `autoResizeIframe` — the option LibreChat passes at each of the 3 render sites checked
+#      below. The library writes the reported size onto the iframe only when that option is set.
+#      A bump that renames or drops it severs the wiring between "LibreChat asks for resize" and
+#      "the library honours the ask" while leaving check 1 AND all 3 render-site checks green:
+#      the protocol constant is untouched and LibreChat's own source is untouched.
+#
+# The option name is the only stable anchor for (2). The gate that consumes it is minified — at
+# 5.7.0 the destructured binding is a single letter — so a pattern naming the binding would break
+# on any rebuild without the property having changed.
+#
+# C21's re-verify-on-bump duty is what these two lines discharge.
+grep -q 'ui-size-change' "$installed/dist/index.mjs" \
+  || fail "shipped bytes no longer handle the ui-size-change message"
+pass "shipped bytes still handle ui-size-change"
+grep -q 'autoResizeIframe' "$installed/dist/index.mjs" \
+  || fail "shipped bytes no longer accept the autoResizeIframe option"
+pass "shipped bytes still accept the autoResizeIframe option"
+
 # R15: the draft that would kill the uri-list path is not in this tree.
 if grep -rq '@modelcontextprotocol/ext-apps' "$CLONE_DIR/client/package.json" 2>/dev/null; then
   fail "client depends on ext-apps — PR #13831 landed, C21's drift source is live"
 fi
 pass "no ext-apps dependency (PR #13831 still out of tree)"
+
+# C21 / R12: R12 names these 3 sites as where LibreChat delegates render mode to
+# `UIResourceRenderer`; `autoResizeIframe` is what makes the frame the frame-sizing work
+# depends on report its own size instead of a fixed one. A bump can drop the prop at one site
+# without touching the others, so each site is its own assertion — a single combined grep
+# would tell an operator sizing broke somewhere without saying where to look.
+#
+# The pattern is value-aware, and has to be. At this pin the key and its value sit on ONE line,
+# `autoResizeIframe: { width: true, height: true },` — so a grep for the bare token still passes
+# when the value is flipped to `false`, and still passes when the whole line is commented out.
+# Both disable sizing while leaving the token in the file. Hence: the line anchor allows only
+# whitespace before the key, which rules out a `//` or `/*` prefix, and both axes must read
+# `true`.
+#
+# Two known bounds, both from grep being line-oriented. It misses a MULTI-line block comment
+# wrapping an unchanged line, which still matches; catching that needs a parser, not a pattern,
+# and the live browser run this harness supports is what would catch it. And it fires on a
+# LibreChat that merely REFORMATS the option across several lines — a red gate there means the
+# pattern is stale, not that the render path is broken, so the fix is to re-read the source at
+# the new pin and re-anchor the pattern to it, never to loosen it back toward a bare-token grep.
+autoresize_re='^[[:space:]]*autoResizeIframe:[[:space:]]*\{[[:space:]]*width:[[:space:]]*true,[[:space:]]*height:[[:space:]]*true[[:space:]]*\}'
+assert_autoresize_site() {
+  local file="$1" label="$2"
+  [ -f "$file" ] || fail "missing $file"
+  grep -Eq "$autoresize_re" "$file" \
+    || fail "$label no longer passes autoResizeIframe with both axes enabled (dropped, commented out, or width/height not true)"
+}
+assert_autoresize_site \
+  "$CLONE_DIR/client/src/components/MCPUIResource/MCPUIResource.tsx" "MCPUIResource.tsx"
+assert_autoresize_site \
+  "$CLONE_DIR/client/src/components/Chat/Messages/Content/ToolCallInfo.tsx" "ToolCallInfo.tsx"
+assert_autoresize_site \
+  "$CLONE_DIR/client/src/components/Chat/Messages/Content/UIResourceCarousel.tsx" "UIResourceCarousel.tsx"
+pass "autoResizeIframe still passed with both axes enabled at all 3 render sites (MCPUIResource, ToolCallInfo, UIResourceCarousel)"
 
 # Item (f), source side: which list-changed notifications the client subscribes to.
 conn="$CLONE_DIR/packages/api/src/mcp/connection.ts"

@@ -130,7 +130,141 @@ predicted by the source read:
   here.
 - **One browser.** Chromium 141 (Playwright build v1194). Firefox and WebKit were not run.
 
+## Three assertions added for the frame-sizing work
+
+`verify_librechat_pin.sh` also asserts three properties that the embed's frame-sizing work rests
+on, alongside the render-path facts measured above. They are three parts of one connective
+property: LibreChat has to ASK for auto-resize, the library has to ACCEPT the ask, and the
+library has to HANDLE the message that answers it. Any one going missing kills sizing, and no one
+of the three checks can see the other two failing.
+
+**`autoResizeIframe` still passed, with both axes enabled, at all three render sites.** `R12`'s
+three sites (`MCPUIResource.tsx`, `ToolCallInfo.tsx`, `UIResourceCarousel.tsx`) each pass an
+`autoResizeIframe: { width: true, height: true }` option into `UIResourceRenderer` at this pin
+— at lines 44, 171, and 115 respectively. Frame sizing depends on that option surviving a
+LibreChat bump. The three files are checked one at a time rather than with a single combined
+grep, so a bump that drops the option at one site produces a failure message naming that site
+instead of a generic "sizing broke somewhere."
+
+The pattern is value-aware rather than a grep for the bare token, and has to be. At this pin the
+key and its value sit on ONE line, so a token grep keeps passing when the value is flipped to
+`false` and keeps passing when the whole line is commented out — both of which disable sizing
+while leaving `autoResizeIframe` in the file. The pattern therefore anchors at the start of the
+line, permitting only whitespace before the key (which rules out a `//` or `/*` prefix), and
+requires both axes to read `true`.
+
+Two stated bounds, both from grep being line-oriented. It misses a multi-line block comment
+wrapping an otherwise unchanged line, which still matches; catching that needs a parser, not a
+pattern, and the live browser run this harness supports is what would catch it. In the other
+direction, it fires on a future LibreChat that merely reformats the option across several lines,
+where the property is intact — read a red gate there as a stale pattern rather than a broken
+render path, and answer it by re-reading the source at the new pin and re-anchoring the pattern
+to it, never by loosening it back toward a bare-token grep.
+
+**Shipped `@mcp-ui/client` bytes still handle `ui-size-change`, and still accept
+`autoResizeIframe`.** `V69`'s rule — upstream provenance is not evidence a control works, so a
+control needs a test against the real mechanism — applies here exactly as it does to the script's
+existing `text/uri-list` and `allow-forms` checks. `V69`'s literal subject is the ported SSH
+host-key control; the rule is being applied one surface over, to shipped bytes versus the source
+they were published from. The real mechanism is what npm installed, so both assertions run
+against `node_modules/@mcp-ui/client/dist/index.mjs`, the bytes LibreChat actually loads, not
+mcp-ui's repo source.
+
+At `5.7.0` the message constant is defined at line 131 (`UI_SIZE_CHANGE: "ui-size-change"`) and
+consumed by the resize handler at lines 192–196, which reads the posted `width`/`height` off the
+message and writes them onto the iframe's inline style. That write is gated on the
+`autoResizeIframe` option, destructured out of the renderer's props at line 142 — the file's only
+occurrence of the name. Both string literals are grepped, the same standard the existing
+`text/uri-list` and sandbox-string checks already use against these bytes.
+
+The second of the two is the connective half, and it is why the check is not redundant with the
+other eleven. A library bump that renames or drops that destructure, while leaving the protocol
+constant intact and LibreChat's own source untouched, leaves the `ui-size-change` check and all
+three render-site checks green with the wiring between "LibreChat asks for resize" and "the
+library honours the ask" silently severed. Round 1 below is exactly that mutation, and it fails
+with the other eleven checks passing. The option NAME is the only stable anchor available: the
+gate that consumes it is minified — at `5.7.0` the destructured binding is a single letter — so a
+pattern naming the binding would break on any rebuild without the property having changed.
+
+### Demonstrated to detect
+
+Per this repo's rule that a bound control has to be shown to separate, not merely asserted
+(`AGENTS.md`, "Test of a CONCURRENCY control" — the same principle applies to any check that is
+supposed to fail on a real regression), each assertion was proven to detect by running
+`verify_librechat_pin.sh` itself — not a hand-copied predicate — against a mutated tree. A
+predicate that only gets exercised in isolation can pass that isolated test while a typo in the
+script's own copy of the pattern lets the real thing through; running the actual script closes
+that gap.
+
+The clone is ~2.4 GB, too large to duplicate per mutation, so each round used
+`cp -al /home/ubuntu/noa/librechat-embed-render-gate "$scratch/clone"` (hardlinks — the `.git`
+directory comes along, so the pin-HEAD check still passes against the copy) and then replaced,
+never edited in place through, the one hardlinked file under test: `sed` to a new path, `rm` the
+hardlink, `mv` the new file over it. Editing through a hardlink would have written into the real
+clone. `verify_librechat_pin.sh` already takes the clone directory as its first argument, so each
+run pointed straight at the mutated copy with no change to the script.
+
+Each round is its own fresh copy and is bounded on both sides, since "the check failed" is only
+evidence if the mutation landed where it was meant to and nowhere else:
+
+- **Before the run.** The scratch file's inode is recorded, and the round aborts if `sed` matched
+  nothing — otherwise a pattern that silently failed to apply would be scored as a detection.
+- **After the run.** The scratch file's inode must have CHANGED from its pre-mutation value,
+  which is what proves the hardlink was broken rather than written through. The real clone's file
+  inode AND its sha256 must both be UNCHANGED from values taken before that round.
+
+Then the scratch directory is removed. Twelve rounds, all twelve detected, real clone verified
+untouched in all twelve by that inode-and-sha256 comparison. Every row below is a round run in
+one session, against the script as it stands here — none is carried forward from an earlier
+session's table. The `ok before FAIL` column is how far each run got, out of the twelve `ok`
+lines a clean run prints. Rounds 2–10 and 12 share one FAIL message, differing only in the site
+it names; it is written out at round 2.
+
+| # | File mutated | Mutation applied | Exit | `ok` before FAIL | Observed FAIL line |
+|---|---|---|---|---|---|
+| 1 | `node_modules/@mcp-ui/client/dist/index.mjs` | `autoResizeIframe` → `xyzUnknownOption` | 1 | 8 | `FAIL  shipped bytes no longer accept the autoResizeIframe option` |
+| 2 | `MCPUIResource.tsx` | value → `{ width: false, height: false }` | 1 | 10 | `FAIL  MCPUIResource.tsx no longer passes autoResizeIframe with both axes enabled (dropped, commented out, or width/height not true)` |
+| 3 | `MCPUIResource.tsx` | line commented out (`// ` prefix) | 1 | 10 | same message, `MCPUIResource.tsx` |
+| 4 | `ToolCallInfo.tsx` | value → `{ width: false, height: false }` | 1 | 10 | same message, `ToolCallInfo.tsx` |
+| 5 | `ToolCallInfo.tsx` | line commented out (`// ` prefix) | 1 | 10 | same message, `ToolCallInfo.tsx` |
+| 6 | `UIResourceCarousel.tsx` | value → `{ width: false, height: false }` | 1 | 10 | same message, `UIResourceCarousel.tsx` |
+| 7 | `UIResourceCarousel.tsx` | line commented out (`// ` prefix) | 1 | 10 | same message, `UIResourceCarousel.tsx` |
+| 8 | `MCPUIResource.tsx` | `autoResizeIframe` → `xyzDisabledProp` | 1 | 10 | same message, `MCPUIResource.tsx` |
+| 9 | `UIResourceCarousel.tsx` | `autoResizeIframe` → `xyzDisabledProp` | 1 | 10 | same message, `UIResourceCarousel.tsx` |
+| 10 | `ToolCallInfo.tsx` | `autoResizeIframe` → `xyzDisabledProp` | 1 | 10 | same message, `ToolCallInfo.tsx` |
+| 11 | `node_modules/@mcp-ui/client/dist/index.mjs` | `ui-size-change` → `xyz-size-disabled` | 1 | 7 | `FAIL  shipped bytes no longer handle the ui-size-change message` |
+| 12 | `MCPUIResource.tsx` | one axis only, `height: true` → `height: false` | 1 | 10 | same message, `MCPUIResource.tsx` |
+
+Round 1 is the one that carries an argument rather than a confirmation. Its eight passing `ok`
+lines include `shipped bytes still handle ui-size-change`, and the three render-site checks sit
+later in the script and would have passed too. That is the blind spot between "LibreChat asks for
+resize" and "the library honours the ask", and it is visible only because the accept-the-option
+check now exists.
+
+Every round reached exactly the assertion under test and no earlier one. For the render-site
+rounds all ten preceding checks passed, including every dist-bytes check (`text/uri-list`, the
+sandbox strings, `ui-size-change`, `autoResizeIframe`), since those read a different, unmutated
+file; the two dist-bytes rounds were caught before the script reached the render-site checks,
+matching the order the checks appear in it.
+
+Rounds 2–7 and 12 are the variants the earlier bare-token pattern let through: value flipped to
+`false` on both axes, on one axis, and the line commented out. Under the value-aware pattern all
+seven fail. Rounds 8, 9 and 10 are whole-token renames, which the earlier pattern already caught;
+they are re-run here because the pattern changed under them, and because two of the three had
+been confirmed only by their own author. Round 11 re-runs the `ui-size-change` mutation against
+the restructured script, confirming that comment restructuring around that check left the
+predicate intact.
+
+With no mutation applied, the same script — same argument form, real clone — exits 0 with all
+twelve `ok` lines present, including the three described here.
+
 ## Reproduce
+
+The shipped-bytes checks above (`text/uri-list`, the sandbox strings, `ui-size-change`) read
+the clone's own `node_modules/@mcp-ui/client`, so this repo's `README.md` Prerequisites —
+`npm ci && npm run frontend` in the clone — must already have run; `verify_librechat_pin.sh`
+fails immediately and by name (`"@mcp-ui/client not installed (run npm ci first)"`) if it has
+not, distinctly from any message that says a property is gone from bytes that ARE installed.
 
 ```bash
 spikes/librechat-embed-render-gate/verify_librechat_pin.sh          # E1: rig is the pin
