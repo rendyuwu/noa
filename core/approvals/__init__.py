@@ -27,6 +27,13 @@ row guard, and the rest holding no statement at all:
   one commit (V46). `execution_host` is V30's shape: one in-process asyncio task per approved
   change, its own session, cancelled by the lifespan at shutdown. It writes no
   `action_requests` column at all — the authorization is read there and answered nowhere else.
+- `delta` — the vocabulary a runner states its own before→after in, and the one module here
+  that holds no statement and reaches no database. The receipt's two halves meet only on
+  identity — the keys they share carry equal values, and the field that moved is never under a
+  shared key — so nothing that reads them can diff them; the runner that produced one half and
+  read the other is the only party that can, and this is the shape it says so in. Every facet is
+  optional in the type, so an absence is structural rather than remembered (V85, V86), and a
+  reason-bearing key is refused at construction (C8, V15, V43).
 - `reaper` — resolves what nobody finished (T38, V30). Runs left `STARTED` past a deadline
   become `FAILED` with a summary saying the outcome is *unknown*, plus a receipt when they
   belong to a request. `APPROVED`-with-no-run is **detected and logged, never repaired**: the

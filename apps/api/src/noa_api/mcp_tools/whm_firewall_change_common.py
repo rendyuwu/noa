@@ -35,6 +35,7 @@ from dataclasses import dataclass
 
 import structlog
 
+from core.approvals.delta import BackendOutcome, Bound
 from core.errors import NoaError
 from core.integrations.whm.availability import FirewallAvailability
 from core.integrations.whm.csf_cli import require_csf_success, run_csf_command
@@ -242,6 +243,81 @@ def holds_allow_entry(lookups: Mapping[str, BackendLookup]) -> bool:
     return any(lookup.allow_entry for lookup in lookups.values() if lookup.answered)
 
 
+def backend_outcomes(
+    changes: Mapping[str, BackendChange], lookups: Mapping[str, BackendLookup]
+) -> tuple[BackendOutcome, ...]:
+    """Each backend's row in the delta both firewall runners publish (V86).
+
+    Two independent facts joined by name, and they are joined here rather than twice because the
+    join is where they could disagree (V66): `changes` says whether the backend could be *driven*
+    and with what refusal, `lookups` says whether it *answered* the confirming read and with what
+    verdict. Keeping them apart is what makes "the command failed" and "the check said nothing"
+    two rows a reader can act on differently — the first names a remedy, the second names a
+    server to go and look at.
+
+    The union of both maps, so a backend that was driven and then went silent, and one that was
+    never driven but still answered, both appear. Sorted by name, so a receipt written twice for
+    one address reads the same both times.
+    """
+    names = sorted(set(changes) | set(lookups))
+    outcomes: list[BackendOutcome] = []
+    for name in names:
+        change = changes.get(name)
+        lookup = lookups.get(name)
+        outcomes.append(
+            BackendOutcome(
+                name=name,
+                # Absent from `changes` means `run_on_usable_backends` never reached it, which
+                # is not the same as reaching it and being refused — but from the delta's side
+                # both are "this backend did not run the change", and the refusal that *was*
+                # measured carries its own code below.
+                driven=change is not None and change.ok,
+                answered=lookup is not None and lookup.answered,
+                verdict=None if lookup is None else lookup.verdict,
+                error_code=None if change is None else change.error_code,
+            )
+        )
+    return tuple(outcomes)
+
+
+def evidence_bound(evidence: Mapping[str, object]) -> Bound | None:
+    """The bound of the before-state reading this change was decided against (V85).
+
+    `firewall_state` writes the lines it read plus `total_matches` and `truncated`, because the
+    cut is csf's own (`max_matches`) and a bound travels with the rows it bounds. A delta stating
+    "this address was blocked and is now allowed" rests on that reading, so the bound rides into
+    the delta as well — without it the sentence reads as a statement about every line the
+    firewall holds for the address, when the evidence behind it stopped at twenty.
+
+    `None` when the evidence carries no usable pair, which is a row opened before those keys
+    existed. Absent rather than a zero: a bound nobody recorded is not a bound of nothing.
+    """
+    firewall = evidence.get(EVIDENCE_FIREWALL)
+    if not isinstance(firewall, Mapping):
+        return None
+    total = firewall.get("total_matches")
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        return None
+    return Bound(total=total, truncated=firewall.get("truncated") is True)
+
+
+def evidence_verdict(evidence: Mapping[str, object]) -> str | None:
+    """The combined verdict the operator saw, as the `old` side of a delta's field change.
+
+    Off the evidence rather than re-derived: it is the reading the decision rests on, and a
+    second computation here could disagree with the one that was authorised (V33).
+
+    `None` when the evidence has no usable verdict, and a caller treats that as "no field change
+    can be stated" rather than substituting a benign word — a delta whose `old` side was invented
+    is exactly the fabrication V86 refuses one surface over.
+    """
+    firewall = evidence.get(EVIDENCE_FIREWALL)
+    if not isinstance(firewall, Mapping):
+        return None
+    verdict = firewall.get("combined_verdict")
+    return verdict if isinstance(verdict, str) and verdict else None
+
+
 @dataclass(frozen=True)
 class FirewallChangeTarget:
     """The machine and address an approved firewall change runs against, from the evidence."""
@@ -305,6 +381,9 @@ __all__ = [
     "BackendChange",
     "FirewallChangeTarget",
     "backend_change_failure",
+    "backend_outcomes",
+    "evidence_bound",
+    "evidence_verdict",
     "firewall_state",
     "holds_allow_entry",
     "resolve_firewall_change_target",

@@ -55,6 +55,15 @@ from typing import Any, Final
 
 import structlog
 
+from core.approvals.delta import (
+    # `VERIFICATION_UNAVAILABLE` arrives below through `change_target`, the same string from the
+    # same definition — `core.approvals.delta` owns all four states.
+    VERIFICATION_MISMATCH,
+    VERIFICATION_VERIFIED,
+    ChangeDelta,
+    ChangeOutcome,
+    FieldChange,
+)
 from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
 from core.integrations.proxmox.client import ProxmoxClient
 from core.integrations.proxmox.nic import (
@@ -78,6 +87,7 @@ from noa_api.mcp_tools.proxmox_nic import (
     ERROR_NET_NOT_FOUND,
     EVIDENCE_ACTION,
     EVIDENCE_NET,
+    EVIDENCE_NIC,
     EVIDENCE_NODE,
     EVIDENCE_SERVER_ID,
     EVIDENCE_VMID,
@@ -183,21 +193,37 @@ def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
     C8 keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
     """
 
-    async def run(request: ChangeExecutionRequest) -> ToolPayload:
+    async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
         """Flip this approved request's NIC, and say what happened.
 
         Resolve from the evidence, re-read, decide, write, verify. Every refusal answers the
         ordinary tool envelope rather than raising, because the executor's own catch records
         something coarser than what this knew (V19).
+
+        The resolution refusal carries **no delta** — nothing was read and nothing was written,
+        so there is nothing to state (V86). Everything below it carries one, and the **no-op**
+        is the case worth naming: its delta reports an explicitly empty `changed_fields`, because
+        a before→after taken from its payload would render the identity fields as new values and
+        describe a change to an interface nothing touched.
         """
         target = await _resolve_change_target(request.evidence, context=context)
         if not isinstance(target, NICChangeTarget):
-            return target
+            return ChangeOutcome(payload=target)
 
         async with target.client:
             fresh = await _read_current_nic(target)
             if not isinstance(fresh, FreshNIC):
-                return fresh
+                return ChangeOutcome(
+                    payload=fresh,
+                    # Read before any write, so nothing moved and NOA knows it: the config could
+                    # not be read, it carried no digest, or the approved interface is gone.
+                    delta=_nic_delta(
+                        target,
+                        verification=VERIFICATION_UNAVAILABLE,
+                        verification_cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
+                        changed_fields=(),
+                    ),
+                )
 
             if fresh.nic.link_state == target.desired_link_state:
                 logger.info(
@@ -208,16 +234,19 @@ def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
                     vmid=target.vmid,
                     net=target.net,
                 )
-                return tool_ok(
-                    **_common(target),
-                    status=STATUS_NO_OP,
-                    link_state=fresh.nic.link_state,
-                    verified=True,
-                    message=(
-                        f"`{target.net}` on VM {target.vmid} ({target.server_name}) was already "
-                        f"{'disabled' if target.disabled else 'enabled'} when NOA ran this "
-                        "change, so nothing was written."
+                return ChangeOutcome(
+                    payload=tool_ok(
+                        **_common(target),
+                        status=STATUS_NO_OP,
+                        link_state=fresh.nic.link_state,
+                        verified=True,
+                        message=(
+                            f"`{target.net}` on VM {target.vmid} ({target.server_name}) was "
+                            f"already {'disabled' if target.disabled else 'enabled'} when NOA "
+                            "ran this change, so nothing was written."
+                        ),
                     ),
+                    delta=_nic_delta(target, verification=VERIFICATION_VERIFIED, changed_fields=()),
                 )
 
             failure = await _write_link_state(target, fresh=fresh)
@@ -315,7 +344,62 @@ async def _read_current_nic(target: NICChangeTarget) -> FreshNIC | ToolPayload:
     return FreshNIC(nic=nic, digest=digest)
 
 
-async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> ToolPayload | None:
+def _nic_delta(
+    target: NICChangeTarget,
+    *,
+    verification: str,
+    verification_cause: str | None = None,
+    changed_fields: tuple[FieldChange, ...] | None,
+) -> ChangeDelta:
+    """This change's before→after, as the runner that ran it states it.
+
+    One field can move on this tool and it is the link state, so `changed_fields` is the whole
+    facet. `changed_fields` is passed in rather than derived, because the two spellings of
+    "nothing to report" are decided per branch and are not interchangeable:
+
+    - `()` — nothing moved, and NOA has grounds for saying so. Proxmox refused the write, its
+      task came back terminal and non-`OK`, the config could not be read *before* anything was
+      written, or the interface was already in the state that was asked for. The last is a
+      comparison and the others are the certainty that no write went out, which
+      `core.approvals.delta` treats as the same claim: the facet says nothing moved, not how the
+      runner came to know it.
+    - `None` — NOA cannot say. The write was accepted and the task did not finish in time, the
+      confirming read could not answer, or the flip was confirmed and the *evidence* carried no
+      before-value to compare it against. Claiming either direction there is the fabrication V86
+      exists to stop, and `false` would be the one that reads as a measurement.
+
+    The interface's own line is not on the identity, for the reason it is not in the payload: a
+    reader needs which interface on which VM moved which way, not the MAC address and bridge of
+    a machine somebody is describing to a customer.
+    """
+    return ChangeDelta(
+        identity=_common(target),
+        verification=verification,
+        verification_cause=verification_cause,
+        changed_fields=changed_fields,
+    )
+
+
+def _evidence_link_state(evidence: Mapping[str, Any]) -> str | None:
+    """The link state the operator saw on the card, as a delta's `old` side.
+
+    Off the evidence rather than from the runner's own pre-write read: the card is what was
+    authorised, and the pre-write read is a second reading taken later that can differ from it
+    (which is precisely why the write goes out under that read's digest and not the card's).
+
+    `None` when the evidence carries no usable value — a row opened before the key existed, or
+    one whose `nic` half did not survive its JSONB round trip as an object. A caller treats that
+    as "no field change can be stated", never as a default: an `old` side nobody recorded is not
+    an `old` side of `up`.
+    """
+    nic = evidence.get(EVIDENCE_NIC)
+    if not isinstance(nic, Mapping):
+        return None
+    link_state = nic.get("link_state")
+    return link_state if isinstance(link_state, str) and link_state else None
+
+
+async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> ChangeOutcome | None:
     """Write the toggled `netN` line under `fresh.digest`. `None` when it took.
 
     The line written is `fresh.nic.value` with `link_down` edited — the value as it is *now*, not
@@ -335,10 +419,21 @@ async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> Tool
         net_value=after_value,
     )
     if write_result.get("ok") is not True:
-        return {
+        failure: ToolPayload = {
             **upstream_failure(write_result, fallback="Proxmox VM config update failed"),
             **_common(target),
         }
+        return ChangeOutcome(
+            payload=failure,
+            # Proxmox refused, so nothing moved and the delta says so with a measured empty
+            # diff rather than with an absence.
+            delta=_nic_delta(
+                target,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=str(failure.get("error_code") or ERROR_UNKNOWN),
+                changed_fields=(),
+            ),
+        )
 
     upid = text_or_none(write_result.get("upid"))
     if upid is None:
@@ -346,7 +441,7 @@ async def _write_link_state(target: NICChangeTarget, *, fresh: FreshNIC) -> Tool
     return await _wait_for_terminal_task(target, upid=upid)
 
 
-async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> ToolPayload | None:
+async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> ChangeOutcome | None:
     """Poll one UPID to a terminal state. `None` when it finished successfully.
 
     Terminality is `status == "stopped"`, or an exit status present while the task is no longer
@@ -367,27 +462,48 @@ async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> Tool
         if task_status == "stopped" or (task_exit_status is not None and task_status != "running"):
             if task_exit_status in (None, "OK"):
                 return None
-            return {
-                **tool_failure(
-                    ERROR_TASK_FAILED,
-                    f"Proxmox rejected the change: its task finished with exit status "
-                    f"'{task_exit_status}'.",
+            return ChangeOutcome(
+                payload={
+                    **tool_failure(
+                        ERROR_TASK_FAILED,
+                        f"Proxmox rejected the change: its task finished with exit status "
+                        f"'{task_exit_status}'.",
+                    ),
+                    **_common(target),
+                },
+                # A terminal non-`OK` task is Proxmox saying it did not apply the write, which
+                # is a measurement: nothing moved.
+                delta=_nic_delta(
+                    target,
+                    verification=VERIFICATION_UNAVAILABLE,
+                    verification_cause=ERROR_TASK_FAILED,
+                    changed_fields=(),
                 ),
-                **_common(target),
-            }
+            )
 
         if attempt < TASK_POLL_ATTEMPTS - 1:
             await asyncio.sleep(TASK_POLL_DELAY_SECONDS)
 
-    return {
-        **tool_failure(ERROR_TASK_TIMEOUT, MESSAGE_TASK_TIMEOUT),
-        **_common(target),
-    }
+    return ChangeOutcome(
+        payload={
+            **tool_failure(ERROR_TASK_TIMEOUT, MESSAGE_TASK_TIMEOUT),
+            **_common(target),
+        },
+        # The write was accepted and the task's outcome was never read, so the link may already
+        # have moved. `None` rather than an empty diff: this is the one branch here that measured
+        # nothing at all.
+        delta=_nic_delta(
+            target,
+            verification=VERIFICATION_UNAVAILABLE,
+            verification_cause=ERROR_TASK_TIMEOUT,
+            changed_fields=None,
+        ),
+    )
 
 
 async def _verify_link_state(
     target: NICChangeTarget, *, request: ChangeExecutionRequest
-) -> ToolPayload:
+) -> ChangeOutcome:
     """Did the link actually move? Read off the `netN` line, ⊥ off the task (V97, V62, V86).
 
     The task's exit status says Proxmox accepted a write; it does not say what the interface now
@@ -415,42 +531,87 @@ async def _verify_link_state(
             net=target.net,
             cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
         )
-        return tool_ok(
-            **_common(target),
-            status=STATUS_CHANGED,
-            verified=False,
-            verification=VERIFICATION_UNAVAILABLE,
-            verification_cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
-            message=(
-                f"Proxmox accepted the change to `{target.net}` on VM {target.vmid} "
-                f"({target.server_name}), but NOA could not read the interface back to confirm "
-                "it. Check the VM before relying on it."
+        return ChangeOutcome(
+            payload=tool_ok(
+                **_common(target),
+                status=STATUS_CHANGED,
+                verified=False,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
+                message=(
+                    f"Proxmox accepted the change to `{target.net}` on VM {target.vmid} "
+                    f"({target.server_name}), but NOA could not read the interface back to "
+                    "confirm it. Check the VM before relying on it."
+                ),
+            ),
+            delta=_nic_delta(
+                target,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=str(fresh.get("error_code") or ERROR_UNKNOWN),
+                changed_fields=None,
             ),
         )
 
     if fresh.nic.link_state != target.desired_link_state:
-        return {
-            **tool_failure(
-                ERROR_POSTFLIGHT_FAILED,
-                f"Proxmox accepted the change, but `{target.net}` on VM {target.vmid} "
-                f"({target.server_name}) still reads as {fresh.nic.link_state}. Check the VM.",
-            ),
-            **_common(target),
-            "link_state": fresh.nic.link_state,
-            "verified": False,
-        }
+        return ChangeOutcome(
+            payload={
+                **tool_failure(
+                    ERROR_POSTFLIGHT_FAILED,
+                    f"Proxmox accepted the change, but `{target.net}` on VM {target.vmid} "
+                    f"({target.server_name}) still reads as {fresh.nic.link_state}. Check the VM.",
+                ),
+                **_common(target),
+                "link_state": fresh.nic.link_state,
+                "verified": False,
+            },
+            # Measured and disagreeing, which is what earns the `verified: false` beside it.
+            delta=_nic_delta(target, verification=VERIFICATION_MISMATCH, changed_fields=()),
+        )
 
-    return tool_ok(
-        **_common(target),
-        status=STATUS_CHANGED,
-        link_state=fresh.nic.link_state,
-        verified=True,
-        message=(
-            f"`{target.net}` on VM {target.vmid} ({target.server_name}) was "
-            f"{'disabled' if target.disabled else 'enabled'} and confirmed: its link is now "
-            f"{fresh.nic.link_state}."
+    return ChangeOutcome(
+        payload=tool_ok(
+            **_common(target),
+            status=STATUS_CHANGED,
+            link_state=fresh.nic.link_state,
+            verified=True,
+            message=(
+                f"`{target.net}` on VM {target.vmid} ({target.server_name}) was "
+                f"{'disabled' if target.disabled else 'enabled'} and confirmed: its link is now "
+                f"{fresh.nic.link_state}."
+            ),
+        ),
+        delta=_nic_delta(
+            target,
+            verification=VERIFICATION_VERIFIED,
+            changed_fields=_link_state_change(request, measured=fresh.nic.link_state),
         ),
     )
+
+
+def _link_state_change(
+    request: ChangeExecutionRequest, *, measured: str
+) -> tuple[FieldChange, ...] | None:
+    """The one row a confirmed flip renders, an empty diff, or no diff at all.
+
+    Three answers, and the first two are the distinction `_evidence_link_state`'s own docstring
+    asks a caller to keep:
+
+    - `None` — the evidence carried no usable `old` side, so nothing was compared. An `old` side
+      nobody recorded is not an `old` side of `up`, and an empty diff here would tell an operator
+      the interface was checked against the card and had not moved, on the branch where the
+      postflight has just confirmed it did (V86).
+    - `()` — both sides were read and they match. Reachable and not a bug: an interface edited
+      away and back while the request sat pending reads the same as the card described, and a
+      delta claiming a move there would be describing one that did not happen. `ChangeDelta`
+      refuses an equal-sided row outright, so the case is decided here rather than raised.
+    - one row — the two sides differ, which is the ordinary confirmed flip.
+    """
+    old = _evidence_link_state(request.evidence)
+    if old is None:
+        return None
+    if old == measured:
+        return ()
+    return (FieldChange(field="link_state", old=old, new=measured),)
 
 
 def _common(target: NICChangeTarget) -> ToolPayload:

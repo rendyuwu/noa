@@ -67,6 +67,19 @@ would pass `{"server": {"ssh_password": ...}}` straight through to a runner (V66
 through `core.audit.summaries`, which redacts; `action_receipts.receipt_data` is the same
 payload and outlives the call in front of the same readers, so it goes through the same rule.
 A per-writer exemption is how one of them eventually puts a credential in the audit trail.
+
+**A runner may state a before→after delta, and it arrives beside the envelope rather than in
+it.** The two halves meet only on identity — keys that carry the same value in both, because a
+runner resolves its identity out of the evidence — and the field a change actually moved is never
+addressable in both, so nothing downstream can diff them; the runner is the only party holding
+both vocabularies, and `ChangeOutcome` is how it says so without touching the payload
+(`core.approvals.delta` carries that argument in full, and
+`apps/api/tests/test_change_receipt_halves.py` holds it). Two consequences
+here. `after` stays byte-identical to the payload the runner returned, because the delta never
+enters it — and so does `result_summary`, which is derived from the same payload and cut at
+2000 characters. And the delta is redacted on its own line below rather than lifted from raw
+payload the way `ok` and `error_code` are, because those two are read *unredacted* on purpose
+and a delta must not be.
 """
 
 from __future__ import annotations
@@ -81,13 +94,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.context import arguments_from_context, evidence_from_context
+from core.approvals.delta import ChangeDelta, ChangeOutcome
 from core.audit.receipts import ActionReceiptRepository, SQLActionReceiptRepository
 from core.audit.summaries import result_summary, status_for_payload
 from core.audit.tool_runs import SQLToolRunRepository, ToolRunRepository
 from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 from core.db.models import ActionRequest
 from core.errors import NoaError
-from core.secrets.redaction import redact_sensitive_data, sensitive_key_paths
+from core.secrets.redaction import redact_mapping, sensitive_key_paths
 
 # The execution began. One event per authorised change actually starting to run, so "why did
 # this account get suspended at 03:00" is answerable from the logs (V46's audit-log third).
@@ -137,6 +151,11 @@ RECEIPT_OK_KEY: Final = "ok"
 RECEIPT_BEFORE_KEY: Final = "before"
 RECEIPT_AFTER_KEY: Final = "after"
 RECEIPT_ERROR_CODE_KEY: Final = "error_code"
+
+# The fifth key, and the only one that is sometimes not there at all. Absent means the runner
+# measured nothing worth stating — which is a claim, not a gap (`core.approvals.delta`), and the
+# one thing that separates an executor refusal from a runner failure, since both are `ok: False`.
+RECEIPT_DELTA_KEY: Final = "delta"
 
 logger = structlog.get_logger(__name__)
 
@@ -209,10 +228,17 @@ class ChangeRunner(Protocol):
     **A runner must not echo `request.reason` back in its payload.** `result_summary` is derived
     from that payload (`core.audit.summaries`) and `noa_get_action_result` returns the summary to
     a model, so an answer repeating the note it just wrote would hand the LLM the one field C8
-    keeps from it — through V45's audit row rather than through any tool schema (V96b).
+    keeps from it — through V45's audit row rather than through any tool schema (V96b). The same
+    fence holds on a delta and is checked there (`core.approvals.delta`), because a receipt key
+    is that door one step over.
+
+    **A runner may answer a `ChangeOutcome` instead of a bare envelope**, which is how it states
+    a before→after delta beside the payload rather than inside it. The bare envelope is still a
+    complete answer and means "nothing measured worth stating"; the union is what keeps a runner
+    with no delta to publish from having to wrap one in an empty object.
     """
 
-    async def __call__(self, request: ChangeExecutionRequest) -> dict[str, Any]: ...
+    async def __call__(self, request: ChangeExecutionRequest) -> dict[str, Any] | ChangeOutcome: ...
 
 
 class ApprovedChangeExecutionRepository(Protocol):
@@ -395,12 +421,12 @@ class ApprovedChangeExecutionService:
             conversation_ref=authorized.conversation_ref,
         )
 
-        payload = await self._run(authorized)
-        return await self._record(authorized, payload)
+        outcome = await self._run(authorized)
+        return await self._record(authorized, outcome)
 
     # --- Internals ---
 
-    async def _run(self, authorized: AuthorizedChange) -> dict[str, Any]:
+    async def _run(self, authorized: AuthorizedChange) -> ChangeOutcome:
         """The change itself, or the named reason it did not happen.
 
         Three refusals before a runner is reached or instead of reaching one, and each returns
@@ -415,6 +441,17 @@ class ApprovedChangeExecutionService:
            else is a NOA bug and says so. `BaseException` is not caught: a cancelled execution
            (app shutdown) has no answer to record, and the row it leaves `STARTED` is exactly
            what the reaper is for.
+
+        **Every refusal here carries no delta, and that is the fact a reader acts on.** Nothing
+        was measured on any of these three paths — no runner was reached, or one was reached and
+        raised — so there is nothing to state, and `ChangeOutcome.delta is None` says so rather
+        than shipping an object full of absences. A runner *failure* is the opposite case and
+        looks nothing like this: it answers `ok: False` with a delta carrying what it did
+        measure, which is why the two cannot be told apart by the envelope.
+
+        A runner that builds an impossible delta lands on the third path: `ChangeDelta` refuses
+        at construction (`core.approvals.delta`), the `ValueError` arrives here, and the run
+        becomes a named terminal failure with a receipt rather than a half-written one.
         """
         redacted = sorted(sensitive_key_paths(authorized.arguments))
         if redacted:
@@ -443,7 +480,7 @@ class ApprovedChangeExecutionService:
             reason=authorized.reason,
         )
         try:
-            return await runner(request)
+            answered = await runner(request)
         except NoaError as exc:
             return _failure(
                 exc.error_code,
@@ -458,18 +495,26 @@ class ApprovedChangeExecutionService:
                 log_detail=f"{type(exc).__name__}: {exc}",
                 tool_name=authorized.tool_name,
             )
+        # A runner with nothing to state answers the bare envelope, and normalising it here is
+        # what keeps that from being seven authors' problem (V66).
+        return answered if isinstance(answered, ChangeOutcome) else ChangeOutcome(payload=answered)
 
     async def _record(
         self,
         authorized: AuthorizedChange,
-        payload: dict[str, Any],
+        outcome: ChangeOutcome,
     ) -> ToolRunStatus:
         """The terminal run and the receipt, in one commit (V46, V47).
 
         The status is read off the envelope's `ok` (`core.audit.summaries`), the same rule the
         READ path records with — so a runner that answered a refusal is not recorded as a
         change that worked.
+
+        The delta travels to `build_receipt` and nowhere else: `status_for_payload` and
+        `result_summary` are handed the runner's payload exactly as it arrived, so both are what
+        they were before a delta existed.
         """
+        payload = outcome.payload
         status = status_for_payload(payload)
         await self._repository.finish_run(
             tool_run_id=authorized.tool_run_id,
@@ -479,7 +524,11 @@ class ApprovedChangeExecutionService:
         await self._repository.record_receipt(
             action_request_id=authorized.action_request_id,
             tool_run_id=authorized.tool_run_id,
-            receipt_data=build_receipt(evidence=authorized.evidence, payload=payload),
+            receipt_data=build_receipt(
+                evidence=authorized.evidence,
+                payload=payload,
+                delta=outcome.delta,
+            ),
         )
         await self._repository.commit()
 
@@ -494,7 +543,12 @@ class ApprovedChangeExecutionService:
         return status
 
 
-def build_receipt(*, evidence: Mapping[str, Any], payload: Mapping[str, Any]) -> dict[str, Any]:
+def build_receipt(
+    *,
+    evidence: Mapping[str, Any],
+    payload: Mapping[str, Any],
+    delta: ChangeDelta | None = None,
+) -> dict[str, Any]:
     """The two-part receipt V46 stores and T42's card renders (DECISIONS §6.5, §T.25).
 
     `before` is the gate-time preflight the operator authorised against; `after` is what the
@@ -510,16 +564,31 @@ def build_receipt(*, evidence: Mapping[str, Any], payload: Mapping[str, Any]) ->
     admin audit surface, so a runner that answers with a `password` field must not leave one
     here. `before` is the gate's own `approval_context` evidence, copied rather than re-derived
     — whatever redaction it carries is T33's, and re-deciding it here would be a second answer.
+
+    **`delta` is a fifth key and it is omitted entirely when there is none.** It arrives as its
+    own parameter, so `before` and `after` are byte-for-byte what they were without it, and it
+    goes through the redactor on its own line rather than inheriting the payload's pass — the two
+    are separate values redacted separately, and a runner that puts a delivery URL in one and not
+    the other still gets one policy. Absent rather than `null`, matching `error_code`'s rule
+    directly above: an absent field beats an empty one, and here the absence is what says nothing
+    was measured.
+
+    Both lines call `redact_mapping`, which answers a mapping because it takes one. The general
+    `redact_sensitive_data` answers `object`, and the two ways of narrowing that at a call site
+    are a `cast` that verifies nothing and an `if isinstance(...) else {}` that cannot run — the
+    second is what stood here, and an unreachable fallback to a benign value is the shape this
+    module argues against one function down (V86).
     """
-    redacted_payload = redact_sensitive_data(dict(payload))
     receipt: dict[str, Any] = {
         RECEIPT_OK_KEY: payload.get(RECEIPT_OK_KEY) is True,
         RECEIPT_BEFORE_KEY: dict(evidence),
-        RECEIPT_AFTER_KEY: redacted_payload if isinstance(redacted_payload, dict) else {},
+        RECEIPT_AFTER_KEY: redact_mapping(payload),
     }
     error_code = payload.get(RECEIPT_ERROR_CODE_KEY)
     if error_code:
         receipt[RECEIPT_ERROR_CODE_KEY] = error_code
+    if delta is not None:
+        receipt[RECEIPT_DELTA_KEY] = redact_mapping(delta.as_payload())
     return receipt
 
 
@@ -529,12 +598,15 @@ def _failure(
     *,
     log_detail: str,
     tool_name: str,
-) -> dict[str, Any]:
+) -> ChangeOutcome:
     """A refusal in the tool envelope's shape, with the cause logged and not returned.
 
     Same split `sanitize_tool_errors` makes and for the same reason (V8, V26): `message` is
     what an operator reads on the card and what a model may be told, while the detail — an
     exception's text, a host, an argument name — stays in the log.
+
+    No delta, by construction rather than by omission: every caller of this reached it because
+    nothing ran, and a refusal that nothing measured has nothing to state (V86).
     """
     logger.warning(
         LOG_EXECUTION_REFUSED,
@@ -542,7 +614,9 @@ def _failure(
         error_code=error_code,
         detail=log_detail,
     )
-    return {"ok": False, RECEIPT_ERROR_CODE_KEY: error_code, "message": message}
+    return ChangeOutcome(
+        payload={"ok": False, RECEIPT_ERROR_CODE_KEY: error_code, "message": message}
+    )
 
 
 __all__ = [
@@ -558,6 +632,7 @@ __all__ = [
     "MESSAGE_RUNNER_UNAVAILABLE",
     "RECEIPT_AFTER_KEY",
     "RECEIPT_BEFORE_KEY",
+    "RECEIPT_DELTA_KEY",
     "RECEIPT_ERROR_CODE_KEY",
     "RECEIPT_OK_KEY",
     "ApprovedChangeExecutionRepository",

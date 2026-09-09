@@ -58,6 +58,14 @@ from typing import Any, Final
 
 import structlog
 
+from core.approvals.delta import (
+    # `VERIFICATION_UNAVAILABLE` arrives below through `change_target`, the same string from the
+    # same definition — `core.approvals.delta` owns all four states.
+    VERIFICATION_MISMATCH,
+    VERIFICATION_VERIFIED,
+    ChangeDelta,
+    ChangeOutcome,
+)
 from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
 from core.errors import NoaError
 from core.integrations.proxmox.client import ProxmoxClient
@@ -186,16 +194,23 @@ def build_proxmox_reset_vm_password_runner(
     keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
     """
 
-    async def run(request: ChangeExecutionRequest) -> ToolPayload:
+    async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
         """Reset this approved request's VM password, and say what happened.
 
         Resolve from the evidence, generate, deliver, apply, verify. Every refusal answers the
         ordinary tool envelope rather than raising, because the executor's own catch records
         something coarser than what this knew (V19).
+
+        The resolution refusal carries **no delta** — nothing was generated, delivered or
+        written, so there is nothing to state (V86). Every path below carries one, and **none of
+        them carries a field change**: what this tool alters is a password, so neither side of
+        that diff may be rendered at all. `delivered_credential` is the facet instead, and its
+        presence carries the same claim the payload's `yopass_url` does — that the password may
+        be live on the VM.
         """
         target = await _resolve_change_target(request.evidence, context=context)
         if not isinstance(target, ProxmoxChangeTarget):
-            return target
+            return ChangeOutcome(payload=target)
 
         # V49: generated here, in this frame, and never an argument. It is passed to exactly two
         # places — the delivery hop and Proxmox — and reaches no return value, no log and no row.
@@ -212,7 +227,17 @@ def build_proxmox_reset_vm_password_runner(
                 action_request_id=str(request.action_request_id),
                 error_code=exc.error_code,
             )
-            return {**tool_failure(exc.error_code, exc.message), **_common(target)}
+            return ChangeOutcome(
+                payload={**tool_failure(exc.error_code, exc.message), **_common(target)},
+                # No `delivered_credential`, and the absence is the claim: the store came before
+                # any write, so the VM is untouched and there is no copy of the new password to
+                # hand anybody. The URL does not exist to withhold.
+                delta=_reset_delta(
+                    target,
+                    verification=VERIFICATION_UNAVAILABLE,
+                    verification_cause=exc.error_code,
+                ),
+            )
 
         async with target.client:
             failure = await _apply_password(target, password=password)
@@ -428,13 +453,40 @@ async def _verify_password(
     return verification
 
 
+def _reset_delta(
+    target: ProxmoxChangeTarget,
+    *,
+    verification: str,
+    verification_cause: str | None = None,
+    delivered_credential: str | None = None,
+) -> ChangeDelta:
+    """This change's before→after, as the runner that ran it states it.
+
+    **No `changed_fields`, on any branch, and that is the point of the facet this uses instead.**
+    The value that moved is a password: the old one NOA never held, the new one it must not
+    record, and a crypt hash of either is exactly what stays in this frame rather than reaching a
+    payload a model can read. So the delta says a credential was delivered and whether the change
+    was confirmed, and says nothing about the value on either side.
+
+    `delivered_credential` present is the claim that the password may be live on the VM, which is
+    the same rule its `yopass_url` twin follows in the payload — a failure carrying no link is
+    NOA saying the VM never got this password, and that difference is what a reader acts on.
+    """
+    return ChangeDelta(
+        identity=_common(target),
+        verification=verification,
+        verification_cause=verification_cause,
+        delivered_credential=delivered_credential,
+    )
+
+
 def _reset_outcome(
     target: ProxmoxChangeTarget,
     *,
     request: ChangeExecutionRequest,
     verification: CloudInitPasswordVerification,
     yopass_url: str,
-) -> ToolPayload:
+) -> ChangeOutcome:
     """What the change did, read off the crypt compare (V62, T69).
 
     Three answers, and the middle one is §T.69:
@@ -454,16 +506,23 @@ def _reset_outcome(
     """
     common = _common(target)
     if verification.verdict is CryptVerdict.MATCH:
-        return tool_ok(
-            **common,
-            status=STATUS_CHANGED,
-            verified=True,
-            yopass_url=yopass_url,
-            message=(
-                f"The cloud-init password for `{target.username}` on VM {target.vmid} "
-                f"({target.server_name}) was changed and confirmed. Give the operator the link; "
-                "it opens once. The guest reads the new password when its cloud-init drive is "
-                "next read."
+        return ChangeOutcome(
+            payload=tool_ok(
+                **common,
+                status=STATUS_CHANGED,
+                verified=True,
+                yopass_url=yopass_url,
+                message=(
+                    f"The cloud-init password for `{target.username}` on VM {target.vmid} "
+                    f"({target.server_name}) was changed and confirmed. Give the operator the "
+                    "link; it opens once. The guest reads the new password when its cloud-init "
+                    "drive is next read."
+                ),
+            ),
+            delta=_reset_delta(
+                target,
+                verification=VERIFICATION_VERIFIED,
+                delivered_credential=yopass_url,
             ),
         )
 
@@ -476,36 +535,56 @@ def _reset_outcome(
             vmid=target.vmid,
             cause=verification.cause,
         )
-        return tool_ok(
-            **common,
-            status=STATUS_CHANGED,
-            verified=False,
-            verification=VERIFICATION_UNAVAILABLE,
-            verification_cause=verification.cause,
-            yopass_url=yopass_url,
-            message=(
-                f"Proxmox accepted the new cloud-init password for `{target.username}` on VM "
-                f"{target.vmid} ({target.server_name}), but NOA could not confirm it took. Give "
-                "the operator the link and check the VM before relying on it."
+        return ChangeOutcome(
+            payload=tool_ok(
+                **common,
+                status=STATUS_CHANGED,
+                verified=False,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=verification.cause,
+                yopass_url=yopass_url,
+                message=(
+                    f"Proxmox accepted the new cloud-init password for `{target.username}` on VM "
+                    f"{target.vmid} ({target.server_name}), but NOA could not confirm it took. "
+                    "Give the operator the link and check the VM before relying on it."
+                ),
+            ),
+            delta=_reset_delta(
+                target,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=verification.cause,
+                delivered_credential=yopass_url,
             ),
         )
 
-    return {
-        **tool_failure(ERROR_POSTFLIGHT_FAILED, MESSAGE_POSTFLIGHT_FAILED),
-        **common,
-        "verified": False,
-        "yopass_url": yopass_url,
-    }
+    return ChangeOutcome(
+        payload={
+            **tool_failure(ERROR_POSTFLIGHT_FAILED, MESSAGE_POSTFLIGHT_FAILED),
+            **common,
+            "verified": False,
+            "yopass_url": yopass_url,
+        },
+        # A measurement: the VM carries a *different* password. The link still goes out, because
+        # Proxmox accepted the write and the generated password may be live anyway.
+        delta=_reset_delta(
+            target,
+            verification=VERIFICATION_MISMATCH,
+            delivered_credential=yopass_url,
+        ),
+    )
 
 
 def _failure_payload(
     target: ProxmoxChangeTarget, failure: StepFailure, *, yopass_url: str
-) -> ToolPayload:
+) -> ChangeOutcome:
     """A failed step, with the link attached exactly when the password may already be live.
 
     The absent field is doing work here rather than saving bytes: a failure carrying no
     `yopass_url` is NOA saying the VM never got this password, and a caller — the card, the
     audit surface, a model reading `noa_get_action_result` — can act on that difference.
+
+    The delta beside it takes the same decision from the same field, so the two cannot disagree
+    about whether a credential was delivered.
     """
     payload: ToolPayload = {
         **tool_failure(failure.error_code, failure.message),
@@ -513,7 +592,15 @@ def _failure_payload(
     }
     if failure.password_may_be_live:
         payload["yopass_url"] = yopass_url
-    return payload
+    return ChangeOutcome(
+        payload=payload,
+        delta=_reset_delta(
+            target,
+            verification=VERIFICATION_UNAVAILABLE,
+            verification_cause=failure.error_code,
+            delivered_credential=yopass_url if failure.password_may_be_live else None,
+        ),
+    )
 
 
 def _common(target: ProxmoxChangeTarget) -> ToolPayload:

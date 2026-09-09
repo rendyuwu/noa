@@ -34,16 +34,30 @@ between the two sentences. Duplicating a constant whose *value* is the system's 
 V66 is about; collapsing them would be, because it would make one code answer for two
 inventories.
 
-**The three status words are here for the same reason the codes are.** `changed`, `no_op` and
-`unavailable` land in `tool_runs.result_summary` and in a receipt an operator reads, so two
-runners spelling one of them differently is two vocabularies in one audit trail (V66). They were
-T22's; T25 is the second speaker.
+**The status words are here for the same reason the codes are.** `changed` and `no_op` land in
+`tool_runs.result_summary` and in a receipt an operator reads, so two runners spelling one of
+them differently is two vocabularies in one audit trail (V66). They were T22's; T25 is the
+second speaker.
+
+`unavailable` was here too and moved to `core.approvals.delta`, which now owns the four states
+verification can hold. Same value, same name, re-exported from here — the move is that a
+runner's payload and the delta it publishes beside that payload read one definition of "the
+postflight could not answer" instead of two.
 """
 
 from __future__ import annotations
 
 from typing import Any
 from uuid import UUID
+
+from core.approvals.delta import (
+    # Hoisted to `core.approvals.delta` when the receipt's delta became the second speaker of
+    # this word (V66). Its value is unchanged and it is re-exported below, so every runner and
+    # test that reads it from here keeps one import path — but there is now exactly one
+    # definition of "the postflight could not answer", shared by the payload a runner returns
+    # and the delta it states beside it, and the two cannot drift into two spellings.
+    VERIFICATION_UNAVAILABLE,
+)
 
 # The approved change names a server that is no longer resolvable — deleted, or the evidence no
 # longer parses. Distinct from the tool-time resolution failures, which the model can fix by
@@ -68,10 +82,6 @@ MESSAGE_EVIDENCE_UNUSABLE = (
 # nothing was asked of an operator and nothing was changed.
 STATUS_NO_OP = "no_op"
 STATUS_CHANGED = "changed"
-
-# The postflight read could not answer. The change happened; whether it took is unconfirmed.
-# V62's rule, stated for every system that has one: verification-unavailable is not verification.
-VERIFICATION_UNAVAILABLE = "unavailable"
 
 
 def uuid_or_none(value: Any) -> UUID | None:

@@ -66,6 +66,16 @@ from typing import Any, Final
 
 import structlog
 
+from core.approvals.delta import (
+    # `VERIFICATION_UNAVAILABLE` arrives below through `change_target`, the same string from the
+    # same definition — `core.approvals.delta` owns all four states.
+    VERIFICATION_MISMATCH,
+    VERIFICATION_NOT_IN_FORCE,
+    VERIFICATION_VERIFIED,
+    ChangeDelta,
+    ChangeOutcome,
+    ListDelta,
+)
 from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
 from core.integrations.pmg.errors import PMGSHCLIError
 from core.integrations.pmg.mynetworks import (
@@ -99,6 +109,7 @@ from noa_api.mcp_tools.pmg_whitelist import (
     EVIDENCE_NORMALIZED_TARGET,
     EVIDENCE_SERVER_ID,
     EVIDENCE_TARGET,
+    EVIDENCE_TOTAL_ENTRIES,
     MESSAGE_SERVER_UNAVAILABLE,
     TOOL_PMG_WHITELIST,
 )
@@ -161,20 +172,36 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
     nothing C8 keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
     """
 
-    async def run(request: ChangeExecutionRequest) -> ToolPayload:
+    async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
         """Apply this approved whitelist change, and say what happened.
 
         Resolve from the evidence, re-read, decide, write, sync, verify. Every refusal answers the
         ordinary tool envelope rather than raising, because the executor's own catch records
         something coarser than what this knew (V19).
+
+        Three deltas are decided here and the rest below. The resolution refusal carries **none**
+        — nothing was read and nothing was written, so there is nothing to state (V86). A
+        `mynetworks` read that could not answer carries one with **no list move**, because the
+        list was never seen. The no-op carries one with an **empty** list move, which is not the
+        same thing: the list was read, it already held what was asked for, and "NOA compared and
+        nothing moved" is what an operator needs to be told rather than an absent facet a
+        renderer would show as a blank.
         """
         target = await _resolve_change_target(request.evidence, context=context)
         if not isinstance(target, WhitelistChangeTarget):
-            return target
+            return ChangeOutcome(payload=target)
 
+        entries = _evidence_total_entries(request.evidence)
         before = await _read_matches(target)
         if not isinstance(before, list):
-            return {**before, **_common(target)}
+            return ChangeOutcome(
+                payload={**before, **_common(target)},
+                delta=_whitelist_delta(
+                    target,
+                    verification=VERIFICATION_UNAVAILABLE,
+                    verification_cause=str(before.get("error_code") or ERROR_UNKNOWN),
+                ),
+            )
 
         if bool(before) == target.adding:
             logger.info(
@@ -184,23 +211,46 @@ def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
                 server=target.server_name,
                 action=target.action,
             )
-            return tool_ok(
-                **_common(target),
-                status=STATUS_NO_OP,
-                exists=target.adding,
-                verified=True,
-                message=(
-                    f"`{target.normalized}` was already "
-                    f"{'on' if target.adding else 'off'} the mynetworks whitelist on "
-                    f"{target.server_name} when NOA ran this change, so nothing was written."
+            return ChangeOutcome(
+                payload=tool_ok(
+                    **_common(target),
+                    status=STATUS_NO_OP,
+                    exists=target.adding,
+                    verified=True,
+                    message=(
+                        f"`{target.normalized}` was already "
+                        f"{'on' if target.adding else 'off'} the mynetworks whitelist on "
+                        f"{target.server_name} when NOA ran this change, so nothing was written."
+                    ),
+                ),
+                delta=_whitelist_delta(
+                    target,
+                    verification=VERIFICATION_VERIFIED,
+                    list_delta=ListDelta(total_entries=entries),
                 ),
             )
 
-        failure = await _apply_change(target, matches=before)
-        if failure is not None:
-            return failure
+        applied = await _apply_change(target, matches=before)
+        moved = ListDelta(added=applied.added, removed=applied.removed, total_entries=entries)
+        if applied.failure is not None:
+            return ChangeOutcome(
+                payload=applied.failure,
+                # The list move rides **beside** the failure rather than instead of it: a
+                # refused `delete` stops mid-loop with the lines it already took gone from the
+                # config, and a sync that failed leaves every line written and none in force.
+                # Both are measurements, and dropping them would report a half-done change as
+                # one that did nothing.
+                delta=_whitelist_delta(
+                    target,
+                    verification=(
+                        VERIFICATION_NOT_IN_FORCE if applied.written else VERIFICATION_UNAVAILABLE
+                    ),
+                    verification_cause=applied.cause,
+                    list_delta=moved,
+                ),
+            )
 
-        return await _verify_membership(target, request=request, removed=before)
+        return await _verify_membership(target, request=request, moved=moved)
 
     return run
 
@@ -287,10 +337,31 @@ async def _read_matches(target: WhitelistChangeTarget) -> list[MynetworksEntry] 
     return find_matching_entries(entries, normalized_target=target.normalized)
 
 
+@dataclass(frozen=True)
+class _Applied:
+    """What the write step actually moved, and the refusal if there was one.
+
+    `failure` is the envelope, `None` when both steps took. The other three are the delta's
+    material and they are carried out of here rather than inferred by the caller, because this is
+    the only frame that knows *how far* a partial removal got: the loop below stops at the first
+    refusal, so "which lines are gone" is a fact only the loop holds.
+
+    `written` separates the two failures the module docstring keeps apart. `pmgsh` refused means
+    nothing was accepted; `pmgconfig sync` refused means everything was accepted and none of it
+    is in force, which is a third outcome and not a shade of either.
+    """
+
+    failure: ToolPayload | None = None
+    added: tuple[str, ...] = ()
+    removed: tuple[str, ...] = ()
+    written: bool = False
+    cause: str | None = None
+
+
 async def _apply_change(
     target: WhitelistChangeTarget, *, matches: list[MynetworksEntry]
-) -> ToolPayload | None:
-    """Write the change and apply it. `None` when both steps took.
+) -> _Applied:
+    """Write the change and apply it. No `failure` when both steps took.
 
     The two failures are kept apart on purpose. A refused `pmgsh create`/`delete` means nothing
     moved. A refused `pmgconfig sync` means the config moved and Postfix did not — see the module
@@ -299,38 +370,101 @@ async def _apply_change(
     A removal sends one `delete` per matching line, each naming that line's own spelling, and stops
     at the first refusal: the remaining lines are still on the box and the postflight will find
     them, which is a truer answer than pressing on and reporting a partial removal as a whole one.
+    The lines that *did* go are collected as they go, one at a time, so a refusal halfway through
+    reports what it moved instead of reporting nothing.
     """
+    removed: list[str] = []
     try:
         if target.adding:
             await run_pmg_mynetworks_add(target.config, cidr=target.normalized)
         else:
             for entry in matches:
                 await run_pmg_mynetworks_delete(target.config, cidr=entry.cidr)
+                removed.append(entry.cidr)
     except PMGSHCLIError as exc:
-        return {**tool_failure(exc.error_code, exc.message), **_common(target), "applied": False}
+        return _Applied(
+            failure={
+                **tool_failure(exc.error_code, exc.message),
+                **_common(target),
+                "applied": False,
+            },
+            removed=tuple(removed),
+            cause=exc.error_code,
+        )
 
+    added = (target.normalized,) if target.adding else ()
     try:
         await run_pmgconfig_sync_restart(target.config)
     except PMGSHCLIError as exc:
-        return {
-            **tool_failure(
-                ERROR_SYNC_FAILED,
-                f"PMG accepted the whitelist change for `{target.normalized}` on "
-                f"{target.server_name}, but `pmgconfig sync` failed, so mail flow has not picked "
-                f"it up yet: {exc.message}",
-            ),
-            **_common(target),
-            "applied": False,
-        }
-    return None
+        return _Applied(
+            failure={
+                **tool_failure(
+                    ERROR_SYNC_FAILED,
+                    f"PMG accepted the whitelist change for `{target.normalized}` on "
+                    f"{target.server_name}, but `pmgconfig sync` failed, so mail flow has not "
+                    f"picked it up yet: {exc.message}",
+                ),
+                **_common(target),
+                "applied": False,
+            },
+            added=added,
+            removed=tuple(removed),
+            written=True,
+            cause=ERROR_SYNC_FAILED,
+        )
+    return _Applied(added=added, removed=tuple(removed), written=True)
+
+
+def _evidence_total_entries(evidence: Mapping[str, Any]) -> int | None:
+    """How many lines `mynetworks` held when the operator was asked (V85).
+
+    Off the evidence, because it is the only place the whole list was counted: this runner reads
+    the lines that *match* its target and never the rest, so a total taken here would be a total
+    of four entries on a gateway that holds forty.
+
+    `None` when the evidence carries no usable count — a row opened before the key existed.
+    Absent rather than zero: a list nobody counted is not an empty list.
+    """
+    total = evidence.get(EVIDENCE_TOTAL_ENTRIES)
+    if isinstance(total, bool) or not isinstance(total, int) or total < 0:
+        return None
+    return total
+
+
+def _whitelist_delta(
+    target: WhitelistChangeTarget,
+    *,
+    verification: str,
+    verification_cause: str | None = None,
+    list_delta: ListDelta | None = None,
+) -> ChangeDelta:
+    """This change's before→after, as the runner that ran it states it.
+
+    **The facet is `list_delta`**, because a `mynetworks` entry has no value that changes — it is
+    either a line in the file or it is not, and the change is its membership. Both spellings of
+    the address ride on the identity for the reason they ride in the payload (V59): a reader told
+    only that `203.0.113.0/24` moved cannot tell whether an operator asked about a network or a
+    host inside it.
+
+    `added` and `removed` hold PMG's own spelling of each line, not the normalised form, because
+    `mynetworks` can hold `1.2.3.4` and `1.2.3.4/32` as two lines and one entry — a receipt
+    saying "removed" without saying which lines is a receipt that cannot be checked against the
+    box.
+    """
+    return ChangeDelta(
+        identity=_common(target),
+        verification=verification,
+        verification_cause=verification_cause,
+        list_delta=list_delta,
+    )
 
 
 async def _verify_membership(
     target: WhitelistChangeTarget,
     *,
     request: ChangeExecutionRequest,
-    removed: list[MynetworksEntry],
-) -> ToolPayload:
+    moved: ListDelta,
+) -> ChangeOutcome:
     """Is the address on the list now? Read off `mynetworks`, ⊥ off the exit code (V97, V62, V86).
 
     `pmgsh` printing `200 OK` says PMG accepted a write; it does not say what the whitelist now
@@ -345,6 +479,10 @@ async def _verify_membership(
        send an operator to repeat a change that has probably already happened.
     3. **mismatch** — the list is readable and the address is not where it was asked to be. That is
        a measurement, and it is a failure.
+
+    All three carry the list move that already happened, beside the verdict rather than instead
+    of it: the writes were accepted on every one of these paths, so what they moved is a fact
+    even where the confirming read disagrees with it or could not answer at all.
     """
     after = await _read_matches(target)
     if not isinstance(after, list):
@@ -357,47 +495,62 @@ async def _verify_membership(
             action=target.action,
             cause=cause,
         )
-        return tool_ok(
-            **_common(target),
-            status=STATUS_CHANGED,
-            verified=False,
-            verification=VERIFICATION_UNAVAILABLE,
-            verification_cause=cause,
-            message=(
-                f"PMG accepted the whitelist change for `{target.normalized}` on "
-                f"{target.server_name}, but NOA could not read the list back to confirm it. Check "
-                "the server before relying on it."
+        return ChangeOutcome(
+            payload=tool_ok(
+                **_common(target),
+                status=STATUS_CHANGED,
+                verified=False,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=cause,
+                message=(
+                    f"PMG accepted the whitelist change for `{target.normalized}` on "
+                    f"{target.server_name}, but NOA could not read the list back to confirm it. "
+                    "Check the server before relying on it."
+                ),
+            ),
+            delta=_whitelist_delta(
+                target,
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=cause,
+                list_delta=moved,
             ),
         )
 
     exists = bool(after)
     if exists != target.adding:
-        return {
-            **tool_failure(
-                ERROR_POSTFLIGHT_FAILED,
-                f"PMG accepted the change, but `{target.normalized}` on {target.server_name} is "
-                f"still {'absent from' if target.adding else 'on'} the mynetworks whitelist. "
-                "Check the server.",
-            ),
-            **_common(target),
-            "exists": exists,
-            "verified": False,
-        }
+        return ChangeOutcome(
+            payload={
+                **tool_failure(
+                    ERROR_POSTFLIGHT_FAILED,
+                    f"PMG accepted the change, but `{target.normalized}` on "
+                    f"{target.server_name} is still "
+                    f"{'absent from' if target.adding else 'on'} the mynetworks whitelist. "
+                    "Check the server.",
+                ),
+                **_common(target),
+                "exists": exists,
+                "verified": False,
+            },
+            delta=_whitelist_delta(target, verification=VERIFICATION_MISMATCH, list_delta=moved),
+        )
 
-    return tool_ok(
-        **_common(target),
-        status=STATUS_CHANGED,
-        exists=exists,
-        verified=True,
-        # PMG's own spelling of each line a removal took. An entry stored as a bare host and its
-        # `/32` twin are two lines, and a receipt saying "removed" without saying how many is a
-        # receipt that cannot be checked against the box.
-        removed=[entry.cidr for entry in removed] if not target.adding else [],
-        message=(
-            f"`{target.normalized}` was "
-            f"{'added to' if target.adding else 'removed from'} the mynetworks whitelist on "
-            f"{target.server_name} and confirmed by a fresh read."
+    return ChangeOutcome(
+        payload=tool_ok(
+            **_common(target),
+            status=STATUS_CHANGED,
+            exists=exists,
+            verified=True,
+            # PMG's own spelling of each line a removal took. An entry stored as a bare host and
+            # its `/32` twin are two lines, and a receipt saying "removed" without saying how
+            # many is a receipt that cannot be checked against the box.
+            removed=list(moved.removed),
+            message=(
+                f"`{target.normalized}` was "
+                f"{'added to' if target.adding else 'removed from'} the mynetworks whitelist on "
+                f"{target.server_name} and confirmed by a fresh read."
+            ),
         ),
+        delta=_whitelist_delta(target, verification=VERIFICATION_VERIFIED, list_delta=moved),
     )
 
 

@@ -1,7 +1,9 @@
 """Key-name redaction for anything persisted or logged (T73, V8, V45).
 
 Ported from `noa-old` branch `MCP` (`core/secrets/redaction.py`) per C13 — the key list and
-the recursive walk are the source's, unchanged. T15 deliberately left it behind: it lands
+the recursive walk are the source's, and what the walk does is unchanged. Its mapping branch
+is a named function here (`redact_mapping`), for a caller that holds a mapping and would
+otherwise have to assert its way back to one. T15 deliberately left the module behind: it lands
 with the code that *writes* redacted audit args, which is T73, because a redactor with no
 caller is a control no test exercises, and that is how B2 shipped (V69).
 
@@ -27,7 +29,7 @@ per-tool exemption is how one of them eventually writes a secret into the audit 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Final
+from typing import Any, Final
 
 REDACTED: Final[str] = "[redacted]"
 
@@ -69,19 +71,37 @@ def redact_sensitive_data(value: object, *, replacement: str = REDACTED) -> obje
     `str`, `bytes` and `bytearray` are excluded from the sequence branch on purpose: they
     are `Sequence`s, and walking one would explode a password into a list of characters,
     which is both unreadable and unredacted.
+
+    Answers `object`, because that is what it is handed. A caller that starts with a mapping
+    wants `redact_mapping` below — same walk, and it says so in the type.
     """
     if isinstance(value, Mapping):
-        return {
-            str(key): (
-                replacement
-                if is_sensitive_key(str(key))
-                else redact_sensitive_data(item, replacement=replacement)
-            )
-            for key, item in value.items()
-        }
+        return redact_mapping(value, replacement=replacement)
     if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [redact_sensitive_data(item, replacement=replacement) for item in value]
     return value
+
+
+def redact_mapping(value: Mapping[str, Any], *, replacement: str = REDACTED) -> dict[str, Any]:
+    """One mapping redacted, answering a mapping (V8).
+
+    The walk above, split out rather than copied: `noa-old`'s function answers `object` because
+    it takes one, and a caller holding a mapping then has to say in some way that a dict comes
+    back. Both spellings of that cost something. A `cast` claims what nothing verifies. An
+    `or {}` — the shape this replaced at two lines of `core.approvals.execution.build_receipt` —
+    is a branch that cannot run, sitting in front of the next author as the way to handle a
+    redactor that answered something else, which is a benign value standing in for a bug (V86,
+    one surface over). Naming the mapping case is the third option, and it costs nothing: the
+    two functions are one policy, and a key comparison changed here changes both.
+    """
+    return {
+        str(key): (
+            replacement
+            if is_sensitive_key(str(key))
+            else redact_sensitive_data(item, replacement=replacement)
+        )
+        for key, item in value.items()
+    }
 
 
 def sensitive_key_paths(value: object, *, _prefix: str = "") -> list[str]:
@@ -117,6 +137,7 @@ __all__ = [
     "REDACTED",
     "SENSITIVE_KEYS",
     "is_sensitive_key",
+    "redact_mapping",
     "redact_sensitive_data",
     "sensitive_key_paths",
 ]

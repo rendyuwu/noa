@@ -64,10 +64,11 @@ from core.approvals.context import (
 from core.approvals.execution import (
     # The keys T38's writer puts in `receipt_data`, read here rather than respelled: a misspelt
     # key in JSONB reads as an absent one, and the constants' own comment names this card as one
-    # of the three readers they exist for (V66). The import is of four strings — nothing on this
+    # of the three readers they exist for (V66). The import is of five strings — nothing on this
     # read path executes anything.
     RECEIPT_AFTER_KEY,
     RECEIPT_BEFORE_KEY,
+    RECEIPT_DELTA_KEY,
     RECEIPT_ERROR_CODE_KEY,
     RECEIPT_OK_KEY,
 )
@@ -117,6 +118,19 @@ class ApprovalCardReceipt:
     this class copies. A reader that redacted again would be a second redaction policy, and the
     day the two disagree is the day one of them is wrong.
 
+    **`delta` is the third half, and it is the only one an operator can read as a sentence.**
+    The other two are a preflight reading and a tool envelope, written minutes apart in two
+    vocabularies that meet only on identity — the keys they share carry the same value in both,
+    and the field that moved is never under a shared key — so "what did this change actually
+    move" is a question neither half answers and nothing downstream can compute. The runner that
+    moved it states it instead (`core.approvals.delta`). `None` when the writer stored none,
+    which is a claim rather than a gap: nothing was measured, so nothing is stated.
+
+    Copied, not re-parsed. The delta is stored as JSONB by one writer that already validated and
+    redacted it, and rebuilding a `ChangeDelta` from that row here would be a second reading of
+    the same bytes — the same argument the two halves above are copied by, and the day the two
+    readings disagree is the day one of them is wrong.
+
     No timestamp. `action_receipts.created_at` exists on the row and is deliberately not carried:
     `tool_runs` already reports when the run started and finished (V47), and a third stamp for
     one moment is the third truth T34 refused when it dropped its own duplicate columns.
@@ -126,18 +140,23 @@ class ApprovalCardReceipt:
     before: dict[str, Any]
     after: dict[str, Any]
     error_code: str | None
+    delta: dict[str, Any] | None = None
 
     def as_payload(self) -> dict[str, Any]:
         """JSON-native fields for the card body.
 
-        `error_code` is `None` rather than omitted, for the reason `run` is: this body is parsed
-        by a renderer that switches on the field, and a missing key reads as one it forgot.
+        `error_code` and `delta` are `None` rather than omitted, for the reason `run` is: this
+        body is parsed by a renderer that switches on the field, and a missing key reads as one
+        it forgot. That is the opposite of the stored receipt's rule, and deliberately so — the
+        row omits a key nothing measured so that the absence is a fact, and this turns that
+        absence into the `null` a renderer branches on.
         """
         return {
             RECEIPT_OK_KEY: self.ok,
             RECEIPT_BEFORE_KEY: dict(self.before),
             RECEIPT_AFTER_KEY: dict(self.after),
             RECEIPT_ERROR_CODE_KEY: self.error_code,
+            RECEIPT_DELTA_KEY: None if self.delta is None else dict(self.delta),
         }
 
 
@@ -240,6 +259,7 @@ def receipt_from_data(receipt_data: Any) -> ApprovalCardReceipt:
     """
     data = receipt_data if isinstance(receipt_data, dict) else {}
     error_code = data.get(RECEIPT_ERROR_CODE_KEY)
+    delta = data.get(RECEIPT_DELTA_KEY)
     return ApprovalCardReceipt(
         ok=data.get(RECEIPT_OK_KEY) is True,
         before=_receipt_half(data.get(RECEIPT_BEFORE_KEY)),
@@ -247,6 +267,12 @@ def receipt_from_data(receipt_data: Any) -> ApprovalCardReceipt:
         # Empty string reads as no code: the writer omits the key when there is none, and a
         # blank one on the card would be a labelled row saying nothing.
         error_code=error_code if isinstance(error_code, str) and error_code else None,
+        # `None` for an absent key *and* for a half that is not an object, which is the two
+        # halves' rule one key over — except that here an empty object is `None` too, because
+        # the writer omits the key rather than storing an empty delta, so `{}` on this row is a
+        # payload nothing NOA wrote and "nothing was measured" is the reading that cannot be
+        # wrong.
+        delta=dict(delta) if isinstance(delta, dict) and delta else None,
     )
 
 

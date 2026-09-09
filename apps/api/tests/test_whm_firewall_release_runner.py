@@ -57,6 +57,7 @@ from noa_api.mcp_tools.whm_firewall_change import (
     build_whm_firewall_release_runner,
 )
 from support.action_decisions import REASON
+from support.change_delta import payload_runner
 from support.remote_exec import SUDO_DENIED_STDERR, command_result
 from support.secrets import build_cipher
 from support.whm_firewall import (
@@ -103,7 +104,7 @@ async def test_the_runner_releases_then_allows_on_both_backends(
     reordering breaks and what a set membership test would not.
     """
     fixture, fake = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -126,7 +127,7 @@ async def test_the_two_outcomes_are_reported_apart(monkeypatch: pytest.MonkeyPat
     see which of them is false.
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -150,7 +151,7 @@ async def test_the_after_state_carries_the_resolved_expiry_timestamp(
     being separated is 137 minutes from a default, not one second from another.
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     before = datetime.now(UTC)
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
@@ -172,7 +173,7 @@ async def test_both_backends_are_given_the_same_expiry(
     expired before the other.
     """
     fixture, fake = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -197,7 +198,7 @@ async def test_the_runner_acts_on_the_server_the_card_named(
     fixture, fake = release_context(
         monkeypatch, box=released_box(), cipher=cipher, servers=[alpha, beta]
     )
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     # The arguments name the other server; only the evidence names alpha.
     await runner(execution_request(server_id=alpha.id, server_ref="beta"))
@@ -211,7 +212,7 @@ async def test_a_release_that_did_not_take_is_a_failure(
     """The address is still blocked after the release ran. Reporting that as done is the
     fabrication the postflight exists to stop, and the code names *which* half failed."""
     fixture, _ = release_context(monkeypatch, box=released_box(csf_after=CSF_DENY_LINE))
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -232,7 +233,7 @@ async def test_an_allow_that_did_not_take_is_a_different_failure(
     fixture, _ = release_context(
         monkeypatch, box=released_box(csf_after=CSF_CLEAN_OUTPUT, imunify_after=IMUNIFY_CLEAN)
     )
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -259,7 +260,7 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
             imunify=imunify_backend(imunify_answer("not json at all")),
         ),
     )
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -285,7 +286,7 @@ async def test_a_backend_that_answered_alone_is_still_verified(
     fixture, _ = release_context(
         monkeypatch, box=FakeFirewallBox(csf=csf_backend(csf_answer(CSF_ALLOW_LINE)))
     )
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -317,7 +318,7 @@ async def test_a_release_step_that_finds_nothing_is_not_a_failure(
             ),
         ),
     )
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -342,7 +343,7 @@ async def test_an_allow_the_backend_refused_fails_with_that_backends_code(
         ),
         ssh_username="operator",
     )
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -357,7 +358,7 @@ async def test_a_server_that_vanished_after_approval_is_refused_before_the_chang
     """Fail closed on the far side of the boundary too: the row the operator approved against is
     gone, so the change does not run against whatever `server_ref` resolves to today."""
     fixture, fake = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=uuid4()))
 
@@ -377,7 +378,7 @@ async def test_evidence_with_an_unusable_duration_is_refused(
     guesses at. Guessing here writes an allow entry nobody approved the length of.
     """
     fixture, fake = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(
         execution_request(server_id=fixture.servers.servers[0].id, duration_minutes=duration)
@@ -393,7 +394,7 @@ async def test_evidence_without_a_usable_target_is_refused(
 ) -> None:
     """The same rule one field over: the address is what the change acts on."""
     fixture, fake = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id, target="  "))
 
@@ -413,7 +414,7 @@ async def test_zero_usable_backends_after_approval_raises_for_the_executor(
     drive at all.
     """
     fixture, _ = release_context(monkeypatch, box=FakeFirewallBox())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     with pytest.raises(NoaError) as raised:
         await runner(execution_request(server_id=fixture.servers.servers[0].id))
@@ -431,7 +432,7 @@ async def test_a_non_root_user_escalates_every_firewall_command(
     that silently does not happen.
     """
     fixture, fake = release_context(monkeypatch, box=released_box(), ssh_username="operator")
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -442,7 +443,7 @@ async def test_a_non_root_user_escalates_every_firewall_command(
 async def test_a_root_user_escalates_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """The other half of the biconditional (V87): root running under `sudo` is the same bug."""
     fixture, fake = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -466,7 +467,7 @@ async def test_the_written_comment_carries_the_operators_reason_behind_noas_mark
     side only.
     """
     fixture, fake = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
     request = execution_request(server_id=fixture.servers.servers[0].id)
 
     await runner(request)
@@ -491,7 +492,7 @@ async def test_the_runner_payload_never_carries_the_reason_back(
     (V96's own "on the serialized result ∧ on the derived summary").
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -526,7 +527,7 @@ async def test_a_backend_failure_message_is_cut_before_it_reaches_the_payload(
             ),
         ),
     )
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
 
     payload = await runner(
         execution_request(
@@ -556,7 +557,7 @@ async def test_the_receipt_keeps_the_two_halves_apart(monkeypatch: pytest.Monkey
     parts" is a claim about what the executor stores, not about what this test can assemble.
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
     request = execution_request(server_id=fixture.servers.servers[0].id)
 
     payload = await runner(request)
@@ -574,7 +575,7 @@ async def test_a_failed_change_keeps_its_before_state(monkeypatch: pytest.Monkey
     """V46: a receipt with a before-state and no working after-state IS the record of a change
     that did not complete — so the half the operator authorised against survives the failure."""
     fixture, _ = release_context(monkeypatch, box=released_box(csf_after=CSF_DENY_LINE))
-    runner = build_whm_firewall_release_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
     request = execution_request(server_id=fixture.servers.servers[0].id)
 
     receipt = build_receipt(evidence=request.evidence, payload=await runner(request))

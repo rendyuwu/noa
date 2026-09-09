@@ -69,6 +69,15 @@ import structlog
 from fastmcp import FastMCP
 from pydantic import Field
 
+from core.approvals.delta import (
+    # `VERIFICATION_UNAVAILABLE` arrives below through `whm_firewall_change_common`, the same
+    # string from the same definition — `core.approvals.delta` owns all four states.
+    VERIFICATION_MISMATCH,
+    VERIFICATION_VERIFIED,
+    ChangeDelta,
+    ChangeOutcome,
+    ListDelta,
+)
 from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
 from core.db.lifecycle import ToolRisk
 from core.errors import NoaError
@@ -106,6 +115,8 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     BackendChange,
     FirewallChangeTarget,
     backend_change_failure,
+    backend_outcomes,
+    evidence_bound,
     firewall_state,
     holds_allow_entry,
     resolve_firewall_change_target,
@@ -284,16 +295,19 @@ def build_whm_firewall_allowlist_remove_runner(*, context: McpToolContext) -> Ch
     because the entry being deleted carries the reason T25 wrote (V96, see the module docstring).
     """
 
-    async def run(request: ChangeExecutionRequest) -> ToolPayload:
+    async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
         """Take this approved request's address off the allow lists, and say what happened.
 
         Resolve from the evidence, probe availability, change, re-read. Each step can refuse, and
         every refusal answers the ordinary tool envelope rather than raising, because the
         executor's own catch records something coarser than what this knew (V19).
+
+        The resolution refusal carries **no delta**: nothing was driven and nothing was read, so
+        there is nothing to state (V86). Every answer from `_removal_outcome` carries one.
         """
         target = await resolve_firewall_change_target(request.evidence, context=context)
         if not isinstance(target, FirewallChangeTarget):
-            return target
+            return ChangeOutcome(payload=target)
 
         availability = await check_firewall_binaries(target.config)
         changes = await run_on_usable_backends(
@@ -416,13 +430,50 @@ async def _imunify_allowlist_remove(config: SSHConnectionConfig, *, target: str)
     return BackendChange(ok=True)
 
 
+def _removal_delta(
+    target: FirewallChangeTarget,
+    *,
+    request: ChangeExecutionRequest,
+    changes: Mapping[str, BackendChange],
+    lookups: Mapping[str, BackendLookup],
+    verification: str,
+    verification_cause: str | None = None,
+    list_delta: ListDelta | None = None,
+) -> ChangeDelta:
+    """This removal's before→after, as the runner that ran it states it.
+
+    **The facet is `list_delta` and not a field change, and V97 is the reason.** Both backends
+    resolve a conflict block-first, so an address on a deny list *and* an allow list reads
+    `blocked` before the removal and `blocked` after it — a delta computed from the combined
+    verdict would render "nothing changed" for a removal that worked, on exactly the address
+    that most plainly had an entry to delete. What this change touches is list membership, so
+    that is what the delta states, off `holds_allow_entry` — the fact the parsers carry beside
+    the verdict for this tool's sake.
+
+    `list_delta` is `None` on every branch except a clean removal, and the omission is a claim:
+    `holds_allow_entry` is an aggregate over the backends that answered, so where it still reads
+    true NOA knows an entry survived somewhere and does *not* know whether another backend's
+    entry went. The per-backend rows carry what was measured; a `removed: []` beside them would
+    read as "nothing left any list", which is more than the aggregate said (V86).
+    """
+    return ChangeDelta(
+        identity={"server": target.server_name, "target": target.target},
+        verification=verification,
+        verification_cause=verification_cause,
+        list_delta=list_delta,
+        backends=backend_outcomes(changes, lookups),
+        unanswered=tuple(unanswered_backends(lookups)),
+        bound=evidence_bound(request.evidence),
+    )
+
+
 def _removal_outcome(
     target: FirewallChangeTarget,
     *,
     request: ChangeExecutionRequest,
     changes: Mapping[str, BackendChange],
     lookups: Mapping[str, BackendLookup],
-) -> ToolPayload:
+) -> ChangeOutcome:
     """What the change did, read off a fresh dual-backend read (V62, V86).
 
     Four answers, in the order they are decided:
@@ -454,13 +505,36 @@ def _removal_outcome(
     }
     unanswered = unanswered_backends(lookups)
 
+    def delta(
+        *,
+        verification: str,
+        verification_cause: str | None = None,
+        list_delta: ListDelta | None = None,
+    ) -> ChangeDelta:
+        """`_removal_delta` with this branch's four shared arguments already bound."""
+        return _removal_delta(
+            target,
+            request=request,
+            changes=changes,
+            lookups=lookups,
+            verification=verification,
+            verification_cause=verification_cause,
+            list_delta=list_delta,
+        )
+
     broken = next((changes[name] for name in sorted(changes) if not changes[name].ok), None)
     if broken is not None:
-        return {
-            **tool_failure(broken.error_code or ERROR_UNKNOWN, broken.message or ""),
-            **common,
-            "unanswered_backends": unanswered,
-        }
+        return ChangeOutcome(
+            payload={
+                **tool_failure(broken.error_code or ERROR_UNKNOWN, broken.message or ""),
+                **common,
+                "unanswered_backends": unanswered,
+            },
+            delta=delta(
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=broken.error_code or ERROR_UNKNOWN,
+            ),
+        )
 
     if unanswered:
         logger.warning(
@@ -470,33 +544,49 @@ def _removal_outcome(
             target=target.target,
             unanswered_backends=unanswered,
         )
-        return tool_ok(
-            **common,
-            status=STATUS_CHANGED,
-            verified=False,
-            verification=VERIFICATION_UNAVAILABLE,
-            unanswered_backends=unanswered,
-            message=(
-                f"`{target.target}` was removed from the allow lists on {target.server_name}, "
-                f"but {' and '.join(unanswered)} did not answer the confirming read. Check the "
-                "server's firewall directly."
+        return ChangeOutcome(
+            payload=tool_ok(
+                **common,
+                status=STATUS_CHANGED,
+                verified=False,
+                verification=VERIFICATION_UNAVAILABLE,
+                unanswered_backends=unanswered,
+                message=(
+                    f"`{target.target}` was removed from the allow lists on "
+                    f"{target.server_name}, but {' and '.join(unanswered)} did not answer the "
+                    "confirming read. Check the server's firewall directly."
+                ),
             ),
+            # Named on `unanswered`, with no cause beside it: which source said nothing *is* the
+            # cause here (V86).
+            delta=delta(verification=VERIFICATION_UNAVAILABLE),
         )
 
     if holds_allow_entry(lookups):
-        return {
-            **tool_failure(ERROR_ALLOWLIST_REMOVE_FAILED, MESSAGE_ALLOWLIST_REMOVE_FAILED),
-            **common,
-            "removed": False,
-        }
+        return ChangeOutcome(
+            payload={
+                **tool_failure(ERROR_ALLOWLIST_REMOVE_FAILED, MESSAGE_ALLOWLIST_REMOVE_FAILED),
+                **common,
+                "removed": False,
+            },
+            # Measured and disagreeing, which is what earns the `false` beside it — and no list
+            # move is stated, for the reason `_removal_delta` gives.
+            delta=delta(verification=VERIFICATION_MISMATCH),
+        )
 
-    return tool_ok(
-        **common,
-        status=STATUS_CHANGED,
-        removed=True,
-        verified=True,
-        unanswered_backends=unanswered,
-        message=(f"`{target.target}` is no longer on an allow list on {target.server_name}."),
+    return ChangeOutcome(
+        payload=tool_ok(
+            **common,
+            status=STATUS_CHANGED,
+            removed=True,
+            verified=True,
+            unanswered_backends=unanswered,
+            message=(f"`{target.target}` is no longer on an allow list on {target.server_name}."),
+        ),
+        delta=delta(
+            verification=VERIFICATION_VERIFIED,
+            list_delta=ListDelta(removed=(target.target,)),
+        ),
     )
 
 

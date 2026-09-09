@@ -41,6 +41,10 @@ import pytest
 from fastmcp.tools import ToolResult
 from mcp.types import EmbeddedResource, TextContent
 
+from core.approvals.delta import (
+    VERIFICATION_MISMATCH,
+    VERIFICATION_VERIFIED,
+)
 from core.approvals.execution import ChangeExecutionRequest
 from core.audit.summaries import result_summary
 from core.auth.tool_catalog import TOOL_CATALOG
@@ -68,10 +72,13 @@ from noa_api.mcp_tools.whm_account_change import (
     STATUS_NO_OP,
     TOOL_WHM_SUSPEND_ACCOUNT,
     VERIFICATION_UNAVAILABLE,
-    build_whm_suspend_runner,
     whm_suspend_account,
 )
+from noa_api.mcp_tools.whm_account_change_runner import (
+    build_whm_suspend_runner,
+)
 from support.action_decisions import REASON
+from support.change_delta import delta_of, payload_runner
 from support.mcp_identity import (
     LIBRECHAT_USER,
     FakeMcpIdentityRepository,
@@ -499,7 +506,7 @@ async def test_the_runner_sends_the_operator_reason_as_whms_suspension_note() ->
     """
     api = whm_endpoint(listings=[[suspended_account()]])
     fixture, api = suspend_context(api)
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -526,7 +533,7 @@ async def test_the_runner_payload_never_carries_the_reason_back() -> None:
     """
     api = whm_endpoint(listings=[[suspended_account()]])
     fixture, _ = suspend_context(api)
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -544,7 +551,7 @@ async def test_the_runner_acts_on_the_server_the_card_named() -> None:
     beta = whm_server("beta")
     api = whm_endpoint(listings=[[suspended_account()]])
     fixture, api = suspend_context(api, servers=[alpha, beta])
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     # The arguments name the other server; only the evidence names alpha.
     await runner(execution_request(server_id=alpha.id, server_ref="beta"))
@@ -558,7 +565,7 @@ async def test_a_change_that_did_not_take_is_a_failure() -> None:
     fabrication the postflight exists to stop."""
     api = whm_endpoint(listings=[[live_account()]])
     fixture, _ = suspend_context(api)
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -572,7 +579,7 @@ async def test_a_change_whm_accepted_but_could_not_confirm_says_unverified() -> 
     that may already be suspended; a plain success would claim a confirmation nobody has."""
     api = whm_endpoint(listaccts_bodies=[whm_api_failure_body("Access denied")])
     fixture, api = suspend_context(api)
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -587,7 +594,7 @@ async def test_a_whm_refusal_at_execute_time_keeps_its_own_code() -> None:
     because "WHM said no" and "NOA broke" send an administrator to different systems."""
     api = whm_endpoint(suspend_body=whm_api_failure_body("Account is locked"))
     fixture, _ = suspend_context(api)
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=fixture.servers.servers[0].id))
 
@@ -600,7 +607,7 @@ async def test_a_server_that_vanished_after_approval_is_refused_before_the_mutat
     """Fail closed on the far side of the boundary too: the row the operator approved against
     is gone, so the change does not run against whatever `server_ref` resolves to today."""
     fixture, api = suspend_context()
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=uuid4()))
 
@@ -613,7 +620,7 @@ async def test_evidence_without_a_usable_server_id_is_refused() -> None:
     """The evidence round-tripped through JSONB. A value that no longer parses as a UUID is a
     request NOA refuses rather than guesses at."""
     fixture, api = suspend_context()
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id="not-a-uuid"))
 
@@ -676,3 +683,152 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
 def whm_endpoint_listing_suspended() -> FakeWHMApi:
     """An endpoint whose account is already suspended, note included."""
     return whm_endpoint(listings=[[suspended_account()]])
+
+
+# --------------------------------------------------------------------------------------
+# The delta the runner publishes beside its envelope (V85, V86)
+# --------------------------------------------------------------------------------------
+
+
+async def test_the_suspend_delta_names_the_one_field_it_moved() -> None:
+    """One field, both sides measured somewhere real (V86).
+
+    The `old` side is the gate-time reading off the evidence — the state the operator authorised
+    against (V33) — and the `new` side is the direction's own target, confirmed by the postflight
+    before this branch is reached. Re-reading the `old` side in the runner would be a second
+    reading, and a delta about a decision nobody made.
+    """
+    fixture, _ = suspend_context(whm_endpoint(listings=[[suspended_account()]]))
+    runner = build_whm_suspend_runner(context=fixture.context)
+
+    delta = await delta_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
+
+    assert delta is not None
+    payload = delta.as_payload()
+    assert payload["identity"] == {"server": SERVER_NAME, "username": ACCOUNT}
+    assert payload["verification"] == VERIFICATION_VERIFIED
+    assert payload["changed_fields"] == [{"field": "suspended", "old": False, "new": True}]
+
+
+async def test_evidence_that_never_recorded_the_field_states_no_field_change() -> None:
+    """One side of the comparison is missing, so no comparison is stated (V86).
+
+    The account summary on the evidence carries no `suspended` key — a row opened before the key
+    existed, or one whose summary did not survive its JSONB round trip as WHM wrote it. The change
+    itself is unaffected: WHM accepted it and the postflight confirms the account is suspended. But
+    NOA compared nothing, so the facet is **absent** rather than empty — an empty diff here would
+    read as "NOA checked and the account did not move" about a change that verifiably moved it, and
+    that is the benign value standing in for unknown.
+
+    Paired with the control below, which is the same runner on the same endpoint with the evidence
+    carrying a before-value that matches. Without the pair, a builder answering `()` for both would
+    pass whichever of the two was written alone (V87).
+    """
+    fixture, _ = suspend_context(whm_endpoint(listings=[[suspended_account()]]))
+    runner = build_whm_suspend_runner(context=fixture.context)
+    request = execution_request(server_id=fixture.servers.servers[0].id)
+    # Replaced rather than merged: what is being arranged is the *absence* of the key.
+    request.evidence[EVIDENCE_ACCOUNT] = {"user": ACCOUNT}
+
+    delta = await delta_of(runner, request)
+
+    assert delta is not None
+    payload = delta.as_payload()
+    assert payload["verification"] == VERIFICATION_VERIFIED
+    assert "changed_fields" not in payload
+
+
+async def test_a_before_value_that_already_matched_renders_a_measured_empty_diff() -> None:
+    """Both sides present and equal: NOA compared, and the reading did not move.
+
+    The control for the case above. The tool answers `no_op` instead of gating when the account is
+    already suspended, so the way here is a row whose account moved and moved back while the
+    request sat pending — the operator authorised against a suspended reading, and a suspended
+    reading is what the postflight found. An empty diff is the truthful answer, and it is a
+    different claim from the absent facet above.
+    """
+    fixture, _ = suspend_context(whm_endpoint(listings=[[suspended_account()]]))
+    runner = build_whm_suspend_runner(context=fixture.context)
+    request = execution_request(server_id=fixture.servers.servers[0].id)
+    request.evidence[EVIDENCE_ACCOUNT] = {"user": ACCOUNT, "suspended": True}
+
+    delta = await delta_of(runner, request)
+
+    assert delta is not None
+    payload = delta.as_payload()
+    assert payload["verification"] == VERIFICATION_VERIFIED
+    assert payload["changed_fields"] == []
+
+
+async def test_the_suspend_delta_never_carries_the_note_it_wrote() -> None:
+    """C8, V15, V43 on the delta, and this runner is where the words genuinely leave NOA.
+
+    WHM stores the operator's reason as the suspension note and echoes it back as
+    `suspendreason` on every later `listaccts` row — including the postflight read this runner
+    takes. So the words can arrive here from the *target system* as well as from the request, and
+    the identity is built from two strings rather than from the summary that carries them.
+    `ChangeDelta` refuses a `suspendreason` key outright; the point of building the identity by
+    hand is that the refusal never has to fire.
+    """
+    fixture, _ = suspend_context(whm_endpoint(listings=[[suspended_account()]]))
+    runner = build_whm_suspend_runner(context=fixture.context)
+
+    delta = await delta_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
+
+    assert delta is not None
+    rendered = json.dumps(delta.as_payload())
+    assert REASON not in rendered
+    assert SUSPEND_NOTE_ECHO not in rendered
+
+
+async def test_a_change_that_did_not_take_publishes_a_measured_empty_diff() -> None:
+    """WHM accepted the call and the account is still live: measured, and disagreeing.
+
+    An empty `changed_fields` rather than an absent one, because the account *was* re-read. That
+    is the whole distinction the facet carries — this branch compared and found nothing moved,
+    while the refusal below never compared at all.
+    """
+    fixture, _ = suspend_context(whm_endpoint(listings=[[live_account()]]))
+    runner = build_whm_suspend_runner(context=fixture.context)
+
+    delta = await delta_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
+
+    assert delta is not None
+    payload = delta.as_payload()
+    assert payload["verification"] == VERIFICATION_MISMATCH
+    assert payload["changed_fields"] == []
+
+
+async def test_a_mutation_whm_refused_claims_no_diff_at_all() -> None:
+    """The other spelling (V87), and it is the safe direction rather than the tidy one.
+
+    WHM refusing a call is not WHM reporting that nothing happened: a timeout or a dropped
+    connection arrives on this branch too, and the mutation behind it may have landed. So the
+    facet is absent, the cause names WHM's own code, and nothing claims a re-read that never
+    happened (V86).
+    """
+    fixture, _ = suspend_context(
+        whm_endpoint(suspend_body=whm_api_failure_body("Account is locked"))
+    )
+    runner = build_whm_suspend_runner(context=fixture.context)
+
+    delta = await delta_of(runner, execution_request(server_id=fixture.servers.servers[0].id))
+
+    assert delta is not None
+    payload = delta.as_payload()
+    assert payload["verification"] == VERIFICATION_UNAVAILABLE
+    assert payload["verification_cause"] == "whm_api_error"
+    assert "changed_fields" not in payload
+
+
+async def test_a_server_that_vanished_after_approval_publishes_no_delta() -> None:
+    """Nothing was asked of WHM, so nothing is stated (V86).
+
+    The refusal above the mutation is where a delta is absent rather than empty, and it is the
+    same shape the executor's own three refusals take: no identity was resolved, no credential
+    was proven, no command was sent.
+    """
+    fixture, _ = suspend_context()
+    runner = build_whm_suspend_runner(context=fixture.context)
+
+    assert await delta_of(runner, execution_request(server_id=uuid4())) is None

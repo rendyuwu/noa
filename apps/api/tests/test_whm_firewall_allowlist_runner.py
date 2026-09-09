@@ -54,6 +54,7 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     ERROR_SERVER_UNAVAILABLE,
 )
 from support.action_decisions import REASON
+from support.change_delta import payload_runner
 from support.remote_exec import SUDO_DENIED_STDERR, command_result
 from support.secrets import build_cipher
 from support.whm_firewall import (
@@ -98,7 +99,7 @@ async def test_the_runner_clears_both_allow_lists_then_re_reads(
     which is what a dropped command breaks and what a membership test would not.
     """
     fixture, fake = release_context(monkeypatch, box=removed_box())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -121,7 +122,7 @@ async def test_a_confirmed_removal_says_so_once_and_names_the_server(
     and inventing a second boolean to mirror T25 would be a field nobody measured.
     """
     fixture, _ = release_context(monkeypatch, box=removed_box())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -146,7 +147,7 @@ async def test_the_runner_acts_on_the_server_the_card_named(
     fixture, fake = release_context(
         monkeypatch, box=removed_box(), cipher=cipher, servers=[alpha, beta]
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     # The arguments name the other server; only the evidence names alpha.
     await runner(removal_request(server_id=alpha.id, server_ref="beta"))
@@ -162,7 +163,7 @@ async def test_a_removal_that_did_not_take_is_a_failure(
     fixture, _ = release_context(
         monkeypatch, box=removed_box(csf_after=CSF_ALLOW_LINE, imunify_after=IMUNIFY_WHITE)
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -185,7 +186,7 @@ async def test_a_surviving_allow_entry_is_caught_even_when_a_block_outranks_it(
         monkeypatch,
         box=removed_box(csf_after=CSF_ALLOW_AND_DENY_OUTPUT, imunify_after=IMUNIFY_WHITE_AND_DROP),
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -209,7 +210,7 @@ async def test_a_blocked_address_with_no_allow_entry_is_a_clean_removal(
             csf_after=f"Found {TARGET} in /etc/csf/csf.deny", imunify_after=IMUNIFY_CLEAN
         ),
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -234,7 +235,7 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
             imunify=imunify_backend(imunify_answer("not json at all")),
         ),
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -259,7 +260,7 @@ async def test_a_backend_that_answered_alone_is_still_verified(
     fixture, _ = release_context(
         monkeypatch, box=FakeFirewallBox(csf=csf_backend(csf_answer(CSF_CLEAN_OUTPUT)))
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -291,7 +292,7 @@ async def test_a_step_that_finds_nothing_is_not_a_failure(
             ),
         ),
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -319,7 +320,7 @@ async def test_a_step_sudo_refuses_is_not_tolerated(monkeypatch: pytest.MonkeyPa
         ),
         ssh_username="operator",
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -334,7 +335,7 @@ async def test_a_server_that_vanished_after_approval_is_refused_before_the_chang
     """Fail closed on the far side of the boundary too: the row the operator approved against is
     gone, so the change does not run against whatever `server_ref` resolves to today."""
     fixture, fake = release_context(monkeypatch, box=removed_box())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=uuid4()))
 
@@ -349,7 +350,7 @@ async def test_evidence_without_a_usable_target_is_refused(
     """The address round-tripped through JSONB, and a value that no longer parses is a request
     NOA declines rather than guesses at — by now an operator has already pressed Approve."""
     fixture, fake = release_context(monkeypatch, box=removed_box())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id, target="  "))
 
@@ -369,7 +370,7 @@ async def test_zero_usable_backends_after_approval_raises_for_the_executor(
     drive at all.
     """
     fixture, _ = release_context(monkeypatch, box=FakeFirewallBox())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     with pytest.raises(NoaError) as raised:
         await runner(removal_request(server_id=fixture.servers.servers[0].id))
@@ -387,7 +388,7 @@ async def test_a_non_root_user_escalates_every_firewall_command(
     silently does not happen.
     """
     fixture, fake = release_context(monkeypatch, box=removed_box(), ssh_username="operator")
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -398,7 +399,7 @@ async def test_a_non_root_user_escalates_every_firewall_command(
 async def test_a_root_user_escalates_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
     """The other half of the biconditional (V87): root running under `sudo` is the same bug."""
     fixture, fake = release_context(monkeypatch, box=removed_box())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -419,7 +420,7 @@ async def test_no_command_carries_a_comment(monkeypatch: pytest.MonkeyPatch) -> 
     reason does not come back" would be true of a tool that had quietly started sending it.
     """
     fixture, fake = release_context(monkeypatch, box=removed_box())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
     request = removal_request(server_id=fixture.servers.servers[0].id)
 
     await runner(request)
@@ -444,7 +445,7 @@ async def test_the_runner_payload_never_carries_the_reason_back(
     fixture, _ = release_context(
         monkeypatch, box=removed_box(csf_after=f"{CSF_ALLOW_LINE} noa:{uuid4()} {REASON}")
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -464,7 +465,7 @@ async def test_the_postflight_evidence_never_reaches_the_payload(
     """
     surviving = f"{CSF_ALLOW_LINE} noa:{uuid4()} {REASON}"
     fixture, _ = release_context(monkeypatch, box=removed_box(csf_after=surviving))
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(removal_request(server_id=fixture.servers.servers[0].id))
 
@@ -504,7 +505,7 @@ async def test_a_backend_failure_message_is_cut_before_it_reaches_the_payload(
         ),
         ssh_username="operator",
     )
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
 
     payload = await runner(
         removal_request(server_id=fixture.servers.servers[0].id, action_request_id=request_id)
@@ -533,7 +534,7 @@ async def test_the_receipt_keeps_the_before_and_after_apart(
     answered.
     """
     fixture, _ = release_context(monkeypatch, box=removed_box())
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
     request = removal_request(server_id=fixture.servers.servers[0].id)
 
     payload = await runner(request)
@@ -550,7 +551,7 @@ async def test_a_failed_change_keeps_its_before_state(monkeypatch: pytest.Monkey
     """V46: a receipt with a before-state and no working after-state IS the record of a change
     that did not complete — so the half the operator authorised against survives the failure."""
     fixture, _ = release_context(monkeypatch, box=removed_box(csf_after=CSF_ALLOW_LINE))
-    runner = build_whm_firewall_allowlist_remove_runner(context=fixture.context)
+    runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
     request = removal_request(server_id=fixture.servers.servers[0].id)
 
     receipt = build_receipt(evidence=request.evidence, payload=await runner(request))

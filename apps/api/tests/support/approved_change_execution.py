@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID, uuid4
 
+from core.approvals.delta import ChangeDelta, ChangeOutcome
 from core.approvals.execution import (
     AuthorizedChange,
     ChangeExecutionRequest,
@@ -185,6 +186,13 @@ class RecordingChangeRunner:
     before the change finished" and "shutdown cancels work in flight" are expressible at all —
     a runner that answers immediately makes both of those a race with the scheduler rather than
     an assertion.
+
+    `delta=None` answers the **bare envelope**, which is the default because that is the shape
+    every claim in `test_approved_change_execution.py` is about and because it is a real half of
+    the `ChangeRunner` contract: a runner with nothing to state need not wrap an empty object.
+    A `ChangeDelta` answers a `ChangeOutcome` instead, which is what makes "the receipt gained
+    exactly one key" and "`after` did not move" assertable through the production service rather
+    than against `build_receipt` alone.
     """
 
     def __init__(
@@ -192,21 +200,25 @@ class RecordingChangeRunner:
         payload: dict[str, Any] | None = None,
         *,
         journal: list[str] | None = None,
+        delta: ChangeDelta | None = None,
     ) -> None:
         self.payload = RUNNER_OK if payload is None else payload
+        self.delta = delta
         self.calls: list[ChangeExecutionRequest] = []
         self.fail: BaseException | None = None
         self.block: asyncio.Event | None = None
         self.journal = journal if journal is not None else []
 
-    async def __call__(self, request: ChangeExecutionRequest) -> dict[str, Any]:
+    async def __call__(self, request: ChangeExecutionRequest) -> dict[str, Any] | ChangeOutcome:
         self.journal.append("run")
         self.calls.append(request)
         if self.block is not None:
             await self.block.wait()
         if self.fail is not None:
             raise self.fail
-        return dict(self.payload)
+        if self.delta is None:
+            return dict(self.payload)
+        return ChangeOutcome(payload=dict(self.payload), delta=self.delta)
 
     @property
     def only_call(self) -> ChangeExecutionRequest:

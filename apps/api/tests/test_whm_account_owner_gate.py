@@ -54,9 +54,11 @@ from noa_api.mcp_tools.whm_account_change import (
     STATUS_NO_OP,
     TOOL_WHM_SUSPEND_ACCOUNT,
     TOOL_WHM_UNSUSPEND_ACCOUNT,
-    build_whm_suspend_runner,
     whm_suspend_account,
     whm_unsuspend_account,
+)
+from noa_api.mcp_tools.whm_account_change_runner import (
+    build_whm_suspend_runner,
 )
 from noa_api.mcp_tools.whm_account_owner_gate import (
     ERROR_ACCOUNT_OWNER_UNKNOWN,
@@ -69,6 +71,7 @@ from noa_api.mcp_tools.whm_account_owner_gate import (
     recorded,
 )
 from support.action_decisions import REASON
+from support.change_delta import payload_runner
 from support.mcp_identity import authenticated_caller, http_request_context
 from support.servers import SECRETS, ToolFixture, build_tool_context, whm_server
 from support.whm_api import (
@@ -661,7 +664,7 @@ async def test_the_runner_refuses_when_the_rows_credential_changed_after_the_req
     account and then reported a refusal.
     """
     fixture, api, _, reseller = gate_context()
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     # The operator approved a card built against the owner's credential; the row now holds
     # somebody else's.
@@ -685,7 +688,7 @@ async def test_the_runner_runs_when_the_credential_still_owns_the_account() -> N
     """The negative control on the far side of the boundary: the same evidence, an unedited row,
     and the mutation happens."""
     fixture, api, _, reseller = gate_context(whm_endpoint(listings=[[owned_account(suspended=1)]]))
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
 
     payload = await runner(execution_request(server_id=reseller.id))
 
@@ -710,7 +713,7 @@ async def test_the_runner_refuses_evidence_that_names_no_owner() -> None:
         fixture, api, _, reseller = gate_context(
             whm_endpoint(listings=[[owned_account(suspended=1)]])
         )
-        runner = build_whm_suspend_runner(context=fixture.context)
+        runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
         request = execution_request(server_id=reseller.id)
         if absent is _NO_OWNER_KEY:
             del request.evidence[EVIDENCE_OWNER]
@@ -733,7 +736,7 @@ async def test_the_runner_refusal_is_logged_at_the_runner_site() -> None:
     """Which of the two sites refused is a field on one event, so "why did this approved change
     not run" is one query rather than two (§V106). Identifiers only, never the payload (V8)."""
     fixture, _, _, reseller = gate_context()
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
     reseller.api_username = OTHER_CREDENTIAL
 
     with capture_logs() as events:
@@ -760,7 +763,7 @@ async def test_one_credential_performs_the_preflight_the_mutation_and_the_postfl
     )
 
     await suspend(fixture, server_ref=OWNER)
-    runner = build_whm_suspend_runner(context=fixture.context)
+    runner = payload_runner(build_whm_suspend_runner(context=fixture.context))
     payload = await runner(execution_request(server_id=reseller.id))
 
     assert payload["ok"] is True

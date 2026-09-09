@@ -32,7 +32,14 @@ it, which is T23) — and answers with the ordinary tool envelope
 (`noa_api.mcp_tools.results.tool_ok` / `tool_failure`). Two rules it carries: it should not
 raise, because the executor records what it is handed and a raise arrives as a coarser code
 than the integration layer already knew (V19); and it must not echo the reason back in its
-payload, which becomes the receipt a model can read through T63 (V76).
+payload, because `tool_runs.result_summary` is derived from that payload and
+`noa_get_action_result` hands the summary to a model (V45, V96b).
+
+**Not through the receipt**, which is the door it is tempting to name here: `core.approvals.results`
+leaves `include_receipt` at its default, so T63's reader never joins `action_receipts` and never
+fetches one (V76, T42's flag). The receipt is read by the approval card and the admin audit
+surface, both of which are the operator's own. A runner's author sent to the wrong field guards
+the wrong thing.
 
 **Each system contributes its own map**, the way `noa_api.mcp_tools.registry` collects
 registrars: a runner belongs beside the tool that opens the request for it, so the before-state
@@ -46,7 +53,7 @@ from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.pmg_whitelist_runner import build_pmg_whitelist_runners
 from noa_api.mcp_tools.proxmox_nic_runner import build_proxmox_nic_runners
 from noa_api.mcp_tools.proxmox_password_runner import build_proxmox_password_runners
-from noa_api.mcp_tools.whm_account_change import build_whm_account_change_runners
+from noa_api.mcp_tools.whm_account_change_runner import build_whm_account_change_runners
 from noa_api.mcp_tools.whm_firewall_allowlist import build_whm_firewall_allowlist_runners
 from noa_api.mcp_tools.whm_firewall_change import build_whm_firewall_change_runners
 

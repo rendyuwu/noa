@@ -572,31 +572,84 @@ def test_me_rejects_session_one_second_past_exp() -> None:
     assert response.json()["error_code"] == AuthSessionExpiredError.error_code
 
 
-def test_me_rejects_session_with_future_dated_iat() -> None:
+def freeze_verification_clock(monkeypatch: pytest.MonkeyPatch, moment: datetime) -> None:
+    """Pin the instant PyJWT compares `iat` and `exp` against.
+
+    NOA offers no seam to inject here and this does not add one: `JWTService.decode_token` hands
+    the claim checks to `jwt.decode`, which reads the wall clock itself
+    (`jwt.api_jwt._validate_claims`, at the `PyJWT==2.13.0` pinned in `apps/api/pyproject.toml`).
+    So the freeze is test-local and patches the library's own name — which fails loudly on a bump
+    that moves it, rather than quietly ceasing to freeze anything.
+
+    Only the *verification* clock moves, and a caller has to mint its tokens **before** calling
+    this: the patched name is the one `jwt.encode` tests its `iat`/`exp` claims against
+    (`isinstance(value, datetime)`), so a `datetime` claim handed to it while the freeze is on is
+    left unconverted and fails to serialise. That is a sharp edge worth keeping rather than
+    designing around — it is the same fact from the other side, that the freeze reaches
+    everything in the library reading that name, not only the comparison under test.
+    """
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:  # type: ignore[override]
+            return moment
+
+    monkeypatch.setattr(jwt.api_jwt, "datetime", Frozen)
+
+
+def test_me_rejects_session_with_future_dated_iat(monkeypatch: pytest.MonkeyPatch) -> None:
     """V79: `iat > now + leeway` rejects, and leeway is 0 (`PyJWT==2.13.0`, R24).
 
     Matters when a second API replica appears: the *minting* side breaks first, so a
     login would hand back a token its own verifier refuses.
+
+    **The clock is frozen, and the offset is not widened** — the two are not interchangeable. One
+    second is the smallest future `iat` the encoding can express, because PyJWT truncates the
+    claim to whole seconds, so it is also the tightest available statement of "leeway is zero":
+    any leeway of a second or more makes this token verify and this test fail. A wider offset
+    would remove the same race and be rejected by a verifier with leeway too, which is the
+    regression the case exists to catch.
+
+    Unfrozen it raced the wall clock. `iat` was read a few milliseconds before the request and
+    truncated down to its own second, so the token stopped being future-dated as soon as the
+    clock crossed into the next one and the assertion held only when the request landed inside
+    the same second (V87, B4: a compare that eats a clock-stamped byte).
+
+    The control below is what keeps the 401 attributable. Frozen at the same instant, a token
+    issued *at* it verifies — so the refusal above is the future `iat` and not the freeze, and
+    not the `exp` arithmetic either.
     """
-    now = datetime.now(UTC)
+    moment = datetime.now(UTC).replace(microsecond=0)
     repository = FakeAuthRepository()
     user = repository.add_active_user(OPERATOR_EMAIL)
+    # Minted before the freeze — see `freeze_verification_clock`, which the encoder reads too.
+    future_dated = encode_session(
+        **{
+            CLAIM_USER_ID: str(user.id),
+            CLAIM_ISSUED_AT: moment + timedelta(seconds=1),
+            CLAIM_EXPIRES_AT: moment + timedelta(hours=1),
+        }
+    )
+    issued_at_the_instant = encode_session(
+        **{
+            CLAIM_USER_ID: str(user.id),
+            CLAIM_ISSUED_AT: moment,
+            CLAIM_EXPIRES_AT: moment + timedelta(hours=1),
+        }
+    )
+
+    freeze_verification_clock(monkeypatch, moment)
 
     with auth_harness(repository=repository) as harness:
-        harness.client.cookies.set(
-            COOKIE_NAME,
-            encode_session(
-                **{
-                    CLAIM_USER_ID: str(user.id),
-                    CLAIM_ISSUED_AT: now + timedelta(seconds=1),
-                    CLAIM_EXPIRES_AT: now + timedelta(hours=1),
-                }
-            ),
-        )
+        harness.client.cookies.set(COOKIE_NAME, future_dated)
         response = harness.client.get("/auth/me")
+
+        harness.client.cookies.set(COOKIE_NAME, issued_at_the_instant)
+        issued_now = harness.client.get("/auth/me")
 
     assert response.status_code == 401
     assert response.json()["error_code"] == AuthSessionInvalidError.error_code
+    assert issued_now.status_code == 200
 
 
 # --- Logout (V6) ---

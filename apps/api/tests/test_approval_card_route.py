@@ -38,6 +38,7 @@ from support.approval_cards import (
     EVIDENCE,
     LIBRECHAT_USER_ID,
     RECEIPT_AFTER,
+    RECEIPT_DELTA,
     CardHarness,
     card_harness,
     receipt_view,
@@ -174,12 +175,24 @@ def test_the_card_body_carries_the_receipts_two_halves(harness: CardHarness) -> 
     the requirement is about — a body that answered `{"outcome": "done"}` would satisfy "the
     card reports the receipt" and none of what that was for. The fixture's halves share no
     value, so a response that sent one of them twice separates from this (V87).
+
+    Five keys, and the fifth is what the runner said the change moved. It is asserted in the
+    same equality as the other four because the two are one contract: the body enumerated here
+    is the executable form of the row §I.embed carries for this route, and a body that grew a
+    key the row does not name is the pair disagreeing. The delta is a third distinct value for
+    the same reason the halves are two, so a card that echoed one of them here would pass a
+    weaker test than this one.
+
+    That nothing reading `before` and `after` can *compute* the delta is a property of the seven
+    real tools' two vocabularies, and it is measured against those tools in
+    `test_change_receipt_halves.py`. This fixture is a rendering one and holds only that the three
+    values travel.
     """
     card = harness.add_card(
         status=ActionRequestStatus.APPROVED,
         decided_at=datetime(2026, 8, 8, 9, 30, tzinfo=UTC),
         run=run_view(status=ToolRunStatus.COMPLETED),
-        receipt=receipt_view(),
+        receipt=receipt_view(delta=RECEIPT_DELTA),
     )
 
     payload = body(harness.get_card(card.action_request_id))
@@ -189,8 +202,32 @@ def test_the_card_body_carries_the_receipts_two_halves(harness: CardHarness) -> 
         "before": EVIDENCE,
         "after": RECEIPT_AFTER,
         "error_code": None,
+        "delta": RECEIPT_DELTA,
     }
     assert payload["receipt"]["before"] != payload["receipt"]["after"]
+
+
+def test_a_receipt_with_no_delta_says_so_rather_than_omitting_the_key(
+    harness: CardHarness,
+) -> None:
+    """`null`, not absent — the opposite of the stored row's rule, and deliberately so.
+
+    T38's writer omits the key when a runner measured nothing, so that the absence on the row is
+    itself the fact. A renderer switches on the field, and a missing key there reads as one it
+    forgot, so the card turns that absence into `null` — the rule `run`, `receipt` and
+    `error_code` already follow on this body.
+    """
+    card = harness.add_card(
+        status=ActionRequestStatus.APPROVED,
+        decided_at=CREATED_AT,
+        run=run_view(status=ToolRunStatus.FAILED),
+        receipt=receipt_view(ok=False, error_code="change_runner_unavailable"),
+    )
+
+    payload = body(harness.get_card(card.action_request_id))
+
+    assert "delta" in payload["receipt"]
+    assert payload["receipt"]["delta"] is None
 
 
 def test_a_failed_changes_receipt_keeps_its_before_state_and_names_the_cause(

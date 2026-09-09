@@ -61,6 +61,7 @@ from noa_api.mcp_tools.pmg_whitelist_runner import (
     build_pmg_whitelist_runner,
     build_pmg_whitelist_runners,
 )
+from support.change_delta import PayloadRunner, payload_runner
 from support.pmg import (
     BYSTANDER,
     SERVER_NAME,
@@ -85,9 +86,13 @@ BOTH_SPELLINGS = [
 ]
 
 
-def build_runner(fixture: Any):  # type: ignore[no-untyped-def]
-    """The runner over this fixture's context."""
-    return build_pmg_whitelist_runner(context=fixture.context)
+def build_runner(fixture: Any) -> PayloadRunner:
+    """The runner over this fixture's context, answering its envelope.
+
+    The delta it publishes beside that envelope is asserted in
+    `test_change_delta.py`; every claim in this file is about the envelope.
+    """
+    return payload_runner(build_pmg_whitelist_runner(context=fixture.context))
 
 
 def server_id(fixture: Any):  # type: ignore[no-untyped-def]

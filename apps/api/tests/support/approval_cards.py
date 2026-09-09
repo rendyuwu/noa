@@ -81,10 +81,29 @@ ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "acme.example"}
 
 # The after-state half of a receipt: what the runner answered, already redacted by the writer
-# (T38's `build_receipt`). Deliberately shares no value with `EVIDENCE` above — the claim these
-# files make is that the card carries *both* halves, and a fixture whose halves overlapped could
-# not tell a card showing two from one showing the same one twice (V87).
+# (T38's `build_receipt`). Deliberately shares no *value* with `EVIDENCE` above — the claim these
+# files make is that the card carries *both* halves, and a fixture whose halves held the same
+# values could not tell a card showing two from one showing the same one twice (V87). It does
+# share the key `suspended`, and reads `False` on one side and `True` on the other.
 RECEIPT_AFTER: dict[str, Any] = {"suspended": True, "suspended_at": "2026-08-08T09:31:00+00:00"}
+
+# The delta the runner published beside that envelope, as T38's writer stored it. A third value
+# with its own keys, because the claim the card makes is that all three travel: a body carrying
+# `before` and `after` alone would satisfy "the receipt renders" and none of what the delta is
+# for. Shaped as `core.approvals.delta.ChangeDelta.as_payload` writes it, absent facets omitted.
+#
+# What this fixture does **not** hold is why the delta has to exist. That is a property of the
+# seven real tools' two vocabularies — the keys they share are identity and carry equal values,
+# and the field that moved is never addressable in both — and it is measured against the tools
+# themselves in `apps/api/tests/test_change_receipt_halves.py`. These two literals are a card
+# rendering fixture and were never in the shape a gate writes: a real WHM before-state nests the
+# account (`{"account": {"user": ..., "suspended": ...}}`), which is exactly the non-alignment
+# the real claim is about.
+RECEIPT_DELTA: dict[str, Any] = {
+    "identity": {"server": "alpha", "username": "acmeco"},
+    "verification": "verified",
+    "changed_fields": [{"field": "suspended", "old": False, "new": True}],
+}
 
 LIBRECHAT_USER_ID = "librechat-user-1"
 
@@ -116,18 +135,25 @@ def receipt_view(
     before: dict[str, Any] | None = None,
     after: dict[str, Any] | None = None,
     error_code: str | None = None,
+    delta: dict[str, Any] | None = None,
 ) -> ApprovalCardReceipt:
     """What T38's writer recorded, as the card reader returns it (V46).
 
     `before` defaults to the same `EVIDENCE` the gate persisted, because that is what the
     production writer copies onto the receipt — a fixture with a different before-state would
     describe a receipt neither of T38's two writers can produce.
+
+    `delta` defaults to **absent**, and that is the writer's own default rather than a shortcut:
+    the receipt key is omitted when the runner stated nothing, so a fixture that supplied one
+    unasked would make every card test assert against a receipt no refusal can produce. Pass
+    `RECEIPT_DELTA` for the case where a runner did state one.
     """
     return ApprovalCardReceipt(
         ok=ok,
         before=EVIDENCE if before is None else before,
         after=RECEIPT_AFTER if after is None else after,
         error_code=error_code,
+        delta=delta,
     )
 
 
@@ -372,6 +398,7 @@ __all__ = [
     "EVIDENCE",
     "LIBRECHAT_USER_ID",
     "RECEIPT_AFTER",
+    "RECEIPT_DELTA",
     "CardHarness",
     "FakeApprovalCardRepository",
     "StoredCard",

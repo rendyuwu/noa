@@ -59,6 +59,7 @@ from noa_api.mcp_tools.proxmox_nic_runner import (
 )
 from noa_api.mcp_tools.proxmox_password import ERROR_SERVER_UNAVAILABLE
 from support.action_decisions import REASON
+from support.change_delta import PayloadRunner, payload_runner
 from support.proxmox_nic import (
     NET0,
     NET0_UP,
@@ -72,9 +73,13 @@ from support.proxmox_nic import (
 )
 
 
-def build_runner(fixture: Any):
-    """The runner over this fixture's context."""
-    return build_proxmox_vm_nic_runner(context=fixture.context)
+def build_runner(fixture: Any) -> PayloadRunner:
+    """The runner over this fixture's context, answering its envelope.
+
+    The delta it publishes beside that envelope is asserted in
+    `test_change_delta.py`; every claim in this file is about the envelope.
+    """
+    return payload_runner(build_proxmox_vm_nic_runner(context=fixture.context))
 
 
 def server_id(fixture: Any):

@@ -87,6 +87,16 @@ import structlog
 from fastmcp import FastMCP
 from pydantic import Field
 
+from core.approvals.delta import (
+    # `VERIFICATION_UNAVAILABLE` is not here: it arrives below through
+    # `whm_firewall_change_common`, which is where every runner already reads it, and it is the
+    # same string from the same definition (`core.approvals.delta` owns all four states).
+    VERIFICATION_MISMATCH,
+    VERIFICATION_VERIFIED,
+    ChangeDelta,
+    ChangeOutcome,
+    FieldChange,
+)
 from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
 from core.db.lifecycle import ToolRisk
 from core.errors import NoaError
@@ -136,6 +146,9 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
     BackendChange,
     FirewallChangeTarget,
     backend_change_failure,
+    backend_outcomes,
+    evidence_bound,
+    evidence_verdict,
     firewall_state,
     resolve_firewall_change_target,
     tolerated_csf_step,
@@ -326,7 +339,7 @@ def build_whm_firewall_release_runner(*, context: McpToolContext) -> ChangeRunne
     production decrypt site rather than a second one.
     """
 
-    async def run(request: ChangeExecutionRequest) -> ToolPayload:
+    async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
         """Release the address this approved request names, allow it, and say what happened.
 
         The order is: resolve from the evidence, probe availability, change, re-read. Each step
@@ -337,10 +350,16 @@ def build_whm_firewall_release_runner(*, context: McpToolContext) -> ChangeRunne
         seconds and Imunify takes an absolute epoch, and deriving them separately is how the two
         backends end up disagreeing about when the entry expires by however long the first hop
         took.
+
+        The refusals above the change carry **no delta**: an unusable duration, an unresolvable
+        server or a missing row means nothing was driven and nothing was read, so there is
+        nothing to state (V86). Everything from `_release_outcome` down carries one, including
+        the failures — a backend that refused the command and a postflight that answered are
+        both measurements, and they are the whole reason the failure branches exist.
         """
         target = await _resolve_release_target(request, context=context)
         if not isinstance(target, _ReleaseTarget):
-            return target
+            return ChangeOutcome(payload=target)
 
         expires_at = datetime.now(UTC) + timedelta(minutes=target.duration_minutes)
         comment = noa_firewall_comment(request.action_request_id, reason=request.reason)
@@ -570,6 +589,93 @@ async def _resolve_release_target(
     )
 
 
+def _release_delta(
+    target: _ReleaseTarget,
+    *,
+    request: ChangeExecutionRequest,
+    expires_at: datetime,
+    changes: Mapping[str, BackendChange],
+    lookups: Mapping[str, BackendLookup],
+    verification: str,
+    verification_cause: str | None,
+    measured_verdict: str | None,
+) -> ChangeDelta:
+    """This change's before→after, as the runner that ran it states it.
+
+    One builder for all five branches, so the facets a branch fills are the only thing that
+    differs and a branch cannot quietly grow a sixth shape (V66). What each argument decides:
+
+    - **a comparison needs both sides, so a missing side means no comparison happened.**
+      `measured_verdict` is `None` where no postflight verdict was consulted — a backend that
+      could not be driven, or one that stayed silent. `old_verdict` is `None` where the evidence
+      carries no usable one. Either way `changed_fields` is **absent**, not empty: absent says
+      NOA did not compare, and an empty tuple would say NOA compared and the reading did not
+      move. Substituting the second for the first is the benign value in place of "unknown",
+      which is what V86 refuses.
+    - both sides present and equal yields an empty `changed_fields`: the reading did not move,
+      measured. That is the honest answer for a release of an address that was already allowed,
+      where the window moved and the verdict did not — `new_values` is what carries that.
+    - a missing `old_verdict` is unreachable from any row the gate wrote, and the branch is
+      defensive rather than live: `firewall_state` always writes the key, and
+      `combine_firewall_verdict` answers one of four non-empty words — `unknown` included, which
+      is a real comparable value and renders as a genuine transition when the postflight then
+      answers. What reaches here without one is an `approval_context` NOA did not write, because
+      the resolution above validates the target and the server id out of this half and nothing
+      else. Defensive or not, it has to say `None`: this is the branch the whole
+      absent-versus-empty distinction was invented on, and a mis-stated one here would be a card
+      reading "measured, nothing changed" about a before-state that was never readable.
+    - `new_values` rides where the allow command took on every driven backend **and** the
+      postflight did not refute the entry, which together are what the resolved expiry is a fact
+      *about*: the window the backends were asked for, accepted, and did not then deny holding.
+      A backend that could not be driven never received it, and a `not_found` postflight is
+      every backend saying it holds no entry for this address at all — on either branch the
+      expiry is a window nothing wrote, and a resolved timestamp for an entry no command created
+      is the worst kind of precise (V86). `blocked` is not that refutation: CSF resolves a
+      conflict block-first, so an allow written under a surviving deny entry exists and is
+      overridden, and whether an existing entry takes effect is the verdict's job rather than
+      this facet's.
+
+    `backends` and `unanswered` are present on every branch, including the failures: which
+    backend refused and which one answered are facts about this run regardless of what the
+    envelope beside it says.
+    """
+    old_verdict = evidence_verdict(request.evidence)
+    changed: tuple[FieldChange, ...] | None = None
+    if measured_verdict is not None and old_verdict is not None:
+        changed = (
+            ()
+            if old_verdict == measured_verdict
+            else (FieldChange(field="firewall_verdict", old=old_verdict, new=measured_verdict),)
+        )
+
+    # Two conditions rather than one, because the commands and the postflight can disagree: every
+    # backend accepted the allow *and* no backend then answered that it holds nothing for this
+    # address. The verdicts listed are the ones under which an allow entry can exist — `None` is
+    # the branch where none was consulted, and `blocked` is an entry that exists and is overridden.
+    allow_took = all(change.ok for change in changes.values()) and measured_verdict in (
+        None,
+        VERDICT_ALLOWLISTED,
+        VERDICT_BLOCKED,
+    )
+    return ChangeDelta(
+        identity={"server": target.server_name, "target": target.target},
+        verification=verification,
+        verification_cause=verification_cause,
+        changed_fields=changed,
+        backends=backend_outcomes(changes, lookups),
+        unanswered=tuple(unanswered_backends(lookups)),
+        new_values=(
+            {
+                "expires_at": expires_at.isoformat(),
+                "duration_minutes": target.duration_minutes,
+            }
+            if allow_took
+            else None
+        ),
+        bound=evidence_bound(request.evidence),
+    )
+
+
 def _release_outcome(
     target: _ReleaseTarget,
     *,
@@ -577,7 +683,7 @@ def _release_outcome(
     expires_at: datetime,
     changes: Mapping[str, BackendChange],
     lookups: Mapping[str, BackendLookup],
-) -> ToolPayload:
+) -> ChangeOutcome:
     """What the change did, read off a fresh dual-backend read (DECISIONS §6.5, V62, V86).
 
     Five answers, in the order they are decided, and the order is the argument:
@@ -595,6 +701,11 @@ def _release_outcome(
     `released` and `allowlisted` appear only where the postflight answered. Claiming either from
     a read that did not happen is exactly what the shape exists to prevent, and an absent field
     is more honest than a `false` nobody measured.
+
+    Every one of the five carries a delta beside its envelope, and the two `false`s on answers 3
+    and 4 are exactly why: they were *earned* by a postflight that answered, so the delta states
+    a measured verdict rather than an absence. `_release_delta` holds which facets each branch
+    fills.
     """
     common: ToolPayload = {
         "server": target.server_name,
@@ -606,13 +717,39 @@ def _release_outcome(
     }
     unanswered = unanswered_backends(lookups)
 
+    def delta(
+        *,
+        verification: str,
+        verification_cause: str | None = None,
+        measured_verdict: str | None = None,
+    ) -> ChangeDelta:
+        """`_release_delta` with this branch's five shared arguments already bound."""
+        return _release_delta(
+            target,
+            request=request,
+            expires_at=expires_at,
+            changes=changes,
+            lookups=lookups,
+            verification=verification,
+            verification_cause=verification_cause,
+            measured_verdict=measured_verdict,
+        )
+
     broken = next((changes[name] for name in sorted(changes) if not changes[name].ok), None)
     if broken is not None:
-        return {
-            **tool_failure(broken.error_code or ERROR_UNKNOWN, broken.message or ""),
-            **common,
-            "unanswered_backends": unanswered,
-        }
+        return ChangeOutcome(
+            payload={
+                **tool_failure(broken.error_code or ERROR_UNKNOWN, broken.message or ""),
+                **common,
+                "unanswered_backends": unanswered,
+            },
+            # No verdict is consulted on this branch, so none is stated. The refusal that *was*
+            # measured is on the backend's own row, where it names a remedy.
+            delta=delta(
+                verification=VERIFICATION_UNAVAILABLE,
+                verification_cause=broken.error_code or ERROR_UNKNOWN,
+            ),
+        )
 
     if unanswered:
         logger.warning(
@@ -622,47 +759,66 @@ def _release_outcome(
             target=target.target,
             unanswered_backends=unanswered,
         )
-        return tool_ok(
-            **common,
-            status=STATUS_CHANGED,
-            verified=False,
-            verification=VERIFICATION_UNAVAILABLE,
-            unanswered_backends=unanswered,
-            message=(
-                f"`{target.target}` was released and allowed on {target.server_name}, but "
-                f"{' and '.join(unanswered)} did not answer the confirming read. Check the "
-                "server's firewall directly."
+        return ChangeOutcome(
+            payload=tool_ok(
+                **common,
+                status=STATUS_CHANGED,
+                verified=False,
+                verification=VERIFICATION_UNAVAILABLE,
+                unanswered_backends=unanswered,
+                message=(
+                    f"`{target.target}` was released and allowed on {target.server_name}, but "
+                    f"{' and '.join(unanswered)} did not answer the confirming read. Check the "
+                    "server's firewall directly."
+                ),
             ),
+            # The silent backends are named on `unanswered` rather than counted, and no cause is
+            # attached: "which source said nothing" *is* the cause, and a code beside it would be
+            # a second answer to the same question (V86).
+            delta=delta(verification=VERIFICATION_UNAVAILABLE),
         )
 
     verdict = combine_firewall_verdict(list(lookups.values()))
     if verdict == VERDICT_BLOCKED:
-        return {
-            **tool_failure(ERROR_RELEASE_FAILED, MESSAGE_RELEASE_FAILED),
-            **common,
-            "released": False,
-            "allowlisted": False,
-        }
+        return ChangeOutcome(
+            payload={
+                **tool_failure(ERROR_RELEASE_FAILED, MESSAGE_RELEASE_FAILED),
+                **common,
+                "released": False,
+                "allowlisted": False,
+            },
+            # A measurement, not an absence: every backend answered and the verdict did not move,
+            # which is what earns the two `false`s beside it.
+            delta=delta(verification=VERIFICATION_MISMATCH, measured_verdict=verdict),
+        )
     if verdict != VERDICT_ALLOWLISTED:
         # `not_found`: nothing blocks it and nothing allows it either.
-        return {
-            **tool_failure(ERROR_ALLOW_FAILED, MESSAGE_ALLOW_FAILED),
-            **common,
-            "released": True,
-            "allowlisted": False,
-        }
+        return ChangeOutcome(
+            payload={
+                **tool_failure(ERROR_ALLOW_FAILED, MESSAGE_ALLOW_FAILED),
+                **common,
+                "released": True,
+                "allowlisted": False,
+            },
+            # The verdict moved off `blocked` and stopped short of `allowlisted`, so the delta
+            # renders one field change and the failure code says which half is missing.
+            delta=delta(verification=VERIFICATION_MISMATCH, measured_verdict=verdict),
+        )
 
-    return tool_ok(
-        **common,
-        status=STATUS_CHANGED,
-        released=True,
-        allowlisted=True,
-        verified=True,
-        unanswered_backends=unanswered,
-        message=(
-            f"`{target.target}` is released from the deny lists on {target.server_name} and "
-            f"allowed until {expires_at.isoformat()}."
+    return ChangeOutcome(
+        payload=tool_ok(
+            **common,
+            status=STATUS_CHANGED,
+            released=True,
+            allowlisted=True,
+            verified=True,
+            unanswered_backends=unanswered,
+            message=(
+                f"`{target.target}` is released from the deny lists on {target.server_name} and "
+                f"allowed until {expires_at.isoformat()}."
+            ),
         ),
+        delta=delta(verification=VERIFICATION_VERIFIED, measured_verdict=verdict),
     )
 
 

@@ -2,27 +2,33 @@
 
 **The first CHANGE tool NOA exposed**, and therefore the first call that runs the whole gate
 over the real mount: `tools/call` → in-process preflight → `action_requests(PENDING)` → the
-approval card → an operator's cookie POST (T37) → the executor (T38) → the runner at the bottom
-of this module. Everything above the runner was already built and, until T22, vacuous.
+approval card → an operator's cookie POST (T37) → the executor (T38) → the runner one module
+over. Everything above the runner was already built and, until T22, vacuous.
 
-**Two halves, on opposite sides of V22's boundary, in one module.** A tool is what the LLM can
-reach and it changes nothing; a runner performs the change and is reachable only from
-`core.approvals.execution`, which is reachable only from an approval. They live together because
-they are two moments of one workflow and because a runner acts on the evidence its tool
-gathered — splitting them would put the before-state and the change that answers it in two files
-that can drift. What keeps the split honest is that neither calls the other: neither tool holds a
-reference to a runner, and a runner is dispatched by tool name from a registry the MCP path never
-reads (`noa_api.mcp_tools.change_runners`).
+**Two halves, on opposite sides of V22's boundary, and now in two modules.** A tool is what the
+LLM can reach and it changes nothing; a runner performs the change and is reachable only from
+`core.approvals.execution`, which is reachable only from an approval. They lived together while
+they fitted, because they are two moments of one workflow and a runner acts on the evidence its
+tool gathered. They stopped fitting: this module reached C14's 900-line budget exactly, so the
+runners moved to `whm_account_change_runner.py`, the split the Proxmox and PMG tools were built
+with from the start. What keeps it honest is unchanged and is not the file boundary — neither
+tool holds a reference to a runner, and a runner is dispatched by tool name from a registry the
+MCP path never reads (`noa_api.mcp_tools.change_runners`).
+
+Every constant stayed here, including the ones only the runners use, so the split moved code and
+not vocabulary: a reader following a code out of a receipt still lands on the module that defines
+it, and the runner module imports one direction only, which is what keeps the aggregate registrar
+from being a cycle.
 
 **Two tools, one shape, and the shape is shared rather than mirrored.** Suspend and unsuspend are
 not merged — opposite risk directions, clearer as two names (DECISIONS §9) — but everything
 between the two names is one implementation (V66): `collect_account_state` is the preflight for
-both, `_resolve_change_target` turns an approved request into the client that performs it, and
-`_verify_account_state` is the postflight, which differs only in the value `suspended` must hold
-when the change took (`_AccountChangeDirection`). What is deliberately written twice is the
-surface a model reads — the two tool functions, their descriptions and their registrations —
-because those genuinely differ and a shared spelling of them would be one sentence trying to
-describe two opposite acts.
+both, and one module over, the resolution of an approved request into the client that performs it
+and the postflight that confirms it are each written once, differing only in the value
+`suspended` must hold when the change took. What is deliberately written twice is the surface a
+model reads — the two tool functions, their descriptions and their registrations — because those
+genuinely differ and a shared spelling of them would be one sentence trying to describe two
+opposite acts.
 
 **The preflight runs inside the call** (C9, V17), and it is `fetch_whm_accounts` — T20/T21's
 internal, not a second copy of "resolve a server and list its accounts" (V66). The evidence it
@@ -104,33 +110,29 @@ verification-unavailable is not verification.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Annotated, Final
-from uuid import UUID
 
 import structlog
 from fastmcp import FastMCP
 from pydantic import Field
 
-from core.approvals.execution import ChangeExecutionRequest, ChangeRunner
 from core.db.lifecycle import ToolRisk
-from core.integrations.whm.accounts import WHMAccount, normalize_whm_account_list
-from core.integrations.whm.client import WHMClient
+from core.integrations.whm.accounts import WHMAccount
 from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
 from noa_api.mcp_tools.change_target import (
     # Hoisted to `change_target` at T25, when the firewall runner became the second caller of
-    # the same refusals and the same three status words (V66). Re-exported below, so every name
-    # this module already published keeps working from here.
+    # the same refusals and the same status words (V66). Re-exported below, so every name this
+    # module already published keeps working from here — including the two the runners one
+    # module over are now the only readers of, because a code's home is where a reader looking
+    # it up expects to find it.
     ERROR_SERVER_UNAVAILABLE,
     MESSAGE_SERVER_UNAVAILABLE,
     STATUS_CHANGED,
     STATUS_NO_OP,
     VERIFICATION_UNAVAILABLE,
-    uuid_or_none,
 )
 from noa_api.mcp_tools.context import McpToolContext
 from noa_api.mcp_tools.results import (
-    ERROR_UNKNOWN,
     ToolAnswer,
     ToolPayload,
     sanitize_tool_errors,
@@ -149,12 +151,11 @@ from noa_api.mcp_tools.whm_account_owner_gate import (
     EVIDENCE_UNRECORDED,
     LOG_OWNERSHIP_REFUSED,
     SITE_PREFLIGHT,
-    SITE_RUNNER,
     classify_ownership,
     recorded,
     refuse_unproven_ownership,
 )
-from noa_api.mcp_tools.whm_read import MESSAGE_LIST_ACCOUNTS_FAILED, fetch_whm_accounts
+from noa_api.mcp_tools.whm_read import fetch_whm_accounts
 
 TOOL_WHM_SUSPEND_ACCOUNT = "whm_suspend_account"
 TOOL_WHM_UNSUSPEND_ACCOUNT = "whm_unsuspend_account"
@@ -236,51 +237,6 @@ SERVER_REF_DESCRIPTION: Final = (
 )
 
 logger = structlog.get_logger(__name__)
-
-
-@dataclass(frozen=True)
-class _AccountChangeDirection:
-    """What "the change took" means for one direction of the suspend/unsuspend pair.
-
-    The two tools are mirror images, and this is what makes that a fact of construction rather
-    than a claim in a docstring (V66): one postflight reads both, and the only thing it needs
-    from its caller is which value `suspended` must hold afterwards. Flipping `target_suspended`
-    is what a mutation test flips, and it turns "the change took" into its opposite in one place.
-
-    The sentences travel with it because an operator reads them: "WHM accepted the suspension"
-    and "WHM accepted the unsuspension" are the same claim about two different acts, and a shared
-    wording would have to name neither.
-    """
-
-    tool_name: str
-    # The value `suspended` must hold on the re-read once the change took.
-    target_suspended: bool
-    # What WHM was asked to do, as it appears mid-sentence: "WHM accepted the {noun} of `x`".
-    noun: str
-    # The confirmed state, as an operator reads it: "`x` {confirmed_state}."
-    confirmed_state: str
-    # The `postflight_failed` sentence — WHM accepted a call that did not take.
-    postflight_message: str
-    unverified_log_event: str
-
-
-_SUSPEND: Final = _AccountChangeDirection(
-    tool_name=TOOL_WHM_SUSPEND_ACCOUNT,
-    target_suspended=True,
-    noun="suspension",
-    confirmed_state="is suspended",
-    postflight_message=MESSAGE_POSTFLIGHT_SUSPEND_FAILED,
-    unverified_log_event=LOG_SUSPEND_UNVERIFIED,
-)
-
-_UNSUSPEND: Final = _AccountChangeDirection(
-    tool_name=TOOL_WHM_UNSUSPEND_ACCOUNT,
-    target_suspended=False,
-    noun="unsuspension",
-    confirmed_state="is no longer suspended",
-    postflight_message=MESSAGE_POSTFLIGHT_UNSUSPEND_FAILED,
-    unverified_log_event=LOG_UNSUSPEND_UNVERIFIED,
-)
 
 
 async def collect_account_state(
@@ -502,83 +458,6 @@ async def whm_unsuspend_account(
     )
 
 
-def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
-    """The half that suspends, reachable only after an operator approved (T22, T38 — V22, V46).
-
-    A closure over the tool context rather than a class: what it needs is the same session
-    factory, cipher and client factory the tool used, and holding them by reference is what makes
-    the change go through the production decrypt site rather than a second one.
-    """
-
-    async def run(request: ChangeExecutionRequest) -> ToolPayload:
-        """Suspend the account this approved request names, and say what happened.
-
-        Answers the ordinary tool envelope (`noa_api.mcp_tools.results`), because the executor
-        classifies the run and bounds the summary off it. It does not raise, for the reason a
-        tool does not (V19): the executor catches, but what it can record then is coarser than
-        what this knew.
-
-        The server and the account both come from the **evidence**, never from the arguments —
-        `_resolve_change_target` is where that rule lives, shared with T23's runner (V33, V66).
-        """
-        target = await _resolve_change_target(request, context=context)
-        if not isinstance(target, _ChangeTarget):
-            return target
-
-        # C8's single field, written where WHM keeps a suspension note. The operator typed it,
-        # the LLM never saw it, and it is not echoed back in the payload below — `result_summary`
-        # is derived from that payload and `noa_get_action_result` returns it to a model (V96b).
-        mutation = await target.client.suspend_account(
-            username=target.username, reason=request.reason
-        )
-        if mutation.get("ok") is not True:
-            return _passthrough_failure(mutation, fallback=MESSAGE_SUSPEND_FAILED)
-
-        return await _verify_account_state(
-            target, direction=_SUSPEND, action_request_id=request.action_request_id
-        )
-
-    return run
-
-
-def build_whm_unsuspend_runner(*, context: McpToolContext) -> ChangeRunner:
-    """The half that lifts a suspension, reachable only after an operator approved (T23, T38).
-
-    The suspend runner one direction over, and deliberately narrower in one respect:
-    `unsuspendacct` takes only a username. `request.reason` is on the request — the executor
-    reads it off the row for every approved change (V43) — and this runner does not touch it,
-    because there is no field on the target system it belongs in. Nothing to write out means
-    none of V96's return paths open here.
-    """
-
-    async def run(request: ChangeExecutionRequest) -> ToolPayload:
-        """Lift the suspension this approved request names, and say what happened."""
-        target = await _resolve_change_target(request, context=context)
-        if not isinstance(target, _ChangeTarget):
-            return target
-
-        mutation = await target.client.unsuspend_account(username=target.username)
-        if mutation.get("ok") is not True:
-            # A locked suspension the tool's preflight did not see — the lock was set after the
-            # request was opened, or WHM did not report it — arrives here as `whm_api_error`
-            # carrying WHM's own `reason`, which is the sentence that names the remedy.
-            return _passthrough_failure(mutation, fallback=MESSAGE_UNSUSPEND_FAILED)
-
-        return await _verify_account_state(
-            target, direction=_UNSUSPEND, action_request_id=request.action_request_id
-        )
-
-    return run
-
-
-def build_whm_account_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
-    """Tool name → runner for this module's CHANGE tools (T22, T23)."""
-    return {
-        TOOL_WHM_SUSPEND_ACCOUNT: build_whm_suspend_runner(context=context),
-        TOOL_WHM_UNSUSPEND_ACCOUNT: build_whm_unsuspend_runner(context=context),
-    }
-
-
 def register_whm_account_change_tools(
     server: FastMCP, *, context: McpToolContext
 ) -> dict[str, ToolRisk]:
@@ -649,15 +528,6 @@ def register_whm_account_change_tools(
 # --- Internals ---
 
 
-@dataclass(frozen=True)
-class _ChangeTarget:
-    """The machine and account an approved change runs against, resolved from the evidence."""
-
-    client: WHMClient
-    username: str
-    server_name: str
-
-
 async def _open_account_change(
     *,
     tool_name: str,
@@ -719,141 +589,6 @@ async def _open_account_change(
     return build_change_gate_response(opened, tool_name=tool_name, context=context)
 
 
-async def _resolve_change_target(
-    request: ChangeExecutionRequest, *, context: McpToolContext
-) -> _ChangeTarget | ToolPayload:
-    """The client and username an approved account change runs against, or the refusal (V33).
-
-    **From the evidence, never from the arguments.** `server_ref` is a string the model supplied
-    and inventory can be edited between a request and its approval; `evidence["server_id"]` is
-    the machine the preflight actually read and the operator actually saw on the card.
-    Re-resolving the string here would be a second resolution that can disagree with the one the
-    decision rests on.
-
-    Two ways it refuses on the identity of the machine, both `whm_server_unavailable` and both
-    before any mutation: the evidence no longer carries a usable id or username (it round-tripped
-    through JSONB, and a value that no longer parses is a request NOA refuses rather than guesses
-    at), or the server row is gone.
-
-    **A third refuses on the identity of the credential** (§V106). The row's `api_username` is
-    read here, now, and compared against the `owner` the card was built from: a row is editable
-    between a request and its decision (V33), so the credential this change would run as need
-    not be the one the operator authorised — repointing `api_username` at another reseller after
-    the card was rendered would otherwise be a silent substitution of the acting identity. The
-    live value is the one that can be wrong, so the live value is the one that is checked.
-
-    It refuses on an **unproven** verdict too, including a row whose evidence carries no `owner`
-    — one opened before this key existed. An approval authorises a change to *this* account by
-    *that* credential, and evidence that cannot say whether the pair holds does not carry the
-    authorisation forward (V86).
-
-    The database session closes before the caller's WHM round trips, T21's rule — and here it
-    matters twice over, because the executor's own session is open for the whole of the call.
-    """
-    server_id = uuid_or_none(request.evidence.get(EVIDENCE_SERVER_ID))
-    account = request.evidence.get(EVIDENCE_ACCOUNT)
-    username = account.get("user") if isinstance(account, dict) else None
-    if server_id is None or not isinstance(username, str) or not username:
-        return tool_failure(ERROR_SERVER_UNAVAILABLE, MESSAGE_SERVER_UNAVAILABLE)
-
-    owner = request.evidence.get(EVIDENCE_OWNER)
-    async with context.session_factory() as session:
-        repository = context.whm_server_repository_factory(session)
-        server = await repository.get_by_id(server_id)
-        if server is None:
-            return tool_failure(ERROR_SERVER_UNAVAILABLE, MESSAGE_SERVER_UNAVAILABLE)
-        api_username = server.api_username
-        client = context.whm_client_factory(server, cipher=context.secret_cipher)
-        server_name = server.name
-
-    ownership = classify_ownership(owner=owner, api_username=api_username)
-    if not ownership.is_proven:
-        return refuse_unproven_ownership(
-            ownership=ownership,
-            tool_name=request.tool_name,
-            site=SITE_RUNNER,
-            username=username,
-            owner=owner,
-            api_username=api_username,
-            # What the model asked for, as the gate recorded it (T33). The resolved row's name
-            # is a reseller's `api_username` by V109(b) and stays out of the answer; it goes to
-            # the log instead.
-            server_ref=request.arguments.get("server_ref"),
-            server_name=server_name,
-            server_id=str(server_id),
-            action_request_id=str(request.action_request_id),
-        )
-
-    return _ChangeTarget(client=client, username=username, server_name=server_name)
-
-
-async def _verify_account_state(
-    target: _ChangeTarget,
-    *,
-    direction: _AccountChangeDirection,
-    action_request_id: UUID,
-) -> ToolPayload:
-    """Re-read the account and say whether the change took (V62's rule, one system over).
-
-    Three answers, and the middle one is why this is a function rather than a boolean:
-
-    - the account reads the way the change asked for → done, and verified;
-    - it reads the other way → WHM accepted a call that did not take, which is a failure;
-    - the read itself did not answer → the change happened and is **unverified**. Reporting that
-      as a failure would send an operator to repeat a change that may already have taken;
-      reporting it as a plain success would claim a confirmation nobody has.
-
-    One function for both directions (V66): `direction.target_suspended` is the only thing that
-    differs, and a second copy of these three branches is a second place the third one can be
-    dropped.
-    """
-    result = await target.client.list_accounts()
-    verified = (
-        match_account(normalize_whm_account_list(result.get("accounts")), username=target.username)
-        if result.get("ok") is True
-        else None
-    )
-
-    if verified is None:
-        logger.warning(
-            direction.unverified_log_event,
-            tool=direction.tool_name,
-            action_request_id=str(action_request_id),
-            username=target.username,
-            cause=str(result.get("error_code") or MESSAGE_LIST_ACCOUNTS_FAILED),
-        )
-        return tool_ok(
-            status=STATUS_CHANGED,
-            server=target.server_name,
-            username=target.username,
-            verified=False,
-            verification=VERIFICATION_UNAVAILABLE,
-            message=(
-                f"WHM accepted the {direction.noun} of `{target.username}`, but the confirming "
-                "read did not answer. Check the account on the server."
-            ),
-        )
-
-    if (verified.get("suspended") is True) is not direction.target_suspended:
-        return tool_failure(ERROR_POSTFLIGHT_FAILED, direction.postflight_message)
-
-    return tool_ok(
-        status=STATUS_CHANGED,
-        server=target.server_name,
-        username=target.username,
-        suspended=direction.target_suspended,
-        verified=True,
-        message=f"`{target.username}` {direction.confirmed_state}.",
-    )
-
-
-def _passthrough_failure(result: dict[str, object], *, fallback: str) -> ToolPayload:
-    """A `WHMClient` failure as a tool failure, keeping the code that names the remedy."""
-    message = result.get("message")
-    spoken = message if isinstance(message, str) and message.strip() else None
-    return tool_failure(str(result.get("error_code") or ERROR_UNKNOWN), spoken or fallback)
-
-
 __all__ = [
     "DESCRIPTION_WHM_SUSPEND_ACCOUNT",
     "DESCRIPTION_WHM_UNSUSPEND_ACCOUNT",
@@ -888,9 +623,6 @@ __all__ = [
     "TOOL_WHM_SUSPEND_ACCOUNT",
     "TOOL_WHM_UNSUSPEND_ACCOUNT",
     "VERIFICATION_UNAVAILABLE",
-    "build_whm_account_change_runners",
-    "build_whm_suspend_runner",
-    "build_whm_unsuspend_runner",
     "classify_ownership",
     "collect_account_state",
     "match_account",

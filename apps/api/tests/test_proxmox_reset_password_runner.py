@@ -58,6 +58,7 @@ from noa_api.mcp_tools.proxmox_password_runner import (
     build_proxmox_password_runners,
     build_proxmox_reset_vm_password_runner,
 )
+from support.change_delta import PayloadRunner, payload_runner
 from support.proxmox_password import (
     NODE,
     OLD_PASSWORD,
@@ -79,9 +80,13 @@ def no_crypt_library() -> CDLL | None:
     return None
 
 
-def build_runner(fixture, **kwargs):
-    """The runner over this fixture's context."""
-    return build_proxmox_reset_vm_password_runner(context=fixture.context, **kwargs)
+def build_runner(fixture, **kwargs) -> PayloadRunner:
+    """The runner over this fixture's context, answering its envelope.
+
+    The delta it publishes beside that envelope is asserted in
+    `test_change_delta.py`; every claim in this file is about the envelope.
+    """
+    return payload_runner(build_proxmox_reset_vm_password_runner(context=fixture.context, **kwargs))
 
 
 def server_id(fixture):
