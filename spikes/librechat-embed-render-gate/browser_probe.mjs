@@ -1,5 +1,5 @@
 /**
- * E2-E5 — the live run for T59 items (d) and (f).
+ * E2-E6 — the live run for T59 items (d) and (f), plus three properties of the rendered frame.
  *
  * Drives a real browser against a real LibreChat at pin 45cc53c4, talking to a real NOA
  * process over MCP, and answers one question with a measurement rather than a source read:
@@ -16,6 +16,15 @@
  * - **The verdicts come from inside the frame**, not from a screenshot. The page writes them
  *   into `data-*` attributes; this reads those. Screenshots are kept as evidence for a human,
  *   not as the oracle.
+ *
+ * E6 adds three measurements on the frame LibreChat rendered: the iframe height the host gives it
+ * and the height the framed document can talk the host into; whether a clipboard write of an
+ * `image/png` succeeds from inside it; and whether a blob-URL download fires from inside it. Each
+ * has its own control — a wrong-source and a wrong-type message for the height, and the same
+ * document unframed for the other two. `resize_probe.mjs` beside this file asks the same three
+ * questions with no LibreChat, no Postgres and no Mongo, and isolates the cause of each refusal
+ * across a wider matrix of frame policies; its recorded numbers are in
+ * `evidence/resize-clipboard-download-probe.json`.
  *
  *   NODE_PATH=<librechat-clone>/node_modules node browser_probe.mjs
  */
@@ -43,6 +52,10 @@ const MCP_SERVER = 'noa';
 const TOOL_URI_LIST = `embed_probe_uri_list_mcp_${MCP_SERVER}`;
 const TOOL_HTML = `embed_probe_html_mcp_${MCP_SERVER}`;
 const TOOL_NOTIFY = `embed_probe_notify_tools_changed_mcp_${MCP_SERVER}`;
+
+/** The height E6 asks the host for, and the absurd one it asks for afterwards. */
+const REQUESTED_HEIGHT = 640;
+const ABSURD_HEIGHT = 20000;
 
 const results = { startedAt: new Date().toISOString(), stages: {}, failures: [] };
 
@@ -222,6 +235,188 @@ async function readFrame(page) {
   return { frames, probes };
 }
 
+/** Inject a gesture target into a document, then read back what the browser lets it do.
+ *
+ * The NOA-served page has no such button, so the harness supplies one. What is under test is the
+ * browser's frame policy, not the button: the click is a real mouse event dispatched at the
+ * element's coordinates, and every answer is read back out of a `data-*` attribute the handler
+ * wrote — never from the absence of a thrown exception.
+ *
+ * `scope` is a Frame or a Page, which is what makes the control possible: the same injected code
+ * in the same document, once framed and once not. `spikes/.../resize_probe.mjs` asks the same two
+ * questions without LibreChat and isolates the cause with a wider matrix of frame policies.
+ */
+async function probeClipboardAndDownload(page, scope) {
+  const context = await scope.evaluate(async () => {
+    const el = document.createElement('div');
+    el.id = 'noa-surface-probe';
+    document.body.appendChild(el);
+
+    const clip = document.createElement('button');
+    clip.id = 'noa-surface-clip';
+    const dl = document.createElement('button');
+    dl.id = 'noa-surface-dl';
+    for (const button of [clip, dl]) {
+      button.type = 'button';
+      button.style.cssText =
+        'position:fixed;left:8px;z-index:2147483647;width:180px;height:32px;font:12px sans-serif;';
+      document.body.appendChild(button);
+    }
+    clip.textContent = 'clipboard write';
+    clip.style.top = '8px';
+    dl.textContent = 'download';
+    dl.style.top = '48px';
+
+    // Built now, so the click handler stays synchronous up to `clipboard.write`: awaiting a blob
+    // inside the handler is a second, independent reason a write can fail, and it would be
+    // indistinguishable from a policy refusal.
+    const canvas = document.createElement('canvas');
+    canvas.width = 2;
+    canvas.height = 2;
+    canvas.getContext('2d').fillRect(0, 0, 2, 2);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+
+    clip.addEventListener('click', () => {
+      el.dataset.clipHasFocus = String(document.hasFocus());
+      let item;
+      try {
+        item = new ClipboardItem({ 'image/png': blob });
+      } catch (error) {
+        el.dataset.clipResult = 'clipboarditem-threw';
+        el.dataset.clipError = `${error && error.name}: ${error && error.message}`;
+        return;
+      }
+      navigator.clipboard.write([item]).then(
+        () => {
+          el.dataset.clipResult = 'resolved';
+          el.dataset.clipError = '(none)';
+        },
+        (error) => {
+          el.dataset.clipResult = 'rejected';
+          el.dataset.clipErrorName = (error && error.name) || typeof error;
+          el.dataset.clipError = (error && error.message) || String(error);
+        },
+      );
+    });
+
+    dl.addEventListener('click', () => {
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(
+        new Blob(['noa embed download probe\n'], { type: 'text/plain' }),
+      );
+      anchor.download = 'noa-embed-probe.txt';
+      document.body.appendChild(anchor);
+      anchor.click();
+      el.dataset.dlAnchorClicked = '1';
+    });
+
+    let supportsPng;
+    try {
+      supportsPng =
+        typeof ClipboardItem !== 'undefined' && typeof ClipboardItem.supports === 'function'
+          ? String(ClipboardItem.supports('image/png'))
+          : '(ClipboardItem.supports absent)';
+    } catch (error) {
+      supportsPng = `threw ${error && error.name}`;
+    }
+    let permission;
+    try {
+      permission = (await navigator.permissions.query({ name: 'clipboard-write' })).state;
+    } catch (error) {
+      permission = `query threw ${error && error.name}`;
+    }
+
+    return {
+      documentOrigin: window.location.origin,
+      isSecureContext: window.isSecureContext,
+      typeofClipboard: typeof navigator.clipboard,
+      typeofClipboardItem: typeof ClipboardItem,
+      clipboardItemSupportsImagePng: supportsPng,
+      permissionsQueryClipboardWrite: permission,
+      pngBlobBytes: blob ? blob.size : -1,
+    };
+  });
+
+  await scope.locator('#noa-surface-clip').click();
+  await page.waitForTimeout(1500);
+
+  const waiting = page
+    .waitForEvent('download', { timeout: 6000 })
+    .then(async (download) => ({
+      fired: true,
+      suggestedFilename: download.suggestedFilename(),
+      failure: await download.failure(),
+    }))
+    .catch((error) => ({ fired: false, timeoutError: String(error).split('\n')[0] }));
+  await scope.locator('#noa-surface-dl').click();
+  const download = await waiting;
+
+  const readback = await scope
+    .locator('#noa-surface-probe')
+    .evaluate((el) => ({ ...el.dataset }));
+
+  return {
+    context,
+    clipboardWrite: {
+      result: readback.clipResult ?? '(no result recorded)',
+      errorName: readback.clipErrorName ?? null,
+      errorMessage: readback.clipError ?? null,
+      documentHadFocusAtClick: readback.clipHasFocus ?? null,
+    },
+    download: { anchorClicked: readback.dlAnchorClicked ?? '(not clicked)', ...download },
+  };
+}
+
+/** The height the host hands the frame, and the height the frame can talk it into.
+ *
+ * `@mcp-ui/client` writes `height: 100%` inline and then overwrites it from a `ui-size-change`
+ * message, gated on `autoResizeIframe` and on `event.source === iframe.contentWindow`. Both gates
+ * get a control here, because "the box moved" is only evidence if a wrong-source and a wrong-type
+ * message leave it alone.
+ */
+async function measureRenderedFrameHeight(page, frame) {
+  const handle = await page.$(`iframe[src^="${EMBED}"]`);
+  if (!handle) return { error: `no iframe with src on ${EMBED}` };
+
+  const box = () =>
+    handle.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        rect: { width: rect.width, height: rect.height },
+        inlineStyleWidth: el.style.width || '(unset)',
+        inlineStyleHeight: el.style.height || '(unset)',
+        sandbox: el.getAttribute('sandbox'),
+      };
+    });
+
+  const post = async (source, message) => {
+    if (source === 'top') await page.evaluate((m) => window.postMessage(m, '*'), message);
+    else await frame.evaluate((m) => window.parent.postMessage(m, '*'), message);
+    await page.waitForTimeout(500);
+    return box();
+  };
+
+  const initial = await box();
+  const afterWrongSource = await post('top', {
+    type: 'ui-size-change',
+    payload: { height: REQUESTED_HEIGHT },
+  });
+  const afterWrongType = await post('frame', {
+    type: 'noa-not-a-size-change',
+    payload: { height: REQUESTED_HEIGHT },
+  });
+  const afterSizeChange = await post('frame', {
+    type: 'ui-size-change',
+    payload: { height: REQUESTED_HEIGHT },
+  });
+  const afterAbsurdHeight = await post('frame', {
+    type: 'ui-size-change',
+    payload: { height: ABSURD_HEIGHT },
+  });
+
+  return { initial, afterWrongSource, afterWrongType, afterSizeChange, afterAbsurdHeight };
+}
+
 async function main() {
   mkdirSync(EVIDENCE, { recursive: true });
 
@@ -300,6 +495,110 @@ async function main() {
       'POST /embed-probe/decide from inside the frame is authenticated (V22 path)',
       (uriProbe?.decide ?? '').startsWith('200'),
       uriProbe?.decide,
+    );
+
+    // --- E6: three properties of the rendered frame a source read cannot settle ---
+    //
+    // Iframe height, a clipboard write of an image, and a blob download — measured on the frame
+    // LibreChat actually rendered, at whatever sandbox string this pin emits.
+    //
+    // Clipboard permission is granted for the NOA embed origin here, deliberately and narrowly.
+    // A headless Chromium refuses `clipboard-write` even to a top-level page, which would make
+    // the framed refusal unattributable: control and subject would both fail and the comparison
+    // would prove nothing. `resize_probe.mjs` measured that the framed refusal survives the grant
+    // while the unframed control starts succeeding, so granting is what gives this comparison
+    // discriminating power rather than what produces the result.
+    await context.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: EMBED });
+
+    const embedFrame = page.frames().find((f) => f.url().startsWith(EMBED));
+    const framedSurfaces = embedFrame
+      ? await probeClipboardAndDownload(page, embedFrame)
+      : { error: 'no frame on the NOA embed origin' };
+
+    // The control: the SAME document, not framed, in its own tab so the LibreChat tab keeps its
+    // in-page access token. If the framed refusals showed up here too, this stage would be
+    // measuring the browser's global posture instead of the frame policy.
+    const topLevelPage = await context.newPage();
+    await topLevelPage.goto(embedFrame ? embedFrame.url() : `${EMBED}/embed-probe/frame`);
+    const topLevelSurfaces = await probeClipboardAndDownload(topLevelPage, topLevelPage);
+    await topLevelPage.close();
+
+    const heights = embedFrame
+      ? await measureRenderedFrameHeight(page, embedFrame)
+      : { error: 'no frame on the NOA embed origin' };
+
+    record('rendered-frame-surfaces', {
+      grantedPermissions: `context.grantPermissions(['clipboard-read','clipboard-write']) for ${EMBED} only`,
+      requestedHeightPx: REQUESTED_HEIGHT,
+      absurdHeightPx: ABSURD_HEIGHT,
+      heights,
+      framed: framedSurfaces,
+      topLevelControl: topLevelSurfaces,
+      note:
+        'A blocked download is silent in a headless Chromium: the anchor click throws nothing ' +
+        'and no console message is emitted, so `fired: false` from the download event is the ' +
+        'only signal. A headed run does log "Download is disallowed. The frame initiating or ' +
+        'instantiating the download is sandboxed, but the flag ‘allow-downloads’ is ' +
+        'not set."',
+    });
+
+    check(
+      'E6: the rendered frame has a measurable initial height',
+      typeof heights?.initial?.rect?.height === 'number' && heights.initial.rect.height > 0,
+      JSON.stringify(heights?.initial),
+    );
+    check(
+      'E6: control — ui-size-change from the TOP window does not move the frame (source gate holds)',
+      heights?.afterWrongSource?.rect?.height === heights?.initial?.rect?.height,
+      `${heights?.initial?.rect?.height} -> ${heights?.afterWrongSource?.rect?.height}`,
+    );
+    check(
+      'E6: control — an unrecognised message type from the frame does not move it',
+      heights?.afterWrongType?.rect?.height === heights?.initial?.rect?.height,
+      `${heights?.initial?.rect?.height} -> ${heights?.afterWrongType?.rect?.height}`,
+    );
+    check(
+      `E6: ui-size-change from the frame sets the height verbatim (${REQUESTED_HEIGHT}px)`,
+      heights?.afterSizeChange?.rect?.height === REQUESTED_HEIGHT,
+      `${heights?.afterSizeChange?.rect?.height} / inline ${heights?.afterSizeChange?.inlineStyleHeight}`,
+    );
+    check(
+      'E6: width is untouched when the payload omits it',
+      heights?.afterSizeChange?.inlineStyleWidth === '100%' &&
+        heights?.afterSizeChange?.rect?.width === heights?.initial?.rect?.width,
+      `inline ${heights?.afterSizeChange?.inlineStyleWidth}, ${heights?.initial?.rect?.width} -> ${heights?.afterSizeChange?.rect?.width}`,
+    );
+    check(
+      `E6: an absurd height (${ABSURD_HEIGHT}px) is applied verbatim — the host does not clamp, so any bound has to come from the framed document`,
+      heights?.afterAbsurdHeight?.rect?.height === ABSURD_HEIGHT,
+      `${heights?.afterAbsurdHeight?.rect?.height} / inline ${heights?.afterAbsurdHeight?.inlineStyleHeight}`,
+    );
+
+    check(
+      'E6: the framed document is a secure context, so a refusal is not the scheme',
+      framedSurfaces?.context?.isSecureContext === true,
+      JSON.stringify(framedSurfaces?.context),
+    );
+    check(
+      'E6: control — clipboard write of image/png SUCCEEDS in the same document unframed',
+      topLevelSurfaces?.clipboardWrite?.result === 'resolved',
+      `${topLevelSurfaces?.clipboardWrite?.result}: ${topLevelSurfaces?.clipboardWrite?.errorMessage}`,
+    );
+    check(
+      'E6: clipboard write of image/png from inside the rendered frame is REFUSED',
+      framedSurfaces?.clipboardWrite?.result === 'rejected',
+      `${framedSurfaces?.clipboardWrite?.result}: ${framedSurfaces?.clipboardWrite?.errorMessage}`,
+    );
+    check(
+      'E6: control — a blob download FIRES in the same document unframed',
+      topLevelSurfaces?.download?.fired === true,
+      JSON.stringify(topLevelSurfaces?.download),
+    );
+    check(
+      'E6: a blob download from inside the rendered frame does NOT fire',
+      framedSurfaces?.download?.fired === false &&
+        framedSurfaces?.download?.anchorClicked === '1',
+      JSON.stringify(framedSurfaces?.download),
     );
 
     // --- E4: the control that proves the above discriminates ---

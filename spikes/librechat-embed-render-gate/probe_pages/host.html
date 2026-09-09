@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>NOA mcp-ui surface probe — host</title>
+    <style id="preflight">
+      /* Tailwind v3 preflight, the parts that move an iframe's measured box. LibreChat's client
+         is on `tailwindcss ^3.4.1` with `@tailwind base` at `client/src/style.css:1` and no
+         `corePlugins.preflight: false` in `client/tailwind.config.cjs`, so these are live at both
+         render sites. They are reproduced by hand because Tailwind is not built in this harness.
+
+         `border-width: 0` is the one that would silently corrupt the numbers if it were left out:
+         a UA-default iframe carries `border: 2px inset`, which is 4px of extra measured height. */
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        border-width: 0;
+        border-style: solid;
+      }
+      img,
+      svg,
+      video,
+      canvas,
+      audio,
+      iframe,
+      embed,
+      object {
+        display: block;
+        vertical-align: middle;
+      }
+    </style>
+    <style>
+      /* `html` keeps the browser's default font-size on purpose. Tailwind's spacing scale is in
+         `rem`, so shrinking the root would shrink `px-3` and `mx-1` and quietly move the measured
+         widths. Only `body` gets a size. `rootFontSizePx` is recorded in the artifact. */
+      html {
+        font-family: system-ui, sans-serif;
+        line-height: 1.5;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        font-size: 14px;
+        line-height: inherit;
+      }
+
+      /* Stands in for the chat column. Its width is an input to the measurement, not a finding:
+         the artifact records it so the numbers are reproducible. */
+      .lc-message-body,
+      #column {
+        width: 768px;
+      }
+
+      /* `MCPUIResource.tsx:39` — Tailwind `mx-1 inline-block w-full align-middle`. */
+      .lc-mcpui-span {
+        margin-left: 0.25rem;
+        margin-right: 0.25rem;
+        display: inline-block;
+        width: 100%;
+        vertical-align: middle;
+      }
+
+      /* `ToolCallInfo.tsx:132` — Tailwind `w-full px-3 py-3.5`, the panel body the renderer is
+         mounted into with no wrapper of its own. */
+      .lc-toolcall-body {
+        width: 100%;
+        padding-left: 0.75rem;
+        padding-right: 0.75rem;
+        padding-top: 0.875rem;
+        padding-bottom: 0.875rem;
+      }
+
+      .lc-raw-slot {
+        margin: 8px 0;
+      }
+
+      /* The host's drop target for the drag-out measurement. Fixed-position on purpose: it must
+         not enter the layout, because the same host document is what the height measurements are
+         taken in and a target in the flow would move the boxes those numbers report. */
+      .lc-dropzone {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        width: 300px;
+        height: 200px;
+        border: 2px dashed #7c3aed;
+        background: #faf5ff;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 12px;
+        color: #6b21a8;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="column"><div id="slots"></div></div>
+    <script src="/probe_bundle.js"></script>
+    <script>
+      // `?preflight=0` drops the preflight block. Not the faithful configuration — it exists so
+      // the run can report how much of the initial height is the UA default border rather than
+      // the package's own layout, which is otherwise indistinguishable from a real measurement.
+      if (new URLSearchParams(location.search).get('preflight') === '0') {
+        document.getElementById('preflight').remove();
+      }
+    </script>
+  </body>
+</html>

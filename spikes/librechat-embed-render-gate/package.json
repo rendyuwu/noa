@@ -2,11 +2,16 @@
   "name": "noa-librechat-embed-render-gate",
   "private": true,
   "type": "module",
-  "description": "Browser probe for T59: does a NOA-served text/uri-list UI resource render on NOA's origin inside LibreChat, with the session cookie riding into the frame?",
+  "description": "Browser probes for T59: does a NOA-served text/uri-list UI resource render on NOA's origin inside LibreChat with the session cookie riding into the frame (browser_probe.mjs), and what can a document inside an mcp-ui iframe actually do (resize_probe.mjs)?",
   "scripts": {
-    "probe": "node browser_probe.mjs"
+    "probe": "node browser_probe.mjs",
+    "surface-probe": "node resize_probe.mjs"
   },
   "devDependencies": {
-    "playwright": "1.56.1"
+    "@mcp-ui/client": "5.7.0",
+    "esbuild": "0.25.10",
+    "playwright": "1.56.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
   }
 }

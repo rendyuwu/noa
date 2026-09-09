@@ -1,0 +1,442 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>NOA mcp-ui surface probe — framed document</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 8px;
+        font: 12px/1.4 system-ui, sans-serif;
+        background: #f4f4f5;
+      }
+      button {
+        display: block;
+        width: 100%;
+        margin: 4px 0;
+        padding: 10px;
+        font: inherit;
+      }
+      pre {
+        margin: 6px 0 0;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      /* No `user-select` rule anywhere in this file, on purpose: measurement 4 asks whether the
+         zero-code path (operator drags across the text and presses Ctrl+C) survives the frame
+         policy, and a `user-select: none` here would answer a different question. The computed
+         value is recorded per run so "nothing obstructs it" is a measured value and not a claim
+         about this stylesheet staying the way it is. */
+      #copytext,
+      #copymixed {
+        margin: 6px 0;
+        padding: 6px;
+        border: 1px solid #a1a1aa;
+        background: #fff;
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+      }
+      #dragimg {
+        display: block;
+        margin: 6px 0;
+      }
+      #dropzone-inframe {
+        margin: 6px 0;
+        padding: 12px 6px;
+        border: 1px dashed #a1a1aa;
+        background: #fff;
+      }
+      a.popout {
+        display: block;
+        margin: 4px 0;
+        padding: 8px;
+        border: 1px solid #a1a1aa;
+        background: #fff;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="probe" data-ready="0"></div>
+    <button id="clip" type="button">clipboard write image/png</button>
+    <button id="dl" type="button">download blob</button>
+
+    <!-- Extraction surfaces (measurements 4a-4f). Every one of them is a way a document in here
+         might hand bytes to the operator with no change on the host side. The buttons exist so the
+         call happens under a real click: user activation is an input to all of the clipboard
+         paths, and a call made from `page.evaluate` would answer a question nobody asked. -->
+    <div id="copytext"></div>
+    <div id="copymixed"><span id="copymixedtext"></span><img id="copyimg" alt="probe" /></div>
+    <button id="exec-copy" type="button">execCommand copy (text selection)</button>
+    <button id="write-text" type="button">clipboard.writeText</button>
+    <button id="exec-copy-image" type="button">execCommand copy (selection with img)</button>
+    <img id="dragimg" alt="drag me" draggable="true" />
+    <div id="dropzone-inframe">in-frame drop target</div>
+    <a class="popout" id="popout-noopener" rel="noopener noreferrer" target="_blank">popout (noopener)</a>
+    <a class="popout" id="popout-plain" target="_blank">popout (plain)</a>
+    <pre id="log"></pre>
+
+    <script>
+      // The document under test. It answers by writing into `data-*` on `#probe`, which is what
+      // the driver reads. Nothing here is asserted from the absence of a thrown exception: every
+      // question resolves to a recorded string, and "rejected" carries the browser's own message
+      // verbatim so a future reader can tell a policy refusal from a harness mistake.
+
+      const el = document.getElementById('probe');
+      const logEl = document.getElementById('log');
+      const params = new URLSearchParams(location.search);
+
+      function set(key, value) {
+        el.dataset[key] = String(value);
+      }
+      function log(line) {
+        logEl.textContent += line + '\n';
+      }
+
+      set('slot', params.get('slot') ?? '(none)');
+      set('origin', location.origin);
+      set('href', location.href);
+      set('secureContext', window.isSecureContext);
+      set('clipboardApi', typeof navigator.clipboard);
+      set('clipboardItemType', typeof ClipboardItem);
+      set('hasFocusAtLoad', document.hasFocus());
+
+      let supportsPng;
+      try {
+        supportsPng =
+          typeof ClipboardItem !== 'undefined' && typeof ClipboardItem.supports === 'function'
+            ? ClipboardItem.supports('image/png')
+            : '(ClipboardItem.supports absent)';
+      } catch (error) {
+        supportsPng = `threw ${error && error.name}: ${error && error.message}`;
+      }
+      set('clipboardItemSupportsPng', supportsPng);
+
+      // Informative only. Chromium reports `clipboard-write` as `granted` in contexts where the
+      // write still fails, so this is recorded next to the write result rather than instead of it.
+      (async () => {
+        try {
+          const status = await navigator.permissions.query({ name: 'clipboard-write' });
+          set('permClipboardWrite', status.state);
+        } catch (error) {
+          set('permClipboardWrite', `query threw ${error && error.name}: ${error && error.message}`);
+        }
+      })();
+
+      // Built at load, not in the click handler: `canvas.toBlob` is async, and awaiting it inside
+      // the handler would put the clipboard call on the far side of a task boundary, which is a
+      // second reason a write can fail. Pre-building keeps the handler synchronous up to the
+      // `write` call so a rejection is attributable to the frame policy.
+      let pngBlob = null;
+      let pngBlobError = null;
+      (function buildPng() {
+        try {
+          const canvas = document.createElement('canvas');
+          canvas.width = 2;
+          canvas.height = 2;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#c81e1e';
+          ctx.fillRect(0, 0, 2, 2);
+          canvas.toBlob((blob) => {
+            if (!blob) {
+              pngBlobError = 'toBlob produced null';
+              set('pngBlobBytes', -1);
+            } else {
+              pngBlob = blob;
+              set('pngBlobBytes', blob.size);
+            }
+            set('ready', '1');
+          }, 'image/png');
+        } catch (error) {
+          pngBlobError = `${error && error.name}: ${error && error.message}`;
+          set('pngBlobBytes', -1);
+          set('ready', '1');
+        }
+      })();
+
+      document.getElementById('clip').addEventListener('click', () => {
+        set('clipHasFocus', document.hasFocus());
+        set('clipResult', 'pending');
+        if (!pngBlob) {
+          set('clipResult', 'harness-error');
+          set('clipError', `no png blob: ${pngBlobError}`);
+          return;
+        }
+        let item;
+        try {
+          item = new ClipboardItem({ 'image/png': pngBlob });
+        } catch (error) {
+          set('clipResult', 'clipboarditem-threw');
+          set('clipErrorName', (error && error.name) || typeof error);
+          set('clipError', (error && error.message) || String(error));
+          return;
+        }
+        navigator.clipboard.write([item]).then(
+          () => {
+            set('clipResult', 'resolved');
+            set('clipErrorName', '(none)');
+            set('clipError', '(none)');
+            log('clipboard.write resolved');
+          },
+          (error) => {
+            set('clipResult', 'rejected');
+            set('clipErrorName', (error && error.name) || typeof error);
+            set('clipError', (error && error.message) || String(error));
+            log(`clipboard.write rejected ${error && error.name}: ${error && error.message}`);
+          },
+        );
+      });
+
+      document.getElementById('dl').addEventListener('click', () => {
+        try {
+          const blob = new Blob(['noa embed sandbox download probe\n'], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const anchor = document.createElement('a');
+          anchor.href = url;
+          anchor.download = 'noa-sandbox-probe.txt';
+          anchor.textContent = 'download';
+          document.body.appendChild(anchor);
+          anchor.click();
+          set('dlAnchorClicked', '1');
+          set('dlError', '(none)');
+          log('download anchor clicked');
+        } catch (error) {
+          set('dlAnchorClicked', 'threw');
+          set('dlError', `${error && error.name}: ${error && error.message}`);
+        }
+      });
+
+      // --- extraction surfaces --------------------------------------------------------------
+      //
+      // The payloads carry the run's nonce (`?token=`) so a value read back off the clipboard is
+      // traceable to THIS copy from THIS slot. Each path gets its own prefix, because the driver
+      // re-seeds the clipboard with a sentinel between steps and then asks which of the two
+      // strings is there; without distinct prefixes a leftover from the previous step would read
+      // as a success.
+      const token = params.get('token') ?? 'no-token';
+      const slotName = params.get('slot') ?? 'no-slot';
+      const TEXT_PAYLOAD = `NOA-EXEC-COPY|${slotName}|${token}`;
+      const WRITETEXT_PAYLOAD = `NOA-WRITETEXT|${slotName}|${token}`;
+      const IMGCOPY_PAYLOAD = `NOA-IMGCOPY|${slotName}|${token}`;
+
+      document.getElementById('copytext').textContent = TEXT_PAYLOAD;
+      document.getElementById('copymixedtext').textContent = IMGCOPY_PAYLOAD;
+      set('textPayload', TEXT_PAYLOAD);
+      set('writeTextPayload', WRITETEXT_PAYLOAD);
+      set('imgCopyPayload', IMGCOPY_PAYLOAD);
+
+      // Whether anything in this document's CSS obstructs a plain drag-select. Measured, not
+      // asserted from reading the stylesheet above — a UA default or an inherited value would not
+      // show up in a source read.
+      const copyTextStyle = window.getComputedStyle(document.getElementById('copytext'));
+      set('userSelect', copyTextStyle.userSelect ?? '(absent)');
+      set('webkitUserSelect', copyTextStyle.webkitUserSelect ?? '(absent)');
+      set('bodyUserSelect', window.getComputedStyle(document.body).userSelect ?? '(absent)');
+      set('execCommandType', typeof document.execCommand);
+      try {
+        set('queryCommandSupportedCopy', document.queryCommandSupported('copy'));
+      } catch (error) {
+        set('queryCommandSupportedCopy', `threw ${error && error.name}`);
+      }
+
+      // A bigger PNG than the 2x2 one the clipboard question uses: a 2px image is not reliably
+      // hit-testable for a drag, and the image-in-selection question wants something that is
+      // visibly an image in the copied HTML.
+      set('imgReady', '0');
+      (function buildDragImage() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 64;
+        canvas.height = 48;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#1d4ed8';
+        ctx.fillRect(0, 0, 64, 48);
+        ctx.fillStyle = '#fafafa';
+        ctx.fillRect(8, 8, 48, 32);
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            set('imgReady', 'toBlob-null');
+            return;
+          }
+          set('dragBlobBytes', blob.size);
+          const url = URL.createObjectURL(blob);
+          const dragImg = document.getElementById('dragimg');
+          const copyImg = document.getElementById('copyimg');
+          let loaded = 0;
+          const onLoad = () => {
+            loaded += 1;
+            if (loaded === 2) set('imgReady', '1');
+          };
+          dragImg.addEventListener('load', onLoad);
+          copyImg.addEventListener('load', onLoad);
+          dragImg.addEventListener('error', () => set('imgReady', 'img-error'));
+          copyImg.addEventListener('error', () => set('imgReady', 'img-error'));
+          dragImg.src = url;
+          copyImg.src = url;
+        }, 'image/png');
+      })();
+
+      /** Select a node's contents the way a script would, and report what got selected. */
+      function selectContents(node) {
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return selection;
+      }
+
+      // Count of `copy` events the document saw, and the types the event carried. This separates
+      // "the editing command never dispatched" from "it dispatched and the clipboard still did not
+      // change" — two different refusals that `execCommand`'s boolean cannot tell apart.
+      let copyEvents = 0;
+      const copyEventTypes = [];
+      document.addEventListener('copy', (event) => {
+        copyEvents += 1;
+        try {
+          copyEventTypes.push((event.clipboardData && Array.from(event.clipboardData.types).join('+')) || '(empty)');
+        } catch (error) {
+          copyEventTypes.push(`threw ${error && error.name}`);
+        }
+        set('copyEventCount', copyEvents);
+        set('copyEventTypes', copyEventTypes.join(' ; '));
+      });
+      set('copyEventCount', 0);
+      set('copyEventTypes', '(none)');
+
+      document.getElementById('exec-copy').addEventListener('click', () => {
+        const before = copyEvents;
+        set('execCopyHasFocus', document.hasFocus());
+        try {
+          const selection = selectContents(document.getElementById('copytext'));
+          set('execCopySelection', selection.toString());
+          set('execCopyQueryEnabled', document.queryCommandEnabled('copy'));
+          const returned = document.execCommand('copy');
+          set('execCopyReturn', returned);
+          set('execCopyError', '(none)');
+        } catch (error) {
+          set('execCopyReturn', 'threw');
+          set('execCopyError', `${error && error.name}: ${error && error.message}`);
+        }
+        set('execCopyEventFired', copyEvents > before);
+        log(`exec-copy return=${el.dataset.execCopyReturn} eventFired=${el.dataset.execCopyEventFired}`);
+      });
+
+      document.getElementById('write-text').addEventListener('click', () => {
+        set('writeTextHasFocus', document.hasFocus());
+        set('writeTextResult', 'pending');
+        let promise;
+        try {
+          promise = navigator.clipboard.writeText(WRITETEXT_PAYLOAD);
+        } catch (error) {
+          set('writeTextResult', 'threw-synchronously');
+          set('writeTextErrorName', (error && error.name) || typeof error);
+          set('writeTextError', (error && error.message) || String(error));
+          return;
+        }
+        promise.then(
+          () => {
+            set('writeTextResult', 'resolved');
+            set('writeTextErrorName', '(none)');
+            set('writeTextError', '(none)');
+            log('clipboard.writeText resolved');
+          },
+          (error) => {
+            set('writeTextResult', 'rejected');
+            set('writeTextErrorName', (error && error.name) || typeof error);
+            set('writeTextError', (error && error.message) || String(error));
+            log(`clipboard.writeText rejected ${error && error.name}: ${error && error.message}`);
+          },
+        );
+      });
+
+      document.getElementById('exec-copy-image').addEventListener('click', () => {
+        const before = copyEvents;
+        try {
+          const selection = selectContents(document.getElementById('copymixed'));
+          const img = document.getElementById('copyimg');
+          set('imgCopySelectionText', selection.toString());
+          set('imgCopySelectionContainsImg', selection.containsNode(img, true));
+          set('imgCopyImgNaturalSize', `${img.naturalWidth}x${img.naturalHeight}`);
+          set('imgCopyQueryEnabled', document.queryCommandEnabled('copy'));
+          const returned = document.execCommand('copy');
+          set('imgCopyReturn', returned);
+          set('imgCopyError', '(none)');
+        } catch (error) {
+          set('imgCopyReturn', 'threw');
+          set('imgCopyError', `${error && error.name}: ${error && error.message}`);
+        }
+        set('imgCopyEventFired', copyEvents > before);
+      });
+
+      // `dragstart` is the discriminator for measurement 4e: if it never fires, a missing drop on
+      // the host means the harness failed to synthesise a drag, not that the frame boundary
+      // stopped one.
+      document.getElementById('dragimg').addEventListener('dragstart', (event) => {
+        set('dragStartFired', '1');
+        try {
+          set('dragStartTypes', Array.from(event.dataTransfer.types).join('+') || '(none)');
+        } catch (error) {
+          set('dragStartTypes', `threw ${error && error.name}`);
+        }
+      });
+      set('dragStartFired', '0');
+
+      // In-frame drop target: the positive control for the same measurement. A drop that lands
+      // here but not on the host isolates the frame boundary from the drag machinery.
+      const inFrameDrops = [];
+      const zone = document.getElementById('dropzone-inframe');
+      for (const type of ['dragenter', 'dragover', 'drop']) {
+        zone.addEventListener(type, (event) => {
+          event.preventDefault();
+          const dt = event.dataTransfer;
+          if (type === 'drop') {
+            inFrameDrops.push({
+              kinds: dt ? Array.from(dt.items).map((i) => i.kind).join('+') : null,
+              types: dt ? Array.from(dt.types).join('+') : null,
+              files: dt ? dt.files.length : null,
+            });
+            set('dropInFrameCount', inFrameDrops.length);
+            set('dropInFrameDetail', JSON.stringify(inFrameDrops));
+          }
+        });
+      }
+      set('dropInFrameCount', 0);
+      set('dropInFrameDetail', '[]');
+
+      // Popout links. Same shape as the card ships (`rel="noopener noreferrer"`, V42) plus a plain
+      // one, so "the popup opened" can be told apart from "the popup opened only without noopener".
+      (function wirePopouts() {
+        const base = new URL(location.href);
+        const mk = (suffix) => {
+          const u = new URL(base.toString());
+          u.searchParams.set('slot', `${slotName}-popup-${suffix}`);
+          return u.toString();
+        };
+        const a1 = document.getElementById('popout-noopener');
+        const a2 = document.getElementById('popout-plain');
+        a1.href = mk('noopener');
+        a2.href = mk('plain');
+        set('popoutNoopenerHref', a1.href);
+        set('popoutPlainHref', a2.href);
+        a1.addEventListener('click', () => set('popoutNoopenerClicked', '1'));
+        a2.addEventListener('click', () => set('popoutPlainClicked', '1'));
+      })();
+
+      // What this document can see about its own sandbox. Recorded for the popup case, where the
+      // question is whether the opened tab inherited flags it was never granted.
+      set('sandboxFlagsVisible', typeof document.featurePolicy);
+      set('openerIsNull', window.opener === null);
+      set('ancestorOriginCount', location.ancestorOrigins ? location.ancestorOrigins.length : -1);
+
+      // Proof the frame can reach the parent at all. The resize negative control reads this back
+      // out of the host's message log: a receipt here beside an unchanged height means the resize
+      // was refused, where an empty log would mean the run measured nothing.
+      try {
+        parent.postMessage({ type: 'noa-probe-frame-ready', slot: params.get('slot') }, '*');
+      } catch (error) {
+        log(`postMessage to parent threw ${error && error.name}: ${error && error.message}`);
+      }
+    </script>
+  </body>
+</html>
