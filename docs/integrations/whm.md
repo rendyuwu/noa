@@ -34,9 +34,9 @@ it).
 All go through `WHMClient._get_json_api`, which appends `api.version=1`.
 
 ```bash
-# List available applications — the cheapest authenticated call; used as the credential probe.
+# Report granted ACLs — the credential probe at Validate (§V.111), replacing `applist`.
 curl -k -H 'Authorization: whm <whm-user>:<api-token>' \
-  'https://<whm-host>:2087/json-api/applist?api.version=1'
+  'https://<whm-host>:2087/json-api/myprivs?api.version=1'
 
 # List accounts
 curl -k -H 'Authorization: whm <whm-user>:<api-token>' \
@@ -50,6 +50,29 @@ curl -k -H 'Authorization: whm <whm-user>:<api-token>' \
 curl -k -H 'Authorization: whm <whm-user>:<api-token>' \
   'https://<whm-host>:2087/json-api/unsuspendacct?api.version=1&user=<cpanel-user>'
 ```
+
+### `myprivs` and the ACL set (§V.111, §V.113)
+
+`myprivs` replaced `applist` as the credential probe because `applist` is not in cPanel's ACL
+chart at all, so nothing documents what gates it — and a restricted token *is* refused calling an
+unmapped function: `version` was measured denied for one (§R.33), which is what tells us
+`applist` is not a safe stand-in either. So a healthy reseller row could validate red for a
+reason that says nothing about whether it may actually suspend an account. `myprivs` answers the
+question Validate needs: which ACLs this token holds.
+
+The shape is two traps deep. `data.privileges` is a **list holding exactly one object** — not
+the object itself — so the unwrap takes its first element. And the granted value's *type* is not
+stable across credentials: on the same host, for the same ACL, root answered the integer `1` and
+a reseller answered the string `"1"` (measured, §R.33) — so a granted check keyed on type would
+silently read a scoped reseller credential as ungranted. Not-granted has three measured
+spellings — the integer `0`, the empty string `""`, and the key absent from the object entirely —
+and an unrecognised value fails closed alongside them rather than being guessed toward "granted".
+
+A row missing `suspend-acct` is refused at Validate with `whm_token_acl_insufficient`: one ACL
+covers both directions (cPanel's chart names it once, "suspend and unsuspend"), so there is no
+second grant to check (§V.112). A row missing `list-accts` is named in the validate message but
+**not** refused — a listing is a lesser capability than a mutation, and gating on it would refuse
+a row that only ever backs `whm_list_accounts` / `whm_search_accounts`.
 
 `suspendacct`'s `reason` is WHM's own suspension note. It is written from the **operator-typed
 approval reason** at execute time — it is not a tool-schema parameter, and the LLM never
@@ -545,6 +568,7 @@ receipt read the same lines and are the operator's own (§V.27, §V.76), so a cu
 | `firewall_allowlist_remove_failed` | `whm_firewall_allowlist_remove` runner | An allow entry is still there after the removal ran (§T.26). |
 | `change_evidence_unusable` | Both firewall runners | The approved row's evidence no longer carries a runnable target or duration (§V.33). |
 | `whm_server_unavailable` | Every CHANGE runner | The server row the change was approved against is gone (§V.33). |
+| `whm_wrong_credential_for_owner` | `whm_suspend_account` / `whm_unsuspend_account` preflight, re-checked by the runner | The resolved row's `api_username` is not the account's `owner`; the message names the `server_ref` that would work (§V.106). |
 | `tool_not_permitted` | `RbacToolMiddleware` | Caller lacks the grant, or the name is not a registered tool (§V.1, §V.10). |
 | `tool_execution_failed` | `sanitize_tool_errors` | Unmapped exception out of a tool (§V.19). |
 | `timeout` | `sanitize_tool_errors` | `TimeoutError` out of a tool (§V.19). |
@@ -582,10 +606,13 @@ response carries `api_token` or an SSH credential — the safe view reports `has
 `has_ssh_password` and `has_ssh_private_key` instead (§V.2, §V.8), and the service encrypts on
 the way in so the stored columns are `enc:v1:fernet:…` (§C.7, §V.48).
 
-**`POST …/validate` checks the API token first, then SSH if the row carries credentials.** A row
-with no SSH credentials validates green on the API alone: SSH is what the firewall tools need,
-and a WHM server used only for account reads is a legitimate configuration. Unreachability is a
-**200 with `ok: false`** and the raised code (`ssh_timeout`, `ssh_auth_failed`,
+**`POST …/validate` checks the API token first, then SSH if the row carries credentials.** The
+API check is `myprivs`, not a ping — it reports the granted ACL set and refuses a row that cannot
+suspend an account (`whm_token_acl_insufficient` when `suspend-acct` is absent; a missing
+`list-accts` is only named, not refused — see "`myprivs` and the ACL set" above, §V.111–§V.113).
+A row with no SSH credentials validates green on the API alone: SSH is what the firewall tools
+need, and a WHM server used only for account reads is a legitimate configuration. Unreachability
+is a **200 with `ok: false`** and the raised code (`ssh_timeout`, `ssh_auth_failed`,
 `ssh_host_key_mismatch`, …) — the operator asked whether the server answers, and "no" is that
 question's answer.
 
@@ -606,18 +633,39 @@ Audit is no longer on the not-built list: §V.45's `tool_runs` row is written fo
 records requester, redacted arguments, a truncated result summary and timing — including
 when it fails.
 
-**Per-reseller API tokens are not ported.** cPanel API tokens enforce reseller *ownership*: a
-root-created token cannot mutate an account owned by another reseller, even with the
-"Everything" ACL. `noa-old` solved this with a `whm_server_tokens` table and an owner → token
-resolver. No such table exists here (§T.4 schema v1 is `whm_servers` only) and no §C or §V
-mentions it, so adding it is a spec change, not a build decision. §T.54 removed the ported
-panel's dead reseller-token surface (the drawer section, its dialog and its five API calls) for
-the reason §T.65 removed the direct-grant controls: a button aimed at a route that does not
-exist reads as a broken deployment. §T.22 and §T.23 are both built now and both hit this on
-reseller-owned accounts: WHM refuses the mutation, the runner passes
-`whm_api_error` and WHM's own `reason` through to the receipt, and the change is recorded as not
-having happened — a named failure rather than a silent one, which is the most this repo can
-truthfully do without that table.
+**Reseller-owned accounts are handled by ownership, not by a per-reseller token table.** cPanel
+API tokens enforce reseller *ownership*: a root-created token cannot mutate an account owned by
+another reseller. That premise is confirmed, on a live host rather than assumed from the API
+chart (§R.33) — but the mechanism is **not** an ACL gap. The root credential measured there had
+`suspend-acct` granted and `list-accts` granted, with `all` (root-level privilege) absent, so a
+root token that is itself ACL-restricted cannot satisfy WHM's root check and the request falls
+through to comparing the account's `owner` against the token's `api_username`; `root` is not
+that account's reseller, so the call is refused regardless of what the ACL permits.
+
+`noa-old` solved this with a `whm_server_tokens` table and an owner → token resolver. NOA does
+not carry that table and does not add one — the design instead is ordinary `whm_servers` rows.
+An admin marks a row `is_reseller_credential = true` when its `api_username` names a reseller
+rather than root (§V.109) — additive, no backfill, every existing row keeps working at zero
+config change. The flag is **visibility and naming, never authorization**: it hides the row from
+`whm_list_servers`'s output (16 clusters × ~7 rows is the context problem behind that filter,
+§V.109(a)) and it requires the row's `name` to equal its `api_username` at the admin write
+(§V.109(b)) — which is what lets an operator name `server_ref` as the account's `owner` and have
+`resolve_whm_server_ref`'s name match land on that same row. The actual gate is §V.106: the
+account CHANGE preflight compares `account["owner"]` against the resolved row's `api_username`
+(both normalized) **before** `action_requests` is written, and refuses
+`whm_wrong_credential_for_owner` naming the `server_ref` that would have worked — a card that
+could only fail would cost an operator a decision and a reason typed for nothing (C8). The
+runner re-checks the same equality off the approval's own evidence, since a row is editable
+between a request and its decision (§V.33).
+
+A reseller credential's read scope is its own accounts only — measured 77 of 77 on the live host
+(§R.33) — so preflight, mutation and postflight for an account CHANGE all run on the **same**
+credential rather than escalating to root "to see everything" (§V.107): the identity that
+confirms a change is the identity that made it. §T.54 removed the ported panel's dead
+reseller-token surface (the drawer section, its dialog and its five API calls) for the reason
+§T.65 removed the direct-grant controls: a button aimed at a route that does not exist reads as
+a broken deployment. That removal still stands — the replacement is the ownership guard above,
+not a revived token sub-resource.
 
 **Never implement** (C22, management policy — not a technical limit): `whm_change_contact_email`,
 `whm_change_primary_domain`, `whm_check_binary_exists`, `whm_firewall_denylist_add_ttl`. The
