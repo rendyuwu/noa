@@ -123,6 +123,7 @@ from core.servers.errors import (
     ProxmoxServerNameExistsError,
     ProxmoxServerNotFoundError,
     ServerInventoryError,
+    WHMResellerCredentialNameMismatchError,
     WHMServerNameExistsError,
     WHMServerNotFoundError,
 )
@@ -238,6 +239,11 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     WHMServerNameExistsError: status.HTTP_409_CONFLICT,
     ProxmoxServerNameExistsError: status.HTTP_409_CONFLICT,
     PMGServerNameExistsError: status.HTTP_409_CONFLICT,
+    # 409 for the same reading, one field over (V109(b)): a reseller WHM row must be named
+    # after its `api_username`, and on a PATCH both operands may be stored columns — so what
+    # refuses is the state of the resulting row, not a malformed body, and a caller cannot tell
+    # from the schema which combination is legal.
+    WHMResellerCredentialNameMismatchError: status.HTTP_409_CONFLICT,
     # Bare `ServerInventoryError`: a refusal about one row, so 409 by decision rather than by
     # falling through to a 503 that would read as "NOA is down". The same subclass-tree test
     # every taxonomy above has guards this from becoming the default for a later class.

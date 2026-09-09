@@ -575,6 +575,16 @@ class WHMServer(Base, SSHCredentialsMixin, TimestampMixin):
     api_username: Mapped[str] = mapped_column(String(255), nullable=False)
     api_token: Mapped[str] = encrypted_secret()
     verify_ssl: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default="true")
+    # A reseller token instead of the root one (V109). Two readers, neither of them an
+    # authorization check: `whm_list_servers` filters its output by it, and the admin write
+    # refuses a `true` row whose `name` is not its `api_username` — that equality is what
+    # makes an account CHANGE addressable by its owner, because `resolve_whm_server_ref`
+    # matches id, `name` and hostname and never `api_username`. Whether a credential may
+    # write an account is decided by comparing that account's `owner` at preflight (V106),
+    # not here.
+    is_reseller_credential: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="false"
+    )
 
     def to_safe_dict(self) -> dict[str, Any]:
         """Admin view. No `api_token`, no SSH credentials (V2, V8)."""
@@ -585,6 +595,9 @@ class WHMServer(Base, SSHCredentialsMixin, TimestampMixin):
             "api_username": self.api_username,
             "has_api_token": bool(self.api_token),
             "verify_ssl": self.verify_ssl,
+            # Published, unlike a credential: the admin form draws the checkbox from it, and
+            # an operator who cannot see the flag cannot tell why a save was refused (V109).
+            "is_reseller_credential": self.is_reseller_credential,
             **self._ssh_safe_fields(),
             "created_at": self.created_at,
             "updated_at": self.updated_at,

@@ -110,13 +110,19 @@ class SSHCredentialsPatch(SSHCredentials):
 
 @dataclass(frozen=True)
 class WHMServerCreate:
-    """A new `whm_servers` row. `api_token` is ciphertext."""
+    """A new `whm_servers` row. `api_token` is ciphertext.
+
+    `is_reseller_credential` defaults `false`, which is the column's own default and the
+    truthful value for a root token (V109): a caller written before the flag existed keeps
+    inserting root rows.
+    """
 
     name: str
     base_url: str
     api_username: str
     api_token: str
     verify_ssl: bool
+    is_reseller_credential: bool = False
     ssh: SSHCredentials = SSHCredentials()
 
 
@@ -129,6 +135,9 @@ class WHMServerUpdate:
     api_username: str | None = None
     api_token: str | None = None
     verify_ssl: bool | None = None
+    # `None` means "leave alone" here too, so a PATCH that renames a row does not silently
+    # turn its reseller flag off. The service is what refuses the combinations V109(b) bans.
+    is_reseller_credential: bool | None = None
     ssh: SSHCredentialsPatch = SSHCredentialsPatch()
 
 
@@ -281,6 +290,7 @@ class SQLWHMServerAdminRepository:
             api_username=spec.api_username,
             api_token=spec.api_token,
             verify_ssl=spec.verify_ssl,
+            is_reseller_credential=spec.is_reseller_credential,
         )
         apply_ssh_fields(server, spec.ssh)
         return await _insert(self._session, server)
@@ -305,6 +315,8 @@ class SQLWHMServerAdminRepository:
             server.api_token = patch.api_token
         if patch.verify_ssl is not None:
             server.verify_ssl = patch.verify_ssl
+        if patch.is_reseller_credential is not None:
+            server.is_reseller_credential = patch.is_reseller_credential
 
         return await _refresh(self._session, server)
 

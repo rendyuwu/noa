@@ -419,6 +419,71 @@ def test_a_rename_may_keep_its_own_name(harness: AdminHarness) -> None:
     assert response.json()["server"]["api_username"] == "reseller"
 
 
+def test_a_reseller_row_not_named_after_its_api_username_is_409(harness: AdminHarness) -> None:
+    """T77's refusal on the wire: 409 `whm_reseller_credential_name_mismatch` (V109(b)).
+
+    Both shapes the form can send it in — the create, and the PATCH that carries nothing but
+    the checkbox — because the second is the one a body-only check would let through.
+    """
+    created = harness.client.post(
+        WHM_SERVERS_PATH,
+        json=whm_create_body("web08", api_username="web08cpnpool01", is_reseller_credential=True),
+    )
+
+    assert created.status_code == 409, created.text
+    body = created.json()
+    assert body["error_code"] == "whm_reseller_credential_name_mismatch"
+    assert set(body) == {"error_code", "message", "request_id"}
+    assert created.headers[REQUEST_ID_HEADER] == body["request_id"]
+
+    existing = harness.whm_servers.servers[0]
+    flipped = harness.client.patch(
+        f"{WHM_SERVERS_PATH}/{existing.id}", json={"is_reseller_credential": True}
+    )
+
+    assert flipped.status_code == 409, flipped.text
+    assert flipped.json()["error_code"] == "whm_reseller_credential_name_mismatch"
+    assert existing.is_reseller_credential is False
+
+
+def test_a_reseller_row_named_after_its_api_username_round_trips(harness: AdminHarness) -> None:
+    """The accepting twin, and the field the panel's checkbox is drawn from (V109).
+
+    Without this the refusal above passes against a route that answers 409 to every reseller
+    save, and the form would have no value to render.
+    """
+    created = harness.client.post(
+        WHM_SERVERS_PATH,
+        json=whm_create_body(
+            "web08cpnpool01", api_username="web08cpnpool01", is_reseller_credential=True
+        ),
+    )
+
+    assert created.status_code == 201, created.text
+    assert created.json()["server"]["is_reseller_credential"] is True
+
+    server_id = created.json()["server"]["id"]
+    listed = harness.client.get(WHM_SERVERS_PATH).json()["servers"]
+    assert {row["id"]: row["is_reseller_credential"] for row in listed}[server_id] is True
+
+    unmarked = harness.client.patch(
+        f"{WHM_SERVERS_PATH}/{server_id}", json={"is_reseller_credential": False}
+    )
+    assert unmarked.status_code == 200, unmarked.text
+    assert unmarked.json()["server"]["is_reseller_credential"] is False
+
+
+def test_a_create_that_omits_the_reseller_flag_stores_a_root_row(harness: AdminHarness) -> None:
+    """The field is defaulted, not required: the ported form's existing payload still saves.
+
+    `false` rows are unbound by V109(b), which is why this body's `api_username` may differ
+    from its name — sixteen root credentials cannot all be named `root`.
+    """
+    created = harness.create_server(WHM_SERVERS_PATH, whm_create_body("plain-root"))
+
+    assert created["is_reseller_credential"] is False
+
+
 def test_every_server_inventory_error_is_mapped_explicitly() -> None:
     """V73: no inventory refusal may reach the 503 *fallback*, which means "unclassified"."""
     from core.servers.errors import ServerInventoryError

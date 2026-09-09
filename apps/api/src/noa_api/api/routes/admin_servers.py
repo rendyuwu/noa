@@ -298,6 +298,9 @@ class WHMServerResponse(BaseModel):
     api_username: str
     has_api_token: bool
     verify_ssl: bool
+    # Published because the form draws a checkbox from it, and because an operator who cannot
+    # see the flag cannot tell why a rename was refused (V109).
+    is_reseller_credential: bool
     ssh_username: str | None
     ssh_port: int | None
     ssh_host_key_fingerprint: str | None
@@ -332,6 +335,10 @@ class WHMServerCreateRequest(BaseModel):
     api_username: WHMApiUsername
     api_token: TrimmedRequired = Field(min_length=1)
     verify_ssl: bool = True
+    # Defaulted rather than required: a root credential is the common row and the column's
+    # default is `false` (V109). A `true` value obliges `name` == `api_username`, which
+    # `core.servers.admin_service` refuses with 409 `whm_reseller_credential_name_mismatch`.
+    is_reseller_credential: bool = False
     ssh_username: Trimmed = None
     ssh_port: SshPort = None
     ssh_password: Trimmed = None
@@ -352,6 +359,10 @@ class WHMServerUpdateRequest(SSHClearFlags):
     api_username: WHMApiUsernameOpt = None
     api_token: Trimmed = None
     verify_ssl: bool | None = None
+    # `None` means "leave alone", so a PATCH that renames a row cannot silently unmark it. The
+    # service checks V109(b) against the row the patch produces, which is why flipping this to
+    # `true` alone can be refused (409 `whm_reseller_credential_name_mismatch`).
+    is_reseller_credential: bool | None = None
     ssh_username: Trimmed = None
     ssh_port: SshPort = None
     ssh_password: Trimmed = None
@@ -372,6 +383,7 @@ def _to_whm_response(server: WHMServer) -> WHMServerResponse:
         api_username=safe["api_username"],
         has_api_token=safe["has_api_token"],
         verify_ssl=safe["verify_ssl"],
+        is_reseller_credential=safe["is_reseller_credential"],
         created_at=iso_or_none(safe["created_at"]),
         updated_at=iso_or_none(safe["updated_at"]),
         **ssh,
@@ -398,7 +410,8 @@ async def create_whm_server(
 
     201, unlike the token mint one file over: there *is* a canonical address for the created
     row — `PATCH`/`DELETE`/`validate` all take its id — so the status that says "created" is
-    the honest one. Duplicate name → 409 `whm_server_name_exists`.
+    the honest one. Duplicate name → 409 `whm_server_name_exists`. A reseller row whose `name`
+    is not its `api_username` → 409 `whm_reseller_credential_name_mismatch` (V109).
     """
     server = await servers.create(
         WHMServerCreate(
@@ -407,6 +420,7 @@ async def create_whm_server(
             api_username=payload.api_username,
             api_token=payload.api_token,
             verify_ssl=payload.verify_ssl,
+            is_reseller_credential=payload.is_reseller_credential,
             ssh=_ssh_credentials(payload),
         ),
         actor_email=admin_user.email,
@@ -427,7 +441,10 @@ async def update_whm_server(
     `(host, port)` pair — `core.servers.admin_repository` does it where the old row is loaded,
     so no caller can forget. The next validate re-captures.
 
-    404 `whm_server_not_found`, 409 `whm_server_name_exists`.
+    404 `whm_server_not_found`, 409 `whm_server_name_exists`, 409
+    `whm_reseller_credential_name_mismatch` when the *resulting* row would be a reseller
+    credential whose `name` is not its `api_username` — which includes a patch that carries
+    nothing but the flag (V109).
     """
     server = await servers.update(
         server_id,
@@ -437,6 +454,7 @@ async def update_whm_server(
             api_username=payload.api_username,
             api_token=payload.api_token,
             verify_ssl=payload.verify_ssl,
+            is_reseller_credential=payload.is_reseller_credential,
             ssh=_ssh_patch(payload),
         ),
         actor_email=admin_user.email,

@@ -127,6 +127,23 @@ def normalize_ssh_host(value: str, *, label: str = "server") -> str:
     return normalized
 
 
+def normalize_whm_identity(value: str) -> str:
+    """`strip().lower()` — the one comparison a WHM account name is ever made under.
+
+    Two sites compare WHM identity strings and they must agree, so the normalisation is a
+    function rather than a repeated expression (V66):
+
+    - the admin write refuses a reseller row whose `name` is not its `api_username` (V109(b));
+    - an account CHANGE refuses before writing anything when the account's `owner` is not the
+      resolved row's `api_username` (V106).
+
+    Lowercase because cPanel usernames are lowercase and an operator types what they read;
+    stripped because a trailing space pasted into a form is not a different reseller. Not a
+    validator: it normalises and never raises, since both call sites compare rather than admit.
+    """
+    return value.strip().lower()
+
+
 def _require_dns_name(value: str, *, error_message: str) -> None:
     """Raise unless `value` is a syntactically valid DNS name.
 
@@ -147,5 +164,6 @@ def _require_dns_name(value: str, *, error_message: str) -> None:
 __all__ = [
     "normalize_https_base_url",
     "normalize_ssh_host",
+    "normalize_whm_identity",
     "validate_server_name",
 ]

@@ -100,6 +100,7 @@ class FakeWHMServerAdminRepository:
             ssh_password=spec.ssh.ssh_password,
             ssh_private_key=spec.ssh.ssh_private_key,
             ssh_host_key_fingerprint=spec.ssh.ssh_host_key_fingerprint,
+            is_reseller_credential=spec.is_reseller_credential,
         )
         server.api_username = spec.api_username
         server.verify_ssl = spec.verify_ssl
@@ -129,6 +130,8 @@ class FakeWHMServerAdminRepository:
             server.api_token = patch.api_token
         if patch.verify_ssl is not None:
             server.verify_ssl = patch.verify_ssl
+        if patch.is_reseller_credential is not None:
+            server.is_reseller_credential = patch.is_reseller_credential
         server.updated_at = CREATED_AT
         return server
 

@@ -17,7 +17,7 @@ The refusals the admin CRUD surface raises, and nothing else. Written the way
    explicitly — a dynamic `error_code` would satisfy that test while making the mapping
    unreadable.
 
-**Nine classes, and the per-system split is deliberate.** A single
+**The per-system split is deliberate.** A single
 `ServerNotFoundError` would answer `server_not_found` for all three tables, which reads
 fine in a body and badly in a log: the three verticals are three panel pages against three
 tables, and "which inventory was this" is the first thing anybody asks. `noa-old` made the
@@ -76,6 +76,34 @@ class WHMServerNameExistsError(ServerInventoryError):
     message: str = "A WHM server with that name already exists. Choose a different name."
 
 
+class WHMResellerCredentialNameMismatchError(ServerInventoryError):
+    """A reseller row whose `name` is not its `api_username` (V109(b)).
+
+    Enforced on the row that *results* from the write, so a PATCH that flips the flag on
+    without touching either field is refused too. Only rows with the flag set are bound: the
+    sixteen root rows cannot all be named `root`.
+
+    The rule exists because a reseller row has to be addressable by the thing an account
+    CHANGE names — its owner. `resolve_whm_server_ref` matches an id, a `name` or a hostname
+    and never `api_username` (V18), so a reseller row named anything else is a row the
+    owner-write path cannot reach, and the failure would land at suspend time on a card an
+    operator already typed a reason into (C8). Whether that credential may write a given
+    account is a different question, decided at preflight by comparing the account's `owner`
+    (V106) — this flag is visibility and naming, never authorization.
+
+    409 rather than 422, `whm_server_name_exists`'s reading: on a PATCH the two operands may
+    both be stored columns, so what refuses is the state of the resulting row rather than a
+    malformed body, and a caller cannot tell from the schema which combination is legal.
+    """
+
+    error_code: str = "whm_reseller_credential_name_mismatch"
+    message: str = (
+        "A reseller WHM credential must be named exactly after its API username, because an "
+        "account change addresses the credential by the account's owner. Set the name and the "
+        "API username to the same value, or clear the reseller checkbox."
+    )
+
+
 # --- Proxmox (`proxmox_servers`) ---
 
 
@@ -116,6 +144,7 @@ __all__ = [
     "ProxmoxServerNameExistsError",
     "ProxmoxServerNotFoundError",
     "ServerInventoryError",
+    "WHMResellerCredentialNameMismatchError",
     "WHMServerNameExistsError",
     "WHMServerNotFoundError",
 ]

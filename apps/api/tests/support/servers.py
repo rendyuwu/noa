@@ -111,6 +111,8 @@ def whm_server(
     ssh_password: str | None = SSH_PASSWORD,
     ssh_private_key: str | None = SSH_PRIVATE_KEY,
     ssh_host_key_fingerprint: str | None = FINGERPRINT,
+    api_username: str = "root",
+    is_reseller_credential: bool = False,
 ) -> WHMServer:
     """One `whm_servers` row, credentials included, ready to read.
 
@@ -122,13 +124,20 @@ def whm_server(
 
     `ssh_private_key` and `ssh_host_key_fingerprint` are overridable to `None` so a test can
     build the two rows `resolve_whm_ssh_config` refuses: no credentials at all, and no pin.
+
+    `api_username` and `is_reseller_credential` are overridable together, because the pair is
+    what V109(b) constrains: a reseller row is named after its API username. The flag is set
+    explicitly rather than left to the column's server default, which never runs on an instance
+    that has not reached Postgres — a `None` here would read as `false` at every call site while
+    being neither.
     """
     server = WHMServer(
         name=name,
         base_url=base_url or f"https://{name}.example.net:2087",
-        api_username="root",
+        api_username=api_username,
         api_token=api_token,
         verify_ssl=True,
+        is_reseller_credential=is_reseller_credential,
         ssh_username=ssh_username,
         ssh_port=22,
         ssh_password=ssh_password,
