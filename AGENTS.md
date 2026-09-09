@@ -160,6 +160,13 @@ again, ∨ the next push is a non-fast-forward.
 - Test SETUP gate ⊥ be the thing under test. Readiness wait pointed at the subject turns the
   subject's failure into a TIMEOUT, ∧ a timeout names nothing. Gate sits one layer BELOW — socket
   under route, process under socket. (V90)
+- **An assertion nobody watched FAIL is ⊥ evidence.** Break the guarded thing, SEE red, restore,
+  see green, record the failure line. Green-against-a-break is WORSE than no check — it eats the
+  attention a missing one would draw. Mutate the PRODUCTION value, ⊥ the test body: deleting an
+  assertion ⊥ redden a suite, so that measures nothing. A hand-kept SET (dict of branches, list of
+  tools) is a claim only where something reads it against the code — bind it ∨ SAY it is unbound.
+  Lane physically ⊥ stage the hazard ⇒ say so ∧ hold each instrument separately; a stated gap
+  beats a spec that reads as coverage. (V119)
 - Conventional commits. ⊥ secrets in git — `.env*` ignored except `.env.example`. (V68)
 - Env vars for lists = JSON arrays: `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`.
 - Browser ⊥ call FastAPI direct. Same-origin proxy route per web app.
