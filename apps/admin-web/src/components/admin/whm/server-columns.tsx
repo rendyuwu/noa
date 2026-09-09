@@ -7,6 +7,7 @@ import {
   deriveWhmSshStatus,
   deriveWhmValidationStatus,
   formatWhmRelativeTime,
+  getWhmResellerBadge,
   getWhmTlsBadge,
 } from '@/lib/admin/whm/whm-status'
 
@@ -15,7 +16,10 @@ import {
 // validation and SSH lifecycle render through StatusChip (standard vocabulary),
 // while TLS verification — a configuration label, not a workflow status — renders
 // through Badge. updated_at keeps its raw accessorKey so the header sort orders by
-// the real timestamp while the cell shows the friendly relative form.
+// the real timestamp while the cell shows the friendly relative form. The Server
+// cell also carries a "Reseller credential" Badge, shown only on `true` rows
+// (§V.109) — an operator scanning the list should not have to open every row to
+// tell a scoped credential from root.
 export function buildServerColumns(
   validateResultById: Record<string, ValidateWhmServerResponse>,
 ): DataTableProps<WhmServer>['columns'] {
@@ -24,12 +28,20 @@ export function buildServerColumns(
     {
       accessorKey: 'name',
       header: 'Server',
-      cell: ({ row }) => (
-        <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-medium text-text-primary">{row.original.name}</span>
-          <span className="truncate text-sm text-text-secondary">{row.original.base_url}</span>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const reseller = getWhmResellerBadge(row.original)
+        return (
+          <div className="flex min-w-0 flex-col gap-1">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="truncate text-sm font-medium text-text-primary">
+                {row.original.name}
+              </span>
+              {reseller ? <Badge variant={reseller.variant}>{reseller.label}</Badge> : null}
+            </div>
+            <span className="truncate text-sm text-text-secondary">{row.original.base_url}</span>
+          </div>
+        )
+      },
     },
     {
       id: 'validation',

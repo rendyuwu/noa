@@ -176,6 +176,21 @@ function ServerApiFields({
           autoComplete="new-password"
         />
       </FormField>
+
+      <div className="flex flex-col gap-2">
+        <Checkbox
+          label="Reseller credential"
+          checked={watch('isResellerCredential')}
+          onCheckedChange={(checked) => setValue('isResellerCredential', checked === true)}
+          disabled={busy}
+        />
+        <p className="text-sm text-text-secondary">
+          Check this only if the API username above belongs to a reseller, not root. WHM only
+          lets a reseller credential change accounts it owns, so it can be resolved back to this
+          row only by name — Name must match API username exactly (case-insensitive), or saving
+          is refused.
+        </p>
+      </div>
     </section>
   )
 }

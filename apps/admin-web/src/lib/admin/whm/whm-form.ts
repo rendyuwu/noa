@@ -13,6 +13,7 @@ export type WhmServerFormState = {
   apiUsername: string
   apiToken: string
   verifySsl: boolean
+  isResellerCredential: boolean
   enableSsh: boolean
   sshUsername: string
   sshPort: string
@@ -28,6 +29,7 @@ export const EMPTY_WHM_FORM: WhmServerFormState = {
   apiUsername: '',
   apiToken: '',
   verifySsl: true,
+  isResellerCredential: false,
   enableSsh: false,
   sshUsername: '',
   sshPort: '',
@@ -61,6 +63,7 @@ export function whmFormStateFromServer(server: WhmServer): WhmServerFormState {
     apiUsername: server.api_username,
     apiToken: '',
     verifySsl: server.verify_ssl,
+    isResellerCredential: server.is_reseller_credential,
     enableSsh:
       server.has_ssh_password ||
       server.has_ssh_private_key ||
@@ -105,6 +108,21 @@ export function validateWhmServerForm(
     return { field: 'apiToken', message: 'API token is required for WHM API operations' }
   }
 
+  // §V.109(b): a reseller credential must resolve back to itself via
+  // resolve_whm_server_ref's name match, since api_username is not one of the
+  // forms that resolver tries. Mirrors the server's normalized (trim + lower)
+  // compare; the server enforces this regardless of what the client sends.
+  if (form.isResellerCredential) {
+    const normalizedName = form.name.trim().toLowerCase()
+    const normalizedApiUsername = form.apiUsername.trim().toLowerCase()
+    if (normalizedName !== normalizedApiUsername) {
+      return {
+        field: 'name',
+        message: 'A reseller credential requires Name to match API username (case-insensitive).',
+      }
+    }
+  }
+
   if (!form.enableSsh) return null
 
   const sshPort = parseOptionalPort(form.sshPort)
@@ -143,6 +161,7 @@ export function buildWhmCreatePayload(form: WhmServerFormState): Record<string, 
     api_username: form.apiUsername.trim(),
     api_token: form.apiToken.trim(),
     verify_ssl: form.verifySsl,
+    is_reseller_credential: form.isResellerCredential,
   }
 
   if (!form.enableSsh) return payload
@@ -172,6 +191,7 @@ export function buildWhmUpdatePayload(
     base_url: form.baseUrl.trim(),
     api_username: form.apiUsername.trim(),
     verify_ssl: form.verifySsl,
+    is_reseller_credential: form.isResellerCredential,
   }
 
   // Token is write-only: only sent when the admin typed a new value to replace it.

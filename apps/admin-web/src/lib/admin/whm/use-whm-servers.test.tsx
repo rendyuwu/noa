@@ -37,6 +37,7 @@ const serverA: WhmServer = {
   name: 'alpha',
   base_url: 'https://a:2087',
   api_username: 'root',
+  is_reseller_credential: false,
   ssh_username: null,
   ssh_port: null,
   ssh_host_key_fingerprint: null,

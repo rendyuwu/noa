@@ -7,18 +7,25 @@
 // exposed only as the booleans has_ssh_password / has_ssh_private_key, which
 // drive the write-only "keep or replace" form copy.
 //
-// Per-reseller WHM API tokens are NOT part of this contract. The legacy vertical
-// had a whm_server_tokens table and a token sub-resource; NOA's schema has no
-// such table and §I.admin-api names no such route, so adding one is a spec change
-// rather than a build decision (docs/integrations/whm.md, "Not built yet"). The
-// dead surface was removed with §T.54, following §T.65's precedent for the
-// direct-grant controls.
+// Per-reseller WHM API tokens are still NOT part of this contract. The legacy
+// vertical had a whm_server_tokens table and a token sub-resource; NOA's schema
+// has no such table and §I.admin-api names no such route, so adding one is a
+// spec change rather than a build decision. The dead surface was removed with
+// §T.54, following §T.65's precedent for the direct-grant controls.
+//
+// `is_reseller_credential` (§T.77, §V.109) is a different thing: a flag on an
+// ordinary row, not a sub-resource. It marks that the row's api_username
+// belongs to a reseller rather than to root — visibility/naming only, never
+// authorization (§V.106's owner compare is the only write gate) — and it is
+// why a `true` row's `name` must equal its `api_username` (enforced server-side;
+// the form mirrors the check for legible client-side feedback).
 
 export type WhmServer = {
   id: string
   name: string
   base_url: string
   api_username: string
+  is_reseller_credential: boolean
   ssh_username: string | null
   ssh_port: number | null
   ssh_host_key_fingerprint: string | null

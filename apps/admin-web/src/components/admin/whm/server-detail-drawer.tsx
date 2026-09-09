@@ -21,8 +21,10 @@ import {
   deriveWhmValidationStatus,
   formatWhmRelativeTime,
   getWhmFingerprintBadge,
+  getWhmResellerBadge,
   getWhmSshAuthLabel,
   getWhmTlsBadge,
+  getWhmValidationMessage,
 } from '@/lib/admin/whm/whm-status'
 
 export type ServerDetailDrawerProps = {
@@ -69,6 +71,7 @@ function ServerDetailContent({
 }: Omit<ServerDetailDrawerProps, 'onCloseAction'> & { server: WhmServer }) {
   const tls = getWhmTlsBadge(server)
   const fingerprint = getWhmFingerprintBadge(server)
+  const reseller = getWhmResellerBadge(server)
 
   const confirmDelete = async () => {
     const result = await onDeleteAction(server.id)
@@ -87,6 +90,7 @@ function ServerDetailContent({
           <div className="flex items-center gap-2">
             <StatusChip status={deriveWhmValidationStatus(validateResult)} />
             <Badge variant={tls.variant}>{tls.label}</Badge>
+            {reseller ? <Badge variant={reseller.variant}>{reseller.label}</Badge> : null}
           </div>
           <div className="flex items-center gap-2">
             <Button
@@ -108,14 +112,7 @@ function ServerDetailContent({
           <DetailRow label="Server ID" value={<span className="font-mono">{server.id}</span>} />
           <DetailRow label="API username" value={server.api_username} />
           <DetailRow label="Updated" value={formatWhmRelativeTime(server.updated_at)} />
-          <DetailRow
-            label="Latest validation"
-            value={
-              validateResult
-                ? validateResult.message
-                : 'Validate checks the WHM API token, then SSH (if configured), and pins the host key.'
-            }
-          />
+          <DetailRow label="Latest validation" value={getWhmValidationMessage(validateResult)} />
         </dl>
 
         <section className="flex flex-col gap-3 border-t border-border-default pt-5">
