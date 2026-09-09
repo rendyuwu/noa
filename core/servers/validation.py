@@ -49,7 +49,7 @@ propagates and takes its 500 (`noa_api.api.errors`).
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Any, Protocol, TypeVar
 from uuid import UUID
@@ -69,7 +69,11 @@ from core.integrations.pmg.errors import PMGSHCLIError
 from core.integrations.pmg.pmgsh_cli import run_pmg_mynetworks_probe, run_pmg_version_probe
 from core.integrations.pmg.ssh import resolve_pmg_ssh_config
 from core.integrations.proxmox.client import ProxmoxClientFactory, build_proxmox_client
-from core.integrations.whm.client import WHMClient
+from core.integrations.whm.client import (
+    WHM_ACL_LIST_ACCOUNTS,
+    WHM_ACL_SUSPEND_ACCOUNT,
+    WHMClient,
+)
 from core.integrations.whm.errors import WHMFirewallCLIError
 from core.integrations.whm.ssh import (
     WHMClientFactory,
@@ -97,6 +101,12 @@ REMOTE_FAILURES = (SSHExecutionError, PMGSHCLIError, WHMFirewallCLIError)
 SSH_PROBE_COMMAND = "true"
 
 MESSAGE_OK = "ok"
+
+# A WHM row whose API token cannot suspend an account is refused HERE, at validate, and this is
+# the code that names it (§V111). The alternative is discovering it at execute, after an
+# operator has read an approval card and typed a reason for a change WHM was always going to
+# refuse — a reason spent on nothing, and a failure that reads as a NOA fault.
+WHM_ACL_INSUFFICIENT_CODE = "whm_token_acl_insufficient"
 
 
 @dataclass(frozen=True)
@@ -216,6 +226,7 @@ def _validation_metadata(
     result: ServerValidationResult,
     host_key_was_pinned: bool,
     fingerprint_captured: bool,
+    extra: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """What a validate event records (V14, V8).
 
@@ -223,8 +234,11 @@ def _validation_metadata(
     answer "who first trusted this host key, and when", which is the question a
     `ssh_host_key_mismatch` six months from now turns into. Never the fingerprint's
     surrounding credential, and never the key material.
+
+    `extra` is the per-system tail — WHM's ACL set (§V111) is the only user. It merges last so
+    a system cannot quietly redefine `ok` or `error_code`, which are read across all three.
     """
-    return {
+    metadata: dict[str, Any] = {
         "server_id": str(server.id),
         "server_name": server.name,
         "ok": result.ok,
@@ -232,6 +246,107 @@ def _validation_metadata(
         "host_key_was_pinned": host_key_was_pinned,
         "fingerprint_captured": fingerprint_captured,
     }
+    if extra:
+        metadata.update({key: value for key, value in extra.items() if key not in metadata})
+    return metadata
+
+
+def _whm_acl_summary(acls: Sequence[str]) -> str:
+    """The ACL set as one operator-facing line (§V111).
+
+    The two names that decide what the row may do are spelled out either way; the rest are a
+    count. An unrestricted root token grants around a hundred ACLs, and pasting all of them
+    into a status message would bury the two that answer the operator's question. The full set
+    goes to the audit trail, where the question is forensic rather than "may I press this".
+    """
+    spelled = ", ".join(
+        f"{name}: {'granted' if name in acls else 'missing'}"
+        for name in (WHM_ACL_SUSPEND_ACCOUNT, WHM_ACL_LIST_ACCOUNTS)
+    )
+    return f"WHM ACLs ({len(acls)} granted) — {spelled}"
+
+
+def _whm_acl_answer(
+    payload: dict[str, object],
+) -> tuple[ServerValidationResult, tuple[str, ...] | None]:
+    """Shape `WHMClient.privileges` into a validate answer that REPORTS the ACL set (§V111).
+
+    The second element is the granted ACL names, `()` when WHM answered with nothing granted,
+    and `None` when the set was never read — a refused probe, or an `ok` payload that carried no
+    set at all. The trail keeps those last two apart, because "this token holds nothing" and
+    "we could not ask" have different remedies (§V86).
+
+    `suspend-acct` missing is a refusal; `list-accts` missing is reported and nothing more. A
+    row is refused for what it cannot do on the CHANGE path, which is the path that costs an
+    operator a typed reason. A missing `list-accts` is named in the message on every validate,
+    green or red, so it is not silent either.
+    """
+    answer = _client_answer(payload, default_message="WHM validation failed")
+    if not answer.ok:
+        return answer, None
+
+    raw = payload.get("acls")
+    if not isinstance(raw, list):
+        # An `ok` payload carrying no ACL set is not an answer to the question this probe asks,
+        # and it must not collapse into an empty one: `()` here would record "the token holds
+        # nothing granted" for the case "the set was never read", which is the same conflation
+        # the `invalid_response` path above exists to prevent (§V86). Unreachable through
+        # `WHMClient.privileges`, which always synthesises `acls` on success — and that is the
+        # reason to spell it out rather than to trust the caller, because a second caller
+        # arrives without this branch being retested.
+        return (
+            ServerValidationResult(
+                ok=False,
+                message="WHM answered `myprivs` without an ACL set",
+                error_code="invalid_response",
+            ),
+            None,
+        )
+
+    # A non-string entry is dropped rather than refused: it cannot be one of the two ACL names
+    # being looked for, so dropping it hides nothing an operator needs.
+    acls = tuple(name for name in raw if isinstance(name, str))
+    summary = _whm_acl_summary(acls)
+    if WHM_ACL_SUSPEND_ACCOUNT not in acls:
+        return (
+            ServerValidationResult(
+                ok=False,
+                message=f"WHM API token cannot suspend accounts. {summary}",
+                error_code=WHM_ACL_INSUFFICIENT_CODE,
+            ),
+            acls,
+        )
+    return ServerValidationResult(ok=True, message=summary), acls
+
+
+def _whm_acl_metadata(acls: tuple[str, ...] | None) -> dict[str, Any]:
+    """The ACL set as audit fields (§V111; V8 — ACL names, never the token they came with).
+
+    `None` throughout when WHM did not answer. An unknown ACL set recorded as an empty one
+    would read, six months later, as a token that held nothing, which is a different fact
+    (§V86).
+    """
+    if acls is None:
+        return {"whm_acls": None, "whm_acl_suspend_acct": None, "whm_acl_list_accts": None}
+    return {
+        "whm_acls": list(acls),
+        "whm_acl_suspend_acct": WHM_ACL_SUSPEND_ACCOUNT in acls,
+        "whm_acl_list_accts": WHM_ACL_LIST_ACCOUNTS in acls,
+    }
+
+
+@dataclass(frozen=True)
+class _WHMProbeOutcome:
+    """What one WHM validate learned: the answer, a pin to store, and the ACL set.
+
+    A tuple grew a third member and stopped reading — `acls` is `None` for "not asked or not
+    answered" and `()` for "answered, nothing granted", and those two must not be positional
+    neighbours of a fingerprint that is also sometimes `None`.
+    """
+
+    result: ServerValidationResult
+    fingerprint: str | None = None
+    acls: tuple[str, ...] | None = None
 
 
 class WHMServerValidationService:
@@ -245,6 +360,14 @@ class WHMServerValidationService:
     rather than lenient: SSH is what the firewall tools need (T24-T26), and a WHM server used
     only for account reads is a legitimate configuration. `resolve_whm_ssh_config` answers
     `ssh_not_configured` if a firewall tool is ever pointed at it, which names the remedy.
+
+    **The API check is `myprivs`, and it is a capability check, not a ping** (§V111). It
+    reports which ACLs the token holds and refuses a row that cannot suspend an account, so the
+    remedy lands on the admin editing a server row rather than on an operator who has already
+    typed an approval reason. `applist` used to be this probe and was a worse one twice over:
+    it is absent from cPanel's ACL chart, so nothing documents what gates it, and a restricted
+    token is refused outright on functions the chart does not map — which made a perfectly
+    healthy reseller row read RED for a reason unrelated to what it may do.
     """
 
     def __init__(
@@ -284,9 +407,9 @@ class WHMServerValidationService:
             ssh_setup = self._resolve_ssh(server) if ssh_wanted else None
             audit_row: WHMServer = server
 
-        result, captured = await self._run_probes(client, ssh_wanted=ssh_wanted, setup=ssh_setup)
-        if captured is not None:
-            await self._store_fingerprint(server_id, captured)
+        outcome = await self._run_probes(client, ssh_wanted=ssh_wanted, setup=ssh_setup)
+        if outcome.fingerprint is not None:
+            await self._store_fingerprint(server_id, outcome.fingerprint)
 
         await self._audit.record(
             AdminAuditEvent(
@@ -295,13 +418,14 @@ class WHMServerValidationService:
                 target=audit_row.name,
                 metadata=_validation_metadata(
                     audit_row,
-                    result=result,
+                    result=outcome.result,
                     host_key_was_pinned=was_pinned,
-                    fingerprint_captured=captured is not None,
+                    fingerprint_captured=outcome.fingerprint is not None,
+                    extra=_whm_acl_metadata(outcome.acls),
                 ),
             )
         )
-        return result
+        return outcome.result
 
     def _resolve_ssh(self, server: WHMServer) -> SSHConnectionConfig | ServerValidationResult:
         """Row → config, or the answer for a row SSH cannot be built from.
@@ -322,22 +446,25 @@ class WHMServerValidationService:
         *,
         ssh_wanted: bool,
         setup: SSHConnectionConfig | ServerValidationResult | None,
-    ) -> tuple[ServerValidationResult, str | None]:
-        api_answer = _client_answer(await client.applist(), default_message="WHM validation failed")
+    ) -> _WHMProbeOutcome:
+        api_answer, acls = _whm_acl_answer(await client.privileges())
         if not api_answer.ok or not ssh_wanted:
-            return api_answer, None
+            return _WHMProbeOutcome(result=api_answer, acls=acls)
         if isinstance(setup, ServerValidationResult):
-            return setup, None
+            return _WHMProbeOutcome(result=setup, acls=acls)
         if setup is None:  # pragma: no cover — `ssh_wanted` implies a resolved config
-            return api_answer, None
+            return _WHMProbeOutcome(result=api_answer, acls=acls)
 
         try:
             captured = await probe_with_trust_on_first_use(
                 config=setup, capture=self._capture_host_key, probe=self._probe
             )
         except REMOTE_FAILURES as error:
-            return _remote_failure(error), None
-        return ServerValidationResult(ok=True, message=MESSAGE_OK), captured
+            return _WHMProbeOutcome(result=_remote_failure(error), acls=acls)
+        # `api_answer`, not a fresh `ok`: its message carries the ACL set, and SSH answering
+        # does not make that less true. A bare `MESSAGE_OK` here would drop the one thing
+        # §V111 asks a validate to report, and only on rows that have SSH configured.
+        return _WHMProbeOutcome(result=api_answer, fingerprint=captured, acls=acls)
 
     async def _store_fingerprint(self, server_id: UUID, fingerprint: str) -> None:
         """The one column this service may write, in its own committed transaction (V100)."""
@@ -488,6 +615,7 @@ __all__ = [
     "MESSAGE_OK",
     "REMOTE_FAILURES",
     "SSH_PROBE_COMMAND",
+    "WHM_ACL_INSUFFICIENT_CODE",
     "HostKeyCapture",
     "HostKeyPinRepository",
     "PMGServerValidationService",

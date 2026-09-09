@@ -46,12 +46,17 @@ from support.rbac import RecordingAuditSink
 from support.secrets import build_cipher
 from support.server_admin import FakeHostKeyPinRepository, RecordingSessionFactory
 from support.servers import pmg_server, proxmox_server, whm_server
-from support.whm_api import FakeWHMApi, whm_api_failure_body
+from support.whm_api import (
+    MYPRIVS_PATH,
+    FakeWHMApi,
+    myprivs_body,
+    reseller_privileges,
+    whm_api_failure_body,
+)
 
 CAPTURED_FINGERPRINT = "SHA256:AAAAC3NzaC1lZDI1NTE5AAAAICapturedByValidate"
 STORED_FINGERPRINT = "SHA256:AAAAC3NzaC1lZDI1NTE5AAAAIAlreadyStoredPin"
 
-APPLIST_PATH = "/json-api/applist"
 VERSION_PATH = "/api2/json/version"
 
 
@@ -61,8 +66,12 @@ def cipher() -> SecretCipher:
 
 
 def whm_api_ok() -> FakeWHMApi:
-    """A WHM endpoint whose `applist` succeeds."""
-    return FakeWHMApi(body={"metadata": {"result": 1, "reason": "OK"}, "data": {"app": []}})
+    """A WHM endpoint whose `myprivs` succeeds with a token that may suspend (§V111).
+
+    The ACL gate itself lives in `test_whm_validate_acl_gate.py`; here the API probe is a step
+    the SSH branches have to get past, so it answers the measured reseller set.
+    """
+    return FakeWHMApi(body=myprivs_body(reseller_privileges()))
 
 
 def whm_client_factory(api: FakeWHMApi) -> Callable[..., WHMClient]:
@@ -151,7 +160,7 @@ async def test_a_whm_validate_checks_the_api_then_ssh(cipher: SecretCipher) -> N
 
     assert result.ok is True
     assert result.error_code is None
-    assert [request.url.path for request in api.requests] == [APPLIST_PATH]
+    assert [request.url.path for request in api.requests] == [MYPRIVS_PATH]
     # The probe ran against the *captured* value, not against an empty pin.
     assert [config.host_key_fingerprint for config in probe.calls] == [CAPTURED_FINGERPRINT]
     assert pins.pins == [CAPTURED_FINGERPRINT]

@@ -60,6 +60,69 @@ from core.secrets.crypto import SecretCipher
 PrimitiveQueryValue = str | int | float | bool
 QueryValue = PrimitiveQueryValue | Sequence[PrimitiveQueryValue]
 
+# The two ACL names a WHM row's API token is read for. `suspend-acct` is ONE ACL covering BOTH
+# directions — cPanel's chart spells it "The user can suspend and unsuspend cPanel accounts" —
+# so there is no unsuspend name to check and no second gate that could fall out of step with
+# this one (§V112). `list-accts` is what a row an account listing is read from needs.
+WHM_ACL_SUSPEND_ACCOUNT = "suspend-acct"
+WHM_ACL_LIST_ACCOUNTS = "list-accts"
+
+# The granted spellings, and the whole of them (§V113). WHM's answer for the *same* function on
+# the *same* host differs by credential — root sends the integer `1` where a reseller sends the
+# string `"1"` (measured, §R.33) — so the value's type carries no information and only the value
+# itself does.
+_GRANTED_TOKENS = frozenset({"1", "true", "yes", "y"})
+
+
+def whm_privilege_granted(value: object) -> bool:
+    """Is one `myprivs` value a granted privilege? (§V113)
+
+    The truth table lives here and nowhere else: two readers of one table drift, and the
+    direction they drift in decides whether an operator is sent to type an approval reason for
+    a change WHM was always going to refuse.
+
+    **Fails closed.** Not-granted has three measured spellings — the integer `0`, the empty
+    string, and the key simply absent — and an unrecognised value joins them rather than being
+    guessed toward "has it". `core.integrations.whm.accounts._optional_bool` is deliberately
+    *not* reused for this: `""` is not among its false tokens, so it answers `None`, and on
+    this path "not granted" must never read as "not known".
+
+    **A string is matched after `strip().lower()`, deliberately** (§V113 carries the clause).
+    The accepted set is exactly `1`, `true`, `yes`, `y` and any non-zero integer; normalising a
+    *spelling* is not the guess this rule forbids, because `" TRUE "` means granted — the
+    forbidden move is answering granted for a value that carries no grant. Do not narrow it
+    back to a literal comparison: that answers "not granted" for a token that holds the ACL, so
+    validate refuses a row which can in fact suspend. A false refusal is not the safe
+    direction — §V111 exists to catch the real ACL gap at validate, not to invent one.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, int):
+        return value != 0
+    if isinstance(value, str):
+        return value.strip().lower() in _GRANTED_TOKENS
+    return False
+
+
+def _unwrap_privileges(data: object) -> dict[str, object] | None:
+    """`data.privileges` → the single object it holds, or `None` when that is not the shape.
+
+    The measured shape is a list holding exactly one object (§R.33, §V113), so `[0]` is the
+    unwrap. A bare object is accepted as well, because unwrapping one cannot invent a grant —
+    every value still goes through `whm_privilege_granted`. Anything else is a parse failure
+    and gets reported as one rather than as an empty ACL set.
+    """
+    if not isinstance(data, dict):
+        return None
+    privileges = data.get("privileges")
+    if isinstance(privileges, dict):
+        return privileges
+    if isinstance(privileges, list) and privileges:
+        first = privileges[0]
+        if isinstance(first, dict):
+            return first
+    return None
+
 
 def _coerce_query_params(params: Mapping[str, object]) -> dict[str, QueryValue]:
     """Reduce arbitrary values to what `httpx` accepts as a query parameter.
@@ -195,8 +258,39 @@ class WHMClient:
         }
 
     async def applist(self) -> dict[str, object]:
-        """Cheapest authenticated call WHM offers — the credential probe for T54's validate."""
+        """Cheapest authenticated call WHM offers. No longer the validate probe — `privileges`
+        replaced it (§V111), and the only callers left are the client's own normalisation
+        tests, which need a method with no unwrap of its own between them and `_get_json_api`.
+        """
         return await self._get_json_api("applist")
+
+    async def privileges(self) -> dict[str, object]:
+        """`myprivs` → `{"ok": True, "acls": [...]}`, the granted ACL names, sorted.
+
+        The validate probe (§V111). It replaced `applist` because `applist` does not appear in
+        cPanel's ACL chart at all, so whatever gates it is undocumented, and a restricted token
+        *is* refused on unmapped functions — a healthy reseller row could read RED for a reason
+        with nothing to do with what it may actually do. `myprivs` answers the question that
+        decides whether the row may write: is `suspend-acct` there.
+
+        The `data.privileges` unwrap lives here so no caller re-derives it — same family as
+        `data.acct` in `list_accounts`. A shape that will not unwrap answers `invalid_response`
+        rather than an empty ACL set: "this token holds nothing" and "the answer could not be
+        read" have different remedies, and reporting the first for the second sends an operator
+        to edit a credential that was fine (§V86).
+        """
+        result = await self._get_json_api("myprivs")
+        if result.get("ok") is not True:
+            return result
+        privileges = _unwrap_privileges(result.get("data"))
+        if privileges is None:
+            return {
+                "ok": False,
+                "error_code": "invalid_response",
+                "message": "WHM response missing privileges",
+            }
+        acls = sorted(name for name, value in privileges.items() if whm_privilege_granted(value))
+        return {"ok": True, "message": "ok", "acls": acls}
 
     async def list_accounts(self) -> dict[str, object]:
         """`listaccts` → `{"ok": True, "accounts": [...]}`.
@@ -266,4 +360,10 @@ def build_whm_client_from_creds(
     )
 
 
-__all__ = ["WHMClient", "build_whm_client_from_creds"]
+__all__ = [
+    "WHM_ACL_LIST_ACCOUNTS",
+    "WHM_ACL_SUSPEND_ACCOUNT",
+    "WHMClient",
+    "build_whm_client_from_creds",
+    "whm_privilege_granted",
+]

@@ -29,6 +29,10 @@ LISTACCTS_PATH = "/json-api/listaccts"
 SUSPENDACCT_PATH = "/json-api/suspendacct"
 UNSUSPENDACCT_PATH = "/json-api/unsuspendacct"
 
+# The validate probe (§V111). `myprivs` reports what the token may do, which is why it replaced
+# `applist` — a test asserting "validate asked about capability" counts requests to this path.
+MYPRIVS_PATH = "/json-api/myprivs"
+
 
 def whm_account(
     user: str,
@@ -55,6 +59,36 @@ def whm_account(
 def listaccts_body(accounts: list[dict[str, Any]]) -> dict[str, Any]:
     """A successful `listaccts` payload."""
     return {"metadata": {"result": 1, "reason": "OK"}, "data": {"acct": accounts}}
+
+
+def myprivs_body(privileges: dict[str, Any]) -> dict[str, Any]:
+    """A successful `myprivs` payload — `data.privileges` is a list holding ONE object.
+
+    The list wrapper is WHM's, measured on a live host (§R.33), and it is the whole reason the
+    client has an unwrap: a fixture that handed the object over bare would let a client that
+    forgot the `[0]` pass here and fail against WHM.
+    """
+    return {"metadata": {"result": 1, "reason": "OK"}, "data": {"privileges": [privileges]}}
+
+
+def reseller_privileges(**overrides: Any) -> dict[str, Any]:
+    """The measured reseller ACL set (§R.33): the suspend flag granted, and nothing else that
+    writes. Values are WHM's own spellings — granted is the *string* `"1"` from a reseller
+    token where root sends the integer `1`, and not-granted is `0` or `""` depending on the
+    key. Both spellings are in here on purpose (§V113)."""
+    privileges: dict[str, Any] = {
+        "basic-whm-functions": "1",
+        "list-accts": "1",
+        "suspend-acct": "1",
+        "all": 0,
+        "create-acct": "",
+        "kill-acct": "",
+        "passwd": "",
+        "create-user-session": "",
+        "manage-api-tokens": "",
+    }
+    privileges.update(overrides)
+    return privileges
 
 
 def whm_api_failure_body(reason: str) -> dict[str, Any]:
@@ -118,10 +152,13 @@ def whm_api_listing(accounts: list[dict[str, Any]]) -> FakeWHMApi:
 
 __all__ = [
     "LISTACCTS_PATH",
+    "MYPRIVS_PATH",
     "SUSPENDACCT_PATH",
     "UNSUSPENDACCT_PATH",
     "FakeWHMApi",
     "listaccts_body",
+    "myprivs_body",
+    "reseller_privileges",
     "whm_account",
     "whm_api_failure_body",
     "whm_api_listing",

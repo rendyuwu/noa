@@ -53,7 +53,7 @@ from support.remote_exec import LoopbackSSH, loopback_ssh_config, loopback_ssh_s
 from support.secrets import build_cipher
 from support.server_admin import FakeHostKeyPinRepository, RecordingSessionFactory
 from support.servers import pmg_server, whm_server
-from support.whm_api import FakeWHMApi
+from support.whm_api import FakeWHMApi, myprivs_body, reseller_privileges
 
 WRONG_FINGERPRINT = "SHA256:AAAAC3NzaC1lZDI1NTE5AAAAINotTheKeyThisHostHas"
 
@@ -68,7 +68,8 @@ def cipher() -> SecretCipher:
 
 
 def whm_api_ok() -> FakeWHMApi:
-    return FakeWHMApi(body={"metadata": {"result": 1, "reason": "OK"}, "data": {"app": []}})
+    """A `myprivs` answer that clears the ACL gate (§V111), so the host key is what is tested."""
+    return FakeWHMApi(body=myprivs_body(reseller_privileges()))
 
 
 def _whm_client_factory(api: FakeWHMApi) -> Any:
