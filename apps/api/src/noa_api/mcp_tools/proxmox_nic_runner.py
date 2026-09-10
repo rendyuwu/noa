@@ -1,10 +1,11 @@
 """The half of `proxmox_vm_nic` that flips the link.
 
-Beside `proxmox_nic.py` rather than inside it, for C14 and on the boundary the design already
-draws — **nothing in the tool module can change anything, and nothing here is reachable without an
-approval**. T27 made the same split for the same reason. The evidence keys, the action words
-and the tool's name come from that module; nothing there imports this one, so `registry.py` reaches
-the tool and `change_runners.py` reaches the runner with no cycle between them.
+Beside `proxmox_nic.py` rather than inside it, for the file-size cap and on the boundary the design
+already draws — **nothing in the tool module can change anything, and nothing here is reachable
+without an approval**. The password-reset tool made the same split for the same reason. The evidence
+keys, the action words and the tool's name come from that module; nothing there imports this one, so
+`registry.py` reaches the tool and `change_runners.py` reaches the runner with no cycle between
+them.
 
 **The re-read is the design, not an optimisation.** `noa-old` carried the config digest from its
 preflight to its change call as a tool argument, seconds apart, and wrote the NIC line it had read
@@ -36,14 +37,15 @@ Three ways that comparison can go, and only one of them is a failure:
 **The postflight asks the change's own question**. It re-reads the config and recomputes the
 link state off the `netN` line — not off the task's exit status, which says only that Proxmox
 accepted the write. A read that cannot answer is `unavailable`, never `false`: silence is not
-evidence of absence, and V62's rule holds one system over —
+evidence of absence, and the verdict rule holds one system over —
 **verification-unavailable is not verified, and it is not refuted either.**
 
-**V96 has no instance here, and that is worth stating rather than assuming.** This runner never
-reads `request.reason`: a `netN` line has no note field, NOA writes no `description`, and the only
-thing it puts on the wire is the interface line and a digest. So nothing C8 keeps from the LLM is
-written onto this VM, V43's permission is unused, and nothing NOA wrote comes back through a later
-READ — T27's and T23's situation, one system over.
+**No path back to a model opens here, and that is worth stating rather than assuming.** This runner
+never reads `request.reason`: a `netN` line has no note field, NOA writes no `description`, and the
+only thing it puts on the wire is the interface line and a digest. So nothing the reason rule keeps
+from the LLM is written onto this VM, the one operator-typed field's permission is unused, and
+nothing NOA wrote comes back through a later READ — the password-reset and unsuspend tools'
+situation, one system over.
 """
 
 from __future__ import annotations
@@ -143,7 +145,8 @@ TASK_POLL_DELAY_SECONDS: Final = 0.5
 logger = structlog.get_logger(__name__)
 
 
-# --- The runner: reachable only after an operator approved (V22's far side) ---
+# --- The runner: reachable only after an operator approved (the far side of the cookie/CSRF
+# boundary) ---
 
 
 @dataclass(frozen=True)
@@ -184,13 +187,14 @@ class FreshNIC:
 def build_proxmox_vm_nic_runner(*, context: McpToolContext) -> ChangeRunner:
     """The half that flips the link, once an operator approved.
 
-    A closure over the tool context rather than a class, for T22's reason: what it needs is the
-    same session factory, cipher and repositories the tool used, so the change goes through the
-    production decrypt site and the production client rather than second copies of either.
+    A closure over the tool context rather than a class, for the suspend tool's reason: what it
+    needs is the same session factory, cipher and repositories the tool used, so the change goes
+    through the production decrypt site and the production client rather than second copies of
+    either.
 
-    `request.reason` is on the request — the executor reads it off the row for every approved
-    change — and this runner never touches it. A `netN` line has no note field, so nothing
-    C8 keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
+    `request.reason` is on the request — the executor reads it off the row for every approved change
+    — and this runner never touches it. A `netN` line has no note field, so nothing the reason rule
+    keeps from the LLM leaves NOA here, and no path back to a model opens on this tool.
     """
 
     async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
@@ -276,13 +280,13 @@ async def _resolve_change_target(
     operator actually saw on the card.
 
     Every value is re-checked as it comes back out of JSONB, `action` included — that is the third
-    place the enum is bounded (V63, T25's discipline): what `tools/list` publishes, what the tool
-    body re-checks, and what survived the round trip. A value that no longer parses is a request
-    NOA declines rather than guesses at, because by the time a runner reads it an operator has
-    typed a reason and pressed Approve.
+    place the enum is bounded (published schema, re-checked at every hop): what `tools/list`
+    publishes, what the tool body re-checks, and what survived the round trip. A value that no
+    longer parses is a request NOA declines rather than guesses at, because by the time a runner
+    reads it an operator has typed a reason and pressed Approve.
 
-    The database session closes before the HTTP hops, T21's rule, and here it matters twice over:
-    the executor's own session is open for the whole of the call.
+    The database session closes before the HTTP hops, the account search's rule, and here it matters
+    twice over: the executor's own session is open for the whole of the call.
     """
     node = evidence.get(EVIDENCE_NODE)
     net = evidence.get(EVIDENCE_NET)
@@ -365,8 +369,8 @@ def _nic_delta(
       runner came to know it.
     - `None` — NOA cannot say. The write was accepted and the task did not finish in time, the
       confirming read could not answer, or the flip was confirmed and the *evidence* carried no
-      before-value to compare it against. Claiming either direction there is the fabrication V86
-      exists to stop, and `false` would be the one that reads as a measurement.
+      before-value to compare it against. Claiming either direction there is the fabrication
+      naming-the-subset exists to stop, and `false` would be the one that reads as a measurement.
 
     The interface's own line is not on the identity, for the reason it is not in the payload: a
     reader needs which interface on which VM moved which way, not the MAC address and bridge of
@@ -504,13 +508,13 @@ async def _wait_for_terminal_task(target: NICChangeTarget, *, upid: str) -> Chan
 async def _verify_link_state(
     target: NICChangeTarget, *, request: ChangeExecutionRequest
 ) -> ChangeOutcome:
-    """Did the link actually move? Read off the `netN` line, ⊥ off the task.
+    """Did the link actually move? Read off the `netN` line, never off the task.
 
     The task's exit status says Proxmox accepted a write; it does not say what the interface now
     is. So this re-reads the config and recomputes the link state from the line itself, which is
     the fact the change is about.
 
-    Three answers, and the middle one is V62's rule one system over:
+    Three answers, and the middle one is the verdict rule one system over:
 
     1. **verified** — the line carries the state that was asked for.
     2. **unavailable** — the postflight read could not answer. `status: changed` with

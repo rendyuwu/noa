@@ -124,9 +124,8 @@ def read_conversation_ref() -> str | None:
 def redacted_args(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
     """Tool arguments as they may be stored.
 
-    `{}` for a call with no arguments rather than `None`, matching the column's server
-    default: "no arguments" and "arguments not recorded" must not read the same in an audit
-    view.
+    `{}` for a call with no arguments rather than `None`, matching the column's server default: "no
+    arguments" and "arguments not recorded" must not read the same in an audit view.
     """
     redacted = redact_sensitive_data(dict(arguments or {}))
     return redacted if isinstance(redacted, dict) else {}
@@ -148,7 +147,7 @@ class ToolRunAuditMiddleware(Middleware):
         tool_name = context.message.name
         if self._tool_risks.get(tool_name) is not ToolRisk.READ:
             # A CHANGE tool's `tools/call` opens the approval gate and executes nothing
-            #; its row belongs to the post-approval executor. An unmapped
+            # ; its row belongs to the post-approval executor. An unmapped
             # name cannot reach here — the RBAC gate outside refuses anything unregistered —
             # so this is also the fail-closed answer if that ever stops being true.
             return await call_next(context)
@@ -242,10 +241,9 @@ class ToolRunAuditMiddleware(Middleware):
     ) -> None:
         """Move the row to its terminal state.
 
-        Swallows its own failure, unlike `_start_run`. The tool has already run by now, so
-        refusing the caller would misreport a call that happened; the row stays `STARTED`,
-        which is a state the schema defines and T38's reaper resolves, and the log line
-        names it.
+        Swallows its own failure, unlike `_start_run`. The tool has already run by now, so refusing
+        the caller would misreport a call that happened; the row stays `STARTED`, which is a state
+        the schema defines and T38's reaper resolves, and the log line names it.
         """
         try:
             async with self._context.session_factory() as session:

@@ -20,7 +20,7 @@ import { BigsuIcon } from '@gio/bigsu-icons'
 ```
 
 `@gio/bigsu-charts` is deliberately not installed — nothing in this panel charts
-yet. Adding it is a dependency decision (C2 pins exactly), not an import.
+yet. Adding it is a dependency decision — pins are exact — not an import.
 
 ## Layout
 

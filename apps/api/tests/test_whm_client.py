@@ -41,7 +41,7 @@ def _ok(payload: dict[str, object]):  # type: ignore[no-untyped-def]
     return handler
 
 
-# --- V19 (feeds): every failure gets a stable, distinct code ---
+# --- Sanitized codes: every failure gets a stable, distinct code ---
 
 
 async def test_client_maps_401_to_auth_failed() -> None:
@@ -157,7 +157,7 @@ async def test_list_accounts_returns_the_error_untouched_on_failure() -> None:
 
 
 async def test_suspend_sends_the_operator_typed_reason_as_whms_suspension_note() -> None:
-    """The `reason` argument is the approval-time operator text — it is ⊥ a
+    """The `reason` argument is the approval-time operator text — it is never a
     tool-schema parameter and the LLM never authors it. Here it only has to reach WHM."""
     seen: dict[str, object] = {}
 
@@ -186,17 +186,17 @@ async def test_unsuspend_calls_unsuspendacct() -> None:
     assert "unsuspendacct" in str(seen["url"])
 
 
-# --- C22: the never-implement boundary holds at the client, not only at the tool ---
+# --- The never-implement boundary holds at the client, not only at the tool ---
 
 
 @pytest.mark.parametrize("method", ["change_contact_email", "change_primary_domain"])
 def test_never_implement_client_methods_are_absent(method: str) -> None:
-    """C22 says ⊥ port, ⊥ expose, ⊥ re-add. Keeping the client method would leave the
-    capability one line from exposure; re-adding it is an owner decision, ⊥ an agent call."""
+    """Never port, never expose, never re-add. Keeping the client method would leave the
+    capability one line from exposure; re-adding it is an owner decision, never an agent call."""
     assert not hasattr(WHMClient, method)
 
 
-# --- C7 / V48: one decrypt site, and it is the factory ---
+# --- One decrypt site, and it is the factory ---
 
 
 async def test_build_whm_client_from_creds_decrypts_token_into_auth_header() -> None:
@@ -222,8 +222,8 @@ async def test_build_whm_client_from_creds_decrypts_token_into_auth_header() -> 
 
 
 async def test_build_whm_client_from_creds_passes_through_an_unencrypted_column() -> None:
-    """`maybe_decrypt_text`, ⊥ `decrypt_text`: a row written before encryption still works,
-    which is what lets T54 migrate the column in place."""
+    """`maybe_decrypt_text`, never `decrypt_text`: a row written before encryption still works,
+    which is what lets the host-key-validation work migrate the column in place."""
     seen: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:

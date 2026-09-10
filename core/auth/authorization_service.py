@@ -1,6 +1,6 @@
 """The RBAC engine.
 
-Ported from `noa-old` branch `MCP` (`core/auth/authorization_service.py`, C13). One class
+Ported from `noa-old` branch `MCP` (`core/auth/authorization_service.py`), never imported. One class
 answers two different kinds of question, and keeping them together is deliberate — the
 write side must not be able to produce a state the read side interprets differently:
 
@@ -12,7 +12,7 @@ write side must not be able to produce a state the read side interprets differen
 
 Three rules the implementation is shaped around:
 
-1. **No cache, anywhere.** V14 says permission updates take effect immediately and V6 says
+1. **No cache, anywhere.** Permission updates take effect immediately and
    the session JWT cannot be revoked before `exp`. Together they mean the row is the only
    trustworthy source: memoizing an operator's tool set — even for one request — would let
    a revoked grant or a disabled account keep working. `AuthorizedUser.tools` is a snapshot
@@ -25,7 +25,7 @@ Three rules the implementation is shaped around:
    invariants about the data, so they hold for any caller — a future CLI or migration
    script included. `noa-old` had them here too, but re-derived each HTTP status in every
    route; here the error class carries it.
-4. **Every mutation commits, and the commit is the last thing it does**. V14 says a
+4. **Every mutation commits, and the commit is the last thing it does**. A
    permission update takes effect immediately, which is only true of a write that ended its
    transaction: the repository flushes and `noa_api.api.deps.get_db_session` never commits,
    so a service that left the boundary to its caller would have five routes answering 200
@@ -34,22 +34,21 @@ Three rules the implementation is shaped around:
    *before* the commit, a refused change persists nothing. The audit event is recorded first,
    so the change and the record of it land in the same transaction (once a `SQLAdminAuditSink`
    exists — the structlog sink is outside it by nature).
-5. **The MCP catalog notification is the one thing that happens *after* the commit** (T66,
-   V74). Every mutation that can move an operator's effective tool set tells the connected
+5. **The MCP catalog notification is the one thing that happens *after* the commit**.
+   Every mutation that can move an operator's effective tool set tells the connected
    MCP sessions of the affected users, through `ToolListChangedNotifier`. Ordering is the
    whole design: a notification sent before the commit invites a client to refetch a catalog
    built from rows that may still roll back, and a refused write — which raises before the
    commit — must announce nothing at all. It is also the one step allowed to fail silently.
-   R30 measured that LibreChat ignores the notification entirely at the pinned commit, so
-   what makes a revoked grant safe is V1's execution-time re-check, not this; a notifier
+   LibreChat was measured ignoring the notification entirely at the pinned commit, so
+   what makes a revoked grant safe is the execution-time permission re-check, not this; a notifier
    fault must not turn a committed permission change into a 500.
 
 Departures from `noa-old`, each with a test:
 
 - **Direct per-user grants are gone.** `migrate_legacy_direct_grants` and the
-  `user:<uuid>` grant reads went with them (V75/T65 makes direct grants a 410). The
-  internal-role *preservation* rule stays, because internal roles are still NOA's
-  bookkeeping.
+  `user:<uuid>` grant reads went with them — direct grants answer 410. The internal-role
+  *preservation* rule stays, because internal roles are still NOA's bookkeeping.
 - **Missing rows raise instead of returning `None`.** `noa-old` returned `None` and each
   route turned it into a 404, which is how one route ends up answering 200 with an empty
   body. `UserNotFoundError` / `RoleNotFoundError` carry the status once.
@@ -114,7 +113,7 @@ DETAIL_ROLE_NAME_BLANK = "role name is blank after stripping"
 DETAIL_ROLE_NAME_TOO_LONG = f"role name exceeds {MAX_ROLE_NAME_LENGTH} characters"
 DETAIL_ROLE_NAME_CHARS = "role name has characters outside [A-Za-z0-9_-]"
 
-# T66: the notifier swallowed an exception after a committed write. Logged at error because
+# The list-changed notifier swallowed an exception after a committed write. Logged at error because
 # nothing else records it — the operator's change succeeded and their 200 says so, so this
 # line is the only trace that a connected client was not told.
 LOG_TOOL_LIST_NOTIFY_FAILED = "tool_list_changed_notify_failed"
@@ -135,14 +134,14 @@ class AuthorizationService:
     ) -> None:
         self._repository = repository
         self._audit = audit_sink
-        # T66/V74. Defaults to the null notifier rather than being required, because this
-        # service is constructed in places with no MCP session to notify — the MCP tool path's
-        # own instance, a future CLI, a migration script. The cost of that default is that a
+        # List-changed emit, best-effort. Defaults to the null notifier rather than being required,
+        # because this service is constructed in places with no MCP session to notify — the MCP tool
+        # path's own instance, a future CLI, a migration script. The cost of that default is that a
         # forgotten production wiring would be silent, so the wiring is asserted separately
         # (`test_app_lifespan.py`); see `core.auth.tool_list_notifications`.
         self._tool_list_notifier = tool_list_notifier or NullToolListChangedNotifier()
-        # Snapshotted at construction, which is safe because the catalog is static for the
-        # process (see `core.auth.tool_catalog`). When T13 makes it registry-derived, this
+        # Snapshotted at construction, which is safe because the catalog is static for the process
+        # (see `core.auth.tool_catalog`). Once the FastMCP mount makes it registry-derived, this
         # becomes a call instead — the service is constructed per request either way.
         self._known_tools = frozenset(known_tools)
 
@@ -151,7 +150,7 @@ class AuthorizationService:
     async def get_permitted_tools(self, user_id: UUID) -> set[str]:
         """Tools `user_id` may call, resolved from the database on every call.
 
-        The three branches are V10 and V11 in order:
+        The three branches, in order:
 
         - `is_active=False` → empty, whatever roles say. Checked first, so a disabled
           admin gets nothing rather than everything.
@@ -172,12 +171,12 @@ class AuthorizationService:
     async def authorize_tool(self, user_id: UUID, tool_name: str) -> bool:
         """Whether `user_id` may call `tool_name` right now.
 
-        Re-resolved rather than read off an earlier `tools/list`: V74 accepts that a client
-        may hold a stale catalog and leans on exactly this check as the backstop, so a
+        Re-resolved rather than read off an earlier `tools/list`: a client
+        may hold a stale catalog and this execution-time re-check is the backstop, so a
         revoked tool still 403s at execution even while it is displayed.
         """
         if tool_name not in self._known_tools:
-            # Cheapest branch first, and it is also the V10 half that applies to admins:
+            # Cheapest branch first, and it is also the admin-bypass half that applies to admins:
             # an unregistered name is refused before any row is read.
             return False
 
@@ -234,8 +233,8 @@ class AuthorizationService:
         created = await self._repository.ensure_role(role_name)
         await self._record(EVENT_ROLE_CREATED, actor_email, created, {"role": created})
         await self._repository.commit()
-        # No T66 notification, and the omission is the correct answer rather than an oversight
-        #. A role is born with zero grants and zero holders, so no operator's effective
+        # No list-changed notification, and the omission is the correct answer rather than an
+        # oversight . A role is born with zero grants and zero holders, so no operator's effective
         # tool set moved. Telling every session to refetch here would be noise a client that
         # honoured the notification would pay for.
         return created
@@ -250,12 +249,12 @@ class AuthorizationService:
         role_name = self._validate_role_name(name)
         self._reject_reserved_role(role_name)
 
-        # **Read the holders before the delete, not after.** The assignments go by
-        # `ON DELETE CASCADE`, so once the row is gone there is nobody left to find and T66's
-        # notification would reach an empty audience — a bug indistinguishable from "nobody
-        # held that role". `delete_role` is also the existence check, so this runs before
-        # it and costs one wasted query on the 404 path; an absent role has no holders, so the
-        # answer is `[]` and nothing is announced.
+        # **Read the holders before the delete, not after.** The assignments go by `ON DELETE
+        # CASCADE`, so once the row is gone there is nobody left to find and the list-changed
+        # notification would reach an empty audience — a bug indistinguishable from "nobody held
+        # that role". `delete_role` is also the existence check, so this runs before it and costs
+        # one wasted query on the 404 path; an absent role has no holders, so the answer is `[]` and
+        # nothing is announced.
         holders = await self._repository.list_user_ids_with_role(role_name)
 
         if not await self._repository.delete_role(role_name):
@@ -268,8 +267,8 @@ class AuthorizationService:
     async def get_role_tools(self, name: str) -> list[str]:
         """Tool grants held by a role.
 
-        `admin` answers with the whole catalog rather than its (empty) grant rows. V10
-        gives it every known tool by bypassing the table, so returning `[]` would render an
+        `admin` answers with the whole catalog rather than its (empty) grant rows. The bypass
+        gives it every known tool by skipping the table, so returning `[]` would render an
         admin role that appears to permit nothing while permitting everything. Displayed
         state and enforced state stay equal.
         """
@@ -283,7 +282,7 @@ class AuthorizationService:
     async def set_role_tools(
         self, name: str, tool_names: Iterable[str], *, actor_email: str | None = None
     ) -> list[str]:
-        """Replace a role's grants with exactly `tool_names` (V14 — effective at once).
+        """Replace a role's grants with exactly `tool_names` — effective at once.
 
         Refuses `admin` and any name outside the catalog. Unknown names are
         rejected as a set, not one at a time, so an admin fixing a typo in a list of twenty
@@ -362,25 +361,24 @@ class AuthorizationService:
     ) -> AuthorizedUser:
         """Enable or disable a user, cascade-revoking their tokens.
 
-        Disabling is the operation V6 leans on: there is no session revocation, so
+        Disabling is the operation the session model leans on: there is no session revocation, so
         `is_active=False` takes effect through the per-request row re-read in
         `AuthService.resolve_session_user` and through `get_permitted_tools` here. That is
         also why both guards below are refusals rather than warnings — an admin who
         disables themselves cannot undo it from inside the app.
 
         Disabling also deletes every `mcp_tokens` row the operator holds. Note
-        what that is and is not: it is not what stops them calling tools — V1's per-request
+        what that is and is not: it is not what stops them calling tools — the per-request
         `is_active` re-check already does, and it does so without waiting for anything to
         propagate. It is what makes the credential itself dead, so a token sitting in a
         LibreChat config cannot start working again the day the row is re-enabled for some
         unrelated reason. The cost is real and one-way: re-enabling an operator means
         minting a fresh token and updating their `customUserVars`, because a deleted row
-        cannot be un-deleted (V2 — revocation *is* the absence).
+        cannot be un-deleted — revocation *is* the absence.
 
         Runs here rather than in a route so no caller can forget it, and only on a genuine
-        True→False transition: re-disabling an already-disabled account revokes nothing,
-        because there is nothing left to revoke and an audit line claiming otherwise would
-        be false.
+        True→False transition: re-disabling an already-disabled account revokes nothing, because
+        there is nothing left to revoke and an audit line claiming otherwise would be false.
         """
         user = await self._require_user(user_id)
         roles = await self._repository.get_role_names(user_id)
@@ -417,7 +415,7 @@ class AuthorizationService:
             },
         )
         # The status flip, the token revoke and the event are one transaction, ended here
-        #. Both guards above raise before it, so a refused disable revokes nothing and
+        # . Both guards above raise before it, so a refused disable revokes nothing and
         # persists nothing.
         await self._repository.commit()
         # Notified on both directions of the flip, not only on disable: enabling an
@@ -498,7 +496,7 @@ class AuthorizationService:
 
     @staticmethod
     def _reject_reserved_role(role_name: str) -> None:
-        """`admin` is built in: ⊥ edit its tools, ⊥ delete it."""
+        """`admin` is built in: never edit its tools, never delete it."""
         if role_name == ADMIN_ROLE_NAME:
             raise ReservedRoleError(f"role `{ADMIN_ROLE_NAME}` is reserved")
 
@@ -537,7 +535,7 @@ class AuthorizationService:
             raise RoleNotFoundError(f"role `{role_name}` does not exist")
 
     async def _effective_tools(self, *, is_active: bool, roles: list[str]) -> set[str]:
-        """The V10/V11 resolution, in one place so reads cannot disagree."""
+        """The admin-bypass/disabled-account resolution, in one place so reads cannot disagree."""
         if not is_active:
             return set()
         if ADMIN_ROLE_NAME in roles:
@@ -574,9 +572,9 @@ class AuthorizationService:
 
         - **Never raises.** The write has committed; the operator's change succeeded and their
           200 is already true. An exception here would report a successful permission change as
-          a failure and invite them to repeat it. V74 makes the emit best-effort in so many
-          words — the control that keeps a stale catalog safe is V1's execution-time re-check,
-          and R30 measured that the pinned client ignores this notification anyway.
+          a failure and invite them to repeat it. The emit is best-effort by
+          decision — the control that keeps a stale catalog safe is the execution-time re-check,
+          and the pinned client was measured ignoring this notification anyway.
         - **Empty is a no-op, not an empty announcement.** `create_role` affects nobody, and a
           role nobody holds affects nobody; short-circuiting keeps the notifier from having to
           decide what an empty audience means.

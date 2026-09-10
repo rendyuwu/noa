@@ -1,10 +1,10 @@
 # Workspace root. Also the `noa-core` package: shared code lives in `core/`
-# (C12 — one shared core, one Alembic, three deploy artifacts).
+# — one shared core, one Alembic, three deploy artifacts.
 [project]
 name = "noa-core"
 version = "0.1.0"
 description = "NOA shared core — config, auth, remote_exec, secrets, integrations"
-# Upper bound per C1: pgpy 0.6.0 (last release) imports stdlib `imghdr` at import
+# Upper bound: pgpy 0.6.0 (last release) imports stdlib `imghdr` at import
 # time; removed in 3.13. On 3.13+ that crashes tool-registry import, not only the
 # password-reset path. Hold <3.13 until pgpy ships a 3.13-compatible release.
 requires-python = ">=3.11,<3.13"

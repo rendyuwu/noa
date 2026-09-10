@@ -1,4 +1,4 @@
-# NOA API image — FastAPI admin routes + the FastMCP server (§T.60, C12).
+# NOA API image — FastAPI admin routes + the FastMCP server, one of three deploy artifacts.
 #
 # Build context is the REPO ROOT, not this directory: `noa-api` is a uv workspace member and
 # `noa-core` is the workspace root (`core/` + the root `pyproject.toml` + `uv.lock`), so an
@@ -15,14 +15,14 @@
 # (`libldap-2.5-0`) are Debian-release-specific, so an unpinned base would move the runtime
 # libraries out from under the wheel built in the first stage.
 #
-# 3.12 is the top of the supported range, not a preference. C1 holds `>=3.11,<3.13` because
+# 3.12 is the top of the supported range, not a preference. The supported window holds `>=3.11,<3.13` because
 # `pgpy==0.6.0` imports the stdlib `imghdr` module, removed in 3.13, at import time — which
 # takes down the whole tool registry, not just the password-reset path.
 # `apps/api/tests/test_deployment.py` asserts this tag against `requires-python`, so a bump
 # past the bound fails a test rather than an operator's first CHANGE call.
 FROM python:3.12-slim-bookworm AS builder
 
-# uv is pinned like every other dependency (C2's discipline applied to tooling): the resolver
+# uv is pinned like every other dependency (exact-pin discipline applied to tooling): the resolver
 # that reads `uv.lock` is part of what makes `--frozen` reproducible.
 COPY --from=ghcr.io/astral-sh/uv:0.10.9 /uv /usr/local/bin/uv
 
@@ -93,13 +93,13 @@ HEALTHCHECK --interval=10s --timeout=3s --start-period=15s --retries=3 \
     CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=2).status == 200 else 1)"]
 
 # ONE process, deliberately. No `--workers`, and one replica per deployment:
-#   * V79 pins session-JWT verification to zero clock leeway because mint and verify share a
+#   * Session-JWT verification is pinned to zero clock leeway because mint and verify share a
 #     clock. A second replica makes that two clocks, and the first symptom is a login whose
 #     token is rejected the instant it is issued.
-#   * T38's approved-change executor is an in-process asyncio task, T39's expiry sweep and
-#     T38's reaper are in-process loops, and T66's notification register is a per-process
+#   * The approved-change executor is an in-process asyncio task, the expiry sweep and the
+#     reaper are in-process loops, and the tool-list notification register is a per-process
 #     WeakSet. N replicas means N sweepers and a register that knows a fraction of the sessions.
-# Scaling out is a deliberate change with V79's revisit trigger attached, not a replica count.
+# Scaling out is a deliberate change with the clock-leeway revisit trigger attached, not a replica count.
 #
 # TLS and forwarded headers belong to the ingress. `--proxy-headers` is NOT set here: it is
 # only safe alongside an explicit `--forwarded-allow-ips`, and a default that trusts the wrong

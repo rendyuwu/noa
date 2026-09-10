@@ -1,27 +1,28 @@
 """`proxmox_vm_nic`'s runner — the half that flips the link.
 
-Reachable only after an operator approved (§V.22's far side), so nothing here goes through the
-tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`, and that is what these
-tests build.
+Reachable only after an operator approved — the far side of the cookie/CSRF boundary — so nothing
+here goes through the tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`,
+and that is what these tests build.
 
 **Three properties carry this file**, and each is a claim a plausible implementation gets wrong:
 
-1. **The runner re-reads before it writes** (T28's departure from `noa-old`). The digest it writes
+1. **The runner re-reads before it writes** — the NIC tool's departure from `noa-old`. The digest it
+   writes
    under is the one from *its own* read, so an unrelated edit made while the card sat pending
    neither refuses the change nor gets reverted by it. The fake enforces the digest the way
    Proxmox does, so "it re-read" is something the transport can fail rather than a comment — and
    the lost-update half is asserted on the **bytes written**, because a runner writing the
    gate-time line back would answer identically.
-2. **The postflight asks the change's own question** (§V.97). It reads the `netN` line, not the
+2. **The postflight asks the change's own question.** It reads the `netN` line, not the
    task's exit status. `ignore_write` with `task_exit_status="OK"` is exactly that case: Proxmox
    says yes and the interface says no.
-3. **Unavailable is not refuted** (§V.62's rule one system over, §V.86). A postflight read that
+3. **Unavailable is not refuted.** A postflight read that
    could not answer is `changed` + `verified: false` + `verification: unavailable`, never a bare
    `false` an operator reads as a measurement.
 
-The fourth thread is **§V.96 having no instance here**, which is asserted rather than assumed: the
-runner never reads `request.reason`, so a sentinel driven through the approval must not appear in
-the serialized payload, the derived summary, the built receipt — or on the wire.
+The fourth thread is **no path back to a model opening here**, which is asserted rather than
+assumed: the runner never reads `request.reason`, so a sentinel driven through the approval must not
+appear in the serialized payload, the derived summary, the built receipt — or on the wire.
 
 The seams: a real `ProxmoxClient` over an `httpx` transport, a real `SecretCipher` decrypting a
 real ciphertext token, the real codec, the real resolver. Only the socket is doubled.
@@ -150,7 +151,7 @@ async def test_only_the_named_interface_is_written() -> None:
     assert vm.nets[NET1] == NET1_UP
 
 
-# --- T28's departure from `noa-old`: the digest is the runner's own ---
+# --- The NIC tool's departure from `noa-old`: the digest is the runner's own ---
 
 
 async def test_a_config_edit_made_while_the_card_was_pending_survives_the_change() -> None:
@@ -241,7 +242,7 @@ async def test_an_interface_removed_before_the_change_ran_is_refused_by_name() -
     assert vm.nets[NET1] == NET1_UP
 
 
-# --- §V.33: the evidence, never the arguments ---
+# --- The evidence, never the arguments ---
 
 
 async def test_the_target_comes_from_the_evidence_and_not_from_the_arguments() -> None:
@@ -277,7 +278,7 @@ async def test_the_target_comes_from_the_evidence_and_not_from_the_arguments() -
 async def test_evidence_that_did_not_survive_its_round_trip_is_declined(
     overrides: dict[str, Any],
 ) -> None:
-    """§V.63's third place, and §V.33's refusal rather than repair.
+    """The enum's third bound place, and the gate-time evidence's refusal rather than repair.
 
     By the time this runs an operator has typed a reason and pressed Approve, so a guess here is a
     guess with an authorisation attached to it.
@@ -304,11 +305,11 @@ async def test_a_server_row_deleted_after_approval_names_the_proxmox_inventory()
     assert vm.requests == []
 
 
-# --- §V.97, §V.86, §V.62: the postflight ---
+# --- The postflight ---
 
 
 async def test_a_task_that_reports_ok_while_the_nic_did_not_move_is_a_failure() -> None:
-    """§V.97: the postflight asks the change's own question.
+    """The postflight asks the change's own question.
 
     `ignore_write` accepts the write and keeps the old line, with the task still exiting `OK`.
     A runner reading its success off the task's exit status answers `verified: true` here, which
@@ -326,7 +327,7 @@ async def test_a_task_that_reports_ok_while_the_nic_did_not_move_is_a_failure() 
 
 
 async def test_a_postflight_that_cannot_be_read_is_unavailable_and_not_unverified() -> None:
-    """§V.86, §V.62: silence is not evidence of absence, and it is not refutation either.
+    """Silence is not evidence of absence, and it is not refutation either.
 
     Proxmox accepted the write, so calling this a failure would send an operator to repeat a
     change that has probably already happened. `verification: unavailable` says which kind of
@@ -348,7 +349,7 @@ async def test_a_readable_postflight_that_agrees_is_verified() -> None:
     """The negative control for both branches above.
 
     Without it, "report unavailable" and "report a mismatch" each pass against a runner that never
-    verifies anything at all (§V.87).
+    verifies anything at all.
     """
     fixture, _ = nic_context()
 
@@ -363,7 +364,7 @@ async def test_a_readable_postflight_that_agrees_is_verified() -> None:
 
 async def test_a_refused_write_is_reported_with_proxmoxs_own_code() -> None:
     """`digest_mismatch` and `permission_denied` send an operator to different places, so the
-    integration layer's classification is kept rather than collapsed (§V.19's argument)."""
+    integration layer's classification is kept rather than collapsed."""
     fixture, vm = nic_context(
         vm=FakeProxmoxNICVM(
             write_error={
@@ -416,14 +417,14 @@ async def test_a_write_that_answers_synchronously_is_not_polled() -> None:
     assert not [path for _method, path in vm.requests if "/tasks/" in path]
 
 
-# --- §V.96 has no instance here, and that is asserted ---
+# --- No path back to a model opens here, and that is asserted ---
 
 
 async def test_the_operator_reason_reaches_neither_the_wire_nor_the_payload() -> None:
-    """A `netN` line has no note field, so nothing C8 keeps from the LLM leaves NOA here.
+    """A `netN` line has no note field, so nothing the operator typed leaves NOA here.
 
     Asserted on the serialized payload, the derived summary and the built receipt rather than on a
-    key set — a value dropped in one place and kept in another passes a key compare (§V.87) — and
+    key set — a value dropped in one place and kept in another passes a key compare — and
     on every request body, because the only thing that can carry it out is a write.
     """
     sentinel = "customer-said-the-box-is-spamming"
@@ -444,7 +445,7 @@ async def test_the_sentinel_would_have_been_found_if_it_had_leaked() -> None:
     """The negative control for the assertion above: `payload_text` really does look.
 
     Without it, "the reason is not in the payload" passes against a helper that serializes
-    nothing, which is exactly the compare that stops separating (§V.87).
+    nothing, which is exactly the compare that stops separating.
     """
     sentinel = "customer-said-the-box-is-spamming"
 
@@ -468,7 +469,7 @@ async def test_the_payload_carries_the_identifiers_and_the_verdict_and_not_the_l
     """This becomes `tool_runs.result_summary`, and `noa_get_action_result` hands it to a model.
 
     What a model needs is which interface on which VM moved which way — not the MAC address and
-    bridge of a machine it is about to describe to somebody (§V.45, §V.76, §V.26).
+    bridge of a machine it is about to describe to somebody.
     """
     fixture, _ = nic_context()
 
@@ -505,10 +506,10 @@ async def test_the_payload_carries_the_identifiers_and_the_verdict_and_not_the_l
 async def test_the_executor_can_classify_every_outcome_this_runner_produces(
     vm_kwargs: dict[str, Any], expected: ToolRunStatus
 ) -> None:
-    """§V.20, §V.46: the run's terminal status is read off `ok`, so every branch has to set it.
+    """The run's terminal status is read off `ok`, so every branch has to set it.
 
-    The unavailable branch is deliberately `COMPLETED` — the change happened; only the
-    confirmation did not — which is the whole of §V.62's distinction expressed in the audit row.
+    The unavailable branch is deliberately `COMPLETED` — the change happened; only the confirmation
+    did not — the whole of write-and-apply-reported-separately expressed in the audit row.
     """
     fixture, _ = nic_context(vm=FakeProxmoxNICVM(**vm_kwargs))
 
@@ -525,11 +526,12 @@ async def test_the_runner_map_covers_this_tool_and_nothing_else() -> None:
 
 
 async def test_the_reason_is_on_the_request_and_the_runner_simply_does_not_read_it() -> None:
-    """§V.43's permission is unused here, which is a fact about this runner rather than the gate.
+    """The one reason field's permission is unused here, which is a fact about this runner rather
+    than the gate.
 
     Stated as a test because the alternative is a comment: the executor puts the operator's words
     on every `ChangeExecutionRequest`, and a future edit that started reading them would
-    open §V.96's return paths on a tool that has none today.
+    open a path back to a model on a tool that has none today.
     """
     fixture, _ = nic_context()
     request = execution_request(server_id=server_id(fixture), reason=REASON)

@@ -20,7 +20,7 @@ import type {
 // trail — `/admin/action-requests`, its detail and its receipt — which are the
 // addresses the ported panel once called before they existed. They answered 404
 // on every load then and were deleted rather than stubbed; they are back because
-// §I.admin-api now names them, which is the only thing that ever made them
+// the admin API's contract now names them, which is the only thing that ever made them
 // legitimate. Every one is a GET: the trail's writers are the approval gate, the
 // decision path and the executor, and the service behind these routes has no way
 // to write at all.

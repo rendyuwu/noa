@@ -1,7 +1,7 @@
 """Imunify360 `ip-list` response parsing.
 
-New — `noa-old` shipped `imunify.py` without a parser test on branch `MCP`. It is the second
-of V57's two backends, so its verdict carries the same weight as CSF's, and every guard in the
+New — `noa-old` shipped `imunify.py` without a parser test on branch `MCP`. It is the second of the
+two firewall backends, so its verdict carries the same weight as CSF's, and every guard in the
 module is a place a malformed row could otherwise become a wrong answer about whether an IP is
 blocked.
 
@@ -63,7 +63,7 @@ def test_drop_beats_white_when_the_ip_is_in_both_lists() -> None:
 
 
 def test_a_white_entry_is_reported_even_when_a_drop_outranks_it() -> None:
-    """T26, and CSF's `allow_entry` one backend over.
+    """For the allowlist-remove tool, and CSF's `allow_entry` one backend over.
 
     The precedence above discards exactly the fact an allowlist removal's postflight asks for,
     so it is carried beside the verdict rather than inferred from it: read off the verdict, a
@@ -103,7 +103,7 @@ def test_absent_ip_reports_not_found_rather_than_whitelisted() -> None:
 
 
 def test_missing_or_malformed_payload_degrades_to_not_found() -> None:
-    """One bad row must ⊥ turn a dual-backend preflight into an error."""
+    """One bad row must never turn a dual-backend preflight into an error."""
     payload = {
         "items": [
             "not-a-dict",
@@ -166,7 +166,7 @@ def test_entry_serialises_for_receipts_and_audit() -> None:
 
 
 def test_matches_render_as_csf_shaped_evidence_lines() -> None:
-    """A dual-backend preflight shows one list, ⊥ two stitched-together shapes."""
+    """A dual-backend preflight shows one list, never two stitched-together shapes."""
     result = parse_imunify_ip_list_response(
         {"items": [_item(purpose="drop", comment="brute force", expiration=1775225644)]},
         TARGET,
@@ -178,7 +178,7 @@ def test_matches_render_as_csf_shaped_evidence_lines() -> None:
 
 
 def test_the_comment_is_the_last_field_on_the_line() -> None:
-    """T25, §V.96: the one field whose text NOA may have written goes last.
+    """The one field whose text NOA may have written goes last.
 
     The surface that answers a model cuts NOA's own comment out of an evidence line, and csf
     gives a comment no closing boundary — so the cut runs to the end of the line

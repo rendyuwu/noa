@@ -65,7 +65,7 @@ carries the full rationale, the re-open triggers, and the tests that hold them.
   module, removed in 3.13, at import time.
 - `uv` for Python dependency management.
 - Node.js **22** and `pnpm` for the two web apps. `engines.node` allows 20 and the built apps run
-  there, but the pinned pnpm 11.x needs `>=22.13` and `pnpm install` fails outright on 20 (§T.60).
+  there, but the pinned pnpm 11.x needs `>=22.13` and `pnpm install` fails outright on 20.
 - Postgres 16.
 
 ## Setup
@@ -99,7 +99,7 @@ docker compose --profile apps up -d    # Postgres, migrations, all three apps
 
 `docs/deployment.md` is the reference: images and contexts, which settings are baked at build time
 versus read at runtime, the one-registrable-parent domain layout the session cookie requires
-(`*.noa.internal` in development, `*.simondayce.my.id` deployed — V40), why the
+(`*.noa.internal` in development, `*.simondayce.my.id` deployed), why the
 API runs as a single replica, and why there is no readiness probe. Two things to know before a
 first build — the admin panel image only builds inside the Biznet Gio network (`@gio/*` is on an
 internal-only registry), and the embed image takes `NOA_LIBRECHAT_ORIGIN` as a **build argument**,
@@ -120,8 +120,8 @@ Per web app: `pnpm lint`, `pnpm typecheck`, `pnpm test`, and `pnpm test:e2e` whe
 exists (`apps/web-embed` boots its own dev server, a stub upstream for the proxy and card specs, and
 a parent page that frames the card the way LibreChat does; run `pnpm exec playwright install
 chromium` once). `apps/admin-web` has no browser lane yet; its `pnpm test:server` boots a dev server
-on a free port and reads real responses off the wire — the framing header (§T.49) and the `/api/*`
-proxy hop against a recording stub upstream (§T.50) — separate from `pnpm test` because it costs
+on a free port and reads real responses off the wire — the framing header and the `/api/*`
+proxy hop against a recording stub upstream — separate from `pnpm test` because it costs
 minutes.
 
 ## Conventions
@@ -133,7 +133,7 @@ minutes.
 - `NOA_SECRET_ENCRYPTION_KEY` encrypts server credentials, not the database. The name says so on
   purpose.
 - `NOA_EMBED_BASE_URL` and `NOA_API_URL` are required outside development: their `localhost`
-  defaults are refused at startup (§V.95). Both are addresses handed onward — the approval URL to
+  defaults are refused at startup. Both are addresses handed onward — the approval URL to
   an operator, the proxy target to a web app — and unlike a missing secret, a wrong address raises
   nothing at first use. It just resolves nowhere.
 
@@ -146,11 +146,11 @@ Proxmox, PMG, `remote_exec`, `secrets`) get copied rather than rewritten; SSH ba
 
 Host-key pinning and TOFU refresh are **not**, despite what this section used to say. Upstream
 passes `known_hosts=None`, which is asyncssh's documented off switch, so the port inherited a pin
-that accepted any host key until it was fixed here (§B.2, §V.82). Upstream provenance is not
+that accepted any host key until it was fixed here. Upstream provenance is not
 evidence that a control works: a ported security control needs a test against the real mechanism
 before any doc calls it hardened.
 
-The same rule caught the *refresh* half at §T.54. Upstream's WHM validate captured whatever key
+The same rule caught the *refresh* half in the admin validate route. Upstream's WHM validate captured whatever key
 answered and overwrote the stored pin on every run, which makes the pin worth nothing — any admin
 pressing Validate silently re-trusted whatever was on the other end of the address. NOA pins
 **once**: a row with no fingerprint gets one captured and stored only if the probe that follows it

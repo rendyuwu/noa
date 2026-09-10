@@ -1,4 +1,4 @@
-"""The fifteen admin server routes, over the real services (T54, I.admin-api).
+"""The fifteen admin server routes, over the real services.
 
 `support/admin.py`'s harness mounts all three routers with `require_admin`,
 `require_session_user`, the real `JWTService`, the real CRUD services, the real `SecretCipher`
@@ -8,7 +8,7 @@ shipped 403, a 422 is the shipped 422, and encrypt-on-write really runs.
 What this file owns, and what it deliberately does not:
 
 - **owns** the HTTP surface: the admin gate on every route, the absence of every secret
-  from every response, the refusals V21's field rules produce, the shared error
+  from every response, the refusals the field rules produce, the shared error
   envelope, and the audit event per mutation.
 - **does not own** the trust-on-first-use rule. `POST …/validate` here goes through a stub
   (`support.server_admin.RecordingValidationService`), because when a pin is written is a
@@ -16,7 +16,7 @@ What this file owns, and what it deliberately does not:
   real `asyncssh` server, and `test_server_admin_service.py` asserts the branch structure and
   the validate audit event over the real services.
 - **does not own** the commit boundary. Only a second database session can see the difference
-  between flushed and committed (`test_server_admin_repository.py`, V100(c)).
+  between flushed and committed (`test_server_admin_repository.py`).
 
 The secret literals below are the point of several tests: they are sent in request bodies and
 then hunted in every response byte. A row built with no secrets could not fail a "no secrets
@@ -135,11 +135,11 @@ ROUTE_TABLE: tuple[tuple[str, str], ...] = tuple(
 )
 
 
-# --- V13: every route is admin-only ---
+# --- Every route is admin-only ---
 
 
 def test_every_server_route_is_admin_only(harness: AdminHarness) -> None:
-    """V13: fifteen routes, fifteen 403s for an operator holding no `admin` role.
+    """Fifteen routes, fifteen 403s for an operator holding no `admin` role.
 
     Walked from `ROUTE_TABLE` rather than listed, so a sixteenth route added later without
     `AdminUserDep` fails here instead of shipping open. The count is asserted too — a table
@@ -158,7 +158,7 @@ def test_every_server_route_is_admin_only(harness: AdminHarness) -> None:
 
 
 def test_a_demoted_admin_loses_the_routes_on_the_next_request() -> None:
-    """V6 through V13: the role is read from the row per request, never from the cookie.
+    """The role is read from the row per request, never from the cookie.
 
     The same claim `test_admin_user_routes.py` makes about its own surface, asserted again here
     because `require_admin` is a per-handler parameter on these fifteen: a router that acquired
@@ -176,7 +176,7 @@ def test_a_demoted_admin_loses_the_routes_on_the_next_request() -> None:
     assert response.json()["error_code"] == "admin_access_required"
 
 
-# --- V2, V8: no response carries a secret ---
+# --- No response carries a secret ---
 
 
 def _all_response_bytes(harness: AdminHarness) -> str:
@@ -236,10 +236,10 @@ def _all_response_bytes(harness: AdminHarness) -> str:
 def test_no_response_on_any_of_the_fifteen_routes_carries_a_secret_literal(
     harness: AdminHarness,
 ) -> None:
-    """V2, V8: what goes in a request body never comes back out.
+    """What goes in a request body never comes back out.
 
     Asserted on the serialized bytes, not on a key set: a field dropped from the model but
-    reachable through a nested dict would pass a key comparison and fail here (V87's shape).
+    reachable through a nested dict would pass a key comparison and fail here.
     """
     body = _all_response_bytes(harness)
 
@@ -251,7 +251,7 @@ def test_no_response_on_any_of_the_fifteen_routes_carries_a_secret_literal(
 
 
 def test_a_created_row_reports_credentials_as_presence_booleans(harness: AdminHarness) -> None:
-    """V2: the panel needs "is something stored", which is all it gets."""
+    """The panel needs "is something stored", which is all it gets."""
     server = harness.create_server(WHM_SERVERS_PATH, whm_create_body("booleans"))
 
     assert server["has_api_token"] is True
@@ -264,7 +264,7 @@ def test_a_created_row_reports_credentials_as_presence_booleans(harness: AdminHa
 
 
 def test_secrets_reach_the_row_encrypted(harness: AdminHarness) -> None:
-    """C7, V48: the service encrypts before the repository sees the value.
+    """The service encrypts before the repository sees the value.
 
     Over the fake repository, so this is about *what the service passed down*, not about SQL —
     `test_server_admin_repository.py` asserts the stored column against Postgres.
@@ -284,7 +284,7 @@ def test_secrets_reach_the_row_encrypted(harness: AdminHarness) -> None:
     assert pinned.ssh_host_key_fingerprint == FINGERPRINT
 
 
-# --- V21: the field rules ---
+# --- The field rules ---
 
 
 @pytest.mark.parametrize(
@@ -312,7 +312,7 @@ def test_secrets_reach_the_row_encrypted(harness: AdminHarness) -> None:
 def test_malformed_identity_fields_are_refused_before_any_write(
     harness: AdminHarness, path: str, body: dict[str, Any]
 ) -> None:
-    """V21: whitespace-only and malformed identity fields are 422, and nothing is stored.
+    """Whitespace-only and malformed identity fields are 422, and nothing is stored.
 
     The "nothing stored" half matters as much as the status: a validator that ran after the
     insert would answer 422 over a row that exists.
@@ -336,7 +336,7 @@ def test_malformed_identity_fields_are_refused_before_any_write(
 
 
 def test_a_422_body_never_echoes_the_submitted_value(harness: AdminHarness) -> None:
-    """V8: pydantic's `input` carries the failing value, and these bodies carry credentials."""
+    """Pydantic's `input` carries the failing value, and these bodies carry credentials."""
     response = harness.client.post(
         WHM_SERVERS_PATH, json=whm_create_body(api_username="root!", api_token=API_TOKEN)
     )
@@ -359,7 +359,7 @@ def test_a_base_url_is_normalized_before_it_is_stored(harness: AdminHarness) -> 
 
 
 def test_server_not_found_carries_the_shared_envelope(harness: AdminHarness) -> None:
-    """V73: `request_id` in the body and the same value in `x-request-id`, on every vertical."""
+    """`request_id` in the body and the same value in `x-request-id`, on every vertical."""
     absent = uuid4()
 
     for path, code in (
@@ -420,7 +420,7 @@ def test_a_rename_may_keep_its_own_name(harness: AdminHarness) -> None:
 
 
 def test_a_reseller_row_not_named_after_its_api_username_is_409(harness: AdminHarness) -> None:
-    """T77's refusal on the wire: 409 `whm_reseller_credential_name_mismatch` (V109(b)).
+    """The reseller-flag refusal on the wire: 409 `whm_reseller_credential_name_mismatch`.
 
     Both shapes the form can send it in — the create, and the PATCH that carries nothing but
     the checkbox — because the second is the one a body-only check would let through.
@@ -476,8 +476,8 @@ def test_a_reseller_row_named_after_its_api_username_round_trips(harness: AdminH
 def test_a_create_that_omits_the_reseller_flag_stores_a_root_row(harness: AdminHarness) -> None:
     """The field is defaulted, not required: the ported form's existing payload still saves.
 
-    `false` rows are unbound by V109(b), which is why this body's `api_username` may differ
-    from its name — sixteen root credentials cannot all be named `root`.
+    `false` rows are unbound by the name == `api_username` rule, which is why this body's
+    `api_username` may differ from its name — sixteen root credentials cannot all be named `root`.
     """
     created = harness.create_server(WHM_SERVERS_PATH, whm_create_body("plain-root"))
 
@@ -485,7 +485,7 @@ def test_a_create_that_omits_the_reseller_flag_stores_a_root_row(harness: AdminH
 
 
 def test_every_server_inventory_error_is_mapped_explicitly() -> None:
-    """V73: no inventory refusal may reach the 503 *fallback*, which means "unclassified"."""
+    """No inventory refusal may reach the 503 *fallback*, which means "unclassified"."""
     from core.servers.errors import ServerInventoryError
 
     def subclasses(klass: type[ServerInventoryError]) -> set[type[ServerInventoryError]]:
@@ -537,7 +537,7 @@ def test_clear_ssh_configuration_empties_the_whole_block_including_the_pin(
 
 
 def test_moving_the_host_drops_the_stored_pin(harness: AdminHarness) -> None:
-    """V82: a pin belongs to one `(host, port)` pair, so moving either invalidates it.
+    """A pin belongs to one `(host, port)` pair, so moving either invalidates it.
 
     Both directions in one test because the pair is one fact: `base_url` for WHM, and the port
     on its own.
@@ -568,9 +568,8 @@ def test_moving_the_host_drops_the_stored_pin(harness: AdminHarness) -> None:
 def test_a_pmg_patch_may_pin_a_new_key_while_moving_the_host(harness: AdminHarness) -> None:
     """An explicit fingerprint in the same patch wins over the invalidation rule.
 
-    PMG's form offers the field, so an operator who moved a node and pasted its new key in one
-    save meant both — and a rule that cleared it anyway would silently discard the value they
-    typed.
+    PMG's form offers the field, so an operator who moved a node and pasted its new key in one save
+    meant both — and a rule that cleared it anyway would silently discard the value they typed.
     """
     existing = harness.pmg_servers.servers[0]
     other = "SHA256:AAAAC3NzaC1lZDI1NTE5AAAAIAnotherHostKeyDigest"
@@ -614,11 +613,11 @@ def test_clearing_the_pin_is_how_an_operator_asks_for_a_recapture(harness: Admin
     assert response.json()["server"]["has_ssh_password"] is True
 
 
-# --- V14: the audit trail ---
+# --- The audit trail ---
 
 
 def test_every_mutation_records_one_audit_event(harness: AdminHarness) -> None:
-    """V14, and the *order* matters: the event precedes the commit (V100(a))."""
+    """Admin changes audited, and the *order* matters: the event precedes the commit."""
     created = harness.create_server(WHM_SERVERS_PATH, whm_create_body("audited"))
     server_id = created["id"]
 
@@ -640,7 +639,7 @@ def test_every_mutation_records_one_audit_event(harness: AdminHarness) -> None:
 
 
 def test_a_refused_write_records_no_event_and_no_commit(harness: AdminHarness) -> None:
-    """V100(a): the guards raise before the commit, so a refusal persists nothing."""
+    """The guards raise before the commit, so a refusal persists nothing."""
     response = harness.client.post(WHM_SERVERS_PATH, json=whm_create_body("existing-whm"))
 
     assert response.status_code == 409
@@ -649,7 +648,7 @@ def test_a_refused_write_records_no_event_and_no_commit(harness: AdminHarness) -
 
 
 def test_an_audit_event_carries_no_credential(harness: AdminHarness) -> None:
-    """V8: the trail records shape — hosts, ports, presence booleans — never material."""
+    """The trail records shape — hosts, ports, presence booleans — never material."""
     harness.create_server(WHM_SERVERS_PATH, whm_create_body("audited-secrets"))
 
     event = harness.audit.events[0]
@@ -709,17 +708,17 @@ def test_validate_on_an_absent_row_is_404(harness: AdminHarness) -> None:
     assert response.json()["error_code"] == "proxmox_server_not_found"
 
 
-# --- V87: the clock-stamped fields ---
+# --- The clock-stamped fields ---
 
 
 def test_create_response_shape_ignores_timestamps_but_still_separates(
     harness: AdminHarness,
 ) -> None:
-    """V87: `created_at`/`updated_at` are asserted by property, and the compare still works.
+    """`created_at`/`updated_at` are asserted by property, and the compare still works.
 
     Two rows created from bodies that differ in one field must compare unequal once the
     timestamps are dropped — otherwise a field-dropping comparator has quietly become a
-    tautology (V87's second clause, B4's shape).
+    tautology (a compare that eats a clock-stamped byte).
     """
     first = harness.create_server(WHM_SERVERS_PATH, whm_create_body("stamped-a"))
     second = harness.create_server(

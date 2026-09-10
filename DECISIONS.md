@@ -3,42 +3,41 @@
 **Status:** design decisions from the 2026-08-04 discussion. Input for `SPEC.md`, not a spec itself.
 **Date:** 2026-08-04
 **Amended:** 2026-08-04 — three factual corrections applied after a fact-check pass against the old
-repo and upstream sources. See the inline correction blocks in §2, §7.1, §7.2, plus the resolved
-spike in §7.3. `SPEC.md` now exists and supersedes this file where they disagree.
+repo and upstream sources. See the inline correction blocks in sections 2, 7.1, 7.2, plus the
+resolved spike in section 7.3. `SPEC.md` now exists and supersedes this file where they disagree.
 
-**Becomes:** `SPEC.md` (per `FORMAT.md`) — **written 2026-08-04.** Live at repo root, C1–C24 /
-V1–V78 / T1–T70. This file is now historical input, ⊥ the working document. Amend `SPEC.md`, not
-this.
+**Becomes:** `SPEC.md` (per `FORMAT.md`) — **written 2026-08-04.** Live at repo root. This file is
+now historical input, not the working document. Amend `SPEC.md`, not this.
 
 Every question raised in this session is answered. Nothing is marked OPEN. Two items are
-deliberately deferred rather than open: phasing (§8.7, owner-owned) and LibreChat Mongo retention
-(§8.6, a go-live gate, not a build blocker). One item needs re-verification against upstream before
-it is relied on: §10.2 — tracked as `SPEC.md` **T59**.
+deliberately deferred rather than open: phasing (section 8.7, owner-owned) and LibreChat Mongo
+retention (section 8.6, a go-live gate, not a build blocker). One item needs re-verification against
+upstream before it is relied on: section 10.2 — tracked as the render-path gate.
 
-> **Resolved 2026-08-08 — T59 PASSED.** The re-verification ran live against LibreChat pin
+> **Resolved 2026-08-08 — render-path gate PASSED.** The re-verification ran live against LibreChat pin
 > `45cc53c4`: a NOA-served `text/uri-list` UI resource renders in an iframe on NOA's origin and
 > the session cookie rides into it, so the approval POST works from the frame. Verdict and
 > numbers: `docs/spikes/librechat-embed-render-gate.md`; harness:
-> `spikes/librechat-embed-render-gate/`. §7.2's warning is **not** refuted and still holds as a
+> `spikes/librechat-embed-render-gate/`. Section 7.2's warning is **not** refuted and still holds as a
 > *future* risk — MCP Apps is stable and excludes `text/uri-list`, and PR #13831 remains out of
-> tree at that pin. What changed is the timeframe: the path works today, and `C21` binds the
-> re-verification to every LibreChat bump rather than to a reading of the spec.
+> tree at that pin. What changed is the timeframe: the path works today, and re-verification now
+> binds to every LibreChat bump rather than to a reading of the spec.
 
 **Corrected 2026-08-04 — what this file got wrong:**
 
-| § | Was | Actually |
+| Section | Was | Actually |
 |---|---|---|
-| §2 | LOC table unlabelled | Measured on `staging`; §8.5 ports from `MCP`, where `core/secrets` is 290 not 136 and the yopass files exist at all |
-| §7.1 | Precedence chain + "unmatched → `ask`" verified in `policy.ts` | That file has no rule chain and no `dontAsk`; claim unverified, and moot per §7.3 |
-| §7.2 | MCP Apps has no stability label, no namespaced ID, SEP-1865 uncited | Stable (2026-01-26), id `io.modelcontextprotocol/ui`, SEP-1865 cited |
-| §7.3 | Spike needed: does unconfigured `toolApproval` still gate? | Resolved — `isHITLEnabled` is `policy?.enabled === true`; fully off. Spike closed |
+| 2 | LOC table unlabelled | Measured on `staging`; section 8.5 ports from `MCP`, where `core/secrets` is 290 not 136 and the yopass files exist at all |
+| 7.1 | Precedence chain + "unmatched → `ask`" verified in `policy.ts` | That file has no rule chain and no `dontAsk`; claim unverified, and moot per section 7.3 |
+| 7.2 | MCP Apps has no stability label, no namespaced ID, SEP-1865 uncited | Stable (2026-01-26), id `io.modelcontextprotocol/ui`, SEP-1865 cited |
+| 7.3 | Spike needed: does unconfigured `toolApproval` still gate? | Resolved — `isHITLEnabled` is `policy?.enabled === true`; fully off. Spike closed |
 
-§6.8's arithmetic (`14 − 3 − 1 − 1 = 9`) was **checked and is correct** — recounted against the live
+Section 6.8's arithmetic (`14 − 3 − 1 − 1 = 9`) was **checked and is correct** — recounted against the live
 registry: 9 retained CHANGE tools. An earlier review pass called this a miscount; that review was
 wrong, and the line stands unchanged.
 
 Owner actions outstanding, not agent tasks: rename this repo to `noa` and the old one to `noa-old`
-(§5).
+(section 5).
 
 ---
 
@@ -86,7 +85,7 @@ Note the top two: one workflow (pool move) plus its preflight burns ~4k chars of
 Codebase split in the old repo (LOC, non-test).
 
 > **Branch caveat (added 2026-08-04, verified).** The figures below were measured on branch
-> **`staging`**. The port instructions in §8.5 target branch **`MCP`**, where several of these
+> **`staging`**. The port instructions in section 8.5 target branch **`MCP`**, where several of these
 > directories differ. Read LOC from the column matching the branch you are actually copying from.
 > `MCP` and `main` agree on every figure.
 
@@ -109,11 +108,11 @@ Codebase split in the old repo (LOC, non-test).
 | `core/secrets/` | 136 | **290** |
 
 `core/secrets/` is the load-bearing row. On `staging` it holds only `crypto.py` + `redaction.py`.
-`yopass.py`, `password.py`, and `docs/integrations/yopass.md` — the exact files §8.5 instructs the
+`yopass.py`, `password.py`, and `docs/integrations/yopass.md` — the exact files section 8.5 instructs the
 agent to port — **exist only on `MCP`/`main`**. An agent porting from the branch this table was
 measured on would find nothing to copy.
 
-Shared between admin and MCP (the number that decided §4):
+Shared between admin and MCP (the number that decided section 4):
 
 | Component | `staging` | `MCP` |
 |---|---|---|
@@ -126,7 +125,7 @@ Shared between admin and MCP (the number that decided §4):
 | `core/secrets/` | 136 | 290 |
 | **Total** | **~5,348** | **~5,538** |
 
-Either total supports §4's conclusion — the argument never turned on the exact figure.
+Either total supports section 4's conclusion — the argument never turned on the exact figure.
 
 ---
 
@@ -165,10 +164,10 @@ protocol change across 8 sites. In the old SPEC that is tasks T143 / T144 / T145
 T160 — the largest single block of P2.
 
 If preflight runs **inside** the same CHANGE call: evidence is born in-process, lives for
-milliseconds, belongs to the same user, and never enters a transcript. The old V164 rule
+milliseconds, belongs to the same user, and never enters a transcript. The old rule
 ("evidence must never come from LLM args or transcript") is then satisfied *structurally* rather
 than by a gate. `conversation_ref` demotes to an audit/grouping label instead of a security
-control. The old V165 fail-closed rule stops being necessary.
+control. The old fail-closed rule stops being necessary.
 
 Result: cheaper in context, safer, and materially less code.
 
@@ -184,13 +183,13 @@ has to be designed in from the start, not patched on later.
 
 ### 3.4 Target size
 
-Superseded by §6, which is owner-confirmed rather than estimated. Kept only for the shape of the
+Superseded by section 6, which is owner-confirmed rather than estimated. Kept only for the shape of the
 reasoning: preflight tools go internal, `validate_server` moves to admin, `update_workflow_todo`
-goes internal (old V169 already made todos plain text in the tool result), and CHANGE tools
+goes internal (todos were already plain text in the tool result), and CHANGE tools
 collapse into workflow families.
 
-The pre-list estimate was `39 → ~14`. The measured figure is **39 → 16 exposed** (§6.8), or 11 if
-enum collapsing (§9) is adopted. Use §6.8, not this number.
+The pre-list estimate was `39 → ~14`. The measured figure is **39 → 16 exposed** (section 6.8), or
+11 if enum collapsing (section 9) is adopted. Use section 6.8, not this number.
 
 ---
 
@@ -210,7 +209,7 @@ already proved (`apps/api` + `apps/web`, one repo, two images, shipped to stagin
 
 ### 4.1 Reasoning
 
-1. **~5,348 LOC is genuinely shared** (§2) with no clean cut line. Admin is not merely DB CRUD:
+1. **~5,348 LOC is genuinely shared** (section 2) with no clean cut line. Admin is not merely DB CRUD:
    `api/whm_admin/service.py` imports `whm.integrations.ssh` and `core.remote_exec.ssh` because
    validating a server means SSH connect, capture fingerprint, TOFU refresh.
    `api/pmg_admin/service.py` imports `pmg.integrations.pmgsh_cli`. The integration layer is
@@ -256,23 +255,23 @@ and accept the versioning cost knowingly.
 |---|---|---|
 | New repo | `~/noa/noa-mcp` → **renamed to `noa`** | Active work. Owner performs the rename. |
 | Old repo | `~/noa/noa` → **renamed to `noa-old`** | Reference / model. Abandoned after the port. Owner performs the rename. |
-| `noa-admin` | folded into this repo per §4 | No longer a separate repo. |
+| `noa-admin` | folded into this repo per section 4 | No longer a separate repo. |
 
 **Repo name DECIDED (owner, 2026-08-04): `noa`.** The old repo becomes `noa-old`. This repo is the
-real NOA going forward, which also settles §4's naming concern — `noa` covers all three apps.
+real NOA going forward, which also settles section 4's naming concern — `noa` covers all three apps.
 
 > Rename is the owner's task, not an agent action. Until it happens, paths in this file still read
 > `noa-mcp` (new) and `noa` (old). Re-read this table after the rename.
 
 **Landmine to remember:** the old repo's checked-out branch is `staging`, and its `SPEC.md`
 contains **no MCP/LibreChat material**. That work lives on branch **`MCP`** (top commits
-`6912ae4` → `6cc2cff` → `6e2fc52`), which carries C17, C18, invariants V138–V180, and tasks
-T98–T171. Branch `MCP` is spec-only: no MCP dependency in `pyproject.toml`, no `apps/web-embed`.
+`6912ae4` → `6cc2cff` → `6e2fc52`), which carries the old repo's constraints C17 and C18, its
+invariants V138–V180, and its tasks T98–T171. Branch `MCP` is spec-only: no MCP dependency in `pyproject.toml`, no `apps/web-embed`.
 Nothing was ever implemented. Read `git show MCP:SPEC.md`, not the working tree.
 
 Research backing it, all untracked in `~/noa/noa/tmp/`:
 
-- `librechat-embed-approval-design.md` — the design C17 cites normatively
+- `librechat-embed-approval-design.md` — the design behind embed-on-NOA-origin
 - `lobechat-vs-noa-research.md` — comparison, twice revised
 - `lobechat.md` — superseded, proven wrong (LobeChat's plugin renderer no longer exists)
 
@@ -287,15 +286,15 @@ Owner supplied the in-use list; every one of the 39 registry tools is now classi
 | # | Need | Old tools folded in |
 |---|---|---|
 | 1 | Suspend / unsuspend WHM account | `whm_suspend_account`, `whm_unsuspend_account`, `whm_preflight_account` |
-| 2 | List WHM accounts | `whm_list_accounts` — needs the large-output fix, §6.7 |
+| 2 | List WHM accounts | `whm_list_accounts` — needs the large-output fix, section 6.7 |
 | 3 | Search WHM accounts | `whm_search_accounts` — stays exposed |
-| 4 | Check IP firewall status (CSF **and** Imunify) | `whm_preflight_firewall_entries` — **exposed** (owner-confirmed), step 1 of the real flow (§6.5) |
-| 5 | Release IP from deny **and** add to allow, one action | `whm_firewall_unblock` + `whm_firewall_allowlist_add_ttl` → **merged into one tool** (§6.5) |
+| 4 | Check IP firewall status (CSF **and** Imunify) | `whm_preflight_firewall_entries` — **exposed** (owner-confirmed), step 1 of the real flow (section 6.5) |
+| 5 | Release IP from deny **and** add to allow, one action | `whm_firewall_unblock` + `whm_firewall_allowlist_add_ttl` → **merged into one tool** (section 6.5) |
 | 6 | Remove IP from allowlist (undo) | `whm_firewall_allowlist_remove` |
 | 7 | Reset Proxmox VM password | `proxmox_reset_vm_cloudinit_password` + its preflight |
 | 8 | Enable / disable Proxmox VM NIC | `proxmox_enable_vm_nic`, `proxmox_disable_vm_nic` + preflight |
 | 9 | PMG whitelist add / remove | `pmg_whitelist_add`, `pmg_whitelist_remove`, `pmg_whitelist_search`, `pmg_whitelist_list` |
-| 10 | Server discovery | `whm_list_servers` — **exposed** (§6.6) |
+| 10 | Server discovery | `whm_list_servers` — **exposed** (section 6.6) |
 
 Dual-backend CSF+Imunify already works today — verified in
 `whm/tools/firewall_tools/__init__.py`: each tool checks `available["csf"]` and
@@ -311,25 +310,25 @@ Owner: **not approved by management**, so these are a boundary to preserve, not 
 Re-adding any of them is a policy decision, not a technical one.
 
 - `whm_change_contact_email`
-- `whm_change_primary_domain` — note the sunk cost: T45/T46 removed DNS-zone verification and
+- `whm_change_primary_domain` — note the sunk cost: earlier work removed DNS-zone verification and
   dropped the `cpanel-api` ACL dependency for security. That work dies with the tool.
 - `proxmox_move_vms_between_pools` ("Change Email PIC") — heaviest schema (1,995 ch), most-fixed
   workflow. Its preflight and `proxmox_get_user_by_email` die with it.
 - `whm_check_binary_exists` — build-time test tool, never real usage.
 - `whm_firewall_denylist_add_ttl` — **owner reversed course 2026-08-04**: manually adding an IP to
   the denylist is not part of the workflow. CSF and Imunify already auto-deny spam sources. The
-  real job is the *opposite* direction — releasing a wrongly-blocked IP. See §6.5.
+  real job is the *opposite* direction — releasing a wrongly-blocked IP. See section 6.5.
 
 ### 6.3 Demoted to internal functions — not exposed as tools
 
 Still needed in-process; simply not in `tools/list`.
 
 - `whm_list_servers`, `proxmox_list_servers`, `pmg_list_servers` — server resolution stays
-  internal. **Exception: `whm_list_servers` stays exposed — see §6.6.**
+  internal. **Exception: `whm_list_servers` stays exposed — see section 6.6.**
 - `proxmox_get_vm_status_current`, `proxmox_get_vm_config`, `proxmox_get_vm_pending` — a separate
   Telegram bot already covers operator-facing VM status. Keep the code as internal preflight input.
-- All `*_preflight_*` tools — per §3, they run inside their workflow.
-- `update_workflow_todo` — internal (old V169: todos are plain text in the tool result).
+- All `*_preflight_*` tools — per section 3, they run inside their workflow.
+- `update_workflow_todo` — internal (todos are plain text in the tool result).
 - `get_current_time`, `get_current_date` — the model and LibreChat already know the time.
 - `whm_validate_server`, `proxmox_validate_server`, `pmg_validate_server` — admin-panel concern,
   not MCP.
@@ -367,7 +366,7 @@ Consequences:
 
 - **`whm_preflight_firewall_entries` is exposed**, not internal (owner-confirmed 2026-08-04). It is
   step 1 — an operator decision point, not a gate. The operator reads the verdict and decides
-  whether to release. This is the one preflight that is genuinely operator-facing, so §3's
+  whether to release. This is the one preflight that is genuinely operator-facing, so section 3's
   "preflight goes internal" rule does not apply to it.
 - **DECIDED: steps 2 and 3 merge into one CHANGE tool** — `whm_firewall_release_and_allow(target,
   reason)` (owner-confirmed 2026-08-04). They are almost always run together, so one approval
@@ -379,8 +378,8 @@ Consequences:
   two-part receipt: before-state = block reason + log evidence, after-state = released **and**
   allowlisted, each verified separately. Do not collapse the two outcomes into a single "done".
 
-  Old V75 still applies to the before-state: show only the `csf.deny`/`csf.allow` log line, never a
-  raw iptables table dump.
+  The old presentation rule still applies to the before-state: show only the `csf.deny`/`csf.allow`
+  log line, never a raw iptables table dump.
 - Keep `whm_firewall_allowlist_remove` separate — it is the undo path, run on its own.
 
 ### 6.6 RESOLVED — `whm_list_servers` stays exposed
@@ -389,10 +388,10 @@ servers exist. Option (b) from the previous draft.
 
 Only `whm_list_servers` is exposed. `proxmox_list_servers` and `pmg_list_servers` stay internal —
 Proxmox and PMG servers are few and named directly by the operator, and a Telegram bot already
-covers Proxmox status (§6.3). Revisit if that proves wrong in use.
+covers Proxmox status (section 6.3). Revisit if that proves wrong in use.
 
 `resolve_*_server_ref` still handles UUID / name / hostname and returns a `choices` list on
-ambiguity (verified in `whm/server_ref.py`), so §3.3's structured-ambiguity rule still applies
+ambiguity (verified in `whm/server_ref.py`), so section 3.3's structured-ambiguity rule still applies
 underneath.
 
 ### 6.7 DECIDED — large account lists render as a UI resource (option A)
@@ -401,15 +400,15 @@ underneath.
 account into LLM context. On a dense server that is thousands of rows.
 
 **Decision: UI resource.** A NOA-origin page renders the full table in the iframe; the tool result
-carries a short summary plus the resource. Zero token cost for the table body. The old `I.mcp`
-already anticipated this ("READ → text (+ optional UI resource for large tables)"), and the iframe
+carries a short summary plus the resource. Zero token cost for the table body. The old MCP server
+contract already anticipated this ("READ → text (+ optional UI resource for large tables)"), and the iframe
 infrastructure is mandatory anyway for the approval card, so this adds no new component.
 
 CSV-to-S3 was **considered and set aside**, not rejected on merit: it answers "save for offline
 work", not "look at it now". If a real export need appears later, two costs must be faced then —
 account inventory leaving for object storage is a data-governance decision of the same class as
 old T123 (Mongo retention), and a presigned URL must not land in tool-result text, because anyone
-who can read the LibreChat transcript could fetch it (same reasoning as old V144). It would have
+who can read the LibreChat transcript could fetch it (same reasoning as the id-only embed URL). It would have
 to travel through the iframe.
 
 `whm_search_accounts` already has `limit` 1–100, so filtered lookup is covered today.
@@ -429,12 +428,13 @@ NIC enable, NIC disable, PMG whitelist add, PMG whitelist remove.
 READ (6): list accounts, search accounts, firewall status check, PMG whitelist list, PMG whitelist
 search, list WHM servers.
 
-Arithmetic: 14 CHANGE today − 3 unpermitted (§6.2) − 1 denylist-add (§6.5) − 1 merged (§6.5) = 9.
+Arithmetic: 14 CHANGE today − 3 unpermitted (section 6.2) − 1 denylist-add (section 6.5) − 1 merged
+(section 6.5) = 9.
 
-With the remaining §9 enum merges (NIC and PMG only): **13 tools, ~16,035 ch (~4,008 tok), 66%.**
+With the remaining section 9 enum merges (NIC and PMG only): **13 tools, ~16,035 ch (~4,008 tok), 66%.**
 
 > Earlier drafts said "~13 exposed" (miscount), then 16. This figure reflects the final
-> owner-confirmed set including the §6.5 merge.
+> owner-confirmed set including the section 6.5 merge.
 
 ### 6.9 #3 "Get account details" — deferred by owner
 
@@ -452,7 +452,7 @@ and the spec release post, not from memory.
 
 ### 7.1 CHANGED — LibreChat now has server-side tool approval (HITL). It shipped.
 
-Old claim (research §8 matrix, old SPEC V141): *"LibreChat has no approval gate — PR #13304 open,
+Old claim (research section 8 matrix, old SPEC): *"LibreChat has no approval gate — PR #13304 open,
 #12152 closed not merged."*
 
 Reality: **#12938 merged 2026-06-24** ("Slice A", policy + types + job state) and **#13942 merged
@@ -476,7 +476,7 @@ What it actually is:
 > live in `@librechat/agents` (`ToolPolicyConfig`), which `policy.ts` only imports as a type, and
 > were **not** inspected. Treat the unmatched-default claim as unverified.
 >
-> This does not change the §7.1 decision — see the resolved spike note at the end of §7.3, which
+> This does not change the section 7.1 decision — see the resolved spike note at the end of section 7.3, which
 > settles the question that actually mattered.
 - Globs match qualified names, so `mcp:noa:*`-style patterns can target NOA's tools specifically.
 - Runtime: `PreToolUse` hook + `humanInTheLoop` + a durable checkpointer; paused jobs get status
@@ -527,31 +527,32 @@ official extension in the new extensions framework.
 > 2026-01-26. SEP-1865 is cited by number in the ext-apps repo and in LibreChat's own commit
 > messages. The caveat also contradicted this section's own body, which references LibreChat
 > negotiating `io.modelcontextprotocol/ui` per session. So MCP Apps is both official **and**
-> stable — which strengthens §7.2's warning rather than softening it: the spec NOA's render path
+> stable — which strengthens this section's warning rather than softening it: the spec NOA's render path
 > depends on is settled, and `text/uri-list` is not in it.
 
 LibreChat **PR #13831 is still open** — but it has evolved in a way that matters:
 
 - It **dropped the community `@mcp-ui/client` for the official Anthropic SDK**, driving
   `AppBridge` + `PostMessageTransport` directly.
-- It **removed the old `handleUIAction` intent/tool/prompt code** — the exact mechanism old V141
-  forbids relying on.
+- It **removed the old `handleUIAction` intent/tool/prompt code** — the exact mechanism the
+  never-through-the-LLM rule forbids relying on.
 - It negotiates `io.modelcontextprotocol/ui` per session, propagates `_meta.ui.csp` and
   `_meta.ui.permissions`, and gates `allow-same-origin` on the sandbox running on a dedicated
   origin.
 
-**Consequence for §11's origin rule — flag as a real risk.** Our whole cookie-POST decision path
+**Consequence for section 11's origin rule — flag as a real risk.** Our whole cookie-POST decision path
 rests on the iframe document sitting on NOA's origin (`text/uri-list` → `src` mode →
 `allow-same-origin`). #13831 introduces a **same-origin sandbox proxy** (`/api/mcp/sandbox`) and
 grants `allow-same-origin` to the inner frame **only when the sandbox runs on a dedicated origin**.
-If that lands and becomes the default render path, the old V180 assumption needs re-verification
-from scratch — it is precisely the "proxy mode" silent-break condition old T98 warned about. It
+If that lands and becomes the default render path, the old embed-on-NOA-origin assumption needs
+re-verification from scratch — it is precisely the "proxy mode" silent-break condition old T98
+warned about. It
 also classifies only `text/html;profile=mcp-app` as app-backed, leaving plain `text/html` `ui://`
 as inert `sandbox=""` srcDoc.
 
 ### 7.3 Net effect on plan
 
-- Nothing in §§3–6 changes. Tool granularity, single repo, and the tool surface all stand.
+- Nothing in sections 3–6 changes. Tool granularity, single repo, and the tool surface all stand.
 - The P1 spike list from the old SPEC is **still required**, and T98's upgrade checklist
   is now urgent rather than hypothetical: pin an exact LibreChat commit, and on every bump
   re-verify (a) no mcp-ui proxy at any render site, (b) `text/uri-list` still maps to `src` mode.
@@ -565,27 +566,27 @@ as inert `sandbox=""` srcDoc.
   }
   ```
 
-  A strict `=== true` on an optional-chained field ⇒ **both** an absent `toolApproval` block **and**
+  A strict `=== true` on an optional-chained field means **both** an absent `toolApproval` block **and**
   `enabled: false` return `false`, so the HITL machinery never engages. The file's own comment
   confirms the intent: *"HITL remains default-off for the rollout; `enabled: true` is the explicit
   opt-in."* The `allow`/`deny`/`ask` glob lists and any unmatched-tool default are only ever
-  consulted **after** that gate opens — so the §7.1 correction above (precedence chain unverified)
+  consulted **after** that gate opens — so the section 7.1 correction above (precedence chain unverified)
   is harmless: NOA never reaches the matcher.
 
   The feared trap — "not configuring it" silently defaulting every NOA CHANGE tool into a LibreChat
   confirmation dialog, producing double friction on top of NOA's own iframe — **does not exist**.
-  §7.1's decision to leave `toolApproval` untouched is safe as written. Carried into `SPEC.md` as
-  **V72**.
+  Section 7.1's decision to leave `toolApproval` untouched is safe as written. Carried forward as a
+  rule: **absent `toolApproval` config bypasses entirely, so it is not relied on.**
 
 ---
 
 ## 8. RESOLVED — owner answers (2026-08-04)
 
-All nine answered. Nothing in §8 is open.
+All nine answered. Nothing in section 8 is open.
 
-**8.1 Repo name → `noa`.** See §5.
+**8.1 Repo name → `noa`.** See section 5.
 
-**8.2 Enum collapsing → adopted.** See §9. Final surface 13 tools.
+**8.2 Enum collapsing → adopted.** See section 9. Final surface 13 tools.
 
 **8.3 Admin frontend → PORT, keep BIGSU.** Copy the finished admin surface from the old repo's `MCP`
 branch (`apps/web-bigsu/src/app/(protected)/admin/`: users, roles, audit, audit/tool-runs, whm,
@@ -598,18 +599,18 @@ Consequences to carry:
 - The old BIGSU governance docs come along: `apps/web-bigsu/AGENTS.md`, `CLAUDE.md`,
   `.claude/skills/bigsu/`, `docs/web-bigsu/topology.md`.
 - **Only the admin surface ports.** The `web-bigsu` chat surface does not — LibreChat replaces it.
-  That was the old C17/P3 cleanup; starting a new repo achieves it for free.
-- Old C16's two-frontend coexistence rules do not apply: one admin app, no legacy `apps/web` to
+  That was the old P3 cleanup; starting a new repo achieves it for free.
+- The old two-frontend coexistence rules do not apply: one admin app, no legacy `apps/web` to
   coexist with.
 
-**8.4 Invariant carry-over → delegated to me.** See §10.
+**8.4 Invariant carry-over → delegated to me.** See section 10.
 
 **8.5 yopass → bring it, as a shared internal helper.** Owner's framing: make it shared/internal so
 future tools can consume it, not welded to the password-reset tool.
 
 - Port `core/secrets/yopass.py` + `core/secrets/password.py` into the shared `core/secrets/` layer
   with a stable internal API (`generate_password()`, `store_secret_and_get_url()`).
-- Keep old C15/V123 intact: password generated **server-side**, never an LLM argument; plaintext
+- Keep the old secrets rule intact: password generated **server-side**, never an LLM argument; plaintext
   lives only inside `execute()` scope; never persisted; never crosses the LLM boundary in either
   direction; the tool returns only `yopass_url`. These helpers are **not** MCP tools.
 - **Locks Python `<3.13`.** `pgpy` 0.6.0 imports the removed stdlib `imghdr`, and the import fires
@@ -622,7 +623,7 @@ answer before this carries real ops data, not before it is built.
 
 **8.7 Phasing → deferred, owner-owned.** Owner will research phases and author `SPEC.md` in a later
 session. **Do not design phases here.** Consequence: whether a READ-only-first phase
-(`mcp_change_tools_enabled`) exists at all is undecided, so old V171 is parked (§10.5).
+(`mcp_change_tools_enabled`) exists at all is undecided, so READ-only-first is parked (section 10.5).
 
 **8.8 `whm_list_accounts` UI-resource page → yes, together with the approval card.** Same app, same
 origin rules, same framing headers, one surface to secure.
@@ -635,7 +636,7 @@ Generalize: the UI-resource path is a **shared capability for any large READ res
 
 ## 9. DECIDED — enum collapsing adopted (owner-confirmed 2026-08-04)
 
-Firewall is already settled by §6.5's merge. The two remaining pairs **are** merged:
+Firewall is already settled by section 6.5's merge. The two remaining pairs **are** merged:
 
 | Merge | Before | After |
 |---|---|---|
@@ -649,17 +650,17 @@ Firewall is already settled by §6.5's merge. The two remaining pairs **are** me
 **Accepted cost, recorded so it is not rediscovered later as a bug:** RBAC gets coarser. Granting
 "PMG whitelist add" without "remove" is no longer possible, same for NIC enable without disable, and
 release-and-allow bundles two mutations under one grant. This matters more than it would have
-before, because §7.1 makes NOA RBAC the *only* authorization layer — there is no LibreChat glob
+before, because section 7.1 makes NOA RBAC the *only* authorization layer — there is no LibreChat glob
 fallback. If a role ever needs one direction but not the other, the merge must be undone for that
 pair.
 
 ---
 
-## 10. DECIDED — invariant carry-over from old V138–V180 (§8.4, my call)
+## 10. DECIDED — invariant carry-over from the old repo's spec (section 8.4, my call)
 
 My pass, as delegated. This is **triage input for the owner's future `SPEC.md`**, not a spec.
 Numbering is the old repo's, kept so every line stays traceable to `git show MCP:SPEC.md`.
-Per §8.7, nothing here implies a phase.
+Per section 8.7, nothing here implies a phase.
 
 ### 10.1 Carry over unchanged — the load-bearing set
 
@@ -670,7 +671,7 @@ These survive because they encode security properties independent of how NOA's c
 | V138 | MCP = Streamable HTTP, one `/mcp`, thin adapter over the tool registry. Resolve `users.id` + re-check `is_active` every request. `tools/list` RBAC-filtered per user. |
 | V139 | Per-user bearer token minted by NOA. Not shared, not a LibreChat-asserted identity. TOFU binding to `{{LIBRECHAT_USER_ID}}`: mint NULL → bind on first use → thereafter must match, absent counts as mismatch once bound. Residual (a pasted token) stated, not hidden. |
 | V140 | READ executes; CHANGE unapproved creates a pending row and does **not** execute; CHANGE approved executes once. "May this run?" always read from the DB. |
-| V141 | Approve/deny never travels through the LLM. Only path = cookie POST from the embed iframe. Reinforced by §7.2: #13831 deletes the `handleUIAction` intent/tool/prompt code outright. |
+| V141 | Approve/deny never travels through the LLM. Only path = cookie POST from the embed iframe. Reinforced by section 7.2: #13831 deletes the `handleUIAction` intent/tool/prompt code outright. |
 | V142 | One `build_change_gate_response()` shapes every CHANGE tool result; three branches (link-out / UI resource / elicitation). |
 | V143 | Text content always carries the approval URL, so link-out is a free fallback. Missing `\ui{}` marker = accepted degradation, not failure. |
 | V144 | Embed URL carries `action_request_id` only. Assume a LibreChat admin can read tool-result artifacts in Mongo. |
@@ -679,16 +680,16 @@ These survive because they encode security properties independent of how NOA's c
 | V148 | Embed 401 renders an explicit "cannot authenticate here" state — never a blank card, never a live Approve button. The one place a silent origin failure becomes visible. |
 | V149 | Embed access control: requester-match primary (`requested_by_user_id == caller`, caller = cookie identity). Mismatch → 404, not 403, so existence does not leak. |
 | V150 | Exactly one `pending → decided` transition per request, under a row lock. Concurrent double-click → one wins, loser gets 409. |
-| V151 | Post-decision notification to the LLM is notification only. Ignored ⇒ change still executed and recorded. |
+| V151 | Post-decision notification to the LLM is notification only. Ignored means change still executed and recorded. |
 | V152 | Embed app = own project, own build/deploy, compact and self-scrolling. |
 | V155 | MCP identity resolved in exactly one function, called for every MCP request. Auth-mechanism swap = one file. |
 | V156 | Tokens **hashed** at rest (not Fernet — NOA only verifies). Plaintext shown once at mint. Revoke = delete row. Never logged. |
-| V157 | LDAP is source of truth for employment, not just login. Long-lived tokens revalidate on a staleness interval; LDAP down ⇒ fail closed. Cascade revoke fires on admin disable too, not only the LDAP path. |
+| V157 | LDAP is source of truth for employment, not just login. Long-lived tokens revalidate on a staleness interval; LDAP down means fail closed. Cascade revoke fires on admin disable too, not only the LDAP path. |
 | V158 | LibreChat auth = same LDAP directory, local registration disabled. A confidentiality requirement: its Mongo holds ops transcripts. |
 | V159 | Embed app has no login page, no LDAP form, no credential handling. 401 → top-level "Sign in to NOA" + retry. |
 | V160 | Two reasons, never conflated: LLM-written `proposed_reason` (evidence only, insufficient to approve) vs operator-typed authoritative `reason` (never through the LLM). |
 | V161 | Approve → async execution, 202 + `tool_run_id`, embed polls to terminal. State in the DB, not in a connection. |
-| V162 | `noa_get_action_result(id)` enforces the V149 predicate against the MCP-token identity; identical not-found shape for foreign and unknown ids ⇒ not an enumeration oracle. |
+| V162 | `noa_get_action_result(id)` enforces the V149 predicate against the MCP-token identity; identical not-found shape for foreign and unknown ids, so it is not an enumeration oracle. |
 | V167 | Async host = in-process asyncio task with its **own** session, plus a reaper for runs stuck in STARTED. |
 | V168 | Explicit per-user cap on in-flight CHANGE executions (default 1). Over limit → 409, never a silent queue. |
 | V169 | Workflow todos in the MCP path = plain text in the tool result. No route, no UI resource. |
@@ -699,23 +700,24 @@ These survive because they encode security properties independent of how NOA's c
 | V176 | Embed never triggers a decision from an inbound `postMessage`. Any listener validates `event.origin` and is read-only in effect. |
 | V179 | Every MCP READ writes a `tool_runs` row: requester, truncated summary, redacted args, queryable in admin audit. |
 
-### 10.2 Carry over, but re-verify before building — V180
+### 10.2 Carry over, but re-verify before building — embed on NOA's own origin
 
-V180 (embed iframe document must sit on NOA's own origin) **still holds as a requirement**, but its
-justification is now stale. Per §7.2, #13831 moved to the official Anthropic SDK, added a
+The embed iframe document must sit on NOA's own origin. **Still holds as a requirement**, but its
+justification is now stale. Per section 7.2, #13831 moved to the official Anthropic SDK, added a
 same-origin sandbox proxy (`/api/mcp/sandbox`), grants `allow-same-origin` only when the sandbox
 runs on a dedicated origin, and treats only `text/html;profile=mcp-app` as app-backed.
 
-So the chain "`text/uri-list` ⇒ `src` mode ⇒ `allow-same-origin` ⇒ cookie rides" must be
+So the chain "`text/uri-list` means `src` mode means `allow-same-origin` means cookie rides" must be
 **re-verified from scratch against the pinned LibreChat version**, not inherited. This is exactly
-the proxy-mode silent-break condition old T98 warned about, and V148 is the only place it surfaces.
+the proxy-mode silent-break condition old T98 warned about, and the explicit 401 card is the only
+place it surfaces.
 
 ### 10.3 Amended — property kept, mechanism changed
 
 | Old | What changes |
 |---|---|
 | V145 | Framing headers. Half (a) targeted `apps/web` + `web-bigsu`; here it becomes **the ported admin app sends `frame-ancestors 'none'`**. Half (b) unchanged: only the embed app allowlists the LibreChat origin. The token-display route keeps `'none'`. |
-| V164 | "Evidence never from LLM args or transcript" is **kept as a rule** but becomes structurally true instead of gate-enforced — §3.2, preflight runs in-process inside the CHANGE call. |
+| V164 | "Evidence never from LLM args or transcript" is **kept as a rule** but becomes structurally true instead of gate-enforced — section 3.2, preflight runs in-process inside the CHANGE call. |
 | V166 | "NOA does not own the conversation" holds, but there is **no migration**: a greenfield schema simply has no `threads` table and no nullable-`thread_id` retrofit. Old T111/T162/T167 collapse into initial schema design. |
 | V178 | Model-facing safety policy (preflight-first, approval gates, no fabrication, argument discipline, the `\ui{}` instruction) must live in the LibreChat agent config. Carries as **new work**, not a port — there is no `core/prompts/loader.py` here to lose. |
 
@@ -723,17 +725,17 @@ the proxy-mode silent-break condition old T98 warned about, and V148 is the only
 
 | Old | Why it goes |
 |---|---|
-| V163 | The NOA-owned evidence store exists so a *separate* preflight call can feed a *later* CHANGE call. §3.2 removes that gap: evidence is born in-process, lives milliseconds, same user, never in a transcript. Largest single deletion — old T143/T144/T155 go with it. |
+| V163 | The NOA-owned evidence store exists so a *separate* preflight call can feed a *later* CHANGE call. Section 3.2 removes that gap: evidence is born in-process, lives milliseconds, same user, never in a transcript. Largest single deletion — old T143/T144/T155 go with it. |
 | V165 | `conversation_ref` as a **security** scope (fail-closed when absent) is unnecessary once evidence never crosses calls. It **demotes to an audit/grouping label**: keep recording it, stop gating on it. Old T145/T160 go. |
 | V170 | "Delete `core/agent/`" — nothing to delete; greenfield never has an agent loop. Its accepted consequence still stands and belongs in the new SPEC: **no NOA-initiated automation**, no cron path, without rebuilding a loop. |
-| V177 | Retirement of relevance-based tool gating — moot; `tool_selection.py` is never ported. §3 is the replacement lever. |
-| V153, V154 | Copy-don't-extract, the freeze rule, `COPIED-FROM.md`. These managed dual maintenance between two live frontends. Here the old repo becomes `noa-old` and is abandoned ⇒ freeze satisfied trivially, no ledger to keep. |
+| V177 | Retirement of relevance-based tool gating — moot; `tool_selection.py` is never ported. Section 3 is the replacement lever. |
+| V153, V154 | Copy-don't-extract, the freeze rule, `COPIED-FROM.md`. These managed dual maintenance between two live frontends. Here the old repo becomes `noa-old` and is abandoned, so freeze is satisfied trivially, no ledger to keep. |
 
-### 10.5 Parked — depends on §8.7
+### 10.5 Parked — depends on section 8.7
 
 | Old | Blocked on |
 |---|---|
-| V171 | READ-only first (`mcp_change_tools_enabled` default false, CHANGE absent from `tools/list`). Purely a phasing device ⇒ owner decides when authoring `SPEC.md`. |
+| V171 | READ-only first (`mcp_change_tools_enabled` default false, CHANGE absent from `tools/list`). Purely a phasing device, so owner decides when authoring `SPEC.md`. |
 
 ### 10.6 Not in the MCP range, but must not be dropped
 
@@ -743,15 +745,15 @@ Greenfield cannot inherit these by accident, so they need restating in the new S
   ones" and "disabled user has zero permissions regardless of roles".
 - **V31–V37** tool discipline — CHANGE requires `reason`, argument validation, error sanitization
   (raw exceptions never reach the LLM), machine-stable lifecycle enums.
-- **V45 / V53** Fernet-encrypted server secrets at rest. Distinct from V156's hashed tokens: these
+- **V45 / V53** Fernet-encrypted server secrets at rest. Distinct from hashed tokens: these
   must stay **decryptable** because they are outbound credentials.
 - **V68 / V100 / V101** IPv4-only firewall targets; `sudo -n` when the SSH user is not root;
   SSH banner stripping at the boundary with raw output retained for audit.
 - **V83–V89** PMG mynetworks semantics, argv-only `pmgsh`, `/32` normalization.
 - **V94–V99** tool-run audit shape and sensitive-arg redaction.
-- **V72–V79** approval-card presentation — especially V73 (each fact exactly once), V75 (no raw
-  iptables dump in before-state), V76 (activity label ≤ 60 chars), V77 (summary is plain text, no
-  markdown tables).
+- **V72–V79** approval-card presentation — especially each fact exactly once, no raw
+  iptables dump in before-state, activity label ≤ 60 chars, summary plain text with no
+  markdown tables.
 
 ---
 

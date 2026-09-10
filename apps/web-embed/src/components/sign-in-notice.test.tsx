@@ -6,11 +6,12 @@ import type { ApprovalCardLoad } from '@/lib/approvals/card'
 import { SignInNotice } from './sign-in-notice'
 
 /**
- * The way out of a 401 (§T.43 — V38, V42).
+ * The way out of a 401.
  *
- * **What jsdom can prove is the structure, and here the structure is most of the requirement.** V42
- * is a statement about what this app does *not* contain — no login page, no LDAP form, no credential
- * handling — and §T.43 adds "no LDAP redirect inside the iframe" to it. Those are absences, and this
+ * **What jsdom can prove is the structure, and here the structure is most of the requirement.** The
+ * embed app is defined by what it does *not* contain — no login page, no LDAP form, no credential
+ * handling — and the sign-in notice adds "no LDAP redirect inside the iframe" to it. Those are
+ * absences, and this
  * is the lane that asserts absences: no `<form>`, no input of any kind, and one anchor whose only
  * job is to open a document somewhere else.
  *
@@ -72,7 +73,7 @@ describe('SignInNotice', () => {
     expect(screen.queryByLabelText(/why is this change/i)).toBeNull()
   })
 
-  it('opens the sign-in in a new top-level document, never in the frame (V42, §T.43)', () => {
+  it('opens the sign-in in a new top-level document, never in the frame', () => {
     const { onRetry } = retryStub('unauthenticated')
     render(<SignInNotice signInUrl={SIGN_IN} onRetry={onRetry} frameOrigin={null} />)
 

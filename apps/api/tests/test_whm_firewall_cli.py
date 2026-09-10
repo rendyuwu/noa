@@ -1,10 +1,10 @@
-"""CSF and Imunify command composition, execution and failure classification
-(T16, V55, V56, V57, V69, V73).
+"""CSF and Imunify command composition, execution and failure classification.
 
 Three things are pinned here, and each one is a production incident in `noa-old`:
 
-- **V55, as a biconditional.** `sudo -n` appears ⟺ the resolved SSH user is not `root`. Both
-  directions are asserted for both backends, because T16 removed the `escalate=` boolean that
+- **The sudo rule, as a biconditional.** `sudo -n` appears ⟺ the resolved SSH user is not `root`.
+  Both
+  directions are asserted for both backends, because the port removed the `escalate=` boolean that
   let a call site get it wrong (deviation (a)) and the replacement only holds if the command
   builders really do read the config.
 - **`ssh_sudo_required` ≠ "no firewall tools"** (`noa-old` GH #82). A denied `sudo -n` and a
@@ -14,9 +14,9 @@ Three things are pinned here, and each one is a production incident in `noa-old`
   is the real fix; the raw-decode fallback is what keeps an unrecognised banner variant
   from turning an approved CHANGE into a parse error.
 
-`run_*_command` takes a resolved `SSHConnectionConfig` as of T24, so the row refusals it used to
-raise on the way past are no longer its business — `test_whm_ssh_config.py` owns them, and
-`test_whm_tools_firewall_preflight.py` owns the answer an operator gets.
+`run_*_command` takes a resolved `SSHConnectionConfig` since the firewall preflight landed, so the
+row refusals it used to raise on the way past are no longer its business — `test_whm_ssh_config.py`
+owns them, and `test_whm_tools_firewall_preflight.py` owns the answer an operator gets.
 
 No host: `ssh_exec` is replaced inside each module's namespace (`support.remote_exec`).
 """
@@ -66,7 +66,7 @@ _LVE_BANNER = (
 )
 
 
-# --- V55: prefix ⟺ user ≠ root ---
+# --- The sudo rule: prefix ⟺ user ≠ root ---
 
 
 def test_csf_command_escalates_only_for_non_root_user() -> None:
@@ -108,7 +108,7 @@ def test_arguments_are_quoted_not_interpolated(hostile: str) -> None:
     assert shlex.split(command) == ["TERM=dumb", CSF_BINARY, "-g", hostile]
 
 
-# --- V55 / GH #82: denied sudo is not a missing binary ---
+# --- GH #82: denied sudo is not a missing binary ---
 
 
 def test_sudo_rights_failure_raises_ssh_sudo_required_not_command_failed() -> None:
@@ -161,7 +161,7 @@ def test_imunify_missing_binary_reports_command_failed() -> None:
     assert exc.value.error_code == "imunify_command_failed"
 
 
-# --- V56 / GH #83: JSON survives a banner the signature gate missed ---
+# --- GH #83: JSON survives a banner the signature gate missed ---
 
 
 def test_imunify_json_parse_recovers_from_leading_banner_fragment() -> None:
@@ -250,7 +250,7 @@ async def test_run_converts_an_ssh_failure_into_the_backend_error_tree(
     assert exc.value.error_code == "ssh_host_key_mismatch"
 
 
-# --- V73: one taxonomy, one handler, mapped status ---
+# --- One taxonomy, one handler, mapped status ---
 
 
 def test_firewall_error_tree_is_mapped_in_status_by_error() -> None:

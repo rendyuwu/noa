@@ -2,7 +2,7 @@ import type { StatusChipStatus } from '@gio/bigsu-ui'
 
 import type { McpToken } from './types'
 
-// Display derivations for the MCP token vertical (§T76). Pure, so the panel, the
+// Display derivations for the MCP token vertical. Pure, so the panel, the
 // columns and the tests all reach the same verdict, and so the awkward cases
 // (never expires, already expired, unbound) are unit-tested directly rather than
 // through a rendered table.

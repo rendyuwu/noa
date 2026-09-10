@@ -3,17 +3,17 @@
 **The first CHANGE tool NOA exposed**, and therefore the first call that runs the whole gate
 over the real mount: `tools/call` → in-process preflight → `action_requests(PENDING)` → the
 approval card → an operator's cookie POST → the executor → the runner one module
-over. Everything above the runner was already built and, until T22, vacuous.
+over. Everything above the runner was already built and, until the suspend tool, vacuous.
 
-**Two halves, on opposite sides of V22's boundary, and now in two modules.** A tool is what the
-LLM can reach and it changes nothing; a runner performs the change and is reachable only from
-`core.approvals.execution`, which is reachable only from an approval. They lived together while
-they fitted, because they are two moments of one workflow and a runner acts on the evidence its
-tool gathered. They stopped fitting: this module reached C14's 900-line budget exactly, so the
-runners moved to `whm_account_change_runner.py`, the split the Proxmox and PMG tools were built
-with from the start. What keeps it honest is unchanged and is not the file boundary — neither
-tool holds a reference to a runner, and a runner is dispatched by tool name from a registry the
-MCP path never reads (`noa_api.mcp_tools.change_runners`).
+**Two halves, on opposite sides of the cookie/CSRF boundary, and now in two modules.** A tool is
+what the LLM can reach and it changes nothing; a runner performs the change and is reachable only
+from `core.approvals.execution`, which is reachable only from an approval. They lived together while
+they fitted, because they are two moments of one workflow and a runner acts on the evidence its tool
+gathered. They stopped fitting: this module reached the 900-line budget exactly, so the runners
+moved to `whm_account_change_runner.py`, the split the Proxmox and PMG tools were built with from
+the start. What keeps it honest is unchanged and is not the file boundary — neither tool holds a
+reference to a runner, and a runner is dispatched by tool name from a registry the MCP path never
+reads (`noa_api.mcp_tools.change_runners`).
 
 Every constant stayed here, including the ones only the runners use, so the split moved code and
 not vocabulary: a reader following a code out of a receipt still lands on the module that defines
@@ -21,7 +21,7 @@ it, and the runner module imports one direction only, which is what keeps the ag
 from being a cycle.
 
 **Two tools, one shape, and the shape is shared rather than mirrored.** Suspend and unsuspend are
-not merged — opposite risk directions, clearer as two names (DECISIONS §9) — but everything
+not merged — opposite risk directions, clearer as two names (DECISIONS section 9) — but everything
 between the two names is one implementation: `collect_account_state` is the preflight for
 both, and one module over, the resolution of an approved request into the client that performs it
 and the postflight that confirms it are each written once, differing only in the value
@@ -30,18 +30,18 @@ model reads — the two tool functions, their descriptions and their registratio
 genuinely differ and a shared spelling of them would be one sentence trying to describe two
 opposite acts.
 
-**The preflight runs inside the call**, and it is `fetch_whm_accounts` — T20/T21's
+**The preflight runs inside the call**, and it is `fetch_whm_accounts` — the read tools'
 internal, not a second copy of "resolve a server and list its accounts". The evidence it
 produces is born in-process, lives milliseconds, belongs to the same user, and reaches the
 operator's card through `approval_context` rather than through a transcript. That is the whole of
-DECISIONS §3.2: no evidence store, no freshness window, no `require_preflight` protocol.
+DECISIONS section 3.2: no evidence store, no freshness window, no `require_preflight` protocol.
 
-**An account already in the state the change would produce is answered, not gated.** The
-preflight is what discovers it — already suspended for T22, not suspended at all for T23 — and
-asking an operator to authorise a change that would do nothing is worse than saying so. No
-`action_requests` row is written on that path, so the only trace is a structured log line —
-which is the right amount of trace for a call that changed nothing (a CHANGE tool's `tools/call`
-writes no `tool_runs` row either, T73).
+**An account already in the state the change would produce is answered, not gated.** The preflight
+is what discovers it — already suspended for the suspend tool, not suspended at all for the
+unsuspend one — and asking an operator to authorise a change that would do nothing is worse than
+saying so. No `action_requests` row is written on that path, so the only trace is a structured log
+line — which is the right amount of trace for a call that changed nothing (a CHANGE tool's
+`tools/call` writes no `tool_runs` row either).
 
 **A locked suspension is refused before a card exists**. WHM's `unsuspendacct` refuses an
 account whose suspension is locked, so opening a request for one costs an operator a decision and
@@ -57,7 +57,7 @@ WHM's `reason`, which names the remedy — and this guard is the cheap early hal
 
 **A credential that does not own the account is refused before a card exists**, the same argument
 one step harder, and `whm_account_owner_gate` holds all of it: cPanel gates an account write on
-*ownership* rather than on the token's ACL (§R.33), so the preflight compares the account's
+*ownership* rather than on the token's ACL (measured), so the preflight compares the account's
 `owner` against the resolved row's `api_username`. Two things this module decides rather than
 that one. The guard sits in `_open_account_change`, the single door both tools reach
 `open_change_request` through, so a third account CHANGE tool cannot be written without it; and
@@ -65,46 +65,47 @@ it runs **again** in the runner, off the stored evidence, because a row is edita
 request and its decision and repointing `api_username` after the card was rendered would
 otherwise substitute the acting identity silently.
 
-**The card and the receipt name the credential, not just the machine** (§V108): the row's
+**The card and the receipt name the credential, not just the machine**: the row's
 `name`, its `api_username`, the host out of its `base_url`, and the account's `owner`. A
 privileged write whose credential is not recorded is not auditable, and what an audit needs is
 which identity acted — a username, never the token.
 
 **A runner acts on the server the card described, not on the operator's word.** `server_ref` is
 whatever the model passed, and inventory can be edited between a request and its approval;
-`evidence["server_id"]` is the machine the preflight actually read and the operator actually saw
-(V33). Re-resolving the string there would be a second resolution that can disagree with the one
-the decision rests on.
+`evidence["server_id"]` is the machine the preflight actually read and the operator actually saw —
+resolution comes from the evidence, never the arguments. Re-resolving the string there would be a
+second resolution that can disagree with the one the decision rests on.
 
 **The suspension note is the operator's reason, and only suspend has one.** WHM's `suspendacct`
-takes a note, and C8's single field is the only text NOA has that belongs there — the LLM never
-authored it, never relayed it and never saw it, and it is read from `action_requests.reason`
-after the decision committed (`core.approvals.execution`). What that costs is two return paths,
-and V96 closes both: WHM echoes the note back as `suspendreason`, so `whm_search_accounts`
-withholds the field from the rows it hands a model (`ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`); and
-`tool_runs.result_summary` is derived from a runner's payload and read back by
-`noa_get_action_result`, so no payload here carries the note — not a no-op answer, not a runner's.
-`whm_list_accounts`' parked table keeps the column, because that page is behind the operator's
-own cookie.
+takes a note, and the reason rule's single field is the only text NOA has that belongs there — the
+LLM never authored it, never relayed it and never saw it, and it is read from
+`action_requests.reason` after the decision committed (`core.approvals.execution`). What that costs
+is two return paths, and both are closed: WHM echoes the note back as `suspendreason`, so
+`whm_search_accounts` withholds the field from the rows it hands a model
+(`ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`); and `tool_runs.result_summary` is derived from a runner's
+payload and read back by `noa_get_action_result`, so no payload here carries the note — not a no-op
+answer, not a runner's. `whm_list_accounts`' parked table keeps the column, because that page is
+behind the operator's own cookie.
 
-`unsuspendacct` takes no note, so **T23 writes nothing out and V96 does not bite on that side.**
-It does meet a case T22 could not: an account being unsuspended *is* suspended when the preflight
-reads it, so its summary carries `suspendreason` — an operator's earlier words. That summary goes
-onto the row as evidence, where V27's requester-match and the card are its only readers (a model
-cannot reach it: `ActionResultView` has no field for evidence, V76). What is not closed by
-construction is this tool's own answers, which do land in a transcript — so the no-op and
-the locked refusal are built from the username and the server name, never from the summary.
+`unsuspendacct` takes no note, so **the unsuspend tool writes nothing out and no path back to a
+model opens on that side.** It does meet a case the suspend tool could not: an account being
+unsuspended *is* suspended when the preflight reads it, so its summary carries `suspendreason` — an
+operator's earlier words. That summary goes onto the row as evidence, where requester-match and the
+card are its only readers (a model cannot reach it: `ActionResultView` has no field for evidence).
+What is not closed by construction is this tool's own answers, which do land in a transcript — so
+the no-op and the locked refusal are built from the username and the server name, never from the
+summary.
 
 **Postflight, and its third answer.** A change WHM accepted is re-read to confirm it took, and it
 is re-read **through the credential that wrote it**: the identity that performed the change is the
 one that confirms it. A reseller token's `listaccts` sees its own accounts (77 of 77 on the
-measured host, §R.33) and its own account is the only one in question, so moving the confirming
+measured host) and its own account is the only one in question, so moving the confirming
 read to a root credential "so it can see everything" would answer "did it take" from an identity
 that did not perform the write. One `_ChangeTarget`, one client, all three phases. Two
 outcomes are obvious — the account reached the state that was asked for, or it did not and the
 change is therefore a failure — and the third is the one worth naming: the mutation succeeded and
 the confirming read did not answer. That is recorded as a change that happened and was *not
-verified*, never as a failure and never as a silent pass. V62's rule one system over:
+verified*, never as a failure and never as a silent pass. The verdict rule one system over:
 verification-unavailable is not verification.
 """
 

@@ -1,30 +1,31 @@
-"""The CHANGE gate's answer: an approval surface, in the shape T59 measured.
+"""The CHANGE gate's answer: an approval surface, in the shape the render gate measured.
 
-T33's file next door proves the gate *writes* the row. This one proves what the tool hands
-back, and the claims are different in kind: a row is right or wrong against the database,
+The gate-write file next door proves the gate *writes* the row. This one proves what the tool
+hands back, and the claims are different in kind: a row is right or wrong against the database,
 while this is right or wrong against a renderer NOA does not own. So the assertions here are
 deliberately literal — the `ui://` scheme, the `text/uri-list` mime type, the URL as the
 resource body — because those three strings are what was carried into Chromium against
 LibreChat pin `45cc53c4` on 2026-08-08 and measured to produce an iframe on NOA's origin with
-the session cookie riding in (R29, R31c, R12). A test that asserted "some resource is
-present" would stay green through the exact drift C21 exists to catch.
+the session cookie riding in. A test that asserted "some resource is
+present" would stay green through the exact drift the re-verify-on-bump rule exists to catch.
 
 Four invariants, and each has its own section below:
 
-- **V24** — one function, three branches, and the active one ships the UI resource *and* the
-  link-out text together rather than choosing.
-- **V25** — the plain address is in the text block on every branch that has one. T43 bounded
-  what that is worth and what it is not: a click needs `allow-popups`, absent at one of the
-  two render sites, and a tab opened by a click inherits the frame's sandbox — so
-  the thing that survives is an address a human can copy, not a link.
-- **V26** — the URL carries an id and nothing else, and neither does the rest of the result.
-- **C8 / V15 / V71** — the word an operator types on the card does not appear in text a model
-  reads.
+- **The branches** — one function, three branches, and the active one ships the UI resource
+  *and* the link-out text together rather than choosing.
+- **The plain address** — it is in the text block on every branch that has one. The sandbox
+  measurement bounded what that is worth and what it is not: a click needs `allow-popups`,
+  absent at one of the two render sites, and a tab opened by a click inherits the frame's
+  sandbox — so the thing that survives is an address a human can copy, not a link.
+- **The id-only URL** — the URL carries an id and nothing else, and neither does the rest of
+  the result.
+- **The reason's boundary** — the word an operator types on the card does not appear in text a
+  model reads.
 
 No mount-level test here for the same reason `test_mcp_change_gate.py` has none: when this file
 was written no CHANGE tool was registered, so nothing reached this function through `tools/call`.
-It first ran over the real mount at T22, and a second time at T23 — both lanes live beside their
-tools.
+It first ran over the real mount beside the suspend tool, and a second time beside the
+unsuspend tool — both lanes live beside their tools.
 """
 
 from __future__ import annotations
@@ -85,12 +86,12 @@ def resource_block(result: Any) -> EmbeddedResource:
 
 
 # --------------------------------------------------------------------------------------
-# V24: one function, three branches, and the active one ships two halves
+# The branches: one function, three branches, and the active one ships two halves
 # --------------------------------------------------------------------------------------
 
 
 def test_active_branch_ships_the_ui_resource_and_the_link_out_text_together() -> None:
-    """V24: two branches ship TOGETHER, not either/or.
+    """Two halves ship TOGETHER, not either/or.
 
     The frame can fail to load — a CSP mistake, a bad deploy, a future upstream bump — and
     the address in the text is the only door left when it does. Asserting on the *count*
@@ -109,7 +110,7 @@ def test_active_branch_ships_the_ui_resource_and_the_link_out_text_together() ->
 
 
 def test_the_link_out_branch_is_text_only_and_still_carries_the_address() -> None:
-    """V24/V25: the branch that becomes primary if a bump fails T59.
+    """The branch that becomes primary if a bump fails the render gate.
 
     It is one block, and that block still has the URL in it — which is the whole reason this
     branch is survivable at all.
@@ -128,7 +129,7 @@ def test_the_link_out_branch_is_text_only_and_still_carries_the_address() -> Non
 
 
 def test_the_elicitation_branch_is_declared_and_refuses() -> None:
-    """V24: three branches, and the third is future — declared, not silently missing.
+    """Three branches, and the third is future — declared, not silently missing.
 
     It refuses with a `ChangeGateError` rather than returning something that looks like an
     approval surface, and rather than a bare exception: `sanitize_tool_errors` passes a
@@ -150,18 +151,18 @@ def test_the_elicitation_branch_is_declared_and_refuses() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# R29 / R31c / R12: the resource is the shape that was measured, not one that resembles it
+# The resource is the shape that was measured, not one that resembles it
 # --------------------------------------------------------------------------------------
 
 
 def test_the_ui_resource_is_the_shape_the_render_gate_measured() -> None:
-    """R29: `ui://` + `text/uri-list` + the URL as the body, all three or none of them.
+    """`ui://` + `text/uri-list` + the URL as the body, all three or none of them.
 
-    `ui://` is LibreChat's classifier (`parsers.ts:183`, R31c) — without it the resource is
-    an ordinary attachment and no card renders. `text/uri-list` is mcp-ui's selector for the
-    `src` render mode; `text/html` renders `srcDoc`, whose opaque origin the T59 run
-    measured as unable to read `document.cookie` at all. Asserted literally because
-    both strings belong to code NOA does not own.
+    `ui://` is LibreChat's classifier (`parsers.ts:183`, per the render gate's measurement) —
+    without it the resource is an ordinary attachment and no card renders. `text/uri-list` is
+    mcp-ui's selector for the `src` render mode; `text/html` renders `srcDoc`, whose opaque
+    origin the live render run measured as unable to read `document.cookie` at all. Asserted
+    literally because both strings belong to code NOA does not own.
     """
     tools = build_tool_context()
     request = pending()
@@ -181,7 +182,7 @@ def test_the_ui_resource_is_the_shape_the_render_gate_measured() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V25: the plain address, on every branch that has a text block
+# The plain address, on every branch that has a text block
 # --------------------------------------------------------------------------------------
 
 
@@ -189,7 +190,7 @@ def test_the_ui_resource_is_the_shape_the_render_gate_measured() -> None:
 def test_every_built_branch_carries_the_plain_address_in_the_text(
     branch: ChangeGateBranch,
 ) -> None:
-    """V25: "always" means on every branch, not only the one shipping today.
+    """ "Always" means on every branch, not only the one shipping today.
 
     And it is the *address*, not markup: no `<a>`, no `href`, nothing that needs a control
     the frame's sandbox can withhold. What an operator can do with it is copy it.
@@ -212,7 +213,7 @@ def test_the_text_names_the_tool_the_request_and_the_deadline() -> None:
     """What the block has to say for itself: nothing ran, here is the id, here is the TTL.
 
     The id is in the text rather than only in the URL because `noa_get_action_result` takes
-    one, and V23 answers "did this run?" from a row — so the model needs the id to ask,
+    one, and "did this run?" is answered from a row — so the model needs the id to ask,
     and is told to ask rather than to assume.
     """
     tools = build_tool_context()
@@ -230,12 +231,12 @@ def test_the_text_names_the_tool_the_request_and_the_deadline() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V26 / C8: an id, and nothing else, in front of the model
+# An id, and nothing else, in front of the model
 # --------------------------------------------------------------------------------------
 
 
 def test_the_approval_url_carries_the_id_and_nothing_else() -> None:
-    """V26: no token, no tool name, no arguments — the result lives in LibreChat's Mongo.
+    """No token, no tool name, no arguments — the result lives in LibreChat's Mongo.
 
     Asserted by taking the URL apart rather than by matching a string, so a query parameter
     appended later fails here instead of hiding inside a `startswith`.
@@ -251,7 +252,7 @@ def test_the_approval_url_carries_the_id_and_nothing_else() -> None:
 
 
 async def test_the_response_carries_no_arguments_evidence_or_requester() -> None:
-    """V26/V17: the card reads those behind a cookie; the transcript never gets them.
+    """The card reads those behind a cookie; the transcript never gets them.
 
     Driven through the real gate rather than a hand-built value, because the claim is about
     what survives the hop from `open_change_request` to `build_change_gate_response`: the
@@ -282,12 +283,12 @@ async def test_the_response_carries_no_arguments_evidence_or_requester() -> None
 
 @pytest.mark.parametrize("branch", BUILT_BRANCHES)
 def test_the_result_text_never_mentions_a_reason(branch: ChangeGateBranch) -> None:
-    """C8/V15/V71: the reason is born on the card, and the model is not told it exists.
+    """The reason is born on the card, and the model is not told it exists.
 
-    V71 keeps reason-writing out of the agent's system prompt for this reason; the same rule
+    The agent's system prompt keeps reason-writing out for this reason; the same rule
     has to hold for text NOA itself emits, which is the only other model-facing surface the
     gate controls. A model that knows there is a field is a model that can be argued into
-    filling it, and C8's boundary is that it never has one to relay.
+    filling it, and the boundary is that it never has one to relay.
     """
     tools = build_tool_context()
 
@@ -322,7 +323,7 @@ def test_the_url_is_built_from_the_configured_base() -> None:
 def test_the_url_joins_the_configured_base_exactly_once() -> None:
     """A base with a trailing slash produces one separator, not two.
 
-    `core.config` already strips them, so this guards the other callers: tests, and T56's
+    `core.config` already strips them, so this guards the other callers: tests, and the
     table surface, which will build its own path off the same base.
     """
     request = pending()

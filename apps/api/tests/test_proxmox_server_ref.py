@@ -1,18 +1,18 @@
-"""Operator word → one Proxmox server (T27, §V.18, §V.21).
+"""Operator word → one Proxmox server.
 
 The third sibling of `test_whm_server_ref.py` and `test_pmg_server_ref.py`, and the one whose
-existence changed the code under it: T19 parked the question of whether a third resolver would be
-two parameters or a third shape, and Proxmox turned out to be WHM's shape exactly, so the policy
-now lives once in `core.servers.reference` (§V.66). **These assertions are therefore doing two
-jobs**: they cover Proxmox's own adapter — the `base_url` host accessor and the `choices` fields
-— and, together with the two files they mirror, they are what says the extraction changed no
+existence changed the code under it: the server-list work parked the question of whether a third
+resolver would be two parameters or a third shape, and Proxmox turned out to be WHM's shape exactly,
+so the policy now lives once in `core.servers.reference`. **These assertions are therefore doing two
+jobs**: they cover Proxmox's own adapter — the `base_url` host accessor and the `choices` fields —
+and, together with the two files they mirror, they are what says the extraction changed no
 behaviour.
 
-**A tie produces candidates, never a pick**, and the stakes are one notch higher than at T31: the
-caller is a CHANGE tool, so a guess opens an approval card for a machine the operator never named
-and resets a password on it.
+**A tie produces candidates, never a pick**, and the stakes are one notch higher than on the
+earlier resolvers: the caller is a CHANGE tool, so a guess opens an approval card for a machine
+the operator never named and resets a password on it.
 
-Ties are reachable even though `proxmox_servers.name` is `unique=True` (§T.4): Postgres
+Ties are reachable even though `proxmox_servers.name` is `unique=True`: Postgres
 uniqueness is case-sensitive and the match is not, so `Pve1` and `pve1` can both exist and both
 answer to `PVE1`.
 
@@ -92,11 +92,11 @@ async def test_a_name_wins_over_another_server_s_hostname() -> None:
     assert resolution.server is by_name
 
 
-# --- V18: a tie is candidates ---
+# --- A tie is candidates ---
 
 
 async def test_a_name_tie_returns_choices_rather_than_a_pick() -> None:
-    """§V.18. Reachable because Postgres uniqueness is case-sensitive and matching is not."""
+    """Reachable because Postgres uniqueness is case-sensitive and matching is not."""
     repository = FakeProxmoxServerRepository([proxmox_server("Pve1"), proxmox_server("pve1")])
 
     resolution = await resolve_proxmox_server_ref("PVE1", repository=repository)
@@ -124,7 +124,7 @@ async def test_a_hostname_tie_returns_choices() -> None:
 
 
 async def test_choices_are_bounded() -> None:
-    """A tie between forty endpoints must not paste forty rows into a transcript (§V.26)."""
+    """A tie between forty endpoints must not paste forty rows into a transcript."""
     repository = FakeProxmoxServerRepository(
         [
             proxmox_server(f"pve{index}", base_url="https://shared.example.net:8006")
@@ -138,7 +138,7 @@ async def test_choices_are_bounded() -> None:
 
 
 def test_a_choice_names_the_server_without_a_credential() -> None:
-    """§V.8, §V.26: enough to recognise an endpoint and name it, and nothing else.
+    """Enough to recognise an endpoint and name it, and nothing else.
 
     `api_token_id` is absent as well as the secret. It is not a credential on its own, but it
     names the Proxmox user NOA authenticates as, and this text goes into a LibreChat transcript
@@ -154,11 +154,11 @@ def test_a_choice_names_the_server_without_a_credential() -> None:
     assert PROXMOX_API_TOKEN_SECRET not in describe(server).values()
 
 
-# --- V21 and the not-found cases ---
+# --- The blank-reference guard and the not-found cases ---
 
 
 async def test_a_blank_reference_is_refused() -> None:
-    """§V.21: a whitespace-only required string is a bad call, not a wildcard.
+    """A whitespace-only required string is a bad call, not a wildcard.
 
     `reads == 0` is the part worth asserting: the guard runs before inventory is touched, so a
     malformed call costs no query.
@@ -176,7 +176,7 @@ async def test_a_blank_reference_is_refused() -> None:
 async def test_the_refusal_names_proxmox_rather_than_another_system() -> None:
     """The shared resolver takes the subject noun as a parameter, so this is what says the
     Proxmox adapter passed its own — a message reading "WHM server reference is required" would
-    send an operator to the wrong inventory (§V.66's cost if the extraction were careless)."""
+    send an operator to the wrong inventory — the cost if the extraction were careless."""
     repository = FakeProxmoxServerRepository()
 
     blank = await resolve_proxmox_server_ref("", repository=repository)

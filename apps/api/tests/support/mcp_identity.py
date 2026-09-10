@@ -1,27 +1,26 @@
 """Doubles for MCP identity resolution.
 
-Same split as `support.mcp_tokens`: these cover policy, and `SQLMcpIdentityRepository` gets
-its own coverage against a live scratch database in `test_mcp_identity_repository.py`. The
-*real* `McpIdentityResolver` runs against these doubles, so the gate order, the TOFU rules
-and the fail-closed behaviour are exercised for real — only the SQL and the directory are
-faked.
+Same split as `support.mcp_tokens`: these cover policy, and `SQLMcpIdentityRepository` gets its own
+coverage against a live scratch database in `test_mcp_identity_repository.py`. The *real*
+`McpIdentityResolver` runs against these doubles, so the gate order, the TOFU rules and the
+fail-closed behaviour are exercised for real — only the SQL and the directory are faked.
 
 `FakeMcpIdentityRepository` stores `token_hash` and counts writes. Both are the assertion
 surface for invariants a value-only double could not express:
 
-- the digest, because V2's claim is that the lookup key is a SHA-256 of the plaintext and
+- the digest, because the claim is that the lookup key is a SHA-256 of the plaintext and
   nothing else, which you can only check by looking at what was stored;
-- `commits`, `binds` and `ldap_touches`, because several V4 rules are about *whether* a
+- `commits`, `binds` and `ldap_touches`, because several revalidation rules are about *whether* a
   write happened — an LDAP outage must deny while touching nothing, and a fresh token must
   not call the directory at all.
 
-`FakeDirectory` can answer, deny, or raise `LdapUnavailableError`, which is the three-way
-split V4 rests on. It records the emails it was asked about so a test can prove the call
-did not happen rather than inferring it from the result.
+`FakeDirectory` can answer, deny, or raise `LdapUnavailableError`, which is the three-way split the
+fail-closed rule rests on. It records the emails it was asked about so a test can prove the call did
+not happen rather than inferring it from the result.
 
 `build_auth_context` is the same doubles behind an `McpAuthContext`, so the verifier
 and the HTTP request path are exercised over one set of fakes. Its session is a stub that
-nothing touches: both repository doubles ignore it, which is what lets the R4 header check
+nothing touches: both repository doubles ignore it, which is what lets the header check
 run in the suite that always runs rather than only where Postgres is up.
 """
 
@@ -58,7 +57,7 @@ OTHER_LIBRECHAT_USER = "librechat-user-2"
 
 REVALIDATE_SECONDS = 900
 
-# Rate-limit policy for T12's tests. Deliberately tighter than the shipped default (5) so a
+# Rate-limit policy for the rate-limit tests. Deliberately tighter than the shipped default (5) so a
 # test reaches a block in three lines instead of five.
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_MAX_ATTEMPTS = 3
@@ -198,7 +197,7 @@ class FakeMcpIdentityRepository:
 
 
 class FakeDirectory:
-    """`DirectoryPresence` with the three answers V4 distinguishes."""
+    """`DirectoryPresence` with the three answers the fail-closed rule distinguishes."""
 
     def __init__(self, *, present: bool = True, unavailable: bool = False) -> None:
         self.present = present
@@ -266,7 +265,7 @@ def authenticated_caller(user_id: UUID | None = None) -> tuple[AuthenticatedUser
     `current_mcp_identity` reads stay one set of constants: a hand-written claims dict would
     let a test pass against an identity production never produces.
 
-    Shared by T33's gate tests and T63's result tool — both need a caller whose id they
+    Shared by the gate tests and the action-result tool — both need a caller whose id they
     then assert a row against, and two copies of this construction would be two chances for a
     test to agree with itself.
     """
@@ -300,8 +299,8 @@ def http_request_context(
 
     Built from a raw ASGI scope rather than a `TestClient` round trip so a unit test can
     name the exact headers on the wire, including their absence. The `Request` is yielded so
-    a test can read back what production wrote onto the scope — T12 stashes its refusal
-    there.
+    a test can read back what production wrote onto the scope — the rate limiter stashes its
+    refusal there.
 
     `user` fills `scope["user"]`, which is where `get_access_token()` looks first; pass an
     `AuthenticatedUser` to stand in for a request the auth middleware already accepted.

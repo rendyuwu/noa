@@ -1,11 +1,11 @@
 """WHM READ tools: `whm_list_servers`, `whm_list_accounts`, `whm_search_accounts`.
 
 `whm_list_servers` is exposed on purpose and it is the only `*_list_servers` that is
-(DECISIONS §6.6, owner-decided 2026-08-04): the model has to know which servers exist before
+(DECISIONS section 6.6, owner-decided 2026-08-04): the model has to know which servers exist before
 it can name one, while Proxmox and PMG nodes are few and named directly by the operator, so
-`proxmox_list_servers` and `pmg_list_servers` stay internal (§I.mcp).
+`proxmox_list_servers` and `pmg_list_servers` stay internal (the MCP contract).
 
-`whm_search_accounts` is the discovery step in front of every account CHANGE: T22 and T23 take
+`whm_search_accounts` is the discovery step in front of every account CHANGE: the suspend pair take
 an exact `user`, and the operator has a domain or half a username. It answers over `listaccts`
 because WHM has no server-side account search — see `fetch_whm_accounts`, which is internal
 and which `whm_list_accounts` shares.
@@ -31,11 +31,12 @@ Two split responsibilities, both deliberate:
   the public name, description and annotations — is `register_whm_read_tools`, so the
   schema fastmcp derives comes from a signature with no context parameter in it.
 - `sanitize_tool_errors` wraps the function, not the registration. A caller that reaches
-  the function some other way (a future internal call, C9/V17) gets the same V19 guarantee.
+  the function some other way (a future internal call — one workflow, one tool) gets the same
+  sanitize-to-a-code guarantee.
 
-Registration also declares the tool's `ToolRisk`. Nothing in this module records
-anything: the `tool_runs` row is written by `ToolRunAuditMiddleware` beside the RBAC gate
-(V83b), and the risk it stamps on that row comes from here, where the tool is defined,
+Registration also declares the tool's `ToolRisk`. Nothing in this module records anything: the
+`tool_runs` row is written by `ToolRunAuditMiddleware` beside the RBAC gate — catalog, RBAC and
+audit at one seam — and the risk it stamps on that row comes from here, where the tool is defined,
 rather than from a list somewhere else that a new tool can be absent from.
 """
 
@@ -66,7 +67,7 @@ TOOL_WHM_LIST_SERVERS = "whm_list_servers"
 TOOL_WHM_LIST_ACCOUNTS = "whm_list_accounts"
 TOOL_WHM_SEARCH_ACCOUNTS = "whm_search_accounts"
 
-# §T.21's bound. Also the schema's `ge`/`le`, so the two cannot drift apart.
+# The account search's bound. Also the schema's `ge`/`le`, so the two cannot drift apart.
 MIN_SEARCH_LIMIT = 1
 MAX_SEARCH_LIMIT = 100
 DEFAULT_SEARCH_LIMIT = 20
@@ -110,13 +111,11 @@ WHM_ACCOUNT_TABLE_COLUMNS: list[TableColumn] = [
 ]
 
 # The account fields a *model* may not read, dropped from `whm_search_accounts`' rows.
-#
-# `suspendreason` is WHM's suspension note, and as of T22 NOA writes the operator's approval
-# reason into it — C8's single field, typed on the card. WHM echoes it back on every later
+# `suspendreason` is WHM's suspension note, and as of the suspend tool NOA writes the operator's
+# approval reason into it — one field, typed on the card. WHM echoes it back on every later
 # `listaccts`, so a search result carrying the field would put that reason in the transcript and
-# hand the LLM the one string C8 says it must never see. The parked table above keeps the column
-# on purpose: `/tables/{token}` is behind the operator's own cookie, not in front of a
-# model.
+# hand the LLM the one string it must never see. The parked table above keeps the column on purpose:
+# `/tables/{token}` is behind the operator's own cookie, not in front of a model.
 ACCOUNT_FIELDS_WITHHELD_FROM_MODEL = frozenset({"suspendreason"})
 
 DESCRIPTION_WHM_SEARCH_ACCOUNTS = (
@@ -136,10 +135,11 @@ async def whm_list_servers(*, context: McpToolContext) -> ToolPayload:
     presence bools, 2 timestamps) and not one of those extras is read by a model choosing a
     server; at scale the gap is thousands of tokens spent on fields nobody here uses.
 
-    A row with `is_reseller_credential = true` is left out (V109(a)) — visibility only, not
+    A row with `is_reseller_credential = true` is left out — this tool filters its own output,
+    visibility only, not
     authorization: the same row stays a valid `resolve_whm_server_ref` candidate by id, name
     and hostname, and stays fully visible in the admin UI. Filtering it out of *resolution*
-    too would make the account CHANGE path V106 depends on unreachable.
+    too would make the account CHANGE path the owner-as-`server_ref` rule depends on unreachable.
     """
     async with context.session_factory() as session:
         repository = context.whm_server_repository_factory(session)
@@ -152,29 +152,29 @@ async def whm_list_servers(*, context: McpToolContext) -> ToolPayload:
 
 
 async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> ToolPayload:
-    """Every account on the named WHM server, normalised. Internal — ⊥ an MCP tool.
+    """Every account on the named WHM server, normalised. Internal — never an MCP tool.
 
     Not exposed and not decorated with `sanitize_tool_errors`: its callers are exposed tools
     that already are, and a second boundary would turn a `NoaError` into a payload the caller
     then has to unwrap twice. `whm_list_accounts` is the other caller.
 
-    **The resolved server's name and id come back with the accounts**. `server_ref`
-    is whatever the operator typed — an id, a hostname, a name in another case — and the tool
-    that reports "these are the accounts on X" has to name the machine it actually read, not the
-    string it was handed. Resolution already happened here, so returning the answer costs
-    nothing; re-reading it in the caller would be a second resolution that could disagree with
-    this one. The id is what T22's CHANGE gate persists as evidence, so the change an operator
-    approves runs against the machine the card described rather than against a string resolved
-    again minutes later.
+    **The resolved server's name and id come back with the accounts**. `server_ref` is whatever the
+    operator typed — an id, a hostname, a name in another case — and the tool that reports "these
+    are the accounts on X" has to name the machine it actually read, not the string it was handed.
+    Resolution already happened here, so returning the answer costs nothing; re-reading it in the
+    caller would be a second resolution that could disagree with this one. The id is what the
+    suspend tool's CHANGE gate persists as evidence, so the change an operator approves runs against
+    the machine the card described rather than against a string resolved again minutes later.
 
-    **The resolved row's `api_username` and host come back too, for the same reason** (§V106,
-    §V108). V106's preflight compare needs `api_username` to check against the account's
-    `owner`, and V108's card/receipt/`tool_runs` need the host — both are already on the row
-    that just won resolution, so returning them here costs the 0 extra round trips V106 asks
+    **The resolved row's `api_username` and host come back too, for the same reason** —
+    owner-as-`server_ref` and the four recorded fields. The owner compare needs `api_username`
+    to check against the account's
+    `owner`, and the card/receipt/`tool_runs` need the host — both are already on the row
+    that just won resolution, so returning them here costs the 0 extra round trips the compare asks
     for; reading them again in the CHANGE module would be a second, disagreeable resolution.
     `host` is `hostname_of(base_url)`, falling back to the raw `base_url` when that does not
     parse — a card field that silently read blank on an unparseable URL would be worse than
-    one carrying the raw string (V86: silence is not evidence).
+    one carrying the raw string (silence is not evidence).
 
     Only `fetch_whm_accounts` itself carries these two: `whm_list_accounts` and
     `whm_search_accounts` pick `accounts` and `server` out of this payload and
@@ -237,14 +237,14 @@ async def fetch_whm_accounts(*, server_ref: str, context: McpToolContext) -> Too
 async def whm_list_accounts(*, server_ref: str, context: McpToolContext) -> ToolAnswer:
     """Every cPanel account on one WHM server, parked on a page.
 
-    **The rows never enter the transcript.** A dense server carries thousands of accounts, and
-    a listing in front of the model costs tokens for a body no human reads there anyway — so
-    the rows go to `tool_result_tables` and the answer is a summary plus the address of the
-    page that renders them. That is the whole of V64, and it is why this tool answers with
-    content blocks while its sibling `whm_search_accounts` answers with the payload envelope:
-    a bounded search's rows *are* the answer, and a listing's rows are a surface.
+    **The rows never enter the transcript.** A dense server carries thousands of accounts, and a
+    listing in front of the model costs tokens for a body no human reads there anyway — so the rows
+    go to `tool_result_tables` and the answer is a summary plus the address of the page that renders
+    them. That is the whole of the table-surface rule, and it is why this tool answers with content
+    blocks while its sibling `whm_search_accounts` answers with the payload envelope: a bounded
+    search's rows *are* the answer, and a listing's rows are a surface.
 
-    **No `limit` argument, deliberately.** V85's cap exists because an operator asked for one;
+    **No `limit` argument, deliberately.** A stated cap exists where an operator asked for one;
     here nothing is dropped on the operator's behalf. The only bound is the table's own
     (`RESULT_TABLE_MAX_ROWS`), it is applied at the write, and it reports itself in the text
     and in the envelope — which is the same invariant answered by the surface instead of by
@@ -253,7 +253,7 @@ async def whm_list_accounts(*, server_ref: str, context: McpToolContext) -> Tool
     Sorted by username before it is handed over, all the same. `cap_rows` is a prefix and
     never a re-sort — only the producer knows which order is reproducible for its source — and
     `listaccts` order is WHM's own and undocumented, so a capped page would otherwise be an
-    arbitrary subset that changes between two identical calls (V85, T21's rule).
+    arbitrary subset that changes between two identical calls.
 
     A failure comes back as the ordinary envelope, `choices` and all: a `server_ref`
     that named nothing or several things, or a WHM that refused, is information the model can
@@ -309,12 +309,12 @@ async def whm_search_accounts(
 ) -> ToolPayload:
     """Accounts on one WHM server whose username or domain contains `query`.
 
-    **Filtered here, not by WHM.** `listaccts` takes no search parameter, so the whole list
-    comes back and the match runs in this process. That is the ported behaviour and it is also
-    why `limit` matters: the tool result is what enters the transcript, and an unbounded answer
-    on a shared server is thousands of rows (V64 is the answer for a genuinely large *listing*,
-    which is `whm_list_accounts`' job above and not this tool's — a bounded search's answer
-    fits the transcript, so it needs no table surface).
+    **Filtered here, not by WHM.** `listaccts` takes no search parameter, so the whole list comes
+    back and the match runs in this process. That is the ported behaviour and it is also why `limit`
+    matters: the tool result is what enters the transcript, and an unbounded answer on a shared
+    server is thousands of rows (the table surface is the answer for a genuinely large *listing*,
+    which is `whm_list_accounts`' job above and not this tool's — a bounded search's answer fits the
+    transcript, so it needs no table surface).
 
     Two guards before any I/O, so a malformed call costs no round trip:
 
@@ -325,20 +325,19 @@ async def whm_search_accounts(
       answers first; this branch is the one that holds for a direct in-process call
       and it is what makes the bound a property of the tool rather than of its registration.
 
-    **Truncation is stated, not implied** (V85, and this tool is where that invariant was
-    written). `total_matches` and `truncated` ship with the rows because `noa-old` returned the
-    first N silently, and a model reading twenty rows with no other signal tells the operator
-    there are twenty accounts — a fabrication the tool handed it rather than one the model
-    invented.
+    **Truncation is stated, not implied** — this tool is where that invariant was written.
+    `total_matches` and `truncated` ship with the rows because `noa-old` returned the first N
+    silently, and a model reading twenty rows with no other signal tells the operator there are
+    twenty accounts — a fabrication the tool handed it rather than one the model invented.
 
-    Matches are sorted by username before the cut, also V85: "the first twenty" has to be
+    Matches are sorted by username before the cut, for the same reason: "the first twenty" has to be
     reproducible, and `listaccts` order is WHM's own and not documented as stable, which would
     make a truncated answer an arbitrary subset that changes between calls.
 
     **One field is withheld from the rows**: `suspendreason`. NOA writes the
     operator's approval reason into WHM's suspension note when it suspends an account, and WHM
     returns it on every later `listaccts` — so a search that reported the field would hand the
-    model, by round trip, the one string C8 says it must never see. See
+    model, by round trip, the one string the LLM must never see. See
     `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`.
     """
     normalized_query = query.strip().lower()
@@ -375,11 +374,11 @@ def _without_withheld_fields(account: WHMAccount) -> WHMAccount:
     """One account row as a model may read it.
 
     See `ACCOUNT_FIELDS_WITHHELD_FROM_MODEL`. Dropped here rather than in
-    `normalize_whm_account_summary`, because the normaliser feeds three callers and only this
-    one answers into a transcript: the parked table renders the column behind a cookie, and
-    T22's suspend preflight puts the whole summary on the approval card, which is the operator's
-    own surface. A field withheld from *everyone* would take it off the two surfaces that exist
-    to show it.
+    `normalize_whm_account_summary`, because the normaliser feeds three callers and only this one
+    answers into a transcript: the parked table renders the column behind a cookie, and the suspend
+    tool's preflight puts the whole summary on the approval card, which is the operator's own
+    surface. A field withheld from *everyone* would take it off the two surfaces that exist to show
+    it.
     """
     return {
         key: value
@@ -389,7 +388,7 @@ def _without_withheld_fields(account: WHMAccount) -> WHMAccount:
 
 
 def register_whm_read_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
-    """Register the WHM READ tools on `server`; return each name with its risk (I.mcp, V20).
+    """Register the WHM READ tools on `server`; return each name with its risk (the MCP contract).
 
     The returned keys are what `registry.register_mcp_tools` checks against `TOOL_CATALOG`,
     and what a test compares against the server's awaited `list_tools()` — see

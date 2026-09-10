@@ -1,11 +1,11 @@
 """`notifications/tools/list_changed` on a permission change.
 
-**What this file may and may not assert.** R30 measured, at LibreChat pin `45cc53c4`, that the
-client ignores this notification: zero handlers for `ToolListChangedNotificationSchema` in the
+**What this file may and may not assert.** Measured at LibreChat pin `45cc53c4`: the
+client ignores this notification — zero handlers for `ToolListChangedNotificationSchema` in the
 tree, and a notification NOA provably put on a session's stream drew no `tools/list` after it.
 So there is no test here that a client refetched, and there must not be — that would assert
 behaviour NOA does not control, and it would go red on an upstream whim. It is the shape of the
-inert host-key control in §B.2 that V69 exists to prevent.
+inert host-key pin: prose is not evidence.
 
 What is left is NOA's own behaviour, and it splits three ways:
 
@@ -15,13 +15,13 @@ What is left is NOA's own behaviour, and it splits three ways:
 2. **How the emit reaches a session** — `McpToolListChangedNotifier` and `McpSessionRegistry`
    over a session double, including the failure paths (closed stream, wedged client).
 3. **That the register is populated at all** — over the real mount, because a middleware nobody
-   reaches is the failure mode this whole feature would otherwise hide behind V74's
-   best-effort silence.
+   reaches is the failure mode this whole feature would otherwise hide behind the
+   best-effort silence the execution-time re-check makes acceptable.
 
-And one assertion that is about the *consequence* rather than the mechanism: T66's own V1
-backstop, at the bottom, where a grant revoked through the production write path is refused at
-execution while the client's captured catalog still names it. That is the property that makes a
-stale catalog safe, and it is the only behavioural claim §T.66 permits here.
+And one assertion that is about the *consequence* rather than the mechanism: the execution-time
+permission re-check, at the bottom, where a grant revoked through the production write path is
+refused at execution while the client's captured catalog still names it. That is the property that
+makes a stale catalog safe, and it is the only behavioural claim this feature permits here.
 """
 
 from __future__ import annotations
@@ -75,7 +75,7 @@ ADMIN_EMAIL = "admin@example.com"
 
 
 async def test_setting_role_tools_notifies_every_holder_of_that_role() -> None:
-    """V74: a grant change moves the catalog of everyone holding the role.
+    """A grant change moves the catalog of everyone holding the role.
 
     Two holders and one non-holder, so the audience is a real selection rather than "everyone
     who exists" — with a single user in the fixture, a broadcast would pass.
@@ -92,7 +92,7 @@ async def test_setting_role_tools_notifies_every_holder_of_that_role() -> None:
 
 
 async def test_deleting_a_role_notifies_the_holders_the_cascade_is_about_to_strip() -> None:
-    """V74: the holders are read *before* the delete, not after.
+    """The holders are read *before* the delete, not after.
 
     `ON DELETE CASCADE` removes the assignments with the role, so a service that read its
     audience after the write would find nobody — and an empty audience is indistinguishable from
@@ -110,7 +110,7 @@ async def test_deleting_a_role_notifies_the_holders_the_cascade_is_about_to_stri
 
 
 async def test_replacing_a_users_roles_notifies_that_user_only() -> None:
-    """V74: role assignment changes what one operator resolves to."""
+    """Role assignment changes what one operator resolves to."""
     rbac = build_service()
     target = rbac.repository.add_user(EMAIL)
     bystander = rbac.repository.add_user(OTHER_EMAIL, roles=(ROLE_SUPPORT,))
@@ -124,10 +124,10 @@ async def test_replacing_a_users_roles_notifies_that_user_only() -> None:
 
 @pytest.mark.parametrize("is_active", [False, True])
 async def test_flipping_a_users_status_notifies_them(is_active: bool) -> None:
-    """V11 + V74: both directions move the catalog.
+    """Both directions move the catalog.
 
     Disabling empties the effective set whatever the roles say; enabling refills it. A test that
-    only covered disable would leave the other half of V11 unasserted, and "notify on disable"
+    only covered disable would leave the other half unasserted, and "notify on disable"
     is the kind of rule that reads as complete.
     """
     rbac = build_service()
@@ -190,7 +190,7 @@ async def test_an_idempotent_role_creation_notifies_nobody() -> None:
     ],
 )
 async def test_a_refused_write_notifies_nobody(call: Any, expected_error: type[Exception]) -> None:
-    """V14 + V74: every guard raises before the commit, so nothing is announced either.
+    """Every guard raises before the commit, so nothing is announced either.
 
     A notification without a committed change is worse than none: it tells a client to refetch a
     catalog that did not move, and if the emit ever *preceded* the commit it would advertise rows
@@ -223,7 +223,7 @@ async def test_the_notification_follows_the_commit() -> None:
 
 
 async def test_a_notifier_that_raises_does_not_fail_the_write() -> None:
-    """V74: best-effort. The change committed, so the caller must see success.
+    """Best-effort. The change committed, so the caller must see success.
 
     The write is verified through a read afterwards rather than by the absence of an exception:
     a service that swallowed the notifier fault *and* rolled back would satisfy the weaker claim.
@@ -389,7 +389,9 @@ async def test_a_closed_session_is_dropped_and_nothing_propagates(error: Excepti
 
 
 async def test_a_live_session_beside_a_closed_one_still_gets_told() -> None:
-    """One dead stream is not a reason to withhold the others' notification (V86's shape)."""
+    """One dead stream is not a reason to withhold the others' notification (a partial answer names
+    its subset).
+    """
     user_id = uuid4()
     dead = FakeServerSession(fail_with=anyio.ClosedResourceError())
     live = FakeServerSession()
@@ -507,7 +509,7 @@ def test_the_real_mount_registers_the_callers_session(mount) -> None:
     """The middleware is reached, and it resolves the caller's `users.id`.
 
     The gap this closes is the one the rest of this file cannot: every notifier test above passes
-    against a register nothing ever writes, and V74's best-effort emit means an unwritten
+    against a register nothing ever writes, and the best-effort emit means an unwritten
     register fails silently in production.
     """
     fixture, identities, tools, registry = mount
@@ -565,10 +567,10 @@ def test_the_emit_reaches_a_real_server_session(mount) -> None:
     name that drifted, or a session shape the register cannot hold, fails here.
 
     `emitted == 1` is the assertion, not the absence of an exception: a notifier that silently
-    dropped every send would satisfy the weaker claim. What happens to the message *after* the
-    write stream is the transport's business and R30's answer — with no standalone GET stream
-    open, the router discards it (`streamable_http.py`), which is why this asserts the hand-over
-    rather than a delivery.
+    dropped every send would satisfy the weaker claim. What happens to the message *after* the write
+    stream is the transport's business and the measured answer — LibreChat ignores the notification;
+    with no standalone GET stream open, the router discards it (`streamable_http.py`), which is why
+    this asserts the hand-over rather than a delivery.
     """
     fixture, identities, tools, registry = mount
     user = tools.authorization.add_user(EMAIL, roles=(ROLE_SUPPORT,))
@@ -616,24 +618,24 @@ def test_an_unauthenticated_request_registers_nothing(mount) -> None:
     assert registry.user_ids() == []
 
 
-# --- T66's own assertion: the V1 backstop behind a production write ---
+# --- The execution-time backstop behind a production write ---
 
 
 def test_a_grant_revoked_through_the_service_is_refused_while_the_cached_catalog_names_it(
     mount,
 ) -> None:
-    """The one behavioural claim §T.66 permits, and the one that matters.
+    """The one behavioural claim this feature permits, and the one that matters.
 
     `test_mcp_tool_rbac.py` asserts the backstop by mutating the repository directly. This asserts
     it behind the *production write* — `AuthorizationService.set_role_tools`, the same call
-    `PUT /admin/roles/{name}/tools` makes and the same call that emits T66's notification — so the
+    `PUT /admin/roles/{name}/tools` makes and the same call that emits the notification — so the
     revocation, the emit and the refusal are one sequence rather than three separate claims.
 
     The client's catalog is captured while the grant exists and is *not* re-read afterwards, which
-    is the situation R30 leaves NOA in: LibreChat ignores the notification, so its displayed
-    catalog keeps the revoked tool until the connection is rebuilt. That is documented in
-    `ARCHITECTURE.md` as an operator-facing consequence, and it is safe for exactly one reason —
-    the execution gate re-resolves per call.
+    is the situation the measurement leaves NOA in: LibreChat ignores the notification, so its
+    displayed catalog keeps the revoked tool until the connection is rebuilt. That is documented in
+    `ARCHITECTURE.md` as an operator-facing consequence, and it is safe for exactly one reason — the
+    execution gate re-resolves per call.
     """
     fixture, identities, tools, _registry = mount
     user = tools.authorization.add_user(EMAIL, roles=(ROLE_SUPPORT,))

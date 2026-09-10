@@ -8,10 +8,10 @@ import tseslint from 'typescript-eslint'
 //
 // `apps/admin-web` — the two web apps are independent packages with their own
 // lockfiles, own CI and own deploy artifact. They share no source, no deps, no
-// aliases and no symlinks (AGENTS.md, C12).
+// aliases and no symlinks (AGENTS.md).
 //
-// `@gio/*` — the BIGSU design system belongs to `apps/admin-web` (§T.47 names it;
-// §T.40 does not). The embed is a card in a small iframe and styles itself with
+// `@gio/*` — the BIGSU design system belongs to `apps/admin-web` (that app's
+// contract names it; this one's does not). The embed is a card in a small iframe and styles itself with
 // hand-written CSS. Adopting BIGSU here is a decision that has to delete this
 // rule on purpose, not a dependency that arrives by accident.
 const forbiddenImports = {
@@ -19,12 +19,12 @@ const forbiddenImports = {
     {
       group: ['**/apps/admin-web', '**/apps/admin-web/**', '**/admin-web/**'],
       message:
-        'apps/web-embed and apps/admin-web are independent packages — they share no source (C12, AGENTS.md).',
+        'apps/web-embed and apps/admin-web are independent packages — they share no source (AGENTS.md).',
     },
     {
       group: ['@gio/*'],
       message:
-        'The embed app does not depend on BIGSU. Adding it is a deliberate change to §T.40 as built, not an import.',
+        'The embed app does not depend on BIGSU. Adding it is a deliberate design change, not an import.',
     },
   ],
 }
@@ -36,7 +36,7 @@ export default defineConfig(
   reactHooks.configs.flat['recommended-latest'],
   nextPlugin.configs.recommended,
   {
-    // Playwright's stub upstream (§T.44) is a plain Node script, not app code: it
+    // Playwright's stub upstream is a plain Node script, not app code: it
     // runs outside the bundler, so the browser-shaped default globals do not
     // describe it. Named here rather than app-wide — a `process` reference inside
     // `src/` should still be an error.

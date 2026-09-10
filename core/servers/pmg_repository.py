@@ -1,10 +1,10 @@
 """SQL behind PMG server inventory.
 
 The PMG sibling of `core.servers.whm_repository`, and it makes the same two calls that module
-made at T19, for the same reasons.
+made, for the same reasons.
 
 **Reads only.** `noa-old`'s `storage/postgres/pmg_servers.py` also had `create`/`update`/
-`delete`, and their only caller in this design is the admin routes of T54. Porting them now
+`delete`, and their only caller in this design is the admin server-CRUD routes. Porting them now
 would land ~130 lines of unreachable code a reviewer has to treat as live.
 
 **`get_by_name` is not a query.** `resolve_pmg_server_ref` already holds the whole list to
@@ -54,16 +54,15 @@ RowT_co = TypeVar("RowT_co", bound=PMGServerRowLike, covariant=True)
 class PMGServerReadRepository(Protocol[RowT_co]):
     """What the PMG tools need from inventory, parametrised by the row it yields.
 
-    Generic, and that is what keeps `PMGServerRowLike` narrow (the same construction T21 gave
-    `WHMServerReadRepository`). Resolution matches on identity and never touches a credential,
-    so it is written against the narrow view; a tool that resolves a server then *connects* to
-    it needs the SSH columns off the row it resolved — that row, not a second read by id, which
-    could disagree with the list the tie was judged against.
+    Generic, and that is what keeps `PMGServerRowLike` narrow (the same construction the WHM account
+    search gave `WHMServerReadRepository`). Resolution matches on identity and never touches a
+    credential, so it is written against the narrow view; a tool that resolves a server then
+    *connects* to it needs the SSH columns off the row it resolved — that row, not a second read by
+    id, which could disagree with the list the tie was judged against.
 
-    The parameter is how both hold at once: `resolve_pmg_server_ref` hands back the row type
-    the repository yields, so the app wiring declares `PMGServerReadRepository[PMGServer]` and
-    reaches the credentials with no cast, while `core/`'s resolution logic still sees three
-    columns.
+    The parameter is how both hold at once: `resolve_pmg_server_ref` hands back the row type the
+    repository yields, so the app wiring declares `PMGServerReadRepository[PMGServer]` and reaches
+    the credentials with no cast, while `core/`'s resolution logic still sees three columns.
     """
 
     async def list_servers(self) -> Sequence[RowT_co]: ...

@@ -1,4 +1,4 @@
-"""In-memory reader for the admin action-request route tests (§I.admin-api).
+"""In-memory reader for the admin action-request route tests (the admin API's contract).
 
 The double holds `ActionRequestListItem`s beside the reason, the gate context and the receipt each
 one carries, and answers every read on the `ActionRequestAdminReader` Protocol. That lets a route

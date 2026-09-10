@@ -1,13 +1,13 @@
 """Async engine + session factory.
 
-First DB access in the repo, so this module exists to serve T8's login flow and
+First DB access in the repo, so this module exists to serve the login flow and
 is shared by everything after it.
 
 `noa-old` reached for `@cache`d module-level `get_engine()` / `get_session_factory()`
 accessors. Both are functions here, and the app calls them once in its lifespan and
 hangs the results on `app.state`. Two reasons:
 
-- T8 requires services be constructed once at startup rather than per request, and
+- The login flow requires services be constructed once at startup rather than per request, and
   a cached global is the same idea with a worse failure mode: a test that builds a
   second app silently shares the first one's engine and its event loop, then fails
   somewhere unrelated when that loop closes.
@@ -37,11 +37,10 @@ from core.config import Settings
 class SessionFactory(Protocol):
     """What a caller outside FastAPI's dependency graph needs: call it, get a session.
 
-    A Protocol rather than the concrete `async_sessionmaker[AsyncSession]` so a path that
-    opens its own transactions can be exercised without Postgres — T39's expiry sweeper is
-    the case in `core/`: its loop, its error handling and its one-session-per-pass rule are
-    all testable without a database, while the SQL it runs is pinned separately against a
-    real one.
+    A Protocol rather than the concrete `async_sessionmaker[AsyncSession]` so a path that opens its
+    own transactions can be exercised without Postgres — the expiry sweeper is the case in `core/`:
+    its loop, its error handling and its one-session-per-pass rule are all testable without a
+    database, while the SQL it runs is pinned separately against a real one.
 
     `noa_api.mcp_request_auth.McpSessionFactory` states the same shape on the MCP side, where
     it cannot import this one: `core/` must not depend on an app.
@@ -68,10 +67,9 @@ def create_engine(settings: Settings) -> AsyncEngine:
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
     """Session factory bound to `engine`.
 
-    `expire_on_commit=False`: request handlers read attributes off an ORM object
-    after committing (a login response reads `user.email` after the transaction
-    closes), and the default would issue a refresh against a session the request is
-    done with.
+    `expire_on_commit=False`: request handlers read attributes off an ORM object after committing (a
+    login response reads `user.email` after the transaction closes), and the default would issue a
+    refresh against a session the request is done with.
     """
     return async_sessionmaker(engine, expire_on_commit=False)
 

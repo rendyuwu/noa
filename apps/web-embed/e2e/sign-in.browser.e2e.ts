@@ -12,19 +12,20 @@ import {
 } from './support/frame'
 
 /**
- * The way out of a 401, in the frame that has to offer it (§T.43 — V38, V42, V25, V87).
+ * The way out of a 401, in the frame that has to offer it.
  *
  * **This lane exists because the failure it guards against is silent.** LibreChat frames the card at
- * two render sites and only one grants `allow-popups` (R13, R29: `ToolCallInfo` =
+ * two render sites and only one grants `allow-popups` (measured live: `ToolCallInfo` =
  * `allow-scripts allow-same-origin`, `MCPUIResource` = that plus `allow-popups`). Where it is absent
- * a `target="_blank"` click is refused with nothing an operator can see — V80's failure shape, one
+ * a `target="_blank"` click is refused with nothing an operator can see — the in-frame `fetch` rule's
+ * failure shape, one
  * mechanism over — so the card prints the address as well as linking it, and the specs below measure
  * both strings rather than trusting either.
  *
  * **The allow-popups case is the negative control.** Without it, "no tab opened" would pass just as
  * well against a link that is simply broken.
  *
- * **And the retry is asserted as a non-navigation.** §T.43 forbids an LDAP redirect inside the
+ * **And the retry is asserted as a non-navigation.** The 401 state forbids an LDAP redirect inside the
  * iframe, which is an absence: the assertion is that the framed document is still on the card's URL
  * after the state has changed under it.
  *
@@ -38,9 +39,9 @@ test.beforeEach(async ({ context }) => {
   await signIn(context)
 })
 
-test('a 401 renders “cannot authenticate here” and no decision (V38, §T.43)', async ({ page }) => {
+test('a 401 renders “cannot authenticate here” and no decision', async ({ page }) => {
   // Never a blank card and never a live Approve: one an operator cannot use reads as an action that
-  // was refused rather than one that was never available. What the state *does* carry is §T.43's way
+  // was refused rather than one that was never available. What the state *does* carry is the 401 state's way
   // out — a link-out and a retry, neither of which is a decision.
   const card = await frameCard(page, APPROVAL_IDS.unauthorized)
 
@@ -48,7 +49,7 @@ test('a 401 renders “cannot authenticate here” and no decision (V38, §T.43)
   await expect(cardBody(card).getByRole('button', { name: /approve|deny/i })).toHaveCount(0)
   await expect(card.getByLabel(/why is this change/i)).toHaveCount(0)
 
-  // V42: no login page and no credential handling — asserted as the absence it is, inside the frame
+  // No login page and no credential handling — asserted as the absence it is, inside the frame
   // LibreChat actually serves.
   await expect(cardBody(card).locator('form')).toHaveCount(0)
   await expect(cardBody(card).locator('input')).toHaveCount(0)
@@ -60,13 +61,13 @@ test('a 401 renders “cannot authenticate here” and no decision (V38, §T.43)
   await expect(cardBody(card).getByRole('button', { name: 'Try again' })).toBeVisible()
 })
 
-test('the sign-in link opens nothing where the sandbox omits allow-popups (§T.43, R13)', async ({
+test('the sign-in link opens nothing where the sandbox omits allow-popups', async ({
   page,
   context,
 }) => {
-  // The measurement §T.43's second door exists for. `ToolCallInfo` frames this card under
+  // The measurement the 401 state's second door exists for. `ToolCallInfo` frames this card under
   // `allow-scripts allow-same-origin`, and a `target="_blank"` click in there is refused with
-  // nothing the operator can see — V80's failure shape, one mechanism over. So the address is on the
+  // nothing the operator can see — the in-frame `fetch` rule's failure shape, one mechanism over. So the address is on the
   // card as text as well, and *that* is what makes the state answerable at this render site.
   const card = await frameCard(page, APPROVAL_IDS.unauthorized)
   expect(MEASURED_SANDBOX).not.toContain('allow-popups')
@@ -101,8 +102,8 @@ test('the same click does open a top-level tab where allow-popups is granted', a
   expect(tab.url()).toBe(SIGN_IN_URL)
 
   // What that tab can still do, measured rather than reasoned about: a popup inherits its opener's
-  // sandbox flags unless `allow-popups-to-escape-sandbox` is granted, and R13 records that as absent
-  // — so a login form in there may be as inert as the one V80 forbids on the card. The result is
+  // sandbox flags unless `allow-popups-to-escape-sandbox` is granted, and that is measured as absent
+  // — so a login form in there may be as inert as the one the card itself forbids. The result is
   // recorded on the stub's own counters; either way the printed address is the door that does not
   // depend on this.
   const probe = await tab.evaluate(async () => {
@@ -132,14 +133,14 @@ test('the same click does open a top-level tab where allow-popups is granted', a
     description: `opened tab: form submit reached the stub = ${submitted}, url = ${tab.url()}`,
   })
 
-  // The V80 control's counters are untouched by all of this — separate paths on purpose.
+  // The in-frame `fetch` control's counters are untouched by all of this — separate paths on purpose.
   expect(seen['POST /__probe/form']).toBeUndefined()
 })
 
-test('Try again picks the session up without leaving the card URL (§T.43 — V42)', async ({
+test('Try again picks the session up without leaving the card URL', async ({
   page,
 }) => {
-  // §T.43's ⊥ clause, asserted: no LDAP redirect inside the iframe. The operator signs in somewhere
+  // The 401 state's forbidden clause, asserted: no LDAP redirect inside the iframe. The operator signs in somewhere
   // else, comes back, clicks once — and the frame is still the document it was, on the URL that owns
   // this request's lifecycle.
   const id = APPROVAL_IDS.recovers

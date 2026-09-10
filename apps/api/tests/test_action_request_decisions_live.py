@@ -81,7 +81,7 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
 
 # The row helpers — `insert_user`, `open_request`, `read_request`, `read_runs` — moved to
 # `support.action_decisions` at T39, when the expiry sweep's live file needed the same four
-#. They still write through the gate's own repository; see their docstrings.
+# . They still write through the gate's own repository; see their docstrings.
 
 
 # --------------------------------------------------------------------------------------

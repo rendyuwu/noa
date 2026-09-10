@@ -32,22 +32,21 @@ SCHEMA_V1_TABLES = {
     "pmg_servers",
 }
 
-# Added after schema v1 by the task named alongside each.
+# Added after schema v1 by the work named alongside each.
 LATER_TABLES = {
-    "login_rate_limits": "T8",
-    "tool_runs": "T35",
-    "action_requests": "T34",
-    "action_receipts": "T36",
-    "tool_result_tables": "T56",
+    "login_rate_limits": "the login flow",
+    "tool_runs": "the tool-runs table",
+    "action_requests": "the action-requests table",
+    "action_receipts": "the receipts table",
+    "tool_result_tables": "the table surface",
 }
 
 # Named so the assertion below says what it is guarding against rather than only
-# failing on a set difference: this arrives with T14, and a table appearing early
-# means a migration landed ahead of the task that specifies its columns.
+# failing on a set difference: this arrives with the ported `remote_exec` work, and a
+# table appearing early means a migration landed ahead of the design that specifies its columns.
 NOT_YET_TABLES = {"audit_log"}
 
-# Columns that hold Fernet ciphertext. None may ever surface in a
-# `to_safe_dict()` payload.
+# Columns that hold Fernet ciphertext. None may ever surface in a `to_safe_dict()` payload.
 SECRET_COLUMNS = {
     "whm_servers": {
         "api_token",
@@ -65,26 +64,26 @@ SECRET_COLUMNS = {
 
 
 def test_metadata_declares_schema_v1_plus_only_the_later_tables_landed_so_far() -> None:
-    """Every table is accounted for by the task that added it.
+    """Every table is accounted for by the work that added it.
 
-    Schema v1 is T4's eight; `LATER_TABLES` names each addition since. An unlisted
-    table means a migration landed without its task, which is how `Base.metadata` and
+    Schema v1 is the original eight; `LATER_TABLES` names each addition since. An unlisted
+    table means a migration landed without its design, which is how `Base.metadata` and
     the migration history start drifting.
     """
     assert set(Base.metadata.tables) == SCHEMA_V1_TABLES | set(LATER_TABLES)
 
 
 def test_the_audit_log_table_has_not_landed_early() -> None:
-    """T14 owns it; a column set defined before its task is a guess.
+    """The ported `remote_exec` work owns it; a column set defined before its design is a guess.
 
-    `action_requests` left this set at T34 and `action_receipts` at T36 — each time, the
-    task that specifies the columns.
+    `action_requests` left this set when its table landed and `action_receipts` the same way —
+    each time, the design that specifies the columns.
     """
     assert set(Base.metadata.tables) & NOT_YET_TABLES == set()
 
 
 def test_users_default_inactive() -> None:
-    """V7: auto-provisioned LDAP users start disabled."""
+    """Auto-provisioned LDAP users start disabled."""
     is_active = Base.metadata.tables["users"].c.is_active
 
     assert is_active.nullable is False
@@ -92,7 +91,7 @@ def test_users_default_inactive() -> None:
 
 
 def test_mcp_token_stores_hash_not_plaintext() -> None:
-    """V2: SHA-256 hex digest (64 chars), unique for lookup; no plaintext column."""
+    """SHA-256 hex digest (64 chars), unique for lookup; no plaintext column."""
     columns = Base.metadata.tables["mcp_tokens"].c
 
     assert columns.token_hash.type.length == 64
@@ -102,7 +101,7 @@ def test_mcp_token_stores_hash_not_plaintext() -> None:
 
 
 def test_mcp_token_carries_tofu_and_revalidation_fields() -> None:
-    """V3 binding + V4 staleness live on the token row."""
+    """TOFU binding + staleness revalidation live on the token row."""
     columns = Base.metadata.tables["mcp_tokens"].c
 
     # NULL until the first `X-Noa-LibreChat-User` header binds it.
@@ -112,21 +111,21 @@ def test_mcp_token_carries_tofu_and_revalidation_fields() -> None:
 
 
 def test_role_tool_permission_tool_name_is_not_a_foreign_key() -> None:
-    """V10: the catalog lives in code; an unknown grant must not dangle."""
+    """The catalog lives in code; an unknown grant must not dangle."""
     tool_name = Base.metadata.tables["role_tool_permissions"].c.tool_name
 
     assert tool_name.foreign_keys == set()
 
 
 def test_token_delete_cascades_from_user() -> None:
-    """V4: cascade revoke on user delete happens in the DB, not in app code."""
+    """Cascade revoke on user delete happens in the DB, not in app code."""
     (fk,) = Base.metadata.tables["mcp_tokens"].c.user_id.foreign_keys
 
     assert fk.ondelete == "CASCADE"
 
 
 def test_admin_and_internal_role_names() -> None:
-    """V13, V75: `admin` reserved; `user:`-prefixed roles are internal."""
+    """`admin` reserved; `user:`-prefixed roles are internal."""
     assert ADMIN_ROLE_NAME == "admin"
     assert INTERNAL_ROLE_PREFIX == "user:"
     assert is_internal_role("user:alice@example.com") is True
@@ -173,7 +172,7 @@ def test_admin_and_internal_role_names() -> None:
 def test_server_safe_dict_reports_presence_never_values(
     model: type, kwargs: dict[str, str]
 ) -> None:
-    """V2, V8: admin views expose booleans, not credentials."""
+    """Admin views expose booleans, not credentials."""
     server = model(id=uuid4(), created_at=datetime.now(UTC), **kwargs)
 
     safe = server.to_safe_dict()
@@ -199,7 +198,7 @@ def test_secret_columns_are_unbounded_text() -> None:
 
 
 def test_pmg_server_is_ssh_only() -> None:
-    """V58: PMG is reached over SSH + `pmgsh`; it has no HTTP surface."""
+    """PMG is reached over SSH + `pmgsh`; it has no HTTP surface."""
     columns = Base.metadata.tables["pmg_servers"].c
 
     assert columns.ssh_host.nullable is False

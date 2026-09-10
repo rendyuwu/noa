@@ -8,13 +8,13 @@ import { FrameSizer } from './frame-sizer'
 import styles from './notice.module.css'
 
 /**
- * What a frame shows when it cannot show its subject (§T.41, §T.43, §T.56 — V27, V38, V94).
+ * What a frame shows when it cannot show its subject.
  *
  * Four states reach it — the session NOA does not recognise, the request or table that is not this
  * operator's, and the read that could not be made at all — and every one of them is a *state*,
  * never a blank frame with a control standing on nothing.
  *
- * Lifted out of `app/approvals/[id]/` at §T.56, when the table surface became the second document
+ * Lifted out of `app/approvals/[id]/` when the table surface became the second document
  * that renders these states. Two copies of "cannot authenticate here" is two places for the way out
  * to go missing from one of them.
  *

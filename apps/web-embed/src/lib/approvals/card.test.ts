@@ -9,7 +9,7 @@ import {
 } from './card'
 
 /**
- * Parsing the API's card body (§T.41).
+ * Parsing the API's card body.
  *
  * The two properties worth separating here are opposites, and both are deliberate: parsing is
  * permissive so a missing field renders as unknown rather than as a blank iframe, while
@@ -32,7 +32,7 @@ const BODY = {
   csrf: 'v1.1786000000.signature',
 }
 
-/** What the API sends once a change has recorded an outcome (§T.38, V46). */
+/** What the API sends once a change has recorded an outcome — run plus receipt. */
 const RECEIPT = {
   ok: true,
   before: { suspended: false },
@@ -100,11 +100,11 @@ describe('parseApprovalCard', () => {
   })
 
   it('drops a run it cannot name', () => {
-    // A run with no id is one nothing can poll (§T.42), so it is not a run.
+    // A run with no id is one nothing can poll, so it is not a run.
     expect(parsed({ run: { status: 'STARTED' } }).run).toBeNull()
   })
 
-  it('keeps the receipt as two halves (§T.42(b), V46, DECISIONS §6.5)', () => {
+  it('keeps the receipt as two halves (DECISIONS section 6.5)', () => {
     // The requirement is that before and after stay separable all the way to the render. A parser
     // that merged them, or kept only the one it thought was the outcome, goes red here — and the
     // two payloads share no value, so this cannot pass by carrying one of them twice.
@@ -148,7 +148,7 @@ describe('parseApprovalCard', () => {
   })
 
   it('renders unknown fields as unknown rather than throwing', () => {
-    // V38: a blank card is not an acceptable state, and neither is a stack trace in an iframe.
+    // A blank card is not an acceptable state, and neither is a stack trace in an iframe.
     const card = parsed({
       tool_name: undefined,
       conversation_ref: undefined,

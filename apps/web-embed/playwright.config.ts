@@ -19,7 +19,7 @@ const BASE_URL = process.env.EMBED_BASE_URL ?? 'http://localhost:3001'
  * different number changes nothing any spec asserts. They are overridable because `webServer`
  * refuses to start on a port something else holds, and a machine that has something else on 8099
  * would otherwise be a machine where this whole lane is skipped rather than run — which is the
- * shape V102 refuses one layer up: a suite reporting its own absence as success. Measured: a
+ * shape a CI lane must never ship one layer up: a suite reporting its own absence as success. Measured: a
  * developer box here had an unrelated static server parked on 8099 for days.
  *
  * **The defaults are the run that matters, and nothing in this repository sets either variable.**
@@ -35,17 +35,17 @@ function harnessPort(variable: string, fallback: number): number {
   return Number.isInteger(value) && value > 0 && value < 65_536 ? value : fallback
 }
 
-// The proxy's upstream for e2e (§T.44). A stub, not the real API: what these specs
+// The proxy's upstream for e2e — the embed's session plumbing. A stub, not the real API: what these specs
 // ask about is the hop, and a real API would make Postgres or LDAP being down read
 // as a broken proxy.
 const UPSTREAM_PORT = harnessPort('NOA_E2E_UPSTREAM_PORT', 8099)
 
-// The stand-in for LibreChat: a page that frames the embed (§T.45). Reached under two hostnames
+// The stand-in for LibreChat: a page that frames the embed. Reached under two hostnames
 // that both resolve here, so the parent origin is the only variable between the allowed case and
 // the refused one.
 const PARENT_PORT = harnessPort('NOA_E2E_PARENT_PORT', 8110)
 
-// The origin the framing specs treat as LibreChat's (§T.45, V41). `http`, not the deployed
+// The origin the framing specs treat as LibreChat's — the one `frame-ancestors` entry. `http`, not the deployed
 // `https://chat.noa.internal`: this harness serves plain HTTP, and an https parent framing an http
 // child is blocked as mixed content before CSP is ever consulted — the refusal spec would then
 // pass for a reason that has nothing to do with the header. The shipped default value is pinned
@@ -60,23 +60,23 @@ export const UPSTREAM_ORIGIN = `http://127.0.0.1:${UPSTREAM_PORT}`
 /**
  * The sandbox LibreChat was measured applying to this frame at pin `45cc53c4`.
  *
- * `allow-forms` is **absent**, and that absence is the premise V80 rests on: a native form submit
+ * `allow-forms` is **absent**, and that absence is the premise the in-frame `fetch` buttons rest on: a native form submit
  * dies silently in here, so the card's buttons are `fetch` handlers. Pinned as a constant because
  * a spec that quietly widened it would be testing a frame LibreChat does not serve.
  */
 export const MEASURED_SANDBOX = 'allow-scripts allow-same-origin'
 
 /**
- * The other sandbox R13/R29 recorded, at LibreChat's second render site (`MCPUIResource`).
+ * The other sandbox the render-path measurement recorded, at LibreChat's second render site (`MCPUIResource`).
  *
- * Same string plus `allow-popups`, and that difference is the whole of §T.43's problem: the 401
+ * Same string plus `allow-popups`, and that difference is the whole of the 401 card's problem: the 401
  * state's "Sign in to NOA" link opens a top-level tab under this one and **nothing at all** under
  * `MEASURED_SANDBOX`, silently. Pinned here beside its sibling so the pair is one edit to widen.
  */
 export const POPUP_SANDBOX = 'allow-popups allow-scripts allow-same-origin'
 
 /**
- * Where the 401 card's link-out points during a browser run (§T.43, `NOA_SIGN_IN_URL`).
+ * Where the 401 card's link-out points during a browser run (`NOA_SIGN_IN_URL`).
  *
  * Deliberately a document on the stub upstream rather than a dead address: it is the *opened tab*
  * that the popup specs then measure — a tab opened from a sandboxed frame inherits the opener's
@@ -86,7 +86,7 @@ export const POPUP_SANDBOX = 'allow-popups allow-scripts allow-same-origin'
 export const SIGN_IN_URL = `${UPSTREAM_ORIGIN}/__popup-control`
 
 /**
- * One card id per outcome the approval page renders (§T.41), shared with the stub that serves them
+ * One card id per outcome the approval page renders, shared with the stub that serves them
  * (`env` below) so a spec cannot ask about a state the stub does not have. Valid UUIDs: the
  * real route's path parameter is UUID-typed, and an id shaped unlike a real one would exercise a
  * 422 the specs are not about.
@@ -96,13 +96,13 @@ export const APPROVAL_IDS = {
   decided: '9f1c2b7e-0000-4000-8000-000000000002',
   unauthorized: '9f1c2b7e-0000-4000-8000-000000000401',
   notFound: '9f1c2b7e-0000-4000-8000-000000000404',
-  /** The one card that moves between reads: an approved change whose run finishes (§T.42, V29). */
+  /** The one card that moves between reads: an approved change whose run finishes — state in DB, polled to terminal. */
   polling: '9f1c2b7e-0000-4000-8000-000000000003',
   /**
-   * The card whose session comes back (§T.43): 401 on the first read, a PENDING card afterwards.
+   * The card whose session comes back: 401 on the first read, a PENDING card afterwards.
    *
-   * Its own id because `unauthorized` above answers 401 forever, which is what the V38 state needs
-   * and what a retry can never escape. This one is the operator who went and signed in.
+   * Its own id because `unauthorized` above answers 401 forever, which is what the cannot-authenticate
+   * state needs and what a retry can never escape. This one is the operator who went and signed in.
    */
   recovers: '9f1c2b7e-0000-4000-8000-000000000402',
   /**
@@ -117,7 +117,7 @@ export const APPROVAL_IDS = {
 } as const
 
 /**
- * One token per outcome the table surface renders (§T.56), shared with the stub that serves them
+ * One token per outcome the table surface renders, shared with the stub that serves them
  * for `APPROVAL_IDS`' reason.
  *
  * Not UUID-shaped, deliberately: the real token is `secrets.token_urlsafe(32)` and the route takes
@@ -126,9 +126,9 @@ export const APPROVAL_IDS = {
 export const TABLE_TOKENS = {
   /** A whole listing: every matched row is on the page. */
   whole: 'e2e-table-whole-000000000000000000000001',
-  /** A capped one — the state V85 exists for, where the counts must not agree. */
+  /** A capped one — the state the stored bound exists for, where the counts must not agree. */
   truncated: 'e2e-table-capped-000000000000000000000002',
-  /** 401 forever: the state V38 renders and a retry cannot escape. */
+  /** 401 forever: the cannot-authenticate state a retry cannot escape. */
   unauthorized: 'e2e-table-unauthorized-00000000000000401',
   /** The one answer for unknown, foreign, orphaned and expired alike. */
   notFound: 'e2e-table-missing-00000000000000000000404',
@@ -149,12 +149,12 @@ export const TABLE_TOKENS = {
   long: 'e2e-table-long-00000000000000000000000438',
 } as const
 
-/** What a capped table reports (§T.56, V85). Asserted, so the numbers live in one place. */
+/** What a capped table reports. Asserted, so the numbers live in one place. */
 export const STUB_TABLE_TOTAL_ROWS = 1240
 export const STUB_TABLE_STORED_ROWS = 2
 
 /**
- * How many rows the long listing carries (§T.56).
+ * How many rows the long listing carries.
  *
  * The count from the complaint the frame-sizing work answers, not a round number: at the ~36px row
  * height `table.module.css` produces this is on the order of 15,000px of natural page height, and
@@ -169,7 +169,7 @@ export const STUB_CSRF = 'v1.1786000000.stub-signature'
 export const STUB_RUN_RESULT = 'Account acmeco suspended on alpha.'
 
 /**
- * The after-state on the receipt that lands with the finished run (§T.42(b), V46).
+ * The after-state on the receipt that lands with the finished run.
  *
  * Its own value, sharing nothing with the before-state the stub's cards carry (`suspended: false`,
  * `domain: acme.example`): the browser assertion is that *both* halves render, and a value present
@@ -232,14 +232,14 @@ export default defineConfig({
       // Not reused, deliberately. The proxy specs depend on `NOA_API_URL` pointing
       // at the stub above, and a server someone else started was given a different
       // one — reusing it would make these specs pass or fail for reasons that have
-      // nothing to do with the proxy. Same family as V90: a setup step that quietly
-      // decides the outcome.
+      // nothing to do with the proxy. A setup step must not quietly
+      // decide the outcome — the readiness gate sits one layer below the subject.
       reuseExistingServer: false,
       timeout: 120_000,
       env: {
         NOA_API_URL: `http://127.0.0.1:${UPSTREAM_PORT}`,
         NOA_LIBRECHAT_ORIGIN: CHAT_ORIGIN,
-        // §T.43's link-out target. Handed in for the same reason as the upstream above: a value from
+        // The 401 card's link-out target. Handed in for the same reason as the upstream above: a value from
         // a developer's `.env` would make the popup specs measure whatever they had configured.
         NOA_SIGN_IN_URL: SIGN_IN_URL,
       },

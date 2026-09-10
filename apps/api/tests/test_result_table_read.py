@@ -1,9 +1,9 @@
 """What the table surface's reader actually asks the database for.
 
-V93 is the rule this file exists for: a separation held by a check the caller makes *after*
-the read is a separation held by nothing much. The row would be loaded — in front of the
-logger, the next edit and a refactor that widens the view — and every payload assertion in
-`test_result_table_routes.py` would stay green while it was.
+The refusal-in-the-statement rule is the rule this file exists for: a separation held by a check the
+caller makes *after* the read is a separation held by nothing much. The row would be loaded — in
+front of the logger, the next edit and a refactor that widens the view — and every payload assertion
+in `test_result_table_routes.py` would stay green while it was.
 
 So the compiled SQL is the assertion. No database: a `Select` compiles without a connection,
 and what is claimed here is about the statement NOA builds, not about what Postgres does with
@@ -50,8 +50,7 @@ class RecordingSession:
 async def read_sql() -> str:
     """The one statement the reader issues, as PostgreSQL SQL.
 
-    Named dialect rather than the default: this is the text the database NOA ships
-    would see.
+    Named dialect rather than the default: this is the text the database NOA ships would see.
     """
     session = RecordingSession()
     await SQLToolResultTableReader(cast("AsyncSession", session)).get_for_requester(
@@ -72,9 +71,10 @@ def where_clause(sql: str) -> str:
 
 
 async def test_the_read_carries_the_requester_match_in_the_where() -> None:
-    """V27, V93: a table that is not the caller's is never fetched.
+    """A table that is not the caller's is never fetched.
 
-    In the statement, not in a branch after it — the difference V93 measured at T42(b), where
+    In the statement, not in a branch after it — the difference measured when the table surface
+    landed, where
     adding a join to a reader left the whole suite green because the projection had nowhere to
     put the row it had already loaded.
     """

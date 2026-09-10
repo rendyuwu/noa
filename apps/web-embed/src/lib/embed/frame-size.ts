@@ -1,5 +1,5 @@
 /**
- * The height this document asks its host for, and every bound on that number (§T.41, §T.56).
+ * The height this document asks its host for, and every bound on that number (the card page and the self-sizing).
  *
  * **Pure arithmetic, no DOM.** `components/frame-sizer.tsx` owns the measuring and the posting;
  * everything that can be got wrong about the *number* lives here, where it can be tested without a
@@ -15,8 +15,8 @@
  * host-side clamp, so every bound below is ours to hold. A bad number is this app's bug, and the
  * host will not save us from it.
  *
- * **Degrading is the design, not the fallback.** Both surfaces still scroll themselves (V25's
- * neighbourhood: the link-out and the printed address stay put either way). If a LibreChat bump
+ * **Degrading is the design, not the fallback.** Both surfaces still scroll themselves — the
+ * link-out and the printed address stay put either way. If a LibreChat bump
  * stops honouring the message, or the target origin cannot be trusted, nothing here posts and the
  * surface is exactly what it is today — never a dead box.
  */

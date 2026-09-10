@@ -1,14 +1,14 @@
 """In-memory `action_requests` writer for the CHANGE gate tests.
 
-The double records the row a real `SQLActionRequestRepository` would have written, so a test
-can assert on the pending request without Postgres — and can make the write fail on demand.
-That failure is a behaviour V23 pins and it is not reachable against a healthy database: no
-row means no authorization to read, so the gate refuses the change rather than letting it run
-unrecorded.
+The double records the row a real `SQLActionRequestRepository` would have written, so a test can
+assert on the pending request without Postgres — and can make the write fail on demand. That failure
+is a behaviour the verdict-from-`status` rule pins and it is not reachable against a healthy
+database: no row means no authorization to read, so the gate refuses the change rather than letting
+it run unrecorded.
 
 `SQLActionRequestRepository` is not doubled away entirely — `test_mcp_change_gate.py` runs it
 against a scratch Postgres, because "the gate called a repository" and "a PENDING row exists
-in `action_requests`" are different claims and only the second one is what V23 reads. Same
+in `action_requests`" are different claims and only the second one is what the verdict reads. Same
 split as `support.tool_runs`, `support.servers` and `support.rbac`.
 
 The recorded row is a dataclass rather than an `ActionRequest` instance, for the reason
@@ -17,7 +17,7 @@ until a flush, so an assertion on `status` would be asserting against the double
 rather than against what the caller asked for. The three columns a decision writes —
 `reason`, `decided_at`, `tool_run_id` — are absent from this class on purpose: the gate has
 no way to set them (`ActionRequestRepository` exposes none), and a double that offered a slot
-for them would make the V22 assertion "the gate wrote no decision" pass by construction.
+for them would make the assertion "the gate wrote no decision" pass by construction.
 """
 
 from __future__ import annotations

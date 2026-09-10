@@ -1,9 +1,9 @@
 """Telling connected MCP clients their tool catalog moved.
 
-V74 requires NOA to emit `notifications/tools/list_changed` when a permission changes. The
-trigger for that emit is a *write* — a role's grants replaced, a user's roles replaced, an
-account disabled — and every one of those writes lives in `AuthorizationService`, on the
-admin REST side of the app. The emit itself needs a live MCP session, which is on the other
+The execution-time RBAC re-check requires NOA to emit `notifications/tools/list_changed` when a
+permission changes. The trigger for that emit is a *write* — a role's grants replaced, a user's
+roles replaced, an account disabled — and every one of those writes lives in `AuthorizationService`,
+on the admin REST side of the app. The emit itself needs a live MCP session, which is on the other
 side. This module is the seam between them.
 
 Same shape as `core.audit.admin_events.AdminAuditSink`, and for the same reasons:
@@ -18,12 +18,12 @@ Same shape as `core.audit.admin_events.AdminAuditSink`, and for the same reasons
   one account — and resolving that from a role name inside the notifier would put the same
   question in two places.
 
-**This is best-effort, and that is a measured position rather than a shrug.** R30 settled
+**This is best-effort, and that is a measured position rather than a shrug.** Measurement settled
 what LibreChat does with the notification at pin `45cc53c4`: nothing. Zero handlers for
 `ToolListChangedNotificationSchema` in the tree, and a notification NOA provably put on a
 session's stream drew no `tools/list` after it. So the emit is protocol-correct, costs
 almost nothing, and may be honoured by a later client — but the property that keeps a stale
-catalog from being a security hole is V1's execution-time re-check, not this. A notifier
+catalog from being a security hole is the execution-time re-check, not this. A notifier
 that fails must therefore never fail the write it followed: the permission change is
 authoritative the moment it commits, and an operator's catalog display is not.
 """
@@ -40,7 +40,7 @@ class ToolListChangedNotifier(Protocol):
 
     One method, and it announces rather than asks. A notifier that could also report which
     sessions exist would tempt the engine into deciding something from the answer, and "may
-    this run?" is resolved from the domain tables on every call (V1, V23 in spirit).
+    this run?" is resolved from the domain tables on every call — the request row, in spirit.
 
     Implementations must not raise. See the module docstring: the write has already
     committed by the time this is called, so an exception here would turn a successful

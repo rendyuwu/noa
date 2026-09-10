@@ -1,21 +1,22 @@
 /**
- * Reading one card again, until there is nothing left to wait for (§T.42 — V29, V34).
+ * Reading one card again, until there is nothing left to wait for (the approval card polls
+ * to terminal — state in DB, one URL through receipt).
  *
  * **The state lives in the database, never in a connection**. An approve returns 202 with a
  * `tool_run_id` and the change runs somewhere else entirely; the only way for this frame to learn
  * how it went is to ask again. So the card asks again — through the same-origin proxy, with the
- * same cookie, at the entry §T.44 planted for exactly this and §T.41 did not use (that page reads
- * its detail server-side).
+ * same cookie, at the entry the proxy planted for exactly this and the card page did not use
+ * (that page reads its detail server-side).
  *
  * **Two speeds, because two different things are being waited on.** While a request is PENDING the
  * only thing that can change is the TTL sweep making it EXPIRED, which nobody is standing by
  * for — but which must land before an operator clicks an Approve the decision door would refuse
- * (V38's family). While a run is in flight somebody *is* watching, and 15 seconds of blank waiting
+ * (a 401 renders explicit, never a blank card). While a run is in flight somebody *is* watching, and 15 seconds of blank waiting
  * after clicking Approve reads as a card that broke.
  *
  * **The run poll is capped and the pending poll is not**, and that asymmetry is deliberate. A
  * PENDING card has a server-side terminator on a deadline this app knows: the sweep flips it at the
- * TTL, the next poll reads a terminal status and stops. A STARTED run's terminator is §T.38's
+ * TTL, the next poll reads a terminal status and stops. A STARTED run's terminator is the
  * reaper, which runs on an interval of its own and only after a cutoff — so a run whose executor
  * died is minutes from moving, and one polled every two seconds until it does would be polled for
  * as long as the frame is open.
@@ -36,7 +37,7 @@ export const POLL_INTERVAL_RUN_MS = 2_000
 
 /**
  * How many times a single run is polled before the card stops asking (≈5 minutes at the interval
- * above). See the module docstring: a run whose executor died moves when §T.38's reaper next runs,
+ * above). See the module docstring: a run whose executor died moves when the reaper next runs,
  * which is not on a timescale anybody watches a frame for.
  */
 export const RUN_POLL_LIMIT = 150
@@ -45,8 +46,8 @@ export const RUN_POLL_LIMIT = 150
  * Where a poll goes: this origin's proxy, never `NOA_API_URL`.
  *
  * That variable is server-only and a browser could not reach the API with it anyway (AGENTS.md,
- * §T.44). The id is encoded and not shape-checked — V27 owns what an absent, malformed or foreign
- * id answers and answers all three alike.
+ * the proxy route). The id is encoded and not shape-checked — requester-match owns what an
+ * absent, malformed or foreign id answers and answers all three alike.
  */
 export function pollPath(actionRequestId: string): string {
   return `/api/action-requests/${encodeURIComponent(actionRequestId)}`
@@ -55,7 +56,7 @@ export function pollPath(actionRequestId: string): string {
 /**
  * Whether NOA is still working on this one.
  *
- * `APPROVED` with no run at all counts: V29 puts the `tool_runs` row in the same transaction as the
+ * `APPROVED` with no run at all counts: the `tool_runs` row lands in the same transaction as the
  * decision, so a card without one is a read that straddled the commit rather than a change that
  * will never run — asking again is the right response to it, and giving up is not.
  */
@@ -99,7 +100,7 @@ export function isStalled(card: ApprovalCard, runPolls: number): boolean {
  *
  * The same four outcomes the server-side load has (`lib/approvals/card.ts`), because a poll can
  * discover every one of them *after* the first render: a session that expired under an open frame
- * answers 401, and V38 says that state is explicit rather than a card left standing with a live
+ * answers 401, and that state renders explicit rather than a card left standing with a live
  * Approve button on it.
  *
  * A transient failure is `unavailable` and is deliberately **not** terminal — the caller keeps
@@ -133,7 +134,7 @@ export async function fetchApprovalCard(actionRequestId: string): Promise<Approv
 
   const card = parseApprovalCard(body)
   // A 200 whose body is not a card is a broken deployment, not an empty card — the same judgement
-  // the server-side loader makes, for the same reason (V38's family).
+  // the server-side loader makes, for the same reason (no blank card).
   if (card === null) return { kind: 'unavailable', status: response.status }
 
   return { kind: 'card', card }

@@ -1,11 +1,11 @@
-"""Reading the authorisation trail against a real Postgres (§I.admin-api — V8, V13, V15, V46).
+"""Reading the authorisation trail against a real Postgres (the admin API's contract).
 
 `test_admin_action_request_routes.py` drives the surface over a double and
 `test_action_request_admin_read.py` reads the compiled statement. **The claim this file exists for
 is that the fields become readable at all** — and that is a claim about production code agreeing
 through the database, so every row here is written by the **real writers** and read by the **real
-reader**. A double answering it would be the test agreeing with itself, which is what V69 keeps
-warning about.
+reader**. A double answering it would be the test agreeing with itself — prose is not evidence
+a control works.
 
 The writers are three, and they are the ones that write these rows in production:
 
@@ -25,7 +25,7 @@ Four more questions are the database's rather than the code's:
   join to `action_receipts` would hide all of them — the outer join is only checkable against a
   database that has one row and not the other.
 - **The page tiles the trail when every timestamp is identical**, which is the case a
-  `created_at`-only cursor gets wrong, and gets wrong silently (V92(c)).
+  `created_at`-only cursor gets wrong, and gets wrong silently.
 
 Skipped, never failed, when Postgres is unreachable — like every other DB-backed test here.
 """
@@ -216,7 +216,7 @@ async def write_receipt(
     tool_run_id: UUID | None,
     receipt_data: dict[str, Any] | None = None,
 ) -> None:
-    """The receipt, through T38's own writer."""
+    """The receipt, through the executor's own writer."""
     repository = SQLActionReceiptRepository(session)
     await repository.create_if_missing(
         action_request_id=action_request_id,
@@ -249,7 +249,7 @@ async def approved_change(session: AsyncSession) -> tuple[UUID, UUID, UUID]:
 async def test_the_reason_a_decision_wrote_comes_back_whole(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
-    """V15, C8: written by the decision path, read by this surface, byte for byte.
+    """The operator-typed reason: written by the decision path, read by this surface, byte for byte.
 
     The one field the whole approval design turns on had a writer, a DB CHECK and no reader. This
     is the round trip that makes "an administrator can see why a change was authorised" a
@@ -297,7 +297,7 @@ async def test_every_field_the_card_stops_rendering_survives_the_round_trip(
     The route test asserts the same list against a fixture, which proves the serializer. This one
     proves the *storage*: the gate wrote this context, the receipt writer wrote these halves, and
     the admin reader hands both back unchanged. Asserted by name and never by counting keys, for
-    the reason V38 records — a count goes red for the right thing spelled wrongly.
+    the reason the 401-card rule records — a count goes red for the right thing spelled wrongly.
     """
     _, request_id, tool_run_id = await approved_change(session)
 
@@ -338,7 +338,7 @@ async def test_the_gate_context_is_returned_as_stored(
 async def test_the_receipt_comes_back_with_its_delta(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
-    """V46: both halves and the runner's delta, off the row T38's writer wrote."""
+    """Both halves and the runner's delta, off the row the executor's writer wrote."""
     _, request_id, tool_run_id = await approved_change(session)
 
     receipt = await reader.receipt_detail(action_request_id=request_id)
@@ -459,7 +459,7 @@ async def test_a_request_with_no_receipt_is_still_listed(
 async def test_the_page_tiles_a_trail_whose_timestamps_are_identical(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
-    """V92(c): `created_at` alone is not unique, and a cursor over it fails silently.
+    """`created_at` alone is not unique, and a cursor over it fails silently.
 
     `<` drops the rest of a tied group and `<=` serves it forever, so the walk is asserted on both
     the count and the *set*: those are different claims, and only one of them catches a repeat.

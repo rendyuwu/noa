@@ -1,7 +1,7 @@
 """Parking a large READ's rows: the cap, the bound it reports, and the redaction.
 
-`core.results.tables` is where V64's "the rows do not enter the transcript" becomes a row in
-Postgres, and where V85's "a READ that caps ships its own bound" becomes two stored numbers.
+`core.results.tables` is where "the rows do not enter the transcript" becomes a row in
+Postgres, and where "a READ that caps ships its own bound" becomes two stored numbers.
 Both are asserted here against the writer double; the SQL has its own lane
 (`test_result_tables_live.py`) and the tool result has another (`test_mcp_table_surface.py`).
 
@@ -12,7 +12,7 @@ Three claims this file exists for:
   a fabrication authored by NOA rather than by the model.
 - **The cut is a prefix.** The producer ordered the rows and only the producer knows which
   order is reproducible for its source, so re-sorting here would scramble a grouping the
-  evidence is read by (V85's amended ordering clause, T24's `csf -g` deviation).
+  evidence is read by (the cap's ordering clause, the firewall preflight's `csf -g` deviation).
 - **Rows are redacted on the way in, at any depth.** A parked table outlives the call and
   sits behind a URL in a persisted transcript, so a per-writer exemption from the redaction
   rule is exactly how one of them eventually stores a credential.
@@ -50,7 +50,7 @@ def rows(count: int) -> list[dict[str, object]]:
 
 
 def test_a_capped_table_reports_the_total_and_the_flag() -> None:
-    """V85: the count before the cut travels with the rows that survived it."""
+    """The count before the cut travels with the rows that survived it."""
     capped = cap_rows(rows(120), max_rows=25)
 
     assert len(capped.rows) == 25
@@ -75,7 +75,7 @@ def test_a_table_exactly_at_the_cap_is_not_truncated() -> None:
     """The boundary, pinned: nothing was dropped, so nothing may say it was.
 
     `>` rather than `>=` in the writer, and this is the case that separates them — the same
-    off-by-one T21 proved red for `whm_search_accounts`.
+    off-by-one the account search proved red for `whm_search_accounts`.
     """
     capped = cap_rows(rows(25), max_rows=25)
 
@@ -84,7 +84,7 @@ def test_a_table_exactly_at_the_cap_is_not_truncated() -> None:
 
 
 def test_the_cut_keeps_the_order_it_was_given() -> None:
-    """V85: a prefix, never a re-sort.
+    """A prefix, never a re-sort.
 
     The rows arrive reverse-sorted on purpose. A cut that sorted first would return
     `account-000` and pass an assertion about counts alone, which is why this asserts the
@@ -103,7 +103,7 @@ def test_the_cut_keeps_the_order_it_was_given() -> None:
 
 
 def test_a_credential_in_a_row_is_redacted_before_it_is_stored() -> None:
-    """V8, V45: the parked table is not the one writer exempt from the redaction rule."""
+    """The parked table is not the one writer exempt from the redaction rule."""
     capped = cap_rows([{"user": "acmeco", "ssh_password": "hunter2"}], max_rows=25)
 
     assert capped.rows[0]["ssh_password"] == REDACTED
@@ -111,7 +111,7 @@ def test_a_credential_in_a_row_is_redacted_before_it_is_stored() -> None:
 
 
 def test_a_nested_credential_is_redacted_too() -> None:
-    """B7's lesson: a guard that reads only the top level is not a guard.
+    """A guard that reads only the top level is not a guard.
 
     `redact_sensitive_data` recurses through mappings and sequences, and a parked row is a
     remote system's own shape — nested by nature. Asserted rather than assumed, because the
@@ -160,7 +160,7 @@ async def test_parking_stores_the_capped_rows_and_the_counts() -> None:
 
 
 async def test_the_deadline_is_the_ttl_from_the_moment_it_was_parked() -> None:
-    """V64: the lifetime is configured, and it is stamped once.
+    """The lifetime is configured, and it is stamped once.
 
     Asserted against the moment passed in rather than against "roughly now", so a wiring that
     read a different setting — or computed the deadline from a second clock read — is red
@@ -228,7 +228,7 @@ async def test_each_parked_table_gets_its_own_token() -> None:
 
 
 def test_a_minted_token_is_long_enough_to_be_unguessable() -> None:
-    """32 random bytes, URL-safe. Defence beside V27's match, never instead of it."""
+    """32 random bytes, URL-safe. Defence beside the requester-match, never instead of it."""
     token = mint_table_token()
 
     assert len(token) >= 43

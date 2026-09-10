@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { SIGN_IN_ENV_VAR, resolveSignInUrl } from '@/lib/sign-in'
 
 /**
- * The sign-in address the 401 state offers (§T.43 — V38, V42).
+ * The sign-in address the 401 state offers.
  *
  * Two properties, and the second is the one with teeth. **Unusable means no link**, because a door
  * that goes nowhere reads as an action that was refused rather than one that was never available.

@@ -1,4 +1,4 @@
-"""Admin role management: list, create, delete, read and set tool grants (T52, I.admin-api).
+"""Admin role management: list, create, delete, read and set tool grants.
 
 **Six routes and no policy**, for the reason `admin_users.py` gives one file over: every rule
 these handlers lean on lives in `core.auth.authorization_service` — the reserved `admin` role,
@@ -10,7 +10,7 @@ these paths. A handler here resolves the actor, calls one service method, and sh
 `AuthService._provision` writes it for a bootstrap admin — so filtering it out of `GET /roles`
 would hide the one role an operator most wants to see who holds. `DELETE` and `PUT .../tools`
 answer 403 `reserved_role`, and `GET /roles/admin/tools` answers the *whole catalog*
-rather than its empty grant rows: V10 gives `admin` every known tool by bypassing the table, so
+rather than its empty grant rows: `admin` gets every known tool by bypassing the table, so
 `[]` would render a role that appears to permit nothing while permitting everything. Displayed
 state equals enforced state, which is the property that makes the panel worth reading.
 
@@ -132,7 +132,7 @@ async def create_role(
 
     Refusals: 400 `invalid_role_name` (blank, over 100 characters, or outside
     `[A-Za-z0-9_-]` — which is what rejects a `user:` prefix), 403 `reserved_role` for `admin`
-    (V13: it exists implicitly through the V10 bypass, and a second definition of it would
+    (it exists implicitly through the grant-table bypass, and a second definition of it would
     carry grants that mean nothing).
     """
     created = await authorization.create_role(payload.name, actor_email=admin_user.email)
@@ -187,17 +187,17 @@ async def set_role_tools(
 ) -> RoleToolsResponse:
     """Replace one role's tool grants.
 
-    This is the write V14's "permission updates take effect immediately" is about: nothing
+    This is the write "permission updates take effect immediately" is about: nothing
     behind it caches, so the next `tools/list` and the next execution-gate check both resolve
     from these rows. A client holding a stale catalog may still *show* a revoked tool;
     calling it 403s.
 
-    Refusals: 400 `invalid_role_name`, 403 `reserved_role` (V13 — `admin` bypasses the grant
-    table, so rows here would imply a limit NOA does not enforce), 404
-    `admin_role_not_found`, 400 `unknown_tools` for any name outside the catalog. Unknown names
-    are refused as a set, so an admin who mistyped one of twenty does not bisect the list by
-    hand — though V8 keeps the offenders in `detail` and out of the body, so the panel sees the
-    code and the operator re-checks their input.
+    Refusals: 400 `invalid_role_name`, 403 `reserved_role` (`admin` bypasses the grant table, so
+    rows here would imply a limit NOA does not enforce), 404 `admin_role_not_found`, 400
+    `unknown_tools` for any name outside the catalog. Unknown names are refused as a set, so an
+    admin who mistyped one of twenty does not bisect the list by hand — though the error envelope
+    keeps the offenders in `detail` and out of the body, so the panel sees the code and the operator
+    re-checks their input.
     """
     stored = await authorization.set_role_tools(name, payload.tools, actor_email=admin_user.email)
     return RoleToolsResponse(tools=stored)
@@ -210,11 +210,11 @@ async def list_tools(
 ) -> AdminToolsResponse:
     """Every tool name a grant may name.
 
-    The vocabulary the allowlist editor offers, read off the same set that validates a write —
-    see the module docstring. Not an existence oracle over anything hidden: V83(d) is about the
-    MCP surface refusing all causes identically, while this is the admin surface, behind
-    `require_admin`, and an admin is precisely who may know which tools exist. C22's
-    never-implement names are absent from the catalog, so they are absent here.
+    The vocabulary the allowlist editor offers, read off the same set that validates a write — see
+    the module docstring. Not an existence oracle over anything hidden: the refusal-folding rule is
+    about the MCP surface refusing all causes identically, while this is the admin surface, behind
+    `require_admin`, and an admin is precisely who may know which tools exist. The never-implement
+    names are absent from the catalog, so they are absent here.
     """
     return AdminToolsResponse(tools=await authorization.list_tools())
 

@@ -1,14 +1,15 @@
 """`require_admin` and the authorization status mapping.
 
-T9 ships no `/admin` routes (T51-T55 own those), but two of its cited invariants are HTTP
-properties: V13's "non-admin users → 403 on admin endpoints" and V12's "admin self-delete →
+The RBAC engine ships no `/admin` routes (the user/role/token routes own those), but two of its
+cited invariants are HTTP properties: "non-admin users → 403 on admin endpoints" and "admin
+self-delete →
 409". Both are decided by `noa_api.api.deps.require_admin` and
 `noa_api.api.errors.STATUS_BY_ERROR`, so they are tested at that level rather than deferred
 to the first route that happens to use them.
 
 `support.rbac.admin_probe_app` mounts one throwaway route behind `require_admin`. Everything
 else on the path is production code — `require_session_user`, the real `AuthService`, the
-real `JWTService`, the shared error handler — so a 403 here is the 403 T51 will return.
+real `JWTService`, the shared error handler — so a 403 here is the 403 the user routes return.
 """
 
 from __future__ import annotations
@@ -41,7 +42,7 @@ ADMIN_EMAIL = "admin@example.com"
 OPERATOR_EMAIL = "operator@example.com"
 
 
-# --- V13: the admin gate ---
+# --- the admin gate: non-admin refused ---
 
 
 def test_admin_reaches_an_admin_route() -> None:
@@ -55,7 +56,7 @@ def test_admin_reaches_an_admin_route() -> None:
 
 
 def test_non_admin_gets_403_admin_access_required() -> None:
-    """V13: authenticated, holds roles, still refused — and told why."""
+    """Authenticated, holds roles, still refused — and told why."""
     with admin_probe_app() as harness:
         harness.sign_in(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,))
 
@@ -84,7 +85,7 @@ def test_missing_cookie_gets_401_not_403() -> None:
 
 
 def test_disabled_admin_loses_the_admin_route_on_the_next_request() -> None:
-    """V6 + V13: the row re-read runs before the role check.
+    """The session row re-read runs before the role check.
 
     A valid, unexpired cookie stops working the moment the row flips, because the session
     JWT itself is not revocable — `require_admin` inherits that guarantee by depending
@@ -116,7 +117,7 @@ def test_admin_role_lost_between_requests_stops_working() -> None:
     assert response.json()["error_code"] == "admin_access_required"
 
 
-# --- V73: status mapping ---
+# --- status mapping ---
 
 
 @pytest.mark.parametrize(
@@ -133,7 +134,8 @@ def test_admin_role_lost_between_requests_stops_working() -> None:
         (LastActiveAdminError(), status.HTTP_409_CONFLICT),
         (SelfDeactivateAdminError(), status.HTTP_409_CONFLICT),
         (SelfDeleteError(), status.HTTP_409_CONFLICT),
-        # V12 names this one explicitly: admin self-delete → 409, inherited through the MRO.
+        # The last-admin guards name this one explicitly: admin self-delete → 409, inherited through
+        # the MRO.
         (SelfDeleteAdminError(), status.HTTP_409_CONFLICT),
         (SelfRemoveAdminRoleError(), status.HTTP_409_CONFLICT),
         (AuthorizationError(), status.HTTP_403_FORBIDDEN),
@@ -170,7 +172,7 @@ def test_every_authorization_error_is_mapped_explicitly() -> None:
 
 
 def test_direct_grants_disabled_is_410_and_is_not_an_authorization_error() -> None:
-    """T65/V75's refusal, and the reason it sits outside the tree above.
+    """The 410 on direct grants, and the reason it sits outside the tree above.
 
     Two assertions, and the second is what keeps the first honest. `status_for` must answer 410
     — a withdrawn capability, not a missing row and not a permission the caller lacks. But the
@@ -201,7 +203,7 @@ def test_authorization_error_codes_are_unique() -> None:
 
 
 def test_error_body_omits_internal_detail_for_authorization_errors() -> None:
-    """V8: `detail` names the row that vanished or the roles held. Logs only."""
+    """`detail` names the row that vanished or the roles held. Logs only."""
     error = UserNotFoundError("no `users` row for `deadbeef`")
 
     body = error_body(error)

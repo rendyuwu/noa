@@ -1,10 +1,10 @@
 """The one place a CHANGE tool becomes runnable after approval.
 
 A CHANGE tool has two halves and they run at different moments, on different sides of the
-boundary V22 draws:
+cookie/CSRF boundary:
 
-- the **tool** (`tools/call`) runs its in-process preflight and opens an `action_requests` row
-  (C9, V17, T33). It executes nothing, and the LLM can reach it.
+- the **tool** (`tools/call`) runs its in-process preflight and opens an `action_requests` row —
+  one workflow, one tool, evidence stays in-process. It executes nothing, and the LLM can reach it.
 - the **runner** performs the change, once an operator has approved it. It is reached only from
   `core.approvals.execution`, which is reached only from the asyncio host an approval hands its
   run to — never from the MCP path.
@@ -15,31 +15,33 @@ callers get the same mapping. `noa_api.mcp_tools.registry` calls it to assert **
 registered CHANGE tool with no runner is a change an operator could approve and NOA could never
 run — and `noa_api.main` calls it to build the executor.
 
-**Seven runners, one per exposed CHANGE tool** (T22 `whm_suspend_account`, T23
-`whm_unsuspend_account`, T25 `whm_firewall_release_and_allow`, T26
-`whm_firewall_allowlist_remove`, T27 `proxmox_reset_vm_password`, T28 `proxmox_vm_nic`, T29
-`pmg_whitelist`). As of T29 the mapping covers the whole registered CHANGE surface, so
+**Seven runners, one per exposed CHANGE tool** (`whm_suspend_account`,
+`whm_unsuspend_account`, `whm_firewall_release_and_allow`,
+`whm_firewall_allowlist_remove`, `proxmox_reset_vm_password`, `proxmox_vm_nic`,
+`pmg_whitelist`). The mapping covers the whole registered CHANGE surface, so
 `registry.assert_change_runners_cover` has nothing left to catch — which is a property to keep
 rather than a check to drop: the executor's `change_runner_unavailable` path stays, because a
 named terminal failure with a receipt is what makes the *next* CHANGE tool safe to register
-before its runner lands (T37(a)'s argument for the seam), and the registry check is what makes
-sure it never has to.
+before its runner lands (the decision endpoints' argument for the seam), and the registry check is
+what makes sure it never has to.
 
 **What a runner is.** A `ChangeRunner` takes a `ChangeExecutionRequest` — the tool name, the
 arguments the gate recorded, the preflight evidence the operator approved against, and the
-reason they typed (T22; a runner whose target system has nowhere to put it simply does not read
-it, which is T23) — and answers with the ordinary tool envelope
-(`noa_api.mcp_tools.results.tool_ok` / `tool_failure`). Two rules it carries: it should not
+reason they typed (the suspend tool passes it through; a runner whose target system has
+nowhere to put it simply does not read it, which is the unsuspend tool) — and answers with the
+ordinary tool envelope (`noa_api.mcp_tools.results.tool_ok` / `tool_failure`). Two rules it
+carries: it should not
 raise, because the executor records what it is handed and a raise arrives as a coarser code
 than the integration layer already knew; and it must not echo the reason back in its
 payload, because `tool_runs.result_summary` is derived from that payload and
-`noa_get_action_result` hands the summary to a model (V45, V96b).
+`noa_get_action_result` hands the summary to a model — and a value kept from a model must stay
+unreadable on every path back.
 
 **Not through the receipt**, which is the door it is tempting to name here: `core.approvals.results`
-leaves `include_receipt` at its default, so T63's reader never joins `action_receipts` and never
-fetches one (V76, T42's flag). The receipt is read by the approval card and the admin audit
-surface, both of which are the operator's own. A runner's author sent to the wrong field guards
-the wrong thing.
+leaves `include_receipt` at its default, so the action-result reader never joins `action_receipts`
+and never fetches one — the approval card's flag, requester-matched. The receipt is read by the
+approval card and the admin audit surface, both of which are the operator's own. A runner's author
+sent to the wrong field guards the wrong thing.
 
 **Each system contributes its own map**, the way `noa_api.mcp_tools.registry` collects
 registrars: a runner belongs beside the tool that opens the request for it, so the before-state
@@ -62,8 +64,8 @@ def build_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
     """Tool name → the thing that performs that change once approved.
 
     `context` carries what every runner needs — the session factory, the cipher, the server
-    repositories and, since T27, the secret-delivery seam — so a runner never reaches for its own
-    copy of the world.
+    repositories and, since the password-reset runner, the secret-delivery seam — so a runner
+    never reaches for its own copy of the world.
     """
     return {
         **build_whm_account_change_runners(context=context),

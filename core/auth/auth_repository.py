@@ -2,7 +2,7 @@
 
 Ported from `noa-old` branch `MCP` (`core/auth/auth_service.py`'s
 `SQLAuthRepository`, `core/auth/role_repository.py`, and
-`storage/postgres/login_rate_limits.py`, C13), consolidated here because all three
+`storage/postgres/login_rate_limits.py`), consolidated here because all three
 share one session and commit as one unit of work: a failed login must not leave a
 provisioned user behind without its rate-limit counter, and vice versa.
 
@@ -17,8 +17,8 @@ whether to commit — a first login raises pending-approval yet its user row mus
 persist. Giving the service an explicit commit lets it write that rule where the rule
 lives, and a test double counts the calls.
 
-Role helpers live here rather than in a separate mixin because T9's RBAC engine reads
-the same three operations, and duplicating them is exactly what V66 forbids.
+Role helpers live here rather than in a separate mixin because the RBAC engine reads
+the same three operations, and duplicating them is exactly what the shared-code rule forbids.
 """
 
 from __future__ import annotations
@@ -150,7 +150,7 @@ class SQLAuthRepository:
         await self._session.flush()
         return user
 
-    # --- Roles (T9 reads these too, V66) ---
+    # --- Roles (the RBAC engine reads these too) ---
 
     async def ensure_role(self, name: str) -> str:
         """Create the role if absent; return its name."""

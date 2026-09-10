@@ -1,35 +1,36 @@
-"""NOA side of the LibreChat embed render gate (T59 items (d) and (f)).
+"""NOA side of the LibreChat embed render gate (items (d) and (f) of the render-path check).
 
-This is a **verification harness**, not product code. It exists to answer one question with
-a live run rather than a source read: when LibreChat at pin `45cc53c4` renders a NOA-served
-`text/uri-list` UI resource, does the resulting document sit on NOA's origin with the
-`noa_session` cookie riding into it, so the approve POST V22 requires is possible?
+This is a **verification harness**, not product code. It exists to answer one question with a live
+run rather than a source read: when LibreChat at pin `45cc53c4` renders a NOA-served `text/uri-list`
+UI resource, does the resulting document sit on NOA's origin with the `noa_session` cookie riding
+into it, so the approve POST — cookie plus CSRF, never the LLM — is possible?
 
 Three things about the shape here are deliberate.
 
 **Production code is not touched.** The probe tools live on a *second* FastMCP server mounted
-at `/mcp-embed-probe`. `register_mcp_tools` refuses any name outside `TOOL_CATALOG` (V10,
-V83a), which is exactly the guard that should stop a throwaway tool from entering the real
+at `/mcp-embed-probe`. `register_mcp_tools` refuses any name outside `TOOL_CATALOG` — catalog,
+RBAC and audit bound at one seam — which is exactly the guard that should stop a throwaway tool
+from entering the real
 registry — so the harness stands up its own server instead of arguing with it. The real
 `/mcp` mount is built here unchanged, from the same `build_mcp_http_app`, so the app this
 process serves is NOA's app plus a probe surface, not a simulation of it.
 
 **Authentication is real.** The probe server takes the same `NoaTokenVerifier` and the same
-`McpAuthErrorMiddleware` as production, so LibreChat has to present a minted bearer token and
-the `X-Noa-LibreChat-User` header C24 requires, and TOFU binding is exercised live for
-the first time. What the probe server does *not* carry is `RbacToolMiddleware`: its tools are
-uncatalogued by construction, so the RBAC gate would refuse them (V83c) — correctly, and
-uselessly for this question.
+`McpAuthErrorMiddleware` as production, so LibreChat has to present a minted bearer token and the
+`X-Noa-LibreChat-User` header the sole-client design requires, and TOFU binding is exercised live
+for the first time. What the probe server does *not* carry is `RbacToolMiddleware`: its tools are
+uncatalogued by construction, so the RBAC gate would refuse them — correctly, and uselessly for this
+question.
 
-**The frame page is the measurement.** `/embed-probe/frame` is served from NOA's origin and
-does what the real approval card will have to do: a same-origin `GET /auth/me` and a
-same-origin `POST /embed-probe/decide`, both `credentials: 'include'`, both by JS `fetch`
-because V80 says a native form submit is dead in that sandbox. The verdicts land in `data-*`
+**The frame page is the measurement.** `/embed-probe/frame` is served from NOA's origin and does
+what the real approval card will have to do: a same-origin `GET /auth/me` and a same-origin `POST
+/embed-probe/decide`, both `credentials: 'include'`, both by JS `fetch` because a native form submit
+is dead in that sandbox — `allow-forms` absent at every render site. The verdicts land in `data-*`
 attributes so the browser probe reads a value rather than a screenshot.
 
-`/embed-probe/decide` stands in for the approve endpoint and deliberately implements none of
-it: no CSRF token, no row lock, no reason. It answers "did the cookie
-arrive" and nothing else. T33/T37 build the real thing once this gate has chosen a branch.
+`/embed-probe/decide` stands in for the approve endpoint and deliberately implements none of it: no
+CSRF token, no row lock, no reason. It answers "did the cookie arrive" and nothing else. The gate
+and the decision endpoints build the real thing once this gate has chosen a branch.
 
 Run:
 
@@ -73,8 +74,9 @@ PROBE_APP_PATH = "/"
 
 # The host the frame is served from. Different origin from the LibreChat parent
 # (`chat.noa.internal`), same registrable domain — which is the whole point: `SameSite=Lax`
-# makes the session cookie a same-site cookie here, and V40 says the deployment is built that
-# way. Overridable so a re-run on other hostnames does not need an edit.
+# makes the session cookie a same-site cookie here, and the deployment is built that way —
+# every operator origin under one registrable parent. Overridable so a re-run on other hostnames
+# does not need an edit.
 EMBED_ORIGIN = os.environ.get("NOA_EMBED_PROBE_ORIGIN", "http://embed.noa.internal:8000")
 
 # Where the JSON-RPC method log lands. Under `.runtime/` beside the harness, which is
@@ -95,7 +97,7 @@ def _frame_html(*, action_request_id: str, mode: str) -> str:
 
     - `data-origin` — where the browser thinks this document lives. On the `src` path that
       is NOA's origin; on the `srcDoc` path it is `null` (an opaque origin), which is the
-      failure C17 describes.
+      failure the embed-on-NOA-origin design exists to prevent.
     - `data-cookie-visible` — `document.cookie`. Must stay empty: the session cookie is
       httpOnly, so a value here would mean something else is setting a readable one.
     - `data-me` / `data-decide` — the two requests that matter. A 200 on both means the
@@ -105,20 +107,12 @@ def _frame_html(*, action_request_id: str, mode: str) -> str:
     `mode` is echoed so a screenshot of either run names which path produced it.
     """
     return f"""<!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><title>NOA embed render gate probe</title>
-<style>
+<html lang="en"> <head><meta charset="utf-8"><title>NOA embed render gate probe</title> <style>
  body {{ font: 13px/1.5 ui-monospace, monospace; margin: 12px; }}
  .row {{ margin: 4px 0; }} .k {{ color: #666; }} b {{ font-weight: 600; }}
-</style></head>
-<body>
-<div id="probe"
-     data-mode="{mode}"
-     data-action-request-id="{action_request_id}"
-     data-origin="pending"
-     data-cookie-visible="pending"
-     data-me="pending"
-     data-decide="pending">
+</style></head> <body> <div id="probe"
+     data-mode="{mode}" data-action-request-id="{action_request_id}" data-origin="pending"
+     data-cookie-visible="pending" data-me="pending" data-decide="pending">
   <div class="row"><span class="k">mode</span> <b>{mode}</b></div>
   <div class="row"><span class="k">action_request_id</span> <b>{action_request_id}</b></div>
   <div class="row"><span class="k">origin</span> <b id="v-origin">…</b></div>
@@ -130,16 +124,14 @@ def _frame_html(*, action_request_id: str, mode: str) -> str:
 (async () => {{
   const el = document.getElementById('probe');
   const set = (key, node, value) => {{
-    el.dataset[key] = value;
-    document.getElementById(node).textContent = value;
+    el.dataset[key] = value; document.getElementById(node).textContent = value;
   }};
 
   set('origin', 'v-origin', String(window.location.origin));
 
-  // `document.cookie` THROWS in an opaque-origin document, which is exactly what the
-  // negative control is. Guarded so the control still reports the rest of its state instead
-  // of dying on line one and leaving every field reading "pending".
-  try {{
+  // `document.cookie` THROWS in an opaque-origin document, which is exactly what the // negative
+  control is. Guarded so the control still reports the rest of its state instead // of dying on line
+  one and leaving every field reading "pending". try {{
     set('cookieVisible', 'v-cookie', document.cookie === '' ? '(empty)' : document.cookie);
   }} catch (err) {{
     set('cookieVisible', 'v-cookie', 'threw: ' + err);
@@ -170,10 +162,7 @@ def _frame_html(*, action_request_id: str, mode: str) -> str:
   }} catch (err) {{
     set('decide', 'v-decide', 'threw: ' + err);
   }}
-}})();
-</script>
-</body>
-</html>
+}})(); </script> </body> </html>
 """
 
 
@@ -185,14 +174,14 @@ def _register_probe_tools(server: FastMCP) -> None:
         name=TOOL_URI_LIST,
         description=(
             "Return a NOA approval surface as a `text/uri-list` UI resource. "
-            "Harness tool for the T59 render gate."
+            "Harness tool for the render gate."
         ),
     )
     async def embed_probe_uri_list() -> ToolResult:
-        """Path A: `ui://` + `text/uri-list` ⇒ mcp-ui renders an iframe `src`.
+        """Path A: `ui://` + `text/uri-list` — mcp-ui renders an iframe `src`.
 
-        The plain URL rides in the text block as well. That is not decoration: V25 makes the
-        link-out permanent, both as the T59-fail path and as the iframe-load-failure path, so
+        The plain URL rides in the text block as well. That is not decoration: the link-out is
+        permanent, both as the gate-fail path and as the iframe-load-failure path, so
         the harness returns the shape the product will return rather than a stripped one.
         """
         action_request_id = str(uuid.uuid4())
@@ -221,14 +210,15 @@ def _register_probe_tools(server: FastMCP) -> None:
         name=TOOL_HTML,
         description=(
             "Return the same NOA approval surface as an inline `text/html` UI resource. "
-            "Negative control for the T59 render gate."
+            "Negative control for the render gate."
         ),
     )
     async def embed_probe_html() -> ToolResult:
-        """Control path: `text/html` ⇒ `srcDoc` ⇒ opaque origin ⇒ the cookie cannot ride.
+        """Control path: `text/html` → `srcDoc` → opaque origin → the cookie cannot ride.
 
         Its job is to fail. Without it, a green result on the `text/uri-list` run proves only
-        that the probe returns 200 somewhere — the same tautology V87 describes one axis over.
+        that the probe returns 200 somewhere — the same tautology a compare that never separates
+        describes one axis over.
         """
         action_request_id = str(uuid.uuid4())
         return ToolResult(
@@ -249,7 +239,7 @@ def _register_probe_tools(server: FastMCP) -> None:
         name=TOOL_NOTIFY,
         description=(
             "Emit `notifications/tools/list_changed` on this MCP session. "
-            "Harness tool for T59 item (f)."
+            "Harness tool for item (f)."
         ),
     )
     async def embed_probe_notify_tools_changed(ctx: Context) -> str:
@@ -259,9 +249,9 @@ def _register_probe_tools(server: FastMCP) -> None:
         emit it on. What is being measured is not this call — it is whether a `tools/list`
         request arrives afterwards, which is read off NOA's access log, and whether LibreChat
         logs an unhandled-notification error rather than quietly ignoring it. A client that
-        ignores this is a client whose cached catalog can name a revoked tool; V74 already
-        says that is not a security hole (V1 re-checks at execution), so the answer changes
-        T66's design, not its safety.
+        ignores this is a client whose cached catalog can name a revoked tool; a stale catalog
+        is no hole — the execution-time permission re-check backstops it — so the answer changes
+        the list-changed emitter's design, not its safety.
         """
         await ctx.session.send_tool_list_changed()
         return "sent notifications/tools/list_changed"
@@ -366,7 +356,7 @@ def create_probe_app() -> FastAPI:
         """The NOA-origin document LibreChat is asked to iframe.
 
         No authentication on the page itself, matching the real embed: the card renders and
-        *then* discovers whether the session travelled, because V38 requires a 401 to become
+        *then* discovers whether the session travelled, because a 401 must become
         an explicit state rather than a blank card.
         """
         return HTMLResponse(_frame_html(action_request_id=id or "(none)", mode=mode))

@@ -1,4 +1,4 @@
-"""The two halves of a receipt, measured against each other (T38 — V46, V69's shape).
+"""The two halves of a receipt, measured against each other.
 
 `core/approvals/delta.py` argues that the runner has to state the before→after itself because
 nothing downstream can compute it: `before` is the gate's in-process preflight and `after` is the
@@ -118,7 +118,7 @@ from support.whm_firewall_change import (
 )
 
 # The WHM account the two account lanes run against, and the reseller WHM reports as its owner.
-# `whm_server`'s credential is `root`, and the runner refuses unless the two agree (§V106).
+# `whm_server`'s credential is `root`, and the runner refuses unless the two agree.
 ACCOUNT = "acmeco"
 OWNER = "root"
 
@@ -222,7 +222,9 @@ async def approved_run(fixture: ToolFixture, runner: ChangeRunner, *, tool: str)
 
 
 async def release_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """T25, on a box that reads blocked before the change and allowlisted after it."""
+    """The firewall-release tool, on a box that reads blocked before the change and allowlisted
+    after it.
+    """
     fixture, _ = release_context(
         monkeypatch,
         box=FakeFirewallBox(
@@ -239,7 +241,7 @@ async def release_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
 
 
 async def allowlist_remove_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """T26, on a box holding an allow entry that the removal then clears."""
+    """The allowlist-remove tool, on a box holding an allow entry that the removal then clears."""
     fixture, _ = release_context(
         monkeypatch,
         box=FakeFirewallBox(
@@ -256,7 +258,7 @@ async def allowlist_remove_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
 
 
 async def nic_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """T28. The fake VM holds its own config, so the runner reads what the gate saw."""
+    """The VM NIC tool. The fake VM holds its own config, so the runner reads what the gate saw."""
     no_polling_delay(monkeypatch)
     fixture, _ = nic_context()
     await call_nic(fixture)
@@ -268,7 +270,7 @@ async def nic_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
 
 
 async def reset_password_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """T27, the one tool whose changed value may not be rendered at all."""
+    """The password-reset tool, the one whose changed value may not be rendered at all."""
     no_password_polling_delay(monkeypatch)
     fixture, _ = reset_context()
     await reset(fixture)
@@ -280,7 +282,9 @@ async def reset_password_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
 
 
 async def whitelist_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """T29. The fake gateway holds `mynetworks`, so the add the gate proposed is the one run."""
+    """The whitelist tool. The fake gateway holds `mynetworks`, so the add the gate proposed is the
+    one run.
+    """
     fixture, _ = whitelist_change_context(monkeypatch)
     await call_whitelist(fixture)
     return await approved_run(
@@ -293,9 +297,8 @@ async def whitelist_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
 def account_context(*, listings: list[list[dict[str, Any]]], path: str) -> ToolFixture:
     """A WHM endpoint answering `listaccts` twice — once for the gate, once for the postflight.
 
-    Two bodies rather than one, because a CHANGE workflow reads that endpoint on both sides of
-    the change and a single answer would let the postflight pass against a read that never
-    happened.
+    Two bodies rather than one, because a CHANGE workflow reads that endpoint on both sides of the
+    change and a single answer would let the postflight pass against a read that never happened.
     """
     api = FakeWHMApi(
         body=listaccts_body([]),
@@ -316,7 +319,7 @@ def account_row(*, suspended: int) -> dict[str, Any]:
 
 
 async def suspend_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """T22: live when the operator was asked, suspended when the runner checked."""
+    """The suspend tool: live when the operator was asked, suspended when the runner checked."""
     fixture = account_context(
         listings=[[account_row(suspended=0)], [account_row(suspended=1)]],
         path=SUSPENDACCT_PATH,
@@ -332,7 +335,7 @@ async def suspend_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
 
 
 async def unsuspend_halves(monkeypatch: pytest.MonkeyPatch) -> Halves:
-    """T23, the mirror: suspended at gate time and live afterwards."""
+    """The unsuspend tool, the mirror: suspended at gate time and live afterwards."""
     fixture = account_context(
         listings=[[account_row(suspended=1)], [account_row(suspended=0)]],
         path=UNSUSPENDACCT_PATH,
@@ -387,7 +390,7 @@ def test_every_change_tool_is_covered_here() -> None:
 async def test_the_two_halves_of_a_receipt_cannot_be_diffed(
     tool: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The property the whole design rests on, measured per tool (V46, V69's shape).
+    """The property the whole design rests on, measured per tool.
 
     Two claims, and together they say a reader holding both halves cannot compute what changed:
 

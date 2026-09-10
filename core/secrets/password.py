@@ -2,12 +2,12 @@
 
 Copied from `noa-old` branch `MCP`. Two properties carry the whole file.
 
-**Generated here, never argued in.** `_generate_password` is a code-level helper, ⊥ an MCP
-tool and ⊥ reachable from a tool argument. `noa-old` GH #91 is the reason: the reset tool used
-to accept `new_password` from the model and echo it back, which put plaintext in the prompt,
-the model context, the stored transcript, and potentially the logs. V49 closes that — the
-plaintext lives only in the calling `execute()` frame, long enough to be delivered via yopass
-and applied to the VM, and the tool returns a `yopass_url` and nothing else.
+**Generated here, never argued in.** `_generate_password` is a code-level helper, never an MCP tool
+and never reachable from a tool argument. `noa-old` GH #91 is the reason: the reset tool used to
+accept `new_password` from the model and echo it back, which put plaintext in the prompt, the model
+context, the stored transcript, and potentially the logs. Server-side generation closes that — the
+plaintext lives only in the calling `execute()` frame, long enough to be delivered via yopass and
+applied to the VM, and the tool returns a `yopass_url` and nothing else.
 
 **The alphabet is a compatibility fix, not taste.** Space, single quote, double quote,
 backtick and backslash are excluded because the generated password is later embedded in a
@@ -39,7 +39,7 @@ _DEFAULT_PASSWORD_LENGTH: Final[int] = 24
 def _generate_password(length: int = _DEFAULT_PASSWORD_LENGTH) -> str:
     """Return a cryptographically random password.
 
-    `secrets.choice`, ⊥ `random`: this value protects a customer VM. Internal helper — the
+    `secrets.choice`, never `random`: this value protects a customer VM. Internal helper — the
     plaintext it returns must not be logged, persisted, or returned across the LLM boundary.
     """
     if length < 1:

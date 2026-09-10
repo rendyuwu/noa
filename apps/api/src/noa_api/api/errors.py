@@ -333,7 +333,7 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # `Retry-After` would be a number NOA cannot honestly produce.
     ChangeExecutionLimitReachedError: status.HTTP_409_CONFLICT,
     # 403, not 401: the session authenticated fine and signing in again changes nothing
-    #. The remedy is a freshly minted token, which means reloading the card.
+    # . The remedy is a freshly minted token, which means reloading the card.
     DecisionCsrfInvalidError: status.HTTP_403_FORBIDDEN,
     # Bare `ActionDecisionError`: a refusal about one request, so 409 rather than the 503
     # fallback, which would read as "NOA is down" for something NOA decided. The same

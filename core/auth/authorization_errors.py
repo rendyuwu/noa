@@ -1,7 +1,7 @@
 """Authorization error taxonomy.
 
-Ported from `noa-old` branch `MCP` (`core/auth/authorization_errors.py`, C13) with two
-changes, both to satisfy V73:
+Ported from `noa-old` branch `MCP` (`core/auth/authorization_errors.py` — port, never
+import) with two changes, both so every error carries `request_id` in body and header:
 
 1. Every class derives from `core.errors.NoaError`, so it carries `error_code` and an
    operator-facing `message`. `noa-old` raised bare `Exception` subclasses and let each
@@ -9,18 +9,19 @@ changes, both to satisfy V73:
    and 409 in another. Here `noa_api.api.errors` maps class → status, once.
 2. The `error_code` strings are lifted verbatim from `noa-old`'s
    `api/error_codes.py` — `last_active_admin`, `self_delete_admin`, `unknown_tools`, and
-   the rest. The admin panel ported in T48 branches on these strings, so inventing new
+   the rest. The ported admin panel branches on these strings, so inventing new
    spellings would break a client that already exists.
 
-`DirectGrantsDisabledError` is deliberately NOT here: V75/T65 owns that 410, and the
-engine has no direct-grant path to refuse.
+`DirectGrantsDisabledError` is deliberately NOT here: the 410 on direct grants owns
+that status, and the engine has no direct-grant path to refuse.
 
 Statuses the handler assigns, and the reasoning:
 
 - 403 `admin_access_required` — authenticated, not an admin. Re-authenticating
   changes nothing, so 401 would loop a login redirect.
 - 403 `reserved_role` — the `admin` role exists and the caller may not edit or delete it
-  (V13). Not 404: pretending it is absent would be a lie the UI then renders.
+  (admin endpoints refuse a non-admin). Not 404: pretending it is absent would be a
+  lie the UI then renders.
 - 404 — the user or role does not exist.
 - 400 — the request itself is malformed: bad role name, unknown tool, unknown role, or an
   internal role the API may not assign.
@@ -86,9 +87,9 @@ class InvalidRoleNameError(AuthorizationError):
 
 
 class ReservedRoleError(AuthorizationError):
-    """The `admin` role is reserved: ⊥ edit its tools, ⊥ delete it.
+    """The `admin` role is reserved: never edit its tools, never delete it.
 
-    V10 gives `admin` every known tool by bypassing the grant table entirely, so its
+    `admin` holds every known tool by bypassing the grant table entirely, so its
     `role_tool_permissions` rows would be decoration that implies a limit NOA does not
     enforce. Refusing the edit keeps the displayed state and the enforced state equal.
     """
@@ -164,7 +165,7 @@ class SelfDeleteError(AuthorizationError):
 
     Applies to non-admins too: account lifecycle is an admin action, and a self-delete
     would leave the caller holding a valid session cookie for a row that no longer exists
-    (V6 — there is no revocation before `exp`).
+    (the cookie's claims are not revocable before `exp`).
     """
 
     error_code: str = "self_delete"

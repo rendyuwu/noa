@@ -1,6 +1,6 @@
 """One id per request, on every response and in every log line.
 
-V73 wants a `request_id` in every error body and an `x-request-id` on every error response.
+Every error body carries a `request_id` and every error response an `x-request-id`.
 That needs something upstream of the exception handlers to decide what the id *is*, because
 by the time a handler runs there is no other place the id could come from that both the
 FastAPI surface and the mounted MCP app can read. `RequestContextMiddleware` is that
@@ -21,11 +21,12 @@ them can reach the others:
 `api/error_handling.py`) takes an inbound `X-Request-Id` verbatim. That value goes straight
 back out as a response header and into structured log output, so an unbounded or
 newline-carrying one is a log-forging surface at best. Inbound is still honoured — a proxy
-that mints ids is exactly the correlation V73 is for — but only when it looks like an
+that mints ids is exactly the correlation the id is for — but only when it looks like an
 id: bounded length, and characters that cover UUIDs, hex digests and W3C trace ids.
 
 That rule is not this header's alone, which is why `sanitize_header_label` is separate from
-`sanitize_request_id`: T73 reads `X-Noa-Conversation-Ref` and writes it into `tool_runs` and
+`sanitize_request_id`: the tool-run writer reads `X-Noa-Conversation-Ref` and writes it into
+`tool_runs` and
 into log output, the same exposure under a different name and a different bound. The
 two callers differ only in what they do with a rejection — an id is minted, a label goes
 `None` — and that choice stays with each caller rather than in here.

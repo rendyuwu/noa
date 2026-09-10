@@ -109,7 +109,7 @@ export function UsersPage({ me }: { me: VerifiedUser }) {
               onSelect: () => selectUser(user.id),
             },
             {
-              // A route, not a drawer section (§T76): a token list has its own
+              // A route, not a drawer section: a token list has its own
               // loading, empty, error and pagination states, and a mint dialog
               // that must not open inside a 360px panel.
               label: 'MCP tokens',

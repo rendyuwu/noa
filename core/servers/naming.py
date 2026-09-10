@@ -1,15 +1,16 @@
 """Identity fields of a server row: names, base URLs, SSH hosts.
 
 Ported from `noa-old` branch `MCP` (`api/routes/server_validation.py`), which is where the
-three admin route files shared it. It sits in `core/` here rather than beside the routes for
-the reason V66 gives and one more: these are properties of a *row*, not of an HTTP request.
+three admin route files shared it. It sits in `core/` here rather than beside the routes
+because shared code lives in `core/`, and for one more reason: these are properties of a
+*row*, not of an HTTP request.
 A future bootstrap script or fixture that inserts a server owes the same normalisation, and
 a validator reachable only through pydantic is one such a caller cannot reach.
 
 Every function raises `ValueError`, not a `NoaError`, and that is deliberate: they are used
 as pydantic `field_validator`s, so pydantic collects them into a `RequestValidationError`
-and the shared handler answers 422 with `request_validation_error` + `request_id` (T64,
-V73). The failing *value* never reaches the body or the log — `redacted_validation_errors`
+and the shared handler answers 422 with `request_validation_error` + `request_id`.
+The failing *value* never reaches the body or the log — `redacted_validation_errors`
 keeps `loc` and `type` only, which matters here because these fields sit in the same
 request body as an API token.
 
@@ -17,10 +18,9 @@ Three fields, three different shapes, and the differences are all forced by what
 afterwards:
 
 - **`name`** — `[A-Za-z0-9._:-]+`. This is what `resolve_*_server_ref` matches an operator's
-  word against, and it travels into `choices` entries a model reads, so it stays to a
-  character set that cannot be confused with a URL, a shell token or a UUID. `+` rather than
-  `*` is V21's "whitespace-only required strings rejected": there is no blank name that
-  passes.
+  word against, and it travels into `choices` entries a model reads, so it stays to a character set
+  that cannot be confused with a URL, a shell token or a UUID. `+` rather than `*` rejects a
+  whitespace-only required string: there is no blank name that passes.
 - **`base_url`** — normalised to `https://<host>[:<port>]`. WHM and Proxmox both reach their
   API over it, and `core.integrations.whm.ssh.resolve_whm_ssh_config` additionally takes the
   *SSH* hostname out of it with `urlsplit(...).hostname`. So a value carrying a path, a
@@ -28,7 +28,7 @@ afterwards:
   whose API endpoint is another. Stripping happens here, once, before the row is written —
   not at read time, where two readers could strip differently.
 - **`ssh_host`** — PMG only (`pmg_servers.ssh_host`), because PMG has no base URL to derive
-  one from (I.ext, V58). An IP literal or a hostname, never a URL: a value with `://` in it
+  one from. An IP literal or a hostname, never a URL: a value with `://` in it
   would be handed to `asyncssh.create_connection` as a host name and fail at the socket
   with a message about DNS.
 
@@ -48,10 +48,10 @@ from urllib.parse import urlsplit
 # `resolve_*_server_ref`'s vocabulary. Same expression as `noa-old`.
 _SERVER_NAME_RE: Final = re.compile(r"^[A-Za-z0-9._:-]+$")
 
-# One DNS label: alphanumeric ends, hyphens inside, 63 characters at most (RFC 1035 §2.3.1).
+# One DNS label: alphanumeric ends, hyphens inside, 63 characters at most (RFC 1035 section 2.3.1).
 _HOST_LABEL_RE: Final = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$")
 
-# Total length of a DNS name (RFC 1035 §2.3.4), checked before the per-label walk so a
+# Total length of a DNS name (RFC 1035 section 2.3.4), checked before the per-label walk so a
 # pathological value is refused in one comparison.
 _MAX_HOSTNAME_LENGTH: Final = 253
 
@@ -102,7 +102,7 @@ def normalize_https_base_url(value: str, *, label: str = "server") -> str:
 
 
 def normalize_ssh_host(value: str, *, label: str = "server") -> str:
-    """A stripped IP literal or DNS name, never a URL (PMG, V58).
+    """A stripped IP literal or DNS name, never a URL (PMG only).
 
     The refusals are the characters that would make `asyncssh` read the value as something
     other than a host: a scheme separator, whitespace, a path or query marker, a userinfo
@@ -133,7 +133,7 @@ def normalize_whm_identity(value: str) -> str:
     Two sites compare WHM identity strings and they must agree, so the normalisation is a
     function rather than a repeated expression:
 
-    - the admin write refuses a reseller row whose `name` is not its `api_username` (V109(b));
+    - the admin write refuses a reseller row whose `name` is not its `api_username`;
     - an account CHANGE refuses before writing anything when the account's `owner` is not the
       resolved row's `api_username`.
 

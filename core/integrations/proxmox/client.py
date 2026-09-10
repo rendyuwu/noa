@@ -29,7 +29,7 @@ SDN.Use)` names the exact ACL path to grant.
 when the config changed underneath, and that CAS failure must stay legible all the way up.
 
 Dict-returning, not exception-raising: these codes are the tool layer's material for a structured
-result, and V19's sanitisation boundary is one layer up. The strings are stable — tools and tests
+result, and the sanitisation boundary is one layer up. The strings are stable — tools and tests
 branch on them.
 
 **Sync or async, same endpoint.** A Proxmox config write answers with a UPID string to poll, or
@@ -41,20 +41,22 @@ an `asyncio.Semaphore(5)`. Verbatim from `noa-old`, and the right call here: tas
 many sequential requests per workflow, so the TLS handshake would be paid on each one. The
 semaphore caps what a single workflow can aim at one node.
 
-`close()` releases it, and `async with` is the shape that cannot forget to (T17 deviation (c)).
+`close()` releases it, and `async with` is the shape that cannot forget to — a port deviation.
 
 **Credentials.** `ProxmoxClient` takes a plaintext secret; `build_proxmox_client_from_creds` is
-the one place ciphertext becomes plaintext. `noa-old` decrypted in three (T17 deviation (b)).
+the one place ciphertext becomes plaintext. `noa-old` decrypted in three — another port deviation.
 
 **What is not here**, and why — each was in the source:
 
-- `get_user` — backs `proxmox_get_user_by_email`, C22 never-implement.
+- `get_user` — backs `proxmox_get_user_by_email`, on the never-implement list.
 - `get_pool`, `get_effective_permissions`, `add_vms_to_pool`, `remove_vms_from_pool` — the pool
-  membership move (`proxmox_move_vms_between_pools` and its preflight), also C22. Their only
+  membership move (`proxmox_move_vms_between_pools` and its preflight), also never-implement.
+  Their only
   callers on `MCP` were `proxmox/tools/pool_tools.py` and `core/workflows/proxmox/postflight.py`.
 
-C22 is a management policy boundary, ⊥ a technical one. Porting the client methods would leave
-the capability one line from exposure; re-adding them is an owner decision, ⊥ an agent call.
+The never-implement list is a management policy boundary, not a technical one. Porting the client
+methods would leave the capability one line from exposure; re-adding them is an owner decision,
+never an agent call.
 """
 
 from __future__ import annotations
@@ -70,7 +72,7 @@ from core.secrets.crypto import SecretCipher
 
 
 def _normalized_text(value: object) -> str | None:
-    """A non-empty stripped string, or `None`. Non-strings are `None`, ⊥ stringified.
+    """A non-empty stripped string, or `None`. Non-strings are `None`, never stringified.
 
     Used on values Proxmox may answer as a string, a null, or a structure — a UPID, a task
     status, a config digest. `None` means "absent", and callers branch on that.
@@ -163,7 +165,7 @@ def _payload_error(payload: Mapping[str, object], *, status_code: int) -> dict[s
     - **The trailing `status_code >= 400` block is unreachable.** Reaching it means the loop found
       no message, and it then re-reads the same `payload["message"]` the loop's first source
       already normalised to `None`. A 4xx with prose therefore comes back `proxmox_api_error`
-      from the loop, ⊥ `http_error` from here; a 4xx with nothing in the body falls past this
+      from the loop, not `http_error` from here; a 4xx with nothing in the body falls past this
       function to `_request_json`'s own `http_error`. Kept for fidelity, pinned by
       `test_maps_a_bare_failure_message_to_proxmox_api_error`.
     """
@@ -229,7 +231,7 @@ class ProxmoxClient:
         self._semaphore = asyncio.Semaphore(max_concurrent_requests)
 
     async def __aenter__(self) -> ProxmoxClient:
-        """T17 deviation (c). `close()` exists on `noa-old` and is called nowhere there — every
+        """Port deviation. `close()` exists on `noa-old` and is called nowhere there — every
         tool call leaked a socket and a TLS context. This is the shape that cannot."""
         return self
 
@@ -274,7 +276,7 @@ class ProxmoxClient:
         *,
         form_data: Mapping[str, object] | None = None,
         query_params: Mapping[str, object] | None = None,
-        # ASYNC109: `timeout` is httpx's per-request deadline, ⊥ an asyncio one. `asyncio.timeout`
+        # ASYNC109: `timeout` is httpx's per-request deadline, not an asyncio one. `asyncio.timeout`
         # would raise `CancelledError` past this function, losing the `timeout` error_code that
         # tells a caller to retry (and, on a CHANGE, that the write may have landed anyway).
         timeout: float | None = None,  # noqa: ASYNC109
@@ -296,7 +298,7 @@ class ProxmoxClient:
         except httpx.TimeoutException:
             return {"ok": False, "error_code": "timeout", "message": "Request timed out"}
         except httpx.RequestError as exc:
-            # V8: `exc` reports transport state (host, errno), never the token in `_headers`.
+            # `exc` reports transport state (host, errno), never the token in `_headers`.
             return {
                 "ok": False,
                 "error_code": "request_failed",
@@ -389,11 +391,12 @@ class ProxmoxClient:
         return {"ok": True, "message": "ok", "upid": upid, "synchronous": upid is None}
 
     async def get_version(self) -> dict[str, object]:
-        """Cheapest authenticated call Proxmox offers — the credential probe for T54's validate."""
+        """Cheapest authenticated call Proxmox offers — the credential probe for admin validate."""
         return await self._request_json("GET", "/api2/json/version")
 
     async def get_qemu_status_current(self, node: str, vmid: int) -> dict[str, object]:
-        """Runtime state plus CPU/memory/disk/net counters. Exact node, ⊥ cluster-wide search."""
+        """Runtime state plus CPU/memory/disk/net counters. Exact node, never a cluster-wide
+        search."""
         return await self._request_json(
             "GET",
             f"/api2/json/nodes/{node}/qemu/{vmid}/status/current",
@@ -407,14 +410,16 @@ class ProxmoxClient:
         )
 
     async def get_qemu_cloudinit(self, node: str, vmid: int) -> dict[str, object]:
-        """Cloud-init key/value pairs as Proxmox holds them (T27's before-state)."""
+        """Cloud-init key/value pairs as Proxmox holds them — the password reset's
+        before-state."""
         return await self._request_json(
             "GET",
             f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit",
         )
 
     async def get_qemu_cloudinit_dump_user(self, node: str, vmid: int) -> dict[str, object]:
-        """The rendered user-data document. Carries the crypt hash T27 verifies against."""
+        """The rendered user-data document. Carries the crypt hash the reset verifies
+        against."""
         return await self._request_json(
             "GET",
             f"/api2/json/nodes/{node}/qemu/{vmid}/cloudinit/dump",
@@ -439,10 +444,10 @@ class ProxmoxClient:
     async def regenerate_qemu_cloudinit(self, node: str, vmid: int) -> dict[str, object]:
         """Rewrite the cloud-init drive so the new password reaches the guest on next boot.
 
-        Ported as-is: this goes through `_request_json`, ⊥ `_request_json_task`, so a UPID
+        Ported as-is: this goes through `_request_json`, not `_request_json_task`, so a UPID
         arrives as `data` and is not polled. Deliberate on `noa-old`, kept — the reset workflow
         verifies by re-reading cloud-init rather than by waiting on this task. Whether to poll
-        it is T27's call, ⊥ this layer's.
+        it is the password-reset runner's call, not this layer's.
 
         30s, not the default 20: regeneration writes the drive image.
         """
@@ -455,10 +460,10 @@ class ProxmoxClient:
     async def get_qemu_config(self, node: str, vmid: int) -> dict[str, object]:
         """VM config plus its digest → `{"ok": True, "config": {...}, "digest": "..."}`.
 
-        A config without a digest is `invalid_response`, ⊥ a soft pass. The digest is the
-        compare-and-set token for `update_qemu_config`: T28 reads it, then writes with it, and
-        Proxmox refuses the write if the config moved. Handing back a digest-free config would
-        turn that fail-closed CAS into a blind overwrite (V62's fail-closed discipline).
+        A config without a digest is `invalid_response`, never a soft pass. The digest is the
+        compare-and-set token for `update_qemu_config`: the NIC tool reads it, then writes with
+        it, and Proxmox refuses the write if the config moved. Handing back a digest-free config
+        would turn that fail-closed CAS into a blind overwrite.
         """
         result = await self._request_json(
             "GET",
@@ -496,9 +501,9 @@ class ProxmoxClient:
     ) -> dict[str, object]:
         """Write one `netN` line under a digest. Backs `proxmox_vm_nic`.
 
-        `digest` is required, ⊥ optional: it must be the value from the `get_qemu_config` read
+        `digest` is required, never optional: it must be the value from the `get_qemu_config` read
         this write is based on. Proxmox answers `digest_mismatch` when the config changed
-        underneath, and the caller then needs a fresh preflight, ⊥ a retry.
+        underneath, and the caller then needs a fresh preflight, not a retry.
         """
         return await self._request_json_task(
             "POST",
@@ -554,9 +559,9 @@ def build_proxmox_client_from_creds(
     `maybe_decrypt_text` unwraps it, tolerating a row that predates encryption. One
     decrypt site means one place to audit and one place to change when a `v2` scheme lands.
 
-    T17 deviation (b): `noa-old` decrypted in three places — the admin validate service, the
+    Port deviation: `noa-old` decrypted in three places — the admin validate service, the
     tool-layer `client_for_server`, and the postflight helper — each reaching for a module-level
-    `maybe_decrypt_text` that T15 deleted along with the settings singleton behind it.
+    `maybe_decrypt_text` deleted here along with the settings singleton behind it.
     `noa_api.main.build_runtime` builds the one `SecretCipher` on `AppRuntime` and it
     arrives here as an argument.
 

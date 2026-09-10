@@ -2,16 +2,15 @@
 name = "noa-api"
 version = "0.1.0"
 description = "NOA API — FastAPI admin routes + FastMCP server"
-# C1: pgpy 0.6.0 (last release) imports stdlib `imghdr` at import time; removed in
+# Python <3.13: pgpy 0.6.0 (last release) imports stdlib `imghdr` at import time; removed in
 # 3.13. On 3.13+ that crashes tool-registry import, not only the reset tool.
 requires-python = ">=3.11,<3.13"
-# Exact pins throughout. Bump = deliberate, with re-verification (C2 discipline
-# applied to Python; C23 for the MCP stack specifically).
+# Exact pins throughout. Bump = deliberate, with re-verification.
 dependencies = [
   "noa-core",
-  # MCP server. Handshake era, negotiated per client, per C23 — NOT fastmcp 4.x, which is
+  # MCP server. Handshake era, negotiated per client — NOT fastmcp 4.x, which is
   # beta-only, drops the 3.x shims, and relocates `fastmcp.server.auth.*`
-  # (breaking the T11 TokenVerifier) for zero gain against LibreChat's SDK v1.x.
+  # (breaking the token-verifier wiring) for zero gain against LibreChat's SDK v1.x.
   "fastmcp==3.4.5",
   # Web layer
   "fastapi==0.141.1",
@@ -40,8 +39,8 @@ dev = [
   "pytest==9.1.1",
   "pytest-asyncio==1.4.0",
   "ruff==0.16.1",
-  # Parses `librechat.yaml` and the config block of `docs/integrations/librechat.md` so V88's
-  # three keys are bound by test rather than by prose (V84c, T57). Declared rather than leaned
+  # Parses `librechat.yaml` and the config block of `docs/integrations/librechat.md` so the
+  # three operator-doc keys are bound by test rather than by prose. Declared rather than leaned
   # on as a transitive: a test whose parser can vanish in someone else's bump is not a binding.
   "pyyaml==6.0.3",
 ]

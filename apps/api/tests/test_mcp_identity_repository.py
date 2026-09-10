@@ -79,7 +79,7 @@ def repository(session: AsyncSession) -> SQLMcpIdentityRepository:
 
 
 async def make_user(session: AsyncSession, email: str, *, is_active: bool = True) -> User:
-    """Create a user through T8's repository — the same path login uses."""
+    """Create a user through the login flow's repository — the same path login uses."""
     return await SQLAuthRepository(session).create_user(
         email=email, ldap_dn=f"CN={email}", display_name=email, is_active=is_active
     )
@@ -93,7 +93,7 @@ async def make_token(
     expires_at: datetime | None = None,
     last_ldap_check_at: datetime | None = None,
 ) -> tuple[str, sa.Row[tuple[object, ...]]]:
-    """Insert one token through T10's repository and return its plaintext plus row id."""
+    """Insert one token through the token repository and return its plaintext plus row id."""
     plaintext = generate_mcp_token()
     view = await SQLMcpTokenRepository(session).insert(
         user_id=user.id,
@@ -118,7 +118,7 @@ async def make_token(
     return plaintext, view  # type: ignore[return-value]
 
 
-# --- V1/V2: the join that resolves a caller ---
+# --- The join that resolves a caller ---
 
 
 async def test_lookup_by_digest_returns_the_user_fields(
@@ -143,7 +143,7 @@ async def test_lookup_by_digest_returns_the_user_fields(
 async def test_lookup_reflects_a_disabled_user(
     session: AsyncSession, repository: SQLMcpIdentityRepository
 ) -> None:
-    """V1: the join reads the live row, so a disable lands on the very next request."""
+    """The join reads the live row, so a disable lands on the very next request."""
     user = await make_user(session, EMAIL)
     plaintext, _ = await make_token(session, user)
 
@@ -168,7 +168,7 @@ async def test_lookup_of_an_unknown_digest_is_none(
 async def test_the_returned_row_carries_no_digest(
     session: AsyncSession, repository: SQLMcpIdentityRepository
 ) -> None:
-    """V2: `token_hash` is a WHERE clause, not a field anything downstream can leak."""
+    """`token_hash` is a WHERE clause, not a field anything downstream can leak."""
     user = await make_user(session, EMAIL)
     plaintext, _ = await make_token(session, user)
 
@@ -179,7 +179,7 @@ async def test_the_returned_row_carries_no_digest(
     assert hash_mcp_token(plaintext) not in str(row)
 
 
-# --- C20/V3: TOFU binding is a compare-and-set in SQL ---
+# --- TOFU binding is a compare-and-set in SQL ---
 
 
 async def test_bind_pins_an_unbound_token(
@@ -222,7 +222,7 @@ async def test_bind_of_a_vanished_token_returns_no_match(
     assert returned != LIBRECHAT_USER
 
 
-# --- V4: usage and revalidation stamps ---
+# --- Usage and revalidation stamps ---
 
 
 async def test_touches_write_the_timestamps(
@@ -249,13 +249,14 @@ async def test_touches_write_the_timestamps(
     assert row["last_ldap_check_at"] == moment
 
 
-# --- V4: cascade revoke ---
+# --- Cascade revoke ---
 
 
 async def test_delete_takes_every_token_of_one_operator(
     session: AsyncSession, repository: SQLMcpIdentityRepository
 ) -> None:
-    """V4 revokes on the *operator* leaving, so a second token cannot survive the first."""
+    """Revocation fires on the *operator* leaving, so a second token cannot survive the
+    first."""
     user = await make_user(session, EMAIL)
     colleague = await make_user(session, OTHER_EMAIL)
     await make_token(session, user)
@@ -305,7 +306,7 @@ async def test_commit_makes_a_binding_visible_to_another_session(
 async def test_a_minted_token_resolves_and_binds_over_real_sql(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """T10 and T11 agree on the digest, and TOFU pins on the first call."""
+    """The mint and verify paths agree on the digest, and TOFU pins on the first call."""
     async with session_factory() as session:
         user = await make_user(session, EMAIL)
         minted = await McpTokenService(
@@ -339,7 +340,7 @@ async def test_a_minted_token_resolves_and_binds_over_real_sql(
 async def test_a_departed_operator_loses_every_token_over_real_sql(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """V4 cascade revoke, committed: the rows are gone in a fresh session."""
+    """Cascade revoke, committed: the rows are gone in a fresh session."""
     async with session_factory() as session:
         user = await make_user(session, EMAIL)
         plaintext, _ = await make_token(session, user, librechat_user_id=LIBRECHAT_USER)
@@ -363,7 +364,7 @@ async def test_a_departed_operator_loses_every_token_over_real_sql(
 async def test_a_fresh_check_skips_the_directory_over_real_sql(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """V4: `last_ldap_check_at` inside the interval means no LDAP round trip at all."""
+    """`last_ldap_check_at` inside the staleness interval means no LDAP round trip at all."""
     async with session_factory() as session:
         user = await make_user(session, EMAIL)
         plaintext, _ = await make_token(

@@ -21,21 +21,21 @@ for one deployment is two places for `NOA_API_URL` to disagree.
 
 The browser never calls FastAPI directly. Everything goes to `/api/*` on this origin and
 `src/app/api/[...path]/route.ts` forwards it server-side to `NOA_API_URL`, carrying the httpOnly
-`noa_session` cookie the registrable domain put here (§T.50, V40). `Authorization` is dropped
+`noa_session` cookie the deployment's registrable parent put here. `Authorization` is dropped
 outbound: bearer tokens are MCP-only and LibreChat's to send, so `/api/mcp/` is reachable on
 this origin and inert.
 
-It is a pass-through, unlike the embed's four-entry allowlist (§T.44). The embed needs one because
+It is a pass-through, unlike the embed's four-entry allowlist. The embed needs one because
 it is the single NOA origin LibreChat may frame; this app answers `frame-ancestors 'none'`, and
-the surface it needs is `§I.admin-api` in full — an allowlist would have to be edited by every later
+the surface it needs is the admin API's contract in full — an allowlist would have to be edited by every later
 admin task and a stale entry there fails as a 404 the panel cannot explain.
 
-`/login` is the LDAP sign-in form (§T.50). Its primary action is a `type="button"` click handler, not
+`/login` is the LDAP sign-in form. Its primary action is a `type="button"` click handler, not
 a form submit, and that is load-bearing rather than stylistic: `NOA_SIGN_IN_URL` points here, one way
-an operator arrives is a click on the embed's 401 card link-out, and R32 measured that the tab such a
+an operator arrives is a click on the embed's 401 card link-out, and a measured run showed the tab such a
 click opens inherits the frame's sandbox — where `allow-forms` is absent, so a submit-driven
-login would be refused with nothing the operator can see (V94, and V80's failure shape one origin
-over). The `<form>` stays and routes to the same handler, for the operator who copies the address
+login would be refused with nothing the operator can see, which is why an escape hatch ships the
+plain address and never a link alone. The `<form>` stays and routes to the same handler, for the operator who copies the address
 into a fresh tab instead.
 
 ## Checks
@@ -48,22 +48,23 @@ pnpm test:server   # boots `next dev` on a free port; minutes, not milliseconds
 pnpm build
 ```
 
-`tests/` holds the package-level guards rather than feature tests: `pins.test.ts` (C2 — exact
+`tests/` holds the package-level guards rather than feature tests: `pins.test.ts` (exact
 versions, no caret ranges), `npmrc.test.ts` (the `@gio` scope resolves from the internal registry),
-`hygiene.test.ts` (C14/V65 — `.ts` ≤ 300 lines, `.tsx` ≤ 450) and `import-firewall.test.ts`.
+`hygiene.test.ts` (file-size caps — `.ts` 300 lines, `.tsx` 450) and `import-firewall.test.ts`.
 
 `tests/**/*.server.test.ts` is the one lane that runs a real server, so it has its own config
 (`vitest.server.config.ts`) and is excluded from `pnpm test`.
 
 ## Framing
 
-Every response carries `Content-Security-Policy: frame-ancestors 'none'` (§T.49, V41): this app is
+Every response carries `Content-Security-Policy: frame-ancestors 'none'`, one entry on every
+response: this app is
 never framed, by anyone. The rule is `config/framing.ts` and `next.config.ts` returns it from
 `headers()` as one entry on `/(.*)`, so the pages, `/login`, `/healthz`, the 404 and the `/api/*`
 proxy are covered without each new route remembering a guard for itself.
 
 Nothing about it is configurable. `apps/web-embed` has one legitimate parent and reads its origin
-from `NOA_LIBRECHAT_ORIGIN` (§T.45); this app has none, so `buildFramingHeaders()` takes no argument
+from `NOA_LIBRECHAT_ORIGIN`; this app has none, so `buildFramingHeaders()` takes no argument
 and no variable in the shared repo-root `.env` can widen it — `tests/next-config-headers.test.ts`
 asserts that the embed's variable means nothing here.
 
@@ -74,11 +75,10 @@ config object — a `headers()` entry Next never applies looks the same from ins
 
 ## Status
 
-Scaffold is `SPEC.md` §T.47; the ported admin pages are §T.48; the framing header is §T.49; the
-`/api/*` proxy, the `noa_session` plumbing and the login route are §T.50.
+Scaffold, ported admin pages, framing header, the `/api/*` proxy, the `noa_session` plumbing and
+the login route: all built.
 
-Still open: the admin verticals' own endpoints (§T.51–§T.55 — the pages are ported, the API routes
-they call are not all built), and a readiness probe. `/healthz` here is liveness only — it touches no
+Still open: the admin verticals' own endpoints (pages ported, not all API routes built), and a readiness probe. `/healthz` here is liveness only — it touches no
 dependency, so a backend outage is never reported as this app's. A `/readyz` that reads `NOA_API_URL`
 would have to define readiness across two deployables, which is a deployment decision and belongs
-with §T.60, not with the session plumbing.
+with the images and compose setup, not with the session plumbing.

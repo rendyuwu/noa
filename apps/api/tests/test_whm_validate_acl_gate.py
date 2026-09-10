@@ -1,4 +1,4 @@
-"""Validate refuses a WHM row that cannot suspend, and reports the ACL set (§T80, §V111).
+"""Validate refuses a WHM row that cannot suspend, and reports the ACL set.
 
 `test_server_admin_service.py` owns which probes run in which order and
 `test_server_host_key_validation.py` owns the pin. What lives here is the answer the API probe
@@ -53,14 +53,15 @@ from support.whm_api import (
 API_TOKEN = "WHM-API-TOKEN-THAT-MUST-NOT-BE-REPORTED"
 CAPTURED_FINGERPRINT = "SHA256:AAAAC3NzaC1lZDI1NTE5AAAAICapturedByValidate"
 
-# The measured refusal (§R.33), kept verbatim: the XID differs on every call and the quotes are
-# U+201C/U+201D, which is exactly why §V114 forbids comparing this text byte for byte.
+# The measured refusal from a live host, kept verbatim: the XID differs on every call and the
+# quotes are U+201C/U+201D, which is exactly why this text is classified by pattern, never
+# byte-compared.
 MEASURED_REFUSAL = "API failure: (XID 3y67mz) You do not have a user named “web08”."
 XID = re.compile(r"\(XID \w+\)")
 
 
 def _without_xid(text: str) -> str:
-    """The refusal minus the one part of it that changes per call (§V114)."""
+    """The refusal minus the one part of it that changes per call."""
     return XID.sub("(XID)", text)
 
 
@@ -150,7 +151,7 @@ async def test_a_token_without_suspend_acct_is_refused_at_validate(cipher: Secre
 
 
 async def test_a_token_with_suspend_acct_validates_green(cipher: SecretCipher) -> None:
-    """The negative control (§V87). Without it, "validate refused" is all the suite knows, and
+    """The negative control. Without it, "validate refused" is all the suite knows, and
     a gate that refuses everything would pass the test above."""
     api = FakeWHMApi(body=myprivs_body(reseller_privileges()))
     service, row, _, _ = _build(cipher=cipher, api=api)
@@ -164,7 +165,7 @@ async def test_a_token_with_suspend_acct_validates_green(cipher: SecretCipher) -
 @pytest.mark.parametrize(
     ("value", "expected_ok"),
     [
-        (1, True),  # root's spelling (§R.33)
+        (1, True),  # root's spelling, measured on a live host
         ("1", True),  # the reseller's spelling for the same grant on the same host
         (0, False),
         ("", False),
@@ -174,7 +175,7 @@ async def test_a_token_with_suspend_acct_validates_green(cipher: SecretCipher) -
 async def test_the_gate_reads_every_measured_spelling_of_the_flag(
     cipher: SecretCipher, value: object, expected_ok: bool
 ) -> None:
-    """The gate goes through the client's truth table rather than carrying its own (§V113).
+    """The gate goes through the client's truth table rather than carrying its own.
 
     Two readers of one table drift, and the direction one of them drifts in is an operator
     typing a reason for a change WHM refuses. The table itself is tested exhaustively in
@@ -202,7 +203,7 @@ async def test_an_absent_suspend_acct_key_is_refused_like_an_empty_one(
     assert result.error_code == WHM_ACL_INSUFFICIENT_CODE
 
 
-# --- §V111: the ACL set gets REPORTED, not just `ok` ---
+# --- The ACL set gets REPORTED, not just `ok` ---
 
 
 async def test_the_acl_set_reaches_the_message_and_the_audit_metadata(
@@ -230,7 +231,7 @@ async def test_the_acl_set_reaches_the_message_and_the_audit_metadata(
     assert f"({len(reported)} granted)" in result.message
     # And it is the fixture's own grants rather than a number that happens to line up: the two
     # decisive names are in the set, and the write ACLs the measured reseller does not hold
-    # (§R.33) stayed out of it.
+    # (measured on a live host) stayed out of it.
     assert WHM_ACL_SUSPEND_ACCOUNT in reported
     assert WHM_ACL_LIST_ACCOUNTS in reported
     assert "all" not in reported
@@ -256,7 +257,7 @@ async def test_the_refusal_also_reports_the_set_it_refused_on(cipher: SecretCiph
 
 
 async def test_a_missing_list_accts_is_reported_and_not_refused(cipher: SecretCipher) -> None:
-    """§V112's second half, and it is a report rather than a gate.
+    """The one-ACL-both-directions rule's second half, and it is a report rather than a gate.
 
     A row is refused for what it cannot do on the CHANGE path, which is the path that costs a
     typed reason. A row that can suspend but cannot list is a strange configuration, not an
@@ -287,7 +288,7 @@ async def test_the_acl_report_survives_the_ssh_half(cipher: SecretCipher) -> Non
     assert audit.events[0].metadata["whm_acl_suspend_acct"] is True
 
 
-# --- §V86: "could not ask" is not "holds nothing" ---
+# --- "Could not ask" is not "holds nothing" ---
 
 
 async def test_a_probe_that_never_answered_records_an_unknown_acl_set(
@@ -341,7 +342,7 @@ def test_an_ok_payload_with_no_acl_set_records_unknown_not_empty(
     re-deriving what an absent `acls` should mean.
 
     `()` here would record `whm_acls: []` — "the token holds nothing granted" — for a set that
-    was never read (§V86). The verdict fails closed and names the source that did not answer.
+    was never read. The verdict fails closed and names the source that did not answer.
     """
     answer, acls = _whm_acl_answer(payload)
 
@@ -370,7 +371,7 @@ def test_an_acl_set_that_answered_with_nothing_granted_is_empty_not_unknown() ->
     assert _whm_acl_metadata(acls)["whm_acls"] == []
 
 
-# --- §V114: WHM's own text is passed through, so assert on it by property ---
+# --- WHM's own text is passed through, so assert on it by property ---
 
 
 async def test_whms_reason_reaches_the_operator_and_compares_by_property(
@@ -392,7 +393,7 @@ async def test_whms_reason_reaches_the_operator_and_compares_by_property(
 
 
 async def test_the_xid_stripped_compare_still_separates_two_reasons() -> None:
-    """The case §V87/§B4 require: a compare that ignores the volatile part must still fail on
+    """The separating case: a compare that ignores the volatile part must still fail on
     text that differs anywhere else, or it is asserting nothing."""
     other = "API failure: (XID zz99aa) You do not have a user named “web09”."
 
@@ -400,7 +401,7 @@ async def test_the_xid_stripped_compare_still_separates_two_reasons() -> None:
     assert _without_xid(other.replace("zz99aa", "3y67mz")) != _without_xid(MEASURED_REFUSAL)
 
 
-# --- V8: the credential is never in what validate reports ---
+# --- The credential is never in what validate reports ---
 
 
 async def test_the_api_token_appears_in_neither_the_message_nor_the_metadata(

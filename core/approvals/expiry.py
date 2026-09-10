@@ -1,56 +1,55 @@
 """Making a stale PENDING request terminal.
 
-V32 wants two things, and T37 built one of them. The decision door already checks on read:
-an operator who reaches a card past its deadline gets the row written `EXPIRED` under the
-lock already held, then a 409. What is here is the other half — **the sweep**, which is
-V32's terminality *without traffic*. Without it a request nobody ever opens stays `PENDING`
-for as long as the database exists, and `action_requests.status` — the column V23 answers
-"may this run?" from every time — has no truthful answer once the TTL has passed. And the
-same mechanism serves the render paths, so a read cannot show a stale `PENDING` either: T63's
-`noa_get_action_result` was its first live caller (`core.approvals.results`) and T41's approval
-card is the second (`core.approvals.card`).
+A pending request expires two ways, and the decision door built one of them. The door already
+checks on read: an operator who reaches a card past its deadline gets the row written `EXPIRED`
+under the lock already held, then a 409. What is here is the other half — **the sweep**:
+terminality *without traffic*. Without it a request nobody ever opens stays `PENDING`
+for as long as the database exists, and `action_requests.status` — the column "may this run?"
+is read from every time — has no truthful answer once the TTL has passed. And the
+same mechanism serves the render paths, so a read cannot show a stale `PENDING` either: the
+`noa_get_action_result` tool was its first live caller (`core.approvals.results`) and the
+approval card is the second (`core.approvals.card`).
 
 **Both render paths run this *after* their requester-matched read** (`core.approvals.reads`).
 `expire_if_due` takes an id and no requester, so running it first would let an identifier the
 caller cannot see be written to — and the ids reach an operator through a tool result that
 persists in LibreChat's MongoDB, so "the caller supplied it" is not the same as "the
-caller may see it". V32 allows a surface that resolves the row itself to call this first; T41's
+caller may see it". A surface that resolves the row itself may call this first; the approval
 card declined, and reading first costs only one poll of freshness (see `apply_due_expiry`).
 
 **A third writer, and the reason is the same one that split the first two.**
-`SQLActionRequestRepository` writes `PENDING` and nothing else, because the MCP tool
-path holds it. `SQLActionDecisionRepository` writes `APPROVED`/`DENIED` and is reached
-only by a cookie POST from a NOA-origin document. Both the sweeper and a render path
-need a terminal write too, and neither may hold a writer that can set `APPROVED` — a loop
-with no operator behind it, and a GET, are the last two places an authorization should be
-grantable from. So this repository's only reachable terminal status is `EXPIRED`: the status
-is not a parameter, and the predicate is part of the statement rather than the caller's to
-supply.
+`SQLActionRequestRepository` writes `PENDING` and nothing else, because the MCP tool path holds it.
+`SQLActionDecisionRepository` writes `APPROVED`/`DENIED` and is reached only by a cookie POST from a
+NOA-origin document. Both the sweeper and a render path need a terminal write too, and neither may
+hold a writer that can set `APPROVED` — a loop with no operator behind it, and a GET, are the last
+two places an authorization should be grantable from. So this repository's only reachable terminal
+status is `EXPIRED`: the status is not a parameter, and the predicate is part of the statement
+rather than the caller's to supply.
 
 **One predicate, one definition** — `status = PENDING AND expires_at <= now`. The sweep and
 the check-on-read are the same `UPDATE` with an id added, because two spellings of "which
 rows are due" is how a boundary ends up holding at one door and not the other.
 
-**`<=`, matching the decision door.** `§T.39`'s line reads `expires_at < now()`; the door
+**`<=`, matching the decision door.** The sweep's line could read `expires_at < now()`; the door
 compares `locked.expires_at <= decided_at`. A row exactly on its deadline has to be one
 thing, and refusing it at the door while leaving it `PENDING` in the sweep is the shape of
-disagreement V32 exists to remove.
+disagreement the TTL exists to remove.
 
-**No `SELECT … FOR UPDATE` here, and that is not a weakening of V28.** A bare `UPDATE` takes
-its own row locks, and under READ COMMITTED it re-evaluates its `WHERE` against the row
-version that the transaction it waited for committed. So a sweep that collides with an
-in-flight approval finds `status = APPROVED` when the lock is released and skips the row —
-it cannot expire a change that has already been authorised and handed to an executor.
-Adding an explicit lock would be a second mechanism to keep in step with the first for no
-gain. `test_action_request_expiry_live.py` holds the approval open and issues the sweep
-inside that window, with the negative control V89 requires.
+**No `SELECT … FOR UPDATE` here, and that is not a weakening of the one-decision row lock.** A bare
+`UPDATE` takes its own row locks, and under READ COMMITTED it re-evaluates its `WHERE` against the
+row version that the transaction it waited for committed. So a sweep that collides with an in-flight
+approval finds `status = APPROVED` when the lock is released and skips the row — it cannot expire a
+change that has already been authorised and handed to an executor. Adding an explicit lock would be
+a second mechanism to keep in step with the first for no gain. `test_action_request_expiry_live.py`
+holds the approval open and issues the sweep inside that window, with the negative control proving
+the two overlapped.
 
 **The loop must outlive its own failures.** `PendingExpirySweeper` catches per pass, because
 a guarantee that ends the first time Postgres blinks is not a guarantee. It sleeps *before*
 its first pass so that starting the app touches no database: `/health` has to answer with
 Postgres down, and one interval of delay against an hour-long TTL costs nothing. Both
 of those, and the two rules about stopping, now live in `core.tasks.periodic.PeriodicTask`
-— hoisted at T38, whose reaper is the second component on the same loop, so the four
+— hoisted for the executor, whose reaper is the second component on the same loop, so the four
 properties are proven once and inherited twice rather than copied.
 """
 
@@ -74,17 +73,17 @@ from core.tasks.periodic import PeriodicTask
 # The asyncio task's name, so a dump of running tasks says what this is.
 SWEEP_TASK_NAME: Final = "noa-action-request-expiry-sweep"
 
-# A pass that expired rows. Ids, not contents: what expired is an operator-facing fact that
-# lives in the rows themselves (V8's spirit — the log names the request, never its context).
+# A pass that expired rows. Ids, not contents: what expired is an operator-facing fact that lives in
+# the rows themselves (the error envelope's spirit — the log names the request, never its context).
 LOG_SWEEP_EXPIRED: Final = "action_requests_expired_by_sweep"
 
 # A pass that raised. Logged and swallowed by the loop: the next pass is the remedy, and a
-# sweeper that dies on a transient database error would leave V32 true only while nothing
+# sweeper that dies on a transient database error would leave the TTL true only while nothing
 # ever went wrong.
 LOG_SWEEP_FAILED: Final = "action_request_expiry_sweep_failed"
 
-# A render path found a request past its deadline and made it terminal (T63's result tool or
-# T41's approval card).
+# A render path found a request past its deadline and made it terminal (the result tool or
+# the approval card).
 LOG_EXPIRED_ON_READ: Final = "action_request_expired_on_render"
 
 logger = structlog.get_logger(__name__)
@@ -129,7 +128,7 @@ class SQLActionRequestExpiryRepository:
 
         `reason` is written NULL rather than left alone. It is NULL on every `PENDING` row by
         construction today (only a decision writes one, and it writes a terminal status in the
-        same statement), but T34's CHECK exempts `EXPIRED` precisely so an expiry *can* carry
+        same statement), but the table's CHECK exempts `EXPIRED` precisely so an expiry *can* carry
         no reason — which means nothing at the database level would catch an `EXPIRED` row
         that carried one. This is what catches it. `tool_run_id` is left untouched by the same
         logic in reverse: no invariant says an expiry clears a link, and clearing one would be
@@ -196,12 +195,12 @@ class ActionRequestExpiryService:
     ) -> bool:
         """Make one request terminal if its deadline has passed; report whether it did.
 
-        Called around a render path's read of the row (T41's card, T63's result tool), so what
-        that path serves is the row's real state rather than a `PENDING` nobody may act on any
-        more. `False` covers both "still live" and "already terminal" — a caller that needs to
-        tell those apart reads `status`, which is where V23 says the answer lives; a caller
-        that ran this *after* its own read (T63, see the module docstring) knows `True` means
-        the row is `EXPIRED` as of the moment it passed in.
+        Called around a render path's read of the row (the card, the result tool), so what that path
+        serves is the row's real state rather than a `PENDING` nobody may act on any more. `False`
+        covers both "still live" and "already terminal" — a caller that needs to tell those apart
+        reads `status`, which is where the answer lives; a caller that ran this *after* its own read
+        (the result tool, see the module docstring) knows `True` means the row is `EXPIRED` as of
+        the moment it passed in.
 
         The commit runs whether or not anything matched. An empty `UPDATE` commits an empty
         transaction, which costs a round trip and keeps this method's contract — "the row is
@@ -220,10 +219,10 @@ class ActionRequestExpiryService:
 
 
 class PendingExpirySweeper:
-    """The background half of V32: an asyncio task that expires what nobody answered.
+    """The background half of the TTL: an asyncio task that expires what nobody answered.
 
-    In-process rather than a cron entry or a separate worker, matching V30's shape for the
-    async host T38 built next door: one task, its own session per pass, started and stopped
+    In-process rather than a cron entry or a separate worker, matching the in-process shape of
+    the async host next door: one task, its own session per pass, started and stopped
     by the app lifespan that owns the engine it draws from.
 
     A pass gets its **own session**, not a long-lived one. A session held for the life of the

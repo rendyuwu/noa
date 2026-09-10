@@ -4,8 +4,8 @@ Two halves, matching the two the production code has: the MCP path parks rows
 (`FakeToolResultTableWriter`) and the HTTP path reads one back for its requester
 (`FakeToolResultTableReader` plus `table_harness`).
 
-The MCP half of T56 parks rows and answers with an address. What a tool test cares about is
-*what was parked* and *what the model was told about it* — not that Postgres accepted the
+The MCP half of the table surface parks rows and answers with an address. What a tool test cares
+about is *what was parked* and *what the model was told about it* — not that Postgres accepted the
 insert, which `test_result_tables_live.py` covers against a real schema.
 
 The HTTP half mirrors `support.approval_cards`: an app with the `/tables` router, the reader
@@ -22,8 +22,8 @@ forgot to commit from one that did.
 
 It records the rows **as it received them**, already capped and already redacted by
 `core.results.tables.park_result_table` — so a test can assert a credential never reached the
-writer at all, rather than that it was removed on the way out again (B8's lesson: the
-question is what the row holds).
+writer at all, rather than that it was removed on the way out again — the
+question is what the row holds, never what it held.
 """
 
 from __future__ import annotations
@@ -169,7 +169,7 @@ def table_view(
     """One parked table as the reader returns it.
 
     `total_rows` defaults to the row count, so an untruncated fixture is self-consistent; a
-    test about V85 passes a larger one with `truncated=True`, which is exactly the pair a
+    test about the row cap passes a larger one with `truncated=True`, which is exactly the pair a
     capped table stores.
 
     A clock-relative deadline, like `support.approval_cards.card_view`: a fixed one would be in
@@ -204,7 +204,7 @@ class FakeToolResultTableReader:
     and the surface has one refusal for the lot.
 
     `fail` exists for the reason its approval-card twin does: a read is the one place on this
-    route's path that can raise for reasons nobody predicted, and V73 says what reaches the
+    route's path that can raise for reasons nobody predicted, and what reaches the
     operator then is the shared envelope.
     """
 

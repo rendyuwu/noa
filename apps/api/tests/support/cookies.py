@@ -2,8 +2,8 @@
 
 `Response.delete_cookie` renders `Expires` as an HTTP-date stamped from *now*, so two
 identical clear-cookie calls emit different header strings the moment they straddle a
-second boundary — a ~1-in-N flake in any test that compares raw headers for equality
-(B4). `cookie_shape` keeps every attribute a browser acts on and drops that one stamp.
+second boundary — a ~1-in-N flake in any test that compares raw headers for
+equality. `cookie_shape` keeps every attribute a browser acts on and drops that one stamp.
 """
 
 from __future__ import annotations

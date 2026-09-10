@@ -9,12 +9,12 @@ A scratch database is created, migrated with `alembic upgrade head`, and dropped
 (never failed) when Postgres is unreachable, exactly as the other repository tests do.
 
 One end-to-end case sits at the bottom: the real `McpTokenService` over this repository, so
-V2's mint→list→revoke cycle is proved once against real SQL and not only against a double.
+the mint→list→revoke cycle is proved once against real SQL and not only against a double.
 
-Below that, the two cases T53 added. They are here rather than with the route tests
-because the property is invisible to a double: an in-memory repository cannot roll back, so
-"flushed" and "committed" read identically. Only a second connection separates them, and that
-is what B10 turned out to hinge on.
+Below that, the two transaction-boundary cases token management added. They are here rather
+than with the route tests because the property is invisible to a double: an in-memory
+repository cannot roll back, so "flushed" and "committed" read identically. Only a second
+connection separates them, and that is what the 200-over-a-rollback bug turned out to hinge on.
 """
 
 from __future__ import annotations
@@ -78,19 +78,19 @@ def repository(session: AsyncSession) -> SQLMcpTokenRepository:
 
 
 async def make_user(session: AsyncSession, email: str) -> User:
-    """Create a user through T8's repository — the same path login uses."""
+    """Create a user through the login repository — the same path login uses."""
     return await SQLAuthRepository(session).create_user(
         email=email, ldap_dn=f"CN={email}", display_name=email, is_active=True
     )
 
 
-# --- V2: what the row holds ---
+# --- what the row holds ---
 
 
 async def test_insert_stores_only_the_sha256_hash(
     session: AsyncSession, repository: SQLMcpTokenRepository
 ) -> None:
-    """V2: hashed at rest. Read back with raw SQL, so no ORM mapping can hide a column."""
+    """Hashed at rest. Read back with raw SQL, so no ORM mapping can hide a column."""
     user = await make_user(session, EMAIL)
     plaintext = generate_mcp_token()
 
@@ -120,7 +120,7 @@ async def test_insert_stores_only_the_sha256_hash(
 async def test_insert_leaves_the_tofu_and_usage_columns_null(
     session: AsyncSession, repository: SQLMcpTokenRepository
 ) -> None:
-    """C20/V3: `librechat_user_id` NULL at mint is what makes first-use binding possible."""
+    """`librechat_user_id` NULL at mint is what makes first-use binding possible."""
     user = await make_user(session, EMAIL)
 
     view = await repository.insert(
@@ -210,7 +210,7 @@ async def test_list_for_a_user_with_no_tokens_is_empty(
     assert await repository.list_for_user(user.id) == []
 
 
-# --- V2: revoke = delete row ---
+# --- revoke = delete row ---
 
 
 async def test_delete_removes_the_row(
@@ -282,7 +282,7 @@ async def test_deleting_the_user_deletes_their_tokens(
 
 
 async def test_service_mints_lists_and_revokes_over_real_sql(session: AsyncSession) -> None:
-    """The whole V2 cycle against Postgres rather than a double."""
+    """The whole mint→list→revoke cycle against Postgres rather than a double."""
     service = McpTokenService(
         repository=SQLMcpTokenRepository(session),
         audit_sink=RecordingAuditSink(),
@@ -310,13 +310,13 @@ async def test_service_mints_lists_and_revokes_over_real_sql(session: AsyncSessi
     assert await service.list_for_user(user.id) == []
 
 
-# --- T53: the transaction boundary, with a witness ---
+# --- the transaction boundary, with a witness ---
 
 
 async def test_commit_makes_a_mint_outlive_the_request(
     session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """V100: flushed is not persisted, and only a second connection can tell the difference.
+    """Flushed is not persisted, and only a second connection can tell the difference.
 
     The repository flushes; `commit()` is what `POST /admin/users/{id}/tokens` needs in order to
     mean anything, because `noa_api.api.deps.get_db_session` never commits. Inside this session
@@ -325,7 +325,8 @@ async def test_commit_makes_a_mint_outlive_the_request(
     the row would vanish at teardown: the operator holds a credential that authenticates
     nothing, and nothing anywhere reports an error.
 
-    The direct `insert` is the negative control (V87, and B10's own shape): the same write
+    The direct `insert` is the negative control (a compare over what the code decides, and the
+    200-over-a-rollback bug's own shape): the same write
     through the repository alone, checked before anything commits, so a green result here
     cannot come from an observer that reads its own session or one that can see nothing at all.
     """
@@ -366,11 +367,10 @@ async def test_commit_makes_a_mint_outlive_the_request(
 async def test_commit_makes_a_revoke_outlive_the_request(
     session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """V100(b): the same boundary on the write that *removes* a credential.
+    """The same boundary on the write that *removes* a credential.
 
-    The dangerous direction. An uncommitted revoke answers 200, the panel stops listing the
-    token, and the row — with every request it authenticates — survives the request that
-    deleted it.
+    The dangerous direction. An uncommitted revoke answers 200, the panel stops listing the token,
+    and the row — with every request it authenticates — survives the request that deleted it.
     """
     service = McpTokenService(
         repository=SQLMcpTokenRepository(session), audit_sink=RecordingAuditSink()

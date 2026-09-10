@@ -112,7 +112,7 @@ async def test_get_by_id_finds_the_row(
 async def test_get_by_id_answers_none_for_a_missing_row(
     repository: SQLPMGServerRepository,
 ) -> None:
-    """`None`, not a raise: `resolve_pmg_server_ref` turns it into `host_not_found` (§V.18)."""
+    """`None`, not a raise: `resolve_pmg_server_ref` turns it into `host_not_found`."""
     assert await repository.get_by_id(uuid4()) is None
 
 
@@ -133,10 +133,10 @@ async def test_a_stored_row_carries_its_generated_identity(
 async def test_a_stored_row_renders_safely(
     session: AsyncSession, repository: SQLPMGServerRepository
 ) -> None:
-    """`to_safe_dict` on a real row: identifiers present, credentials absent (§V.2, §V.8).
+    """`to_safe_dict` on a real row: identifiers present, credentials absent.
 
     Not on `PMGServerRowLike` — nothing exposed over MCP renders a PMG row — but the admin
-    routes of §T.54 will, and the row already has the method, so the guarantee is checked where
+    server-CRUD routes will, and the row already has the method, so the guarantee is checked where
     the row is real.
     """
     await insert(session, "pmg1")

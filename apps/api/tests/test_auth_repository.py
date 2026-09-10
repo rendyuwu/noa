@@ -1,9 +1,8 @@
 """`SQLAuthRepository` / `SQLLoginRateLimitRepository` against a live database.
 
-The doubles in `support.auth` cover policy; these cover the SQL. Anything asserted here
-is something a fake cannot tell you: that `ON CONFLICT` really upserts, that a `commit()`
-really survives into another session, that `flush()` really fills a server-generated
-`users.id`.
+The doubles in `support.auth` cover policy; these cover the SQL. Anything asserted here is something
+a fake cannot tell you: that `ON CONFLICT` really upserts, that a `commit()` really survives into
+another session, that `flush()` really fills a server-generated `users.id`.
 
 A scratch database is created, migrated with `alembic upgrade head`, and dropped —
 skipped (never failed) when Postgres is unreachable, exactly as `test_migrations.py`
@@ -83,7 +82,7 @@ async def test_create_user_fills_the_server_generated_id(session: AsyncSession) 
 
 
 async def test_created_user_defaults_to_inactive(session: AsyncSession) -> None:
-    """V7 at the SQL level: a provisioned row waits for an admin."""
+    """A provisioned row waits for an admin, at the SQL level."""
     repository = SQLAuthRepository(session)
 
     user = await repository.create_user(
@@ -108,7 +107,7 @@ async def test_get_user_by_email_and_by_id_find_the_same_row(session: AsyncSessi
 
 
 async def test_get_user_by_unknown_id_returns_none(session: AsyncSession) -> None:
-    """V6's re-read treats this as "session gone", so it must be `None`, ⊥ a raise."""
+    """The session re-read treats this as "session gone", so it must be `None`, never a raise."""
     assert await SQLAuthRepository(session).get_user_by_id(uuid4()) is None
 
 
@@ -131,7 +130,7 @@ async def test_update_user_patches_only_what_is_passed(session: AsyncSession) ->
 
 
 async def test_update_user_can_set_is_active_false(session: AsyncSession) -> None:
-    """`False is not None`, so disabling works — T9 depends on it."""
+    """`False is not None`, so disabling works — the RBAC engine depends on it."""
     repository = SQLAuthRepository(session)
     user = await repository.create_user(
         email=EMAIL, ldap_dn=DN, display_name=DISPLAY_NAME, is_active=True
@@ -143,7 +142,7 @@ async def test_update_user_can_set_is_active_false(session: AsyncSession) -> Non
 
 
 async def test_duplicate_email_is_rejected_by_the_database(session: AsyncSession) -> None:
-    """One row per operator, enforced below the application (T4's unique index)."""
+    """One row per operator, enforced below the application (the schema's unique index)."""
     repository = SQLAuthRepository(session)
     await repository.create_user(email=EMAIL, ldap_dn=DN, display_name=None, is_active=True)
 
@@ -157,7 +156,8 @@ async def test_duplicate_email_is_rejected_by_the_database(session: AsyncSession
 async def test_commit_persists_the_row_into_another_session(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """The property V7 rests on: a provisioned row survives the pending-approval raise.
+    """The property the inactive-by-default rule rests on: a provisioned row survives the
+    pending-approval raise.
 
     Only a real transaction can show this. `AuthService` commits before its activation
     gate precisely so the row an admin has to enable is already durable.
@@ -205,7 +205,7 @@ async def test_ensure_role_is_idempotent(session: AsyncSession) -> None:
 
 
 async def test_assign_role_is_idempotent(session: AsyncSession) -> None:
-    """Every bootstrap-admin login re-assigns; the composite PK ⊥ be tripped."""
+    """Every bootstrap-admin login re-assigns; the composite PK must not be tripped."""
     repository = SQLAuthRepository(session)
     user = await repository.create_user(email=EMAIL, ldap_dn=DN, display_name=None, is_active=True)
     await repository.ensure_role(ADMIN_ROLE_NAME)
@@ -217,7 +217,7 @@ async def test_assign_role_is_idempotent(session: AsyncSession) -> None:
 
 
 async def test_assign_unknown_role_is_a_no_op(session: AsyncSession) -> None:
-    """A missing role means "no permission", ⊥ a 500 on the login path."""
+    """A missing role means "no permission", never a 500 on the login path."""
     repository = SQLAuthRepository(session)
     user = await repository.create_user(email=EMAIL, ldap_dn=DN, display_name=None, is_active=True)
 
@@ -227,7 +227,7 @@ async def test_assign_unknown_role_is_a_no_op(session: AsyncSession) -> None:
 
 
 async def test_get_role_names_is_sorted(session: AsyncSession) -> None:
-    """Stable order so a response body ⊥ change between identical requests."""
+    """Stable order so a response body never changes between identical requests."""
     repository = SQLAuthRepository(session)
     user = await repository.create_user(email=EMAIL, ldap_dn=DN, display_name=None, is_active=True)
     for role in ("zulu", "alpha", "mike"):
@@ -257,7 +257,7 @@ async def test_get_bucket_returns_none_when_absent(session: AsyncSession) -> Non
 
 
 async def test_upsert_inserts_then_updates_the_same_row(session: AsyncSession) -> None:
-    """`ON CONFLICT DO UPDATE` is the point: two concurrent attempts ⊥ both insert.
+    """`ON CONFLICT DO UPDATE` is the point: two concurrent attempts must not both insert.
 
     A plain `INSERT` would trip `uq_login_rate_limits_scope_key` and turn a second
     simultaneous failed login into a 500 — while leaving the counter unincremented.
@@ -281,7 +281,7 @@ async def test_upsert_inserts_then_updates_the_same_row(session: AsyncSession) -
 async def test_upsert_returns_the_stored_row_including_block_end(
     session: AsyncSession,
 ) -> None:
-    """`RETURNING` gives the committed state, ⊥ the caller's optimistic guess."""
+    """`RETURNING` gives the committed state, never the caller's optimistic guess."""
     repository = SQLLoginRateLimitRepository(session)
     blocked_until = T0 + timedelta(seconds=600)
 
@@ -326,14 +326,14 @@ async def test_clear_bucket_removes_only_its_own_key(session: AsyncSession) -> N
 
 
 async def test_clear_absent_bucket_is_a_no_op(session: AsyncSession) -> None:
-    """`record_success` clears unconditionally, so absence ⊥ be an error."""
+    """`record_success` clears unconditionally, so absence must not be an error."""
     await SQLLoginRateLimitRepository(session).clear_bucket(SCOPE_IP, "198.51.100.1")
 
 
 async def test_bucket_survives_a_commit(
     session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """V9's counters must outlive the failed request that created them.
+    """The rate limiter's counters must outlive the failed request that created them.
 
     `AuthService` commits after `record_failure` for exactly this reason: the error path
     rolls the session back, and a rolled-back counter is a limiter that never limits.

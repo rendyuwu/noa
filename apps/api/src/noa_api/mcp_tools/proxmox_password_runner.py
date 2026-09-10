@@ -1,17 +1,17 @@
 """The half of `proxmox_reset_vm_password` that changes the VM.
 
-Beside `proxmox_password.py` rather than inside it, for C14: a CHANGE tool is two halves and
-together they run past the 900-line budget. T26 made the same split for the same reason and it
-falls on the boundary the design already draws — **nothing in the tool module can change
-anything, and nothing here is reachable without an approval**. The evidence keys and the
-tool's name come from that module; nothing there imports this one, so `registry.py` reaches the
-tool and `change_runners.py` reaches the runner with no cycle between them.
+Beside `proxmox_password.py` rather than inside it, for the file-size budget: a CHANGE tool is two
+halves and together they run past 900 lines. The suspend tool made the same split for the same
+reason and it falls on the boundary the design already draws — **nothing in the tool module can
+change anything, and nothing here is reachable without an approval**. The evidence keys and the
+tool's name come from that module; nothing there imports this one, so `registry.py` reaches the tool
+and `change_runners.py` reaches the runner with no cycle between them.
 
-**The order is the safety property, not an implementation detail**. Generate → *deliver* →
-apply. yopass is stored **before** `cipassword` is written, so a delivery failure aborts with the
-VM untouched and nobody locked out. The reverse order has one failure mode that cannot be
-recovered from a log: the password is live on the VM and the only copy of it is gone. What the
-chosen order costs instead is the case V62 names and accepts — a write that fails *after* a
+**The order is the safety property, not an implementation detail**. Generate → *deliver* → apply.
+yopass is stored **before** `cipassword` is written, so a delivery failure aborts with the VM
+untouched and nobody locked out. The reverse order has one failure mode that cannot be recovered
+from a log: the password is live on the VM and the only copy of it is gone. What the chosen order
+costs instead is the case the verdict rule names and accepts — a write that fails *after* a
 successful store leaves a URL holding a password nothing applied, and the old credentials still
 work.
 
@@ -20,33 +20,33 @@ exactly when NOA cannot rule out that the new password reached the VM.
 
 - Proxmox *refused* the config write, or the write's task exited non-`OK` — ruled out. No URL,
   because handing an operator a link to a password the VM never had is how a "reset" gets relayed
-  to a customer who then cannot log in. This is V62's own sentence.
+  to a customer who then cannot log in. This is the verdict rule's own sentence.
 - Proxmox *accepted* the write — every later failure ships the URL: the regeneration failing, the
   task poll timing out, the crypt compare coming back unavailable or mismatched. The password may
   be live, and withholding the only copy of a live credential is a lockout **NOA** created.
   `noa-old` withheld it on the verification branches; this is the one behavioural correction to
-  its flow beyond §T.69.
+  its flow beyond the three-state verdict.
 
-**§T.69 is decided here**. `noa-old` answered verification with a `bool`, and a host whose
-libcrypt would not load produced `False` — indistinguishable from a password that genuinely does
-not match. So a change that in fact succeeded was reported as failed, and an operator was sent to
-reset a password that was already live. `core.integrations.proxmox.cloudinit` answers three
-states, and this module turns the third into an outcome an operator can read:
+**The three-state verdict is decided here**. `noa-old` answered verification with a `bool`, and a
+host whose libcrypt would not load produced `False` — indistinguishable from a password that
+genuinely does not match. So a change that in fact succeeded was reported as failed, and an operator
+was sent to reset a password that was already live. `core.integrations.proxmox.cloudinit` answers
+three states, and this module turns the third into an outcome an operator can read:
 **verification-unavailable is not verified, and it is not refuted either.**
 
-**What the payload carries, and what it deliberately does not.** V49 says the tool returns the
+**What the payload carries, and what it deliberately does not.** The tool returns the
 `yopass_url` and nothing else of the secret. `noa-old` also returned the sanitized cloud-init
 user-data dump; here nothing derived from the dump enters the payload at all. The reason is
 structural rather than fastidious: this payload becomes `tool_runs.result_summary`
 (`core.audit.summaries`) and `noa_get_action_result` hands that string to a model, so the crypt
-hash of the password NOA just set would reach the LLM through V45's audit row. It stays in this
+hash of the password NOA just set would reach the LLM through the audit row. It stays in this
 frame; what leaves is a verdict.
 
-**V96 is inert on the way out, and that is worth stating rather than assuming.** This runner never
-reads `request.reason`: cloud-init has no note field, so nothing C8 keeps from the LLM is written
-onto the target system, and V43's permission is unused here — T23's and T26's shape, one system
-over. Nothing NOA writes to this VM comes back to a model either, because the only thing written
-is a password hash and the payload carries no reading of it.
+**No path back to a model opens here, and that is worth stating rather than assuming.** This runner
+never reads `request.reason`: cloud-init has no note field, so nothing the reason rule keeps from
+the LLM is written onto the target system, and the approve-with-note permission is unused here — the
+suspend tool's shape, one system over. Nothing NOA writes to this VM comes back to a model either,
+because the only thing written is a password hash and the payload carries no reading of it.
 """
 
 from __future__ import annotations
@@ -145,7 +145,8 @@ VERIFICATION_POLL_DELAY_SECONDS: Final = 0.5
 logger = structlog.get_logger(__name__)
 
 
-# --- The runner: reachable only after an operator approved (V22's far side) ---
+# --- The runner: reachable only after an operator approved (the cookie/CSRF boundary's far side)
+# ---
 
 
 @dataclass(frozen=True)
@@ -180,18 +181,18 @@ def build_proxmox_reset_vm_password_runner(
 ) -> ChangeRunner:
     """The half that resets the password, once an operator approved.
 
-    A closure over the tool context rather than a class, for T22's reason: what it needs is the
-    same session factory, cipher, repositories and delivery seam the tool used, so the change
-    goes through the production decrypt site and the production yopass helper rather than second
-    copies of either.
+    A closure over the tool context rather than a class, for the suspend tool's reason: what it
+    needs is the same session factory, cipher, repositories and delivery seam the tool used, so the
+    change goes through the production decrypt site and the production yopass helper rather than
+    second copies of either.
 
-    `crypt_loader` is §T.69's seam. It is a constructor argument rather than a patched module
-    global so a test can present a host with no libcrypt without leaving the process in a state
-    the next test inherits (V90's neighbourhood: the setup must not become the subject).
+    `crypt_loader` is the three-state verdict's seam. It is a constructor argument rather than a
+    patched module global so a test can present a host with no libcrypt without leaving the process
+    in a state the next test inherits — the setup must not become the subject.
 
-    `request.reason` is on the request — the executor reads it off the row for every approved
-    change — and this runner never touches it. Cloud-init has no note field, so nothing C8
-    keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
+    `request.reason` is on the request — the executor reads it off the row for every approved change
+    — and this runner never touches it. Cloud-init has no note field, so nothing the reason rule
+    keeps from the LLM leaves NOA here; no path back to a model has an instance on this tool.
     """
 
     async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
@@ -212,14 +213,14 @@ def build_proxmox_reset_vm_password_runner(
         if not isinstance(target, ProxmoxChangeTarget):
             return ChangeOutcome(payload=target)
 
-        # V49: generated here, in this frame, and never an argument. It is passed to exactly two
+        # Generated here, in this frame, and never an argument. It is passed to exactly two
         # places — the delivery hop and Proxmox — and reaches no return value, no log and no row.
         password = _generate_password(context.secret_password_length)
 
         try:
             yopass_url = await context.secret_delivery(username=target.username, password=password)
         except NoaError as exc:
-            # V62's abort: nothing has been written, so the VM is untouched and the old
+            # The verdict rule's abort: nothing has been written, so the VM is untouched and the old
             # credentials still work. The URL does not exist to withhold.
             logger.warning(
                 LOG_RESET_DELIVERY_FAILED,
@@ -280,8 +281,8 @@ async def _resolve_change_target(
     operator has typed a reason and pressed Approve, so a guess here is a guess with an
     authorisation attached to it.
 
-    The database session closes before the HTTP hops, T21's rule, and here it matters twice over:
-    the executor's own session is open for the whole of the call.
+    The database session closes before the HTTP hops — the account search's rule — and here it
+    matters twice over: the executor's own session is open for the whole of the call.
     """
     node = evidence.get(EVIDENCE_NODE)
     username = evidence.get(EVIDENCE_USERNAME)
@@ -325,7 +326,7 @@ async def _apply_password(target: ProxmoxChangeTarget, *, password: str) -> Step
     `if not ok` chain:
 
     - **the write refused** — Proxmox never took the password, so the old credentials still work
-      and the generated one is not live anywhere. This is V62's named residual case.
+      and the generated one is not live anywhere. This is the verdict rule's named residual case.
     - **the task exited non-`OK`** — the same: Proxmox took the request and then rejected it.
     - **the task did not finish in time, or the regeneration failed** — the write was *accepted*.
       The password may already be on the VM, so the URL has to go out with the failure.
@@ -421,7 +422,7 @@ async def _verify_password(
     Everything else is polled, because the rendered user-data lags the write: a hash that is
     absent or does not match yet is a reason to look again, while a match is final. A read that
     fails outright ends the loop as `unavailable` too — a document NOA could not fetch has not
-    told it anything (V86: silence is not evidence of absence).
+    told it anything — silence is not evidence of absence.
 
     The last verdict wins when the attempts run out, which keeps "we compared and it differed"
     distinguishable from "there was never a hash to compare".
@@ -489,14 +490,14 @@ def _reset_outcome(
 ) -> ChangeOutcome:
     """What the change did, read off the crypt compare.
 
-    Three answers, and the middle one is §T.69:
+    Three answers, and the middle one is the three-state verdict:
 
     1. **verified** — the VM carries this password. `verified: true`, and the link goes out.
     2. **unavailable** — no comparison happened, and the cause says which kind of nothing it was.
        `status: changed` with `verified: false` and `verification: unavailable`, never a bare
        `false` that reads as a measurement. Reporting this as failed would send an operator to
        reset a password that is already live; reporting it as verified would be the fabrication
-       V62 exists to stop.
+       the verdict rule exists to stop.
     3. **mismatch** — the VM carries a *different* password. That is a failure, and the link still
        goes out because Proxmox accepted the write and the password may be live anyway.
 

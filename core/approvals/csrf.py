@@ -1,17 +1,17 @@
 """The CSRF token that guards a decision POST.
 
-V22 puts the decision on exactly one path: a cookie POST from a NOA-origin document. A
-cookie rides automatically, which is the whole point of C17/V40 — and also the whole
+The decision travels on exactly one path: a cookie POST from a NOA-origin document. A
+cookie rides automatically, which is the whole point of cookie auth — and also the whole
 problem, because *any* page that can reach the endpoint gets the cookie sent for it. This
 module is what makes "the browser sent the cookie" insufficient on its own.
 
-**Server-minted and signed, never double-submit.** V39 is explicit that a double-submit
+**Server-minted and signed, never double-submit.** A double-submit
 cookie is not enough here: `noa_session` is scoped `Domain=.noa.internal`, so any
 sibling host under that registrable domain can plant a cookie of its own and echo it back.
 A token this process signed cannot be forged by something that can only *write* cookies.
 
 **Bound to the session and to the request.** The signed message covers `user_id` *and*
-`action_request_id`. V39 asks for session-bound; binding the request id too costs nothing
+`action_request_id`. Session-bound is the requirement; binding the request id too costs nothing
 and removes a whole shape of mistake — a token minted for one approval card cannot
 authorise a different one, so a card left open in another tab is not a spare key.
 
@@ -26,15 +26,15 @@ number of its own. A CSRF token that outlives its request buys an attacker nothi
 the decision path checks `action_requests.expires_at` under the row lock anyway — so a
 second, independent timeout would be a second thing to get wrong and nothing to gain.
 
-Clock discipline matches V79: zero leeway, and a token issued in the future is invalid
+Clock discipline matches the JWT layer: zero leeway, and a token issued in the future is invalid
 rather than tolerated. Same single-process assumption, and the same revisit trigger — more
 than one API replica makes clock drift a real term, and the fix then is an explicit leeway,
 not a silent widening.
 
-There is no minting *route*, and T41 settled that there never will be: the approval card's own
+There is no minting *route*, and the approval card settled that there never will be: its own
 `GET /action-requests/{id}` mints one in the same answer that renders the card. A token
 that arrived separately from the thing it authorises is a token a page could hold without ever
-having passed V27's requester-match, and that read is where the match happens. Terminal
+having passed the requester-match, and that read is where the match happens. Terminal
 requests get `null` rather than a token — a live key for a card with no door.
 """
 
@@ -74,13 +74,13 @@ MESSAGE_SEPARATOR: Final = "|"
 
 # Diagnostics for the `detail` slot — logs only, never a response body. None of them
 # quotes the token or the expected signature.
-DETAIL_BLANK = "empty CSRF token; ⊥ verification attempted"
+DETAIL_BLANK = "empty CSRF token; no verification attempted"
 DETAIL_MALFORMED = "CSRF token is not `<version>.<issued_at>.<signature>`"
 DETAIL_WRONG_VERSION = f"CSRF token version is not `{CSRF_VERSION}`"
 DETAIL_BAD_ISSUED_AT = "CSRF token `issued_at` segment is not an integer"
 DETAIL_BAD_SIGNATURE = "CSRF token signature does not match this session and request"
 DETAIL_EXPIRED = "CSRF token is older than the pending TTL"
-DETAIL_FUTURE = "CSRF token `issued_at` is in the future (V79: zero leeway)"
+DETAIL_FUTURE = "CSRF token `issued_at` is in the future (zero leeway)"
 
 
 def _signing_key(settings: Settings) -> bytes:
@@ -117,10 +117,9 @@ def mint_decision_csrf_token(
 ) -> str:
     """Mint the token an approval card carries into its decision POST.
 
-    `issued_at` is a parameter rather than always the clock so a test can pin the moment and
-    assert the age rules directly, instead of sleeping or comparing two tokens minted a
-    fraction of a second apart (V87: a clock-stamped byte does not belong in an equality
-    compare).
+    `issued_at` is a parameter rather than always the clock so a test can pin the moment and assert
+    the age rules directly, instead of sleeping or comparing two tokens minted a fraction of a
+    second apart (a clock-stamped byte does not belong in an equality compare).
     """
     stamp = int((issued_at or datetime.now(UTC)).timestamp())
     signature = _signature(

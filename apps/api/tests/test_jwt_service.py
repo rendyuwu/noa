@@ -2,8 +2,8 @@
 
 No app and no DB: `JWTService` takes only `Settings`, so mint/verify run directly
 and the cookie paths run against a bare Starlette `Response`. Cookie assertions
-parse the real `Set-Cookie` header rather than trusting the call arguments — V6 is
-a statement about what the browser receives.
+parse the real `Set-Cookie` header rather than trusting the call arguments — the cookie contract
+is a statement about what the browser receives.
 """
 
 from __future__ import annotations
@@ -62,9 +62,9 @@ def build_service(**overrides: object) -> JWTService:
 
 
 def build_production_service(**overrides: object) -> JWTService:
-    """Production settings need the secrets V52/V53 demand outside dev.
+    """Production settings need the Fernet and JWT secrets outside dev.
 
-    And the addresses V95 demands: both default to localhost, and outside development a
+    And the operator-facing addresses: both default to localhost, and outside development a
     default is a startup failure rather than a value.
     """
     return build_service(
@@ -105,7 +105,7 @@ def test_mint_then_verify_round_trip() -> None:
 
 
 def test_expires_in_matches_configured_ttl_and_encoded_exp() -> None:
-    """Cookie Max-Age and signature expiry agree — ⊥ cookie outliving its token."""
+    """Cookie Max-Age and signature expiry agree — never a cookie outliving its token."""
     service = build_service(auth_jwt_access_token_ttl_seconds=900)
 
     issued = service.create_access_token(email=OPERATOR_EMAIL, user_id=OPERATOR_ID)
@@ -144,7 +144,7 @@ def test_blank_email_rejected_at_mint() -> None:
 
 
 def test_claims_carry_identity_only() -> None:
-    """Roles and permissions stay out: they go stale, and V1 re-reads them anyway."""
+    """Roles and permissions stay out: they go stale, and the gate re-reads them anyway."""
     service = build_service()
 
     payload = jwt.decode(
@@ -166,7 +166,7 @@ def test_absent_or_malformed_token_rejected(token: str) -> None:
 
 
 def test_expired_token_reports_expiry_not_invalid() -> None:
-    """Routine expiry is its own error so the UI ⊥ imply tampering."""
+    """Routine expiry is its own error so the UI never implies tampering."""
     service = build_service(auth_jwt_access_token_ttl_seconds=60)
     past = datetime.now(UTC) - timedelta(hours=2)
     token = jwt.encode(
@@ -185,7 +185,7 @@ def test_expired_token_reports_expiry_not_invalid() -> None:
 
 
 def test_token_signed_with_another_secret_rejected() -> None:
-    """Signature verification is real: a foreign signer ⊥ mint NOA sessions."""
+    """Signature verification is real: a foreign signer cannot mint NOA sessions."""
     foreign = JWTService(build_settings(auth_jwt_secret=OTHER_SECRET))
     issued = foreign.create_access_token(email=OPERATOR_EMAIL, user_id=OPERATOR_ID)
 
@@ -194,7 +194,7 @@ def test_token_signed_with_another_secret_rejected() -> None:
 
 
 def test_unsigned_token_rejected() -> None:
-    """`alg: none` ⊥ verify: algorithms are pinned to the configured HMAC."""
+    """`alg: none` never verifies: algorithms are pinned to the configured HMAC."""
     token = jwt.encode(
         {
             CLAIM_EMAIL: OPERATOR_EMAIL,
@@ -275,7 +275,7 @@ def test_future_dated_iat_rejected() -> None:
 
 @pytest.mark.parametrize("user_id", ["not-a-uuid", "", 12345])
 def test_non_uuid_user_id_claim_rejected(user_id: object) -> None:
-    """Correctly signed but wrong shape → reject, ⊥ hand back a bogus `user_id`."""
+    """Correctly signed but wrong shape → reject, never hand back a bogus `user_id`."""
     token = jwt.encode(
         {
             CLAIM_EMAIL: OPERATOR_EMAIL,
@@ -291,11 +291,11 @@ def test_non_uuid_user_id_claim_rejected(user_id: object) -> None:
         build_service().decode_token(token)
 
 
-# --- V8: no token material in error text ---
+# --- No token material in error text ---
 
 
 def test_errors_never_quote_the_token() -> None:
-    """V8: neither message nor internal detail carries token bytes."""
+    """Neither message nor internal detail carries token bytes."""
     service = build_service()
     token = service.create_access_token(email=OPERATOR_EMAIL, user_id=OPERATOR_ID).token
     tampered = f"{token}tamper"
@@ -332,19 +332,19 @@ def test_lowercase_algorithm_accepted() -> None:
 
 @pytest.mark.parametrize("algorithm", ["none", "None", "RS256", "ES256", "HS128", ""])
 def test_disallowed_algorithm_fails_at_construction(algorithm: str) -> None:
-    """Fail at construction, ⊥ per mint. `none` would accept unsigned tokens."""
+    """Fail at construction, not per mint. `none` would accept unsigned tokens."""
     with pytest.raises(AuthConfigurationError):
         build_service(auth_jwt_algorithm=algorithm)
 
 
-# --- Key length (RFC 7518 §3.2) ---
+# --- Key length (RFC 7518 section 3.2) ---
 
 
 @pytest.mark.parametrize(("algorithm", "minimum"), sorted(MIN_KEY_BYTES_BY_ALGORITHM.items()))
 def test_secret_shorter_than_algorithm_minimum_fails_at_construction(
     algorithm: str, minimum: int
 ) -> None:
-    """V53's 32-char floor suits HS256 only; HS384/HS512 need more.
+    """The 32-char secret floor suits HS256 only; HS384/HS512 need more.
 
     PyJWT warns per mint instead of refusing, so a short key would otherwise ship
     quietly and weaken every session signature.
@@ -364,11 +364,11 @@ def test_mint_emits_no_insecure_key_warning(recwarn: pytest.WarningsRecorder) ->
     assert [str(warning.message) for warning in recwarn] == []
 
 
-# --- V6: cookie attributes ---
+# --- Cookie attributes ---
 
 
 def test_set_session_cookie_attributes() -> None:
-    """V6: httpOnly, SameSite=Lax, `Domain=.noa.internal`, `Path=/`."""
+    """httpOnly, SameSite=Lax, `Domain=.noa.internal`, `Path=/`."""
     service = build_service(auth_jwt_access_token_ttl_seconds=1800)
     response = Response()
 
@@ -397,7 +397,7 @@ def test_session_cookie_not_secure_in_dev_but_secure_in_production() -> None:
 
 
 def test_clear_session_cookie_expires_it_with_matching_attributes() -> None:
-    """V6: logout clears. Domain/Path must match the set path or the live cookie stays."""
+    """Logout clears. Domain/Path must match the set path or the live cookie stays."""
     service = build_service()
     set_response, clear_response = Response(), Response()
 
@@ -416,7 +416,7 @@ def test_clear_session_cookie_expires_it_with_matching_attributes() -> None:
 
 
 def test_clear_session_cookie_is_idempotent_and_needs_no_auth() -> None:
-    """V6: logout works without a session and repeats safely.
+    """Logout works without a session and repeats safely.
 
     Compared through `cookie_shape`, not the raw header: `delete_cookie` stamps `Expires`
     from the clock, so two calls that straddle a second boundary emit different header
@@ -466,7 +466,7 @@ def test_read_session_cookie_returns_token_when_present() -> None:
 
 @pytest.mark.parametrize("cookies", [{}, {COOKIE_NAME: ""}, {COOKIE_NAME: "   "}, {"other": "x"}])
 def test_read_session_cookie_returns_none_when_absent_or_blank(cookies: dict[str, str]) -> None:
-    """A blank cookie is "no session", so callers ⊥ verify an empty string."""
+    """A blank cookie is "no session", so callers never verify an empty string."""
     assert build_service().read_session_cookie(cookies) is None
 
 
@@ -474,7 +474,7 @@ def test_read_session_cookie_returns_none_when_absent_or_blank(cookies: dict[str
 
 
 def test_session_token_is_not_an_mcp_credential() -> None:
-    """C5/V2: MCP tokens are opaque and hashed. Nothing here mints one."""
+    """MCP tokens are opaque and hashed. Nothing here mints one."""
     service = build_service()
 
     issued = service.create_access_token(email=OPERATOR_EMAIL, user_id=uuid4())
@@ -485,7 +485,7 @@ def test_session_token_is_not_an_mcp_credential() -> None:
 
 
 def test_verification_is_time_based_not_call_count_based() -> None:
-    """A token stays valid until `exp`; repeat verification ⊥ consume it."""
+    """A token stays valid until `exp`; repeat verification never consumes it."""
     service = build_service(auth_jwt_access_token_ttl_seconds=60)
     issued = service.create_access_token(email=OPERATOR_EMAIL, user_id=OPERATOR_ID)
 

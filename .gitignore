@@ -27,7 +27,7 @@ playwright-report/
 test-results/
 .playwright-cli/
 
-# --- Env (C11: no secrets in git) ---
+# --- Env (no secrets in git) ---
 .env
 .env.*
 !.env.example

@@ -91,7 +91,7 @@ LOG_REQUEST_EXPIRED_ON_READ: Final = "action_request_expired_on_read"
 LOG_EXECUTION_HANDOFF_FAILED: Final = "approved_change_execution_handoff_failed"
 
 # An approval was refused because the operator already has their allowance of changes running
-#. Logged because "my approve button returns 409" is otherwise indistinguishable, to the
+# . Logged because "my approve button returns 409" is otherwise indistinguishable, to the
 # operator, from a request that expired.
 LOG_INFLIGHT_LIMIT_REACHED: Final = "approved_change_inflight_limit_reached"
 
@@ -366,10 +366,9 @@ class ActionDecisionService:
     ) -> None:
         self._repository = repository
         self._executor = executor
-        # `APPROVAL_MAX_INFLIGHT_PER_USER`. Required rather than defaulted, for T33(e)'s
-        # reason one setting over: a default here would be a second answer to "how many changes
-        # may one operator have running", and the copy that drifts is always the one nobody
-        # edits.
+        # `APPROVAL_MAX_INFLIGHT_PER_USER`. Required rather than defaulted, for T33(e)'s reason one
+        # setting over: a default here would be a second answer to "how many changes may one
+        # operator have running", and the copy that drifts is always the one nobody edits.
         self._max_inflight_per_user = max_inflight_per_user
 
     async def approve(

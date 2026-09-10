@@ -7,17 +7,18 @@ shape — runs against a monkeypatched `asyncssh.create_connection`. Those behav
 socket, and a fake keeps them fast.
 
 The pin itself does **not** use the fake. A double that calls `validate_host_public_key`
-itself proves only that the callback works when something calls it; B2 was precisely that
-nothing did. So the pin is exercised against a real `asyncssh.create_server` on loopback: the
-rejection has to come out of a real key exchange, and the server has to record that it was
-never asked to authenticate anyone.
+itself proves only that the callback works when something calls it; the inert pin shipped
+precisely that nothing did. So the pin is exercised against a real `asyncssh.create_server` on
+loopback: the rejection has to come out of a real key exchange, and the server has to record
+that it was never asked to authenticate anyone.
 
 What each group protects:
 
-- banner strip + raw retention — V56, and the parse failures behind `noa-old` GH #83.
+- banner strip + raw retention — banners stripped before parsing, raw kept for audit, and the
+  parse failures behind `noa-old` GH #83.
 - the pin — `ssh_exec` refuses without a stored fingerprint *before* opening a socket, and a
   host presenting any other key is rejected in-handshake, pre-auth.
-- TOFU capture — the one unpinned path, which T54's validate endpoint depends on.
+- TOFU capture — the one unpinned path, which the admin validate endpoint depends on.
 - error shape — `SSHExecutionError` is a `NoaError` with a mapped status, so the shared
   handler answers 502 instead of the unclassified-auth 503 fallback.
 """
@@ -160,7 +161,7 @@ def _install_failing_connection(
     return attempts
 
 
-# --- V56: banner stripped at the boundary, raw kept for audit ---
+# --- Banner stripped at the boundary, raw kept for audit ---
 
 
 async def test_ssh_exec_strips_banner_from_stdout_and_preserves_raw(
@@ -211,7 +212,7 @@ async def test_ssh_exec_signal_killed_process_reports_negative_exit_code(
     assert isinstance(result.exit_code, int)
 
 
-# --- V69: host-key pinning ---
+# --- Host-key pinning ---
 
 
 def test_pinned_client_accepts_matching_fingerprint() -> None:
@@ -249,19 +250,21 @@ async def test_ssh_exec_without_stored_fingerprint_never_connects(
     assert attempts == []
 
 
-# --- V82: the pin runs inside a real handshake ---
+# --- The pin runs inside a real handshake ---
 #
 # `known_hosts=None` is the one value that silently switches host-key validation off — asyncssh
 # sets `_trusted_host_keys = None` and skips the block that would call the callback. These tests
 # stand on a real server precisely because a fake handshake cannot tell the two apart.
 #
-# The server itself lives in `support/remote_exec.py` as of T54: its validate flow decides *when*
-# a pin gets written and needs the same real handshake, and two copies of the rig are two things
-# that can silently stop overlapping with reality (V89's reason, one mechanism over).
+# The server itself lives in `support/remote_exec.py` since the admin validate landed: its
+# validate flow decides *when* a pin gets written and needs the same real handshake, and two
+# copies of the rig are two things that can silently stop overlapping with reality — the reason a
+# concurrency test must prove overlap, one mechanism over.
 
 
 async def test_wrong_host_key_is_rejected_by_a_real_handshake_before_auth() -> None:
-    """B2's regression test: a wrong pin must stop the connection, not merely be compared.
+    """The inert pin's regression test: a wrong pin must stop the connection, not merely be
+    compared.
 
     The auth-attempt assertion is the part that matters. A post-connect fingerprint check
     would also raise `ssh_host_key_mismatch` — after the SSH password had already been handed
@@ -276,7 +279,7 @@ async def test_wrong_host_key_is_rejected_by_a_real_handshake_before_auth() -> N
             )
 
         assert excinfo.value.error_code == "ssh_host_key_mismatch"
-        # Never authenticated ⇒ the credential never crossed the wire.
+        # Never authenticated, so the credential never crossed the wire.
         assert server.auth_attempts == []
 
 
@@ -395,7 +398,7 @@ async def test_invalid_private_key_is_named_without_leaking_material(
     assert _SSH_PASSPHRASE not in excinfo.value.message
 
 
-# --- TOFU capture / refresh (T54's dependency) ---
+# --- TOFU capture / refresh (the admin validate route's dependency) ---
 
 
 async def test_get_host_fingerprint_returns_presented_key(
@@ -474,7 +477,7 @@ def test_command_from_argv_rejects_empty_argv() -> None:
     assert excinfo.value.error_code == "ssh_command_invalid"
 
 
-# --- V73: one error shape, one handler ---
+# --- One error shape, one handler ---
 
 
 def test_ssh_execution_error_is_a_noa_error_with_mapped_status() -> None:
@@ -493,7 +496,7 @@ def test_ssh_execution_error_is_a_noa_error_with_mapped_status() -> None:
 async def test_error_messages_carry_no_credential_material(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V8: a connect failure names the transport, never the credential presented with it."""
+    """A connect failure names the transport, never the credential presented with it."""
     _install_failing_connection(monkeypatch, OSError("connection refused"))
 
     with pytest.raises(SSHExecutionError) as excinfo:

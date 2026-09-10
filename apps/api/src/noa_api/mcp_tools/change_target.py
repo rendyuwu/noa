@@ -10,8 +10,8 @@ actually read and the operator actually saw on the card. That rule produces the 
 refusals in every runner — the evidence no longer carries a usable value, or the row it names is
 gone — so the codes and the sentences live here rather than once per system.
 
-Born at T22 inside `whm_account_change`, hoisted at T25 when the firewall runner became the
-second caller. `whm_account_change` re-exports both names, so the tools and tests that already
+Born inside `whm_account_change` with the suspend runner, hoisted when the firewall runner became
+the second caller. `whm_account_change` re-exports both names, so the tools and tests that already
 reach for them there keep one import path.
 
 **Why the evidence is refused rather than repaired.** It round-tripped through JSONB, and a
@@ -22,22 +22,22 @@ a guess with an authorisation attached to it.
 Two codes, because two remedies. `whm_server_unavailable` sends an administrator to inventory —
 the server row was deleted after the request was opened. `change_evidence_unusable` says the
 approved request itself is no longer runnable, which is a NOA bug rather than anything an
-operator can fix on a server, and the sentence says so without naming the field (V8: the detail
+operator can fix on a server, and the sentence says so without naming the field (the detail
 goes to the log, not to the card).
 
-**Only one of those two is universal, and T27 is where that showed.** The first Proxmox runner
-shares `change_evidence_unusable` exactly — same remedy, same sentence, no system in it — and
-does *not* share the server pair: `whm_server_unavailable` names the table an administrator has
-to go and look at, and `proxmox_servers` is a different one. So the code stays per-system
-(`noa_api.mcp_tools.proxmox_password.ERROR_SERVER_UNAVAILABLE`) and only the noun differs
-between the two sentences. Duplicating a constant whose *value* is the system's name is not what
-V66 is about; collapsing them would be, because it would make one code answer for two
-inventories.
+**Only one of those two is universal, and the password-reset runner is where that showed.** The
+first Proxmox runner shares `change_evidence_unusable` exactly — same remedy, same sentence, no
+system in it — and does *not* share the server pair: `whm_server_unavailable` names the table an
+administrator has to go and look at, and `proxmox_servers` is a different one. So the code stays
+per-system (`noa_api.mcp_tools.proxmox_password.ERROR_SERVER_UNAVAILABLE`) and only the noun differs
+between the two sentences. Duplicating a constant whose *value* is the system's name is not what the
+shared-helpers rule is about; collapsing them would be, because it would make one code answer for
+two inventories.
 
 **The status words are here for the same reason the codes are.** `changed` and `no_op` land in
 `tool_runs.result_summary` and in a receipt an operator reads, so two runners spelling one of
-them differently is two vocabularies in one audit trail. They were T22's; T25 is the
-second speaker.
+them differently is two vocabularies in one audit trail. They were the suspend runner's; the
+firewall runner is the second speaker.
 
 `unavailable` was here too and moved to `core.approvals.delta`, which now owns the four states
 verification can hold. Same value, same name, re-exported from here — the move is that a

@@ -13,7 +13,7 @@ import type { BadgeVariant, StatusChipStatus } from '@gio/bigsu-ui'
 // read a `terminalPhase` off a receipt route NOA did not serve. It went with
 // that tab. `resolveActionRequestStatus` below is not that function
 // returning: it maps `action_requests.status`, a real column, reached through a
-// route §I.admin-api names.
+// route the admin API's contract names.
 
 export type AuditStatusView =
   | { kind: 'status'; status: StatusChipStatus }

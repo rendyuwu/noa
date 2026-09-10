@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { ALLOWED_ROUTES, resolveProxyTarget } from './routes'
 
 /**
- * The allowlist is the guard (§T.44, §I.embed). These cases are what keeps it from widening by
+ * The allowlist is the guard. These cases are what keeps it from widening by
  * accident — a new entry has to break the pinned table below to land.
  */
 
@@ -23,11 +23,11 @@ describe('resolveProxyTarget — allows exactly the embed’s four calls', () =>
   })
 
   it.each([
-    // V42: this app has no login page, no LDAP form and no credential handling. A
+    // This app has no login page, no LDAP form and no credential handling. A
     // pass-through proxy would put one on the origin LibreChat frames.
-    ['POST', ['auth', 'login'], 'the login route V42 says does not exist here'],
+    ['POST', ['auth', 'login'], 'the login route that does not exist here'],
     ['POST', ['auth', 'logout'], 'logout — the embed has no session controls'],
-    // V41: the admin surface is reachable from the admin origin, which is not frameable.
+    // The admin surface is reachable from the admin origin, which is not frameable.
     ['GET', ['admin', 'users'], 'the admin surface'],
     ['POST', ['admin', 'users', '1', 'tokens'], 'token minting'],
     ['GET', ['me', 'mcp-tokens'], 'the caller’s own MCP tokens'],
@@ -63,10 +63,10 @@ describe('resolveProxyTarget — allows exactly the embed’s four calls', () =>
   })
 
   it('exposes four routes and no more', () => {
-    // Pinned deliberately, and nothing has moved it: §T.46 settled that the CSRF token rides in the
+    // Pinned deliberately, and nothing has moved it: the CSRF token rides in the
     // card's own detail response, so there was no minting route to allowlist, and the poll uses the
-    // `GET action-requests/<id>` entry planted here rather than a new one. §T.56 was predicted to
-    // widen it and did not — the table surface reads server-side and never polls, so the browser
+    // `GET action-requests/<id>` entry planted here rather than a new one. The table surface was predicted
+    // to widen it and did not — it reads server-side and never polls, so the browser
     // needs no route to it at all. A surface that *does* need one has to change this number, which
     // is the point.
     expect(

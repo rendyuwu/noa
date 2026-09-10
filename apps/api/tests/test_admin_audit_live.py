@@ -1,11 +1,12 @@
 """Reading the audit trail against a real Postgres.
 
 `test_admin_audit_routes.py` drives the surface over a double and `test_tool_run_audit_read.py`
-reads the compiled statement. **The claim this file exists for is V45's last clause** — "every MCP
-READ writes a `tool_runs` row … *queryable in admin audit*" — and it is a claim about two pieces of
-production code agreeing through the database. A double answering it would be the test agreeing with
-itself, which is what V69 keeps warning about: so every row here is written by the **real writer**
-(`core.audit.tool_runs.SQLToolRunRepository`, T73's) and read by the **real reader**.
+reads the compiled statement. **The claim this file exists for is the trail's last clause** — "every
+MCP READ writes a `tool_runs` row … *queryable in admin audit*" — and it is a claim about two pieces
+of production code agreeing through the database. A double answering it would be the test agreeing
+with itself — upstream provenance is no evidence a control works — so every row here is written by
+the **real writer** (`core.audit.tool_runs.SQLToolRunRepository`, the tool-run writer) and read by
+the **real reader**.
 
 Four more questions are the database's rather than the code's:
 
@@ -13,7 +14,7 @@ Four more questions are the database's rather than the code's:
   `DELETE` produces, and the outer join is what keeps the row visible — an inner join would hide
   exactly the rows an audit trail is kept for.
 - **The page tiles the trail when every timestamp is identical.** Five runs at one `created_at` is
-  the case a `created_at`-only cursor gets wrong, and it gets it wrong *silently* (V92(c)).
+  the case a `created_at`-only cursor gets wrong, and it gets it wrong *silently*.
 - **Each filter narrows in SQL** — including the `ILIKE` escape, which only Postgres can settle.
 - **The redacted arguments come back as stored.** Redaction happens at the write; this is the
   proof the read adds nothing and removes nothing.
@@ -91,10 +92,10 @@ async def record_run(
     status: ToolRunStatus | None = ToolRunStatus.COMPLETED,
     summary: str | None = None,
 ) -> UUID:
-    """One run through the **production** writer — both statements, both commits (T73's shape).
+    """One run through the **production** writer — both statements, both commits.
 
     `status=None` leaves the row `STARTED`, which is what a call still in flight looks like and what
-    T38's reaper sweeps. `args` goes through `noa_api.mcp_audit.redacted_args` rather than straight
+    the reaper sweeps. `args` goes through `noa_api.mcp_audit.redacted_args` rather than straight
     in, so what lands is what the tool path would have written.
     """
     repository = SQLToolRunRepository(session)
@@ -122,14 +123,15 @@ def audit(session: AsyncSession) -> ToolRunAuditService:
     return ToolRunAuditService(repository=SQLToolRunAuditReader(session))
 
 
-# --- V45: the row the tool path wrote is the row the audit surface finds ---
+# --- The row the tool path wrote is the row the audit surface finds ---
 
 
 async def test_a_read_run_written_by_the_tool_path_is_queryable(session: AsyncSession) -> None:
-    """V45, end to end: T73's writer, T55's reader, one database, every field V47 names.
+    """The trail, end to end: the tool-run writer, the audit reader, one database, every recorded
+    field — requester, tool, status, conversation ref, summary, redacted args, timing.
 
     The clause this whole task exists for. Until now the row landed and nothing could ask about it,
-    so "queryable in admin audit" was prose — and prose is what B2 shipped.
+    so "queryable in admin audit" was prose — and prose is what the inert pin shipped.
     """
     operator = await insert_user(session, OPERATOR_EMAIL)
     tool_run_id = await record_run(
@@ -153,7 +155,7 @@ async def test_a_read_run_written_by_the_tool_path_is_queryable(session: AsyncSe
 
 
 async def test_a_failed_read_is_queryable(session: AsyncSession) -> None:
-    """V20, V45: `risk` and `status` are separate columns, so a failed READ is a row.
+    """`risk` and `status` are separate columns, so a failed READ is a row.
 
     `noa-old` kept `risk` on `action_requests` instead, so its trail could not describe this at all.
     The pair is asserted together — either one alone would pass against a row of the other kind.
@@ -185,7 +187,7 @@ async def test_a_started_run_has_no_completion_or_duration(session: AsyncSession
 
 
 async def test_a_change_run_is_in_the_same_trail(session: AsyncSession) -> None:
-    """V46's row and V45's row are one table, and one list answers for both.
+    """A change's row and a read's row are one table, and one list answers for both.
 
     `risk` is a filter here, never a scope: a surface that answered only READs would leave the
     changes — the rows an operator most wants — visible nowhere.
@@ -221,16 +223,16 @@ async def test_a_deleted_requester_leaves_the_run_with_a_null_email(session: Asy
     assert detail.requested_by_user_id is None
 
 
-# --- V8: redaction happened at the write, and the read neither adds nor undoes it ---
+# --- Redaction happened at the write, and the read neither adds nor undoes it ---
 
 
 async def test_the_surface_serves_the_stored_redacted_args(session: AsyncSession) -> None:
     """The credential is `[REDACTED]` in the column, so it is `[REDACTED]` on the detail.
 
-    Two halves, and both matter: the secret is gone, and the *other* arguments survive intact —
-    a read that redacted again could blank the whole payload and still pass a "no secret here" test
-    (V87's shape). The column is read directly as well, so this cannot pass because the reader
-    dropped `args` altogether.
+    Two halves, and both matter: the secret is gone, and the *other* arguments survive intact — a
+    read that redacted again could blank the whole payload and still pass a "no secret here" test —
+    a compare must still separate. The column is read directly as well, so this cannot pass because
+    the reader dropped `args` altogether.
     """
     operator = await insert_user(session, OPERATOR_EMAIL)
     tool_run_id = await record_run(
@@ -306,7 +308,7 @@ async def test_a_page_walk_yields_every_run_once(session: AsyncSession) -> None:
 
 
 async def test_a_tied_timestamp_page_walk_yields_every_row_once(session: AsyncSession) -> None:
-    """V92(c): five runs sharing one `created_at`, paged two at a time, each seen exactly once.
+    """Five runs sharing one `created_at`, paged two at a time, each seen exactly once.
 
     This is the case a `created_at`-only cursor gets wrong, and it fails both ways at once — `<`
     skips the rest of the tied group, `<=` serves it again forever. The tie-break is what makes
@@ -337,7 +339,7 @@ async def test_a_tied_timestamp_page_walk_yields_every_row_once(session: AsyncSe
 
 
 async def test_the_last_page_carries_no_cursor(session: AsyncSession) -> None:
-    """Two runs, `limit=5`: one page and `next_cursor is None` (V85's family).
+    """Two runs, `limit=5`: one page and `next_cursor is None`.
 
     The bound rides in the answer, so a client can tell "that is all of them" from "there is more"
     without inferring it from a row count against the limit it asked for.
@@ -454,7 +456,7 @@ async def test_a_percent_in_the_email_filter_matches_literally(session: AsyncSes
 async def test_filters_and_paging_compose(session: AsyncSession) -> None:
     """A filtered walk pages over the filtered set, not over the table.
 
-    The failure this catches is the one V93 describes: a filter applied after the fetch would let
+    The failure this catches is the missing-field bind: a filter applied after the fetch would let
     `LIMIT` cut the unfiltered rows first, so a page could come back short — or empty — while the
     cursor claimed there was more.
     """

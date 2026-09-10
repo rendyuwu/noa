@@ -1,19 +1,19 @@
 /**
- * Where an operator signs in, when this app cannot let them (§T.43 — V38, V42).
+ * Where an operator signs in, when this app cannot let them — a 401 says so and offers a way out.
  *
  * **This app has no login page and this module does not add one.** The card authenticates with the
  * `noa_session` cookie and the MCP bearer token never reaches a browser, so a 401 in
- * the frame means the operator has a working LibreChat token and no NOA browser session. V42 says
- * the answer to that is a pointer, never a form: sign in where NOA already has a login — the admin
+ * the frame means the operator has a working LibreChat token and no NOA browser session. The answer
+ * is a pointer, never a form: sign in where NOA already has a login — the admin
  * app — and come back. The cookie is scoped to the registrable domain, so a session minted there
  * rides to this origin.
  *
- * **The whole URL, not an origin plus a path.** `apps/admin-web` (§T.47–§T.50) is unbuilt, so a
+ * **The whole URL, not an origin plus a path.** The admin app is unbuilt, so a
  * hard-coded `/login` here would be this package guessing at another package's routing table, and a
  * deployment that put the login elsewhere would need a code change to say so.
  *
  * **Read at request time, not baked.** `output: 'standalone'` never executes `next.config.ts` at
- * runtime, so resolving this in the config the way §T.45 resolves the framing origin would freeze it
+ * runtime, so resolving this in the config the way the framing origin is resolved would freeze it
  * at build — and unlike that header, this value is not one a runtime variable must be prevented from
  * changing. It is server-side and deliberately not `NEXT_PUBLIC_*`: the page resolves it and passes
  * it down, so no build inlines it and no client bundle carries it.
@@ -41,7 +41,7 @@ const ALLOWED_PROTOCOLS = new Set(['http:', 'https:'])
  *
  * Embedded credentials are refused for a related reason: `https://user:pass@host/` renders as a
  * link that puts a secret in the document, in the browser's history and in any screenshot of the
- * card (V8's shape, V26's shape).
+ * card — an id-only URL, an error envelope with nothing else in it.
  */
 export function resolveSignInUrl(env: Record<string, string | undefined>): string | null {
   const raw = env[SIGN_IN_ENV_VAR]
@@ -53,8 +53,8 @@ export function resolveSignInUrl(env: Record<string, string | undefined>): strin
   let url: URL
   try {
     // No base: a relative path is not an address a new top-level tab can be opened at, and
-    // resolving one against this origin would point the operator at a login page V42 says this app
-    // does not have.
+    // resolving one against this origin would point the operator at a login page this app does
+    // not have.
     url = new URL(value)
   } catch {
     return null

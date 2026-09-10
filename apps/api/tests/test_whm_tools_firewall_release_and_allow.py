@@ -1,27 +1,29 @@
 """`whm_firewall_release_and_allow` — the call that opens a question.
 
 The tool half: the guards, the in-process preflight, the gate response and the mount. Its runner
-lives on the far side of V22's boundary and is asserted in `test_whm_firewall_release_runner.py`;
-the two are separate files because together they run past C14's line budget, and the split falls
-on the boundary the design already draws — nothing here can change anything, and nothing there is
-reachable without an approval.
+lives on the far side of the cookie/CSRF boundary and is asserted in
+`test_whm_firewall_release_runner.py`; the two are separate files because together they run past the
+900-line budget, and the split falls on the boundary the design already draws — nothing here can
+change anything, and nothing there is reachable without an approval.
 
 Driven through the real `open_change_request` inside a real request context, so
 `current_mcp_identity` and `read_conversation_ref` are production functions rather than patched
-names. Seams are T24's: the real resolver, a real `SecretCipher`, real CSF and Imunify parsing,
-real command composition through `core.remote_exec.sudo`, real `sanitize_tool_errors`. Only the
-SSH socket is doubled — in all three modules a firewall call crosses — so a test asserts the whole
-command sequence rather than one hop of it.
+names. Seams are the preflight tool's: the real resolver, a real `SecretCipher`, real CSF and
+Imunify parsing, real command composition through `core.remote_exec.sudo`, real
+`sanitize_tool_errors`. Only the SSH socket is doubled — in all three modules a firewall call
+crosses — so a test asserts the whole command sequence rather than one hop of it.
 
-**What is new on this side, beyond mirroring T22.**
+**What is new on this side, beyond mirroring the suspend tool.**
 
-1. **`duration_minutes` is required and bounded** (§V.77). No server-side default, 1 to 525600,
+1. **`duration_minutes` is required and bounded.** No server-side default, 1 to 525600,
    and the bound is asserted on the published schema as well as in the body — the schema is what
    the model is told, and the body is where a caller reaching the function directly meets it.
-2. **The before-state is the receipt's first half** (DECISIONS §6.5). What lands on the row is
+2. **The before-state is the receipt's first half** (DECISIONS section 6.5). What lands on the row
+   is
    why the address was blocked and the log lines it was read from, not a verdict on its own.
-3. **§V.54 read from the CHANGE side.** Every target kind T24 deliberately accepts is refused
-   here, because this one writes firewall rules.
+3. **The IPv4-only rule read from the CHANGE side.** Every target kind the preflight deliberately
+   accepts
+   is refused here, because this one writes firewall rules.
 
 There is deliberately **no no-op test**, because there is no no-op: the allow entry carries a TTL,
 so a repeat always moves the expiry. `test_an_address_no_backend_has_heard_of_still_opens_a_request`
@@ -101,14 +103,14 @@ from support.whm_firewall_change import (
 )
 
 # --------------------------------------------------------------------------------------
-# V16, V23: the call opens a question and changes nothing
+# The call opens a question and changes nothing
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_release_call_opens_a_pending_request_and_changes_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The whole of V16 in one assertion pair: a row exists, and no firewall was written to.
+    """The whole gate in one assertion pair: a row exists, and no firewall was written to.
 
     The second half is the one that matters and it is counted rather than inferred — the call
     *does* reach the server, for its preflight, so "no SSH happened" would be false and "the
@@ -135,12 +137,12 @@ async def test_a_release_call_opens_a_pending_request_and_changes_nothing(
 async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """C9, V17, V33, V35: one call, evidence born in it, persisted for the card.
+    """One workflow, one call: evidence born in it, persisted for the card.
 
-    The before-state DECISIONS §6.5 asks the receipt for is exactly this: why the address was
+    The before-state DECISIONS section 6.5 asks the receipt for is exactly this: why the address was
     blocked, and the `csf.deny` / Imunify lines it was read from. Asserted on the evidence lines
     rather than on the verdict alone, because a card that says "blocked" and shows nothing is the
-    state §6.5's "block reason + log evidence" wording exists to prevent.
+    state section 6.5's "block reason + log evidence" wording exists to prevent.
     """
     fixture, _ = release_context(
         monkeypatch,
@@ -164,7 +166,7 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row(
     assert firewall["unanswered_backends"] == []
     assert CSF_DENY_LINE in firewall["matches"]
     assert f"Imunify blacklist: {TARGET}" in " ".join(firewall["matches"])
-    # V85: the evidence carries its own bound, on the card as much as in a tool result.
+    # The evidence carries its own bound, on the card as much as in a tool result.
     assert firewall["total_matches"] == len(firewall["matches"])
     assert firewall["truncated"] is False
 
@@ -172,7 +174,7 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row(
 async def test_the_recorded_arguments_are_the_three_the_schema_declares(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """C8, V15, V43: the row records what was asked for, and no reason is among it.
+    """The row records what was asked for, and no reason is among it.
 
     Asserted on the keys rather than on the absence of one name, so a future argument cannot
     arrive here unnoticed — and cross-checked against `FORBIDDEN_REASON_KEYS` so the claim is
@@ -193,9 +195,9 @@ async def test_an_address_no_backend_has_heard_of_still_opens_a_request(
 ) -> None:
     """There is no no-op here, and this is that claim as a case.
 
-    T22 and T23 answer instead of gating when the account is already in the state the change
-    would produce. A clean address is not that state: the release finds nothing, and the allow —
-    with the TTL the operator stated — is still the change that was asked for.
+    The suspend and unsuspend tools answer instead of gating when the account is already in the
+    state the change would produce. A clean address is not that state: the release finds nothing,
+    and the allow — with the TTL the operator stated — is still the change that was asked for.
     """
     fixture, _ = release_context(
         monkeypatch,
@@ -240,16 +242,16 @@ async def test_an_already_allowlisted_address_still_opens_a_request(
 
 
 # --------------------------------------------------------------------------------------
-# V24, V25: what the model is handed
+# What the model is handed
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_result_carries_the_card_address_and_the_iframe(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V24, V25: two blocks, text first, and the plain address inside the text.
+    """Two blocks, text first, and the plain address inside the text.
 
-    Asserted on the count and the order because that is what V24 claims — "both, never one" — and
+    Asserted on the count and the order because that is the claim — "both, never one" — and
     a test that only looked for a resource would pass on a result with no address in it, which is
     the case where the frame fails to load and the operator has no door.
     """
@@ -269,7 +271,7 @@ async def test_the_result_carries_the_card_address_and_the_iframe(
 
 
 async def test_no_evidence_line_reaches_the_transcript(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V26: the gate response carries the card's address and nothing about the reading.
+    """The gate response carries the card's address and nothing about the reading.
 
     The before-state is on the row, behind the operator's cookie. Putting it in the tool result
     would publish it to LibreChat's MongoDB, and a `csf.deny` line names hosts and services.
@@ -285,10 +287,10 @@ async def test_no_evidence_line_reaches_the_transcript(monkeypatch: pytest.Monke
 
 
 async def test_the_tool_schema_carries_no_reason_parameter() -> None:
-    """C8, V15: the boundary is on the schema, so the schema is where it is asserted.
+    """The reason boundary is on the schema, so the schema is where it is asserted.
 
-    Read off the registered server rather than off the function signature: what C8 bounds is what
-    the model is *told* it may send, and that is what `tools/list` publishes.
+    Read off the registered server rather than off the function signature: what the rule bounds is
+    what the model is *told* it may send, and that is what `tools/list` publishes.
     """
     tools = await _published_tools()
     properties = set(tools[TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW].parameters["properties"])
@@ -298,9 +300,9 @@ async def test_the_tool_schema_carries_no_reason_parameter() -> None:
 
 
 async def test_the_schema_declares_the_duration_bound_and_no_default() -> None:
-    """V77 on the published schema: required, 1 to 525600, and no server-side default.
+    """The duration rule on the published schema: required, 1 to 525600, and no server-side default.
 
-    A default here would be the thing V77 forbids most directly — a permanent-ish allow entry
+    A default here would be the thing the rule forbids most directly — a permanent-ish allow entry
     nobody stated the length of — and it would be invisible from the body, because a caller that
     omitted the argument would never reach the body's own check.
     """
@@ -316,7 +318,7 @@ async def test_the_schema_declares_the_duration_bound_and_no_default() -> None:
 
 
 def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
-    """V10, V20: a name outside the catalog is a capability no role can be granted, and a CHANGE
+    """A name outside the catalog is a capability no role can be granted, and a CHANGE
     that registered as a READ would have the audit middleware write a row for a change that has
     not happened."""
     context = _tool_context()
@@ -337,7 +339,7 @@ def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
 async def test_a_blank_target_is_refused_before_any_round_trip(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V21, and the guard is placed where the schema cannot reach: `min_length` counts
+    """The blank-target guard is placed where the schema cannot reach: `min_length` counts
     whitespace, so `"  "` would otherwise be carried to a server."""
     fixture, fake = release_context(monkeypatch)
 
@@ -357,10 +359,10 @@ async def test_a_blank_target_is_refused_before_any_round_trip(
 async def test_only_an_ipv4_address_is_accepted(
     monkeypatch: pytest.MonkeyPatch, target: str
 ) -> None:
-    """V54: a CHANGE tool writes firewall rules, so it takes the one kind it can write.
+    """A CHANGE tool writes firewall rules, so it takes the one kind it can write.
 
-    Every kind T24 deliberately accepts is refused here, which is the same invariant read from
-    the other side — see `test_whm_tools_firewall_preflight.py` for the READ half.
+    Every kind the preflight deliberately accepts is refused here, which is the same invariant read
+    from the other side — see `test_whm_tools_firewall_preflight.py` for the READ half.
     """
     fixture, fake = release_context(monkeypatch)
 
@@ -373,7 +375,7 @@ async def test_only_an_ipv4_address_is_accepted(
 
 
 async def test_an_ipv4_address_is_not_refused(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The V54 guard's negative control.
+    """The IPv4-only guard's negative control.
 
     Without it, "every non-IPv4 target is refused" passes just as well against a tool that
     refuses every target.
@@ -389,11 +391,11 @@ async def test_an_ipv4_address_is_not_refused(monkeypatch: pytest.MonkeyPatch) -
 async def test_a_duration_outside_the_bound_is_refused_before_any_round_trip(
     monkeypatch: pytest.MonkeyPatch, duration: int
 ) -> None:
-    """V77: 1 to 525600, checked in the body as well as on the schema.
+    """1 to 525600, checked in the body as well as on the schema.
 
     The schema is what the model is told; this is what holds for a caller that reaches the
-    function directly — the same reason `assert_no_reason_argument` exists behind C8's schema
-    rule. Refused before any I/O, so a malformed window costs no round trip.
+    function directly — the same reason `assert_no_reason_argument` exists behind the reason-free
+    schema rule. Refused before any I/O, so a malformed window costs no round trip.
     """
     fixture, fake = release_context(monkeypatch)
 
@@ -409,7 +411,7 @@ async def test_a_duration_outside_the_bound_is_refused_before_any_round_trip(
 async def test_the_bounds_themselves_are_accepted(
     monkeypatch: pytest.MonkeyPatch, duration: int
 ) -> None:
-    """V77's bound is inclusive at both ends, and that is the off-by-one this catches."""
+    """The bound is inclusive at both ends, and that is the off-by-one this catches."""
     fixture, _ = release_context(monkeypatch)
 
     answer, _ = await release(fixture, duration_minutes=duration)
@@ -424,7 +426,7 @@ async def test_the_bounds_themselves_are_accepted(
 async def test_an_ambiguous_server_ref_returns_choices_and_opens_no_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V18, C10: a CHANGE that guessed which machine an operator meant is the whole hazard."""
+    """A CHANGE that guessed which machine an operator meant is the whole hazard."""
     cipher = build_cipher()
     shared = "https://shared.example.net:2087"
     fixture, fake = release_context(
@@ -448,11 +450,11 @@ async def test_an_ambiguous_server_ref_returns_choices_and_opens_no_request(
 async def test_zero_usable_backends_refuses_rather_than_changing_nothing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V57, and this is the harm the invariant is actually about.
+    """Zero usable backends, and this is the harm the invariant is actually about.
 
     The tool holds no copy of the check: it is `firewall_gate.run_on_usable_backends`' refusal,
-    raised where the backend set becomes work and travelling back through `sanitize_tool_errors`
-    (V19). A card opened here would be an approval for a change NOA could never make.
+    raised where the backend set becomes work and travelling back through `sanitize_tool_errors`.
+    A card opened here would be an approval for a change NOA could never make.
     """
     fixture, _ = release_context(monkeypatch, box=FakeFirewallBox())
 
@@ -466,7 +468,7 @@ async def test_zero_usable_backends_refuses_rather_than_changing_nothing(
 async def test_denied_sudo_names_sudo_rather_than_the_install(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """`noa-old` GH #82, V55: two causes, two remedies, two codes.
+    """Two causes, two remedies, two codes — the upstream issue's lesson.
 
     The binaries are installed; the sudoers line is not. "No firewall tools on this server" sends
     the operator to install software that is already there.
@@ -487,7 +489,7 @@ async def test_denied_sudo_names_sudo_rather_than_the_install(
 async def test_a_raising_preflight_reaches_the_model_as_a_named_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V19: a raw exception never reaches the LLM, and a timeout says so by name."""
+    """A raw exception never reaches the LLM, and a timeout says so by name."""
     from noa_api.mcp_tools import whm_firewall_change
 
     async def raises(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
@@ -505,7 +507,7 @@ async def test_a_raising_preflight_reaches_the_model_as_a_named_failure(
 
 
 async def test_a_gate_write_failure_refuses_the_change(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V23: no authorization row means no authorization, so the call fails rather than answering
+    """No authorization row means no authorization, so the call fails rather than answering
     with a card address that leads nowhere."""
     fixture, _ = release_context(monkeypatch)
     fixture.action_requests.fail_create = RuntimeError("connection reset")
@@ -517,7 +519,7 @@ async def test_a_gate_write_failure_refuses_the_change(monkeypatch: pytest.Monke
 
 
 async def test_no_credential_reaches_the_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V8, V26: the result persists in LibreChat's MongoDB, so it carries no credential
+    """The result persists in LibreChat's MongoDB, so it carries no credential
     material — asserted against the ciphertext in the column and the plaintext behind it."""
     fixture, fake = release_context(monkeypatch)
 
@@ -541,7 +543,7 @@ async def test_no_credential_reaches_the_result(monkeypatch: pytest.MonkeyPatch)
 async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V16, V20, V45, T73 — over `create_app()`, with every middleware in the chain.
+    """Gate, classification, audit trail — over `create_app()`, with every middleware in the chain.
 
     The third CHANGE tool to make this claim, and it is re-made rather than inherited: the risk
     comes from `register_whm_firewall_change_tools`, and a tool registered CHANGE but classified
@@ -576,7 +578,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
     request = tools.action_requests.only
     assert request.status is ActionRequestStatus.PENDING
     assert request.requested_by_user_id == user.id
-    # V46's row belongs to the executor that runs after a decision, not to this call.
+    # The run row belongs to the executor that runs after a decision, not to this call.
     assert tools.tool_runs.runs == []
 
 

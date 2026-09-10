@@ -1,13 +1,13 @@
 """SQL behind WHM server inventory.
 
 Ported from `noa-old` branch `MCP` (`storage/postgres/whm_servers.py`). One departure, and
-it is the same call T16 (e) and T17 (a) made: **only the reads are here.**
+it is the same call the earlier ports made: **only the reads are here.**
 `create`/`update`/`delete` and the whole `SQLWHMServerTokenRepository` are not ported.
 
-- The write half has exactly one caller in the design — the admin routes of T54 — and
+- The write half has exactly one caller in the design — the admin server-CRUD routes — and
   porting it now would land ~150 lines of untested, unreachable code that a reviewer has to
-  treat as live (V67: tests for new functionality).
-- `whm_server_tokens` does not exist in this schema at all. T4 created `whm_servers` only,
+  treat as live (new functionality ships with tests).
+- `whm_server_tokens` does not exist in this schema at all. Schema v1 created `whm_servers` only,
   and per-reseller tokens are a spec change rather than a build decision (see
   `docs/integrations/whm.md`, "Not built yet").
 
@@ -62,7 +62,7 @@ RowT_co = TypeVar("RowT_co", bound=WHMServerRowLike, covariant=True)
 
 
 class WHMServerReadRepository(Protocol[RowT_co]):
-    """What T19's callers need from WHM inventory, parametrised by the row it yields.
+    """What the server-ref callers need from WHM inventory, parametrised by the row it yields.
 
     **Generic, and that is what keeps `WHMServerRowLike` narrow**. Reference resolution
     matches on identity and never touches a credential, so it is written against the narrow
@@ -101,9 +101,8 @@ class SQLWHMServerRepository:
     async def get_by_id(self, server_id: UUID) -> WHMServer | None:
         """One server by primary key, or `None`.
 
-        `None` rather than a raise: the caller is `resolve_whm_server_ref`, and "no server
-        with that id" is a `host_not_found` *result* the model can act on, not an
-        exception.
+        `None` rather than a raise: the caller is `resolve_whm_server_ref`, and "no server with that
+        id" is a `host_not_found` *result* the model can act on, not an exception.
         """
         result = await self._session.execute(select(WHMServer).where(WHMServer.id == server_id))
         return result.scalar_one_or_none()

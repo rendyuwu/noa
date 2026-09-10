@@ -143,7 +143,7 @@ MESSAGE_ALLOWLIST_REMOVE_FAILED = (
 
 # One structured event per tolerated step, so "the entry was already gone" and "the command
 # could not run" stay separable after the fact. Identifiers and codes only, never a comment
-#. Its own event name rather than T25's: a log event names the tool a reader is
+# . Its own event name rather than T25's: a log event names the tool a reader is
 # looking for, and `tool=` rides beside it as a field.
 LOG_REMOVE_STEP_TOLERATED: Final = "whm_firewall_allowlist_remove_step_tolerated"
 

@@ -1,8 +1,8 @@
 """Auth error taxonomy.
 
-Ported from `noa-old` branch `MCP` (`core/auth/errors.py`, C13), plus
-`LdapUnavailableError` and `AuthAccountDisabledError` — new work for V4's
-fail-closed rule and C4's employment check.
+Ported, not imported, from `noa-old` branch `MCP` (`core/auth/errors.py`), plus
+`LdapUnavailableError` and `AuthAccountDisabledError` — new work for the token
+revalidation fail-closed rule and the LDAP employment check.
 
 Every class carries three things, and the split matters:
 
@@ -20,13 +20,14 @@ Login denials that operators actually hit, and why each is its own class:
 
 - `AuthInvalidCredentialsError` — wrong password OR no such account. Deliberately
   ONE message for both. Separate texts here would let anyone test whether an
-  address exists, so the vagueness is the feature (⊥ enumeration oracle).
-- `AuthAccountDisabledError` — directory disabled the account: employment ended
-  (C4). Terminal, and NOA cannot override it. Raised post-bind only, so it never
-  reveals account state to an unauthenticated caller.
+  address exists, so the vagueness is the feature (never an enumeration oracle).
+- `AuthAccountDisabledError` — directory disabled the account: employment ended,
+  and the directory is source of truth for it. Terminal, and NOA cannot override it.
+  Raised post-bind only, so it never reveals account state to an unauthenticated caller.
 - `AuthPendingApprovalError` — directory is happy, but this NOA row is
   `is_active=False`. Every new LDAP user lands here on first login and an
-  admin activates them. Recoverable, NOA-side only: T8 raises it, T6 never does.
+  admin activates them. Recoverable, NOA-side only: the login flow raises it, the LDAP
+  service never does.
 - `AuthConfigurationError` — NOA is misconfigured. The operator's credentials are
   fine and retrying will not help, so the message says so and points at an
   administrator rather than sending them hunting their own password.
@@ -82,8 +83,7 @@ class AuthInvalidCredentialsError(AuthError):
 class AuthAccountDisabledError(AuthError):
     """Directory disabled the account: employment ended. Terminal.
 
-    Distinct from `AuthPendingApprovalError`: enabling the NOA row would not help,
-    and must not.
+    Distinct from `AuthPendingApprovalError`: enabling the NOA row would not help, and must not.
     """
 
     error_code: str = "ldap_account_disabled"
@@ -96,7 +96,7 @@ class AuthAccountDisabledError(AuthError):
 class AuthPendingApprovalError(AuthError):
     """NOA row is `is_active=False`. First login lands here until an admin enables.
 
-    NOA-side state, so `LDAPService` never raises this — T8 does, after the
+    NOA-side state, so `LDAPService` never raises this — the login flow does, after the
     directory has already vouched for the operator.
     """
 
@@ -130,7 +130,7 @@ class AuthSessionInvalidError(AuthError):
 
 
 class AuthConfigurationError(AuthError):
-    """NOA-side misconfiguration — ⊥ the operator's fault, ⊥ their credentials.
+    """NOA-side misconfiguration — never the operator's fault, never their credentials.
 
     Message avoids directory internals on purpose: an operator learns retrying is
     pointless, an attacker learns nothing about the deployment. `detail` carries
@@ -145,7 +145,7 @@ class AuthConfigurationError(AuthError):
 
 
 class LdapUnavailableError(AuthError):
-    """Directory unreachable. Deny the request; ⊥ conclude the user is gone."""
+    """Directory unreachable. Deny the request; never conclude the user is gone."""
 
     error_code: str = "ldap_unavailable"
     message: str = "Cannot reach the company directory right now. Try again in a few moments."

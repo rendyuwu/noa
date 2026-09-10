@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     # --- MCP tokens ---
     # Staleness interval for LDAP revalidation; LDAP down -> fail closed.
     mcp_token_ldap_revalidate_seconds: int = Field(default=900, ge=0)
-    # None -> non-expiring until revoked (V2: revoke = delete row).
+    # None -> non-expiring until revoked (revoke = delete row).
     mcp_token_ttl_seconds: int | None = Field(default=None, ge=60)
 
     # Failed-MCP-auth rate limiting. Same numbers as login: the buckets are
@@ -161,56 +161,50 @@ class Settings(BaseSettings):
     # --- Approval gate ---
     approval_max_inflight_per_user: int = Field(default=1, ge=1)
     approval_pending_ttl_seconds: int = Field(default=3600, ge=60)
-    # How often T39's background sweep looks for pending requests past their deadline. Not
+    # How often the expiry sweep looks for pending requests past their deadline. Not
     # derived from the TTL: it is a resolution, not a lifetime — how late a request may still
     # read PENDING after it stopped being answerable, which is bounded by this and not by how
-    # long the request was given. `ge=1` because a sweeper that never runs is V32 held by
+    # long the request was given. `ge=1` because a sweeper that never runs is the TTL held by
     # nothing at all.
     approval_expiry_sweep_interval_seconds: int = Field(default=60, ge=1)
-    # How long a `tool_runs` row may sit STARTED before T38's reaper calls it abandoned. This
-    # *is* a lifetime, unlike the interval above, and the number is a judgement about the
-    # slowest legitimate change: 15 minutes covers an SSH round trip to an unhappy host with
-    # room to spare, and is short enough that V31's cap — which counts STARTED runs — is not
-    # spent for hours by one crashed process. `ge=60` because a deadline shorter than a minute
-    # would reap changes that are merely slow, and a reaped run reads as an outcome nobody
-    # observed.
+    # How long a `tool_runs` row may sit STARTED before the reaper calls it abandoned. This *is* a
+    # lifetime, unlike the interval above, and the number is a judgement about the slowest
+    # legitimate change: 15 minutes covers an SSH round trip to an unhappy host with room to spare,
+    # and is short enough that the per-user in-flight cap — which counts STARTED runs — is not spent
+    # for hours by one crashed process. `ge=60` because a deadline shorter than a minute would reap
+    # changes that are merely slow, and a reaped run reads as an outcome nobody observed.
     approval_stranded_run_reap_after_seconds: int = Field(default=900, ge=60)
     # How often the reaper looks. A resolution, like the sweep interval, and deliberately not
     # derived from the deadline above.
     approval_stranded_run_reap_interval_seconds: int = Field(default=120, ge=1)
     # How many stranded runs one pass may resolve. A bound the pass is held to, not a knob for
-    # throughput: without it a pass after a long outage loads every stranded row — each carrying
-    # its request's evidence — and issues an UPDATE plus a receipt INSERT for each inside one
-    # transaction, holding all of those row locks and that transaction's xmin until the last
-    # write lands.
-    #
-    # Drain rate is this over the interval above: 100 per 120s, so 50 a minute and 3,000 an
-    # hour. That beats the rate stranded rows appear at, because appearing costs a process
-    # death mid-call or a failed closing audit write — the population that can strand at
-    # one instant is the runs in flight at that instant, and V31's cap bounds the CHANGE half of
-    # it per operator. A *sustained* 50 a minute would mean NOA is failing that many calls a
-    # minute, which is not a backlog a reaper is the remedy for. The two knobs compose: an
-    # operator who needs a faster drain lowers the interval, which is what a resolution is for.
-    #
-    # `le` as much as `ge`: a batch size with no ceiling is the unbounded pass again, spelled in
-    # an env var.
+    # throughput: without it a pass after a long outage loads every stranded row — each carrying its
+    # request's evidence — and issues an UPDATE plus a receipt INSERT for each inside one
+    # transaction, holding all of those row locks and that transaction's xmin until the last write
+    # lands. Drain rate is this over the interval above: 100 per 120s, so 50 a minute and 3,000 an
+    # hour. That beats the rate stranded rows appear at, because appearing costs a process death
+    # mid-call or a failed closing audit write — the population that can strand at one instant is
+    # the runs in flight at that instant, and the in-flight cap bounds the CHANGE half of it per
+    # operator. A *sustained* 50 a minute would mean NOA is failing that many calls a minute, which
+    # is not a backlog a reaper is the remedy for. The two knobs compose: an operator who needs a
+    # faster drain lowers the interval, which is what a resolution is for. `le` as much as `ge`: a
+    # batch size with no ceiling is the unbounded pass again, spelled in an env var.
     approval_stranded_run_reap_batch_size: int = Field(default=100, ge=1, le=1000)
 
     # --- Large READ results ---
     # How long a parked table stays readable. A lifetime, like the reap deadline above and
     # unlike the two intervals: the URL it belongs to persists in LibreChat's transcript
-    #, so an operator may open it long after the call, and 24 hours is a working day
+    # , so an operator may open it long after the call, and 24 hours is a working day
     # plus the night in between. Read past this and the surface answers exactly as it does
-    # for an absent or a foreign token — one refusal for all of them (V27's shape).
+    # for an absent or a foreign token — one refusal for all of them (requester-match's shape).
     result_table_ttl_seconds: int = Field(default=86400, ge=60)
     # How many rows one parked table may hold. A bound the write is held to, not a knob for
     # throughput: `whm_list_accounts` on a dense server is thousands of rows, and neither an
-    # unbounded JSONB column nor an unbounded `<table>` in a small iframe is a thing anybody
-    # chose. What the cap must never do is hide itself — the row stores the pre-cut count and
-    # a truncation flag beside the rows, and both are rendered.
-    #
-    # `le` as much as `ge`, for T38's reason one table over: a cap with no ceiling is the
-    # unbounded write again, spelled in an env var.
+    # unbounded JSONB column nor an unbounded `<table>` in a small iframe is a thing anybody chose.
+    # What the cap must never do is hide itself — the row stores the pre-cut count and a truncation
+    # flag beside the rows, and both are rendered. `le` as much as `ge`, for the reaper batch's
+    # reason one table over: a cap with no ceiling is the unbounded write again, spelled in an env
+    # var.
     result_table_max_rows: int = Field(default=5000, ge=1, le=50000)
 
     # --- Origins / CORS ---
@@ -218,7 +212,7 @@ class Settings(BaseSettings):
         default_factory=lambda: ["http://localhost:3000", "http://localhost:3001"]
     )
     api_cors_allow_credentials: bool = True
-    # Base of the approval URL handed to the operator (V26: carries an id only). The default
+    # Base of the approval URL handed to the operator (carries an id only). The default
     # is refused outside development — see `_validate_operator_addresses`.
     noa_embed_base_url: str = DEV_DEFAULT_EMBED_BASE_URL
     # LibreChat origin allowed to frame the embed app.
@@ -274,7 +268,7 @@ class Settings(BaseSettings):
     @field_validator("auth_session_cookie_samesite", mode="after")
     @classmethod
     def _validate_samesite(cls, value: str) -> str:
-        """V6 wants `Lax`; `none`/`strict` allowed but must be a real value."""
+        """The session cookie wants `Lax`; `none`/`strict` allowed but must be a real value."""
         normalized = value.strip().lower()
         if normalized not in {"lax", "strict", "none"}:
             raise ValueError("auth_session_cookie_samesite must be one of: lax, strict, none")
@@ -301,12 +295,12 @@ class Settings(BaseSettings):
     def _validate_cookie_transport(self) -> None:
         """`SameSite=None` without `Secure` is a cookie the browser throws away.
 
-        Runs after the development override above, because that override is what
-        creates the trap: `samesite=none` is the attribute someone reaches for when
-        testing the cross-site embed locally (SameSite=Lax will not ride into a
-        third-party iframe, C17/C18), and development forces `secure=False`. The
-        combination sets a cookie the browser silently drops, so the approval POST
-        arrives unauthenticated with nothing in the logs to say why.
+        Runs after the development override above, because that override is what creates the trap:
+        `samesite=none` is the attribute someone reaches for when testing the cross-site embed
+        locally (SameSite=Lax will not ride into a third-party iframe — the embed sits on NOA's
+        origin and decides by cookie POST), and development forces `secure=False`. The combination
+        sets a cookie the browser silently drops, so the approval POST arrives unauthenticated with
+        nothing in the logs to say why.
         """
         if self.auth_session_cookie_samesite == "none" and not self.auth_session_cookie_secure:
             raise ValueError(
@@ -316,7 +310,7 @@ class Settings(BaseSettings):
             )
 
     def _resolve_jwt_secret(self) -> None:
-        """V53: required in production, ≥32 chars; generated in dev."""
+        """JWT secret: required in production, ≥32 chars; generated in dev."""
         secret = self.auth_jwt_secret.get_secret_value() if self.auth_jwt_secret else ""
 
         if not secret.strip():
@@ -334,7 +328,7 @@ class Settings(BaseSettings):
             )
 
     def _resolve_encryption_key(self) -> None:
-        """V52: required in production, generated in dev; always a valid Fernet key.
+        """Fernet key: required in production, generated in dev; always a valid Fernet key.
 
         A malformed key fails here rather than at the first credential decrypt,
         where it would look like a broken server instead of a broken config.
@@ -349,7 +343,7 @@ class Settings(BaseSettings):
             if not self.is_development:
                 raise ValueError(
                     "noa_secret_encryption_key is required outside development/test "
-                    "environments (it encrypts server credentials, C7)"
+                    "environments (it encrypts server credentials)"
                 )
             self.noa_secret_encryption_key = SecretStr(Fernet.generate_key().decode())
             return
@@ -367,11 +361,11 @@ class Settings(BaseSettings):
         self.noa_secret_encryption_key = SecretStr(key)
 
     def _validate_operator_addresses(self) -> None:
-        """V95: an address that reaches an operator or a browser cannot keep its dev default.
+        """An address that reaches an operator or a browser cannot keep its dev default.
 
         The rule sits beside the secret rules above because the failure mode is the one
         environment rules exist for — a deploy that never set the var boots clean. It is
-        *distinct* from V52/V53 because of how the two fail: a missing secret is loud at
+        *distinct* from the two secrets because of how the two fail: a missing secret is loud at
         first use, while a wrong address is not an error anywhere. `NOA_EMBED_BASE_URL` on
         its default hands every operator `http://localhost:3001/approvals/<id>`, an address
         that resolves on one laptop and silently nowhere else; the operator sees a dead link
@@ -404,7 +398,7 @@ class Settings(BaseSettings):
             )
 
     def _validate_ldap_transport(self) -> None:
-        """C4: LDAP carries a service-account bind — TLS unless explicitly waived."""
+        """LDAP carries a service-account bind — TLS unless explicitly waived."""
         if self.is_development:
             return
 

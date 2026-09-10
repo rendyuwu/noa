@@ -17,8 +17,8 @@ are easy to state and were easy to get wrong:
 key answered and overwrote the stored one before probing. That makes the pin worth nothing:
 any admin pressing Validate silently re-trusts whatever is on the other end of the address,
 which is the exact event a pin exists to surface. Its PMG service already had the tighter
-shape (`if not pinned_fingerprint:` plus a rollback), so the port takes PMG's and V69 is why:
-provenance is not evidence a security control works, and a ported control lands with a test
+shape (`if not pinned_fingerprint:` plus a rollback), so the port takes PMG's — provenance is
+not evidence a security control works, and a ported control lands with a test
 against the real mechanism (`test_server_host_key_validation.py`, a live `asyncssh` server).
 
 **Refresh is deliberate, and it is two operator actions**: `PATCH` with
@@ -32,11 +32,11 @@ That removes `noa-old`'s rollback branch entirely: a capture whose probe fails l
 because none was ever stored. The rollback path was the one that could strand a bad pin if the
 process died between the write and the failure.
 
-**No database connection is held across a hop.** Each service reads its row in one short
-session, closes it, does the network work, and opens a second session only when there is a
-fingerprint to store. Holding a pooled connection while waiting on somebody else's SSH daemon
-is how a slow server becomes a database outage — T21's rule, and `core.approvals.expiry`
-already draws its own sessions for the same reason.
+**No database connection is held across a hop.** Each service reads its row in one short session,
+closes it, does the network work, and opens a second session only when there is a fingerprint to
+store. Holding a pooled connection while waiting on somebody else's SSH daemon is how a slow server
+becomes a database outage — the account search's rule, and `core.approvals.expiry` already draws its
+own sessions for the same reason.
 
 **Unreachable is an answer, not an error.** Every one of these returns
 `ServerValidationResult(ok=False, error_code=…)` with a 200 behind it. The operator asked "does
@@ -102,10 +102,10 @@ SSH_PROBE_COMMAND = "true"
 
 MESSAGE_OK = "ok"
 
-# A WHM row whose API token cannot suspend an account is refused HERE, at validate, and this is
-# the code that names it (§V111). The alternative is discovering it at execute, after an
-# operator has read an approval card and typed a reason for a change WHM was always going to
-# refuse — a reason spent on nothing, and a failure that reads as a NOA fault.
+# A WHM row whose API token cannot suspend an account is refused HERE, at validate, and this is the
+# code that names it (a validate reports the ACL set). The alternative is discovering it at execute,
+# after an operator has read an approval card and typed a reason for a change WHM was always going
+# to refuse — a reason spent on nothing, and a failure that reads as a NOA fault.
 WHM_ACL_INSUFFICIENT_CODE = "whm_token_acl_insufficient"
 
 
@@ -131,7 +131,7 @@ class HostKeyPinRepository(Protocol[RowT_co]):
     The narrowest thing a reachability probe can be handed. `SQLWHMHostKeyPinRepository` and
     `SQLPMGHostKeyPinRepository` are the implementations, and neither can change a credential
     or delete a row — the split `noa_api.api.deps` makes for the approval card, spelled against
-    inventory (V82: the pin is the thing being protected here).
+    inventory (the pin is the thing being protected here).
     """
 
     async def get_by_id(self, server_id: UUID) -> RowT_co | None: ...
@@ -200,7 +200,7 @@ async def probe_with_trust_on_first_use(
 
 
 def _remote_failure(error: SSHExecutionError | PMGSHCLIError | WHMFirewallCLIError):  # type: ignore[no-untyped-def]
-    """Shape a remote refusal as an answer (V8: `message` is already credential-free)."""
+    """Shape a remote refusal as an answer (`message` is already credential-free)."""
     return ServerValidationResult(ok=False, message=error.message, error_code=error.error_code)
 
 
@@ -235,7 +235,7 @@ def _validation_metadata(
     `ssh_host_key_mismatch` six months from now turns into. Never the fingerprint's
     surrounding credential, and never the key material.
 
-    `extra` is the per-system tail — WHM's ACL set (§V111) is the only user. It merges last so
+    `extra` is the per-system tail — WHM's ACL set is the only user. It merges last so
     a system cannot quietly redefine `ok` or `error_code`, which are read across all three.
     """
     metadata: dict[str, Any] = {
@@ -252,7 +252,7 @@ def _validation_metadata(
 
 
 def _whm_acl_summary(acls: Sequence[str]) -> str:
-    """The ACL set as one operator-facing line (§V111).
+    """The ACL set as one operator-facing line.
 
     The two names that decide what the row may do are spelled out either way; the rest are a
     count. An unrestricted root token grants around a hundred ACLs, and pasting all of them
@@ -269,12 +269,12 @@ def _whm_acl_summary(acls: Sequence[str]) -> str:
 def _whm_acl_answer(
     payload: dict[str, object],
 ) -> tuple[ServerValidationResult, tuple[str, ...] | None]:
-    """Shape `WHMClient.privileges` into a validate answer that REPORTS the ACL set (§V111).
+    """Shape `WHMClient.privileges` into a validate answer that REPORTS the ACL set.
 
     The second element is the granted ACL names, `()` when WHM answered with nothing granted,
     and `None` when the set was never read — a refused probe, or an `ok` payload that carried no
     set at all. The trail keeps those last two apart, because "this token holds nothing" and
-    "we could not ask" have different remedies (§V86).
+    "we could not ask" have different remedies — a non-answer is never folded into the benign value.
 
     `suspend-acct` missing is a refusal; `list-accts` missing is reported and nothing more. A
     row is refused for what it cannot do on the CHANGE path, which is the path that costs an
@@ -290,7 +290,7 @@ def _whm_acl_answer(
         # An `ok` payload carrying no ACL set is not an answer to the question this probe asks,
         # and it must not collapse into an empty one: `()` here would record "the token holds
         # nothing granted" for the case "the set was never read", which is the same conflation
-        # the `invalid_response` path above exists to prevent (§V86). Unreachable through
+        # the `invalid_response` path above exists to prevent. Unreachable through
         # `WHMClient.privileges`, which always synthesises `acls` on success — and that is the
         # reason to spell it out rather than to trust the caller, because a second caller
         # arrives without this branch being retested.
@@ -320,11 +320,10 @@ def _whm_acl_answer(
 
 
 def _whm_acl_metadata(acls: tuple[str, ...] | None) -> dict[str, Any]:
-    """The ACL set as audit fields (§V111; V8 — ACL names, never the token they came with).
+    """The ACL set as audit fields — ACL names, never the token they came with.
 
     `None` throughout when WHM did not answer. An unknown ACL set recorded as an empty one
-    would read, six months later, as a token that held nothing, which is a different fact
-    (§V86).
+    would read, six months later, as a token that held nothing, which is a different fact.
     """
     if acls is None:
         return {"whm_acls": None, "whm_acl_suspend_acct": None, "whm_acl_list_accts": None}
@@ -361,7 +360,8 @@ class WHMServerValidationService:
     only for account reads is a legitimate configuration. `resolve_whm_ssh_config` answers
     `ssh_not_configured` if a firewall tool is ever pointed at it, which names the remedy.
 
-    **The API check is `myprivs`, and it is a capability check, not a ping** (§V111). It
+    **The API check is `myprivs`, and it is a capability check, not a ping** — it reports the
+    ACL set. It
     reports which ACLs the token holds and refuses a row that cannot suspend an account, so the
     remedy lands on the admin editing a server row rather than on an operator who has already
     typed an approval reason. `applist` used to be this probe and was a worse one twice over:
@@ -398,9 +398,9 @@ class WHMServerValidationService:
             if server is None:
                 raise WHMServerNotFoundError(f"no `whm_servers` row `{server_id}`")
 
-            # Everything that needs the row happens here, before the session closes: an ORM
-            # instance cannot be read after that, and `SSHConnectionConfig` is frozen and holds
-            # the decrypted credentials it needs (T21's rule, `core.remote_exec.types`).
+            # Everything that needs the row happens here, before the session closes: an ORM instance
+            # cannot be read after that, and `SSHConnectionConfig` is frozen and holds the decrypted
+            # credentials it needs (no session held across a hop, `core.remote_exec.types`).
             was_pinned = bool((server.ssh_host_key_fingerprint or "").strip())
             client = self._client_factory(server, cipher=self._cipher)
             ssh_wanted = has_ssh_credentials(server)
@@ -463,7 +463,7 @@ class WHMServerValidationService:
             return _WHMProbeOutcome(result=_remote_failure(error), acls=acls)
         # `api_answer`, not a fresh `ok`: its message carries the ACL set, and SSH answering
         # does not make that less true. A bare `MESSAGE_OK` here would drop the one thing
-        # §V111 asks a validate to report, and only on rows that have SSH configured.
+        # a validate exists to report, and only on rows that have SSH configured.
         return _WHMProbeOutcome(result=api_answer, fingerprint=captured, acls=acls)
 
     async def _store_fingerprint(self, server_id: UUID, fingerprint: str) -> None:
@@ -507,7 +507,7 @@ class ProxmoxServerValidationService:
             client = self._client_factory(server, cipher=self._cipher)
             audit_row: ProxmoxServer = server
 
-        # `async with`: `ProxmoxClient` holds an `httpx.AsyncClient`, and T17 deviation (c)
+        # `async with`: `ProxmoxClient` holds an `httpx.AsyncClient`, and the Proxmox port
         # records that `noa-old` leaked one per call.
         async with client:
             result = _client_answer(

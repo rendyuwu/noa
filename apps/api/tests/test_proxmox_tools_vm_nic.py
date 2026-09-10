@@ -1,24 +1,24 @@
-"""`proxmox_vm_nic` — one tool for two directions (T28 — §V.63).
+"""`proxmox_vm_nic` — one tool for two directions.
 
 The tool half: the guards, the enum, the in-process preflight, the two ambiguity refusals, the
-no-op, the gate response and the mount. Its runner lives on the far side of §V.22's boundary and
-is asserted in `test_proxmox_nic_runner.py`; the two are separate files because together they run
-past C14's line budget, and the split falls on the boundary the design already draws — **nothing
+no-op, the gate response and the mount. Its runner lives on the far side of the approval boundary
+and is asserted in `test_proxmox_nic_runner.py`; the two are separate files because together they
+run past the line budget, and the split falls on the boundary the design already draws — **nothing
 here can change anything**, and nothing there is reachable without an approval.
 
 Driven through the real `open_change_request` inside a real request context, so
 `current_mcp_identity` and `read_conversation_ref` are production functions rather than patched
-names. The seams are the ones T21 established: the real resolver, a real `SecretCipher` with real
-ciphertext on the row, the real `ProxmoxClient`, the real codec, the real failure normalisation,
-real `sanitize_tool_errors`. Only the HTTP socket is doubled.
+names. The seams are the ones the account search established: the real resolver, a real
+`SecretCipher` with real ciphertext on the row, the real `ProxmoxClient`, the real codec, the real
+failure normalisation, real `sanitize_tool_errors`. Only the HTTP socket is doubled.
 
-**What is new on this side, beyond mirroring T22-T27.**
+**What is new on this side, beyond mirroring the earlier tools.**
 
-1. **The enum is the tool** (§V.63, DECISIONS §9). One name where `noa-old` had two, and `action`
+1. **The enum is the tool** (DECISIONS section 9). One name where `noa-old` had two, and `action`
    is asserted on the *published schema* rather than on behaviour — a model reads the pair of
    words from `tools/list`, and a free-string parameter that happened to work would leave the
    collapse undone where it is visible.
-2. **Two ambiguity refusals, and one inference** (C10, §V.18). A VM with several interfaces and no
+2. **Two ambiguity refusals, and one inference.** A VM with several interfaces and no
    `net` named gets the list; a VM with one gets it chosen, and the card says so.
 3. **No digest anywhere on this side.** `noa-old` handed the config digest to the model and took
    it back on the change call. With an approval gate in that window the runner re-reads instead,
@@ -86,12 +86,12 @@ TWO_NICS = {NET0: NET0_UP, NET1: NET1_UP}
 
 
 def evidence_of(fixture: Any) -> dict[str, Any]:
-    """The preflight the gate persisted on the one row it opened (§V.33)."""
+    """The preflight the gate persisted on the one row it opened."""
     [request] = fixture.action_requests.requests
     return request.approval_context["evidence"]
 
 
-# --- Guards, before any I/O (§V.21) ---
+# --- Guards, before any I/O ---
 
 
 @pytest.mark.parametrize(
@@ -110,13 +110,13 @@ def evidence_of(fixture: Any) -> dict[str, Any]:
 async def test_a_malformed_call_is_refused_before_any_request(
     node: str, vmid: Any, action: str, expected: str
 ) -> None:
-    """§V.21, and the assertion that matters is `vm.requests == []`.
+    """The assertion that matters is `vm.requests == []`.
 
     A refusal that still made a round trip would mean the guards run after the client is built,
     and a `vmid` of `0` or `True` goes into a URL path. `True` is here because `bool` is an `int`
     in Python and pydantic's `ge=1` would let it through as `1`.
 
-    The three `action` rows are §V.63's third place (T25's discipline): the schema publishes the
+    The three `action` rows are the enum's third place: the schema publishes the
     enum, the body re-checks it for a caller that reaches the function directly, and the runner
     re-checks it after the JSONB round trip.
     """
@@ -131,7 +131,7 @@ async def test_a_malformed_call_is_refused_before_any_request(
 
 
 async def test_an_unknown_server_is_refused_without_reaching_proxmox() -> None:
-    """A reference nobody can resolve is a `host_not_found` result the model can act on (§V.18)."""
+    """A reference nobody can resolve is a `host_not_found` result the model can act on."""
     fixture, vm = nic_context()
 
     answer, _ = await call_nic(fixture, server_ref="nope")
@@ -142,7 +142,8 @@ async def test_an_unknown_server_is_refused_without_reaching_proxmox() -> None:
 
 
 async def test_an_ambiguous_server_returns_choices_rather_than_a_pick() -> None:
-    """§V.18 on a CHANGE path: a guess cuts a machine nobody named off the network."""
+    """A tie is `choices`, never a pick — on a CHANGE path a guess cuts a machine nobody named
+    off the network."""
     fixture, vm = nic_context(
         servers=[proxmox_server("Pve1"), proxmox_server("pve1")],
     )
@@ -155,11 +156,11 @@ async def test_an_ambiguous_server_returns_choices_rather_than_a_pick() -> None:
     assert vm.requests == []
 
 
-# --- §V.63: one tool, and the enum is on the published schema ---
+# --- One tool, and the enum is on the published schema ---
 
 
 async def test_one_tool_carries_the_action_enum_and_the_two_old_names_are_gone() -> None:
-    """DECISIONS §9's collapse, asserted where a model actually reads it.
+    """The DECISIONS section 9 collapse, asserted where a model actually reads it.
 
     `noa-old` exposed `proxmox_enable_vm_nic` and `proxmox_disable_vm_nic`. The merge is only
     done if the two words are in the *schema* — a free-string `action` that happened to work would
@@ -170,7 +171,7 @@ async def test_one_tool_carries_the_action_enum_and_the_two_old_names_are_gone()
     server = build_mcp_server(tool_context=context)
     register_mcp_tools(server, context=context)
 
-    # `run_middleware=False`: the RBAC gate reads a caller off the request context (§V.1), and
+    # `run_middleware=False`: the RBAC gate reads a caller off the request context, and
     # this test is about the *schema* a tool declares, not about who may see it.
     tools = await server.list_tools(run_middleware=False)
     names = {tool.name for tool in tools}
@@ -182,11 +183,11 @@ async def test_one_tool_carries_the_action_enum_and_the_two_old_names_are_gone()
 
 
 async def test_the_tool_schema_carries_no_reason_parameter() -> None:
-    """C8, §V.15, §V.43 at the surface the LLM actually sees.
+    """The reason boundary at the surface the LLM actually sees.
 
     The reason is typed by an operator on the card. A parameter of any of these names would ask
-    the model to author one, which is the thing C8 forbids — and the schema is where a model
-    learns what it may say.
+    the model to author one, which is the thing the reason rule forbids — and the schema is where
+    a model learns what it may say.
     """
     context = nic_context()[0].context
     server = build_mcp_server(tool_context=context)
@@ -204,7 +205,7 @@ async def test_the_tool_schema_carries_no_reason_parameter() -> None:
 
 
 async def test_the_tool_schema_carries_no_digest_parameter() -> None:
-    """T28's departure from `noa-old`, asserted rather than described.
+    """This tool's departure from `noa-old`, asserted rather than described.
 
     There the digest was a tool argument: a preflight handed it to the model and the change call
     handed it back. With an approval gate in that window the runner re-reads instead, so there is
@@ -233,7 +234,7 @@ async def test_a_reason_shaped_argument_is_refused_at_the_gate() -> None:
 
 
 async def test_the_tool_is_registered_as_a_change_in_the_catalog() -> None:
-    """§V.20, §V.83: the risk is declared at registration, and the name is one grants can name.
+    """The risk is declared at registration, and the name is one grants can name.
 
     `ToolRisk.CHANGE` is what keeps `ToolRunAuditMiddleware` from writing a `tool_runs` row for a
     call that executed nothing, and what makes the registry demand a runner at startup — which is
@@ -248,7 +249,7 @@ async def test_the_tool_is_registered_as_a_change_in_the_catalog() -> None:
 
 
 async def test_no_nic_preflight_is_exposed_as_a_tool() -> None:
-    """C9, §V.17: the preflight runs in-process inside the CHANGE call, and is not callable."""
+    """The preflight runs in-process inside the CHANGE call, and is not callable."""
     context = nic_context()[0].context
     server = build_mcp_server(tool_context=context)
     register_mcp_tools(server, context=context)
@@ -259,7 +260,7 @@ async def test_no_nic_preflight_is_exposed_as_a_tool() -> None:
     assert not {name for name in names if "preflight" in name} - TOOL_CATALOG
 
 
-# --- C10 / §V.18: which interface ---
+# --- Which interface ---
 
 
 async def test_two_nics_and_no_net_named_returns_choices_rather_than_a_pick() -> None:
@@ -309,7 +310,7 @@ async def test_a_named_nic_is_not_marked_auto_selected() -> None:
 
 
 async def test_a_net_this_vm_does_not_have_lists_the_ones_it_does() -> None:
-    """§V.18 again, and the codes are two because the remedies read differently."""
+    """The ambiguity rule again, and the codes are two because the remedies read differently."""
     fixture, vm = nic_context(vm=FakeProxmoxNICVM(nets=dict(TWO_NICS)))
 
     answer, _ = await call_nic(fixture, net="net7")
@@ -342,9 +343,9 @@ async def test_a_vm_with_no_nics_gets_the_emptiest_code_rather_than_an_ambiguity
     ],
 )
 async def test_a_nic_already_in_the_asked_for_state_opens_nothing(line: str, action: str) -> None:
-    """T22/T23/T26's shape: there is nothing for an operator to authorise.
+    """The no-op shape the other tools share: there is nothing for an operator to authorise.
 
-    The payload is transcript (§V.26), so it is built from the server, the VM, the interface and
+    The payload is transcript, so it is built from the server, the VM, the interface and
     one measured boolean — not from the config it was decided from.
     """
     fixture, vm = nic_context(vm=FakeProxmoxNICVM(nets={NET0: line}))
@@ -382,7 +383,7 @@ async def test_a_nic_that_has_to_move_opens_a_card(line: str, action: str) -> No
     """The negative control for the no-op above.
 
     Without it, "answer `no_op`" passes against a tool that never opens a card at all — and the
-    approval gate would be gone with every test still green (§V.87).
+    approval gate would be gone with every test still green.
     """
     fixture, vm = nic_context(vm=FakeProxmoxNICVM(nets={NET0: line}))
 
@@ -395,11 +396,11 @@ async def test_a_nic_that_has_to_move_opens_a_card(line: str, action: str) -> No
     assert request.status is ActionRequestStatus.PENDING
 
 
-# --- §V.16, §V.23: it opens a question and changes nothing ---
+# --- It opens a question and changes nothing ---
 
 
 async def test_a_well_formed_call_writes_nothing_and_opens_one_pending_request() -> None:
-    """The whole of §V.16 on this tool, asserted from both sides.
+    """The whole of the opens-a-question rule on this tool, asserted from both sides.
 
     `vm.config_writes == []` is the half a returned envelope cannot prove: a tool that flipped the
     link and *then* opened a card would answer identically.
@@ -417,7 +418,7 @@ async def test_a_well_formed_call_writes_nothing_and_opens_one_pending_request()
 
 
 async def test_the_row_carries_the_preflight_the_operator_will_see() -> None:
-    """§V.33, §V.35: born in-process, persisted on the row, never rebuilt from a transcript.
+    """Born in-process, persisted on the row, never rebuilt from a transcript.
 
     Every interface is on the evidence, not only the one being changed: an operator deciding
     whether to cut a VM off the network needs to know whether it keeps another live one, which is
@@ -457,7 +458,8 @@ async def test_the_evidence_carries_no_digest() -> None:
 
 
 async def test_the_arguments_on_the_row_carry_no_reason(monkeypatch: pytest.MonkeyPatch) -> None:
-    """C8 at the third place it can leak: what the gate recorded, not just what was declared."""
+    """The reason rule at the third place it can leak: what the gate recorded, not just what was
+    declared."""
     fixture, _ = nic_context()
 
     await call_nic(fixture)
@@ -466,7 +468,7 @@ async def test_the_arguments_on_the_row_carry_no_reason(monkeypatch: pytest.Monk
     assert not FORBIDDEN_REASON_KEYS & set(request.approval_context["arguments"])
 
 
-# --- §V.86: a read that could not answer is named ---
+# --- A read that could not answer is named ---
 
 
 async def test_an_unreadable_run_state_is_named_rather_than_absent() -> None:
@@ -494,7 +496,7 @@ async def test_a_readable_run_state_names_no_gaps() -> None:
 
 async def test_an_unreadable_config_is_a_refusal_rather_than_a_gap() -> None:
     """The config is what the decision rests on — a card that cannot describe what it is asking
-    about is the state §V.35 exists to prevent."""
+    about is the state the evidence rule exists to prevent."""
     fixture, _ = nic_context(vm=FakeProxmoxNICVM(config_error={"status": 500}))
 
     answer, _ = await call_nic(fixture)
@@ -503,7 +505,7 @@ async def test_an_unreadable_config_is_a_refusal_rather_than_a_gap() -> None:
     assert fixture.action_requests.requests == []
 
 
-# --- §V.19: what a failure looks like in front of a model ---
+# --- What a failure looks like in front of a model ---
 
 
 async def test_an_unexpected_failure_reaches_the_model_as_a_named_code(
@@ -524,14 +526,14 @@ async def test_an_unexpected_failure_reaches_the_model_as_a_named_code(
     assert "10.0.0.9" not in answer["message"]
 
 
-# --- §V.24, §V.25, §V.26: the gate response ---
+# --- The gate response ---
 
 
 async def test_the_gate_answer_is_the_text_block_then_the_ui_resource() -> None:
-    """§V.24's "two branches ship together", asserted on the count and the order.
+    """The two branches ship together, asserted on the count and the order.
 
     The text carries the address plainly because the frame can fail to load and then the URL is
-    the only door (§V.25), and the resource is what LibreChat renders.
+    the only door, and the resource is what LibreChat renders.
     """
     fixture, _ = nic_context()
 
@@ -546,7 +548,7 @@ async def test_the_gate_answer_is_the_text_block_then_the_ui_resource() -> None:
 
 
 async def test_the_approval_url_carries_the_request_id_and_nothing_else() -> None:
-    """§V.26: this string persists in LibreChat's MongoDB, so everything in it is readable there.
+    """This string persists in LibreChat's MongoDB, so everything in it is readable there.
 
     Taken apart rather than matched by prefix — a query parameter added later would hide on the
     end of a `startswith` and go red here instead.
@@ -568,13 +570,13 @@ async def test_the_approval_url_carries_the_request_id_and_nothing_else() -> Non
     assert url.fragment == ""
     assert emitted == f"{EMBED_BASE_URL}{APPROVAL_CARD_PATH}/{created.action_request_id}"
     # The plain address rides in the text block too — the door that survives an iframe that did
-    # not load (§V.25).
+    # not load.
     assert emitted in text.text
     assert str(resource.resource.uri) == f"{UI_RESOURCE_URI_PREFIX}{created.action_request_id}"
 
 
 async def test_no_secret_from_the_server_row_reaches_the_answer() -> None:
-    """§V.8 on the surface that becomes a transcript."""
+    """No credential reaches the surface that becomes a transcript."""
     fixture, _ = nic_context()
 
     answer, _ = await call_nic(fixture)

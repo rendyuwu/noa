@@ -1,15 +1,15 @@
 """The expiry sweep against a real Postgres.
 
-`test_action_request_expiry.py` drives the same service over an in-memory repository, which
-proves the loop and the reporting but cannot prove the three claims that are *about the
-database*:
+`test_action_request_expiry.py` drives the same service over an in-memory repository, which proves
+the loop and the reporting but cannot prove the three claims that are *about the database*:
 
 - **The predicate.** "PENDING and past its deadline, and nothing else" is a statement about
   SQL, and a double that re-implements it agrees with the test rather than with the code.
 - **The deadline boundary.** A row exactly on `expires_at` has to be judged the same way by
   the sweep and by the decision door. Two comparisons in two statements can only be shown to
   agree by running both.
-- **The lock behaviour V28 leans on.** The sweep takes no `SELECT … FOR UPDATE`; it relies on
+- **The lock behaviour the one-decision rule leans on.** The sweep takes no `SELECT … FOR UPDATE`;
+  it relies on
   a bare `UPDATE` re-evaluating its `WHERE` against the row version left by the transaction
   it waited for. That is a Postgres property, so only Postgres can demonstrate it — and if it
   did not hold, a sweep could expire a change that had already been authorised and handed to
@@ -104,10 +104,10 @@ async def expire_if_due(
 
 
 async def test_the_sweep_expires_a_pending_request_past_its_deadline(factory) -> None:
-    """V32's whole point: terminality with nobody having opened the card.
+    """The TTL's whole point: terminality with nobody having opened the card.
 
     The row shape matters as much as the status. `reason` stays NULL because an expiry is the
-    absence of an answer, not one — T34's CHECK exempts EXPIRED for exactly this write — and
+    absence of an answer, not one — the table's CHECK exempts EXPIRED for exactly this write — and
     `tool_run_id` stays NULL because nothing ran.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
@@ -167,7 +167,7 @@ async def test_one_pass_expires_every_due_request(factory) -> None:
 async def test_a_request_exactly_on_its_deadline_expires_at_both_doors(factory) -> None:
     """`<=`, in both comparisons, asserted together.
 
-    `§T.39`'s line reads `expires_at < now()` and the decision door compares
+    The expiry task's line reads `expires_at < now()` and the decision door compares
     `expires_at <= decided_at`. Taken literally, a request whose deadline is *this instant*
     would be refused at the door and left PENDING by the sweep forever — a row that can never
     be answered and never becomes terminal. The two are pinned in one test on purpose: a
@@ -199,11 +199,11 @@ async def test_the_sweep_writes_away_a_reason_a_pending_row_should_not_have(fact
     """The `reason = NULL` in the sweep's `SET`, proven rather than described.
 
     No production writer can put a reason on a `PENDING` row today — only a decision writes
-    one, and it writes a terminal status in the same statement. But T34's CHECK exempts
+    one, and it writes a terminal status in the same statement. But the table's CHECK exempts
     `EXPIRED` precisely so an expiry *can* carry none, which means nothing at the database
     level would catch an `EXPIRED` row that carried one. So the guard is in the sweep's
-    statement, and this is the case that makes it a control rather than a comment (V69's
-    shape: a property asserted by prose and held by nothing).
+    statement, and this is the case that makes it a control rather than a comment — a property
+    asserted by prose and held by nothing is no control at all.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     action_request_id = await open_request(
@@ -272,7 +272,7 @@ async def test_the_sweep_cannot_touch_a_decided_request(factory) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Check-on-read, the half T41's card depends on
+# Check-on-read, the half the approval card depends on
 # --------------------------------------------------------------------------------------
 
 
@@ -340,17 +340,18 @@ async def test_check_on_read_cannot_expire_a_decided_request(factory) -> None:
 async def test_check_on_read_of_an_unknown_id_reports_nothing_and_raises_nothing(
     factory,
 ) -> None:
-    """A render path calls this before it knows whether the row exists (V27 answers that)."""
+    """A render path calls this before it knows whether the row exists (requester-match answers
+    that)."""
     assert await expire_if_due(factory, UUID(int=0)) is False
 
 
 # --------------------------------------------------------------------------------------
-# V89 — the sweep against an approval that is already in flight
+# The sweep against an approval that is already in flight
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_sweep_cannot_expire_a_request_being_approved(factory) -> None:
-    """V28, V32: the request expired *while* an operator's approval was in flight.
+    """The request expired *while* an operator's approval was in flight.
 
     **The race is arranged, and the arrangement is the point**. Running the two in an
     `asyncio.gather` is not a race — the first commonly finishes before the second's statement
@@ -363,7 +364,7 @@ async def test_a_sweep_cannot_expire_a_request_being_approved(factory) -> None:
     means. The negative control below shows that ordering is not automatic.
 
     The two moments differ on purpose. The approval judges the row against a `now` before its
-    deadline (so it passes V32's check-on-read at the door) and the sweep judges it against
+    deadline (so it passes the check-on-read at the door) and the sweep judges it against
     one after — which is exactly the situation the invariant is about: the TTL passed while a
     human was deciding. If the `UPDATE` did not re-check its `WHERE` after waiting, this row
     would end up EXPIRED with a `tool_runs` row already handed to an executor.
@@ -471,7 +472,7 @@ async def test_an_unlocked_read_of_the_same_row_does_not_wait(factory) -> None:
 async def test_a_decision_after_the_sweep_is_refused_as_already_decided(factory) -> None:
     """The other order: the sweep won, so the operator's click is a 409, not an approval.
 
-    `already_decided` rather than `expired`, because V28's status guard runs before V32's
+    `already_decided` rather than `expired`, because the status guard runs before the
     deadline guard and the row is terminal by the time the door sees it. The remedy the two
     messages give differs, and this is the one an operator gets after a sweep.
     """
@@ -496,7 +497,7 @@ async def test_a_decision_after_the_sweep_is_refused_as_already_decided(factory)
 
 
 # --------------------------------------------------------------------------------------
-# V87 — two writers, one kind of EXPIRED row
+# Two writers, one kind of EXPIRED row
 # --------------------------------------------------------------------------------------
 
 # Everything the two expiry writers are supposed to agree on. `id`, `expires_at`, `created_at`
@@ -524,7 +525,7 @@ async def test_a_swept_row_matches_one_expired_at_the_decision_door(factory) -> 
 
     The decision door and the sweep both write EXPIRED, from different sides and for different
     reasons — an operator arrived too late, or nobody arrived at all. If they disagreed on the
-    row they leave, "expired" would mean two things in one column, and T41's card and the
+    row they leave, "expired" would mean two things in one column, and the approval card and the
     admin audit would each be right about a different one.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
@@ -552,7 +553,8 @@ async def test_a_swept_row_matches_one_expired_at_the_decision_door(factory) -> 
 
 
 async def test_the_shape_compare_still_separates_two_different_outcomes(factory) -> None:
-    """The case V87 requires beside every dropped field: proof the comparator still bites.
+    """The case the clock-compare rule requires beside every dropped field: proof the comparator
+    still bites.
 
     A field-dropping comparator degrades into a tautology silently, and a tautology passes
     every run — including the ones it was written to catch. So: a denial and an expiry differ
@@ -581,7 +583,7 @@ async def test_the_shape_compare_still_separates_two_different_outcomes(factory)
 
 
 async def test_the_sweepers_pass_expires_against_a_real_database(factory) -> None:
-    """`PendingExpirySweeper` with its production default repository (T39's wiring).
+    """`PendingExpirySweeper` with its production default repository — the expiry loop's wiring.
 
     `test_action_request_expiry.py` swaps that default out to drive the loop without Postgres,
     which means the default itself is only exercised here — the seam a test replaces is

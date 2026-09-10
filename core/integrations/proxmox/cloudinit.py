@@ -1,7 +1,7 @@
 """What cloud-init says about a VM's password, and whether NOA may claim it took.
 
-Ported from `noa-old` branch `MCP` (`proxmox/tools/_cloudinit_passwords.py`, C13, V69) with one
-deliberate correction, which is the whole of §T.69.
+Ported, never imported, from `noa-old` branch `MCP` (`proxmox/tools/_cloudinit_passwords.py`)
+with one deliberate correction, which is the whole of the three-value crypt verdict below.
 
 **The correction.** `noa-old`'s `cloudinit_dump_matches_password` answered a `bool`, and it
 answered `False` in three unrelated situations: the password genuinely does not match, the
@@ -9,16 +9,17 @@ rendered user-data carries no `password:` line at all, and **libcrypt could not 
 third is not a verdict. A box where `_load_crypt_lib()` answers `None` cannot compare anything,
 and reporting that as "does not match" makes a *measurement* out of an *absence* — a change that
 in fact succeeded is reported as one that failed, and an operator is sent to reset a password
-that is already live. V62 names it: **verification-unavailable ≠ verified**, and it is equally
-≠ refuted.
+that is already live. The verdict names it: **verification-unavailable ≠ verified**, and it is
+equally ≠ refuted.
 
 So verification answers three states rather than two (`CryptVerdict`), and every unavailable one
 carries the **cause** that produced it. `verified` is derived from the verdict rather than stored
 beside it, so the two cannot disagree.
 
 **Why ctypes rather than the stdlib `crypt` module.** `noa-old`'s call, kept. The stdlib module
-is deprecated and removed in 3.13, and C1 already pins `<3.13` for `pgpy`; binding this to a
-second removal would mean two reasons to be stuck on one interpreter instead of one.
+is deprecated and removed in 3.13, and the Python window already pins `<3.13` for `pgpy`;
+binding this to a second removal would mean two reasons to be stuck on one interpreter instead
+of one.
 
 **The lock is load-bearing, not caution.** POSIX `crypt(3)` returns a pointer into a static
 buffer, so two concurrent calls in one process can read each other's result. NOA runs approved
@@ -27,7 +28,7 @@ changes as concurrent asyncio tasks, and while an event loop serialises the *Pyt
 
 `crypt(3)` on a SHA-512 hash is a few milliseconds of CPU and is called once per verification
 attempt, so it runs inline rather than on a thread. If a future caller verifies in a loop, that
-is the moment to reconsider, ⊥ now.
+is the moment to reconsider, not now.
 
 **A `*`-prefixed answer is unavailable, not a mismatch.** libxcrypt reports a salt it cannot use
 by returning `*0` (or `*`), never by returning a hash that fails to compare. Reading that as
@@ -73,7 +74,7 @@ _NOT_LOADED: Final[object] = object()
 _CRYPT_LIB: CDLL | object | None = _NOT_LOADED
 
 # The line `cloudinit/dump?type=user` renders the crypt hash on.
-_PASSWORD_FIELD: Final = "password:"  # noqa: S105 — a YAML key, ⊥ a credential
+_PASSWORD_FIELD: Final = "password:"  # noqa: S105 — a YAML key, not a credential
 
 # Proxmox's own key for the cloud-init password, in both payload shapes it answers with.
 _CIPASSWORD_KEY: Final = "cipassword"
@@ -82,9 +83,9 @@ _CIPASSWORD_KEY: Final = "cipassword"
 class CryptVerdict(StrEnum):
     """What a crypt-compare established, including "nothing".
 
-    Three values rather than a `bool`, because the third is the one §T.69 exists for: a box that
-    cannot compare has not refuted anything, and collapsing it into `MISMATCH` reports a change
-    that worked as one that failed.
+    Three values rather than a `bool`, because the third is the one the verdict exists for: a
+    box that cannot compare has not refuted anything, and collapsing it into `MISMATCH` reports
+    a change that worked as one that failed.
     """
 
     MATCH = "match"
@@ -95,13 +96,13 @@ class CryptVerdict(StrEnum):
 # The causes an `UNAVAILABLE` verdict can carry. Stable strings: they reach an operator through
 # the receipt and a model through `result_summary`, and each names a different thing to do.
 #
-# The host has no libcrypt — the deployment's problem, and the one V62 names by hand.
+# The host has no libcrypt — the deployment's problem, and the one the verdict names by hand.
 CAUSE_CRYPT_LIBRARY_UNAVAILABLE: Final = "crypt_library_unavailable"
 # The rendered user-data has no `password:` line, so there is nothing to compare against. Either
 # the drive has not been regenerated yet or this VM does not carry a cloud-init password at all.
 CAUSE_PASSWORD_HASH_ABSENT: Final = "cloudinit_password_hash_absent"  # noqa: S105 — a code
 # libcrypt loaded and then refused the stored salt (`*0`). A malformed or unsupported hash
-# format on the VM, ⊥ a wrong password.
+# format on the VM, not a wrong password.
 CAUSE_CRYPT_REFUSED_HASH: Final = "crypt_refused_stored_hash"
 
 
@@ -110,8 +111,8 @@ class CloudInitPasswordVerification:
     """One crypt-compare, or the named reason there was not one.
 
     `verified` and `answered` are derived rather than stored, so no caller can be handed a value
-    whose boolean disagrees with its verdict — the shape B6 is the reminder for, one subject
-    over.
+    whose boolean disagrees with its verdict — the two-writers-one-run defect is the reminder
+    for, one subject over.
     """
 
     verdict: CryptVerdict
@@ -124,14 +125,14 @@ class CloudInitPasswordVerification:
 
     @property
     def answered(self) -> bool:
-        """Was a comparison performed at all? `False` is V62's `verification_unavailable`."""
+        """Was a comparison performed at all? `False` is `verification_unavailable`."""
         return self.verdict is not CryptVerdict.UNAVAILABLE
 
 
 def _load_crypt_lib() -> CDLL | None:
     """The host's `crypt(3)`, or `None` when there is not one.
 
-    Cached both ways, for the reason `_NOT_LOADED` exists. `None` is the answer V62 turns into
+    Cached both ways, for the reason `_NOT_LOADED` exists. `None` is the answer that becomes
     `verification_unavailable`; it is never an exception, because a missing library is a fact
     about the deployment that a change has to *report*, not one it should crash on.
     """
@@ -225,8 +226,8 @@ def verify_cloudinit_password(
 
     A `TypeError`/`ValueError` out of the encode-and-call path is `crypt_refused_stored_hash`
     rather than a raise, for the reason the whole module returns instead of raising: this runs
-    inside an approved change, and the caller has a receipt to write either way (V19 one layer
-    up).
+    inside an approved change, and the caller has a receipt to write either way — raw exceptions
+    are sanitised one layer up.
     """
     if loader() is None:
         return CloudInitPasswordVerification(
@@ -258,7 +259,7 @@ def cloudinit_carries_password(cloudinit_data: object) -> bool:
 
     A weaker question than `verify_cloudinit_password` and used for a weaker claim: it says a
     password is *set*, never that it is the one NOA just generated. It is the cheap gate in front
-    of the crypt compare, ⊥ a substitute for it (V62: the compare is what "verify" means here).
+    of the crypt compare, never a substitute for it — the compare is what "verify" means here.
     """
     if isinstance(cloudinit_data, Mapping):
         return _non_empty_text(cloudinit_data.get(_CIPASSWORD_KEY)) is not None
@@ -277,7 +278,7 @@ def cloudinit_carries_password(cloudinit_data: object) -> bool:
 
 
 def _non_empty_text(value: Any) -> str | None:
-    """A stripped non-empty string, or `None`. Non-strings are `None`, ⊥ stringified.
+    """A stripped non-empty string, or `None`. Non-strings are `None`, never stringified.
 
     `core.integrations.proxmox.client._normalized_text`'s rule, restated for this module's own
     payload reading rather than imported across a private name.

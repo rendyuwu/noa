@@ -8,11 +8,11 @@ import tseslint from 'typescript-eslint'
 //
 // `apps/web-embed` — the two web apps are independent packages with their own
 // lockfiles, own CI and own deploy artifact. They share no source, no deps, no
-// aliases and no symlinks (AGENTS.md, C12). The mirror of this rule lives in
+// aliases and no symlinks (AGENTS.md). The mirror of this rule lives in
 // `apps/web-embed/eslint.config.mjs`.
 //
 // `noa-old` / `web-bigsu` — this panel was PORTED from the old repo, not linked
-// to it (C13, V69, §T.48). A copy that keeps a path back to its source is not a
+// to it. A copy that keeps a path back to its source is not a
 // copy: the old tree is a reference, it is not on the deploy artifact, and a
 // build that resolved one of these would only do so on a developer's machine.
 const forbiddenImports = {
@@ -20,12 +20,12 @@ const forbiddenImports = {
     {
       group: ['**/apps/web-embed', '**/apps/web-embed/**', '**/web-embed/**'],
       message:
-        'apps/admin-web and apps/web-embed are independent packages — they share no source (C12, AGENTS.md).',
+        'apps/admin-web and apps/web-embed are independent packages — they share no source (AGENTS.md).',
     },
     {
       group: ['**/noa-old/**', '**/web-bigsu', '**/web-bigsu/**'],
       message:
-        'noa-old is a reference, not a dependency — §T.48 ports its files, it does not import them.',
+        'noa-old is a reference, not a dependency — the port copies its files, it does not import them.',
     },
   ],
 }

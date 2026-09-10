@@ -9,7 +9,7 @@ import { ForbiddenView, PageLoadingSkeleton } from '@/components/states'
 import { fetchUsers } from '@/lib/admin/users/users-api'
 import { useVerifiedAuth } from '@/lib/auth/use-verified-auth'
 
-// /admin/users/[userId]/tokens (§T76). The protected layout already verified an
+// /admin/users/[userId]/tokens. The protected layout already verified an
 // active session and mounted the AppShell; this route adds the admin gate the
 // same way /admin/users does, so a verified non-admin gets the 403 state instead
 // of another operator's token list. FastAPI RBAC stays authoritative — this only

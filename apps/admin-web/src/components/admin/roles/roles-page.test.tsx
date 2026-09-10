@@ -12,8 +12,8 @@ vi.mock('@/lib/admin/roles/use-roles', () => ({
 }))
 
 // No `roles-api` mock. Nothing this page renders calls the transport directly any
-// more — the controller owns every request, and it is mocked above (T65 removed the
-// migration action, the one component that reached past it).
+// more — the controller owns every request, and it is mocked above (the 410 on direct
+// grants removed the migration action, the one component that reached past it).
 
 function makeController(over: Partial<RolesController> = {}): RolesController {
   return {
@@ -110,8 +110,8 @@ describe('RolesPage', () => {
     expect(within(dialog).getByLabelText('Role name')).toBeInTheDocument()
   })
 
-  // T65 / V75: the ported panel's direct-grant migration control is gone, because
-  // NOA has no per-user grant table and no migration endpoint. Asserted as an
+  // The 410 on direct grants: the ported panel's direct-grant migration control is gone,
+  // because NOA has no per-user grant table and no migration endpoint. Asserted as an
   // absence rather than simply deleting the old test: without this, re-adding the
   // button would go unnoticed until an operator clicked it and got a 404.
   it('offers no legacy direct-grant migration', () => {

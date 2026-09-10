@@ -2,8 +2,8 @@
 
 No directory needed: `LDAPService` takes an injectable `connect` factory, so these
 drive bind/search/error paths against a fake `LDAPObject`. `ldap.*` exception
-classes and option constants come from the real `python-ldap` (a pinned dependency
-per T3), so the classification under test is the real taxonomy.
+classes and option constants come from the real `python-ldap` (a pinned dependency),
+so the classification under test is the real taxonomy.
 """
 
 from __future__ import annotations
@@ -69,9 +69,9 @@ ABSENT = object()
 def render_traceback(error: BaseException) -> str:
     """Full traceback text, chained causes included.
 
-    V8 assertions need this: `str(err)` alone passes even when the raw directory
-    diagnostic survives on `__cause__` and surfaces the moment a handler logs with
-    `exc_info=True`.
+    The no-credentials-in-errors assertions need this: `str(err)` alone passes even
+    when the raw directory diagnostic survives on `__cause__` and surfaces the moment
+    a handler logs with `exc_info=True`.
     """
     return "".join(traceback.format_exception(type(error), error, error.__traceback__))
 
@@ -174,7 +174,7 @@ def service_with(
 
 
 async def test_authenticate_binds_service_account_then_user() -> None:
-    """C4/I.ext: service-account bind + search for the DN, then bind as the user."""
+    """The directory flow: service-account bind + search for the DN, then bind as the user."""
     service, directory = service_with({"results": [entry()]}, {})
 
     user = await service.authenticate(OPERATOR_EMAIL, OPERATOR_PASSWORD)
@@ -272,7 +272,7 @@ async def test_authenticate_rejects_blank_email_without_touching_directory() -> 
 
 
 async def test_unknown_user_and_wrong_password_share_one_error_shape() -> None:
-    """⊥ enumeration oracle: identical class, `error_code`, and operator message.
+    """Never an enumeration oracle: identical class, `error_code`, and operator message.
 
     Asserts on what reaches the browser, not on `str(exc)`: the internal `detail`
     differs by design (next test), and only the rendered surface has to match.
@@ -316,7 +316,7 @@ async def test_unknown_user_and_wrong_password_keep_distinct_log_detail() -> Non
 
 
 async def test_password_never_appears_in_error() -> None:
-    """V8: credentials stay out of messages AND out of the exception chain.
+    """Credentials stay out of messages AND out of the exception chain.
 
     A directory that quotes the attempted bind in its diagnostic would otherwise
     reach a traceback via `__cause__` the moment any handler logs `exc_info`. The
@@ -335,7 +335,7 @@ async def test_password_never_appears_in_error() -> None:
 
 
 async def test_service_password_never_appears_in_error() -> None:
-    """V8 covers the service credential too, on the same reasoning."""
+    """The rule covers the service credential too, on the same reasoning."""
     service, _ = service_with(
         {"bind_error": ldap.INVALID_CREDENTIALS(f"rejected {SERVICE_PASSWORD}")}
     )
@@ -371,7 +371,7 @@ async def test_non_credential_failures_keep_their_cause() -> None:
     ],
 )
 async def test_unreachable_directory_raises_ldap_unavailable(error: Exception) -> None:
-    """V4: unreachable ≠ user gone. Callers fail closed, ⊥ cascade-revoke."""
+    """Unreachable ≠ user gone. Callers fail closed, never cascade-revoke."""
     service, _ = service_with({"bind_error": error})
 
     with pytest.raises(LdapUnavailableError):
@@ -390,7 +390,7 @@ async def test_unavailable_is_not_an_invalid_credentials_error() -> None:
 
 
 async def test_rejected_service_bind_is_a_configuration_error() -> None:
-    """NOA's misconfiguration, ⊥ the operator's password."""
+    """NOA's misconfiguration, never the operator's password."""
     service, _ = service_with({"bind_error": ldap.INVALID_CREDENTIALS("svc rejected")})
 
     with pytest.raises(AuthConfigurationError):
@@ -398,7 +398,7 @@ async def test_rejected_service_bind_is_a_configuration_error() -> None:
 
 
 async def test_search_failure_is_sanitized() -> None:
-    """V8/V19 discipline: raw directory detail never rides out on the message."""
+    """Sanitization discipline: raw directory detail never rides out on the message."""
     service, _ = service_with({"search_error": ldap.FILTER_ERROR("bad filter at offset 12")})
 
     with pytest.raises(AuthError) as raised:
@@ -559,7 +559,7 @@ ALL_AUTH_ERRORS = [
 
 @pytest.mark.parametrize("error_class", ALL_AUTH_ERRORS)
 def test_every_error_has_a_code_and_a_message(error_class: type[AuthError]) -> None:
-    """V73 wants a machine code; a human wants prose. Both, always."""
+    """Every error response wants a machine code; a human wants prose. Both, always."""
     assert error_class.error_code
     assert error_class.error_code != AuthError.error_code
     assert error_class.message
@@ -585,7 +585,7 @@ def test_distinguishable_outcomes_have_distinct_messages() -> None:
 
 @pytest.mark.parametrize("error_class", ALL_AUTH_ERRORS)
 def test_messages_carry_no_credentials_or_internals(error_class: type[AuthError]) -> None:
-    """V8: the rendered text is safe by construction, ⊥ by handler discipline."""
+    """The rendered text is safe by construction, never by handler discipline."""
     message = error_class.message.lower()
 
     for leak in (SERVICE_DN.lower(), SERVICE_PASSWORD, OPERATOR_PASSWORD, BASE_DN.lower()):
@@ -604,12 +604,12 @@ def test_message_names_who_can_fix_each_recoverable_case() -> None:
 
 
 def test_misconfiguration_message_absolves_the_operator() -> None:
-    """⊥ send someone hunting their own password over a NOA-side fault."""
+    """Never send someone hunting their own password over a NOA-side fault."""
     assert "credentials are fine" in AuthConfigurationError.message
 
 
 def test_invalid_credentials_message_names_neither_half() -> None:
-    """ "Email or password" — ⊥ "no such user", ⊥ "wrong password"."""
+    """ "Email or password" — never "no such user", never "wrong password"."""
     message = AuthInvalidCredentialsError.message.lower()
 
     assert "email or password" in message
@@ -652,7 +652,7 @@ async def test_disabled_account_message_reaches_the_caller() -> None:
 
     assert raised.value.error_code == "ldap_account_disabled"
     assert "disabled in the company directory" in raised.value.message
-    # The AD flag detail is diagnostic, ⊥ operator-facing.
+    # The AD flag detail is diagnostic, never operator-facing.
     assert ACCOUNT_CONTROL_ATTRIBUTE in raised.value.detail
     assert ACCOUNT_CONTROL_ATTRIBUTE not in raised.value.message
 
@@ -683,7 +683,7 @@ async def test_service_bind_detail_points_at_the_config_without_leaking_it() -> 
 
 
 async def test_authenticate_rejects_directory_disabled_account() -> None:
-    """C4: employment ended ⇒ login denied even though the password verified."""
+    """Employment ended means login denied even though the password verified."""
     service, _ = service_with(
         {"results": [entry(account_control=DISABLED_ACCOUNT_CONTROL)]},
         {},
@@ -707,7 +707,7 @@ async def test_disabled_check_runs_after_the_user_bind() -> None:
 
 
 async def test_wrong_password_on_disabled_account_reports_invalid_credentials() -> None:
-    """Bad password wins: a wrong guess ⊥ learn that the account is disabled."""
+    """Bad password wins: a wrong guess never learns that the account is disabled."""
     service, _ = service_with(
         {"results": [entry(account_control=DISABLED_ACCOUNT_CONTROL)]},
         {"bind_error": ldap.INVALID_CREDENTIALS("nope")},
@@ -729,7 +729,9 @@ async def test_disabled_is_distinct_from_pending_approval() -> None:
 
 
 async def test_ldap_service_never_raises_pending_approval() -> None:
-    """V7 is NOA-side state: T8 owns it, T6 has no access to `users.is_active`."""
+    """Pending-approval is NOA-side state: the auth service owns it, the directory service has no
+    access to `users.is_active`.
+    """
     service, _ = service_with({"results": [entry()]}, {})
 
     user = await service.authenticate(OPERATOR_EMAIL, OPERATOR_PASSWORD)
@@ -759,7 +761,7 @@ async def test_dev_bypass_authenticates_without_directory() -> None:
 
 
 async def test_dev_bypass_still_requires_a_password() -> None:
-    """Bypass skips the directory, ⊥ the notion of supplying a credential."""
+    """Bypass skips the directory, never the notion of supplying a credential."""
     service, _ = build_bypass_service()
 
     with pytest.raises(AuthInvalidCredentialsError):
@@ -774,7 +776,7 @@ async def test_dev_bypass_reports_every_user_enabled() -> None:
 
 
 async def test_dev_bypass_rejected_outside_development() -> None:
-    """C4: the bypass cannot become a production auth path — config blocks it.
+    """The bypass cannot become a production auth path — config blocks it.
 
     Pinned to `ValidationError`: a bare `Exception` match would pass on an
     unrelated `TypeError` and quietly stop testing the guard.
@@ -789,7 +791,7 @@ async def test_dev_bypass_rejected_outside_development() -> None:
 async def test_missing_python_ldap_is_a_configuration_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Hosts without the C extension get a clear config error, ⊥ an AttributeError."""
+    """Hosts without the C extension get a clear config error, never an AttributeError."""
     monkeypatch.setattr("core.auth.ldap_service.LDAP_AVAILABLE", False)
     service, _ = service_with({"results": [entry()]})
 
@@ -820,7 +822,7 @@ def test_default_connect_sets_protocol_referrals_and_timeouts() -> None:
 
 
 async def test_service_passes_configured_timeout_to_the_factory() -> None:
-    """`LDAP_TIMEOUT_SECONDS` reaches the connection, ⊥ silently defaulted."""
+    """`LDAP_TIMEOUT_SECONDS` reaches the connection, never silently defaulted."""
     service, directory = service_with({"results": [entry()]}, {}, ldap_timeout_seconds=11)
 
     await service.authenticate(OPERATOR_EMAIL, OPERATOR_PASSWORD)

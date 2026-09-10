@@ -1,47 +1,47 @@
-"""Admin: the CHANGE authorisation trail and its receipts (§I.admin-api — V13, V15, V46).
+"""Admin: the CHANGE authorisation trail and its receipts.
 
-**The half `/admin/audit/tool-runs` does not have.** T55 made `tool_runs` queryable — what ran,
-with what arguments, and how it ended. It could not answer *who authorised it, or why*, because
-that lives on `action_requests` and nothing read that table for an administrator. The single most
-load-bearing field on this surface is `reason`: C8 and V15 exist for it, a DB CHECK holds it
-against every writer, and until this router it had no reader anywhere. The embed card carries no
+**The half `/admin/audit/tool-runs` does not have.** The audit reader made `tool_runs` queryable —
+what ran, with what arguments, and how it ended. It could not answer *who authorised it, or why*,
+because that lives on `action_requests` and nothing read that table for an administrator. The single
+most load-bearing field on this surface is `reason`: the reason rule exists for it, a DB CHECK holds
+it against every writer, and until this router it had no reader anywhere. The embed card carries no
 `reason` field at any status by construction, and `tool_runs` has no column for it.
 
-**Three routes, read-only, and there is nothing here to decide.** No POST, no PATCH, no DELETE,
-and the service behind them can write nothing at all — `core.approvals.admin_reads` has no
-`commit` and issues no statement that is not a `SELECT`. That matters more here than on the audit
-surface: `action_requests.status` has exactly one writer for a terminal value
-(`core.approvals.decisions`, V22, V28) and V32's expiry sweep has the other, so a second path that
-could move a status would be a second answer to "may this run?". This router is structurally
-incapable of being one.
+**Three routes, read-only, and there is nothing here to decide.** No POST, no PATCH, no DELETE, and
+the service behind them can write nothing at all — `core.approvals.admin_reads` has no `commit` and
+issues no statement that is not a `SELECT`. That matters more here than on the audit surface:
+`action_requests.status` has exactly one writer for a terminal value (`core.approvals.decisions`,
+under row lock) and the TTL expiry sweep has the other, so a second path that could move a status
+would be a second answer to "may this run?". This router is structurally incapable of being one.
 
 **`require_admin` is a parameter on every handler**, not a router dependency, for the reason
-`admin_users.py` gives: the gate and the actor are one read, and it inherits V6's row
+`admin_users.py` gives: the gate and the actor are one read, and it inherits the session row
 re-read with it, so a demoted or disabled admin loses these routes on their next request rather
 than at cookie expiry.
 
-**No requester-match, and that is not a weakening of V27.** V27 scopes the *embed* read to the
-operator who asked, because that surface hands out an approve button. This one hands out nothing,
-sits behind a strictly stronger gate, and exists to let an administrator read a decision they did
-not make — an audit surface that could only show the reader's own decisions could audit nothing.
+**No requester-match, and that is not a weakening of the rule.** The requester-match scopes the
+*embed* read to the operator who asked, because that surface hands out an approve button. This one
+hands out nothing, sits behind a strictly stronger gate, and exists to let an administrator read a
+decision they did not make — an audit surface that could only show the reader's own decisions could
+audit nothing.
 
 **camelCase in and out**, matching `admin_audit.py` next door rather than the snake_case rest of
-`/admin`: the panel's audit vertical was ported with its client (DECISIONS §8.3) and this is the
-same client's second view.
+`/admin`: the panel's audit vertical was ported with its client (DECISIONS section 8.3) and this is
+the same client's second view.
 
 **Nothing here redacts and nothing here un-redacts.** `approval_context` was redacted at gate time
 and `receipt_data` by `build_receipt`; what this serves is what was stored. A second
 redactor on the read would be a quieter second home for one rule — `core/approvals/card.py`
 records the same argument for the operator-facing reader.
 
-**One refusal for two causes on the detail routes** — no such request, and an id that is not a
-UUID — both 404 `action_request_not_found`. Not because either is sensitive (this surface is
-admin-only) but because a 422 for a malformed id would describe what the validator accepts rather
-than what exists; `core.audit.errors` records the argument and T63(e) made the same call one
+**One refusal for two causes on the detail routes** — no such request, and an id that is not a UUID
+— both 404 `action_request_not_found`. Not because either is sensitive (this surface is admin-only)
+but because a 422 for a malformed id would describe what the validator accepts rather than what
+exists; `core.audit.errors` records the argument and the action-result tool made the same call one
 surface over. Which is why `action_request_id` is a plain `str` here rather than a `UUID` path
 param. The receipt route adds a *third*, genuinely different refusal — the request is real and
-carries no receipt — and it gets its own code, because "no such request" and "that decision
-started no run" are two different things to tell an administrator.
+carries no receipt — and it gets its own code, because "no such request" and "that decision started
+no run" are two different things to tell an administrator.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ router = APIRouter(prefix="/admin/action-requests", tags=["admin", "audit"])
 
 
 class AdminActionRequestListItemResponse(BaseModel):
-    """One authorisation in the list (§I.admin-api).
+    """One authorisation in the list.
 
     Neither `reason` nor `approvalContext`: a fifty-row page would otherwise carry fifty JSONB
     payloads to draw six columns, and both are one click away on the detail route — the same call
@@ -97,9 +97,9 @@ class AdminActionRequestListItemResponse(BaseModel):
 class AdminActionRequestListResponse(BaseModel):
     """`GET /admin/action-requests`. One page, and the token for the next.
 
-    `nextCursor` is `null` on the last page, which is the bound this surface owes (V85's family):
-    the client can tell "that is all of them" from "there is more" without inferring it from a row
-    count against the limit it asked for.
+    `nextCursor` is `null` on the last page, which is the bound this surface owes (the cap's
+    family): the client can tell "that is all of them" from "there is more" without inferring it
+    from a row count against the limit it asked for.
     """
 
     items: list[AdminActionRequestListItemResponse]
@@ -109,8 +109,8 @@ class AdminActionRequestListResponse(BaseModel):
 class AdminActionRequestDetailResponse(AdminActionRequestListItemResponse):
     """`GET /admin/action-requests/{id}`: the list item, the reason, and the gate-time context.
 
-    **`reason` is why this router exists.** It is the operator's own words authorising a change
-    (C8, V15), written at decision time by the one writer that may write it, and `null` while
+    **`reason` is why this router exists.** It is the operator's own words authorising a change,
+    written at decision time by the one writer that may write it, and `null` while
     PENDING and after an expiry because nobody typed one. Never `''` on a decided request — the
     endpoints refuse a blank one with a 409 and `ck_action_requests_decided_reason` holds the same
     line against any other writer — so a client that finds an empty string here has found a bug,
@@ -118,7 +118,7 @@ class AdminActionRequestDetailResponse(AdminActionRequestListItemResponse):
 
     `approvalContext` is a loose type on purpose, exactly like `AuditToolRunDetailResponse.args`:
     the keys under `evidence` are whichever tool's own preflight vocabulary, so a model that
-    flattened them would have to be widened by every tool ever added. Served as the object T33
+    flattened them would have to be widened by every tool ever added. Served as the object the gate
     persisted — `requester`, `arguments`, `evidence` — and this is the surface on which
     `librechat_user_id`, `server_id` and `api_username` stay readable.
     """
@@ -130,7 +130,7 @@ class AdminActionRequestDetailResponse(AdminActionRequestListItemResponse):
 class AdminActionReceiptResponse(BaseModel):
     """`GET /admin/action-requests/{id}/receipt`: what the approved change actually did.
 
-    The two halves, uncollapsed. DECISIONS §6.5 refuses to let `before` and `after` become a
+    The two halves, uncollapsed. DECISIONS section 6.5 refuses to let `before` and `after` become a
     single "done", so they are two fields here as they are two on the operator's card, and `delta`
     is the runner's own statement of what moved between them — the only one available, because the
     halves are written minutes apart in two vocabularies that meet on identity alone.
@@ -182,7 +182,7 @@ async def list_action_requests(
     created_from: Annotated[datetime | None, Query(alias="from")] = None,
     created_to: Annotated[datetime | None, Query(alias="to")] = None,
 ) -> AdminActionRequestListResponse:
-    """CHANGE authorisations, newest first, filtered and cursor-paged (§I.admin-api — V13, V15).
+    """CHANGE authorisations, newest first, filtered and cursor-paged.
 
     Every filter is applied inside the statement. One applied after the fetch would also
     break paging, because the `LIMIT` would have cut rows the filter was about to remove and the
@@ -221,7 +221,7 @@ async def get_action_request(
     admin_user: AdminUserDep,
     requests: ActionRequestAdminServiceDep,
 ) -> AdminActionRequestDetailResponse:
-    """One authorisation: the operator's reason and the gate-time context (§I.admin-api, V15).
+    """One authorisation: the operator's reason and the gate-time context.
 
     `action_request_id` is a plain `str`, not a `UUID` path param, so a malformed id reaches the
     same 404 as an unknown one — see the module docstring for why the split is refused.

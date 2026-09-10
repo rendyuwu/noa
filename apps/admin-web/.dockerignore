@@ -1,4 +1,4 @@
-# Build context for the admin panel image (§T.60). Context is this directory.
+# Build context for the admin panel image. Context is this directory.
 #
 # `node_modules` is excluded and then re-introduced from the `deps` stage: a host `node_modules`
 # is both the largest thing here and the one most likely to hold a platform-specific binary that
@@ -9,7 +9,7 @@
 # runs that same type check — so `tests/`, `config/*.test.ts` and the vitest configs are all in
 # the program. An earlier draft of this file excluded `tests/` and the build failed with
 # `TS2307: Cannot find module '../../../../tests/support/approval-card'` from a spec colocated in
-# `src/` (MEASURED at §T.60, in the sibling embed image). Dropping those files would not have
+# `src/` — measured in the sibling embed image. Dropping those files would not have
 # fixed it honestly either: it would have made the image's type check a smaller program than the
 # one `pnpm typecheck` runs, which turns the build into a weaker gate that still reads as green.
 

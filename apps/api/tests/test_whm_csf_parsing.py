@@ -2,8 +2,8 @@
 
 Ported from `noa-old` branch `MCP` (`test_whm_csf_parsing.py`) with the HTML-path cases dropped
 — that render path is not ported (see `core.integrations.whm.csf`) — and the target-kind case
-widened to cover every branch, because `parse_csf_target` is the classifier V54 is enforced
-with: the CHANGE tools reject anything that is not `ip`.
+widened to cover every branch, because `parse_csf_target` is the classifier the IPv4-only
+CHANGE rule is enforced with: the CHANGE tools reject anything that is not `ip`.
 
 The grep fixtures are real `csf -g` output shapes, not invented ones. That matters: the
 verdict is read from marker strings in human-facing text, so a fixture that does not look like
@@ -16,7 +16,7 @@ import pytest
 
 from core.integrations.whm.csf import parse_csf_grep_output, parse_csf_target
 
-# --- V54: target classification ---
+# --- target classification ---
 
 
 @pytest.mark.parametrize(
@@ -35,7 +35,7 @@ from core.integrations.whm.csf import parse_csf_grep_output, parse_csf_target
 def test_parse_csf_target_classifies_ipv4_cidr_ipv6_hostname_unknown(
     raw: str, kind: str, field: str, value: str
 ) -> None:
-    """Every kind the CHANGE tools branch on gets its own answer, ⊥ a guess."""
+    """Every kind the CHANGE tools branch on gets its own answer, never a guess."""
     target = parse_csf_target(raw)
 
     assert target.kind == kind
@@ -46,7 +46,7 @@ def test_parse_csf_target_classifies_ipv4_cidr_ipv6_hostname_unknown(
 @pytest.mark.parametrize("raw", ["bad_target", "999.999.999.999", "-leading-dash.com", "nodot"])
 def test_parse_csf_target_returns_unknown_rather_than_guessing(raw: str) -> None:
     """`unknown` is a verdict. `999.999.999.999` is label-legal but has no letter, so it is
-    ⊥ classified as a hostname and never reaches DNS."""
+    never classified as a hostname and never reaches DNS."""
     assert parse_csf_target(raw).kind == "unknown"
 
 
@@ -56,7 +56,7 @@ def test_parse_csf_target_rejects_empty_input() -> None:
 
 
 def test_parse_csf_target_does_not_normalize_a_bare_address_to_a_cidr() -> None:
-    """`1.2.3.4` stays `ip`. Turning it into `1.2.3.4/32` would erase the V54 distinction."""
+    """`1.2.3.4` stays `ip`. Turning it into `1.2.3.4/32` would erase the ip/cidr distinction."""
     target = parse_csf_target("1.2.3.4")
 
     assert target.kind == "ip"
@@ -132,7 +132,7 @@ No matches found for 203.0.113.10 in ip6tables
 
 
 def test_blocked_beats_allowlisted_when_the_ip_is_in_both_lists() -> None:
-    """T25 releases *and* allows in one action, so the intermediate state is real: an IP in
+    """The release-and-allow tool releases *and* allows in one action, so the intermediate state is real: an IP in
     `csf.deny` and `csf.allow` at once is, operationally, still blocked."""
     output = "Found 203.0.113.10 in /etc/csf/csf.allow\nFound 203.0.113.10 in /etc/csf/csf.deny\n"
 
@@ -140,7 +140,7 @@ def test_blocked_beats_allowlisted_when_the_ip_is_in_both_lists() -> None:
 
 
 def test_an_allow_entry_is_reported_even_when_a_block_outranks_it() -> None:
-    """T26: the precedence above is what makes `allow_entry` a second field rather than a
+    """The precedence above is what makes `allow_entry` a second field rather than a
     re-reading of the first.
 
     "What is this box doing to this address" and "is there still an allow entry for it" are two
@@ -184,7 +184,7 @@ def test_an_unparseable_answer_reports_no_allow_entry() -> None:
 
 
 def test_unrecognised_output_is_unknown_not_not_found() -> None:
-    """A parse regression must ⊥ read as a clean IP — `not_found` needs csf to have said so."""
+    """A parse regression must never read as a clean IP — `not_found` needs csf to have said so."""
     output = "203.0.113.10 appears somewhere we do not have a marker for\n"
 
     assert parse_csf_grep_output(output, target="203.0.113.10").verdict == "unknown"
@@ -193,9 +193,10 @@ def test_unrecognised_output_is_unknown_not_not_found() -> None:
 def test_matches_are_bounded_and_the_total_is_reported() -> None:
     """A busy box greps hundreds of log lines; the result is headed for an LLM context.
 
-    §V.85: the cut happens here, so the count before it is reported here. Twenty lines with no
+    The row cap's own bound: the cut happens here, so the count before it is reported here.
+    Twenty lines with no
     other signal read as "there are twenty entries" — a fabrication the tool would be handing
-    the model rather than one the model invented (T24 is the caller that states it).
+    the model rather than one the model invented (the firewall preflight is the caller that states it).
     """
     lines = ["Found \x1b[31m1.2.3.4\x1b[0m in /etc/csf/csf.deny"]
     lines += [f"Log entry {index} 1.2.3.4" for index in range(50)]
@@ -209,7 +210,7 @@ def test_matches_are_bounded_and_the_total_is_reported() -> None:
 
 
 def test_an_uncut_result_reports_its_own_length_as_the_total() -> None:
-    """The other side of §V.85: `total_matches` is ⊥ a constant, and ⊥ only meaningful when
+    """The other side of the truncation rule: `total_matches` is never a constant, and never only meaningful when
     the list was cut. A caller compares the two to decide whether to say "truncated"."""
     output = "Found 1.2.3.4 in /etc/csf/csf.deny\nTemporary Blocks: IP:1.2.3.4 Port: Dir:in\n"
 
@@ -220,10 +221,10 @@ def test_an_uncut_result_reports_its_own_length_as_the_total() -> None:
 
 
 def test_the_kept_evidence_is_the_prefix_of_csf_s_own_order() -> None:
-    """§V.85 asks for a stable ordering before the cut; csf's own is it.
+    """The cap rule asks for a stable ordering before the cut; csf's own is it.
 
     `csf -g` renders the current tables and files, so identical calls against unchanged state
-    yield an identical prefix — unlike `listaccts`, the tool §V.85 was written at. Sorting the
+    yield an identical prefix — unlike `listaccts`, the tool the stable-ordering rule was written at. Sorting the
     lines would also scramble the deny/allow grouping that makes the evidence readable.
     """
     lines = [f"Found 1.2.3.4 in /etc/csf/csf.deny entry {index:02d}" for index in range(30)]

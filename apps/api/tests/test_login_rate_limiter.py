@@ -67,7 +67,7 @@ async def test_fresh_buckets_allow() -> None:
 
 
 async def test_below_max_attempts_still_allows() -> None:
-    """V9 blocks *past* the max; the attempts up to it are the operator's typo budget."""
+    """The limiter blocks *past* the max; the attempts up to it are the operator's typo budget."""
     limiter, _ = build_limiter()
 
     await fail(limiter, times=MAX_ATTEMPTS - 1, at=T0)
@@ -134,7 +134,7 @@ async def test_block_boundary_is_exclusive() -> None:
 
 
 async def test_failures_outside_window_do_not_accumulate() -> None:
-    """V9 is "max failures *within* a window", so a slow trickle never blocks."""
+    """The rule is "max failures *within* a window", so a slow trickle never blocks."""
     limiter, store = build_limiter()
 
     for index in range(MAX_ATTEMPTS * 3):
@@ -194,7 +194,7 @@ async def test_ip_bucket_blocks_across_accounts() -> None:
 
 
 async def test_an_unrelated_operator_from_a_clean_address_is_unaffected() -> None:
-    """Blocks are scoped: one operator's typos ⊥ deny everybody."""
+    """Blocks are scoped: one operator's typos never deny everybody."""
     limiter, _ = build_limiter()
     await fail(limiter, times=MAX_ATTEMPTS, at=T0)
 
@@ -237,7 +237,7 @@ async def test_record_success_clears_both_scopes() -> None:
 
 
 async def test_record_success_does_not_lift_a_block_on_another_account() -> None:
-    """Clearing is per key, so one valid credential ⊥ unlock the whole directory."""
+    """Clearing is per key, so one valid credential never unlocks the whole directory."""
     limiter, _ = build_limiter()
     for _ in range(MAX_ATTEMPTS):
         await limiter.record_failure(email=OTHER_EMAIL, ip_address=OTHER_IP, now=T0)

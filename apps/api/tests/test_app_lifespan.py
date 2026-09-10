@@ -1,6 +1,6 @@
 """App startup guards.
 
-T8 requires the long-lived services be constructed once, in the lifespan. The reason is
+The login flow requires the long-lived services be constructed once, in the lifespan. The reason is
 specific rather than stylistic: `JWTService.__init__` allowlists the JWT algorithm and
 checks the RFC 7518 minimum key length, so a per-request build turns a configuration
 error into a 500 on somebody's first login instead of a refusal to start. These tests
@@ -87,7 +87,7 @@ def test_jwt_service_built_once_at_startup(
 def test_bad_jwt_algorithm_fails_at_startup_not_on_first_login(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A config error must be a boot failure, ⊥ a 500 on an operator's first login.
+    """A config error must be a boot failure, never a 500 on an operator's first login.
 
     `AUTH_JWT_ALGORITHM=none` would otherwise mint unsigned tokens that verify, so the
     guard exists — the point here is *when* it fires.
@@ -103,7 +103,7 @@ def test_bad_jwt_algorithm_fails_at_startup_not_on_first_login(
 def test_short_secret_for_the_chosen_algorithm_fails_at_startup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """HS512 needs 64 bytes; V53's 32-char floor only satisfies HS256."""
+    """HS512 needs 64 bytes; the JWT secret's 32-char floor only satisfies HS256."""
     monkeypatch.setattr(
         main,
         "get_settings",
@@ -120,7 +120,7 @@ def test_short_secret_for_the_chosen_algorithm_fails_at_startup(
 
 
 def test_health_answers_with_an_unreachable_database(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V51: a liveness probe that needs Postgres cannot report "API up, DB down".
+    """A liveness probe that needs Postgres cannot report "API up, DB down".
 
     `create_async_engine` opens nothing until first use, and `/health` declares no
     dependencies, so both halves have to hold for this to pass.
@@ -139,7 +139,7 @@ def test_health_answers_with_an_unreachable_database(monkeypatch: pytest.MonkeyP
 def test_lifespan_disposes_the_engine(
     monkeypatch: pytest.MonkeyPatch, pinned_settings: Settings
 ) -> None:
-    """Connections ⊥ outlive the app; the lifespan that made the engine ends it.
+    """Connections never outlive the app; the lifespan that made the engine ends it.
 
     `dispose` is patched on the class, not the instance — `AsyncEngine` makes the
     attribute read-only. The engine is captured separately so the assertion is about
@@ -168,13 +168,13 @@ def test_lifespan_disposes_the_engine(
     assert engines and disposed == engines
 
 
-# --- T39's expiry sweeper ---
+# --- the expiry sweeper ---
 
 
 def test_the_sweeper_starts_with_the_app_and_stops_before_the_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V32's background half runs for exactly the life of the app, and no longer.
+    """The expiry rule's background half runs for exactly the life of the app, and no longer.
 
     The *ordering* is the claim worth pinning: `stop()` has to complete before
     `engine.dispose()`, because a sweep still in flight would otherwise be running against a
@@ -219,13 +219,14 @@ def test_the_sweeper_starts_with_the_app_and_stops_before_the_engine(
     assert built[0]["session_factory"] is not None
 
 
-# --- T38's reaper and executor ---
+# --- the reaper and executor ---
 
 
 def test_the_reaper_starts_with_the_app_and_stops_before_the_engine(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V30's background half runs for exactly the life of the app, and no longer.
+    """The reaper — the executor's background half — runs for exactly the life of the app, and no
+    longer.
 
     Same claim and same reason as the sweeper above, one component over: a pass still in flight
     when `dispose()` runs is a pass against a disposed pool. The real `StrandedRunReaper` is
@@ -325,7 +326,8 @@ def test_the_executor_is_stopped_before_the_engine_and_before_the_loops(
 def test_building_the_app_starts_no_execution_and_opens_no_connection(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V51, one component further: the executor owns tasks only once an approval hands it a run.
+    """Liveness, one component further: the executor owns tasks only once an approval hands it a
+    run.
 
     An executor that touched the database at construction would make every boot — and every
     `/health` probe on a broken deployment — depend on Postgres being up.
@@ -369,7 +371,7 @@ def test_auth_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> N
 
 
 def test_admin_user_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> None:
-    """T51: the `/admin/users` router is wired in `create_app`, not only in `support.admin`.
+    """The `/admin/users` router is wired in `create_app`, not only in `support.admin`.
 
     The gap this closes is real: `test_admin_user_routes.py` builds its own app, so an
     `include_router` line missing from `create_app` would leave every one of those tests green
@@ -381,12 +383,13 @@ def test_admin_user_routes_are_mounted_on_the_real_app(pinned_settings: Settings
         "/admin/users",
         "/admin/users/{user_id}",
         "/admin/users/{user_id}/roles",
-        # T65's withdrawn route. Asserted here for the same reason as the rest: it answers 410
-        # by design, and a 410 the deployed API never serves is indistinguishable from the 404
-        # it would serve instead — which is the one thing V75's status choice rules out.
+        # The withdrawn direct-grants route. Asserted here for the same reason as the rest: it
+        # answers 410 by design, and a 410 the deployed API never serves is indistinguishable from
+        # the 404 it would serve instead — which is the one thing the 410 status choice rules out.
         "/admin/users/{user_id}/tools",
     } <= set(schema)
-    # The methods §I.admin-api names, so a route added under the wrong verb is caught here too.
+    # The methods the admin API's contract names, so a route added under the wrong verb is caught
+    # here too.
     assert set(schema["/admin/users"]) == {"get"}
     assert set(schema["/admin/users/{user_id}"]) == {"patch", "delete"}
     assert set(schema["/admin/users/{user_id}/roles"]) == {"put"}
@@ -394,15 +397,15 @@ def test_admin_user_routes_are_mounted_on_the_real_app(pinned_settings: Settings
 
 
 def test_admin_role_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> None:
-    """T52: the `/admin/roles` router is wired in `create_app`, not only in `support.admin`.
+    """The `/admin/roles` router is wired in `create_app`, not only in `support.admin`.
 
-    Same gap T51 closed one router over: `test_admin_role_routes.py` builds its own app, so a
-    missing `include_router` line would leave every one of those tests green while the panel's
+    Same gap the users test closed one router over: `test_admin_role_routes.py` builds its own app,
+    so a missing `include_router` line would leave every one of those tests green while the panel's
     Roles page got a 404 from the deployed API.
 
-    `/admin/tools` is asserted here too. It is the one route in this set §I.admin-api does not
-    yet name — `noa-old` shipped it on its user router and the port dropped it — so until that
-    row lands, this assertion is what records that NOA serves it.
+    `/admin/tools` is asserted here too. It is the one route in this set the admin API's contract
+    does not yet name — `noa-old` shipped it on its user router and the port dropped it — so until
+    that contract row lands, this assertion is what records that NOA serves it.
     """
     schema = main.create_app().openapi()["paths"]
 
@@ -419,12 +422,13 @@ def test_admin_role_routes_are_mounted_on_the_real_app(pinned_settings: Settings
 
 
 def test_mcp_token_routes_are_mounted_on_the_real_app(pinned_settings: Settings) -> None:
-    """T53: both token routers are wired in `create_app`, not only in `support.admin`.
+    """Both token routers are wired in `create_app`, not only in `support.admin`.
 
-    The same gap T51 and T52 closed, and it costs more here: `test_mcp_token_routes.py` builds
-    its own app, so a missing `include_router` line would leave every one of those tests green
-    while an operator had no way to obtain the credential §I.mcp's whole surface authenticates
-    with — and no error to read, only a 404 on a path the panel believed in.
+    The same gap the users and roles tests closed, and it costs more here:
+    `test_mcp_token_routes.py` builds its own app, so a missing `include_router` line would leave
+    every one of those tests green while an operator had no way to obtain the credential the MCP
+    surface's whole contract authenticates with — and no error to read, only a 404 on a path the
+    panel believed in.
 
     Both prefixes in one assertion because they are one feature under two gates: `/admin/...`
     behind `require_admin`, `/me/...` behind `require_session_user`. A router included twice
@@ -444,17 +448,17 @@ def test_mcp_token_routes_are_mounted_on_the_real_app(pinned_settings: Settings)
     assert set(schema["/me/mcp-tokens/{token_id}"]) == {"delete"}
 
 
-# --- T66: the tool-list notifier reaches the engine ---
+# --- the tool-list notifier reaches the engine ---
 
 
 def test_the_app_publishes_the_real_tool_list_notifier(pinned_settings: Settings) -> None:
-    """T66/V74: `app.state` carries the MCP notifier, not the null one.
+    """`app.state` carries the MCP notifier, not the null one.
 
-    This is the gap every other T66 test leaves open. `AuthorizationService` defaults its
-    notifier to `NullToolListChangedNotifier`, so a `create_app` that forgot to publish the real
-    one would emit nothing at all — and *no* unit test would fail, because V74 makes the emit
-    best-effort and silence is its success case. The wiring is the only place that can be
-    checked.
+    This is the gap every other notifier test leaves open. `AuthorizationService` defaults its
+    notifier to `NullToolListChangedNotifier`, so a `create_app` that forgot to publish the real one
+    would emit nothing at all — and *no* unit test would fail, because the execution-time RBAC
+    re-check makes the emit best-effort and silence is its success case. The wiring is the only
+    place that can be checked.
     """
     app = main.create_app()
 
@@ -467,7 +471,7 @@ def test_the_app_publishes_the_real_tool_list_notifier(pinned_settings: Settings
 def test_the_mount_and_the_admin_surface_share_one_session_register(
     pinned_settings: Settings,
 ) -> None:
-    """T66/V74: the register the MCP middleware writes is the one the notifier reads.
+    """The register the MCP middleware writes is the one the notifier reads.
 
     Two objects here would be the worst kind of bug in this feature: the middleware would
     register every session, the notifier would find none, every emit would reach zero clients,
@@ -504,7 +508,7 @@ def test_the_notifier_dependency_resolves_the_published_object(pinned_settings: 
 def test_a_wrongly_typed_notifier_on_state_is_refused_loudly() -> None:
     """The null notifier — or anything else — on `app.state` is a startup bug, not a silent one.
 
-    `_from_state`'s type guard is what catches it. Without the check, V74's best-effort emit means
+    `_from_state`'s type guard is what catches it. Without the check, the best-effort emit means
     the wrong object here would surface as "no client was ever notified", which is indistinguishable
     from a correct deployment nobody was connected to.
     """

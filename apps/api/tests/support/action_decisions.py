@@ -8,17 +8,16 @@ the real `ActionDecisionService`, and the real CSRF mint and verify — as produ
 
 `SQLActionDecisionRepository` is not doubled away entirely. `test_action_request_decisions_live.py`
 runs it against a scratch Postgres, because "the service called a repository" and "exactly one
-`pending → decided` transition happened under a row lock" are different claims and only the
-second one is V28. Same split as `support.action_requests`, `support.tool_runs` and
+`pending → decided` transition happened under a row lock" are different claims and only the second
+one is the one-decision rule. Same split as `support.action_requests`, `support.tool_runs` and
 `support.rbac`.
 
-**The journal is the point of this module.** Every double appends to one shared list, so a
-test can assert the *order* the service did things in rather than only the fact that it did
-them. `["lock", "run", "decision:APPROVED", "commit", "execute"]` is what pins three separate
-decisions at once: the lock precedes every guard, the run is inserted before the
-decision commits so both land together, and the executor is handed the run only
-after that commit — a handoff before it could start a change whose authorization then rolled
-back.
+**The journal is the point of this module.** Every double appends to one shared list, so a test can
+assert the *order* the service did things in rather than only the fact that it did them. `["lock",
+"run", "decision:APPROVED", "commit", "execute"]` is what pins three separate decisions at once: the
+lock precedes every guard, the run is inserted before the decision commits so both land together,
+and the executor is handed the run only after that commit — a handoff before it could start a change
+whose authorization then rolled back.
 
 Rows are dataclasses, not ORM instances, for the reason `support.tool_runs` gives: an
 `ActionRequest` would carry its server-defaulted columns as `None` until a flush, so an
@@ -28,13 +27,13 @@ what the caller asked for.
 **The live helpers at the bottom are not doubles.** `insert_user`, `open_request`,
 `read_request`, `read_runs` and `ObservedDecisionRepository` run against a real Postgres and
 live here because several files need them: the three the decision's live coverage is
-split across — `test_action_request_decisions_live.py` (T37, the row lock and the refusals),
-`test_action_request_decision_records_live.py` (what a decision writes) and
+split across — `test_action_request_decisions_live.py` (the decision endpoints: the row lock
+and the refusals), `test_action_request_decision_records_live.py` (what a decision writes) and
 `test_action_request_change_cap_live.py` — plus `test_action_request_expiry_live.py`
-(T39). That last one races a sweep against an approval, which needs the same "hold the
+(the expiry sweep). That last one races a sweep against an approval, which needs the same "hold the
 transaction open between its locked read and its commit" instrument the others use — and a
 second copy of that instrument is a second thing that can silently stop overlapping, which is
-exactly the failure V89 exists to name.
+exactly the failure an overlap-proving test exists to name.
 """
 
 from __future__ import annotations

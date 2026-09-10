@@ -8,15 +8,15 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
- * The proxy hop, from a server that is actually running (§T.50, §I.admin-web).
+ * The proxy hop, from a server that is actually running.
  *
  * `src/lib/proxy/http.test.ts` proves what the primitives compute and
  * `src/app/api/[...path]/route.test.ts` proves what the handler passes to `fetch`. Neither answers
  * the question this lane exists for: does a request the BROWSER makes to `/api/*` reach the API
  * with the operator's cookie on it, and does the `Set-Cookie` come back? Next sits between those
  * two facts — a route file in the wrong place, a `runtime` that cannot stream, a header the
- * framework rewrites — and every one of those looks correct from inside the process (§T.49's lane
- * exists for the same reason).
+ * framework rewrites — and every one of those looks correct from inside the process (the
+ * framing-header lane exists for the same reason).
  *
  * Upstream is a stub, not the real API: what is asked here is the hop, and a real API would make
  * Postgres or LDAP being down read as a broken proxy. It records what arrived, which is what makes
@@ -95,7 +95,7 @@ async function waitForPort(port: number, deadline: number): Promise<void> {
 /**
  * The stub API. Answers three shapes the panel actually uses and records what arrived.
  *
- * `/auth/login` sets the session cookie with the `Domain` attribute V40 depends on; `/auth/me`
+ * `/auth/login` sets the session cookie with the `Domain` attribute the shared-domain session depends on; `/auth/me`
  * answers 401 so the status that drives the session-expiry flow is exercised as itself; anything
  * else is a 500 carrying a request id.
  */
@@ -193,7 +193,7 @@ async function call(pathname: string, init: RequestInit = {}): Promise<Response>
   })
 }
 
-describe('§T.50 — /api/* reaches the API, and the session rides both ways', () => {
+describe('the live proxy — /api/* reaches the API, and the session rides both ways', () => {
   it('answers at all — the server under test is the one being measured', async () => {
     // Without this the specs below could pass against a server that errors on everything: an error
     // page carries the config headers too, and a 500 from the app is indistinguishable from a 500
@@ -218,7 +218,7 @@ describe('§T.50 — /api/* reaches the API, and the session rides both ways', (
     expect(seen[0]?.url).toBe('/auth/login')
     expect(seen[0]?.body).toContain('operator@noa.internal')
 
-    // V40: `Domain=.noa.internal` is what puts this session on the same registrable domain as the
+    // `Domain=.noa.internal` is what puts this session on the same registrable domain as the
     // embed. Rewritten or dropped here, the panel would still work and the approval card would not.
     const cookies = response.headers.getSetCookie()
     expect(cookies).toContain(
@@ -237,7 +237,7 @@ describe('§T.50 — /api/* reaches the API, and the session rides both ways', (
       },
     })
 
-    // C5: bearer is MCP-only and LibreChat's to send. Asserted on what ARRIVED at the upstream, so
+    // Bearer is MCP-only and LibreChat's to send. Asserted on what ARRIVED at the upstream, so
     // this is a fact about the wire and not about a mocked `fetch`.
     expect(seen[0]?.authorization).toBeNull()
     // The negative control beside it: the credential that IS this origin's did arrive. A proxy that

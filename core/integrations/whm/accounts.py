@@ -3,8 +3,8 @@
 Ported from `noa-old` branch `MCP` (`whm/tools/result_shapes.py`), where it sat under the
 tool package. It lives in `core/` here because three callers need it, not one:
 `whm_search_accounts`, `whm_list_accounts` and the suspend/unsuspend preflights
-that run in-process inside T22/T23. Two copies of a field list is how one of them
-starts reporting a field the others do not.
+that run in-process inside the suspend and unsuspend tools. Two copies of a field list is how
+one of them starts reporting a field the others do not.
 
 **A whitelist, not a passthrough.** `listaccts` answers with far more per account than any
 NOA surface needs — IP, plan, disk and bandwidth counters, theme, locale, partition. Every
@@ -17,12 +17,11 @@ than "what did WHM send".
 takes, so an account NOA cannot name is an account it cannot act on — carrying it into a
 result would offer the operator a row whose follow-up call has no argument.
 
-**Types are normalised, not trusted.** WHM answers `suspended` as `0`/`1` in some versions
-and `"0"`/`"1"` in others, and `suspendtime` as a string epoch. A tool that branched on the
-raw value would read `"0"` as truthy and report a live account as suspended. `is_locked`
-carries a second name (`suspendlock`) for the same reason, and the fallback fires on a JSON
-`null` too — `.get` defaults only when the key is *missing*, never when it is present and
-null.
+**Types are normalised, not trusted.** WHM answers `suspended` as `0`/`1` in some versions and
+`"0"`/`"1"` in others, and `suspendtime` as a string epoch. A tool that branched on the raw value
+would read `"0"` as truthy and report a live account as suspended. `is_locked` carries a second name
+(`suspendlock`) for the same reason, and the fallback fires on a JSON `null` too — `.get` defaults
+only when the key is *missing*, never when it is present and null.
 """
 
 from __future__ import annotations
@@ -72,7 +71,7 @@ def normalize_whm_account_summary(account: object) -> WHMAccount | None:
         normalized["suspendtime"] = suspend_time
 
     # Field name varies by cPanel version. `is_locked` first, `suspendlock` as the fallback;
-    # a suspension lock blocks `unsuspendacct`, so T23's preflight has to see it.
+    # a suspension lock blocks `unsuspendacct`, so the unsuspend tool's preflight has to see it.
     raw_lock = account.get("is_locked")
     if raw_lock is None:
         raw_lock = account.get("suspendlock")
@@ -87,8 +86,8 @@ def normalize_whm_account_list(accounts: object) -> list[WHMAccount]:
     """Every usable row of a `listaccts` payload, in the order WHM returned them.
 
     Order is preserved rather than sorted: a caller that truncates decides its own order
-    (T21 sorts before it cuts), and a caller that does not should not have WHM's answer
-    silently rearranged under it.
+    — the account search sorts before it cuts — and a caller that does not should not have
+    WHM's answer silently rearranged under it.
     """
     if not isinstance(accounts, Iterable) or isinstance(accounts, (str, bytes, bytearray, dict)):
         return []

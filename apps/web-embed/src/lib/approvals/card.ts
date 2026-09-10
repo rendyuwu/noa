@@ -1,14 +1,14 @@
 /**
- * The approval card, as this app models it (§T.41, §I.embed).
+ * The approval card, as this app models it.
  *
  * One shape, parsed once, at the edge of the app. The API's body is snake_case because it is an
- * HTTP contract shared with the spec (§I.embed); everything inside this package reads the
+ * HTTP contract shared with the spec (the embed surface's contract); everything inside this package reads the
  * camelCase view below, so a field rename upstream breaks in `parseApprovalCard` rather than in
  * whichever component happened to read it.
  *
  * **Parsing is permissive and rendering is fail-closed**, and those are not in tension. A body
  * missing a field renders that field as unknown, because a card that throws is a blank iframe and
- * V38 is explicit that a blank card is not an acceptable state. What is never permissive is
+ * a blank card is never an acceptable state. What is never permissive is
  * whether the operator may *act*: `canDecide` demands a PENDING status **and** a token, so
  * anything unrecognised — an unknown status string, an absent `csrf` — renders read-only.
  *
@@ -16,8 +16,8 @@
  * this card and travels outward only; nothing renders one back.
  *
  * The **receipt** is the one field that arrives late: it is `null` until something has recorded
- * what the change did, and then it carries two halves that are never merged (§T.42(b), V46,
- * DECISIONS §6.5). Modelled as two fields rather than one summary string for that reason — the
+ * what the change did, and then it carries two halves that are never merged (the receipt's
+ * run-plus-receipt rule, DECISIONS section 6.5). Modelled as two fields rather than one summary string for that reason — the
  * shape is where "do not collapse this into 'done'" is enforced, not the component.
  */
 
@@ -47,9 +47,9 @@ export type ApprovalRequester = {
 }
 
 /**
- * What the change did, in the two halves it was written as (§T.38, §T.42 — V46).
+ * What the change did, in the two halves it was written as.
  *
- * DECISIONS §6.5 is the requirement: an operator reads back the state they authorised against
+ * DECISIONS section 6.5 is the requirement: an operator reads back the state they authorised against
  * **and** what the change did to it, each on its own, never collapsed into a single "done". So
  * `before` and `after` are two fields here and two blocks on the card — modelling them as one
  * string would make the collapse a rendering decision, and it is not one that is available.
@@ -94,7 +94,7 @@ export type ApprovalCard = {
 }
 
 /**
- * One read of one card, however it turned out (§T.41, §T.42).
+ * One read of one card, however it turned out.
  *
  * Lives here rather than beside either reader because there are now two of them: the server-side
  * load `lib/approvals/detail.ts` does before the page renders, and the browser-side poll
@@ -102,8 +102,8 @@ export type ApprovalCard = {
  * questions and the card component switches on the result once — a second union would be a second
  * set of states for the same read, free to grow a fifth on one side only.
  *
- * **Four kinds because four of them render differently.** A 401 is V38's "cannot authenticate
- * here", a 404 is V27's single answer for absent / another operator's / a deleted requester's, and
+ * **Four kinds because four of them render differently.** A 401 is "cannot authenticate
+ * here", a 404 is requester-match's single answer for absent / another operator's / a deleted requester's, and
  * anything else is "could not load" — which is neither, and must never be shown as a card with
  * empty fields.
  */
@@ -141,7 +141,7 @@ function parseRun(value: unknown): ApprovalRun | null {
   if (!isRecord(value)) return null
 
   const toolRunId = asString(value['tool_run_id'])
-  // No id, no run: a run the card cannot name is one nothing can poll (§T.42).
+  // No id, no run: a run the card cannot name is one nothing can poll.
   if (!toolRunId) return null
 
   return {
@@ -154,9 +154,9 @@ function parseRun(value: unknown): ApprovalRun | null {
 }
 
 /**
- * The receipt block, or `null` when the API sent none (§T.42 — V46, V38).
+ * The receipt block, or `null` when the API sent none.
  *
- * `null` means "nothing has recorded what this change did", which is the truth until T38's
+ * `null` means "nothing has recorded what this change did", which is the truth until the approved-change
  * executor or its reaper writes one — and the card renders no outcome section rather than an
  * empty one. Anything that is not an object lands here too: a body the API cannot send is not a
  * reason to blank the frame, and the halves render as "nothing recorded" instead.
@@ -183,7 +183,7 @@ function parseReceipt(value: unknown): ApprovalReceipt | null {
  * The API body as an `ApprovalCard`, or `null` if it is not one.
  *
  * `null` for a body with no `action_request_id`: that is the one field every other part of the
- * page hangs off — the decision POST's path, the poll (§T.42), the CSRF binding — so a card
+ * page hangs off — the decision POST's path, the poll, the CSRF binding — so a card
  * without it is not a card, and pretending otherwise would render live buttons aimed at nothing.
  */
 export function parseApprovalCard(value: unknown): ApprovalCard | null {

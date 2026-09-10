@@ -1,8 +1,8 @@
 """Fernet secret encryption.
 
-V48 is three claims, and each gets its own assertion rather than being inferred from a
-round-trip passing: the round-trip itself, the `enc:v1:fernet:` format that makes the scheme
-identifiable, and the refusal to hand back a value that was never encrypted.
+The cipher contract is three claims, and each gets its own assertion rather than being inferred
+from a round-trip passing: the round-trip itself, the `enc:v1:fernet:` format that makes the
+scheme identifiable, and the refusal to hand back a value that was never encrypted.
 
 The negative cases are the reason this file is longer than the module: a cipher that
 double-wraps on re-encrypt, or that silently returns cleartext on decrypt, still passes a
@@ -36,7 +36,7 @@ def _cipher() -> SecretCipher:
     return SecretCipher(key=Fernet.generate_key().decode())
 
 
-# --- V48: round-trip and format ---
+# --- Round-trip and format ---
 
 
 def test_round_trip_returns_plaintext() -> None:
@@ -102,7 +102,8 @@ def test_is_encrypted_text_reads_only_the_prefix() -> None:
 
 
 def test_from_settings_uses_the_configured_key() -> None:
-    """V52's key is what encrypts server credentials — not a second key built elsewhere."""
+    """The Fernet secret's key is what encrypts server credentials — not a second key built
+    elsewhere."""
     key = Fernet.generate_key().decode()
     settings = build_settings(noa_secret_encryption_key=key)
 
@@ -127,7 +128,7 @@ def test_unusable_key_raises_at_construction(key: str) -> None:
         SecretCipher(key=key)
 
 
-# --- V73: one handler shapes these too ---
+# --- One handler shapes these too ---
 
 
 @pytest.mark.parametrize(
@@ -150,7 +151,7 @@ def test_secret_errors_have_an_explicit_status_mapping(
 
 
 def test_secret_error_codes_are_the_stable_strings() -> None:
-    """C15 names `yopass_not_configured`; callers and receipts branch on these."""
+    """The contract names `yopass_not_configured`; callers and receipts branch on these."""
     assert YopassNotConfiguredError().error_code == "yopass_not_configured"
     assert YopassStoreError().error_code == "yopass_store_failed"
     assert SecretDecryptError().error_code == "secret_decrypt_failed"
@@ -158,7 +159,7 @@ def test_secret_error_codes_are_the_stable_strings() -> None:
 
 
 def test_secret_error_bodies_carry_no_internal_detail() -> None:
-    """V8: `detail` names the configuration fault and stays in the logs."""
+    """`detail` names the configuration fault and stays in the logs."""
     error = SecretDecryptError("key rotated on 2026-08-01, row written under the old one")
 
     body = error_body(error)

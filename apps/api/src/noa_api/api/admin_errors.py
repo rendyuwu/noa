@@ -1,7 +1,7 @@
 """Refusals the admin surface owns, that no core service can raise.
 
 One class today, and it is here rather than in `core.auth.authorization_errors` for the
-reason that file already records: V75 disables direct per-user tool grants, so the RBAC
+reason that file already records: direct per-user tool grants answer 410, so the RBAC
 engine has *no direct-grant path to refuse*. `AuthorizationService` cannot reach this
 condition — there is no user-level grant table, no `set_user_tools` method, and nothing to
 validate. The refusal is a property of the HTTP surface: a route that used to exist in

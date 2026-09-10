@@ -4,7 +4,7 @@
 // both verticals proved they need the identical behavior — this encodes
 // contract-shape handling, not app-specific presentation.
 //
-// `coerceString`/`coerceRecord` arrived with the receipt parser (§T.48), which
+// `coerceString`/`coerceRecord` arrived with the receipt parser, which
 // had its own copies in the old repo's chat lib. One home for the coercers keeps
 // the audit receipt and the server verticals agreeing on what counts as a string
 // and what counts as a record.

@@ -75,8 +75,8 @@ async function mounted(scope: TokenScope = SELF) {
 
 // The detector is `./token-plaintext`, shared with the dialog lane, and its own
 // specs prove it still separates a plaintext from a `token_prefix`. What
-// stays here is the reachability control §V103 demands: this file's `false`
-// assertions only mean something if the same call is shown answering `true` for
+// stays here is the reachability control the write-once-display rule demands: this file's
+// `false` assertions only mean something if the same call is shown answering `true` for
 // the value that was actually minted.
 
 describe('useTokens loading', () => {
@@ -113,8 +113,8 @@ describe('useTokens loading', () => {
   })
 })
 
-// V89: two callers have to genuinely OVERLAP, the assertion is on ORDER, and a
-// negative control shows the forbidden interleaving is deliverable. Resolving
+// A concurrency test proves overlap: two callers have to genuinely OVERLAP, the assertion is
+// on ORDER, and a negative control shows the forbidden interleaving is deliverable. Resolving
 // two promises with `Promise.all` would pass with every guard deleted.
 describe('stale load', () => {
   it('drops the older load when it lands after the newer one', async () => {
@@ -216,7 +216,7 @@ describe('mutation versus refresh', () => {
   })
 })
 
-describe('mint (§V103 — the plaintext is never controller state)', () => {
+describe('mint (the plaintext is never controller state)', () => {
   it('returns the plaintext, and keeps only the row', async () => {
     const { result } = await mounted()
     const minted: MintedToken = { token: tokenC, plaintext: PLAINTEXT }
@@ -232,8 +232,8 @@ describe('mint (§V103 — the plaintext is never controller state)', () => {
     // Newest first, matching the order the list endpoint returns.
     expect(ids(result.current.tokens)).toEqual(['C', 'A', 'B'])
 
-    // The whole of §V103 here: nothing token-shaped is reachable through the
-    // controller after a successful mint — and the same call demonstrably sees
+    // The whole of the write-once-display rule here: nothing token-shaped is reachable through
+    // the controller after a successful mint — and the same call demonstrably sees
     // the value that WAS minted, so the two `false`s are the controller's doing.
     expect(looksLikeTokenPlaintext(minted)).toBe(true)
     expect(looksLikeTokenPlaintext(result.current)).toBe(false)
@@ -282,7 +282,7 @@ describe('mint (§V103 — the plaintext is never controller state)', () => {
   })
 })
 
-describe('revoke (§V104 — a 404 is not knowledge, the re-read is)', () => {
+describe('revoke (a 404 is not knowledge, the re-read is)', () => {
   const notFound = () =>
     new ApiError(404, 'MCP token not found', { errorCode: 'mcp_token_not_found' })
 

@@ -8,16 +8,16 @@ and `test_result_table_read.py` asserts the guards are *in* the statement.
 
 Two things this file is careful about, both borrowed from the approval card's route tests:
 
-- **Refusal bodies are compared, not just statuses.** V27 makes another operator's table
-  answer the same as an absent one, and "same status" is a much weaker claim than "same body"
-  — an `error_code` that differed would be an existence oracle with a 404 painted on it (B1's
-  shape).
+- **Refusal bodies are compared, not just statuses.** Another operator's table answers the
+  same as an absent one, and "same status" is a much weaker claim than "same body"
+  — an `error_code` that differed would be an existence oracle with a 404 painted on it —
+  a differing code leaking existence.
 - **The requester asked about is the cookie's.** Recorded per lookup, so "the identity came
   from the session and not from the path" is asserted rather than assumed.
 
 And one that is this surface's own: the response carries **no decision affordance**. There is
 no CSRF token, no reason, no approve or deny — a parked listing has nothing to authorise, and
-a token on this body would be a key with no door (§I.embed, V39's family).
+a token on this body would be a key with no door — the embed surface stays read-only.
 """
 
 from __future__ import annotations
@@ -59,7 +59,7 @@ def body(response: Response) -> dict:
 
 
 def test_the_table_carries_its_columns_rows_and_provenance(harness: TableHarness) -> None:
-    """V64: the whole listing, on NOA's origin, for the operator whose READ produced it."""
+    """The whole listing, on NOA's origin, for the operator whose READ produced it."""
     harness.add_table(token=TOKEN)
 
     response = harness.get_table(TOKEN)
@@ -74,7 +74,7 @@ def test_the_table_carries_its_columns_rows_and_provenance(harness: TableHarness
 
 
 def test_a_capped_table_reports_the_total_and_the_flag(harness: TableHarness) -> None:
-    """V85: the bound travels to the surface, so the page can render it.
+    """The row cap's bound travels to the surface, so the page can render it.
 
     `stored_rows` and `total_rows` are both sent, and they differ here — a body that carried
     only the rows would leave the page reporting a capped table as a complete one.
@@ -99,7 +99,7 @@ def test_an_uncapped_table_says_so(harness: TableHarness) -> None:
 
 
 def test_the_body_carries_no_decision_affordance(harness: TableHarness) -> None:
-    """§I.embed: read-only, no decision controls — and the body is where that starts.
+    """The embed surface is read-only, no decision controls — and the body is where that starts.
 
     Asserted on the key set rather than on values: a `csrf` field that happened to be `None`
     today is a field a later edit fills in, and a table has nothing to authorise.
@@ -127,7 +127,7 @@ def test_the_body_carries_no_decision_affordance(harness: TableHarness) -> None:
 
 
 def test_the_requester_asked_about_is_the_cookies(harness: TableHarness) -> None:
-    """V27: the identity comes from the session, never from the request.
+    """The identity comes from the session, never from the request.
 
     A token in a URL says which row; it does not say who is asking. The lookup records both,
     so a route that passed anything else through would be red here rather than merely wrong.
@@ -140,7 +140,7 @@ def test_the_requester_asked_about_is_the_cookies(harness: TableHarness) -> None
 
 
 def test_an_unknown_and_a_foreign_token_answer_one_body(harness: TableHarness) -> None:
-    """V27: existence does not leak, and the bound is the *body*, not the status.
+    """Existence does not leak, and the bound is the *body*, not the status.
 
     A code that differed by cause would be a 403 spelled differently, and a status-only
     assertion could not see it. Only `request_id` may differ.
@@ -187,7 +187,7 @@ def test_a_table_past_its_deadline_answers_the_same_refusal(harness: TableHarnes
 
 
 def test_a_signed_out_caller_gets_401_and_no_lookup(harness: TableHarness) -> None:
-    """V6, V22: the cookie is the first half of the access control.
+    """The cookie is the first half of the access control.
 
     No lookup happens at all — the refusal is upstream of the read, so an unauthenticated
     caller cannot use response timing or a lookup counter as an oracle either.
@@ -204,7 +204,7 @@ def test_a_signed_out_caller_gets_401_and_no_lookup(harness: TableHarness) -> No
 def test_a_disabled_operator_loses_the_table_on_the_next_request(
     harness: TableHarness,
 ) -> None:
-    """V6: the row is re-read per request, because a session JWT is not revocable.
+    """The row is re-read per request, because a session JWT is not revocable.
 
     The same property `require_session_user` gives every other cookie-authenticated surface —
     asserted here because this one is new, not because it is different.
@@ -227,7 +227,7 @@ def test_a_disabled_operator_loses_the_table_on_the_next_request(
 
 
 def test_an_unexpected_read_failure_answers_the_shared_envelope(harness: TableHarness) -> None:
-    """V73: every error body carries `error_code`, `message` and `request_id`.
+    """Every error body carries `error_code`, `message` and `request_id`.
 
     Not a stack trace and not Starlette's default shape — the surface an operator sees when
     the database is unhappy is the same one every other route produces.
@@ -243,7 +243,7 @@ def test_an_unexpected_read_failure_answers_the_shared_envelope(harness: TableHa
 
 
 def test_a_token_that_is_not_a_uuid_is_still_just_a_token(harness: TableHarness) -> None:
-    """T63(e)'s argument, one surface over: one refusal for the whole family.
+    """One refusal for the whole family, one surface over from the action-result tool.
 
     A shape check here would answer 422 for a malformed token and 404 for an unknown one,
     which tells a caller which strings are worth guessing.

@@ -16,7 +16,7 @@ from mcp.types import LATEST_PROTOCOL_VERSION
 PYPROJECT = Path(__file__).resolve().parents[1] / "pyproject.toml"
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
-# The era C23 rejected. Absent from both SDKs at 1.29.0, so the docs may name it —
+# The era the handshake never admits. Absent from both SDKs at 1.29.0, so the docs may name it —
 # they just may not claim NOA serves it.
 REJECTED_ERA = "2026-07-28"
 
@@ -31,7 +31,7 @@ def _project() -> dict:
 
 
 def test_python_upper_bound_excludes_3_13() -> None:
-    """C1: pgpy 0.6.0 imports the removed `imghdr` module on 3.13+."""
+    """The `>=3.11,<3.13` window: pgpy 0.6.0 imports the removed `imghdr` module on 3.13+."""
     assert _project()["requires-python"] == ">=3.11,<3.13"
 
 
@@ -40,19 +40,19 @@ def test_runtime_python_within_supported_range() -> None:
 
 
 def test_fastmcp_pinned_to_3_4_5() -> None:
-    """C23: handshake era, negotiated per client; fastmcp 4.x is beta and breaks T11."""
+    """Handshake era, negotiated per client; fastmcp 4.x is beta and breaks the token verifier."""
     deps = _project()["dependencies"]
 
     assert "fastmcp==3.4.5" in deps
 
 
 def test_server_serves_every_era_a_v1_client_can_ask_for() -> None:
-    """C23 as corrected by T71: the pin is a *set*, and the set is what must hold.
+    """The pin is a *set*, and the set is what must hold.
 
-    LibreChat sends its SDK's `LATEST_PROTOCOL_VERSION` and nothing else (T71: exact-locked
-    `@modelcontextprotocol/sdk` 1.29.0, stock `Client`, no version knob), so a bump on the
-    client side lands here as an era NOA has never been asked for. This asserts both ends of
-    C23: today's client era negotiates, and the sessionless `2026-07-28` era C23 rejected is
+    LibreChat sends its SDK's `LATEST_PROTOCOL_VERSION` and nothing else — exact-locked
+    `@modelcontextprotocol/sdk` 1.29.0, stock `Client`, no version knob, read from the SDK
+    source — so a bump on the client side lands here as an era NOA has never been asked for.
+    Both ends asserted: today's client era negotiates, and the sessionless `2026-07-28` era is
     still absent — reaching it means bumping the SDK, not flipping a setting.
     """
     assert {"2025-06-18", "2025-11-25"} <= set(SUPPORTED_PROTOCOL_VERSIONS)
@@ -62,7 +62,7 @@ def test_server_serves_every_era_a_v1_client_can_ask_for() -> None:
 
 @pytest.mark.parametrize("doc_name", ["ARCHITECTURE.md", "README.md"])
 def test_pin_docs_track_the_servable_set(doc_name: str) -> None:
-    """T70: the prose about the pin is bound to the SDK, not written once and trusted.
+    """The prose about the pin is bound to the SDK, not written once and trusted.
 
     The `2025-06-18`-as-the-era claim survived in four files because nothing compared it
     to the SDK. This closes that: both directions are asserted, so widening the
@@ -82,7 +82,7 @@ def test_pin_docs_track_the_servable_set(doc_name: str) -> None:
 
 
 def test_architecture_doc_records_the_pin_and_its_re_open_trigger() -> None:
-    """T70: the pin reads as a decision with an expiry condition, not as an accident."""
+    """The pin reads as a decision with an expiry condition, not as an accident."""
     doc = (REPO_ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")
 
     assert f"`{LATEST_PROTOCOL_VERSION}`" in doc
@@ -93,7 +93,7 @@ def test_architecture_doc_records_the_pin_and_its_re_open_trigger() -> None:
 
 
 def test_all_dependencies_exactly_pinned() -> None:
-    """No caret/range specifiers — same discipline as C2 for the web apps."""
+    """No caret/range specifiers — same discipline as the web apps' exact pins."""
     deps = _project()["dependencies"]
     unpinned = [dep for dep in deps if dep != "noa-core" and "==" not in dep]
 

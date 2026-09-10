@@ -5,7 +5,7 @@ for in-memory doubles and leaves everything else — router, error handler, `JWT
 `AuthService`, `LoginRateLimiter` — as production code. See that module for why.
 
 Cookie assertions parse the real `Set-Cookie` header rather than trusting call
-arguments: V6 is a statement about what the browser receives.
+arguments: the cookie rule is a statement about what the browser receives.
 """
 
 from __future__ import annotations
@@ -85,8 +85,8 @@ def encode_session(**claim_overrides: object) -> str:
 # --- Login: success + cookie ---
 
 
-def test_login_sets_httponly_session_cookie_with_v6_attributes() -> None:
-    """V6: httpOnly, SameSite=Lax, `Path=/`, Max-Age matching the token TTL.
+def test_login_sets_httponly_session_cookie_with_the_required_attributes() -> None:
+    """httpOnly, SameSite=Lax, `Path=/`, Max-Age matching the token TTL.
 
     `Domain` is not asserted here — the harness unsets it so `TestClient` will store the
     cookie at all. The `.noa.internal` scope is covered in `test_jwt_service.py`,
@@ -158,11 +158,11 @@ def test_login_records_last_login_at() -> None:
     assert repository.users[user.id].last_login_at is not None
 
 
-# --- Login: V7 activation gate ---
+# --- Login: the activation gate ---
 
 
 def test_first_login_provisions_inactive_user_and_returns_403_pending_approval() -> None:
-    """V7: a new LDAP user lands `is_active=False` and waits for an admin."""
+    """A new LDAP user lands `is_active=False` and waits for an admin."""
     repository = FakeAuthRepository()
 
     with auth_harness(repository=repository) as harness:
@@ -217,7 +217,7 @@ def test_second_login_after_activation_succeeds() -> None:
 
 
 def test_bootstrap_admin_activated_with_admin_role_on_first_login() -> None:
-    """V7: without this, a fresh deployment has nobody able to activate anybody."""
+    """Without this, a fresh deployment has nobody able to activate anybody."""
     repository = FakeAuthRepository()
 
     with auth_harness(
@@ -232,7 +232,7 @@ def test_bootstrap_admin_activated_with_admin_role_on_first_login() -> None:
 
 
 def test_bootstrap_admin_reactivated_after_being_disabled() -> None:
-    """The env var is the deployment's break-glass, so it ⊥ be defeatable in-app."""
+    """The env var is the deployment's break-glass, so it must never be defeatable in-app."""
     repository = FakeAuthRepository()
     user = repository.add_active_user(ADMIN_EMAIL)
     user.is_active = False
@@ -279,7 +279,7 @@ def test_directory_failures_map_to_their_status(
     [{"email": "", "password": OPERATOR_PASSWORD}, {"email": OPERATOR_EMAIL, "password": ""}],
 )
 def test_blank_credentials_rejected_without_touching_the_directory(payload: dict[str, str]) -> None:
-    """An empty submit guesses nothing, so it ⊥ reach LDAP and ⊥ spend block budget."""
+    """An empty submit guesses nothing, so it never reaches LDAP and never spends block budget."""
     directory = FakeDirectory()
 
     with auth_harness(directory=directory) as harness:
@@ -290,13 +290,13 @@ def test_blank_credentials_rejected_without_touching_the_directory(payload: dict
     assert directory.calls == []
 
 
-# --- V8: no credential material in a response ---
+# --- no credential material in a response ---
 
 
 def test_login_error_response_carries_no_password_and_no_detail() -> None:
-    """V8: body is `error_code` + `message` + `request_id`. `detail` names internals.
+    """Body is `error_code` + `message` + `request_id`. `detail` names internals.
 
-    `request_id` joined the set with T64. It is the one addition V8 admits: a
+    `request_id` is the one addition the no-credential rule admits: a
     per-request opaque id, minted by NOA, that names the log line rather than anything in it.
     """
     repository = FakeAuthRepository()
@@ -310,7 +310,7 @@ def test_login_error_response_carries_no_password_and_no_detail() -> None:
 
 
 def test_login_response_carries_token_only_in_cookie() -> None:
-    """V8/V6: the session token is httpOnly, so it ⊥ also appear in the body."""
+    """The session token is httpOnly, so it must never also appear in the body."""
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
 
@@ -324,7 +324,7 @@ def test_login_response_carries_token_only_in_cookie() -> None:
 
 
 def test_failed_login_logs_no_password(caplog: pytest.LogCaptureFixture) -> None:
-    """V8: no password, and no fragment of one, reaches a log record.
+    """No password, and no fragment of one, reaches a log record.
 
     Nothing on this path logs today, so the assertion is trivially true right now. It is
     here as the tripwire for when login auditing arrives: the natural first draft of an
@@ -341,7 +341,7 @@ def test_failed_login_logs_no_password(caplog: pytest.LogCaptureFixture) -> None
 
 
 def test_successful_login_logs_no_session_token(caplog: pytest.LogCaptureFixture) -> None:
-    """V8: the minted token is a credential, so it ⊥ be logged either."""
+    """The minted token is a credential, so it must never be logged either."""
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
     caplog.set_level(logging.DEBUG)
@@ -354,11 +354,11 @@ def test_successful_login_logs_no_session_token(caplog: pytest.LogCaptureFixture
     assert OPERATOR_PASSWORD not in caplog.text
 
 
-# --- V9: rate limiting ---
+# --- rate limiting ---
 
 
 def test_login_blocked_after_max_failures_returns_429_with_retry_after() -> None:
-    """V9: block past the configured max, and say when to come back."""
+    """Block past the configured max, and say when to come back."""
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
     settings = build_settings(
@@ -378,7 +378,7 @@ def test_login_blocked_after_max_failures_returns_429_with_retry_after() -> None
 
 
 def test_rate_limit_blocks_the_correct_password_too() -> None:
-    """A block is a block: guessing right on attempt six ⊥ get you in."""
+    """A block is a block: guessing right on attempt six never gets you in."""
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
     settings = build_settings(auth_login_rate_limit_max_attempts=2)
@@ -408,7 +408,7 @@ def test_recorded_failure_is_committed_not_left_pending() -> None:
     """A rolled-back counter is a limiter that never limits.
 
     The request's error path rolls its session back, so `record_failure` has to commit
-    or V9 becomes decorative — the kind of defect that passes every unit test.
+    or the limiter becomes decorative — the kind of defect that passes every unit test.
     """
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
@@ -420,7 +420,7 @@ def test_recorded_failure_is_committed_not_left_pending() -> None:
 
 
 def test_successful_login_clears_failure_counters() -> None:
-    """V9 counts guesses; a proven operator is not guessing."""
+    """The limiter counts guesses; a proven operator is not guessing."""
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
 
@@ -435,7 +435,7 @@ def test_successful_login_clears_failure_counters() -> None:
 
 
 def test_directory_outage_does_not_consume_rate_limit_budget() -> None:
-    """Departure from `noa-old`: an outage ⊥ amplify into a lockout.
+    """Departure from `noa-old`: an outage never amplifies into a lockout.
 
     `noa-old` called `record_failure()` for every `AuthError` LDAP raised, so a few
     minutes of `LdapUnavailableError` counted as wrong passwords and locked every
@@ -469,7 +469,7 @@ def test_disabled_directory_account_does_not_consume_rate_limit_budget() -> None
     assert harness.rate_limits.buckets == {}
 
 
-# --- /auth/me: the V6 re-read ---
+# --- /auth/me: the per-request re-read ---
 
 
 def test_me_returns_the_current_user_for_a_valid_session() -> None:
@@ -486,9 +486,9 @@ def test_me_returns_the_current_user_for_a_valid_session() -> None:
 
 
 def test_me_rejects_when_user_disabled_after_cookie_issued() -> None:
-    """V6 keystone: the session JWT has no revocation path before `exp`.
+    """The keystone: the session JWT has no revocation path before `exp`.
 
-    No `jti`, no denylist, and V4's cascade revoke covers `mcp_tokens` only — so this
+    No `jti`, no denylist, and the cascade revoke covers `mcp_tokens` only — so this
     per-request row re-read is the ONLY thing bounding a disabled operator's live
     session. Cache it or trust a claim and the window becomes the full token TTL.
     """
@@ -546,11 +546,11 @@ def test_me_rejects_a_foreign_signature() -> None:
     assert response.json()["error_code"] == AuthSessionInvalidError.error_code
 
 
-# --- V79: zero clock leeway ---
+# --- zero clock leeway ---
 
 
 def test_me_rejects_session_one_second_past_exp() -> None:
-    """V79: leeway is 0, so `exp` one second ago is expired — not "close enough"."""
+    """Leeway is 0, so `exp` one second ago is expired — not "close enough"."""
     now = datetime.now(UTC)
     repository = FakeAuthRepository()
     user = repository.add_active_user(OPERATOR_EMAIL)
@@ -598,7 +598,7 @@ def freeze_verification_clock(monkeypatch: pytest.MonkeyPatch, moment: datetime)
 
 
 def test_me_rejects_session_with_future_dated_iat(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V79: `iat > now + leeway` rejects, and leeway is 0 (`PyJWT==2.13.0`, R24).
+    """`iat > now + leeway` rejects, and leeway is 0 (`PyJWT==2.13.0`).
 
     Matters when a second API replica appears: the *minting* side breaks first, so a
     login would hand back a token its own verifier refuses.
@@ -613,7 +613,7 @@ def test_me_rejects_session_with_future_dated_iat(monkeypatch: pytest.MonkeyPatc
     Unfrozen it raced the wall clock. `iat` was read a few milliseconds before the request and
     truncated down to its own second, so the token stopped being future-dated as soon as the
     clock crossed into the next one and the assertion held only when the request landed inside
-    the same second (V87, B4: a compare that eats a clock-stamped byte).
+    the same second — a compare must never eat a clock-stamped byte.
 
     The control below is what keeps the 401 attributable. Frozen at the same instant, a token
     issued *at* it verifies — so the refusal above is the future `iat` and not the freeze, and
@@ -656,7 +656,7 @@ def test_me_rejects_session_with_future_dated_iat(monkeypatch: pytest.MonkeyPatc
 
 
 def test_logout_clears_cookie_without_authentication() -> None:
-    """V6: an operator whose token already expired most needs the stale cookie gone."""
+    """An operator whose token already expired most needs the stale cookie gone."""
     with auth_harness() as harness:
         response = harness.client.post("/auth/logout")
 
@@ -667,7 +667,7 @@ def test_logout_clears_cookie_without_authentication() -> None:
 
 
 def test_logout_is_idempotent() -> None:
-    """V6: a second logout is indistinguishable from the first.
+    """A second logout is indistinguishable from the first.
 
     Compared through `cookie_shape`, not the raw header: `delete_cookie` stamps `Expires`
     from the clock, so two POSTs that straddle a second boundary emit different header
@@ -695,7 +695,7 @@ def test_logout_reaches_no_database() -> None:
 
 
 def test_session_survives_logout_until_exp() -> None:
-    """V6 states this openly: logout kills the *cookie*, ⊥ the token.
+    """The cookie rule states this openly: logout kills the *cookie*, never the token.
 
     No `jti` and no denylist means a captured copy keeps verifying. Pinned as a test so
     the deviation stays a known one rather than becoming a surprise, and so the reason
@@ -737,7 +737,7 @@ def test_status_for_every_auth_error(error: AuthError, expected_status: int) -> 
 
 
 def test_status_for_unmapped_subclass_inherits_its_parent() -> None:
-    """An unmapped subclass ⊥ silently become a 503."""
+    """An unmapped subclass never silently becomes a 503."""
 
     class TokenLooksTamperedError(AuthSessionInvalidError):
         pass
@@ -746,7 +746,7 @@ def test_status_for_unmapped_subclass_inherits_its_parent() -> None:
 
 
 def test_error_body_omits_internal_detail() -> None:
-    """V8: `detail` can name configuration faults and directory internals."""
+    """`detail` can name configuration faults and directory internals."""
     error = AuthConfigurationError("directory rejected the service-account bind")
 
     body = error_body(error)

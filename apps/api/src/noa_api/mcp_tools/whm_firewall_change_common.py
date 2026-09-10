@@ -46,7 +46,7 @@ from core.remote_exec.types import SSHConnectionConfig
 from noa_api.mcp_tools.change_target import (
     # Re-exported below rather than imported twice: a firewall CHANGE module reaches for all of
     # these through this one module, instead of half through `change_target` and half from here
-    #. What `change_target` owns is what every runner shares across systems; this is the
+    # . What `change_target` owns is what every runner shares across systems; this is the
     # firewall pair's own layer on top of it.
     ERROR_EVIDENCE_UNUSABLE,
     ERROR_SERVER_UNAVAILABLE,

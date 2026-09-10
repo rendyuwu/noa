@@ -8,7 +8,8 @@ module missing from it means an unreplaced `ssh_exec` and a test that tries to o
 
 Its own module rather than `support/whm.py`, which owns the server row and nothing else
 (`test_support_layout.py` holds that line), and rather than `support/remote_exec.py`, which is
-about the transport and knows nothing about csf. T25 is the second caller; T26 is the next.
+about the transport and knows nothing about csf. The release-and-allow tool is the second
+caller; the allowlist-remove tool is the next.
 
 No live host and no live firewall: everything under test is command composition, output
 parsing, verdict combination and refusal shaping.
@@ -137,11 +138,11 @@ def both_backends(
     return FakeFirewall(csf=csf or csf_answer(), imunify=imunify or imunify_answer())
 
 
-# --- T25: a box that also accepts changes ---
+# --- A box that also accepts changes ---
 
 # csf's own sub-commands, as `noa-old` sends them and as the CHANGE tools still do. The last two
-# are T26's: `-tra` drops a temporary allow and `-ar` the `csf.allow` entry, which are the two
-# lists a release can have written to.
+# are the allowlist-remove tool's: `-tra` drops a temporary allow and `-ar` the `csf.allow`
+# entry, which are the two lists a release can have written to.
 CSF_READ = "-g"
 CSF_TEMP_RELEASE = "-tr"
 CSF_DENY_RELEASE = "-dr"
@@ -163,9 +164,9 @@ IMUNIFY_MUTATION_OK = json.dumps({"result": "success"})
 # ordinary case rather than a failure: an address held by a temporary ban has no `csf.deny` line.
 CSF_NOT_IN_LIST = "csf: 203.0.113.10 not found in /etc/csf/csf.deny"
 
-# A `csf -g` line for an address that is on the allow list *and* the deny list. The verdict
-# resolves block-first and therefore reports `blocked`, which is why T26 asks `allow_entry`
-# instead — this fixture is what separates the two readings.
+# A `csf -g` line for an address that is on the allow list *and* the deny list. The verdict resolves
+# block-first and therefore reports `blocked`, which is why the allowlist-remove tool asks
+# `allow_entry` instead — this fixture is what separates the two readings.
 CSF_ALLOW_AND_DENY_OUTPUT = f"{CSF_ALLOW_LINE}\n{CSF_DENY_LINE}"
 
 # An Imunify document holding both purposes for one address, for the same reason.

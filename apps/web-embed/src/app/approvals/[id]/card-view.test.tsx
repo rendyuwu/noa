@@ -14,7 +14,8 @@ import {
 } from '../../../../tests/support/approval-card'
 
 /**
- * The card asking again until there is nothing left to wait for (§T.42 — V27, V29, V34, V38, V80).
+ * The card asking again until there is nothing left to wait for — requester-matched, state in the
+ * DB, one URL through the receipt, JS `fetch` only.
  *
  * **What jsdom can prove is the loop**: that it starts, that it uses the right door and the right
  * interval, that every answer moves it to the right place, and — the half that matters most — that
@@ -22,7 +23,7 @@ import {
  *
  * Fake timers throughout, so the 15-second pending wait costs nothing and so "no further calls"
  * can be asserted against a clock that has actually moved rather than against a `waitFor` that
- * merely ran out (V90's family, one lane over).
+ * merely ran out — the setup gate sits one layer below the subject, one lane over.
  */
 
 const RESULT = 'Account acmeco suspended on alpha.'
@@ -35,7 +36,7 @@ function load(body: Record<string, unknown>): ApprovalCardLoad {
 /**
  * The component under its real props.
  *
- * The id comes from the page's own URL parameter rather than off the card (§T.43): a 401 answer
+ * The id comes from the page's own URL parameter rather than off the card: a 401 answer
  * carries no card, and a retry offered from that state has to know what to re-read.
  */
 function renderCardView(
@@ -101,7 +102,7 @@ describe('CardView', () => {
   })
 
   it('polls a running change until the run is terminal, then stops', async () => {
-    // The whole of V29 in one spec: the state lives in the database, so the frame re-reads the row
+    // The whole of state-in-DB in one spec: the state lives in the database, so the frame re-reads the row
     // — and the outcome lands on the same URL that asked the question.
     const polls = stubPolls(() =>
       Response.json(approvedBody({ status: 'COMPLETED', result_summary: RESULT })),
@@ -169,15 +170,15 @@ describe('CardView', () => {
     await tick(POLL_INTERVAL_PENDING_MS)
 
     expect(screen.getByText(/cannot authenticate here/i)).toBeTruthy()
-    // Named rather than counted: §T.43 puts a link-out and a retry in this state, and neither is a
-    // decision. What V38 forbids is an Approve an operator cannot use, and the reason box beside it.
+    // Named rather than counted: the 401 state puts a link-out and a retry here, and neither is a
+    // decision. What is forbidden is an Approve an operator cannot use, and the reason box beside it.
     expect(screen.queryByRole('button', { name: /approve|deny/i })).toBeNull()
     expect(screen.queryByLabelText(/why is this change/i)).toBeNull()
     expect(screen.getByRole('link', { name: /sign in to noa/i })).toBeTruthy()
     expect(screen.getByRole('button', { name: /try again/i })).toBeTruthy()
   })
 
-  it('Try again re-reads the card and hands the loop back (§T.43 — V42)', async () => {
+  it('Try again re-reads the card and hands the loop back', async () => {
     // The way out of a 401 that does not navigate the frame: the session is picked up in another
     // tab, this button re-reads, and the card that comes back resumes polling on its own.
     const polls = stubPolls(
@@ -266,8 +267,8 @@ describe('CardView', () => {
     expect(screen.getByText(RESULT)).toBeTruthy()
   })
 
-  it('renders both halves of a finished change, never one "done" (§T.42(b), V46)', async () => {
-    // DECISIONS §6.5, at the render: the state the operator authorised against and what the change
+  it('renders both halves of a finished change, never one "done"', async () => {
+    // DECISIONS section 6.5, at the render: the state the operator authorised against and what the change
     // did to it are two blocks, and the fixture's halves share no value — so a card that showed one
     // of them twice, or collapsed the pair into the verdict word, goes red here.
     stubPolls(() =>
@@ -319,7 +320,7 @@ describe('CardView', () => {
   })
 
   it('shows the before-state once, not once per source', async () => {
-    // `evidence` and `receipt.before` are the same payload — T38's writer copies it — so rendering
+    // `evidence` and `receipt.before` are the same payload — the executor's writer copies it — so rendering
     // both would put one fact on the card twice under two headings.
     renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
 
@@ -328,7 +329,7 @@ describe('CardView', () => {
   })
 
   it('stops watching a run that never moves, and says so', async () => {
-    // A run whose executor died moves only when §T.38's reaper next runs, which is not a timescale
+    // A run whose executor died moves only when the reaper next runs, which is not a timescale
     // anyone watches a frame for. Without the cap this loop would run for as long as the frame is
     // open. Giving up is not reported as a failure — NOA has no evidence of one, only of not having
     // been told.
@@ -381,7 +382,7 @@ describe('CardView', () => {
 
     expect(screen.getByText(text)).toBeTruthy()
 
-    // No *loop* from any of these: none of them says what to wait for. §T.43's retry is a click,
+    // No *loop* from any of these: none of them says what to wait for. The 401 retry is a click,
     // not a timer — a state with no terminator polled on an interval would ask forever.
     await ticks(5, POLL_INTERVAL_PENDING_MS)
     expect(polls.calls).toBe(0)

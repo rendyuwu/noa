@@ -1,8 +1,8 @@
 """`whm_list_accounts` — the listing that answers with a surface, not with rows.
 
-The V64 half of the WHM account pair. `whm_search_accounts` answers a bounded question in
-the transcript; this one answers an unbounded one by parking its rows in `tool_result_tables`
-and handing back a summary plus the address of the page that renders them.
+The summary-plus-URL half of the WHM account pair. `whm_search_accounts` answers a bounded question
+in the transcript; this one answers an unbounded one by parking its rows in `tool_result_tables` and
+handing back a summary plus the address of the page that renders them.
 
 Same seams as its sibling, and for the same reasons: real `WHMClient` over a doubled socket
 (`support.whm_api`), because WHM reports a refusal as **HTTP 200** with `metadata.result: 0` and
@@ -128,7 +128,7 @@ def text_block(answer: ToolResult) -> str:
 
 
 async def test_it_answers_with_a_summary_block_and_the_table_iframe() -> None:
-    """V25, V64: two blocks, text first — the address survives a frame that will not load."""
+    """Two blocks, text first — the address survives a frame that will not load."""
     fixture, _ = listing_context(accounts=[whm_account("acme"), whm_account("beta")])
 
     answer, _ = await listing(fixture)
@@ -171,8 +171,8 @@ async def test_the_address_in_the_text_is_the_parked_table_s() -> None:
 async def test_an_empty_server_is_a_parked_table_with_no_rows() -> None:
     """Nothing has gone wrong: WHM answered and the box has no accounts.
 
-    A refusal here would be a tool reporting an outage for a true answer, and the page says
-    "this read matched no rows" rather than rendering headings over nothing (V38's family).
+    A refusal here would be a tool reporting an outage for a true answer, and the page says "this
+    read matched no rows" rather than rendering headings over nothing (the never-blank-card family).
     """
     fixture, _ = listing_context(accounts=[])
 
@@ -196,11 +196,11 @@ async def test_an_account_whm_cannot_name_is_never_parked() -> None:
     assert [row["user"] for row in fixture.result_tables.only.rows] == ["acme2"]
 
 
-# --- V64, V26: what the model is handed ---
+# --- What the model is handed ---
 
 
 async def test_no_account_row_reaches_the_tool_result() -> None:
-    """The whole point of V64, asserted on the serialized result.
+    """The whole point of summary-plus-URL, asserted on the serialized result.
 
     Driven through the real writer, so the sentinel is a row that genuinely reached the table
     and not one that only ever existed in this file.
@@ -217,10 +217,10 @@ async def test_no_account_row_reaches_the_tool_result() -> None:
 
 
 async def test_it_does_not_forward_api_username_or_host() -> None:
-    """The exposed half of the internal/exposed boundary at `fetch_whm_accounts` (§V106,
-    §V108): that internal function carries `api_username` and `host` off the resolved row,
+    """The exposed half of the internal/exposed boundary at `fetch_whm_accounts`:
+    that internal function carries `api_username` and `host` off the resolved row,
     but this tool reads only `accounts` and `server` back out of its payload — so neither
-    credential fact reaches this tool's answer, and never a LibreChat transcript (§V26).
+    credential fact reaches this tool's answer, and never a LibreChat transcript.
 
     Asserted against the whole serialized result, not a top-level key check, so a leak
     nested inside a row or under any future key still fails this. Same assertion shape as
@@ -238,7 +238,7 @@ async def test_it_does_not_forward_api_username_or_host() -> None:
 
 
 async def test_the_result_carries_no_credential_material() -> None:
-    """V2, V8, V26: neither the ciphertext in the column nor the plaintext behind it."""
+    """Neither the ciphertext in the column nor the plaintext behind it."""
     fixture, _ = listing_context(accounts=[whm_account("acme", plan="business")])
 
     answer, _ = await listing(fixture)
@@ -249,15 +249,15 @@ async def test_the_result_carries_no_credential_material() -> None:
 
 
 async def test_a_field_noa_does_not_speak_about_never_reaches_the_page() -> None:
-    """V26: the whitelist is what bounds a parked row, and it runs before anything is stored.
+    """The whitelist is what bounds a parked row, and it runs before anything is stored.
 
     Asserted on what the *writer received*, because the question is what the row holds — not
-    whether something was removed again on the way out (B8's shape).
+    whether something was removed again on the way out (the raw-vs-redacted receipt's shape).
 
-    The stopping control here is `normalize_whm_account_summary`'s field list, not the
-    recursive redaction `cap_rows` applies: `listaccts` sends plans, IPs and counters, and none
-    of them are things NOA renders. Redaction is the second layer and it is T56's own claim —
-    naming it here would be this file certifying a control that did no work (V69's shape).
+    The stopping control here is `normalize_whm_account_summary`'s field list, not the recursive
+    redaction `cap_rows` applies: `listaccts` sends plans, IPs and counters, and none of them are
+    things NOA renders. Redaction is the second layer and it is the table surface's own claim —
+    naming it here would be this file certifying a control that did no work.
     """
     fixture, _ = listing_context(
         accounts=[whm_account("acme", plan=SENTINEL_SECRET, ip="10.0.0.5", diskused="900M")],
@@ -270,11 +270,11 @@ async def test_a_field_noa_does_not_speak_about_never_reaches_the_page() -> None
     assert "10.0.0.5" not in stored
 
 
-# --- V85: the bound belongs to the surface, and the order belongs to the producer ---
+# --- The bound belongs to the surface, and the order belongs to the producer ---
 
 
 async def test_the_rows_are_parked_sorted_by_username() -> None:
-    """V85's ordering clause. `cap_rows` is a prefix, so the order it is handed is the answer.
+    """The cap's ordering clause. `cap_rows` is a prefix, so the order it is handed is the answer.
 
     `listaccts` order is WHM's own and not documented as stable, which would make a capped
     page an arbitrary subset that differs between two identical calls.
@@ -289,10 +289,10 @@ async def test_the_rows_are_parked_sorted_by_username() -> None:
 
 
 async def test_a_capped_listing_stores_the_pre_cut_total_and_says_so() -> None:
-    """V85: the cap is the surface's, and it reports itself in the text and in the envelope.
+    """The cap is the surface's, and it reports itself in the text and in the envelope.
 
     The fixture's cap is deliberately not `Settings`' 5000, so a tool that read the production
-    default could not pass this (V87, T33's trick for the pending TTL).
+    default could not pass this (the gate's trick for the pending TTL).
     """
     fixture, _ = listing_context(
         accounts=[whm_account(f"account-{index:04d}") for index in range(RESULT_TABLE_MAX_ROWS + 3)]
@@ -330,10 +330,10 @@ async def test_an_uncapped_listing_does_not_claim_truncation() -> None:
 
 
 async def test_there_is_no_limit_argument_to_hide_rows_behind() -> None:
-    """V64 offloads a listing *whole*; V85's cap is the one an operator asked for.
+    """A listing offloads *whole*; the cap is the one an operator asked for.
 
     A `limit` here would be a second bound, applied before the table's own and invisible on
-    the page — the shape V85 exists to stop, one surface further back.
+    the page — the shape the cap's own bound exists to stop, one surface further back.
     """
     server = build_mcp_server(tool_context=build_tool_context().context)
     tools = {tool.name: tool for tool in await server.list_tools(run_middleware=False)}
@@ -344,11 +344,12 @@ async def test_there_is_no_limit_argument_to_hide_rows_behind() -> None:
     assert schema["required"] == ["server_ref"]
 
 
-# --- V27: whose table is it ---
+# --- Whose table is it ---
 
 
 async def test_the_table_is_parked_for_the_caller_the_token_authenticated() -> None:
-    """V27: the requester is the authenticated identity, never anything off the arguments.
+    """Requester-match: the requester is the authenticated identity, never anything off the
+    arguments.
 
     That column is what the surface matches on later, so a tool that could name a requester
     would be a tool that could park a listing under somebody else's name.
@@ -373,7 +374,7 @@ async def test_the_parked_table_is_named_after_the_tool_that_produced_it() -> No
 
 
 def test_every_column_names_a_field_the_normaliser_can_emit() -> None:
-    """V66: two lists of WHM account fields, and they must not drift apart.
+    """Two lists of WHM account fields, and they must not drift apart.
 
     `listaccts` rows are sparse, so a column list derived from the first row would drop a
     column every later row has — the columns are declared instead. This is what stops a
@@ -403,11 +404,11 @@ def test_the_columns_reach_the_writer_in_the_declared_order() -> None:
     assert [column.key for column in WHM_ACCOUNT_TABLE_COLUMNS][:2] == ["user", "domain"]
 
 
-# --- V18, V19: refusals ---
+# --- Refusals ---
 
 
 async def test_an_ambiguous_server_ref_returns_choices() -> None:
-    """V18: a tie is candidates, never a pick — a guess would list the wrong server's accounts."""
+    """A tie is candidates, never a pick — a guess would list the wrong server's accounts."""
     shared = "https://shared.example.net:2087"
     fixture, endpoint = listing_context(
         accounts=[whm_account("acme")],
@@ -463,7 +464,7 @@ async def test_a_whm_failure_keeps_whm_s_own_error_code(
 
 
 async def test_the_whm_call_authenticates_with_the_decrypted_token() -> None:
-    """C7, V48: the column holds ciphertext and WHM has to receive plaintext."""
+    """The column holds ciphertext and WHM has to receive plaintext."""
     fixture, endpoint = listing_context(accounts=[whm_account("acme")])
 
     await listing(fixture)
@@ -472,7 +473,7 @@ async def test_the_whm_call_authenticates_with_the_decrypted_token() -> None:
 
 
 async def test_a_failed_park_refuses_the_read_rather_than_a_dead_address() -> None:
-    """Fail-closed (T33's rule, one surface over), through the real error boundary.
+    """Fail-closed (the gate's rule, one surface over), through the real error boundary.
 
     The refusal is visible at the moment it happens; a result carrying the address of a table
     that was never written is discovered later, by an operator, in a persisted transcript.
@@ -523,7 +524,7 @@ class ExplodingWHMServerRepository:
 async def test_an_exception_reaches_the_caller_as_a_named_failure(
     error: BaseException, expected_code: str, expected_message: str
 ) -> None:
-    """V19's two mappings, and the original text never travels.
+    """The two sanitized mappings, and the original text never travels.
 
     The success path answers with content blocks, so this is also where "a failure is the same
     envelope whatever the success was" is held — `sanitize_tool_errors` widens a return type
@@ -558,7 +559,7 @@ async def test_cancellation_is_not_swallowed() -> None:
         await whm_list_accounts(server_ref=SERVER_NAME, context=context)
 
 
-# --- V83a: the tool ships with its gate ---
+# --- The tool ships with its gate ---
 
 
 def test_the_tool_name_matches_the_catalog() -> None:

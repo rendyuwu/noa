@@ -1,7 +1,7 @@
 """The asyncio host an approval hands its run to.
 
-`ApprovedChangeExecutor` is the seam T37 wired; this is the real thing behind it, and V30 fixes
-its shape. Four claims, and every one of them is a way the arrangement can fail quietly:
+`ApprovedChangeExecutor` is the seam the approval flow wired; this is the real thing behind it, and
+its shape is fixed. Four claims, and every one of them is a way the arrangement can fail quietly:
 
 - **`start` returns before the change finishes**. That is what makes the approve endpoint
   a 202 rather than a request held open across an SSH round trip.
@@ -13,8 +13,7 @@ its shape. Four claims, and every one of them is a way the arrangement can fail 
 - **Shutdown cancels and waits**, because the lifespan disposes the engine immediately
   after — and the runs it interrupts stay `STARTED` on purpose, which is the reaper's population.
 
-What one execution *records* is `test_approved_change_execution.py`'s; the SQL is the live
-file's.
+What one execution *records* is `test_approved_change_execution.py`'s; the SQL is the live file's.
 """
 
 from __future__ import annotations
@@ -121,7 +120,7 @@ async def test_start_returns_before_the_change_has_run() -> None:
 
     **Bounded**, because an `await self._execute(...)` in place of the `create_task` would make
     `start()` wait on a gate this test has not opened yet — a deadlock, and a hang names nothing
-    (the same trap T39 recorded for a dropped `task.cancel()`). One second is four orders of
+    (the recorded trap: a dropped `task.cancel()` hangs the same way). One second is four orders of
     magnitude more than scheduling a task needs.
     """
     host = Host(blocked=True)
@@ -257,7 +256,7 @@ async def test_stop_cancels_outstanding_executions() -> None:
     with capture_logs() as logs:
         # Bounded: `stop()` gathers the tasks it cancelled, so dropping the `cancel()` while
         # keeping the gather makes it wait on a change that never ends. A hang names nothing
-        # (T39's recorded trap), and unlike the loop's `stop()` there is no `suppress` here for
+        # (the recorded trap), and unlike the loop's `stop()` there is no `suppress` here for
         # the timeout to be swallowed by.
         try:
             await asyncio.wait_for(host.executor.stop(), timeout=STOP_TIMEOUT_SECONDS)

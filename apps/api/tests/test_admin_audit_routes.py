@@ -1,4 +1,4 @@
-"""The two admin audit routes, over the real service (T55, I.admin-api — V13, V45, V47, V73).
+"""The two admin audit routes, over the real service (the admin API's contract).
 
 `support/admin.py`'s harness mounts this router beside the rest of `/admin` with `require_admin`,
 `require_session_user`, the real `JWTService`, the real `ToolRunAuditService` and the shared error
@@ -8,13 +8,13 @@ is the shipped token, and the body is the shipped body.
 What this file owns, and what it deliberately does not:
 
 - **owns** the HTTP surface: the admin gate on both routes, the query string → filter
-  mapping, V47's field list *on the serialized payload*, the page bound, the cursor walk, and the
-  one refusal a bad id or a bad cursor produces.
+  mapping, the run row's field list *on the serialized payload*, the page bound, the cursor walk,
+  and the one refusal a bad id or a bad cursor produces.
 - **does not own** whether a filter narrows anything. The predicates live in the SQL, so a Python
   double applying them would be a second, more forgiving judge — `test_tool_run_audit_read.py`
   reads the compiled statement and `test_admin_audit_live.py` runs it against Postgres.
-- **does not own** V45's "queryable" clause. That one needs a row written by the real writer, which
-  is the live file's whole job.
+- **does not own** the tool-run trail's "queryable" clause. That one needs a row written by the
+  real writer, which is the live file's whole job.
 """
 
 from __future__ import annotations
@@ -79,11 +79,11 @@ def harness() -> Iterator[AdminHarness]:
         yield built
 
 
-# --- V13: both routes are admin-only ---
+# --- both routes are admin-only ---
 
 
 def test_both_audit_routes_are_admin_only(harness: AdminHarness) -> None:
-    """V13: an operator holding no `admin` role reaches none of the routes this router mounts.
+    """An operator holding no `admin` role reaches none of the routes this router mounts.
 
     `ROUTE_TABLE` is compared against `router.routes` first, so the walk is over what is
     *registered* rather than over what someone listed. That is what makes "a third audit route
@@ -103,7 +103,7 @@ def test_both_audit_routes_are_admin_only(harness: AdminHarness) -> None:
 
 
 def test_a_demoted_admin_loses_the_audit_trail_on_the_next_request(harness: AdminHarness) -> None:
-    """V6 through V13: the role is re-read per request, never taken from the cookie.
+    """The role is re-read per request, never taken from the cookie.
 
     `require_admin` is a per-handler parameter here; a router that acquired a `dependencies=[…]`
     gate instead would pass the walk above and could stop re-reading the row.
@@ -118,14 +118,14 @@ def test_a_demoted_admin_loses_the_audit_trail_on_the_next_request(harness: Admi
     assert response.json()["error_code"] == "admin_access_required"
 
 
-# --- V47: the field list, on the wire ---
+# --- the field list, on the wire ---
 
 
-def test_the_list_item_carries_every_v47_field(harness: AdminHarness) -> None:
-    """V47: requester, tool name, status, conversation ref, result summary and timing.
+def test_the_list_item_carries_every_recorded_field(harness: AdminHarness) -> None:
+    """Requester, tool name, status, conversation ref, result summary and timing.
 
     Asserted on the serialized body, key set *and* values: a payload test that only spot-checked
-    two fields would stay green while a third silently went missing, and V47 is a list.
+    two fields would stay green while a third silently went missing, and the run row is a list.
 
     `args` is deliberately absent from a list item — the detail carries it, so fifty rows do not
     ship fifty JSONB payloads to draw five columns.
@@ -157,7 +157,7 @@ def test_the_list_item_carries_every_v47_field(harness: AdminHarness) -> None:
 
 
 def test_risk_and_status_are_separate_fields(harness: AdminHarness) -> None:
-    """V20, V45: a *failed READ* is representable, and the audit list is where one is seen.
+    """A *failed READ* is representable, and the audit list is where one is seen.
 
     The two columns are why. Folded into one lifecycle field, `FAILED` and `READ` would compete
     for the same cell and this row could not exist.
@@ -176,7 +176,7 @@ def test_a_started_run_has_no_completion_or_duration(harness: AdminHarness) -> N
     """Timing half two is `null` while a run is in flight, and so is the derived duration.
 
     A zero would read as "it finished instantly", which is the opposite of what a `STARTED` row
-    means (T38's reaper exists for the ones that never finish).
+    means (the stranded-run reaper exists for the ones that never finish).
     """
     harness.tool_runs.items = [build_list_item(status=ToolRunStatus.STARTED, completed_ms=None)]
 
@@ -198,7 +198,7 @@ def test_a_deleted_requester_leaves_the_email_null(harness: AdminHarness) -> Non
 
 
 def test_the_detail_carries_args_summary_and_timing(harness: AdminHarness) -> None:
-    """§I.admin-api: the detail is the list item plus the redacted arguments.
+    """The admin API's contract: the detail is the list item plus the redacted arguments.
 
     The keys are asserted as a superset relation rather than by hand, so the two payloads cannot
     drift: a field renamed on the list item shows up here.
@@ -293,8 +293,9 @@ def test_a_cursor_walk_yields_every_run_once(harness: AdminHarness) -> None:
 
     `nextCursor` is minted from the *last item of the page*, never from the extra row the reader
     dropped — taking it from the extra row would skip that run on the next page, which is the kind
-    of gap an audit trail must not have. The final page's `null` is the bound (V85's family): a
-    client can tell "that is all" from "there is more" without counting rows against its own limit.
+    of gap an audit trail must not have. The final page's `null` is the bound (the row cap's
+    family): a client can tell "that is all" from "there is more" without counting rows against its
+    own limit.
     """
     harness.tool_runs.items = [build_list_item(tool_name=f"tool_{index}") for index in range(5)]
 
@@ -320,7 +321,7 @@ def test_the_last_page_carries_a_null_cursor(harness: AdminHarness) -> None:
     assert harness.client.get(TOOL_RUNS_PATH).json()["nextCursor"] is None
 
 
-# --- V73: one envelope, one refusal per cause ---
+# --- one envelope, one refusal per cause ---
 
 
 def test_unknown_and_malformed_ids_answer_one_body(harness: AdminHarness) -> None:
@@ -328,7 +329,8 @@ def test_unknown_and_malformed_ids_answer_one_body(harness: AdminHarness) -> Non
 
     A 422 for the malformed id would describe what the path validator accepts rather than what
     exists; `core.audit.errors` records why the split is refused. Asserted on the *body* and not
-    only the status, which is B1's shape: a differing code is a different answer spelled quietly.
+    only the status, which is a differing code leaking existence: a different answer spelled
+    quietly.
     """
     unknown = harness.client.get(f"{TOOL_RUNS_PATH}/{uuid4()}")
     malformed = harness.client.get(f"{TOOL_RUNS_PATH}/not-a-uuid")

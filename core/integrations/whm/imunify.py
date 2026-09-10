@@ -1,9 +1,9 @@
 """Imunify360 `ip-list` response parsing.
 
-Copied from `noa-old` branch `MCP` (`whm/integrations/imunify.py`) unchanged — pure functions,
-zero NOA imports, no I/O. The counterpart to `csf.py`: Imunify is the second firewall backend
-(V57), and unlike CSF it answers in JSON, so this module validates a shape rather than scraping
-text.
+Copied from `noa-old` branch `MCP` (`whm/integrations/imunify.py`) unchanged — pure functions, zero
+NOA imports, no I/O. The counterpart to `csf.py`: Imunify is the second firewall backend (the
+zero-backend rule's second usable answer), and unlike CSF it answers in JSON, so this module
+validates a shape rather than scraping text.
 
 The shape `imunify360-agent ip-list local list --by-ip <ip> --json` returns:
 
@@ -53,11 +53,11 @@ class ImunifyIPEntry:
 class ImunifyIPListResult:
     """Parsed `ip-list` query: whether the IP is listed, how, and the rows behind it.
 
-    `allow_entry` is CSF's `allow_entry` one backend over, and it is here for the same reason
-    (T26): `drop` beats `white`, so an IP on both lists reports `blacklisted` and the `white`
-    row it also holds stops being visible in the verdict. An allowlist removal's postflight asks
-    exactly about that row, and reading it off the verdict would call a surviving whitelist entry
-    removed whenever a blacklist entry outranked it.
+    `allow_entry` is CSF's `allow_entry` one backend over, and it is here for the same reason (the
+    allowlist-remove undo path): `drop` beats `white`, so an IP on both lists reports `blacklisted`
+    and the `white` row it also holds stops being visible in the verdict. An allowlist removal's
+    postflight asks exactly about that row, and reading it off the verdict would call a surviving
+    whitelist entry removed whenever a blacklist entry outranked it.
     """
 
     found: bool
@@ -168,13 +168,13 @@ def imunify_entry_to_dict(entry: ImunifyIPEntry) -> dict[str, Any]:
 def format_imunify_matches(entries: list[ImunifyIPEntry]) -> list[str]:
     """Render entries as evidence lines shaped like CSF's, so both backends read alike.
 
-    **The comment goes last, and that ordering is load-bearing as of T25.** A comment is the one
-    field on this line whose text NOA may itself have written — it is where a firewall entry NOA
-    created carries the operator's approval reason — and the surface that answers a
-    *model* has to cut that text back out again. csf gives no closing boundary for its own
-    comment, so the cut runs from NOA's marker to the end of the line; putting `[expires: …]`
-    ahead of the comment here is what keeps that cut from taking a second field with it. Swapping
-    these two back would silently shorten the evidence a model reads.
+    **The comment goes last, and that ordering is load-bearing since the release-and-allow tool.** A
+    comment is the one field on this line whose text NOA may itself have written — it is where a
+    firewall entry NOA created carries the operator's approval reason — and the surface that answers
+    a *model* has to cut that text back out again. csf gives no closing boundary for its own
+    comment, so the cut runs from NOA's marker to the end of the line; putting `[expires: …]` ahead
+    of the comment here is what keeps that cut from taking a second field with it. Swapping these
+    two back would silently shorten the evidence a model reads.
     """
     matches: list[str] = []
     for entry in entries:

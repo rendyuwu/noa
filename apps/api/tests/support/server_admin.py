@@ -8,8 +8,8 @@ should have to say so at the import.
 
 Three decisions carry the weight of what uses this.
 
-**The rows are real mapped instances**, built by `support/servers.py`'s factories. The V2/V8
-assertion is that no response carries a credential, and the thing that decides that is
+**The rows are real mapped instances**, built by `support/servers.py`'s factories. The
+no-credential-in-a-response assertion is decided by
 `WHMServer.to_safe_dict`. A hand-written row with a hand-written `to_safe_dict` would test the
 hand-written one.
 
@@ -18,9 +18,9 @@ live in `core.servers.admin_repository` and are imported here rather than re-imp
 clear-flag order and the "a moved host loses its pin" rule are exactly what the service tests
 assert, and a double with its own copy would be asserting the copy.
 
-**`commit` is counted, not simulated.** The V100 boundary itself is only observable against a
-live database from a second session (`test_server_admin_repository.py`). What a double *can*
-show is that the service reached `commit()` at all, and that it reached it **after** its
+**`commit` is counted, not simulated.** The commit-ordering boundary itself is only observable
+against a live database from a second session (`test_server_admin_repository.py`). What a double
+*can* show is that the service reached `commit()` at all, and that it reached it **after** its
 guards — so `commits` is a counter and `writes` records the order.
 """
 
@@ -51,7 +51,7 @@ from support.servers import CREATED_AT, pmg_server, proxmox_server, whm_server
 class _Journal:
     """What a repository was asked to do, in order.
 
-    An ordered list rather than counters, because the assertion V100(a) needs is *ordering*: a
+    An ordered list rather than counters, because what is needed is *ordering*: a
     refused write must persist nothing, so `commit` must never appear before the write it
     commits, and it must not appear at all when a guard raised.
     """
@@ -323,8 +323,9 @@ class RecordingSessionFactory:
     """A `SessionFactory` that hands out nothing and counts how often it was asked.
 
     The validation services take a *factory* rather than a session precisely so each database
-    step is its own short transaction and no connection is held across a network hop (T21's
-    rule). That shape is only assertable by counting: `opened == 1` means the service read its
+    step is its own short transaction and no connection is held across a network hop — the
+    account search's rule. That shape is only assertable by counting: `opened == 1` means the
+    service read its
     row and did the hops with nothing checked out; `opened == 2` means it also stored a pin.
     """
 

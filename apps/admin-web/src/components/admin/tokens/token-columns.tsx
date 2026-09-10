@@ -6,7 +6,7 @@ import { formatRelativeTime } from '@/lib/admin/shared/relative-time'
 import { deriveTokenStatus, formatBinding } from '@/lib/admin/tokens/token-status'
 import type { McpToken } from '@/lib/admin/tokens/types'
 
-// DataTable columns for the MCP token list (§T76). The identifier column is the
+// DataTable columns for the MCP token list. The identifier column is the
 // `token_prefix`, not the row id: the prefix is what an operator can match
 // against the value pasted into LibreChat's `customUserVars`, and createIdColumn
 // keeps it monospace so it can be read character-by-character against a config

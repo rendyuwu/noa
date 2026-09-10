@@ -1,9 +1,10 @@
 """A Proxmox VM whose NICs can actually be flipped, and the calls into it.
 
-`support/proxmox.py` owns the client-level double and `support/proxmox_password.py` owns T27's
-VM. This owns what `proxmox_vm_nic`'s two lanes need: a VM whose `netN` lines are **state**, the
+`support/proxmox.py` owns the client-level double and `support/proxmox_password.py` owns the
+password tool's VM. This owns what `proxmox_vm_nic`'s two lanes need: a VM whose `netN` lines are
+**state**, the
 two call helpers, and the fixture shapes both lanes share. Its own module because those lanes are
-two test files, split so neither runs past C14's line budget, and helpers duplicated across files
+two test files, split so neither runs past the line budget, and helpers duplicated across files
 are helpers that drift.
 
 **`FakeProxmoxNICVM` stores lines, not answers.** A config write parses the submitted `netN` value
@@ -94,7 +95,7 @@ class FakeProxmoxNICVM:
     # The task never reaches a terminal state — the poll-timeout branch.
     task_never_finishes: bool = False
     # Accept the write and keep the old line: the VM whose link did not move. `task_exit_status`
-    # stays `OK`, which is what makes this the §V.97 case — the task says yes, the NIC says no.
+    # stays `OK`, which is the lying-task case — the task says yes, the NIC says no.
     ignore_write: bool = False
     # Fail every config read taken *after* the first write — the postflight-unavailable branch,
     # with the preflight left readable so the change still happens.
@@ -259,8 +260,8 @@ def execution_request(
     """What `core.approvals.execution` hands a runner for an approved NIC change.
 
     The evidence is what the gate wrote and what the operator saw; the arguments deliberately name
-    a `server_ref` the runner must ignore, so every runner test that resolves a target is also a
-    V33 assertion.
+    a `server_ref` the runner must ignore, so every runner test that resolves a target is also an
+    evidence-not-arguments assertion.
     """
     return ChangeExecutionRequest(
         action_request_id=action_request_id or uuid4(),

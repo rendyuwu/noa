@@ -10,7 +10,7 @@ import {
   isSelf,
 } from './user-status'
 
-// `formatRelativeTime` itself moved to `admin/shared/relative-time.ts` (§T76) and
+// `formatRelativeTime` itself moved to `admin/shared/relative-time.ts` and
 // is covered there. What stays here is the re-export: Users call sites import it
 // from this module, so the seam has to keep working.
 

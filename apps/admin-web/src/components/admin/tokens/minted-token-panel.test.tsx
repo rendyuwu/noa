@@ -88,7 +88,7 @@ describe('MintedTokenPanel', () => {
   it('keeps the field out of any form, unnamed, and out of autofill', () => {
     const { field } = renderPanel()
 
-    // R2: inside a <form>, Enter re-fires submit or performs a native GET that
+    // Inside a <form>, Enter re-fires submit or performs a native GET that
     // puts the credential in the query string, the address bar and the history.
     expect(field.closest('form')).toBeNull()
     expect(field.getAttribute('name')).toBeNull()
@@ -104,7 +104,7 @@ describe('MintedTokenPanel', () => {
   })
 
   it('falls back to selecting the field when there is no clipboard', () => {
-    // R4: jsdom stubs no clipboard, so ABSENT is the default and this is the
+    // jsdom stubs no clipboard, so ABSENT is the default and this is the
     // path that runs unless a test provides one. Assert the premise, or the
     // fallback silently stops being the covered branch the day jsdom adds one.
     expect(navigator.clipboard).toBeUndefined()

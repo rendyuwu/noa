@@ -13,7 +13,7 @@ import {
 } from './support/frame'
 
 /**
- * The frame the table surface asks for, and the floor under the rows (§T.56 — V64, V85).
+ * The frame the table surface asks for, and the floor under the rows.
  *
  * The approval card's own frame, and the notice states', are `frame-size-card.browser.e2e.ts`: same
  * harness and same parent, two subjects whose measurements have nothing to say to each other.
@@ -25,15 +25,15 @@ import {
  * arithmetic lives in `src/lib/embed/frame-size.test.ts`, the message and the bookkeeping live in
  * `src/components/frame-sizer.test.tsx`, and what is measured here is a browser doing layout.
  *
- * **The frame is the one LibreChat serves** (`support/frame.ts`): the parent origin §T.45 allows,
- * the sandbox string R13/R29 measured with `allow-forms` absent, and a parent that applies a
- * `ui-size-change` to the iframe's inline style the way `@mcp-ui/client` was measured doing —
+ * **The frame is the one LibreChat serves** (`support/frame.ts`): the parent origin the framing
+ * header allows, the sandbox string measured with `allow-forms` absent, and a parent that applies
+ * a `ui-size-change` to the iframe's inline style the way `@mcp-ui/client` was measured doing —
  * verbatim, gated on the message coming from the frame's own `contentWindow`, with no clamp of its
  * own. A harness more forgiving than the host would prove nothing.
  *
- * V90: no readiness wait of its own; the servers are gated on their open sockets by
- * `playwright.config.ts`, and every wait below is on the frame's own content or on the parent's
- * record of what it received.
+ * The setup gate sits one layer below the subject: no readiness wait of its own; the servers are
+ * gated on their open sockets by `playwright.config.ts`, and every wait below is on the frame's
+ * own content or on the parent's record of what it received.
  */
 
 test.use({ launchOptions: { args: HOST_RESOLVER_ARGS } })
@@ -179,7 +179,7 @@ test('at the box the host opens with, the expiry line is reachable rather than c
   await page.mouse.wheel(0, 600)
 
   // One pixel of tolerance: a fractional viewport rounds, and the claim is "on screen", not "on
-  // screen to the pixel" (V87's rule about what a compare may eat). Polled because a wheel is
+  // screen to the pixel" — a compare never eats what the clock stamps. Polled because a wheel is
   // delivered asynchronously, and bounded so a box that refuses to scroll fails as an assertion
   // rather than as the suite's own timeout.
   await expect

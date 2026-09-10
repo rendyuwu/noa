@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 /**
- * Repo-root `.env` loading for local dev (§T.47, C11).
+ * Repo-root `.env` loading for local dev (one env file per deployment, and no secrets in git).
  *
  * Next only auto-loads env files from the app directory, and this package deliberately has no
  * `.env.local`: two env files for one deployment is two places for `NOA_API_URL` to disagree, and
@@ -11,7 +11,7 @@ import path from 'node:path'
  *
  * A copy of `apps/web-embed/config/root-env.ts`, not an import of it: the two web apps are
  * independent packages with their own lockfiles, own CI and own deploy artifact, and they share no
- * source (C12, AGENTS.md). Duplication across that boundary is the boundary working.
+ * source (AGENTS.md). Duplication across that boundary is the boundary working.
  *
  * Lives in its own module rather than inside the config because the precedence rule below is the
  * part that can be got wrong, and a rule inside `next.config.ts` cannot be tested without

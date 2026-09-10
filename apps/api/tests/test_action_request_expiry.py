@@ -7,10 +7,11 @@ Two claims live here and neither is about SQL:
   land `EXPIRED` with a `decided_at` it was never actually judged against.
 - **The loop** sleeps before its first pass, opens a fresh session per pass, survives a pass
   that raises, and stops when the app stops. A sweeper that dies on the first transient
-  database error would leave V32's "terminality without traffic" true only while nothing ever
-  went wrong — which is the state it exists to prevent.
+  database error would leave the TTL's "terminality without traffic" true only while nothing
+  ever went wrong — which is the state it exists to prevent.
 
-The SQL itself — the predicate, the `RETURNING`, and the lock behaviour V28 leans on — is
+The SQL itself — the predicate, the `RETURNING`, and the row lock the one-decision rule leans
+on — is
 `test_action_request_expiry_live.py`'s, against a real Postgres.
 """
 
@@ -49,8 +50,8 @@ async def wait_for(predicate: Callable[[], bool], *, what: str) -> None:
     """Poll until `predicate` holds, or fail saying what never happened.
 
     Polling rather than a fixed `asyncio.sleep(n * INTERVAL)`: the assertion is that the loop
-    *gets there*, and a fixed wait turns a slow machine into a red suite — the flake habit V87
-    is about, one axis over.
+    *gets there*, and a fixed wait turns a slow machine into a red suite — the flake habit of
+    comparing what the clock stamps, one axis over.
     """
     loop = asyncio.get_running_loop()
     deadline = loop.time() + WAIT_TIMEOUT_SECONDS
@@ -96,7 +97,7 @@ async def running(sweeper: PendingExpirySweeper) -> AsyncIterator[PendingExpiryS
 
 
 async def test_the_sweep_expires_every_due_request_and_reports_them() -> None:
-    """V32: past the deadline is terminal, and the pass says which rows it moved."""
+    """Past the deadline is terminal, and the pass says which rows it moved."""
     repository = FakeActionRequestExpiryRepository()
     due = repository.add(pending_row(expires_in_seconds=-5))
     also_due = repository.add(pending_row(expires_in_seconds=-3600))
@@ -111,10 +112,10 @@ async def test_the_sweep_expires_every_due_request_and_reports_them() -> None:
 
 
 async def test_an_expiry_carries_no_reason() -> None:
-    """V32: an expiry is the *absence* of an answer, so the field that holds one stays NULL.
+    """An expiry is the *absence* of an answer, so the field that holds one stays NULL.
 
-    T34's CHECK deliberately exempts EXPIRED — which is exactly why nothing at the database
-    level would catch an expiry that carried a reason, and why this is asserted here.
+    The table's CHECK deliberately exempts EXPIRED — which is exactly why nothing at the
+    database level would catch an expiry that carried a reason, and why this is asserted here.
     """
     repository = FakeActionRequestExpiryRepository()
     due = repository.add(pending_row(expires_in_seconds=-5))
@@ -159,12 +160,12 @@ async def test_a_pass_without_a_moment_uses_an_aware_utc_clock() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Check-on-read (V32 — T63's result tool calls this today, T41's card next)
+# Check-on-read (the action-result tool calls this today, the approval card next)
 # --------------------------------------------------------------------------------------
 
 
 async def test_check_on_read_expires_a_due_request_and_reports_it() -> None:
-    """T41's card must not render a PENDING nobody may act on any more."""
+    """The card must not render a PENDING nobody may act on any more."""
     repository = FakeActionRequestExpiryRepository()
     due = repository.add(pending_row(expires_in_seconds=-5))
 
@@ -237,7 +238,7 @@ async def test_check_on_read_cannot_expire_an_already_decided_request() -> None:
 
 
 async def test_the_first_pass_waits_one_interval() -> None:
-    """No sweep at boot: V51 says `/health` answers with Postgres down, and a pass at
+    """No sweep at boot: `/health` answers 200 with Postgres down, and a pass at
     startup would make every boot open a connection to find that out."""
     repository = FakeActionRequestExpiryRepository()
     factory = RecordingSessionFactory()
@@ -252,7 +253,7 @@ async def test_the_first_pass_waits_one_interval() -> None:
 
 
 async def test_each_pass_opens_its_own_session() -> None:
-    """V30: a session held across passes pins one connection for the life of the process."""
+    """A session held across passes pins one connection for the life of the process."""
     repository = FakeActionRequestExpiryRepository()
     factory = RecordingSessionFactory()
 
@@ -277,7 +278,7 @@ async def test_a_pass_commits_inside_the_session_it_opened() -> None:
 
 
 async def test_a_failing_pass_does_not_end_the_loop() -> None:
-    """V32 without this is a guarantee that lasts until Postgres first blinks."""
+    """The TTL without this is a guarantee that lasts until Postgres first blinks."""
     repository = FakeActionRequestExpiryRepository()
     repository.fail = RuntimeError("connection reset by peer")
     factory = RecordingSessionFactory()
@@ -316,7 +317,8 @@ async def test_run_once_raises_rather_than_swallowing() -> None:
 
 
 async def test_stop_cancels_the_task() -> None:
-    """The lifespan disposes the engine right after this returns (T39's wiring in `main`)."""
+    """The lifespan disposes the engine right after this returns — the expiry loop's wiring in
+    `main`."""
     sweeper = build_sweeper(FakeActionRequestExpiryRepository(), RecordingSessionFactory())
 
     await sweeper.start()

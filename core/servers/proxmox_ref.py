@@ -1,15 +1,15 @@
 """Operator word → one Proxmox server, or a structured refusal.
 
-Ported from `noa-old` branch `MCP` (`proxmox/server_ref.py`, C13). Error codes are verbatim
+Ported from `noa-old` branch `MCP` (`proxmox/server_ref.py`). Error codes are verbatim
 (`host_required`, `host_not_found`, `host_ambiguous`), which is why they live in
 `core.servers.reference` and are re-exported here rather than restated.
 
-**This is the module the package docstring was waiting for.** T19 and T31 each ported a
-per-system resolver and left the question open: is the third one two parameters or a third
-shape? It is two parameters, and Proxmox is `whm_ref`'s shape exactly — the host is parsed out
-of `base_url`, and a candidate is recognised by id, name and that URL. So T27 extracted
-`core.servers.reference` instead of writing a third copy of ~130 lines, and this file is
-what a Proxmox row is and nothing else.
+**This is the module the package docstring was waiting for.** The WHM and PMG ports each took a
+per-system resolver and left the question open: is the third one two parameters or a third shape? It
+is two parameters, and Proxmox is `whm_ref`'s shape exactly — the host is parsed out of `base_url`,
+and a candidate is recognised by id, name and that URL. So the shared policy was extracted into
+`core.servers.reference` instead of writing a third copy of ~130 lines, and this file is what a
+Proxmox row is and nothing else.
 
 `noa-old`'s own version differed from its WHM sibling in one way that is *not* carried: it
 answered a resolution whose `server` was typed `object`, so every caller cast. Here the row keeps
@@ -52,8 +52,7 @@ def describe(server: ProxmoxServerRowLike) -> dict[str, str]:
     """One candidate, as a `choices` entry.
 
     Id, name and `base_url` — enough for an operator to recognise an endpoint and then name it
-    unambiguously. No `api_token_id` and no secret: this text goes into an LLM transcript
-    (V8, V26).
+    unambiguously. No `api_token_id` and no secret: this text goes into an LLM transcript.
     """
     return {"id": str(server.id), "name": server.name, "base_url": server.base_url}
 

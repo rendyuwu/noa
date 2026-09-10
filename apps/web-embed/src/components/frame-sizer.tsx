@@ -13,7 +13,7 @@ import {
 } from '@/lib/embed/frame-size'
 
 /**
- * Asks the host to make the frame as tall as the document inside it (§T.41, §T.56 — V66).
+ * Asks the host to make the frame as tall as the document inside it.
  *
  * One component for both surfaces, because both ask the same question of the same host and the
  * difference between them is a policy object (`lib/embed/frame-size.ts`). Two copies would be two

@@ -9,9 +9,9 @@ Two levels, for two different claims:
   an FK's `ondelete` is a string until a real `DELETE` runs against it. Skipped (never
   failed) when Postgres is unreachable, like every other DB-backed test here.
 
-This file is about the *shape*, not the writer. T73 wired the write into the tool path and
-`test_mcp_tool_audit.py` covers it end to end; what is asserted here is that the columns
-V45-V47 ask for exist and hold, so the writer cannot quietly reshape them.
+This file is about the *shape*, not the writer. The tool-run writer wired the write into the tool
+path and `test_mcp_tool_audit.py` covers it end to end; what is asserted here is that the columns
+the tool-run audit rule asks for exist and hold, so the writer cannot quietly reshape them.
 """
 
 from __future__ import annotations
@@ -33,9 +33,9 @@ SCRATCH_DB = "noa_tool_runs_schema_test"
 
 TOOL_RUNS = Base.metadata.tables["tool_runs"]
 
-# §T.35's column list, verbatim, plus the second half of "timing". A column added without
+# The run table's column list, verbatim, plus the second half of "timing". A column added without
 # a task to specify it is a guess (`test_schema_v1.py` guards whole tables the same way);
-# one removed takes a V47 field with it.
+# one removed takes an audit field with it.
 T35_COLUMNS = {
     "id",
     "tool_name",
@@ -49,7 +49,7 @@ T35_COLUMNS = {
     "completed_at",
 }
 
-# V47's field list, named one by one so a failure says which audit field went missing
+# The audit field list, named one by one so a failure says which audit field went missing
 # rather than only that a set differs.
 V47_FIELDS = [
     "requested_by_user_id",
@@ -60,8 +60,8 @@ V47_FIELDS = [
     "args",
 ]
 
-# §I.admin-api's audit filters (toolName, status, user, conversationRef, date range) plus
-# the ordering T55 pages on. `risk` is deliberately absent: nothing filters by it.
+# The admin audit surface's filters (toolName, status, user, conversationRef, date range) plus
+# the ordering the audit list pages on. `risk` is deliberately absent: nothing filters by it.
 INDEXED_COLUMNS = {
     "tool_name",
     "status",
@@ -79,22 +79,22 @@ INDEXED_COLUMNS = {
 def test_column_set_is_exactly_what_t35_specifies() -> None:
     """No extra columns, no missing ones.
 
-    Two absences are deliberate and this is what holds them: `error` (a sanitized failure
-    code fits `result_summary`, and V19 keeps raw exception text away from the LLM), and
-    `action_request_id` (T34 puts `tool_run_id` on `action_requests`; a second FK pointing
-    back would be two truths about one link).
+    Two absences are deliberate and this is what holds them: `error` (a sanitized failure code fits
+    `result_summary`, and raw exception text never reaches the LLM), and `action_request_id` (the
+    request table puts `tool_run_id` on `action_requests`; a second FK pointing back would be two
+    truths about one link).
     """
     assert set(TOOL_RUNS.c.keys()) == T35_COLUMNS
 
 
 @pytest.mark.parametrize("field", V47_FIELDS)
-def test_v47_names_every_audit_column(field: str) -> None:
-    """V47: the tool-run audit record carries each of these."""
+def test_every_audit_field_is_a_column(field: str) -> None:
+    """The tool-run audit record carries each of these."""
     assert field in TOOL_RUNS.c
 
 
 def test_timing_is_a_pair_of_timestamps() -> None:
-    """V47 "timing": start and end. Duration is derived on read, never stored.
+    """The audit rule's "timing": start and end. Duration is derived on read, never stored.
 
     Two columns cannot disagree with each other; a stored duration can disagree with both.
     `completed_at` is nullable because a STARTED run has not got one yet.
@@ -107,7 +107,7 @@ def test_timing_is_a_pair_of_timestamps() -> None:
 
 
 def test_risk_and_status_are_separate_columns_so_a_failed_read_is_representable() -> None:
-    """V20: two columns, two enums — not one flat lifecycle set.
+    """Two columns, two enums — not one flat lifecycle set.
 
     Folded together, `FAILED` and `READ` compete for one cell and a failed READ becomes
     unwritable. `noa-old` kept `risk` on `action_requests` only, so its `tool_runs` could
@@ -125,13 +125,12 @@ def test_risk_and_status_are_separate_columns_so_a_failed_read_is_representable(
 
 
 def test_change_runs_are_representable() -> None:
-    """V46: an approved CHANGE writes here too.
+    """An approved CHANGE writes here too.
 
-    The receipt half of V46 is T36's `action_receipts` (table built, writer still T38's), and
-    the CHANGE row itself is written by the
-    post-approval executor rather than by T73's middleware, which records READs only —
-    a CHANGE tool's `tools/call` opens the approval gate and executes nothing. This
-    table only has to be able to say that a run was a change.
+    The receipt half of the rule is `action_receipts` (table built, writer still the executor's),
+    and the CHANGE row itself is written by the post-approval executor rather than by the tool-run
+    middleware, which records READs only — a CHANGE tool's `tools/call` opens the approval gate and
+    executes nothing. This table only has to be able to say that a run was a change.
     """
     run = ToolRun(
         tool_name="whm_suspend_account", risk=ToolRisk.CHANGE, status=ToolRunStatus.COMPLETED
@@ -141,12 +140,12 @@ def test_change_runs_are_representable() -> None:
 
 
 def test_lifecycle_enums_are_distinct_and_machine_stable() -> None:
-    """V20: this table's two enums, stable values.
+    """This table's two enums, stable values.
 
-    Exact member sets, so a rename is a test failure rather than a silent data change.
-    Disjoint values, because a shared member would let a query written against one column
-    match rows in the other. V20's third enum landed with T34; the three-way version of
-    this assertion lives in `test_action_requests_schema.py`, where all three exist.
+    Exact member sets, so a rename is a test failure rather than a silent data change. Disjoint
+    values, because a shared member would let a query written against one column match rows in the
+    other. The third lifecycle enum landed with the request table; the three-way version of this
+    assertion lives in `test_action_requests_schema.py`, where all three exist.
     """
     assert {member.name: member.value for member in ToolRisk} == {
         "READ": "READ",
@@ -164,7 +163,7 @@ def test_lifecycle_enums_are_distinct_and_machine_stable() -> None:
 
 
 def test_enum_columns_are_checked_varchars_not_native_postgres_enums() -> None:
-    """V20 "machine-stable" enforced by the database, not by application discipline.
+    """ "Machine-stable" enforced by the database, not by application discipline.
 
     `native_enum=False` alone leaves an unconstrained VARCHAR — SQLAlchemy 2.0 defaults
     `create_constraint` to `False`. The CHECK is what makes a renamed member a migration.
@@ -184,7 +183,7 @@ def test_enum_columns_are_checked_varchars_not_native_postgres_enums() -> None:
 def test_status_defaults_to_started() -> None:
     """The row is inserted before the tool body runs, so its default has to be truthful.
 
-    A process that dies mid-call then leaves a STARTED row for T38's reaper, rather than
+    A process that dies mid-call then leaves a STARTED row for the reaper, rather than
     no evidence at all.
     """
     assert TOOL_RUNS.c.status.server_default.arg == ToolRunStatus.STARTED.value
@@ -192,7 +191,7 @@ def test_status_defaults_to_started() -> None:
 
 
 def test_args_default_to_an_empty_object_never_null() -> None:
-    """V45: args are recorded (redacted by the writer — `core.secrets.redaction`, T73).
+    """Args are recorded, redacted by the writer — `core.secrets.redaction` on the tool path.
 
     `'{}'` rather than NULL so an audit view cannot confuse "took no arguments" with
     "arguments were not recorded".
@@ -204,27 +203,27 @@ def test_args_default_to_an_empty_object_never_null() -> None:
 
 
 def test_result_summary_is_bounded() -> None:
-    """V45, V47: "truncated summary".
+    """The audit rule's "truncated summary".
 
-    An unbounded column invites the whole result body, which V64 deliberately keeps out of
-    context and out of this table.
+    An unbounded column invites the whole result body, which summary-plus-URL deliberately keeps out
+    of context and out of this table.
     """
     assert TOOL_RUNS.c.result_summary.type.length == 2000
     assert TOOL_RUNS.c.result_summary.nullable is True
 
 
 def test_conversation_ref_is_a_nullable_label() -> None:
-    """DECISIONS §3.2: an audit/grouping label, never a security scope.
+    """DECISIONS section 3.2: an audit/grouping label, never a security scope.
 
-    Nullable because MCP has no thread to guarantee one — C16 dropped threads, and the old
-    fail-closed-when-absent rule (old V165) went with the evidence store.
+    Nullable because MCP has no thread to guarantee one — threads were dropped, and the old
+    fail-closed-when-absent rule went with the evidence store.
     """
     assert TOOL_RUNS.c.conversation_ref.nullable is True
 
 
 @pytest.mark.parametrize("column_name", sorted(INDEXED_COLUMNS))
 def test_audit_query_columns_are_indexed(column_name: str) -> None:
-    """Every §I.admin-api audit filter, plus the column T55's cursor pages on."""
+    """Every admin audit filter, plus the column the list cursor pages on."""
     indexed = {column.name for index in TOOL_RUNS.indexes for column in index.columns}
 
     assert column_name in indexed
@@ -234,7 +233,7 @@ def test_requester_fk_sets_null_rather_than_cascading() -> None:
     """Deliberately unlike every other user FK in schema v1, which cascades.
 
     An audit trail a user deletion erases is not an audit trail. `RESTRICT` would instead
-    make `DELETE /admin/users/{id}` fail the moment a user had run one tool. T73 always
+    make `DELETE /admin/users/{id}` fail the moment a user had run one tool. The writer always
     writes an id; NULL describes life after the subject is deleted.
     """
     (fk,) = TOOL_RUNS.c.requested_by_user_id.foreign_keys
@@ -287,7 +286,7 @@ async def insert_raw_run(session: AsyncSession, *, risk: str, status: str) -> No
 
 
 async def test_migration_created_the_check_constraint_on_status(session: AsyncSession) -> None:
-    """V20: the database refuses a status the enum does not define.
+    """The database refuses a status the enum does not define.
 
     Raw SQL on purpose — the ORM's own `validate_strings` would catch it first and prove
     nothing about the schema the migration built.
@@ -297,7 +296,7 @@ async def test_migration_created_the_check_constraint_on_status(session: AsyncSe
 
 
 async def test_migration_created_the_check_constraint_on_risk(session: AsyncSession) -> None:
-    """V20, same for the risk column — the two constraints are separate."""
+    """Same for the risk column — the two constraints are separate."""
     with pytest.raises(IntegrityError):
         await insert_raw_run(session, risk="DELETE", status="STARTED")
 
@@ -312,7 +311,7 @@ async def test_orm_refuses_an_unknown_member_before_the_flush(session: AsyncSess
 
 
 async def test_a_failed_read_round_trips(session: AsyncSession) -> None:
-    """V20, end to end: risk READ with status FAILED is a row Postgres accepts."""
+    """End to end: risk READ with status FAILED is a row Postgres accepts."""
     user_id = await insert_user(session, "operator@example.com")
     session.add(
         ToolRun(
@@ -366,7 +365,7 @@ async def test_deleting_the_requester_keeps_the_run(session: AsyncSession) -> No
 
 
 async def test_args_hold_a_redacted_payload(session: AsyncSession) -> None:
-    """V45: JSONB round-trips the shape T73 writes (redaction is the writer's, not the
+    """JSONB round-trips the shape the tool-run writer writes (redaction is the writer's, not the
     column's)."""
     redacted = {"server_ref": "whm-1", "ssh_password": "[redacted]", "targets": ["1.2.3.4"]}
     session.add(

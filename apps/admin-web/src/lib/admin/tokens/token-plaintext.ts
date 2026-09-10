@@ -1,4 +1,5 @@
-// The token-plaintext SHAPE detector (§V103), and the reason it has one home.
+// The token-plaintext SHAPE detector — write-once display, one render site — and the reason it
+// has one home.
 //
 // It mirrors `_plaintexts_in` in `apps/api/tests/test_mcp_token_routes.py:75`:
 // the public `noa_` marker (mcp_token_service.py:64) followed by the 43

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * File-size hygiene (C14, V65, §T.47): `.ts` <= 300 lines, `.tsx` <= 450.
+ * File-size hygiene: `.ts` <= 300 lines, `.tsx` <= 450.
  *
  * Scans `git ls-files` rather than walking the filesystem — the same choice
  * `apps/web-embed/tests/hygiene.test.ts` and `apps/api/tests/test_config.py`
@@ -36,7 +36,7 @@ function lineCount(relativePath: string): number {
   return readFileSync(path.join(APP_ROOT, relativePath), 'utf8').split('\n').length
 }
 
-describe('C14/V65 — TypeScript file size limits', () => {
+describe('TypeScript file size limits', () => {
   it('scans the package it is meant to bound', () => {
     // Without this the suite below is a tautology: an empty file list satisfies
     // every limit, so a broken `git ls-files` call would read as compliance.
@@ -56,7 +56,7 @@ describe('C14/V65 — TypeScript file size limits', () => {
     expect(oversized).toEqual([])
   })
 
-  it('separates — the limits are the ones C14 states', () => {
+  it('separates — the limits are the pinned ones', () => {
     // The comparison above is only as good as these two numbers. Pinning them
     // means loosening a cap has to be an edit to this line, not a quiet drift.
     expect(LIMITS).toEqual({ '.ts': 300, '.tsx': 450 })

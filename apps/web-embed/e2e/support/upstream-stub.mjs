@@ -1,7 +1,7 @@
 import { createServer } from 'node:http'
 
 /**
- * Stand-in for the NOA API, for the browser checks (§T.44, §T.41).
+ * Stand-in for the NOA API, for the browser checks (the proxy route and the card page).
  *
  * The e2e questions here are about *this app*: does a browser cookie on the embed origin reach the
  * API through the proxy, and does a decision leave a frame whose sandbox omits `allow-forms`. A
@@ -10,8 +10,8 @@ import { createServer } from 'node:http'
  *
  * It records what it was asked for, so a refusal the proxy makes can be told apart from a refusal
  * the upstream makes. Without `/__hits` the "login is not proxied" assertion would pass just
- * as well against a proxy that forwarded the request to an upstream that happened to 404 — V87's
- * shape. The approval specs lean on the same counter from the other side: a decision POST that
+ * as well against a proxy that forwarded the request to an upstream that happened to 404 — a
+ * compare that proves nothing. The approval specs lean on the same counter from the other side: a decision POST that
  * *did* arrive is what makes "a form submit did not" mean something.
  */
 
@@ -20,7 +20,7 @@ const PORT = Number(process.env.UPSTREAM_STUB_PORT ?? 8099)
 /** @type {Record<string, number>} */
 const hits = {}
 
-// Card ids the approval specs address, one per outcome the page renders (§T.41). Handed in by
+// Card ids the approval specs address, one per outcome the page renders. Handed in by
 // `playwright.config.ts`, which is also where the specs read them from — one source, so a spec
 // cannot ask about a state this stub does not serve.
 const PENDING_ID = process.env.STUB_PENDING_ID ?? ''
@@ -28,12 +28,12 @@ const DECIDED_ID = process.env.STUB_DECIDED_ID ?? ''
 const UNAUTHORIZED_ID = process.env.STUB_UNAUTHORIZED_ID ?? ''
 const NOT_FOUND_ID = process.env.STUB_NOT_FOUND_ID ?? ''
 
-// The one card that MOVES between reads (§T.42, V29). Everything else this stub serves is a fixed
+// The one card that MOVES between reads (approve runs async, state in DB). Everything else this stub serves is a fixed
 // state; this id is how the browser lane can watch a run reach a terminal one.
 const POLLING_ID = process.env.STUB_POLLING_ID ?? ''
 
-// The card whose SESSION comes back (§T.43): 401 on the first read, a PENDING card after that. Its
-// own id because `UNAUTHORIZED_ID` answers 401 forever — that is the state V38 renders, and a retry
+// The card whose SESSION comes back (the 401 card): 401 on the first read, a PENDING card after that. Its
+// own id because `UNAUTHORIZED_ID` answers 401 forever — that is the state the 401 card renders, and a retry
 // can never escape it. This id is the operator who went and signed in.
 const RECOVERS_ID = process.env.STUB_RECOVERS_ID ?? ''
 const RUN_RESULT = process.env.STUB_RUN_RESULT ?? ''
@@ -67,7 +67,7 @@ const reads = {}
 const CSRF = process.env.STUB_CSRF ?? 'v1.1786000000.stub-signature'
 const TOOL_RUN_ID = '5c2f1a90-0000-4000-8000-000000000001'
 
-// The large-READ table surface's tokens (§T.56), one per outcome that page renders. Same rule as
+// The large-READ table surface's tokens, one per outcome that page renders. Same rule as
 // the card ids above: handed in by `playwright.config.ts`, which is where the specs read them.
 // No token for the whole-listing case: any token this stub does not recognise is served as one,
 // the way any unrecognised card id is served PENDING.
@@ -105,7 +105,7 @@ function longTableRows() {
   }))
 }
 
-/** The body the API's `GET /tables/{token}` sends (§I.embed, V64, V85). */
+/** The body the API's `GET /tables/{token}` sends (the embed app's contract: summary plus URL, capped read ships its bound). */
 function tableBody(token, { truncated, rows = TABLE_ROWS }) {
   return {
     token,
@@ -115,8 +115,8 @@ function tableBody(token, { truncated, rows = TABLE_ROWS }) {
       { key: 'domain', label: 'Primary domain' },
     ],
     rows,
-    // The count before the cut when capped, and the rows themselves when not: the two states V85
-    // separates, served as two tokens so a spec can assert the page tells them apart.
+    // The count before the cut when capped, and the rows themselves when not: the two states the
+    // cap's bound separates, served as two tokens so a spec can assert the page tells them apart.
     total_rows: truncated ? TABLE_TOTAL_ROWS : rows.length,
     stored_rows: rows.length,
     truncated,
@@ -125,7 +125,7 @@ function tableBody(token, { truncated, rows = TABLE_ROWS }) {
   }
 }
 
-/** The card body the API's `GET /action-requests/{id}` sends (§I.embed). */
+/** The card body the API's `GET /action-requests/{id}` sends (the embed app's contract). */
 function cardBody(id, { pending }) {
   return {
     action_request_id: id,
@@ -173,7 +173,7 @@ function json(response, status, body, extraHeaders = {}) {
  * between the sandbox and the counter. It fires a `fetch` POST and submits a native `<form>` POST
  * to two different paths, so `/__hits` says which of the two the browser actually performed.
  *
- * This is V80's mechanism under test rather than asserted (V84c): the card ships a `fetch` because
+ * This is the JS-`fetch` rule's mechanism under test rather than asserted: the card ships a `fetch` because
  * a form submit dies silently in this sandbox, and a spec that only checked the `fetch` worked
  * would never notice if that premise stopped being true.
  */
@@ -200,14 +200,14 @@ function sandboxControl(prefix) {
 }
 
 /**
- * The same document, on counter paths of its own, for the tab §T.43's link-out opens.
+ * The same document, on counter paths of its own, for the tab the 401 card's link-out opens.
  *
- * A separate prefix rather than a second use of the paths above, because the V80 control asserts
+ * A separate prefix rather than a second use of the paths above, because the fetch control asserts
  * `POST /__probe/form` is **undefined** — a shared counter would let one spec's probe satisfy or
  * break the other's, and this stub is one process for every spec file.
  *
  * What it is for: a tab opened from a sandboxed frame inherits the opener's sandbox flags unless
- * `allow-popups-to-escape-sandbox` is granted, which R13 records as absent. So the question "does
+ * `allow-popups-to-escape-sandbox` is granted, absent at every render site. So the question "does
  * the link-out land somewhere an operator can actually sign in" is a question about what this
  * document is still allowed to do, and it answers it on the counter rather than in prose.
  */
@@ -258,7 +258,7 @@ const server = createServer((request, response) => {
       return
     }
     if (id === RECOVERS_ID) {
-      // 401 for the page's own server-side read, a card for everything after it (§T.43): the
+      // 401 for the page's own server-side read, a card for everything after it: the
       // operator signed in between the two, and the retry is what asks again.
       reads[id] = (reads[id] ?? 0) + 1
       if (reads[id] === 1) {
@@ -306,7 +306,7 @@ const server = createServer((request, response) => {
           created_at: '2026-08-08T09:30:00+00:00',
           completed_at: finished ? '2026-08-08T09:30:12+00:00' : null,
         },
-        // The receipt arrives with the terminal write and not before (§T.42(b), V46), so the
+        // The receipt arrives with the terminal write and not before (run and receipt, one commit), so the
         // browser lane watches an outcome section appear rather than finding one already there.
         // Two halves, sharing no value, because "both halves render" is what is asserted.
         receipt: finished

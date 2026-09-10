@@ -1,15 +1,17 @@
 """`pmg_whitelist` — one tool for two directions.
 
-The second of the two **enum collapses** DECISIONS §9 adopted, after T28: `noa-old`'s
-`pmg_whitelist_add` and `pmg_whitelist_remove` become one tool with an `action` parameter. The
+The second of the two **enum collapses** DECISIONS section 9 adopted, after the NIC tool:
+`noa-old`'s `pmg_whitelist_add` and `pmg_whitelist_remove` become one tool with an `action`
+parameter. The
 recorded cost is the same one — RBAC gets coarser, because a role can no longer be granted "add"
-without "remove" (DECISIONS §9) — and it is not re-litigated here.
+without "remove" (DECISIONS section 9) — and it is not re-litigated here.
 
-**Two halves, and only the first is here.** This module runs the in-process preflight
-and opens an `action_requests` row; it executes nothing, and the LLM can reach it. The half that
-edits `mynetworks` is `pmg_whitelist_runner.py`, reachable only from `core.approvals.execution`
-after an operator approved. Two files for C14, split on the boundary the design already
-draws, and the dependency runs one way — T27's and T28's arrangement, one system over.
+**Two halves, and only the first is here.** This module runs the in-process preflight and opens an
+`action_requests` row; it executes nothing, and the LLM can reach it. The half that edits
+`mynetworks` is `pmg_whitelist_runner.py`, reachable only from `core.approvals.execution` after an
+operator approved. Two files under the file-size cap, split on the boundary the design already
+draws, and the dependency runs one way — the password-reset and NIC tools' arrangement, one system
+over.
 
 **No reason parameter, and nowhere to add one**. `open_change_request` refuses a
 reason-shaped argument even for a caller reaching this function directly.
@@ -19,30 +21,31 @@ already run resolve → connect → `pmgsh ls` → parse, and a CHANGE that gath
 through its own reader would be a second answer to "what is on this whitelist" that could drift
 from the one the operator got from `pmg_whitelist_search` a minute earlier.
 
-**§V.59 is worse here than it is one tool over, and the card carries the proof.**
-`ipaddress.ip_network(…, strict=False)` masks host bits, so `1.2.3.4/24` is a question about
-`1.2.3.0/24` — and where the search tool only *answers* about the masked form, this **writes** it:
-an operator who typed one address would be approving a whole `/24`. So the operator's own text and
-the normalised form travel together on the evidence and in every answer, never one instead of the
-other.
+**The exact-membership rule is worse here than it is one tool over, and the card carries the
+proof.** `ipaddress.ip_network(…, strict=False)` masks host bits, so `1.2.3.4/24` is a question
+about `1.2.3.0/24` — and where the search tool only *answers* about the masked form, this **writes**
+it: an operator who typed one address would be approving a whole `/24`. So the operator's own text
+and the normalised form travel together on the evidence and in every answer, never one instead of
+the other.
 
 **Two no-op branches, an answer rather than a question.** `add` against an address already on the
-list, and `remove` against one that is not, have nothing for an operator to authorise — T22, T23,
-T26 and T28's shape. That answer is transcript, so it is built from the server's name, the
-two spellings of the target and one measured boolean, never from the `pmgsh` output it was decided
-from.
+list, and `remove` against one that is not, have nothing for an operator to authorise — the same
+shape the WHM account pair, the allowlist undo and the NIC tool take. That answer is transcript, so
+it is built from the server's name, the two spellings of the target and one measured boolean, never
+from the `pmgsh` output it was decided from.
 
-**One source, so §V.86 has no partial case here.** PMG answers over exactly one transport, so
+**One source, so a partial answer has no case here.** PMG answers over exactly one transport, so
 there is no second backend to be silent while the first speaks. A `pmgsh ls` that cannot answer
 raises, and `sanitize_tool_errors` hands the model the integration's own code —
 `ssh_sudo_required` and `pmgsh_command_failed` name different remedies (`noa-old` GH #82) — and
 **no card is opened**. Fail-closed by construction rather than by choice, which is what makes this
-different from T26's dual-backend gate rather than a weaker version of it.
+different from the allowlist-remove tool's dual-backend gate rather than a weaker version of it.
 
-**§V.96 has no instance.** `pmgsh create /config/mynetworks -cidr <cidr>` takes a CIDR and nothing
-else — there is no comment, note or description field on a `mynetworks` entry — so nothing C8 keeps
-from the LLM is ever written onto a PMG node, and nothing NOA wrote can come back through a later
-READ. Stated rather than assumed, and asserted on the runner's commands and its payload.
+**No kept-from-the-LLM value has an instance.** `pmgsh create /config/mynetworks -cidr <cidr>` takes
+a CIDR and nothing else — there is no comment, note or description field on a `mynetworks` entry —
+so nothing the operator types and the LLM never sees is ever written onto a PMG node, and nothing
+NOA wrote can come back through a later READ. Stated rather than assumed, and asserted on the
+runner's commands and its payload.
 """
 
 from __future__ import annotations
@@ -80,7 +83,7 @@ from noa_api.mcp_tools.results import (
 
 TOOL_PMG_WHITELIST: Final = "pmg_whitelist"
 
-# --- The action enum (DECISIONS §9) ---
+# --- The action enum (DECISIONS section 9) ---
 #
 # Two words, and the pair is the whole of the collapse. Constants rather than literals at each site
 # because they cross three boundaries: the published schema, the JSONB evidence, and the runner
@@ -89,11 +92,10 @@ ACTION_ADD: Final = "add"
 ACTION_REMOVE: Final = "remove"
 ACTIONS: Final[tuple[str, ...]] = (ACTION_ADD, ACTION_REMOVE)
 
-# --- Evidence keys ---
-#
-# This tool's own. Written into `approval_context` here and read back by the runner after a
-# decision, so a misspelling reads as an absent value rather than as an error — T27's warning, and
-# the reason these are constants shared by both halves rather than string literals twice.
+# --- Evidence keys --- This tool's own. Written into `approval_context` here and read back by the
+# runner after a decision, so a misspelling reads as an absent value rather than as an error — the
+# password-reset tool's warning, and the reason these are constants shared by both halves rather
+# than string literals twice.
 EVIDENCE_SERVER_ID: Final = "server_id"
 EVIDENCE_SERVER_NAME: Final = "server"
 EVIDENCE_ACTION: Final = "action"
@@ -107,21 +109,21 @@ EVIDENCE_ENDPOINT: Final = "mynetworks_endpoint"
 
 # The approved change names a PMG node that is no longer resolvable. Its own code rather than
 # `change_target.ERROR_SERVER_UNAVAILABLE`, which names the WHM inventory: an administrator sent to
-# the wrong table is an administrator sent nowhere (T27's precedent, `change_target`'s docstring).
+# the wrong table is an administrator sent nowhere (the password-reset tool's precedent,
+# `change_target`'s docstring).
 ERROR_SERVER_UNAVAILABLE: Final = "pmg_server_unavailable"
 MESSAGE_SERVER_UNAVAILABLE: Final = (
     "The PMG server this change was approved for is no longer available. Contact an administrator."
 )
 
 # The schema publishes an enum, so a well-behaved client cannot produce this. It is here for the
-# caller that reaches the function directly, which is T25's three-place discipline for a bounded
-# argument: what `tools/list` publishes, what the body re-checks, and what the runner re-checks
-# after the JSONB round trip.
-#
-# Deliberately not imported from `noa_api.mcp_tools.proxmox_nic`, which spells the same word for the
-# same fault. The value is one word because the fault is one fault; sharing the constant would make
-# the PMG module import the Proxmox one, and one system's tools reaching into another's is the cost
-# V66 does not ask anyone to pay (`change_target`'s argument for keeping the server codes apart).
+# caller that reaches the function directly, which is the firewall tool's three-place discipline for
+# a bounded argument: what `tools/list` publishes, what the body re-checks, and what the runner
+# re-checks after the JSONB round trip. Deliberately not imported from
+# `noa_api.mcp_tools.proxmox_nic`, which spells the same word for the same fault. The value is one
+# word because the fault is one fault; sharing the constant would make the PMG module import the
+# Proxmox one, and one system's tools reaching into another's is the cost one shared helper does not
+# ask anyone to pay (`change_target`'s argument for keeping the server codes apart).
 ERROR_INVALID_ACTION: Final = "invalid_action"
 MESSAGE_INVALID_ACTION: Final = (
     "The action must be `add` or `remove`, exactly — nothing else names a whitelist change."
@@ -170,11 +172,11 @@ async def pmg_whitelist(
     CIDRs, and turning a name into an address here would open a card about whatever DNS said at
     that moment.
 
-    Then the read both PMG READ tools already share (`read_pmg_mynetworks`, V66): resolve the
-    operator's word to a server (V18 — a tie is `choices`, never a pick), connect, read, parse, with
-    the database session closed before the SSH hop (T21's rule). That read is this call's preflight
-    (C9, V17): born here, milliseconds old, same user, reaching the operator through
-    `approval_context` rather than through a transcript.
+    Then the read both PMG READ tools already share (`read_pmg_mynetworks`): resolve the
+    operator's word to a server (a tie is `choices`, never a pick), connect, read, parse, with
+    the database session closed before the SSH hop. That read is this call's preflight —
+    one workflow, one tool, evidence born in-process: born here, milliseconds old, same user,
+    reaching the operator through `approval_context` rather than through a transcript.
 
     One of its answers is an answer rather than a question: a whitelist already in the state being
     asked for is `no_op`, and no request is opened. There is nothing for an operator to authorise.
@@ -231,10 +233,10 @@ def build_whitelist_evidence(
 ) -> dict[str, Any]:
     """The before-state an operator authorises a whitelist change against.
 
-    JSON-native throughout, for `approval_context` JSONB (T33's rule), and a fixed set of fields
-    built by naming what goes in rather than by sanitizing what came out of `pmgsh` — a structure
-    with nowhere to put the raw command output cannot leak it by an omission nobody noticed (V26,
-    V93's shape).
+    JSON-native throughout, for `approval_context` JSONB (the gate's rule), and a fixed set of
+    fields built by naming what goes in rather than by sanitizing what came out of `pmgsh` — a
+    structure with nowhere to put the raw command output cannot leak it by an omission nobody
+    noticed (an id-only URL's shape: bound at the fetch, not at the shape that drops it).
 
     **Both spellings of the target.** `target` is what the operator typed and `normalized_target` is
     what membership was decided on and what an `add` will write. A card showing only the first
@@ -277,8 +279,9 @@ def _no_op(
 
     Built from the server's name, the two spellings of the target and one measured boolean — never
     from the `pmgsh` lines it was decided from. This is a plain tool result rather than a gate
-    response, so it lands in the transcript LibreChat persists, and T26's rule one system over
-    says a transcript surface is assembled from facts rather than from the evidence behind them.
+    response, so it lands in the transcript LibreChat persists, and the allowlist-remove tool's rule
+    one system over says a transcript surface is assembled from facts rather than from the evidence
+    behind them.
 
     The normalised form is in the sentence, not only in the payload: an operator being told
     `1.2.3.4/24` is "already whitelisted" is being told something about `1.2.3.0/24`.
@@ -309,12 +312,12 @@ def _no_op(
 def register_pmg_whitelist_tools(
     server: FastMCP, *, context: McpToolContext
 ) -> dict[str, ToolRisk]:
-    """Register the PMG whitelist CHANGE tool; return its name and risk (I.mcp, V20).
+    """Register the PMG whitelist CHANGE tool; return its name and risk (the MCP contract).
 
-    **One tool, one `action`** — the whole of DECISIONS §9's second collapse, and the reason this
-    registrar returns a single entry where `noa-old` had two tools. `Literal` rather than a free
-    string is what puts the two words into the published input schema, so a model reads the pair
-    from `tools/list` instead of from the description.
+    **One tool, one `action`** — the whole of DECISIONS section 9's second collapse, and the reason
+    this registrar returns a single entry where `noa-old` had two tools. `Literal` rather than a
+    free string is what puts the two words into the published input schema, so a model reads the
+    pair from `tools/list` instead of from the description.
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
     call — it opens an approval request and executes nothing — and what makes

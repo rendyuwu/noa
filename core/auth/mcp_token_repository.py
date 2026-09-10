@@ -5,12 +5,12 @@ New work — `noa-old` has no `mcp_tokens` table to port from.
 Two classes, one table. They are separate because their transaction discipline is opposite,
 not because the SQL is unrelated:
 
-- `SQLMcpTokenRepository` — the admin CRUD path. Like T9's
-  `SQLAuthorizationRepository`, every method takes the caller's `AsyncSession` and flushes
+- `SQLMcpTokenRepository` — the admin CRUD path. Like the authorization repository,
+  every method takes the caller's `AsyncSession` and flushes
   rather than commits, so a mint and its audit event land together or not at all. `commit()`
   is the boundary itself: `noa_api.api.deps.get_db_session` never commits, so without
   it a mint would return a plaintext over a transaction that rolls back at teardown and the
-  operator would hold a credential authenticating nothing (V100, B10's shape one table over).
+  operator would hold a credential authenticating nothing — the commit-last rule, one table over.
 - `SQLMcpIdentityRepository` — the MCP request path. It runs outside FastAPI's
   dependency graph, inside `verify_token`, where there is no request transaction to join.
   It therefore owns its session and exposes `commit()`, which `McpIdentityResolver` calls
@@ -218,9 +218,8 @@ class SQLMcpIdentityRepository:
     async def touch_last_used(self, token_id: UUID, *, now: datetime) -> None:
         """Stamp `last_used_at`. One UPDATE per authenticated MCP request.
 
-        Worth the write: without it an admin cannot tell a token in daily use from one
-        pasted into a config a year ago and forgotten, which is exactly the token worth
-        revoking.
+        Worth the write: without it an admin cannot tell a token in daily use from one pasted into a
+        config a year ago and forgotten, which is exactly the token worth revoking.
         """
         await self._session.execute(
             update(McpToken).where(McpToken.id == token_id).values(last_used_at=now)
@@ -235,11 +234,10 @@ class SQLMcpIdentityRepository:
     async def delete_tokens_for_user(self, user_id: UUID) -> int:
         """Cascade-revoke every token this operator holds; return how many.
 
-        Every token, not only the presented one: V4 revokes on the *operator* leaving, and
-        a colleague-facing token left alive would authenticate on the next request.
-        Deletion rather than a flag, matching T10 — revocation is the row's absence, and a
-        status column would be a second source of truth the verify path could disagree
-        with.
+        Every token, not only the presented one: the cascade revokes on the *operator* leaving, and
+        a colleague-facing token left alive would authenticate on the next request. Deletion rather
+        than a flag, matching the revoke path — revocation is the row's absence, and a status column
+        would be a second source of truth the verify path could disagree with.
         """
         result = await self._session.execute(delete(McpToken).where(McpToken.user_id == user_id))
         return int(result.rowcount or 0)

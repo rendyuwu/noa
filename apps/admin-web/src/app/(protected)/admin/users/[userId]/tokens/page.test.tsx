@@ -107,7 +107,7 @@ describe('/admin/users/[userId]/tokens', () => {
     await waitFor(() => expect(state.fetchUsers).toHaveBeenCalled())
 
     // The scope the page HANDS the controller. The union is the only thing that
-    // builds a path, so this picks between §V2's two mint surfaces — admin FOR
+    // builds a path, so this picks between the two mint surfaces — admin FOR
     // an operator vs operator for themself — and a wrong id here mints against
     // the wrong account. The empty-state wording below separates self from user
     // and nothing more: a page passing the wrong id renders identically.

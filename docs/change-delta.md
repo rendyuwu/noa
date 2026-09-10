@@ -28,7 +28,7 @@ the change is not under a shared key — and the only party that holds both voca
 runner: it read one and produced the other. That property is held by
 `apps/api/tests/test_change_receipt_halves.py`, which drives each tool's gate and then its runner
 and compares the two halves a receipt is built from. It was prose alone until then, and the prose
-had the count wrong — `§V.69`'s shape, one surface over.
+had the count wrong — a fixture asserting a property of itself, one surface over.
 
 It also knows things neither half records. Which backend answered the confirming read. Whether
 the write landed and the step that puts it into effect did not. Whether a credential was
@@ -103,7 +103,7 @@ the next tool that combined two differently.
 
 Every facet is optional in the type, so a missing outcome is *absent* rather than `false`. A
 non-optional field would force a value where nothing was measured, and a fabricated `false` reads
-exactly like a measured one — which is the failure `§V.86` exists to stop, applied one surface
+exactly like a measured one — which is the failure the partial-answer rule exists to stop, applied one surface
 over. `apps/api/tests/test_change_delta.py` asserts the facet record has exactly two required
 fields, so a facet added without a default fails there rather than in a card six months later.
 
@@ -159,7 +159,7 @@ cannot ride on an answer.
 
 ### A bounded list ships its bound
 
-`§V.85`. `before.firewall.matches` is cut at twenty by csf's own `max_matches`, and travels with
+The cap's own bound. `before.firewall.matches` is cut at twenty by csf's own `max_matches`, and travels with
 `total_matches` and `truncated`. A delta stated against that reading carries the same pair, or
 "this address was blocked and is now allowed" reads as a statement about every line the firewall
 holds for the address. `whm_firewall_change_common.py::evidence_bound` lifts it off the evidence
@@ -168,7 +168,7 @@ not a bound of nothing.
 
 ### Name the source that could not answer
 
-`§V.86`. Names, never a count: "one backend was silent" does not say which server to go and look
+The partial-answer rule. Names, never a count: "one backend was silent" does not say which server to go and look
 at. `whm_firewall_change_common.py::unanswered_backends` is the one spelling of the predicate, and
 it is asked on the before-state and on every after-state branch. On the branch where a backend
 went silent, no `verification_cause` rides beside the names — *which* source said nothing is the
@@ -193,14 +193,14 @@ Those publish an explicit "nothing changed" in their family's own facet — an e
 
 ### The delta carries no reason
 
-`§C.8`, `§V.15`, `§V.43`. One reason field exists, an operator types it on the card, and the LLM
+The reason boundary. One reason field exists, an operator types it on the card, and the LLM
 never authors, relays or sees it. `change_runners.py`'s own docstring states the payload half: a
 runner must not echo the reason back in its payload, because `tool_runs.result_summary` is
 derived from that payload and `noa_get_action_result` hands the summary to a model.
 
 **The receipt is not that door**, and it is worth being exact about which one is: the model-facing
 reader leaves `include_receipt` at its default (`core/approvals/results.py`), so it never joins
-`action_receipts` and never fetches a receipt at all (`§V.76`). What reaches a model is
+`action_receipts` and never fetches a receipt at all. What reaches a model is
 `result_summary`, and nothing else. A delta is a *receipt* key, read by the approval card and the
 admin audit surface — both the operator's own, behind their cookie — and the fence exists there
 anyway, because those two surfaces are where the operator's words would be reflected back at
@@ -229,8 +229,8 @@ Ask what kind of thing moved.
   `1.2.3.4/32` as two lines and one entry, and a receipt saying "removed" without saying which
   lines cannot be checked against the box. `total_entries` comes off the evidence, because that is
   the only place the whole list was counted.
-- **The change is list membership even though a verdict exists** → still `list_delta`, and
-  `§V.97` is why. `whm_firewall_allowlist_remove` could have used the combined verdict, but both
+- **The change is list membership even though a verdict exists** → still `list_delta`, and the
+  block-first conflict rule is why. `whm_firewall_allowlist_remove` could have used the combined verdict, but both
   backends resolve a conflict block-first: an address on a deny list *and* an allow list reads
   `blocked` before the removal and `blocked` after it, so a verdict-based delta would render
   "nothing changed" for a removal that worked, on exactly the address that most plainly had an

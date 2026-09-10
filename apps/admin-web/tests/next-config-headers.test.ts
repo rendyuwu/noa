@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * The framing header is actually wired into the config Next reads (§T.49, V41).
+ * The framing header is actually wired into the config Next reads.
  *
  * `config/framing.test.ts` proves the rule; this proves the app applies it. A rule nobody calls
  * holds nothing, and `headers()` is the one knob Next reads for this.
@@ -12,7 +12,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
  * config is ever built. The subject is a Node-side config file, so it is read in a Node runtime.
  */
 
-// The embed's variable (§T.45). It lives in the same `.env` and on the same host, and it must mean
+// The embed's variable. It lives in the same `.env` and on the same host, and it must mean
 // nothing here.
 const EMBED_ENV_VAR = 'NOA_LIBRECHAT_ORIGIN'
 
@@ -34,7 +34,7 @@ afterEach(() => {
   vi.resetModules()
 })
 
-describe('§T.49 — next.config.ts sends the framing header', () => {
+describe('next.config.ts sends the framing header', () => {
   it("returns the frame-ancestors 'none' entry", async () => {
     expect(await loadHeaders()).toEqual([
       {
@@ -45,8 +45,8 @@ describe('§T.49 — next.config.ts sends the framing header', () => {
   })
 
   it("stays 'none' with the embed's origin variable set — the separating case", async () => {
-    // The repo-root `.env` is shared by both web apps (§T.44, §T.47), so this variable is present
-    // in the environment this config is built in. V41 gives the embed an allowlist and this app
+    // The repo-root `.env` is shared by both web apps, so this variable is present
+    // in the environment this config is built in. The embed gets an allowlist and this app
     // none; a value that leaked across would frame the admin panel from the chat origin.
     process.env[EMBED_ENV_VAR] = 'https://chat.noa.internal'
 

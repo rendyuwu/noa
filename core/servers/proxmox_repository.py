@@ -3,8 +3,8 @@
 The third of these, after `whm_repository.py` and `pmg_repository.py`, and written
 the same way for the same reasons — so the note here is only about what differs.
 
-**Reads only.** `create`/`update`/`delete` belong to the admin routes of T54 and are not ported;
-landing them now would be untested, unreachable code a reviewer has to treat as live.
+**Reads only.** `create`/`update`/`delete` belong to the admin server-CRUD routes and are not
+ported; landing them now would be untested, unreachable code a reviewer has to treat as live.
 
 **A narrower row than WHM's.** Proxmox is an HTTP API and nothing else (I.ext), so
 `ProxmoxServerRowLike` carries `id`, `name` and `base_url` — the three fields reference
@@ -40,9 +40,9 @@ class ProxmoxServerRowLike(Protocol):
     be handed to something that would decrypt it.
 
     `to_safe_dict()` is required because it is the only sanctioned way to render a row outward —
-    `ProxmoxServer.to_safe_dict` drops `api_token_secret` and replaces it with a presence boolean
-    (V2, V8). Requiring it here means a tool cannot serialize a row another way without changing
-    this Protocol first.
+    `ProxmoxServer.to_safe_dict` drops `api_token_secret` and replaces it with a presence boolean —
+    identifiers render, credentials never. Requiring it here means a tool cannot serialize a row
+    another way without changing this Protocol first.
     """
 
     id: UUID
@@ -57,7 +57,8 @@ RowT_co = TypeVar("RowT_co", bound=ProxmoxServerRowLike, covariant=True)
 
 
 class ProxmoxServerReadRepository(Protocol[RowT_co]):
-    """What T27's callers need from Proxmox inventory, parametrised by the row it yields.
+    """What the password-reset callers need from Proxmox inventory, parametrised by the row it
+    yields.
 
     Generic for the reason its WHM twin is: resolution is written against the narrow view
     above, while a tool that resolves a server then *calls* it needs the credentials off the row
@@ -91,9 +92,8 @@ class SQLProxmoxServerRepository:
     async def get_by_id(self, server_id: UUID) -> ProxmoxServer | None:
         """One server by primary key, or `None`.
 
-        `None` rather than a raise: the caller is `resolve_proxmox_server_ref`, and "no server
-        with that id" is a `host_not_found` *result* the model can act on, not an
-        exception.
+        `None` rather than a raise: the caller is `resolve_proxmox_server_ref`, and "no server with
+        that id" is a `host_not_found` *result* the model can act on, not an exception.
         """
         result = await self._session.execute(
             select(ProxmoxServer).where(ProxmoxServer.id == server_id)

@@ -6,23 +6,25 @@ What only Postgres can answer:
   `status = APPROVED AND tool_run_id IS NULL AND decided_at <= cutoff` for the pair the
   decision path cannot produce. A double can be told what to return; only the database can be
   asked whether the `WHERE` really says that.
-- **`<=`, matching both expiry doors** (T39(a)). A row exactly on its cutoff has to be one
+- **`<=`, matching both expiry doors** (check-on-read and the sweep). A row exactly on its cutoff
+  has to be one
   thing, and this is the file that can put one there.
 - **The join that decides which reaped run owes a receipt.** `action_receipts.action_request_id`
   is NOT NULL, and whether a run has a request is a fact about
   `action_requests.tool_run_id` — the same edge the card joins.
-- **`APPROVED` with no run is reachable at all.** T37 writes the run and the link in one
+- **`APPROVED` with no run is reachable at all.** The decision endpoint writes the run and the link
+  in one
   transaction, so nothing NOA does produces that pair — but `tool_run_id` is `SET NULL`,
   so deleting a run row does. Without this file the detector would be a predicate that has
-  never once been true, which is a guard held by nothing (V69's shape).
+  never once been true, which is a guard held by nothing — prose is not evidence.
 - **The batch, and the ordering it cuts on**. That a pass stops at `batch_size` is
   visible from a double; that the rows beyond it are never *loaded*, that the total behind the
   cut is counted in the same statement, and that `(created_at, id)` decides which rows the cut
   keeps, are all claims about the `SELECT`. `created_at` is not unique, so the tiebreaker is
   the difference between a reproducible cut and one that falls wherever the scan yielded.
 
-Rows come from the production writers wherever one exists: T33's gate opens requests, T37's
-decision approves them and opens their runs, and T73's audit path is stood in for by a direct
+Rows come from the production writers wherever one exists: the CHANGE gate opens requests, the
+decision approves them and opens their runs, and the tool-run audit path is stood in for by a direct
 `SQLToolRunRepository` insert for the READ case, because a READ run's opening write is that
 repository's and driving a whole MCP mount here would test the mount.
 """
@@ -204,8 +206,8 @@ async def stranded_reads(
     """`count` stranded READ runs, oldest first, one second apart.
 
     READ runs rather than approved changes because the batch is about how many rows a pass
-    touches, and a READ run reaches the same predicate without spending an operator's V31
-    allowance to get there.
+    touches, and a READ run reaches the same predicate without spending an operator's
+    in-flight allowance to get there.
     """
     user_id = await insert_user(factory, "reader@example.com")
     run_ids: list[UUID] = []
@@ -262,7 +264,7 @@ async def test_a_run_inside_the_deadline_is_left_alone(factory) -> None:  # type
 
 
 async def test_a_run_exactly_on_its_deadline_is_reaped(factory) -> None:  # type: ignore[no-untyped-def]
-    """`<=`, matching both expiry doors (T39(a)).
+    """`<=`, matching both expiry doors (check-on-read and the sweep).
 
     A row exactly on its cutoff has to be one thing. With `<` it would be neither reaped nor
     running as far as any reader could tell, and the next pass would judge it against a later
@@ -418,8 +420,8 @@ async def test_the_next_pass_takes_what_the_last_one_left(factory) -> None:  # t
 async def test_the_batch_takes_the_oldest_runs_first(factory) -> None:  # type: ignore[no-untyped-def]
     """Ordered before the cut, oldest first.
 
-    Oldest first because a stranded run spends its operator's V31 allowance until it is reaped,
-    so the row that has waited longest is the one worth the batch's slot. An unordered cut
+    Oldest first because a stranded run spends its operator's in-flight allowance until it is
+    reaped, so the row that has waited longest is the one worth the batch's slot. An unordered cut
     would also make two identical passes over an untouched backlog take different subsets.
     """
     run_ids = await stranded_reads(factory, count=3)
@@ -530,8 +532,8 @@ async def test_a_reaped_change_gets_a_receipt_pointing_at_its_request(factory) -
 async def test_a_reaped_read_run_gets_no_receipt(factory) -> None:  # type: ignore[no-untyped-def]
     """A READ has no approval to be the receipt of, and the FK is NOT NULL.
 
-    It is still reaped: T73's middleware swallows a failed closing write and names this reaper as
-    what resolves the row, so a stranded READ has to become terminal too.
+    It is still reaped: the tool-run middleware swallows a failed closing write and names this
+    reaper as what resolves the row, so a stranded READ has to become terminal too.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     run_id = await insert_read_run(factory, requested_by_user_id=user_id)
@@ -565,7 +567,7 @@ async def test_one_pass_reaps_a_read_and_a_change_and_writes_one_receipt(factory
 
 async def test_a_second_pass_does_not_double_the_receipt(factory) -> None:  # type: ignore[no-untyped-def]
     """The run is terminal after the first pass, so the second finds nothing — and even if the
-    predicate changed, T36's UNIQUE is what keeps "the receipt" singular."""
+    predicate changed, the receipt table's UNIQUE is what keeps "the receipt" singular."""
     _request_id, run_id = await approved_change(factory)
     await age_run(factory, run_id, created_at=moment() - timedelta(seconds=REAP_AFTER_SECONDS + 1))
 
@@ -605,7 +607,8 @@ async def test_an_approved_request_whose_run_was_deleted_is_detected(factory) ->
 
 
 async def test_an_approval_with_its_run_intact_is_not_reported(factory) -> None:  # type: ignore[no-untyped-def]
-    """The negative control: the healthy shape T37 produces must not read as an anomaly.
+    """The negative control: the healthy shape the decision endpoint produces must not read as an
+    anomaly.
 
     This is the case that matters most — a detector that fires on every approval is one an
     operator learns to ignore.
@@ -633,7 +636,8 @@ async def test_a_freshly_approved_request_is_not_reported_as_an_anomaly(factory)
 
 
 async def test_a_pending_request_is_never_reported(factory) -> None:  # type: ignore[no-untyped-def]
-    """`status = APPROVED` is in the predicate. A request nobody answered is T39's population,
+    """`status = APPROVED` is in the predicate. A request nobody answered is the expiry sweep's
+    population,
     and the two writers are deliberately different classes."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id)

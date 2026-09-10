@@ -7,10 +7,10 @@ than nothing. This is what makes that worth having. Four claims here, none about
   a summary that says the outcome is *unknown* — an interrupted change may well have applied on
   the remote host, and "failed" would be a claim nobody observed.
 - **Which reaped runs owe a receipt.** Those belonging to an `action_requests` row, because
-  `action_receipts.action_request_id` is NOT NULL and a READ has no approval to be the
-  receipt of.
+  `action_receipts.action_request_id` is NOT NULL and a READ has no approval to be the receipt of.
 - **What the reaper will not repair.** `APPROVED`-with-no-run is detected and logged, never
-  fixed. The decision path cannot produce that pair (T37 writes both in one transaction, V29);
+  fixed. The decision path cannot produce that pair — the decision endpoints write both in one
+  transaction, and the run's state lives in the DB;
   a deleted run row can, via `SET NULL` — and in *that* case the change may have completed, so
   opening a `FAILED` run to fill the gap would put a false claim in the audit trail.
 - **How much one pass may do, and what it says about the rest.** Both populations are read
@@ -107,7 +107,8 @@ def build_reaper(
 
 
 async def test_a_stranded_run_is_moved_to_failed() -> None:
-    """`STARTED` must not mean both "running" and "abandoned": V31's cap counts the former."""
+    """`STARTED` must not mean both "running" and "abandoned": the per-user in-flight cap counts
+    the former."""
     repository = FakeStrandedRunRepository()
     run = stranded_run()
     repository.runs.append(run)
@@ -165,9 +166,8 @@ async def test_a_pass_is_one_transaction() -> None:
     """Per-row commits would leave a pass half-applied when the second row's write failed, and
     the next pass would see a different set than the one it was judging.
 
-    Still true with the batch in place, and the batch is what makes it affordable: the promise
-    costs one transaction's worth of row locks, and `batch_size` is the ceiling on that
-    worth.
+    Still true with the batch in place, and the batch is what makes it affordable: the promise costs
+    one transaction's worth of row locks, and `batch_size` is the ceiling on that worth.
     """
     repository = FakeStrandedRunRepository()
     repository.runs.extend([stranded_run(), stranded_run()])
@@ -203,7 +203,7 @@ async def test_a_pass_stops_at_its_batch_size() -> None:
 
 
 async def test_a_truncated_pass_reports_how_many_it_left() -> None:
-    """V85 one population over: the pass that capped says what the cap hid.
+    """The capped-read rule one population over: the pass that capped says what the cap hid.
 
     Five stranded, two reaped, three still stranded — and the caller is told the three, not
     left to infer them from a count that looks complete.
@@ -253,8 +253,8 @@ async def test_a_complete_pass_logs_that_nothing_is_left() -> None:
     """The negative control for the line above: the two passes have to read differently.
 
     A `truncated` that is always true, or a `remaining` that is always zero, would let the log
-    of a capped pass be mistaken for the log of a finished one — the exact reading V85 exists
-    to prevent.
+    of a capped pass be mistaken for the log of a finished one — the exact reading the truncation
+    flag exists to prevent.
     """
     repository = FakeStrandedRunRepository()
     repository.runs.extend(stranded_run() for _ in range(2))
@@ -352,7 +352,7 @@ async def test_a_pass_without_a_moment_uses_an_aware_utc_clock() -> None:
 
 
 async def test_a_reaped_change_gets_a_receipt() -> None:
-    """V46 wants one per approved change, and "we do not know how this ended" is an outcome.
+    """Every approved change owes a receipt, and "we do not know how this ended" is an outcome.
 
     Its before-state is the gate's evidence — the same half the executor writes — so the two
     writers of this table produce one shape.
@@ -376,7 +376,7 @@ async def test_a_reaped_read_run_gets_no_receipt() -> None:
     """`action_receipts.action_request_id` is NOT NULL: a READ has no approval to be the
     receipt of, and a receipt has nowhere to point without one.
 
-    READ rows are still reaped — T73's audit middleware swallows a failed closing write and
+    READ rows are still reaped — the tool-run writer swallows a failed closing write and
     names this reaper as what resolves the row.
     """
     repository = FakeStrandedRunRepository()
@@ -431,7 +431,8 @@ async def test_an_approved_request_with_no_run_is_reported_and_left_alone() -> N
 
     `action_requests.tool_run_id` is `SET NULL`, so this pair is reachable by deleting a run row,
     and then the change may well have completed. Opening a `FAILED` run to fill the gap would be
-    a claim nothing observed; §T.38 also reserves the run's creation and the link to T37.
+    a claim nothing observed; the executor also reserves the run's creation and the link to the
+    decision.
     """
     repository = FakeStrandedRunRepository()
     orphan = uuid4()
@@ -460,7 +461,7 @@ async def test_a_pass_with_nothing_in_either_population_logs_nothing() -> None:
 
 
 async def test_a_reaping_pass_names_what_it_reaped() -> None:
-    """V8's bound on it: ids, counts and tool names — never a row's contents."""
+    """The error envelope's bound on it: ids, counts and tool names — never a row's contents."""
     repository = FakeStrandedRunRepository()
     run = stranded_run(action_request_id=uuid4())
     repository.runs.append(run)
@@ -521,7 +522,8 @@ async def test_run_once_raises_rather_than_swallowing() -> None:
 
 
 async def test_a_failing_pass_does_not_end_the_loop() -> None:
-    """A reaper that dies on a transient error leaves V30 true only while nothing went wrong.
+    """A reaper that dies on a transient error leaves stuck-run recovery true only while nothing
+    went wrong.
 
     The loop's own guarantee is `test_periodic_task.py`'s; what this pins is that the reaper is
     on that loop rather than a copy of it, and that its failure event is the one an operator

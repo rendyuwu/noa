@@ -1,11 +1,9 @@
 """action requests: one row per "may this CHANGE run?" question
 
-Revision ID: 0004_action_requests
-Revises: 0003_tool_runs
-Create Date: 2026-08-08
+Revision ID: 0004_action_requests Revises: 0003_tool_runs Create Date: 2026-08-08
 
-T34. This table is the authorization: V23 answers "may this
-run?" from `status` every time, never from an LLM claim or a tool argument.
+This table is the authorization: "may this run?" is answered
+from `status` every time, never from an LLM claim or a tool argument.
 
 `status` is a VARCHAR plus a CHECK, not a Postgres enum type, matching `tool_runs`
 (0003) — adding a member to a native enum is `ALTER TYPE`, and the type outlives the
@@ -19,9 +17,9 @@ carried the reason inside the request's `args` JSONB, which made it LLM-authored
 it arrives only at approve time, typed by an operator.
 
 Two indexes, and deliberately fewer than 0003 laid on `tool_runs`: nothing filters this
-table the way §I.admin-api filters the audit surface. The composite serves T39's sweep
+table the way the admin API filters the audit surface. The composite serves the expiry sweep
 (`status = PENDING AND expires_at < now()`) and, on its leading column, status-only
-lookups; the requester index serves V31's per-user in-flight cap.
+lookups; the requester index serves the per-user in-flight cap.
 """
 
 from __future__ import annotations
@@ -49,7 +47,7 @@ def upgrade() -> None:
         "action_requests",
         sa.Column("id", _UUID, primary_key=True, server_default=sa.text("gen_random_uuid()")),
         sa.Column("tool_name", sa.String(length=200), nullable=False),
-        # SET NULL, not CASCADE: an approved CHANGE is an audit artifact and T36's
+        # SET NULL, not CASCADE: an approved CHANGE is an audit artifact and the
         # receipts hang off this row, so cascading would let one user deletion erase both.
         sa.Column("requested_by_user_id", _UUID, nullable=True),
         sa.Column(
@@ -63,15 +61,15 @@ def upgrade() -> None:
             nullable=False,
             server_default="PENDING",
         ),
-        # Audit/grouping label only, never a security scope (DECISIONS §3.2).
+        # Audit/grouping label only, never a security scope (DECISIONS section 3.2).
         sa.Column("conversation_ref", sa.String(length=255), nullable=True),
-        # V33: persisted at gate time, never rebuilt from a transcript. No default — an
+        # Persisted at gate time, never rebuilt from a transcript. No default — an
         # empty context is not a legitimate state, so an insert omitting it must fail.
         sa.Column("approval_context", postgresql.JSONB(), nullable=False),
         # The one reason that exists. NULL until an operator types one.
         sa.Column("reason", sa.Text(), nullable=True),
         sa.Column("tool_run_id", _UUID, nullable=True),
-        # V32: required, because a row without a deadline cannot expire.
+        # Required, because a row without a deadline cannot expire.
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column(
             "created_at",

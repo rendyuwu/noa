@@ -1,6 +1,6 @@
 """WHM server → SSH connection config.
 
-Copied from `noa-old` branch `MCP` (`whm/integrations/ssh.py`), minus the half that T14 already
+Copied from `noa-old` branch `MCP` (`whm/integrations/ssh.py`), minus the half already
 hoisted: `SSH_SUDO_REQUIRED_CODE`, the sudo failure/missing-binary marker tables,
 `should_escalate` and `is_sudo_rights_failure` now live in `core.remote_exec.sudo` as shared
 code, because PMG needs the same escalation rules. Importing them from two places
@@ -10,25 +10,26 @@ What remains is the WHM-specific translation: a `whm_servers` row is not a conne
 refusals happen here, before any socket:
 
 - **No SSH hostname.** WHM stores a `base_url` (`https://host:2087`); the SSH host is its
-  hostname component. A `base_url` that parses to nothing is a bad row, ⊥ an unreachable host.
+  hostname component. A `base_url` that parses to nothing is a bad row, never an unreachable host.
 - **No credentials.** Neither a password nor a private key stored → `ssh_not_configured`.
   Distinct from an auth failure: the remedy is an admin filling in the server, not a retry.
 - **No pinned fingerprint** (when required) → `ssh_host_key_not_validated`. `ssh_exec` refuses
   this too, but failing here names the WHM server rather than the connection, and it is what
   lets a caller ask "is this server usable?" without opening a connection to find out.
 
-`require_host_key_fingerprint` is a parameter rather than always-on for one caller: T54's
+`require_host_key_fingerprint` is a parameter rather than always-on for one caller: the admin
 validate flow deliberately connects unpinned, via `ssh_get_host_fingerprint`, to *capture* the
 value an operator is about to store (TOFU). Every tool path passes `True`.
 
 **Credentials are decrypted here, and only here, for the SSH path** — via an injected
-`SecretCipher` (T16 deviation (b), matching `client.build_whm_client_from_creds`). The
+`SecretCipher` (a port deviation, matching `client.build_whm_client_from_creds`). The
 resulting `SSHConnectionConfig` is frozen and `slots=True` precisely because it now holds
 plaintext (see `core.remote_exec.types`).
 
-The username default is `root`, and that default is coupled to V55: `requires_escalation`
-compares the *resolved* username, so a blank `ssh_username` column resolves to `root` and gets
-no `sudo -n` prefix. Change the default here and the escalation rule changes with it.
+The username default is `root`, and that default is coupled to the escalation rule:
+`requires_escalation` compares the *resolved* username, so a blank `ssh_username` column resolves
+to `root` and gets no `sudo -n` prefix. Change the default here and the escalation rule changes
+with it.
 """
 
 from __future__ import annotations
@@ -136,7 +137,7 @@ def resolve_whm_ssh_config(
             message="SSH host key fingerprint is not validated for this WHM server",
         )
 
-    # Blank column → `root` → no `sudo -n` (V55; see module docstring).
+    # Blank column → `root` → no `sudo -n` (see module docstring).
     username = (server.ssh_username or "").strip() or "root"
     return SSHConnectionConfig(
         host=hostname,

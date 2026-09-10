@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { CHAT_ORIGIN, OTHER_ORIGIN } from '../playwright.config'
 
 /**
- * Who may frame this app, decided by a real browser (§T.45, V41, V37).
+ * Who may frame this app, decided by a real browser.
  *
  * The unit specs prove what header the app emits. Whether a browser then refuses the frame is a
  * different question, and it is the one the control exists to answer — a CSP that is present but
@@ -17,7 +17,8 @@ import { CHAT_ORIGIN, OTHER_ORIGIN } from '../playwright.config'
 // DNS only: both names point at the loopback address the parent server listens on. Chromium's
 // Local Network Access checks block a request to loopback from an origin it cannot place in an
 // address space, so an intercepted parent page made *both* frames fail before any response — the
-// refusal spec would then have passed with no CSP header in existence (V90's family).
+// refusal spec would then have passed with no CSP header in existence — the readiness gate
+// sits one layer below the subject, never pointed at it.
 test.use({
   launchOptions: {
     args: [
@@ -29,7 +30,7 @@ test.use({
 const FRAMED_PATH = '/healthz'
 
 test('every response carries the framing header, whatever serves it', async ({ page }) => {
-  // One `headers()` entry on `/(.*)`, so the pages, the `/api/*` proxy (§T.44) and a path that
+  // One `headers()` entry on `/(.*)`, so the pages, the `/api/*` proxy and a path that
   // routes to nothing are all covered. A page-shaped pattern would leave each new route to
   // remember the guard for itself.
   for (const path of [FRAMED_PATH, '/api/auth/me', '/this-route-does-not-exist']) {
@@ -38,14 +39,15 @@ test('every response carries the framing header, whatever serves it', async ({ p
     expect(headers['content-security-policy'], `no CSP on ${path}`).toBe(
       `frame-ancestors ${CHAT_ORIGIN}`,
     )
-    // §T.45: none is needed, and one added later would break framing in any client that honours
+    // None is needed, and one added later would break framing in any client that honours
     // it over CSP.
     expect(headers['x-frame-options'], `X-Frame-Options on ${path}`).toBeUndefined()
   }
 })
 
 test('a document on the LibreChat origin may frame the embed', async ({ page }) => {
-  // V37's guard. The render path R29 measured live has LibreChat put the frame `src` on this
+  // The allowed case, guarded. The render path measured live has LibreChat put the frame `src`
+  // on this
   // app's origin; a framing header is exactly the kind of change that can kill that silently, so
   // the allowed case is asserted, not assumed.
   await page.goto(`${CHAT_ORIGIN}/parent`)

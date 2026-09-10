@@ -1,16 +1,17 @@
 """Login + session resolution.
 
-Ported from `noa-old` branch `MCP` (`core/auth/auth_service.py`, C13). This is the
+Ported from `noa-old` branch `MCP` (`core/auth/auth_service.py`). This is the
 one place the three auth mechanisms meet: LDAP says whether the operator is employed
-(C4, T6), the `users` row says whether NOA has activated them (V7), and `JWTService`
+(LDAP is source of truth for employment), the `users` row says whether NOA has
+activated them (new users land inactive), and `JWTService`
 mints the cookie credential.
 
 Two entry points, and the second one is not an optimization:
 
 - `authenticate()` — the login path.
-- `resolve_session_user()` — run on *every* session-authenticated request. V6 records
-  that the session JWT has no revocation path before `exp`: there is no `jti`, no
-  denylist, and V4's cascade revoke covers `mcp_tokens` only. So re-reading
+- `resolve_session_user()` — run on *every* session-authenticated request. The session
+  JWT has no revocation path before `exp`: there is no `jti`, no
+  denylist, and the LDAP-staleness cascade revoke covers `mcp_tokens` only. So re-reading
   `users.is_active` here is the ONLY thing that bounds a disabled operator's live
   session. Caching it, trusting a claim, or skipping it on a "cheap" route reopens an
   unbounded window (default `AUTH_JWT_ACCESS_TOKEN_TTL_SECONDS` = 3600).
@@ -28,14 +29,14 @@ Departures from `noa-old`, each with a test:
    `authenticate()` commits after provisioning and before the activation gate, so the
    rule sits where the rule is, and no caller sniffs exception types.
 3. **A recorded failure is committed before the error propagates.** Otherwise the
-   request's rollback discards the counter and V9 never blocks anything — the limiter
-   would look correct in isolation and do nothing in production.
+   request's rollback discards the counter and the rate limiter never blocks anything —
+   it would look correct in isolation and do nothing in production.
 4. **Session re-read keys on the `uid` claim, not `sub`.** See
    `SQLAuthRepository.get_user_by_id`.
 
-V8 throughout: the password is a parameter and nothing else. It is never logged,
-returned, stored, or placed in an error message, and the session token leaves here
-inside `IssuedToken` for the cookie only — never in a response body.
+The error envelope holds throughout: the password is a parameter and nothing else. It is never
+logged, returned, stored, or placed in an error message, and the session token leaves here inside
+`IssuedToken` for the cookie only — never in a response body.
 """
 
 from __future__ import annotations
@@ -58,7 +59,7 @@ from core.auth.login_rate_limiter import UNKNOWN_IP, LoginRateLimiter
 from core.db.models import ADMIN_ROLE_NAME
 
 # Internal diagnostics for the `detail` slot: logs only, never a response body.
-DETAIL_BLANK_INPUT = "blank email or password; ⊥ directory bind attempted"
+DETAIL_BLANK_INPUT = "blank email or password; no directory bind attempted"
 DETAIL_PENDING_APPROVAL = "`users.is_active` is False; awaiting admin activation"
 DETAIL_SESSION_USER_GONE = "`uid` claim resolves to no `users` row"
 
@@ -128,9 +129,8 @@ class AuthService:
         """
         normalized_email = email.strip().lower()
         if not normalized_email or not password:
-            # Before the limiter, as in `noa-old`: an empty form submit guesses
-            # nothing, so spending block budget on it would only lock out operators
-            # who mis-clicked.
+            # Before the limiter, as in `noa-old`: an empty form submit guesses nothing, so spending
+            # block budget on it would only lock out operators who mis-clicked.
             raise AuthInvalidCredentialsError(DETAIL_BLANK_INPUT)
 
         ip_address = (source_ip or "").strip() or UNKNOWN_IP
@@ -191,7 +191,7 @@ class AuthService:
         """Bind against LDAP; count the attempt only if it was a credential guess.
 
         `AuthInvalidCredentialsError` covers both "no such entry" and "bind rejected"
-        (T6 merges them so login is not an enumeration oracle), which is exactly the
+        (the LDAP service merges them so login is not an enumeration oracle), which is exactly the
         set worth rate limiting. `LdapUnavailableError`, `AuthConfigurationError` and
         `AuthAccountDisabledError` pass through untouched: the first two are NOA's or
         the network's fault, and the third already proved the password.
@@ -208,7 +208,7 @@ class AuthService:
     async def _provision(self, email: str, ldap_user: LdapUser) -> AuthUserRecord:
         """Create or refresh the `users` row for an operator LDAP just vouched for.
 
-        V7: a new row lands `is_active=False` and waits for an admin. The single
+        A new row lands `is_active=False` and waits for an admin. The single
         exception is a bootstrap admin from `AUTH_BOOTSTRAP_ADMIN_EMAILS`, who is
         activated and given the `admin` role — otherwise a fresh deployment has nobody
         able to activate anybody.

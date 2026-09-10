@@ -1,6 +1,6 @@
 """Pinned SSH execution.
 
-Ported from `noa-old` branch `MCP` (`core/remote_exec/ssh.py`, C13/V69), plus the B2 fix that
+Ported from `noa-old` branch `MCP` (`core/remote_exec/ssh.py`), plus the pin fix that
 the source needed too: `known_hosts` is an empty trusted-key *list*, never `None`.
 
 Two connection paths, and the split is the whole security model:
@@ -86,7 +86,7 @@ def _client_keys(config: SSHConnectionConfig) -> list[asyncssh.SSHKey] | None:
             config.private_key_passphrase,
         )
     except (asyncssh.KeyImportError, ValueError) as exc:
-        # V8: the key and passphrase stay out of the message; `raise from` keeps the
+        # The key and passphrase stay out of the message; `raise from` keeps the
         # asyncssh cause available to the logs.
         raise SSHExecutionError(
             code="ssh_invalid_private_key",
@@ -120,7 +120,7 @@ async def ssh_get_host_fingerprint(
 ) -> str:
     """Connect trust-on-first-use and return the host's sha256 fingerprint.
 
-    The only unpinned path in this module. Runs no command: it exists so T54's validate
+    The only unpinned path in this module. Runs no command: it exists so the admin validate
     endpoint can show an operator the fingerprint it is about to store, and so a legitimate
     host-key rotation has a refresh path that is an explicit admin action rather than a
     silent accept inside `ssh_exec`.
@@ -226,8 +226,8 @@ async def ssh_exec(
         ) from exc
     except asyncssh.HostKeyNotVerifiable as exc:
         # The pin rejected the presented key. Distinct code because the remedy is an
-        # investigation, not a retry: either the host rotated its key (admin re-validates,
-        # T54) or something is answering in its place.
+        # investigation, not a retry: either the host rotated its key (admin re-validates)
+        # or something is answering in its place.
         raise SSHExecutionError(
             code="ssh_host_key_mismatch",
             message="SSH host key fingerprint did not match the stored fingerprint",
@@ -263,7 +263,7 @@ async def ssh_exec(
         duration_ms = int((time.perf_counter() - started) * 1000)
         # Strip the CloudLinux LVE/PAM banner from stdout only: it was confirmed
         # to land on stdout (live capture on web16-cpn; `2>/dev/null` still shows
-        # it), so stderr is passed through unchanged (`noa-old` GH #83, V56).
+        # it), so stderr is passed through unchanged (`noa-old` GH #83).
         # raw_stdout/raw_stderr retain the unstripped streams for debugging/audit.
         raw_stdout = result.stdout
         exit_status = result.exit_status

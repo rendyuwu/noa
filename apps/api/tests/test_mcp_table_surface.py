@@ -1,15 +1,14 @@
 """What a large READ answers with, and what it never answers with.
 
-`noa_api.mcp_tools.table_surface` is the READ-side sibling of T32's CHANGE gate response, and
+`noa_api.mcp_tools.table_surface` is the READ-side sibling of the CHANGE gate response, and
 this file makes the same four claims about it, one surface over:
 
 - **two content blocks, text first** — the frame is where the table is read and the address in
-  the text is what remains when the frame does not load. Asserted on the count and the
-  order, because "a resource exists" stays true when the text block is the half that got
-  dropped;
+  the text is what remains when the frame does not load. Asserted on the count and the order,
+  because "a resource exists" stays true when the text block is the half that got dropped;
 - **the resource is shaped the way the render gate measured** — `ui://` scheme, `text/uri-list`
-  mime, URL as the body (R12, R29, R31c). Any one of the three wrong and the table either does
-  not render or renders on an opaque origin;
+  mime, URL as the body — the three fields the render gate measured live. Any one of the three wrong
+  and the table either does not render or renders on an opaque origin;
 - **the URL carries the token and nothing else**. Taken apart rather than prefix-matched,
   so a query parameter added later goes red instead of hiding on the end of a `startswith`;
 - **the bound is stated in the text**. A model reports what it was handed, so a capped
@@ -17,11 +16,11 @@ this file makes the same four claims about it, one surface over:
 
 And two this surface owes that the CHANGE gate does not.
 
-**No rows anywhere in the result.** The whole point of V64 is that the body never enters the
-transcript, and a "sample row" would be exactly the ops data it exists to keep out of
+**No rows anywhere in the result.** The whole point of summary-plus-URL is that the body never
+enters the transcript, and a "sample row" would be exactly the ops data it exists to keep out of
 LibreChat's MongoDB.
 
-**A counts envelope beside the blocks**. T32's gate answers with content
+**A counts envelope beside the blocks**. The change gate answers with content
 alone, for two reasons, and only one of them survives the trip to a READ: a CHANGE call skips
 the audit middleware, so no reader is owed an envelope, while every READ is recorded and
 `status_for_payload` reads a missing envelope as FAILED. The reason that does survive — an
@@ -132,7 +131,7 @@ async def park(
 
 
 # --------------------------------------------------------------------------------------
-# The shape of the answer (V24's shape, one surface over — V64)
+# The shape of the answer (one-function-shapes-it, one surface over)
 # --------------------------------------------------------------------------------------
 
 
@@ -151,11 +150,12 @@ def test_the_result_carries_a_summary_block_and_a_ui_resource() -> None:
 
 
 def test_the_resource_uses_the_ui_scheme_and_the_uri_list_mime() -> None:
-    """R12, R31c: the three fields that make LibreChat render a frame at all.
+    """The three fields that make LibreChat render a frame at all.
 
-    `ui://` is what its parser classifies on; `text/uri-list` is what mcp-ui maps to an iframe
+    `ui://` is what its parser classifies on — the classifier needs the scheme; `text/uri-list`
+    is what mcp-ui maps to an iframe
     `src` rather than `srcDoc`; the body is the URL because that is what a uri-list is. Same
-    mechanism as the approval card, which is what V64 means by "not a second one".
+    mechanism as the approval card, which is what summary-plus-URL means by "not a second one".
     """
     tools = build_tool_context()
     answer = result(tools)
@@ -169,7 +169,7 @@ def test_the_resource_uses_the_ui_scheme_and_the_uri_list_mime() -> None:
 
 
 def test_the_table_url_carries_the_token_and_nothing_else() -> None:
-    """V26: the address is a name, not a key, and it names one thing.
+    """The address is a name, not a key, and it names one thing — an id-only URL.
 
     Taken apart rather than prefix-matched. A `startswith` assertion stays green when a query
     parameter — a tool name, a row count, a server — is appended later, and everything in this
@@ -207,7 +207,7 @@ def test_the_surface_reads_the_base_off_the_context_it_was_given() -> None:
 
 
 def test_the_text_block_carries_the_plain_address_and_no_markup() -> None:
-    """V25, V94: an address, not a link.
+    """An address, not a link — the escape hatch ships the plain address.
 
     A `target="_blank"` clicked inside the frame opens nothing at all under one of the two
     render sites' sandboxes, silently — so the door that always works is text a human can
@@ -221,7 +221,7 @@ def test_the_text_block_carries_the_plain_address_and_no_markup() -> None:
 
 
 def test_a_capped_table_says_so_in_the_text() -> None:
-    """V85: the model reports what it was handed, so the bound has to be in the sentence."""
+    """The model reports what it was handed, so the cap's bound has to be in the sentence."""
     body = text_block(result(build_tool_context(), total_rows=900, stored_rows=25, truncated=True))
 
     assert "900" in body
@@ -245,7 +245,8 @@ def test_the_text_names_the_deadline() -> None:
 
 
 def test_the_result_carries_no_reason_shaped_word() -> None:
-    """V71 as widened at T32: the rule is about model-facing text, and this is model-facing
+    """The model-facing safety text rule, widened to this surface: the rule is about model-facing
+    text, and this is model-facing
     text. A model told the field exists is a model that can be argued into filling it."""
     body = text_block(result(build_tool_context())).lower()
 
@@ -259,7 +260,7 @@ def test_the_result_carries_no_reason_shaped_word() -> None:
 
 
 def test_the_result_carries_the_counts_as_a_success_envelope() -> None:
-    """V20, V45: `ToolRunAuditMiddleware` reads the run's status off this and nothing else.
+    """`ToolRunAuditMiddleware` reads the run's status off this and nothing else.
 
     The CHANGE gate answers with content alone because a CHANGE call skips the audit
     middleware and no reader is owed an envelope. A READ has one, and
@@ -293,7 +294,7 @@ def test_the_envelope_states_both_counts_when_nothing_was_dropped() -> None:
 
 
 def test_the_envelope_carries_no_address_and_no_token() -> None:
-    """The half of T32(b)'s reason that does hold here.
+    """The half of the gate's reason that does hold here.
 
     An envelope beside the blocks must not become a third place the URL lives: everything in a
     tool result persists in LibreChat's MongoDB, and the address is already stated once in the
@@ -308,7 +309,7 @@ def test_the_envelope_carries_no_address_and_no_token() -> None:
 
 
 async def test_no_row_reaches_the_tool_result() -> None:
-    """V64, V26: the whole point is that the body stays out of the transcript.
+    """The whole point is that the body stays out of the transcript.
 
     Driven through the real writer and the real result builder, then hunted in the serialized
     result — the second half matters, because a sentinel that only ever existed in a fixture
@@ -329,7 +330,7 @@ async def test_no_row_reaches_the_tool_result() -> None:
 
 
 async def test_the_table_is_parked_for_the_caller_the_token_authenticated() -> None:
-    """V27: the requester is read from the identity, never passed in.
+    """The requester is read from the identity, never passed in.
 
     A tool that could pass one would be a tool that could park a table under somebody else's
     name — and the column this writes is the one the surface matches on later.
@@ -342,10 +343,10 @@ async def test_the_table_is_parked_for_the_caller_the_token_authenticated() -> N
 
 
 async def test_parking_uses_the_cap_and_the_ttl_off_the_context() -> None:
-    """V64, V85: both numbers are configured, and neither is hardcoded in the tool path.
+    """Both numbers are configured, and neither is hardcoded in the tool path.
 
     The fixture's cap and TTL are deliberately not `Settings`' values, so a wiring that read
-    the production defaults could not pass this (V87, the trick T33 used for the pending TTL).
+    the production defaults could not pass this — the same trick the gate used for the pending TTL.
     """
     tools = build_tool_context()
     rows = [{"user": f"account-{index}"} for index in range(RESULT_TABLE_MAX_ROWS + 5)]
@@ -362,7 +363,7 @@ async def test_parking_uses_the_cap_and_the_ttl_off_the_context() -> None:
 
 
 async def test_a_failed_park_refuses_the_read_rather_than_handing_out_a_dead_address() -> None:
-    """Fail-closed (T33's rule, one table over).
+    """Fail-closed, one table over from the gate's rule.
 
     A result whose URL leads nowhere is worse than a refusal: the refusal is visible when it
     happens, and the dead link is discovered by an operator, later, in a transcript.

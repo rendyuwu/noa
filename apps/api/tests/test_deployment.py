@@ -1,16 +1,16 @@
-"""Deployment artifact guards (§T.60).
+"""Deployment artifact guards — Dockerfile per app, compose for local dev.
 
 Three Dockerfiles, one compose file and `docs/deployment.md` carry claims that are checkable
 text: a base-image tag either satisfies `requires-python` or it does not, and a documented
 `docker compose up -d postgres` either names a service that exists or it does not. Everything
-asserted here is in that category, which is where V84(c) says to bind by test rather than by
+asserted here is in that category, which is where doc prose gets bound by test rather than by
 discipline.
 
 Two things are deliberately NOT asserted here, so their absence reads as a decision:
 
 * Nothing runs `docker`. These tests parse artifacts and must pass on a runner with no daemon.
   The behaviour that needs a daemon — that the framing origin reaches the wire, and that a
-  widening value fails the build — was measured at §T.60 and is recorded in
+  widening value fails the build — was measured against the compose setup and is recorded in
   `docs/deployment.md`, because a test that shells out to `docker build` is a test that skips.
 * No test asserts the admin panel image builds. It cannot, outside the Biznet Gio network
   (`@gio/*` is internal-only, `docs/admin-web.md`), and a test that passes only on an internal
@@ -31,8 +31,9 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_FILE = REPO_ROOT / "docker-compose.yml"
 DEPLOYMENT_DOC = REPO_ROOT / "docs" / "deployment.md"
 
-# The three deploy artifacts C12 names, and nothing else. Keyed by the compose service that
-# builds each one, because the service name is what the rest of this file cross-checks.
+# The three deploy artifacts — one repo, three deploy artifacts — and nothing else. Keyed by the
+# compose service that builds each one, because the service name is what the rest of this file
+# cross-checks.
 DEPLOYABLES = {
     "api": Path("apps/api"),
     "admin-web": Path("apps/admin-web"),
@@ -42,8 +43,8 @@ WEB_DEPLOYABLES = ("admin-web", "embed")
 
 # `pnpm install` on Node 20 dies with `ERR_UNKNOWN_BUILTIN_MODULE: No such built-in module:
 # node:sqlite` before it resolves a package, because `packageManager` pins pnpm 11.x and pnpm
-# 11's own `engines` demand `>=22.13`. MEASURED at §T.60 on `node:20-bookworm-slim`, not read
-# off a changelog.
+# 11's own `engines` demand `>=22.13`. MEASURED against the compose setup on
+# `node:20-bookworm-slim`, not read off a changelog.
 #
 # This floor belongs to pnpm 11 and to nothing else, which is why
 # `test_web_packages_still_pin_the_pnpm_major_this_floor_was_measured_for` exists: a pnpm major
@@ -147,12 +148,12 @@ def under_session_cookie_domain(host: str) -> bool:
 
 
 # --------------------------------------------------------------------------------------------
-# C12 — three deployables, three images, no cross-app context
+# Three deployables, three images, no cross-app context
 # --------------------------------------------------------------------------------------------
 
 
 def test_every_deployable_has_exactly_one_dockerfile() -> None:
-    """C12: three deploy artifacts, and a fourth cannot appear unnoticed."""
+    """Three deploy artifacts, and a fourth cannot appear unnoticed."""
     found = {
         path.relative_to(REPO_ROOT)
         for path in REPO_ROOT.rglob("Dockerfile")
@@ -163,7 +164,7 @@ def test_every_deployable_has_exactly_one_dockerfile() -> None:
 
 
 def test_web_images_build_from_their_own_app_directory() -> None:
-    """C12: the two web packages share no source, so neither may see the other's files.
+    """The two web packages share no source, so neither may see the other's files.
 
     A repo-root context would put `apps/admin-web` inside the embed image and vice versa —
     the boundary AGENTS.md states, expressed as a build context.
@@ -191,12 +192,12 @@ def test_api_image_builds_from_the_workspace_root() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# C1 / C2 — base image versions
+# Base image versions — Python window, exact web pins
 # --------------------------------------------------------------------------------------------
 
 
 def test_api_image_python_matches_requires_python() -> None:
-    """C1 read off `pyproject.toml`, not restated.
+    """The `>=3.11,<3.13` Python window, read off `pyproject.toml`, not restated.
 
     `pgpy==0.6.0` imports the removed stdlib `imghdr` at import time, which takes down the whole
     tool registry on 3.13+. A base image past the bound is that failure shipped, and it surfaces
@@ -232,7 +233,7 @@ def test_api_image_uses_one_python_base_for_every_stage() -> None:
 
 @pytest.mark.parametrize("service", WEB_DEPLOYABLES)
 def test_web_image_node_major_satisfies_package_engines(service: str) -> None:
-    """C2 floor, read off the package rather than restated."""
+    """Exact-pin floor, read off the package rather than restated."""
     declared = package_json(service)["engines"]["node"]
     floor = int(declared.removeprefix(">=").split(".")[0])
 
@@ -288,12 +289,12 @@ def test_both_web_images_share_one_node_base() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# V41 — the framing origin is a build input and only a build input
+# The framing origin is a build input and only a build input
 # --------------------------------------------------------------------------------------------
 
 
 def test_embed_image_takes_the_framing_origin_as_a_build_arg() -> None:
-    """V41: `output: 'standalone'` bakes `frame-ancestors`, so the value enters at build.
+    """`output: 'standalone'` bakes `frame-ancestors`, so the value enters at build.
 
     Position matters as much as presence: an `ARG` after `pnpm build`, or in a different stage,
     is declared and unread — the build would then silently use the fallback default.
@@ -318,12 +319,12 @@ def test_embed_image_takes_the_framing_origin_as_a_build_arg() -> None:
 
 
 def test_no_container_is_given_the_framing_origin_at_runtime() -> None:
-    """V41's other half, and the one that fails silently.
+    """The other half of the build-input rule, and the one that fails silently.
 
     A `NOA_LIBRECHAT_ORIGIN` in a compose `environment:` block, a ConfigMap or an image `ENV`
     reads as the lever that moves the framing allowlist while doing nothing at all — the
-    standalone output never re-reads the Next config. That is V95's silently-wrong-address
-    failure one setting over, so its absence is asserted rather than assumed.
+    standalone output never re-reads the Next config. That is a dev default reaching production
+    one setting over, so its absence is asserted rather than assumed.
     """
     for service, spec in compose_services().items():
         keys = set(spec.get("environment", {}) or {})
@@ -348,7 +349,7 @@ def test_only_the_embed_service_passes_the_framing_origin_as_a_build_arg() -> No
 
 
 def test_admin_image_names_no_framing_origin_at_all() -> None:
-    """`frame-ancestors 'none'` names no origin, so no variable can widen it (V41, §T.49)."""
+    """`frame-ancestors 'none'` names no origin, so no variable can widen it."""
     body = dockerfile("admin-web")
     directives = [
         line.strip()
@@ -360,12 +361,12 @@ def test_admin_image_names_no_framing_origin_at_all() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# V40 — the cookie domain reaches every operator-facing origin
+# The cookie domain reaches every operator-facing origin
 # --------------------------------------------------------------------------------------------
 
 
 def test_documented_hosts_line_covers_every_operator_facing_origin() -> None:
-    """V40: `Domain=.noa.internal` either reaches an origin or the session silently does not.
+    """`Domain=.noa.internal` either reaches an origin or the session silently does not.
 
     An origin the hosts line does not name is a URL that resolves nowhere; an origin outside
     `noa.internal` resolves fine and then drops the cookie, which is the worse failure because
@@ -395,7 +396,7 @@ def test_documented_origins_match_the_ports_compose_publishes() -> None:
     """The doc's port and the compose file's port are one fact stated twice.
 
     Without this, changing a published port leaves `docs/deployment.md` describing an address
-    that answers nothing — the failure V95 describes, arriving by a different route.
+    that answers nothing — a dev default seen by an operator, arriving by a different route.
     """
     origins = {line.split()[0]: line.split()[1] for line in marked_block("origins")}
     services = compose_services()
@@ -415,14 +416,14 @@ def test_compose_publishes_only_on_loopback() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# V84(a) — the documented commands name real things
+# The documented commands name real things
 # --------------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("doc_name", ["README.md", "AGENTS.md", "docs/deployment.md"])
 def test_documented_compose_commands_name_real_services_and_profiles(doc_name: str) -> None:
     """`docker compose up -d postgres` was in `README.md` and `AGENTS.md` before any compose
-    file existed (flagged at §T.67 for this row). This is what stops it drifting back:
+    file existed. This is what stops it drifting back:
     every service and profile an operator is told to type has to exist.
     """
     doc = (REPO_ROOT / doc_name).read_text(encoding="utf-8")
@@ -460,12 +461,13 @@ def test_the_profile_free_service_is_the_one_the_docs_tell_you_to_start() -> Non
 
 
 # --------------------------------------------------------------------------------------------
-# C11 / V8 — no key material in the compose file or an image layer
+# No key material in the compose file or an image layer
 # --------------------------------------------------------------------------------------------
 
 
 def test_compose_hands_no_service_a_secret_it_does_not_read() -> None:
-    """C7, V8: a container that reads one address should not be given three credentials.
+    """Credentials Fernet-encrypted at rest; a container that reads one address should not be
+    given three credentials.
 
     The API takes the whole `.env` because it reads the whole thing; the web services are
     handed their variables individually for exactly this reason.
@@ -505,8 +507,8 @@ def test_compose_overrides_only_container_topology_values() -> None:
     # Read pre-interpolation, deliberately: the assertion is about the FORM, not the value a
     # particular `.env` happens to supply. `${NOA_SIGN_IN_URL:-}` interpolates from `.env` with
     # no default of its own — a default here would be a second truth beside `.env.example`'s,
-    # and blank is a valid answer anyway (the 401 card then names the state and offers no link,
-    # §T.43). A literal address in this slot is the failure being excluded.
+    # and blank is a valid answer anyway (the 401 card then names the state and offers no link).
+    # A literal address in this slot is the failure being excluded.
     assert services["embed"]["environment"] == {
         "NOA_API_URL": "http://api:8000",
         "NOA_SIGN_IN_URL": "${NOA_SIGN_IN_URL:-}",
@@ -515,7 +517,7 @@ def test_compose_overrides_only_container_topology_values() -> None:
 
 @pytest.mark.parametrize("service", sorted(DEPLOYABLES))
 def test_no_image_can_bake_an_env_file(service: str) -> None:
-    """C11 keeps secrets out of git; an image layer is just as permanent and harder to inspect."""
+    """No secrets in git; an image layer is just as permanent and harder to inspect."""
     patterns = dockerignore(service)
 
     assert ".env" in patterns
@@ -524,8 +526,8 @@ def test_no_image_can_bake_an_env_file(service: str) -> None:
 
 @pytest.mark.parametrize("service", WEB_DEPLOYABLES)
 def test_dockerignore_excludes_no_typescript_the_build_type_checks(service: str) -> None:
-    """MEASURED at §T.60: excluding `tests/` broke the build, and dropping the specs would have
-    been worse.
+    """MEASURED against the compose setup: excluding `tests/` broke the build, and dropping the
+    specs would have been worse.
 
     `tsconfig.json` includes `**/*.ts` and `**/*.tsx` across the whole package and `next build`
     runs that same check, so specs colocated in `src/` import from `tests/support/`. With
@@ -557,7 +559,7 @@ def test_dockerignore_excludes_no_typescript_the_build_type_checks(service: str)
 
 
 # --------------------------------------------------------------------------------------------
-# V51 / V79 — liveness only, one process
+# Liveness only, one process
 # --------------------------------------------------------------------------------------------
 
 
@@ -568,7 +570,7 @@ def test_dockerignore_excludes_no_typescript_the_build_type_checks(service: str)
 def test_healthcheck_targets_the_dependency_free_liveness_route(
     service: str, route: str, port: int
 ) -> None:
-    """V51: `/health` answers with Postgres down on purpose.
+    """`/health` answers 200 ok with Postgres down on purpose.
 
     A healthcheck that reached the database or the API would report that dependency's outage as
     this process being dead, and a restart is then the wrong remedy. The probe address is
@@ -603,11 +605,12 @@ def test_postgres_readiness_gate_is_pg_isready_and_gates_the_migration() -> None
 
 
 def test_api_image_runs_exactly_one_uvicorn_process() -> None:
-    """V79's revisit trigger is ">1 API replica", so the image must not quietly be that.
+    """The revisit trigger for zero clock leeway is ">1 API replica", so the image must not quietly
+    be that.
 
-    Mint and verify share a clock at zero leeway, and T38's executor, T38's reaper, T39's sweep
-    and T66's session register are all in-process. `--workers 2` is the trigger tripped without
-    anyone deciding to trip it.
+    Mint and verify share a clock at zero leeway, and the executor, the reaper, the expiry sweep and
+    the list-changed session register are all in-process. `--workers 2` is the trigger tripped
+    without anyone deciding to trip it.
     """
     body = dockerfile("api")
     command = next(line for line in body.splitlines() if line.startswith('CMD ["uvicorn"'))
@@ -627,7 +630,7 @@ def test_no_service_declares_more_than_one_replica() -> None:
 
 
 def test_deployment_doc_records_the_single_replica_trigger() -> None:
-    """The constraint is only useful if the reason travels with it (V84a)."""
+    """The constraint is only useful if the reason travels with it — doc prose bound by test."""
     doc = DEPLOYMENT_DOC.read_text(encoding="utf-8")
 
     assert "V79" in doc
@@ -636,15 +639,15 @@ def test_deployment_doc_records_the_single_replica_trigger() -> None:
 
 
 # --------------------------------------------------------------------------------------------
-# The readiness question §T.50 parked on this row
+# The readiness question the admin auth work parked here
 # --------------------------------------------------------------------------------------------
 
 
 def test_readiness_decision_is_recorded_and_no_longer_deferred() -> None:
-    """`docs/admin-web.md` said `/readyz` "is §T.60's, not §T.50's". §T.60 answered it: no.
+    """`docs/admin-web.md` deferred `/readyz` to the deployment artifacts. They answered it: no.
 
     Both halves are asserted, because recording the decision while leaving the deferral in
-    place is how two truths end up live (V84a).
+    place is how two truths end up live.
     """
     deployment = DEPLOYMENT_DOC.read_text(encoding="utf-8")
     admin_web = (REPO_ROOT / "docs" / "admin-web.md").read_text(encoding="utf-8")

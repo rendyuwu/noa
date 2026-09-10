@@ -1,12 +1,12 @@
 /**
- * Nobody may frame this app (§T.49, V41).
+ * Nobody may frame this app.
  *
  * The admin panel holds the operator's session and every admin mutation behind it, so a document
  * that can put this app in a frame and land a click on it is exactly the reachability this header
- * exists to deny. §I.admin-web states it as a property of the app: not frameable, by anyone.
+ * exists to deny. It is a property of the app: not frameable, by anyone.
  *
  * The embed answers the mirror of this — `frame-ancestors <LibreChat origin>` — because it has one
- * legitimate parent (§T.45). This app has none, so there is nothing to configure: no variable, no
+ * legitimate parent. This app has none, so there is nothing to configure: no variable, no
  * default to fall back to, no value an environment could widen. `buildFramingHeaders` therefore
  * takes no argument at all, which is the point rather than an omission — an unused `env` parameter
  * is where a knob later grows.
@@ -15,8 +15,8 @@
  * and a `SAMEORIGIN` added later would be read *instead* of this header by a client that honours
  * XFO first — which is a different, weaker policy. Its absence is asserted rather than assumed.
  *
- * Lives beside `root-env.ts` rather than inside `next.config.ts` for the reason §T.47 put that one
- * here: the part that can be got wrong is the rule, and a rule inside the config cannot be tested
+ * Lives beside `root-env.ts` rather than inside `next.config.ts` for the reason that one is here:
+ * the part that can be got wrong is the rule, and a rule inside the config cannot be tested
  * without importing the config's side effects.
  */
 
@@ -37,8 +37,8 @@ export const FRAME_ANCESTORS = "'none'"
  *
  * Deliberately not a page-shaped pattern: config headers are applied during route resolution
  * without terminating the match, so this one entry covers the pages, `/healthz`, the 404 and the
- * `/api/*` proxy §T.50 will add. A guard the next route has to remember is one it forgets
- * (V83b's shape).
+ * `/api/*` proxy to come. A guard the next route has to remember is one it forgets — one seam,
+ * never per-route code.
  */
 export const FRAMING_SOURCE = '/(.*)'
 

@@ -2,7 +2,7 @@
 
 `core.integrations.proxmox.nic` has no tool context, no client and no session, so it is tested
 here directly: the grammar is the whole subject, and the two halves of `proxmox_vm_nic` are two
-callers of it rather than the thing under test (§V.66).
+callers of it rather than the thing under test — shared code sits in `core/`.
 
 **Why a rewrite is the risky operation.** Proxmox takes a `netN` line whole. There is no "set the
 `link_down` field" call — the change is a write of the entire value, so every segment this module
@@ -10,8 +10,9 @@ drops is a segment deleted from a live VM. Most of this file is that one propert
 several directions, because a codec that loses `tag=42` produces a VM on the wrong VLAN and
 answers `ok`.
 
-The other thread is **Proxmox's truthiness, not Python's** (§V.87's family): `link_down=0` is a
-non-empty string, and a codec that read it as set would report an enabled NIC as disabled.
+The other thread is **Proxmox's truthiness, not Python's** — a compare must not eat a byte that
+carries meaning: `link_down=0` is a non-empty string, and a codec that read it as set would
+report an enabled NIC as disabled.
 """
 
 from __future__ import annotations
@@ -104,7 +105,9 @@ def test_a_nic_is_read_by_the_shape_of_its_mac_not_by_segment_position() -> None
 
 
 def test_a_line_with_no_mac_reports_no_model_rather_than_guessing_one() -> None:
-    """An absence, not a value — the same rule §V.86 makes about an unanswered read."""
+    """An absence, not a value — the same rule an unanswered read follows: silence is not a benign
+    answer.
+    """
     nic = read_nic("net0", "bridge=vmbr0,firewall=1")
 
     assert nic.model is None
@@ -126,7 +129,7 @@ def test_the_raw_line_is_kept_and_the_evidence_does_not_carry_it() -> None:
 
 def test_a_choice_entry_is_all_strings_with_absences_rendered_as_a_dash() -> None:
     """`tool_failure(choices=…)` takes `dict[str, str]`, and a literal `None` in a picker reads
-    as a value rather than as an absence (§V.18)."""
+    as a value rather than as an absence — ambiguous identifiers get candidates, never a guess."""
     choice = read_nic("net0", "bridge=vmbr0").as_choice()
 
     assert all(isinstance(value, str) for value in choice.values())
@@ -202,7 +205,7 @@ def test_nics_are_listed_in_proxmoxs_own_numeric_order() -> None:
     """Numeric, not lexical: `net2` before `net10`.
 
     An operator reads this as a `choices` list, and the order is reproducible across identical
-    calls (§V.85's ordering rule, on a list too small to need a cap).
+    calls — the capped-READ ordering rule, on a list too small to need a cap.
     """
     config = {"net10": "virtio=AA:0A", "net2": "virtio=AA:02", "net0": "virtio=AA:00"}
 

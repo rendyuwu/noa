@@ -1,10 +1,9 @@
 """Reading one approval request back, for the operator who asked for it.
 
-T33 opens a request, T37 decides it, T39 expires the ones nobody answered. This is the only
-thing that *reads* one from the MCP side: `noa_get_action_result` is how a model finds out
-what happened to a change it asked for, without the answer travelling through an LLM claim
-(V23 — the row is still the authority) and without it reaching past the operator who opened
-it.
+The gate opens a request, the decision endpoint decides it, the expiry loop expires the ones nobody
+answered. This is the only thing that *reads* one from the MCP side: `noa_get_action_result` is how
+a model finds out what happened to a change it asked for, without the answer travelling through an
+LLM claim (the row is still the authority) and without it reaching past the operator who opened it.
 
 **A fourth class, and the reason is the one that split the first three.** `repository` writes
 PENDING, `decisions` writes APPROVED/DENIED under a lock, `expiry` writes EXPIRED and nothing
@@ -13,33 +12,32 @@ statement that is not a `SELECT`. The one write on this path — expiring a stal
 GET cannot serve it — is delegated to `ActionRequestExpiryService`, whose writer can set
 exactly one status.
 
-**The row guard is `core.approvals.reads`, shared with T41's card.** The requester-match sits
-in the `WHERE` (`select_requester_matched`) and V32's check-on-read runs after it
+**The row guard is `core.approvals.reads`, shared with the approval card.** The requester-match sits
+in the `WHERE` (`select_requester_matched`) and the TTL check-on-read runs after it
 (`apply_due_expiry`); both live one module over because the *other* reader of an approval
 request has to guard it identically, and two spellings of an access control is how it ends up
 holding at one surface and not the other. What is not shared is what each surface
 renders — see the next paragraph.
 
-**What the views cannot carry.** `ActionResultView` has no `reason` field and nowhere to put
-one. The reason is the operator's own words, typed on the approval card, and C8 says the LLM
-never authors it, never relays it and never *sees* it — and this tool answers into
-a transcript that persists in LibreChat's MongoDB. The same is true of the preflight
-evidence on `approval_context`: V17 says it is born in-process and stays out of the
-transcript, so it is read for the card and never for the model. Neither is filtered
-out downstream; neither is ever loaded. `arguments_from_context` is the only thing this module
-takes off that payload.
+**What the views cannot carry.** `ActionResultView` has no `reason` field and nowhere to put one.
+The reason is the operator's own words, typed on the approval card, and the reason rule says the LLM
+never authors it, never relays it and never *sees* it — and this tool answers into a transcript that
+persists in LibreChat's MongoDB. The same is true of the preflight evidence on `approval_context`:
+it is born in-process and stays out of the transcript, so it is read for the card and never for the
+model. Neither is filtered out downstream; neither is ever loaded. `arguments_from_context` is the
+only thing this module takes off that payload.
 
-**The run is `tool_runs`, not `action_receipts`.** §T.63 says "receipt summary". The run row is
-what this reads: `action_requests.tool_run_id` is written in the same transaction as an approval
-(T37, V29), so it exists for every approved change, and it carries status, redacted summary and
-timing.
+**The run is `tool_runs`, not `action_receipts`.** The action-result tool's design says "receipt
+summary". The run row is what this reads: `action_requests.tool_run_id` is written in the same
+transaction as an approval (approve means async run, state in DB), so it exists for every approved
+change, and it carries status, redacted summary and timing.
 
-T38 has since built the receipt's writer, so a receipt now exists for every approved change that
-reached a terminal state — and joining it *here* is still T63's own decision rather than
-something T38 did on its behalf. What a model may be told is narrower than what the card shows
-(V76), and a receipt's before-state is the gate's in-process preflight, which V17 keeps out of
-the transcript. So the receipt joins this view when someone decides which of its halves a model
-may see; T42's card is where it renders first, and it has since done so.
+The executor has since built the receipt's writer, so a receipt now exists for every approved change
+that reached a terminal state — and joining it *here* is still the action-result tool's own decision
+rather than something the executor did on its behalf. What a model may be told is narrower than what
+the card shows (requester-match), and a receipt's before-state is the gate's in-process preflight,
+which stays out of the transcript. So the receipt joins this view when someone decides which of its
+halves a model may see; the approval card is where it renders first, and it has since done so.
 
 That decision is now expressible rather than merely stated: `select_requester_matched` takes an
 `include_receipt` flag, the card passes it and this reader does not. So the separation is a
@@ -135,7 +133,7 @@ class SQLActionResultRepository:
         """The caller's request and the run it started, or `None`.
 
         The statement is `core.approvals.reads.select_requester_matched` — one outer join with
-        the requester-match in the `WHERE`, shared with T41's card so the access control has
+        the requester-match in the `WHERE`, shared with the approval card so the access control has
         one spelling. What is local to this class is the *projection*: only
         `arguments_from_context` comes off `approval_context`, and `ActionResultView` has
         nowhere to put the rest.
@@ -171,8 +169,8 @@ class ActionResultService:
     """Read one request, and never serve a stale PENDING.
 
     **Order: the requester-match first, the expiry second** — `core.approvals.reads`
-    (`apply_due_expiry`) holds that ordering and the argument for it, shared with T41's card so
-    a second reader cannot arrive at the other order.
+    (`apply_due_expiry`) holds that ordering and the argument for it, shared with the approval card
+    so a second reader cannot arrive at the other order.
     """
 
     def __init__(

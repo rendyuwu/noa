@@ -1,19 +1,20 @@
 """Operator word → one PMG server, or a structured refusal.
 
-Ported from `noa-old` branch `MCP` (`pmg/server_ref.py`, C13).
+Ported from `noa-old` branch `MCP` (`pmg/server_ref.py`) — port, never rewrite.
 
-**Shrunk 2026-08-15 at T27**, the same move `whm_ref` made in the same change and for the reason
+**Shrunk 2026-08-15**, the same move `whm_ref` made in the same change and for the reason
 that module's docstring gives: the policy lives in `core.servers.reference` now, and what is left
 here is what a PMG row is. Behaviour is unchanged — codes, messages and `choices` fields are
 byte-identical, which is what `test_pmg_server_ref.py` holds unchanged.
 
-PMG is SSH-only (V58, I.ext), so the host is the bare `ssh_host` column rather than something
-parsed out of a URL, and that column is what a candidate is recognised by. That difference — one
-accessor and one `choices` field — is the whole of what made three copies look necessary.
+PMG is SSH-only (the external interface contract), so the host is the bare `ssh_host` column rather
+than something parsed out of a URL, and that column is what a candidate is recognised by. That
+difference — one accessor and one `choices` field — is the whole of what made three copies look
+necessary.
 
-**The resolved row keeps its own type**, as at T21: matching only ever reads id, name and
-`ssh_host` — the `PMGServerRowLike` bound — but the tool then has to *connect* with the row it
-resolved, and re-reading it by id would let a second query disagree with the list the tie was
+**The resolved row keeps its own type**, as the account search established: matching only ever reads
+id, name and `ssh_host` — the `PMGServerRowLike` bound — but the tool then has to *connect* with the
+row it resolved, and re-reading it by id would let a second query disagree with the list the tie was
 judged against. So `resolve_pmg_server_ref` is generic in the row.
 """
 

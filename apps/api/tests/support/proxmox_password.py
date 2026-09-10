@@ -4,15 +4,14 @@
 `httpx.MockTransport` — which is what `test_proxmox_client*.py` need. This owns what a *tool*
 test needs: a VM with state that the reset workflow actually changes, the two call helpers for
 the tool and its runner, and the fixture shapes both lanes share. Its own module because those
-lanes are two test files, split so neither runs past C14's line budget, and helpers duplicated
+lanes are two test files, split so neither runs past the line budget, and helpers duplicated
 across files are helpers that drift.
 
 **`FakeProxmoxVM` holds state rather than replaying canned answers**, and that is what makes the
 happy path worth running. Writing `cipassword` recomputes the VM's stored crypt hash with the
 **real** `crypt(3)`, so the rendered user-data the runner then reads is a document the real
-`verify_cloudinit_password` really has to agree with. A fixture that returned a pre-baked
-"matching" dump would make the crypt compare a formality and would pass with the comparison
-deleted.
+`verify_cloudinit_password` really has to agree with. A fixture that returned a pre-baked "matching"
+dump would make the crypt compare a formality and would pass with the comparison deleted.
 
 Every knob is a *failure* knob, and each names one step of the workflow, because what the runner
 tests are actually about is which failure ships the yopass URL and which does not.
@@ -124,7 +123,9 @@ class FakeProxmoxVM:
 
     @property
     def config_writes(self) -> list[tuple[str, str]]:
-        """Every request that would have changed the VM. Empty is the V62 abort assertion."""
+        """Every request that would have changed the VM. Empty is the verdict rule's abort
+        assertion.
+        """
         return [(method, path) for method, path in self.requests if method in {"POST", "PUT"}]
 
     def _handle(self, request: httpx.Request) -> httpx.Response:
@@ -266,8 +267,8 @@ def execution_request(
     """What `core.approvals.execution` hands a runner for an approved reset.
 
     The evidence is what the gate wrote and what the operator saw; the arguments deliberately name
-    a `server_ref` the runner must ignore, so every runner test that resolves a target is also a
-    V33 assertion.
+    a `server_ref` the runner must ignore, so every runner test that resolves a target also asserts
+    resolution comes from the evidence, never the arguments.
     """
     return ChangeExecutionRequest(
         action_request_id=action_request_id or uuid4(),

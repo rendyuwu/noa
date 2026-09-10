@@ -1,14 +1,14 @@
 """In-memory `tool_runs` writer for the audit tests.
 
-The double records the rows a real `SQLToolRunRepository` would have written, so a test can
-assert on the audit trail without Postgres — and, more usefully, can make either write fail
-on demand. Both failure modes are behaviours V45 pins and neither is reachable against a
-healthy database: the opening write failing means the call is refused, the closing one
-failing means the row is left `STARTED` for T38's reaper.
+The double records the rows a real `SQLToolRunRepository` would have written, so a test can assert
+on the audit trail without Postgres — and, more usefully, can make either write fail on demand. Both
+failure modes are behaviours the tool-run trail pins and neither is reachable against a healthy
+database: the opening write failing means the call is refused, the closing one failing means the row
+is left `STARTED` for the reaper.
 
 `SQLToolRunRepository` is not doubled away entirely — `test_mcp_tool_audit.py` runs it
 against a scratch Postgres, because "the middleware called a repository" and "a row exists
-in `tool_runs`" are different claims and only the second one is V45. Same split as
+in `tool_runs`" are different claims and only the second one is the audit rule. Same split as
 `support.servers` and `support.rbac`.
 
 Rows are a dataclass rather than `ToolRun` instances: the ORM object would carry

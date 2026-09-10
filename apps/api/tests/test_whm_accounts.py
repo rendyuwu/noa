@@ -10,9 +10,8 @@ because the result lands in a LibreChat transcript that persists in their MongoD
 the cPanel version, and `"0"` is truthy — a tool branching on the raw value would report a live
 account as suspended. Every spelling is pinned here rather than discovered in production.
 
-**A row NOA cannot name is not a row.** `user` is the argument every account CHANGE tool takes,
-so an account without one is dropped rather than carried into a result the operator cannot act
-on.
+**A row NOA cannot name is not a row.** `user` is the argument every account CHANGE tool takes, so
+an account without one is dropped rather than carried into a result the operator cannot act on.
 """
 
 from __future__ import annotations
@@ -102,7 +101,8 @@ def test_a_row_noa_cannot_name_is_dropped(row: object) -> None:
 
 
 def test_the_list_drops_unusable_rows_and_keeps_whm_order() -> None:
-    """Order is WHM's; the caller that truncates decides its own (T21 sorts first)."""
+    """Order is WHM's; the caller that truncates decides its own — the account search sorts
+    first."""
     accounts = normalize_whm_account_list(
         [whm_account("zeta"), {"domain": "orphan.example.com"}, whm_account("alpha"), "junk"]
     )
@@ -154,7 +154,8 @@ def test_whm_boolean_spellings_normalize(raw: object, expected: bool | None) -> 
 
 
 def test_the_lock_field_falls_back_to_the_older_name() -> None:
-    """`suspendlock` on older cPanel; a lock blocks `unsuspendacct`, so T23 must see it."""
+    """`suspendlock` on older cPanel; a lock blocks `unsuspendacct`, so the unsuspend tool must
+    see it."""
     summary = normalize_whm_account_summary({"user": "acme", "suspendlock": "1"})
 
     assert summary is not None

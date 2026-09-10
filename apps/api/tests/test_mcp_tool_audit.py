@@ -1,20 +1,20 @@
-"""`tool_runs` written for every READ, from the gate (T73 — V20, V45, V47, V83b).
+"""`tool_runs` written for every READ, from the gate.
 
-T19(g) recorded the hole this closes: every tool call was unaudited because the table did
-not exist yet. T35 built the table and wrote nothing. This is the test that the write
+The hole this closes: every tool call was unaudited because the table did
+not exist yet. The schema built the table and wrote nothing. This is the test that the write
 happens, that it happens in one place rather than in each tool, and that a failed READ is
 recorded as one.
 
 Three levels, for three different claims:
 
 - **Over the real mount** — the middleware chain, the RBAC gate, the verifier, the real
-  tool. This is where V45 and V83b are provable, because the thing being asserted is that
-  a row appears without the tool knowing anything about it.
+  tool. This is where every-READ-writes-a-row and the gate-owns-the-write are provable, because
+  the thing being asserted is that a row appears without the tool knowing anything about it.
 - **Against the middleware's helpers** — summarisation, status mapping, header handling.
   Cheap, and they say which piece broke.
 - **Live** — `SQLToolRunRepository` against a scratch Postgres. "The middleware called a
   repository" and "a row exists in `tool_runs`" are different claims, and only the second
-  one is V45.
+  one is the audit guarantee.
 
 The identity doubles are joined by `user_id` exactly as in `test_mcp_tool_rbac.py`:
 `FakeMcpIdentityRepository.add_token` mints the credential and
@@ -67,17 +67,17 @@ from support.whm_api import whm_account, whm_api_listing
 
 SCRATCH_DB = "noa_tool_run_writer_test"
 
-# The header T57 will fill from `{{LIBRECHAT_BODY_CONVERSATIONID}}`. A UUID, because that is
-# what LibreChat's `conversationId` is.
+# The header the LibreChat-facing layer fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`. A UUID,
+# because that is what LibreChat's `conversationId` is.
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
 # Catalogued, unbuilt, and a CHANGE when it lands. Used to drive the middleware's
 # CHANGE branch, which has no registered tool behind it yet.
 CHANGE_TOOL = "whm_suspend_account"
 
-# Catalogued but not registered (T27, `proxmox_reset_vm_password`) — what a stale client catalog
+# Catalogued but not registered (`proxmox_reset_vm_password`) — what a stale client catalog
 # or a prompt-injected call names. Refused by the RBAC gate outside this middleware. It was
-# `whm_list_accounts` until T20 built that one and `pmg_whitelist_list` until T30 did, and a
+# `whm_list_accounts` until that one was built and `pmg_whitelist_list` until that one was, and a
 # stand-in the registry knows would make "an unregistered name writes no row" a claim about a
 # tool that answers.
 UNREGISTERED_TOOL = "proxmox_reset_vm_password"
@@ -110,12 +110,12 @@ def scenario(monkeypatch: pytest.MonkeyPatch):
 
 
 # --------------------------------------------------------------------------------------
-# V45: every READ writes a row
+# Every READ writes a row
 # --------------------------------------------------------------------------------------
 
 
 def test_a_successful_read_writes_one_completed_row(scenario) -> None:
-    """V45, the baseline. One call, one row, terminal and attributed.
+    """The baseline. One call, one row, terminal and attributed.
 
     Everything below is a variation on this, so it is asserted first: a middleware that
     wrote nothing would pass most of the negative tests here.
@@ -143,8 +143,8 @@ def test_each_call_writes_its_own_row(scenario) -> None:
     assert len(runs.runs) == 2
 
 
-def test_the_written_row_carries_every_v47_field(scenario) -> None:
-    """V47's field list, one assertion per field rather than a shape comparison.
+def test_the_written_row_carries_every_required_field(scenario) -> None:
+    """The audit row's field list, one assertion per field rather than a shape comparison.
 
     A shape comparison would go green on a row where `conversation_ref` and
     `result_summary` were both silently `None`.
@@ -164,11 +164,11 @@ def test_the_written_row_carries_every_v47_field(scenario) -> None:
 
 
 def test_timing_is_a_started_row_committed_before_the_tool_runs(scenario) -> None:
-    """V47 timing, and the reason `STARTED` exists at all.
+    """The audit row's timing, and the reason `STARTED` exists at all.
 
     Two commits in order — `STARTED`, then `COMPLETED`. One commit would mean the row only
     appears once the call ends, so a process that died mid-call would leave no evidence,
-    and T38's reaper would have nothing to sweep.
+    and the reaper would have nothing to sweep.
     """
     sign_in, runs, _ = scenario
     session, _ = sign_in()
@@ -180,15 +180,15 @@ def test_timing_is_a_started_row_committed_before_the_tool_runs(scenario) -> Non
 
 
 # --------------------------------------------------------------------------------------
-# V45 fail-closed: no row, no run
+# Fail-closed: no row, no run
 # --------------------------------------------------------------------------------------
 
 
 def test_a_read_is_refused_when_its_audit_row_cannot_be_written(scenario) -> None:
-    """V45 held by mechanism rather than by prose.
+    """The audit guarantee held by mechanism rather than by prose.
 
     Running anyway would leave "every READ writes a row" asserted in the spec and enforced
-    by nothing — the shape B2 shipped. The refusal reuses the tool envelope so a model
+    by nothing — prose is not evidence. The refusal reuses the tool envelope so a model
     sees one shape whichever gate closed.
     """
     sign_in, runs, tools = scenario
@@ -208,7 +208,7 @@ def test_a_terminal_write_failure_leaves_the_row_started_and_the_call_intact(sce
 
     The tool has already run by the time the closing write happens, so refusing the caller
     would misreport a call that took place. The row stays `STARTED`, which is a state the
-    schema defines and T38's reaper resolves.
+    schema defines and the reaper resolves.
     """
     sign_in, runs, _ = scenario
     session, _ = sign_in()
@@ -221,12 +221,12 @@ def test_a_terminal_write_failure_leaves_the_row_started_and_the_call_intact(sce
 
 
 # --------------------------------------------------------------------------------------
-# V20: risk and status are separate, and a failed READ is representable
+# Risk and status are separate, and a failed READ is representable
 # --------------------------------------------------------------------------------------
 
 
 def test_risk_is_read_while_status_carries_the_lifecycle(scenario) -> None:
-    """V20: two columns, two enums. `risk` never advances."""
+    """Two columns, two enums. `risk` never advances."""
     sign_in, runs, _ = scenario
     session, _ = sign_in()
 
@@ -237,7 +237,7 @@ def test_risk_is_read_while_status_carries_the_lifecycle(scenario) -> None:
 
 
 def test_an_ok_false_result_is_recorded_as_a_failed_read(scenario, monkeypatch) -> None:
-    """V20's whole point, over the real mount.
+    """The whole point of the risk/status split, over the real mount.
 
     `sanitize_tool_errors` turns an exception into a *returned* `{"ok": False}`
     payload, so a failure arrives as an ordinary result. Without the `ok` branch every
@@ -259,7 +259,7 @@ def test_an_ok_false_result_is_recorded_as_a_failed_read(scenario, monkeypatch) 
 
 
 def test_the_failure_summary_names_the_sanitized_code_not_the_cause(scenario, monkeypatch) -> None:
-    """T35 left out an `error` column because a sanitized code fits `result_summary`.
+    """The schema has no `error` column because a sanitized code fits `result_summary`.
 
     The raw exception text must not land there: the audit row is read by the admin surface
     and may name hosts and paths. What is stored is what the model was told.
@@ -279,16 +279,16 @@ def test_the_failure_summary_names_the_sanitized_code_not_the_cause(scenario, mo
 
 
 # --------------------------------------------------------------------------------------
-# V83b: the write is the gate's, not the tool's
+# The write is the gate's, not the tool's
 # --------------------------------------------------------------------------------------
 
 
 async def test_calling_the_tool_function_directly_writes_nothing() -> None:
-    """V83b, first half: no tool contains audit code.
+    """First half of the gate-owns-the-write claim: no tool contains audit code.
 
     Paired with `test_a_successful_read_writes_one_completed_row`, which drives the same
     tool over the mount and gets a row. Together they locate the write in the middleware —
-    which is what makes T20-T31 and T63 audited by existing, rather than by each remembering
+    which is what makes every tool audited by existing, rather than by each remembering
     to call something.
     """
     tools = build_tool_context(servers=[whm_server("alpha")])
@@ -319,7 +319,7 @@ def test_a_call_refused_by_rbac_writes_no_row(scenario) -> None:
 
 
 def test_an_unregistered_name_writes_no_row(scenario) -> None:
-    """V10's refusal is not an execution either, and the risk map is the second guard.
+    """The unknown-tool refusal is not an execution either, and the risk map is the second guard.
 
     `proxmox_reset_vm_password` is catalogued but unbuilt, so an `admin` bypass reaches
     the gate with it. Neither the gate nor the risk map knows it, and it must not become an
@@ -336,7 +336,7 @@ def test_an_unregistered_name_writes_no_row(scenario) -> None:
 def test_the_second_read_tool_is_audited_with_its_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V45, V83b: the row comes from the gate, so a *new* tool inherits it.
+    """The row comes from the gate, so a *new* tool inherits it.
 
     Every other test here drives `whm_list_servers`, the tool that shipped beside the
     middleware — which cannot distinguish "audits every READ" from "audits that one". This
@@ -378,7 +378,7 @@ def test_the_second_read_tool_is_audited_with_its_arguments(
 async def test_a_large_read_is_recorded_completed_with_its_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V20, V45: a READ that answers with a *surface* is still a READ that succeeded.
+    """A READ that answers with a *surface* is still a READ that succeeded.
 
     The third shape of tool result, and the one this middleware could not read. Status and
     summary both come off `structured_content`, and `status_for_payload` treats a missing
@@ -461,7 +461,7 @@ async def test_a_large_read_that_fails_is_recorded_failed(
 
 
 async def test_a_change_tool_writes_no_row_here() -> None:
-    """V46 belongs to the post-approval executor, not to the gate call.
+    """A CHANGE's audit row belongs to the post-approval executor, not to the gate call.
 
     A CHANGE tool's `tools/call` opens the approval gate and executes nothing, so a
     row written here would record a change that has not happened and may be denied. Driven
@@ -486,12 +486,12 @@ async def test_a_change_tool_writes_no_row_here() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V8: arguments and summaries are redacted before they land
+# Arguments and summaries are redacted before they land
 # --------------------------------------------------------------------------------------
 
 
 def test_arguments_are_redacted_before_they_land() -> None:
-    """V8, V45: the audit row says what was asked for, never with the credential in it."""
+    """The audit row says what was asked for, never with the credential in it."""
     stored = redacted_args({"server_ref": "alpha", "ssh_password": "hunter2"})
 
     assert stored == {"server_ref": "alpha", "ssh_password": REDACTED}
@@ -521,7 +521,8 @@ def test_the_result_summary_carries_no_credential_material(scenario) -> None:
 
 
 def test_a_long_result_is_truncated_to_the_column_bound() -> None:
-    """V45 "truncated". The column is `String(2000)`; an over-long value would fail the
+    """Truncated to the column bound. The column is `String(2000)`; an over-long value would fail
+    the
     INSERT and, being fail-closed, take the whole call down with it."""
     summary = result_summary({"ok": True, "rows": ["x" * 100 for _ in range(200)]})
 
@@ -549,7 +550,7 @@ def test_a_summary_is_compact_json_of_the_redacted_payload() -> None:
     [
         ({"ok": True, "servers": []}, ToolRunStatus.COMPLETED),
         ({"ok": False, "error_code": "timeout"}, ToolRunStatus.FAILED),
-        # V18: an ambiguity is not a success. The call did not do what was asked.
+        # An ambiguity is not a success. The call did not do what was asked.
         ({"ok": False, "error_code": "ambiguous_server_ref", "choices": []}, ToolRunStatus.FAILED),
         # A result that cannot be read as a success is not evidence of one.
         ({}, ToolRunStatus.FAILED),
@@ -558,7 +559,7 @@ def test_a_summary_is_compact_json_of_the_redacted_payload() -> None:
     ],
 )
 def test_status_is_read_off_the_result_envelope(payload, expected: ToolRunStatus) -> None:
-    """V20: `ok` is the one field every tool result carries."""
+    """`ok` is the one field every tool result carries."""
     assert status_for_payload(payload) is expected
 
 
@@ -568,9 +569,11 @@ def test_status_is_read_off_the_result_envelope(payload, expected: ToolRunStatus
 
 
 def test_the_conversation_header_becomes_the_grouping_label(scenario) -> None:
-    """V47, DECISIONS §10.4. LibreChat sends no conversation id in the call itself — at pin
+    """DECISIONS section 10.4. LibreChat sends no conversation id in the call itself — at pin
     `45cc53c4` `MCPManager.callTool` sends `params: {name, arguments}` with no `_meta` — so
-    it arrives as a header T57 fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`."""
+    it arrives as a header the LibreChat-facing layer fills from
+    `{{LIBRECHAT_BODY_CONVERSATIONID}}`.
+    """
     sign_in, runs, _ = scenario
     session, _ = sign_in(conversation_ref=CONVERSATION_ID)
 
@@ -580,10 +583,10 @@ def test_the_conversation_header_becomes_the_grouping_label(scenario) -> None:
 
 
 def test_a_missing_conversation_header_is_null_and_the_call_proceeds(scenario) -> None:
-    """It is a label, not a security scope (old V165 dissolved).
+    """It is a label, not a security scope.
 
-    Fail-closing on its absence is what the old design did, and §3.2 removed the reason:
-    evidence never crosses calls, so nothing is being scoped.
+    Fail-closing on its absence is what the old design did; DECISIONS section 3.2 removed the
+    reason: evidence never crosses calls, so nothing is being scoped.
     """
     sign_in, runs, _ = scenario
     session, _ = sign_in()
@@ -605,8 +608,8 @@ def test_a_missing_conversation_header_is_null_and_the_call_proceeds(scenario) -
 def test_an_unusable_conversation_header_is_dropped_rather_than_stored(
     scenario, label: str, value: str
 ) -> None:
-    """The value lands in Postgres *and* in structlog, the surface V73 closed for
-    `x-request-id` — so it gets the same bounded allowlist check.
+    """The value lands in Postgres *and* in structlog, the surface the request-id work closed
+    for `x-request-id` — so it gets the same bounded allowlist check.
 
     Dropped to NULL rather than refused: a malformed header from a client NOA does not
     control would otherwise turn every tool off. An over-long one would also fail the
@@ -646,7 +649,7 @@ async def session(database_url: str) -> AsyncIterator[AsyncSession]:
 
 
 async def test_the_sql_writer_round_trips_a_run_through_postgres(session: AsyncSession) -> None:
-    """V45 against the database, not against a double.
+    """Every READ writes a row — against the database, not against a double.
 
     "The middleware called a repository" and "a row exists in `tool_runs`" are different
     claims. This one covers the second: the INSERT satisfies the CHECK constraints and the
@@ -690,7 +693,7 @@ async def test_the_sql_writer_round_trips_a_run_through_postgres(session: AsyncS
 
 
 async def test_a_failed_read_round_trips_through_the_writer(session: AsyncSession) -> None:
-    """V20 through the production writer, not through a hand-built `ToolRun`.
+    """The risk/status split through the production writer, not through a hand-built `ToolRun`.
 
     `test_tool_runs_schema.py` proves the *column pair* can hold this. This proves the code
     that writes it does.

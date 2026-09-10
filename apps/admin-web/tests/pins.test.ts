@@ -5,9 +5,10 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Dependency-pin guards (C2, §T.47).
+ * Dependency-pin guards (exact pins, the admin scaffold).
  *
- * C2 puts the web stack on the same footing as C1 puts Python: the versions are
+ * Exact pins put the web stack on the same footing as Python's `>=3.11,<3.13`
+ * window: the versions are
  * a decision, and a bump has to be deliberate. `next`, `react` and `react-dom`
  * are named there explicitly, and BIGSU is pinned for the same reason — the
  * design system arrives from an internal registry whose `latest` tag can move
@@ -42,7 +43,7 @@ function packageJson(): PackageJson {
   return JSON.parse(readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8')) as PackageJson
 }
 
-describe('C2 — web dependencies are pinned exactly', () => {
+describe('web dependencies are pinned exactly', () => {
   it.each(['next', 'react', 'react-dom'])(
     'pins %s to a bare version, never a range',
     (name: string) => {
@@ -53,7 +54,7 @@ describe('C2 — web dependencies are pinned exactly', () => {
     },
   )
 
-  it('pins next to 16 and react to 19 (C2 names the majors)', () => {
+  it('pins next to 16 and react to 19 (the majors are named)', () => {
     const deps = packageJson().dependencies
 
     expect(deps['next']).toMatch(/^16\./)
@@ -61,7 +62,7 @@ describe('C2 — web dependencies are pinned exactly', () => {
     expect(deps['react-dom']).toBe(deps['react'])
   })
 
-  it.each(BIGSU_PACKAGES)('pins %s — §T.47 names BIGSU as a scaffold dependency', (name: string) => {
+  it.each(BIGSU_PACKAGES)('pins %s — the scaffold names BIGSU as a dependency', (name: string) => {
     const spec = packageJson().dependencies[name]
 
     expect(spec, `${name} is absent from dependencies`).toBeDefined()
@@ -85,8 +86,8 @@ describe('C2 — web dependencies are pinned exactly', () => {
     expect(NOT_EXACT.test('16.3.0')).toBe(false)
   })
 
-  it('declares the Node floor C2 sets', () => {
-    // C2 says Node 20+. Stated on the package so `pnpm install` refuses an older
+  it('declares the Node floor the pin rule sets', () => {
+    // Node 20+. Stated on the package so `pnpm install` refuses an older
     // runtime, rather than left to the README to remember.
     expect(packageJson().engines['node']).toBe('>=20.9.0')
   })
@@ -103,7 +104,7 @@ describe('C2 — web dependencies are pinned exactly', () => {
   })
 
   it('carries no chat dependency — the assistant surface is not in this app', () => {
-    // NOA's chat moved to an external LLM UI, so the panel ported in §T.48 drops
+    // NOA's chat moved to an external LLM UI, so the ported panel drops
     // `@assistant-ui/*` and `assistant-stream`. Named here because a dependency
     // is how that decision would quietly come back.
     const { dependencies, devDependencies } = packageJson()

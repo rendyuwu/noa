@@ -1,15 +1,15 @@
 """`pmgsh ls /config/mynetworks` output → normalised CIDR entries.
 
-The half of `noa-old`'s `pmg/tools/whitelist_tools.py` that is not a tool: T18 ported the
+The half of `noa-old`'s `pmg/tools/whitelist_tools.py` that is not a tool: the PMG port took the
 command layer and named this as deferred (`core.integrations.pmg.__init__`), because parsing
-belongs beside the commands rather than inside whichever tool ran one. `pmg_whitelist_search`
-(T31), `pmg_whitelist_list` (T30) and `pmg_whitelist` (T29) all read the same text.
+belongs beside the commands rather than inside whichever tool ran one. `pmg_whitelist_search`,
+`pmg_whitelist_list` and `pmg_whitelist` all read the same text.
 
-**V59 is one rule applied twice.** A single host and its host route are the same whitelist
-entry — `1.2.3.4` ≡ `1.2.3.4/32`, `2001:db8::1` ≡ `2001:db8::1/128` — so both the operator's
-target and every stored line go through `normalize_cidr` before anything is compared. Matching
-raw strings instead would report "not whitelisted" for an address PMG whitelists, in the exact
-spelling PMG happens to use.
+**Exact membership is one rule applied twice.** A single host and its host route are the same
+whitelist entry — `1.2.3.4` ≡ `1.2.3.4/32`, `2001:db8::1` ≡ `2001:db8::1/128` — so both the
+operator's target and every stored line go through `normalize_cidr` before anything is compared.
+Matching raw strings instead would report "not whitelisted" for an address PMG whitelists, in the
+exact spelling PMG happens to use.
 
 `ipaddress.ip_network(value, strict=False)` is the single normalisation call. `noa-old` tried
 `ip_address` first and fell back to `ip_network`, which is the same answer twice: for every
@@ -23,10 +23,7 @@ echoing what it was handed.
 `pmgsh ls` prints `<id> <cidr>` rows under an `id cidr` header, with a `200 OK` status line
 somewhere in it:
 
-    200 OK
-    id cidr
-    1 10.10.10.0/24
-    2 103.150.86.115/32
+    200 OK id cidr 1 10.10.10.0/24 2 103.150.86.115/32
 
 Per line the second column is tried, then the first — `noa-old`'s order, which tolerates a
 bare-CIDR variant of the output. Nothing else is needed to skip the noise: `200`, `OK`, `id`
@@ -34,8 +31,7 @@ and `cidr` all fail to parse as an address or a network, so status and header li
 entries. (`ipaddress` rejects a bare decimal *string* such as `"200"`; it accepts an `int`, and
 nothing here passes one.)
 
-Two departures from `noa-old`, both deliberate (T21 (b): a port carries the code, not the
-defect):
+Two departures from `noa-old`, both deliberate (a port carries the code, not the defect):
 
 - **The first parsable candidate ends the line.** `noa-old` skipped a candidate whose
   normalised form it had already seen and fell through to the *next column*, so a repeated CIDR
@@ -56,7 +52,7 @@ Parsing preserves PMG's own, and `sort_entries` is opt-in beside it, because the
 owe different things. `pmg_whitelist_search` reports *membership*: it hands back the
 entries that matched, in the order the file holds them, and re-ordering there would only make
 one fact harder to check against the box. `pmg_whitelist_list` reports a *listing* that
-may be capped by the table surface, and V85's ordering clause lands on the producer —
+may be capped by the table surface, and the cap's ordering clause lands on the producer —
 `core.results.tables.cap_rows` keeps a prefix and never re-sorts, so an unsorted listing would
 make a capped page an arbitrary subset that changes between two identical calls. `pmgsh ls`
 prints in whatever order PMG stores, which is documented nowhere.
@@ -90,7 +86,7 @@ def normalize_cidr(value: str) -> str | None:
     """`value` as a canonical CIDR string, or `None` when it is not an address or network.
 
     `None` rather than a raise: every caller is either classifying an operator's target (a
-    refusal the model can act on, V18/V19) or skipping a line of command output that was never
+    refusal the model can act on) or skipping a line of command output that was never
     meant to be an address.
     """
     try:
@@ -146,7 +142,7 @@ def sort_entries(entries: Sequence[MynetworksEntry]) -> list[MynetworksEntry]:
 def find_matching_entries(
     entries: list[MynetworksEntry], *, normalized_target: str
 ) -> list[MynetworksEntry]:
-    """The entries that *are* `normalized_target` — exact membership, ⊥ containment.
+    """The entries that *are* `normalized_target` — exact membership, never containment.
 
     A containing network is not a match: `1.2.3.0/24` in `mynetworks` does not make
     `1.2.3.4/32` an entry, and answering otherwise would tell an operator their address is

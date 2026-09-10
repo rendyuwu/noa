@@ -1,10 +1,10 @@
 # librechat-embed-render-gate
 
-The rig that answered `§T.59` items (d) and (f). Verdict and captured numbers live in
+The rig that answered the render gate's live-run items. Verdict and captured numbers live in
 [`docs/spikes/librechat-embed-render-gate.md`](../../docs/spikes/librechat-embed-render-gate.md);
 this file is how to run it again.
 
-It is committed because `C21` says re-verify on **every** LibreChat bump. A prose description
+It is committed because the render path is re-verified on **every** LibreChat bump. A prose description
 of a rig is not a rig — the point of keeping the scripts is that the next re-verification is a
 command rather than an afternoon.
 
@@ -12,13 +12,13 @@ command rather than an afternoon.
 
 | File | Role |
 |---|---|
-| `verify_librechat_pin.sh` | E1: `V88`'s config keys are still in the YAML and in `docs/integrations/librechat.md`, the clone is the pin, and the shipped `@mcp-ui/client` bytes still map `text/uri-list` → iframe `src` with `allow-same-origin` and without `allow-forms` |
+| `verify_librechat_pin.sh` | E1: the three required config keys are still in the YAML and in `docs/integrations/librechat.md`, the clone is the pin, and the shipped `@mcp-ui/client` bytes still map `text/uri-list` → iframe `src` with `allow-same-origin` and without `allow-forms` |
 | `noa_embed_probe_server.py` | NOA's real app plus a probe MCP mount and the NOA-origin frame page that measures whether the session cookie arrives |
-| `mint_mcp_token.py` | mints the bearer token LibreChat authenticates with (`T10`, `V2`); no `/admin` or `/me` route exists yet |
+| `mint_mcp_token.py` | mints the bearer token LibreChat authenticates with; no `/admin` or `/me` route exists yet |
 | `browser_probe.mjs` | E2-E6: drives LibreChat in Chromium, reads the verdicts out of the frame, writes `evidence/` |
 | `resize_probe.mjs` + `probe_pages/` | the standalone surface probe: iframe height, clipboard write, download — no LibreChat, no Postgres, no Mongo (see below) |
-| `librechat.yaml` | the MCP server entry, including the three settings `C24` forces (`startup: false`, `requiresOAuth: false`, and NOA's host in `mcpSettings.allowedDomains`) — `V88`, and the operator-facing version of it is [`docs/integrations/librechat.md`](../../docs/integrations/librechat.md) |
-| `harness.env` | NOA settings for the run. Development values, no key material (`C11`) |
+| `librechat.yaml` | the MCP server entry, including the three settings the sole MCP client forces (`startup: false`, `requiresOAuth: false`, and NOA's host in `mcpSettings.allowedDomains`) — each closes a silent failure, and the operator-facing version of it is [`docs/integrations/librechat.md`](../../docs/integrations/librechat.md) |
+| `harness.env` | NOA settings for the run. Development values, no key material |
 
 ## Prerequisites
 
@@ -69,7 +69,7 @@ cd apps/api && set -a && . ../../spikes/librechat-embed-render-gate/harness.env 
 uv run alembic upgrade head && cd ../..
 uv run python spikes/librechat-embed-render-gate/mint_mcp_token.py operator@noa.internal dev-bypass
 #    ^ prints the plaintext once. Paste it into LibreChat's .env as NOA_MCP_TOKEN.
-#    Mint a FRESH one per run: the first MCP call binds it to a LibreChat user id (V3 TOFU),
+#    Mint a FRESH one per run: the first MCP call binds it to a LibreChat user id (TOFU),
 #    and a token bound to a previous run's user is a 401.
 
 # 2. NOA (real /auth and /mcp, plus the probe mount)
@@ -93,8 +93,9 @@ green run it prints `all checks green`.
 - **`iframe[sandbox]` never appears** — the model never called the tool, or LibreChat never
   connected. Check `.runtime/jsonrpc.log`: no `tools/list` means the connection never
   authenticated (a stale bound token, or `startup:`/`requiresOAuth:` missing from the config).
-- **`sandbox` gained `allow-forms`** — `V80`'s premise changed. `verify_librechat_pin.sh` fails
-  first and says so; re-read `R13` before touching the invariant.
+- **`sandbox` gained `allow-forms`** — the JS-`fetch`-only rule loses its premise.
+  `verify_librechat_pin.sh` fails first and says so; re-measure every render site before touching
+  the rule.
 - **the frame's `/auth/me` is 401 while the control is also 401** — the discriminator is dead,
   so the run proves nothing. Check the cookie domain and that NOA and the frame share a
   registrable domain.

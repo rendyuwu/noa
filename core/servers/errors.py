@@ -9,13 +9,12 @@ The refusals the admin CRUD surface raises, and nothing else. Written the way
    ~40 lines an endpoint — which is how one condition ends up as two statuses.
 2. The `error_code` strings are `noa-old`'s verbatim (`api/error_codes.py`):
    `whm_server_not_found`, `whm_server_name_exists`, and the Proxmox and PMG equivalents.
-   The admin panel ported at T48 branches on them already
+   The admin panel branches on them already
    (`apps/admin-web/src/lib/admin/*/[system]-api.ts` surfaces them to the operator), so a
    new spelling would break a client that exists.
 3. One class per code rather than one class with a `system` field. `STATUS_BY_ERROR` maps
-   classes, and its subclass-tree test walks this tree asserting every member is mapped
-   explicitly — a dynamic `error_code` would satisfy that test while making the mapping
-   unreadable.
+   classes, and its subclass-tree test walks this tree asserting every member is mapped explicitly —
+   a dynamic `error_code` would satisfy that test while making the mapping unreadable.
 
 **The per-system split is deliberate.** A single
 `ServerNotFoundError` would answer `server_not_found` for all three tables, which reads
@@ -24,7 +23,7 @@ tables, and "which inventory was this" is the first thing anybody asks. `noa-old
 same call.
 
 **Why 404 and not 403 for an absent row.** These routes sit behind `require_admin`,
-so there is no existence secret to keep from the caller in the V27 sense — an admin may
+so there is no existence secret to keep from the caller in the requester-match sense — an admin may
 list every server. 404 is here because it is *true*: the row is gone, and 409 or 403 would
 send an operator looking for a permission they already have.
 
@@ -77,7 +76,7 @@ class WHMServerNameExistsError(ServerInventoryError):
 
 
 class WHMResellerCredentialNameMismatchError(ServerInventoryError):
-    """A reseller row whose `name` is not its `api_username` (V109(b)).
+    """A reseller row whose `name` is not its `api_username`.
 
     Enforced on the row that *results* from the write, so a PATCH that flips the flag on
     without touching either field is refused too. Only rows with the flag set are bound: the

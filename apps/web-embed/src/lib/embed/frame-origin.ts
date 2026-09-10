@@ -1,7 +1,7 @@
 import { resolveFrameAncestor } from '../../../config/framing'
 
 /**
- * The origin this document posts its height to — resolved, never `"*"` (§T.45, V41, V66).
+ * The origin this document posts its height to — resolved, never `"*"`.
  *
  * **One resolver, reused.** `config/framing.ts::resolveFrameAncestor` is the single place that turns
  * `NOA_LIBRECHAT_ORIGIN` into an origin string, and it is the same value the `frame-ancestors`

@@ -1,13 +1,14 @@
 """SQL behind `action_receipts` — what an approved CHANGE actually did.
 
-T36 built the table and wrote nothing to it, naming this task as its only writer. This is
-that writer, and it is one class for the whole table for the reason `core.audit.tool_runs`
+The migration built the table and wrote nothing to it, naming this module as its only writer.
+This is that writer, and it is one class for the whole table for the reason `core.audit.tool_runs`
 gives: the audit trail has one writer per table, so a second insert written somewhere else
 would be a second shape for the same record.
 
-**Two callers, one row.** T38's executor writes the receipt for a change it ran; T38's reaper
-writes one for a change whose process died before it could. Both can reach the same finished
-run — which is exactly why T36 stated `UNIQUE (action_request_id)` rather than inheriting it
+**Two callers, one row.** The executor writes the receipt for a change it ran; the stranded-run
+reaper writes one for a change whose process died before it could. Both can reach the same
+finished run — which is exactly why the table states `UNIQUE (action_request_id)` rather than
+inheriting it
 from `noa-old`'s primary key (`core.db.models.ActionReceipt`). `create_if_missing` is that
 constraint used as the mechanism: `ON CONFLICT DO NOTHING` on the unique index, so whichever
 writer arrives second is a no-op instead of a second answer to "what did this change do".
@@ -19,7 +20,7 @@ was watching.
 
 **No `commit`.** The session is the caller's, and both callers commit the receipt in the same
 transaction as the terminal `tool_runs` write — a `COMPLETED` run whose receipt rolled back
-would be V46 held by nothing.
+would be a durable lie — a finished run with no record of what it did.
 """
 
 from __future__ import annotations

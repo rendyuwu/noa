@@ -1,8 +1,7 @@
 """`McpTokenService` policy over in-memory doubles.
 
 `test_mcp_token_repository.py` covers the SQL. Everything here is about the rules: what the
-plaintext may touch, what a view may carry, who may revoke what, and what lands in the
-audit trail.
+plaintext may touch, what a view may carry, who may revoke what, and what lands in the audit trail.
 
 The service is the real one; only the repository and the audit sink are doubles, so a pass
 here means the production class behaves this way.
@@ -38,7 +37,7 @@ from support.mcp_tokens import LABEL, NOW, OTHER_LABEL, build_token_service
 ACTOR = "admin@example.com"
 
 
-# --- V2: the plaintext (mint returns it once, nothing else ever does) ---
+# --- The plaintext (mint returns it once, nothing else ever does) ---
 
 
 async def test_mint_returns_a_marked_high_entropy_plaintext() -> None:
@@ -53,7 +52,7 @@ async def test_mint_returns_a_marked_high_entropy_plaintext() -> None:
 
 
 async def test_each_mint_generates_a_distinct_token() -> None:
-    """V2: two tokens for one user are two credentials, not the same one twice."""
+    """Two tokens for one user are two credentials, not the same one twice."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
 
@@ -65,7 +64,7 @@ async def test_each_mint_generates_a_distinct_token() -> None:
 
 
 async def test_mint_stores_the_sha256_digest_and_never_the_plaintext() -> None:
-    """V2: hashed at rest. The digest is what the verify path will look up."""
+    """Hashed at rest. The digest is what the verify path will look up."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
 
@@ -78,7 +77,7 @@ async def test_mint_stores_the_sha256_digest_and_never_the_plaintext() -> None:
 
 
 async def test_list_never_returns_the_plaintext() -> None:
-    """V2: `McpTokenView` has no field that could hold it — absent, not redacted."""
+    """`McpTokenView` has no field that could hold it — absent, not redacted."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
     minted = await fixture.service.mint(user_id)
@@ -92,7 +91,7 @@ async def test_list_never_returns_the_plaintext() -> None:
 
 
 async def test_minted_token_repr_omits_the_plaintext() -> None:
-    """V2 "⊥ logged" / V8: structlog and tracebacks both render values with `repr()`."""
+    """Never logged: structlog and tracebacks both render values with `repr()`."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
 
@@ -114,14 +113,14 @@ async def test_stored_prefix_is_a_short_non_secret_fragment() -> None:
 
 
 def test_hash_is_stable_across_calls() -> None:
-    """T11 hashes the presented bearer with this same function, so it must not vary."""
+    """MCP auth hashes the presented bearer with this same function, so it must not vary."""
     plaintext = generate_mcp_token()
 
     assert hash_mcp_token(plaintext) == hash_mcp_token(plaintext)
     assert hash_mcp_token(plaintext) != hash_mcp_token(generate_mcp_token())
 
 
-# --- V2: token ↔ users.id ---
+# --- token ↔ users.id ---
 
 
 async def test_mint_binds_the_token_to_the_user() -> None:
@@ -134,7 +133,7 @@ async def test_mint_binds_the_token_to_the_user() -> None:
 
 
 async def test_list_returns_only_that_users_tokens() -> None:
-    """V2: a token belongs to one operator, so a colleague's never appears in the list."""
+    """A token belongs to one operator, so a colleague's never appears in the list."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
     other_user_id = fixture.repository.add_user()
@@ -175,11 +174,11 @@ async def test_mint_for_an_unknown_user_is_not_found() -> None:
     assert fixture.repository.stored_hashes == []
 
 
-# --- V3 / C20: TOFU binding is T11's, and mint must leave room for it ---
+# --- TOFU binding is the MCP auth path's, and mint must leave room for it ---
 
 
 async def test_mint_leaves_librechat_user_id_null() -> None:
-    """C20: NULL at mint is the precondition for first-use binding. Set here = no TOFU."""
+    """NULL at mint is the precondition for first-use binding. Set here = no TOFU."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
 
@@ -190,7 +189,7 @@ async def test_mint_leaves_librechat_user_id_null() -> None:
     assert minted.token.last_ldap_check_at is None
 
 
-# --- C5: expiry ---
+# --- expiry ---
 
 
 async def test_mint_without_a_ttl_leaves_expires_at_null() -> None:
@@ -256,7 +255,7 @@ async def test_label_at_the_limit_is_accepted() -> None:
     assert len(minted.token.label) == MAX_LABEL_LENGTH
 
 
-# --- V2: revoke ---
+# --- revoke ---
 
 
 async def test_revoke_removes_the_token_from_the_list() -> None:
@@ -274,7 +273,7 @@ async def test_revoking_another_users_token_is_not_found() -> None:
     """Scoped by user id in the query, so a guessed id cannot reach a colleague's row.
 
     Same error as an id that never existed: a distinct 403 would confirm the token is
-    real (V27/V76 principle).
+    real — the requester-match principle.
     """
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
@@ -306,7 +305,7 @@ async def test_second_revoke_of_the_same_token_is_not_found() -> None:
         await fixture.service.revoke(user_id, minted.token.id)
 
 
-# --- V14 / V8: audit ---
+# --- audit ---
 
 
 async def test_mint_and_revoke_each_record_an_audit_event() -> None:
@@ -322,7 +321,7 @@ async def test_mint_and_revoke_each_record_an_audit_event() -> None:
 
 
 async def test_audit_event_carries_no_plaintext_or_hash() -> None:
-    """V2 "⊥ logged" / V8: ids, prefix and label only."""
+    """Nothing secret logged: ids, prefix and label only."""
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
 
@@ -347,7 +346,7 @@ async def test_a_refused_mint_records_nothing() -> None:
     assert fixture.audit.events == []
 
 
-# --- V73: status mapping ---
+# --- status mapping ---
 
 
 @pytest.mark.parametrize(
@@ -384,7 +383,7 @@ def test_mcp_token_error_codes_are_unique() -> None:
 
 
 def test_error_body_omits_internal_detail_for_token_errors() -> None:
-    """V8: `detail` names the ids that missed. Logs only."""
+    """`detail` names the ids that missed. Logs only."""
     error = McpTokenNotFoundError("no `mcp_tokens` row `deadbeef` for user `cafebabe`")
 
     body = error_body(error)
@@ -393,16 +392,16 @@ def test_error_body_omits_internal_detail_for_token_errors() -> None:
     assert "deadbeef" not in str(body)
 
 
-# --- V100: the transaction boundary this service owns ---
+# --- the transaction boundary this service owns ---
 
 
 async def test_mint_commits_once_and_last() -> None:
-    """V100(a): the commit is the last statement, so the plaintext is not handed back until
+    """The commit is the last statement, so the plaintext is not handed back until
     the row it hashes to is durable.
 
     `committed` rather than `tokens` is the assertion surface: the double cannot roll back, so
-    the mutable dict holds the row whether or not a boundary exists — which is precisely why
-    B10 went unnoticed for two tasks.
+    the mutable dict holds the row whether or not a boundary exists — which is precisely how a
+    missing commit went unnoticed here for two tasks.
     """
     fixture = build_token_service()
     user_id = fixture.repository.add_user()
@@ -414,7 +413,7 @@ async def test_mint_commits_once_and_last() -> None:
 
 
 async def test_revoke_commits_once_and_last() -> None:
-    """V100(b): the *class* of mutations commits, not the one a caller reaches first.
+    """The *class* of mutations commits, not the one a caller reaches first.
 
     The dangerous half of the pair: an uncommitted revoke reports the credential gone while the
     row, and every request it authenticates, survives.
@@ -430,7 +429,7 @@ async def test_revoke_commits_once_and_last() -> None:
 
 
 async def test_a_refused_mint_commits_nothing() -> None:
-    """V100(a): the `user_exists` guard raises before any write, so nothing persists."""
+    """The `user_exists` guard raises before any write, so nothing persists."""
     fixture = build_token_service()
 
     with pytest.raises(UserNotFoundError):
@@ -442,7 +441,7 @@ async def test_a_refused_mint_commits_nothing() -> None:
 
 
 async def test_a_refused_label_commits_nothing_and_writes_no_row() -> None:
-    """The second guard, between the user lookup and the insert (V100(a)).
+    """The second guard, between the user lookup and the insert.
 
     Ordered deliberately: a validator moved *after* `insert` would leave a row behind for every
     over-long label a panel ever submitted, while still answering 400.

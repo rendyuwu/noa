@@ -1,11 +1,11 @@
-"""Reading the CHANGE authorisation trail for the admin panel (§I.admin-api — V13, V15, V45).
+"""Reading the CHANGE authorisation trail for the admin panel.
 
-T55 made `tool_runs` queryable and stopped there, so an administrator could see *what ran* and
-never *who authorised it or why*. `action_requests.reason` — the one field C8 and V15 exist for,
-written by a decision and bounded by a DB CHECK — had no reader on any surface: the embed card
-carries no `reason` field at any status by construction, and `tool_runs` has no column for it.
+The audit reader made `tool_runs` queryable and stopped there, so an administrator could see *what
+ran* and never *who authorised it or why*. `action_requests.reason` — the one operator-typed reason
+field, written by a decision and bounded by a DB CHECK — had no reader on any surface: the embed
+card carries no `reason` field at any status by construction, and `tool_runs` has no column for it.
 This module is that reader, and `action_receipts` comes with it because a decision and what it
-produced are one story an operator reads in one sitting (V46, DECISIONS §6.5).
+produced are one story an operator reads in one sitting — run plus receipt, DECISIONS section 6.5.
 
 **Reader beside the writer, split by what it can do.** `core.approvals.decisions` is the single
 writer of a terminal status and `core.audit.receipts` writes the receipt; nothing here
@@ -14,30 +14,30 @@ but a `SELECT`. Same discipline as `core.audit.tool_run_reads` and `core.results
 same reason: the write side is reachable from the MCP tool path, this side only from behind a
 session cookie and `require_admin`.
 
-**No requester match, deliberately.** V27 scopes the *embed* read to the operator who asked, which
-is why `core.approvals.reads.select_requester_matched` puts the requester in the `WHERE`. An admin
-audit surface that could only show the reader's own decisions would be unable to audit anything;
-`require_admin` is this surface's scope, and it is a stronger gate than the one it replaces.
+**No requester match, deliberately.** Requester-match scopes the *embed* read to the operator who
+asked, which is why `core.approvals.reads.select_requester_matched` puts the requester in the
+`WHERE`. An admin audit surface that could only show the reader's own decisions would be unable to
+audit anything; `require_admin` is this surface's scope, and it is a stronger gate than the one it
+replaces.
 
-**The requester is an outer join**, for the reason `core.audit.tool_run_reads` gives: T34 made
+**The requester is an outer join**, for the reason `core.audit.tool_run_reads` gives: the table made
 `requested_by_user_id` a `SET NULL`, so an inner join would hide exactly the decisions that
 outlived their operator. A missing email is `null` on the wire — "the account is gone", never
 "nobody asked".
 
 **The receipt join is a presence bit on the list and a row on the detail.** `action_receipts`
-carries `UNIQUE (action_request_id)`, so the outer join cannot multiply rows and
-`hasReceipt` needs no second query per row. The body itself is a separate read because it is the
-largest JSONB on this path and most list rows will never be opened — T55's argument for leaving
-`args` off the audit list, one table over.
+carries `UNIQUE (action_request_id)`, so the outer join cannot multiply rows and `hasReceipt` needs
+no second query per row. The body itself is a separate read because it is the largest JSONB on this
+path and most list rows will never be opened — the audit list's argument for leaving `args` off it,
+one table over.
 
-**Nothing here redacts, and nothing here un-redacts.** `approval_context` was redacted at gate
-time by T33's `build_approval_context`, and `receipt_data` by `build_receipt` on the way in.
-A second redactor under the read would be a quieter second home for one rule and the one an
-auditor would have to trust without seeing it. `core/approvals/card.py` records the same rule for
-the operator-facing reader: the day two redaction policies disagree is the day one of them is
-wrong.
+**Nothing here redacts, and nothing here un-redacts.** `approval_context` was redacted at gate time
+by `build_approval_context`, and `receipt_data` by `build_receipt` on the way in. A second redactor
+under the read would be a quieter second home for one rule and the one an auditor would have to
+trust without seeing it. `core/approvals/card.py` records the same rule for the operator-facing
+reader: the day two redaction policies disagree is the day one of them is wrong.
 
-**Expiry is not applied here.** V32's check-on-read belongs to `ActionRequestExpiryService`, whose
+**Expiry is not applied here.** The check-on-read belongs to `ActionRequestExpiryService`, whose
 writer can set exactly one status, and this module cannot write. A PENDING row whose deadline has
 passed therefore renders as PENDING with a past `expiresAt`, which is the honest reading: the
 sweep has not run yet, and an admin view that silently reported a status the database does not
@@ -56,9 +56,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.approvals.clock import as_utc
 from core.approvals.execution import (
-    # The keys T38's writer puts in `receipt_data`, read here rather than respelled — a misspelt
-    # key in JSONB reads as an absent one, and this surface is the third reader those constants
-    # exist for. A sixth key added there reaches this route; a hand-kept mirror would not.
+    # The keys the executor's writer puts in `receipt_data`, read here rather than respelled — a
+    # misspelt key in JSONB reads as an absent one, and this surface is the third reader those
+    # constants exist for. A sixth key added there reaches this route; a hand-kept mirror would not.
     RECEIPT_AFTER_KEY,
     RECEIPT_BEFORE_KEY,
     RECEIPT_DELTA_KEY,
@@ -80,7 +80,7 @@ MAX_PAGE_SIZE: Final = 200
 
 @dataclass(frozen=True)
 class ActionRequestAdminFilters:
-    """What an admin narrowed the authorisation trail to (§I.admin-api).
+    """What an admin narrowed the authorisation trail to.
 
     All optional, and an empty object means "everything" — the panel's first load. One frozen
     value rather than five parameters threaded through three layers, so the route maps query
@@ -100,11 +100,11 @@ class ActionRequestAdminFilters:
 
 @dataclass(frozen=True)
 class ActionRequestListItem:
-    """One authorisation as the admin list renders it (§I.admin-api).
+    """One authorisation as the admin list renders it.
 
     Carries neither `reason` nor `approval_context`: a fifty-row page would otherwise ship fifty
     JSONB payloads to draw six columns, and both are one click away on the detail read. That is
-    T55's argument for leaving `args` off the audit list, made again one table over.
+    the audit list's argument for leaving `args` off it, made again one table over.
 
     `tool_run_id` is the edge to `tool_runs` and it lives on this row and only here — a
     matching column on the run would be two truths about one link. `null` on a denied or expired
@@ -129,8 +129,8 @@ class ActionRequestListItem:
         """JSON-native fields for the HTTP body, camelCase like the rest of the audit surface.
 
         One spelling of this body: the route's response model is built from this dict rather than
-        re-listing the fields, the way `ToolRunListItem.as_payload()` is T55's single spelling.
-        Two hand-maintained copies of one payload is one that can disagree.
+        re-listing the fields, the way `ToolRunListItem.as_payload()` is the audit list's single
+        spelling. Two hand-maintained copies of one payload is one that can disagree.
         """
         return {
             "actionRequestId": str(self.action_request_id),
@@ -159,7 +159,7 @@ class ActionRequestDetailView:
     empty reason on an approved change would read as "the operator wrote nothing" and the gate
     refuses that with a 409 before it can happen.
 
-    `approval_context` is the object T33 persisted, carried whole. Not re-projected into named
+    `approval_context` is the object the gate persisted, carried whole. Not re-projected into named
     fields: the keys are the gate's own vocabulary per tool, so a model that flattened them here
     would have to be widened by every tool ever added — `ToolRunDetailView.args`' argument. This
     is the surface on which `librechat_user_id`, `server_id` and `api_username` remain readable.
@@ -182,8 +182,8 @@ class ActionRequestDetailView:
 class ActionReceiptAdminView:
     """What an approved CHANGE actually did, as an administrator may read it.
 
-    The stored halves, uncollapsed. DECISIONS §6.5 refuses to let `before` and `after` become a
-    single "done", so they are two fields here as they are two fields on the operator's card, and
+    The stored halves, uncollapsed. DECISIONS section 6.5 refuses to let `before` and `after` become
+    a single "done", so they are two fields here as they are two fields on the operator's card, and
     `delta` is the runner's own sentence about what moved between them.
 
     `delta` is `None` when the writer stored none, and that absence is the only discriminator
@@ -230,8 +230,8 @@ class ActionReceiptAdminView:
 class ActionRequestPage:
     """One page of authorisations, and the token for the next — `None` on the last page.
 
-    `next_cursor` is the bound this surface owes (V85's family): a client can tell "that is all of
-    them" from "there is more" without counting rows against the limit it asked for.
+    `next_cursor` is the bound this surface owes — the row cap's own bound: a client can tell "that
+    is all of them" from "there is more" without counting rows against the limit it asked for.
     """
 
     items: list[ActionRequestListItem]
@@ -290,7 +290,7 @@ def select_action_request_page(
     limit: int,
     cursor: KeysetCursor | None,
 ) -> Select[Any]:
-    """The statement one page of authorisations is read with (§I.admin-api, V85, V92, V93).
+    """The statement one page of authorisations is read with — bound, ordered, in the SQL.
 
     Built as a function for the reason `select_tool_run_page` is: the claims worth asserting
     — that the filters and the cursor are *in* the statement, and that the order carries its
@@ -298,8 +298,8 @@ def select_action_request_page(
     payload test green while being no check at all.
 
     One order, and the tie-break is part of it: `created_at DESC, id DESC`. `created_at` is not
-    unique — a burst of gate insertions in one millisecond is ordinary — and paging by a
-    non-unique key splits a tied group differently per call (V92(c)).
+    unique — a burst of gate insertions in one millisecond is ordinary — and paging by a non-unique
+    key splits a tied group differently per call — a page boundary that wanders is no bound.
 
     `limit + 1`: the extra row answers "is there another page" without a second `COUNT` over a
     table being appended to while it is read. It is never serialised.
@@ -484,7 +484,7 @@ class SQLActionRequestAdminReader:
 
 
 class ActionRequestAdminService:
-    """Query the CHANGE authorisation trail (§I.admin-api — V13, V15, V46).
+    """Query the CHANGE authorisation trail for the admin panel.
 
     Thin, like `ToolRunAuditService`: it bounds the page size, decides the continuation token, and
     holds a *reader* rather than any of the three writers next door (`decisions`, `expiry`,

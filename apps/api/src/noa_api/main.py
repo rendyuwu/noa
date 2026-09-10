@@ -1,7 +1,6 @@
 """FastAPI application factory.
 
-Live surfaces: `/health`, `/auth`, `/action-requests` and the mounted MCP
-server at `/mcp`.
+Live surfaces: `/health`, `/auth`, `/action-requests` and the mounted MCP server at `/mcp`.
 
 **What is built where, and why it moved.** T8 put every long-lived object in the lifespan.
 T13 splits that in two, because mounting the MCP app forces the order: `http_app()` reads
@@ -100,7 +99,7 @@ class AppRuntime:
     # executor's runner map, and two contexts would be two worlds configured alike.
     tool_context: McpToolContext
     # T37's approvals hand a started run to this; T38 filled it with the real asyncio host
-    #. One per app, not one per request — a per-request executor would leave nobody
+    # . One per app, not one per request — a per-request executor would leave nobody
     # holding its outstanding tasks at shutdown.
     #
     # Typed to the host, not to `ApprovedChangeExecutor`, and deliberately: the lifespan below

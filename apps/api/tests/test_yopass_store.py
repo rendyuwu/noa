@@ -1,17 +1,16 @@
 """Out-of-band secret delivery via yopass.
 
-Ported from `noa-old` branch `MCP` alongside the helper, rewired to this repo's
-injected `Settings`.
+Ported from `noa-old` branch `MCP` alongside the helper, rewired to this repo's injected `Settings`.
 
-V50 is a chain, and each link is asserted separately because any one of them silently
-defeats the others: the blob is username+password, it is encrypted **before** the POST, the
-POST goes to `<base>/secret`, and the decryption passphrase comes back in the URL fragment
-and never in the request. `test_passphrase_never_sent_to_server` is the load-bearing one — a
-refactor that "simplifies" by letting the server generate the key would still pass every
-other test here while making the yopass instance able to read every secret NOA sends it.
+The delivery guarantee is a chain, and each link is asserted separately because any one of them
+silently defeats the others: the blob is username+password, it is encrypted **before** the POST, the
+POST goes to `<base>/secret`, and the decryption passphrase comes back in the URL fragment and never
+in the request. `test_passphrase_never_sent_to_server` is the load-bearing one — a refactor that
+"simplifies" by letting the server generate the key would still pass every other test here while
+making the yopass instance able to read every secret NOA sends it.
 
 The HTTP boundary is driven with `httpx.MockTransport`, so the real client, the real PGPy
-encrypt and the real URL assembly all run; only the socket is faked (C15: every failure is a
+encrypt and the real URL assembly all run; only the socket is faked (every failure is a
 tool error, never a crash).
 """
 
@@ -62,7 +61,7 @@ def _failing_transport(response: httpx.Response | Exception) -> httpx.MockTransp
     return httpx.MockTransport(handler)
 
 
-# --- V50: request shape ---
+# --- Request shape ---
 
 
 async def test_posts_expected_payload() -> None:
@@ -117,7 +116,7 @@ async def test_body_carries_ciphertext_not_plaintext() -> None:
     assert "-----BEGIN PGP MESSAGE-----" in serialized
 
 
-# --- V50: URL shape and the fragment ---
+# --- URL shape and the fragment ---
 
 
 async def test_builds_fragment_url() -> None:
@@ -188,7 +187,7 @@ async def test_trailing_slash_in_base_url_does_not_double_up() -> None:
     assert url.startswith(f"{BASE_URL}/#/s/")
 
 
-# --- C15: unconfigured is a tool error, not a crash ---
+# --- Unconfigured is a tool error, not a crash ---
 
 
 async def test_missing_base_url_raises_not_configured() -> None:
@@ -248,7 +247,7 @@ async def test_missing_secret_id_raises(body: object) -> None:
         )
 
 
-# --- V49: nothing sensitive reaches the logs ---
+# --- Nothing sensitive reaches the logs ---
 
 
 async def test_logs_carry_no_plaintext_or_passphrase(caplog: pytest.LogCaptureFixture) -> None:

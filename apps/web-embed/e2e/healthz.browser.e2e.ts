@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 /**
- * Scaffold smoke check (§T.40): a real browser reaches a real dev server on the
+ * Scaffold smoke check: a real browser reaches a real dev server on the
  * embed's own origin and gets the liveness answer.
  *
  * Same-origin, so it runs here. The cross-origin cookie behaviour this app
@@ -18,7 +18,7 @@ test('the embed serves /healthz to a browser on its own origin', async ({ page }
 
 test('an unmapped path is a 404, not a blank 200', async ({ page }) => {
   // The card renders decision controls. A route that answers 200 for anything
-  // would let a mistyped id render an empty card, which V38 rules out for the
+  // would let a mistyped id render an empty card, which the no-blank-card rule rules out for the
   // 401 case for the same reason.
   const response = await page.goto('/this-route-does-not-exist')
 

@@ -2,14 +2,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 /**
- * The framing header is actually wired into the config Next reads (§T.45, V41).
+ * The framing header is actually wired into the config Next reads.
  *
  * `config/framing.test.ts` proves the rule; this proves the app applies it. A resolver nobody
- * calls holds nothing, and `headers()` is the one knob Next reads for this — the same reason §T.40
- * asserts `runtime`/`dynamic` on the route module's own exports rather than on a response.
+ * calls holds nothing, and `headers()` is the one knob Next reads for this — the same reason the
+ * route config test asserts `runtime`/`dynamic` on the route module's own exports rather than on
+ * a response.
  *
  * The variable is set before the import so the result does not depend on a developer's repo-root
- * `.env`: `loadRootEnv` fills only keys the environment does not already have (§T.44).
+ * `.env`: `loadRootEnv` fills only keys the environment does not already have.
  *
  * Node environment, not the package default: `next.config.ts` resolves its own directory from
  * `import.meta.url`, and under jsdom that is an `http://` URL, so `fileURLToPath` throws before the
@@ -36,7 +37,7 @@ afterEach(() => {
   vi.resetModules()
 })
 
-describe('§T.45 — next.config.ts sends the framing header', () => {
+describe('next.config.ts sends the framing header', () => {
   it('returns the frame-ancestors entry for the configured origin', async () => {
     process.env[ENV_VAR] = 'https://chat.noa.internal'
 

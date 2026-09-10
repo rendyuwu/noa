@@ -15,7 +15,7 @@ export const dynamic = 'force-dynamic'
 type RouteContext = { params: Promise<{ path: string[] }> }
 
 /**
- * The embed's same-origin door to the NOA API (§T.44, §I.embed).
+ * The embed's same-origin door to the NOA API — the embed surface's proxy entry.
  *
  * The browser calls `/api/*` on this origin; the request is forwarded server-side to
  * `NOA_API_URL`, carrying the `noa_session` cookie the registrable domain put here. The

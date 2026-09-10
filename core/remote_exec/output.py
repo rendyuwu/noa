@@ -2,8 +2,8 @@
 
 `noa-old` carried this function **three times**, byte-identical, on branch `MCP`:
 `whm/integrations/csf_cli.py:30`, `whm/integrations/imunify_cli.py:33`, and
-`pmg/integrations/pmgsh_cli.py:30`. It lands here with T16 rather than a fourth time, because
-T18 (PMG) is the fourth caller and V66 puts shared code in `core/`. Nothing about it is
+`pmg/integrations/pmgsh_cli.py:30`. It lands here once rather than a fourth time: shared
+code lives in `core/`, and the PMG port is the fourth caller. Nothing about it is
 WHM-specific — it reads `CommandResult`, which is this package's type.
 
 Why both streams: the CLIs it serves are inconsistent about which one they use. `csf -g` writes
@@ -12,7 +12,7 @@ explanation on stderr while `--json` output goes to stdout. A caller that reads 
 an empty error message roughly half the time, which is how a failure ends up reported as
 `… failed with exit code 1` and nothing else.
 
-**Reads `stdout`, ⊥ `raw_stdout`.** This text is parsed and shown to an operator, so it
+**Reads `stdout`, never `raw_stdout`.** This text is parsed and shown to an operator, so it
 must be the banner-stripped stream — a CloudLinux LVE banner in front of a JSON document is
 exactly what `noa-old` GH #83 was. `raw_stdout`/`raw_stderr` stay on the result for audit.
 """

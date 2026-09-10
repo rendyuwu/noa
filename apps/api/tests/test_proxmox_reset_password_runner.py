@@ -1,21 +1,22 @@
 """`proxmox_reset_vm_password`'s runner — the half that changes the VM.
 
-Reachable only after an operator approved (§V.22's far side), so nothing here goes through the
-tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`, and that is what
-these tests build.
+Reachable only after an operator approved — the far side of the cookie/CSRF boundary — so nothing
+here goes through the tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`,
+and that is what these tests build.
 
 **Three properties carry this file**, and each is a claim a plausible implementation gets wrong:
 
-1. **Deliver before you apply** (§V.62). yopass is stored *first*, so a delivery failure aborts
+1. **Deliver before you apply.** yopass is stored *first*, so a delivery failure aborts
    with the VM untouched. Asserted on the **absence of a config write** rather than on the
    returned envelope — a runner that wrote first and reported the failure afterwards would
    produce the same return value and leave a live password nobody has a copy of.
-2. **The generated password never leaves this frame** (C15, §V.49). The runner's payload becomes
+2. **The generated password never leaves this frame.** Server-side generation; only `yopass_url`
+   returns. The runner's payload becomes
    `tool_runs.result_summary` and the receipt's `after`, and `noa_get_action_result` hands the
    summary to a model — so the assertion is made against the *serialized* payload, the derived
-   summary and the built receipt, not against a key set (§V.87's shape: a field dropped in one
-   place and kept in another passes a key compare).
-3. **Verification-unavailable is not verified, and not refuted either** (§V.62, §T.69). A host
+   summary and the built receipt, not against a key set — a field dropped in one
+   place and kept in another passes a key compare.
+3. **Verification-unavailable is not verified, and not refuted either.** A host
    with no libcrypt reports `changed` + `verified: false` + `verification: unavailable`, and the
    link still goes out because Proxmox accepted the write.
 
@@ -76,7 +77,7 @@ from support.servers import SECRET_PASSWORD_LENGTH, SECRETS, YOPASS_URL, Recordi
 
 
 def no_crypt_library() -> CDLL | None:
-    """A host with no libcrypt — §T.69's subject, injected rather than patched."""
+    """A host with no libcrypt — the crypt verdict's subject, injected rather than patched."""
     return None
 
 
@@ -121,7 +122,7 @@ async def test_an_approved_reset_changes_the_password_and_confirms_it() -> None:
 
 
 async def test_the_password_is_generated_here_at_the_configured_length() -> None:
-    """C15, §V.49: server-side, and long enough that a fallback default would show.
+    """Server-side, and long enough that a fallback default would show.
 
     `SECRET_PASSWORD_LENGTH` is deliberately not `Settings`' 24, which is also
     `_DEFAULT_PASSWORD_LENGTH` — so a runner that ignored the context and called the generator
@@ -137,7 +138,9 @@ async def test_the_password_is_generated_here_at_the_configured_length() -> None
 
 
 async def test_the_username_delivered_is_the_one_on_the_evidence() -> None:
-    """§V.33: the blob names the account the operator saw on the card, not a tool argument."""
+    """The blob names the account the operator saw on the card, not a tool argument — context
+    persisted at gate time.
+    """
     fixture, _ = reset_context()
 
     await build_runner(fixture)(execution_request(server_id=server_id(fixture)))
@@ -145,16 +148,16 @@ async def test_the_username_delivered_is_the_one_on_the_evidence() -> None:
     assert fixture.secret_delivery.calls[0]["username"] == USERNAME
 
 
-# --- V49: the plaintext never leaves this frame ---
+# --- The plaintext never leaves this frame ---
 
 
 async def test_the_generated_password_is_absent_from_payload_receipt_and_summary() -> None:
-    """§V.49 and §V.8, asserted at all three places the payload becomes durable.
+    """Only `yopass_url` returns, asserted at all three places the payload becomes durable.
 
-    `result_summary` is what `noa_get_action_result` hands a model (§V.45, §V.76), and the
+    `result_summary` is what `noa_get_action_result` hands a model, and the
     receipt's `after` is what the card and the admin audit surface read. Asserted on the
     *serialized* text rather than on a key set, because a field dropped from the top level and
-    kept in a nested structure passes a key compare (§V.87).
+    kept in a nested structure passes a key compare.
 
     The credential-shaped literals from the server row are checked too: the API token is
     decrypted on the way to every call here, so this is also the assertion that it is not
@@ -196,11 +199,12 @@ async def test_no_reading_of_the_cloudinit_dump_reaches_the_payload() -> None:
 
 
 async def test_the_runner_never_reads_the_operator_s_reason() -> None:
-    """§V.96 has no instance on this tool, and that is a property rather than an oversight.
+    """No path back to a model opens on this tool, and that is a property rather than an oversight.
 
-    Cloud-init has no note field, so nothing C8 keeps from the LLM is written onto the VM — the
-    shape T23 and T26 have on their write side. The reason is on the request (V43 carries it for
-    every approved change); what matters is that it does not come back out.
+    Cloud-init has no note field, so nothing the operator typed is written onto the VM — the
+    shape the suspend and allowlist-remove tools have on their write side. The reason is on the
+    request — the one operator-typed field carries it for
+    every approved change; what matters is that it does not come back out.
     """
     fixture, vm = reset_context()
     request = execution_request(server_id=server_id(fixture), reason="customer locked out")
@@ -212,7 +216,7 @@ async def test_the_runner_never_reads_the_operator_s_reason() -> None:
     assert all("customer locked out" not in path for _method, path in vm.requests)
 
 
-# --- V62: deliver before you apply ---
+# --- Deliver before you apply ---
 
 
 @pytest.mark.parametrize(
@@ -223,7 +227,7 @@ async def test_the_runner_never_reads_the_operator_s_reason() -> None:
     ],
 )
 async def test_a_delivery_failure_aborts_before_any_config_write(error: Exception) -> None:
-    """**§V.62's ordering, and the assertion is the empty write list.**
+    """**yopass-before-set ordering, and the assertion is the empty write list.**
 
     A runner that applied the password first and then failed to deliver it would return exactly
     the same envelope as this one. The only thing that separates the two is whether the VM was
@@ -241,7 +245,7 @@ async def test_a_delivery_failure_aborts_before_any_config_write(error: Exceptio
 
 
 async def test_the_delivery_hop_runs_before_the_write_in_the_happy_path_too() -> None:
-    """The negative control for the ordering above (§V.87).
+    """The negative control for the ordering above.
 
     "No writes" also holds for a runner that does nothing at all, so the ordering claim needs the
     case where both happen: delivery was called, *and* the VM was written, in that order.
@@ -258,7 +262,7 @@ async def test_the_delivery_hop_runs_before_the_write_in_the_happy_path_too() ->
 
 
 async def test_a_refused_config_write_withholds_the_link() -> None:
-    """§V.62's named residual case, from the safe side.
+    """The named residual case of deliver-before-apply, from the safe side.
 
     Proxmox refused the write, so the VM keeps its old credentials and the generated password is
     live nowhere. Handing over a link to it is how a customer is told to use a password that
@@ -334,11 +338,11 @@ async def test_a_synchronous_write_polls_no_task() -> None:
     assert [path for _m, path in vm.requests if "/tasks/" in path] == []
 
 
-# --- T69: the crypt guard, at the runner ---
+# --- The crypt guard, at the runner ---
 
 
 async def test_a_host_without_libcrypt_reports_changed_but_unverified() -> None:
-    """**§T.69 at the surface an operator reads** (§V.62).
+    """**The crypt verdict at the surface an operator reads.**
 
     Three things at once, and each is a different way of getting this wrong:
 
@@ -406,7 +410,7 @@ async def test_a_dump_that_never_carries_a_hash_is_unavailable_not_a_failure(
 async def test_a_vm_still_carrying_another_password_is_a_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """**The negative control the two tests above need** (§V.87).
+    """**The negative control the two tests above need.**
 
     Every assertion in this section is satisfied by a runner that answers `unavailable` for
     everything. This is the one that is not: a VM that accepted the write and still shows a
@@ -429,7 +433,9 @@ async def test_a_vm_still_carrying_another_password_is_a_failure(
 async def test_a_dump_that_cannot_be_read_is_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """§V.86: a document NOA could not fetch has not told it the password is wrong."""
+    """A document NOA could not fetch has not told it the password is wrong — no answer, never the
+    benign value.
+    """
     no_polling_delay(monkeypatch)
     fixture, _ = reset_context(vm=FakeProxmoxVM(dump_error={"status": 500}))
 
@@ -440,11 +446,12 @@ async def test_a_dump_that_cannot_be_read_is_unavailable(
     assert payload["verification"] == VERIFICATION_UNAVAILABLE
 
 
-# --- V33: the runner acts on the evidence, never on the arguments ---
+# --- The runner acts on the evidence, never on the arguments ---
 
 
 async def test_the_runner_resolves_the_server_from_the_evidence() -> None:
-    """§V.33. The request's `arguments` name a different endpoint on purpose.
+    """Context persisted at gate time. The request's `arguments` name a different endpoint on
+    purpose.
 
     Inventory can be edited between a request and its approval, and the evidence is the state the
     operator actually saw on the card — so a runner that re-resolved `server_ref` would run the
@@ -513,7 +520,8 @@ async def test_unusable_evidence_is_refused_before_anything_is_generated(
 
 
 async def test_a_confirmed_reset_records_a_completed_run_and_a_two_part_receipt() -> None:
-    """§V.20, §V.46: the status is read off the envelope and the receipt keeps both halves.
+    """The status is read off the envelope and the receipt keeps both halves — run plus receipt, one
+    commit.
 
     The before-state is the gate's own preflight, so a failed change still has a record of what
     was authorised — which is why the receipt is built here rather than derived from the answer.
@@ -531,7 +539,7 @@ async def test_a_confirmed_reset_records_a_completed_run_and_a_two_part_receipt(
 
 
 async def test_an_unverified_reset_still_records_a_completed_run() -> None:
-    """§T.69's consequence one layer out, and the reason `ok` is true on that branch.
+    """The crypt verdict's consequence one layer out, and the reason `ok` is true on that branch.
 
     An unavailable verification is a change that happened, so the run is `COMPLETED` and the
     receipt says `verified: false` — rather than a `FAILED` run that would read as "the password
@@ -550,7 +558,7 @@ async def test_an_unverified_reset_still_records_a_completed_run() -> None:
 
 
 async def test_a_mismatched_reset_records_a_failed_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The separation the test above needs (§V.87): a measured mismatch is `FAILED`."""
+    """The separation the test above needs: a measured mismatch is `FAILED`."""
     no_polling_delay(monkeypatch)
     fixture, _ = reset_context(vm=FakeProxmoxVM(ignore_password_write=True))
 

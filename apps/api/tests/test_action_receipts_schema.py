@@ -11,10 +11,10 @@ Two levels, for two different claims:
   metadata says nothing about what the migration built. Skipped (never failed) when
   Postgres is unreachable, like every other DB-backed test here.
 
-This file is about the *shape*, not the writer. Nothing writes this table yet — T38's
-executor does, and T42's card and T63's `noa_get_action_result` read it beside the run.
-What is asserted here is that the columns V46 asks for exist and hold, so none of those
-three can quietly reshape them.
+This file is about the *shape*, not the writer. Nothing writes this table yet — the approved-change
+executor does, and the approval card and `noa_get_action_result` read it beside the run. What is
+asserted here is that the columns the run-plus-receipt rule asks for exist and hold, so none of
+those three can quietly reshape them.
 """
 
 from __future__ import annotations
@@ -37,8 +37,8 @@ SCRATCH_DB = "noa_action_receipts_schema_test"
 
 ACTION_RECEIPTS = Base.metadata.tables["action_receipts"]
 
-# §T.36's column list, verbatim. A column added without a task to specify it is a guess
-# (`test_schema_v1.py` guards whole tables the same way); one removed takes a V46 field
+# The receipt table's column list, verbatim. A column added without a task to specify it is a guess
+# (`test_schema_v1.py` guards whole tables the same way); one removed takes a run-plus-receipt field
 # with it.
 T36_COLUMNS = {
     "id",
@@ -52,20 +52,20 @@ T36_COLUMNS = {
 # are the shapes a later edit would most plausibly reach for. Named one by one so a failure
 # says which boundary was crossed rather than only that a set differs.
 FORBIDDEN_COLUMNS = {
-    # C16 drops the multi-phase workflows this described. The terminal state lives on
+    # The multi-phase workflows this described are dropped. The terminal state lives on
     # `tool_runs.status` and `action_requests.status`; a third column saying it again is a
-    # third truth about one moment (T34's argument for the four columns it dropped).
-    "terminal_phase": "V20 — terminal state lives on `tool_runs`/`action_requests`",
+    # third truth about one moment — the request table's argument for the four columns it dropped.
+    "terminal_phase": "terminal state lives on `tool_runs`/`action_requests`",
     # `approval_context` and `tool_runs.args` are both unversioned JSONB. Versioning the
     # third would make their bareness look deliberate when it is not.
     "schema_version": "consistency — the other two JSONB payloads carry no version",
-    # §T.36 names `receipt_data`. `payload` is the port's name for the same column, and two
+    # The column is named `receipt_data`. `payload` is the port's name for the same column, and two
     # names for one column is how a writer ends up filling the wrong one.
-    "payload": "§T.36 names `receipt_data`",
-    # C8, V43: the reason is operator-typed on the card and lives on `action_requests`.
-    # V43 says "⊥ LLM-authored reason anywhere in schema/DB/**receipt**" — this is the
+    "payload": "the column is named `receipt_data`",
+    # The reason is operator-typed on the card and lives on `action_requests` — and an
+    # LLM-authored reason is forbidden anywhere in schema/DB/**receipt**; this is the
     # receipt half of that sentence.
-    "reason": "C8, V43 — one reason, and it is on `action_requests`",
+    "reason": "one reason, operator-typed, and it is on `action_requests`",
     # A receipt records one terminal moment. There is nothing to update.
     "updated_at": "a receipt is written once; there is no second moment to stamp",
 }
@@ -88,11 +88,11 @@ def test_the_columns_this_design_refuses_are_absent(column: str, why: str) -> No
 
 
 def test_one_receipt_per_request_is_a_constraint_not_a_convention() -> None:
-    """V28, V34: one decision, one outcome.
+    """One decision, one outcome — one URL through receipt.
 
-    `noa-old` made `action_request_id` the primary key, so this came with the table. §T.36
+    `noa-old` made `action_request_id` the primary key, so this came with the table. This table
     names a separate `id`, which means the property is stated here or it is lost in the
-    port — and losing it is not theoretical: T38's executor and its reaper can both reach a
+    port — and losing it is not theoretical: the executor and its reaper can both reach a
     finished run, and a second receipt turns "the receipt" into "some receipt".
     """
     unique = {
@@ -107,9 +107,9 @@ def test_one_receipt_per_request_is_a_constraint_not_a_convention() -> None:
 def test_the_request_link_is_required() -> None:
     """A receipt is always *about* a request; there is no free-standing one.
 
-    Unlike every other FK added since T35, which are nullable because their rows still
-    describe something without their subject. This one would not: the tool name, the
-    requester and the arguments all live on `action_requests`.
+    Unlike every other FK added since the `tool_runs` table, which are nullable because their rows
+    still describe something without their subject. This one would not: the tool name, the requester
+    and the arguments all live on `action_requests`.
     """
     action_request_id = ACTION_RECEIPTS.c.action_request_id
 
@@ -135,7 +135,7 @@ def test_the_run_link_is_described_the_same_way_at_both_ends() -> None:
 
 
 def test_receipt_data_is_required_and_has_no_default() -> None:
-    """V46: a receipt with nothing in it is a failed insert, not a stored row.
+    """A receipt with nothing in it is a failed insert, not a stored row.
 
     Deliberately unlike `tool_runs.args`, which defaults to `'{}'` so "took no arguments"
     and "not recorded" stay distinguishable, and exactly like `approval_context`: there is
@@ -151,8 +151,8 @@ def test_the_index_set_is_only_what_a_reader_needs() -> None:
     """Every reader arrives holding an `action_request_id`, which the unique already indexes.
 
     `noa-old` also indexed `tool_run_id`, `terminal_phase` and `created_at`. Nothing filters
-    or orders by them here — the discipline that left `risk` unindexed at T35 and kept T34's
-    index set smaller than `tool_runs`'.
+    or orders by them here — the discipline that left `risk` unindexed on the run table and kept the
+    request table's index set smaller than `tool_runs`'.
     """
     assert {index.name for index in ACTION_RECEIPTS.indexes} == set()
 
@@ -236,11 +236,12 @@ async def insert_approved_request(session: AsyncSession, *, tool_run_id: UUID | 
 
 
 async def test_a_receipt_round_trips_its_payload(session: AsyncSession) -> None:
-    """V46: the approved change's outcome, stored beside the run that produced it.
+    """The approved change's outcome, stored beside the run that produced it.
 
-    The payload shape is T38's, not this column's — what is asserted here is only that JSONB
-    gives back what the executor put in, so DECISIONS §6.5's two-part story (before-state and
-    after-state, each verified separately) survives a round trip without being collapsed.
+    The payload shape is the executor's, not this column's — what is asserted here is only that
+    JSONB gives back what the executor put in, so DECISIONS section 6.5's two-part story
+    (before-state and after-state, each verified separately) survives a round trip without being
+    collapsed.
     """
     await insert_user(session, "operator@example.com")
     run_id = await insert_run(session)
@@ -260,10 +261,10 @@ async def test_a_receipt_round_trips_its_payload(session: AsyncSession) -> None:
 
 
 async def test_a_second_receipt_for_one_request_is_refused(session: AsyncSession) -> None:
-    """V28, V34: one decision, one outcome — held by the database, not by the writer.
+    """One decision, one outcome — held by the database, not by the writer.
 
     This is the case the port got for free from its primary key and this shape has to state.
-    T38's executor and its reaper can both reach a finished run; without the constraint the
+    The executor and its reaper can both reach a finished run; without the constraint the
     second write succeeds and every reader afterwards picks one of two receipts arbitrarily.
     """
     run_id = await insert_run(session)
@@ -314,7 +315,7 @@ async def test_a_receipt_cannot_exist_without_its_request(session: AsyncSession)
 
     An id nothing authorised is the shape of the mistake that matters — a writer holding a
     stale or fabricated request id would otherwise store an outcome for a change nobody
-    approved (V23: the request row *is* the authorization).
+    approved — the request row *is* the authorization.
     """
     session.add(ActionReceipt(action_request_id=uuid4(), receipt_data=RECEIPT_DATA))
 
@@ -336,11 +337,11 @@ async def test_receipt_data_cannot_be_omitted(session: AsyncSession) -> None:
 async def test_deleting_the_request_removes_the_receipt(session: AsyncSession) -> None:
     """CASCADE, proven by a real DELETE.
 
-    `ondelete` is a string in metadata until something deletes (T34's rule). This is the one
-    FK in the schema that cascades rather than nulls, because a receipt whose request is gone
-    describes nothing: the tool name, the requester and the arguments all lived on that row.
-    The audit artifact that must survive a user deletion is `action_requests` itself, and T34
-    made both of its FKs `SET NULL` for exactly that.
+    `ondelete` is a string in metadata until something deletes. This is the one FK in the schema
+    that cascades rather than nulls, because a receipt whose request is gone describes nothing: the
+    tool name, the requester and the arguments all lived on that row. The audit artifact that must
+    survive a user deletion is `action_requests` itself, and the request table made both of its FKs
+    `SET NULL` for exactly that.
     """
     request_id = await insert_approved_request(session, tool_run_id=None)
     session.add(ActionReceipt(action_request_id=request_id, receipt_data=RECEIPT_DATA))
@@ -381,7 +382,7 @@ async def test_deleting_the_run_keeps_the_receipt(session: AsyncSession) -> None
 async def test_deleting_the_requester_keeps_the_receipt(session: AsyncSession) -> None:
     """The chain that matters end to end: a user deletion erases neither half.
 
-    T34 made `action_requests.requested_by_user_id` `SET NULL` naming this table as the
+    The request table made `requested_by_user_id` `SET NULL` naming this table as the
     reason ("cascading would let one user deletion erase both what was authorised and the
     receipt proving it ran"). That sentence is asserted here rather than only written there,
     because it is a claim about two tables and neither file can make it alone.

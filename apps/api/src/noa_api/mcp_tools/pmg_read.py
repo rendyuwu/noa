@@ -10,23 +10,23 @@ whitelist?** The two split by size, not by subject, exactly as the WHM account p
 A membership question's answer fits the transcript; a whitelist can be hundreds of CIDRs, so
 this one parks its rows in `tool_result_tables` and answers with a summary plus the address of
 the page that renders them (`noa_api.mcp_tools.table_surface`). It is the **second** caller of
-that surface after `whm_list_accounts`, and it adds nothing to it — which is what V64's
-"shared capability, ⊥ per-tool special case" means once there is more than one producer.
+that surface after `whm_list_accounts`, and it adds nothing to it — which is what
+"shared capability, never a per-tool special case" means once there is more than one producer.
 
 **One read, shared.** `read_pmg_mynetworks` is the resolve-connect-read-parse step both tools
 run; only what they do with the entries differs. Internal, never registered.
 
-Exact membership, never containment (V59, and see
+Exact membership, never containment (see
 `core.integrations.pmg.mynetworks.find_matching_entries`): `1.2.3.0/24` sitting in the
 whitelist does not make `1.2.3.4` an entry. Answering otherwise would tell an operator their
 address is whitelisted when the CIDR they would have to remove is not the one they named.
 
-**One `pmgsh` read, and the session is closed before it.** The row is resolved and turned into
-an `SSHConnectionConfig` inside one database session, which then closes; everything after that
-is SSH. That is T21's rule — a pooled Postgres connection held across a hop to someone else's
+**One `pmgsh` read, and the session is closed before it.** The row is resolved and turned into an
+`SSHConnectionConfig` inside one database session, which then closes; everything after that is SSH.
+That is the account search's rule — a pooled Postgres connection held across a hop to someone else's
 host is how a slow PMG node becomes a database outage — and it is why
 `core.integrations.pmg.pmgsh_cli` takes a config rather than a row as of this task, the same
-re-signing T24 did for the WHM firewall path.
+re-signing the firewall preflight did for the WHM firewall path.
 
 `resolve_pmg_ssh_config` is deliberately allowed to raise. Its four refusals
 (`ssh_invalid_host`, `ssh_invalid_port`, `ssh_not_configured`, `ssh_host_key_not_validated`)
@@ -34,7 +34,7 @@ are `NoaError`s, so `sanitize_tool_errors` hands the model the code that names t
 and names the *server* rather than reporting a failed `pmgsh` command. `PMGSHCLIError` travels
 the same way, which is why nothing here catches it: `ssh_sudo_required` and
 `pmgsh_command_failed` have different remedies (`noa-old` GH #82), and a local `except` that
-collapsed them would undo the split T18 built.
+collapsed them would undo the split the PMG port built.
 
 Two split responsibilities, both matching `whm_read`:
 
@@ -42,10 +42,11 @@ Two split responsibilities, both matching `whm_read`:
   name, description and annotations — is `register_pmg_read_tools`, so the schema fastmcp
   derives comes from a signature with no context parameter in it.
 - `sanitize_tool_errors` wraps the function, not the registration, so a future in-process call
-  (C9, V17 — T29's preflight is exactly that) gets the same V19 guarantee.
+  (one workflow, one tool — the whitelist tool's preflight is exactly that) gets the same
+  sanitized-code guarantee.
 
 Registration declares `ToolRisk.READ`. Nothing here records anything: the
-`tool_runs` row is written by `ToolRunAuditMiddleware` beside the RBAC gate (V83b), and the
+`tool_runs` row is written by `ToolRunAuditMiddleware` beside the RBAC gate, at one seam, and the
 risk it stamps comes from here, where the tool is defined. The listing's counts envelope is
 what that middleware reads its status and summary off — see `table_surface`.
 """
@@ -137,16 +138,16 @@ class MynetworksRead:
 async def read_pmg_mynetworks(
     *, server_ref: str, context: McpToolContext
 ) -> MynetworksRead | ToolPayload:
-    """Every `mynetworks` entry on the named PMG node. Internal — ⊥ an MCP tool.
+    """Every `mynetworks` entry on the named PMG node. Internal — never an MCP tool.
 
     Not exposed and not decorated with `sanitize_tool_errors`: both callers are exposed tools
     that already are, and a second boundary would turn a `NoaError` into a payload the caller
     then has to unwrap twice — `fetch_whm_accounts`' argument, one system over.
 
     **The database session closes before the SSH hop.** The row is resolved and turned into an
-    `SSHConnectionConfig` inside the session, because both read mapped attributes and a
-    detached instance would raise on a lazy refresh; the `pmgsh` read is outside it. That is
-    T21's rule: a pooled Postgres connection held across a hop to someone else's host is how a
+    `SSHConnectionConfig` inside the session, because both read mapped attributes and a detached
+    instance would raise on a lazy refresh; the `pmgsh` read is outside it. That is the account
+    search's rule: a pooled Postgres connection held across a hop to someone else's host is how a
     slow PMG node becomes a database outage.
 
     **Entries come back in PMG's order.** Ordering is the caller's, because the two callers owe
@@ -200,7 +201,7 @@ async def pmg_whitelist_search(
       whitelisted" for everything.
 
     Then the read both PMG tools share (`read_pmg_mynetworks`): resolve the operator's word to
-    a server (V18 — a tie is `choices`, never a pick), connect, read, parse.
+    a server (a tie is `choices`, never a pick), connect, read, parse.
 
     **The entries are searched in PMG's own order**, unlike the listing's. Nothing here
     is capped, so there is no cut for an order to make arbitrary, and the position of a
@@ -210,11 +211,10 @@ async def pmg_whitelist_search(
     `1.2.3.4/24` is really a question about `1.2.3.0/24`, and stating what membership was tested
     against is the difference between an answer and an echo.
 
-    **So does the entry count.** `exists: false` against a whitelist that parsed to zero
-    entries is a different fact from `exists: false` against three hundred, and `pmgsh ls`
-    output alone cannot tell an empty `mynetworks` from a format NOA no longer recognises. The
-    count is what lets an operator see which one they got instead of reading a clean bill into
-    both.
+    **So does the entry count.** `exists: false` against a whitelist that parsed to zero entries is
+    a different fact from `exists: false` against three hundred, and `pmgsh ls` output alone cannot
+    tell an empty `mynetworks` from a format NOA no longer recognises. The count is what lets an
+    operator see which one they got instead of reading a clean bill into both.
     """
     normalized_input = target.strip()
     if not normalized_input:
@@ -249,29 +249,28 @@ async def pmg_whitelist_search(
 async def pmg_whitelist_list(*, server_ref: str, context: McpToolContext) -> ToolAnswer:
     """Every `mynetworks` entry on one PMG server, parked on a page.
 
-    **The entries never enter the transcript.** A whitelist grows with every release an
-    operator has ever whitelisted, and a listing in front of the model costs tokens for a body
-    no human reads there anyway — so the rows go to `tool_result_tables` and the answer is a
-    summary plus the address of the page that renders them. That is the whole of V64, and it is
-    why this tool answers with content blocks while its sibling `pmg_whitelist_search` answers
-    with the payload envelope: a membership question's answer *is* the answer, and a listing's
-    rows are a surface.
+    **The entries never enter the transcript.** A whitelist grows with every release an operator has
+    ever whitelisted, and a listing in front of the model costs tokens for a body no human reads
+    there anyway — so the rows go to `tool_result_tables` and the answer is a summary plus the
+    address of the page that renders them. That is the whole of summary-plus-URL, and it is why this
+    tool answers with content blocks while its sibling `pmg_whitelist_search` answers with the
+    payload envelope: a membership question's answer *is* the answer, and a listing's rows are a
+    surface.
 
     The second tool to park a table, after `whm_list_accounts`, and it adds nothing to
-    the surface to do it — V64's "shared capability, ⊥ per-tool special case" is that sentence
+    the surface to do it — "shared capability, never a per-tool special case" is that sentence
     made checkable.
 
-    **No `limit` argument, deliberately.** V85's cap is the bound an operator asked for; here
+    **No `limit` argument, deliberately.** The cap is the bound an operator asked for; here
     nothing is dropped on their behalf. The only bound is the table's own
     (`RESULT_TABLE_MAX_ROWS`), it is applied at the write, and it reports itself in the text
     and in the envelope.
 
-    **Sorted before it is handed over, and duplicates kept.** `cap_rows` is a prefix and never
-    a re-sort, and `pmgsh ls` prints in whatever order PMG stores, so a capped page would
-    otherwise be an arbitrary subset that changes between two identical calls. Two
-    spellings of one address stay two rows: `mynetworks` really does hold both lines, a removal
-    has to take each, and a listing that collapsed them would describe a file PMG does
-    not have.
+    **Sorted before it is handed over, and duplicates kept.** `cap_rows` is a prefix and never a
+    re-sort, and `pmgsh ls` prints in whatever order PMG stores, so a capped page would otherwise be
+    an arbitrary subset that changes between two identical calls. Two spellings of one address stay
+    two rows: `mynetworks` really does hold both lines, a removal has to take each, and a listing
+    that collapsed them would describe a file PMG does not have.
 
     A failure comes back as the ordinary envelope, `choices` and all. A table that
     cannot be *parked* raises instead, and `sanitize_tool_errors` turns it into
@@ -313,7 +312,7 @@ def _whitelist_summary(server_name: str) -> str:
 
 
 def register_pmg_read_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
-    """Register the PMG READ tools on `server`; return each name with its risk (I.mcp, V20).
+    """Register the PMG READ tools on `server`; return each name with its risk.
 
     Both PMG reads today. `pmg_whitelist` is a CHANGE tool and goes in its own module
     with the approval gate.

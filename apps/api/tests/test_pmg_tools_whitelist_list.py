@@ -1,11 +1,11 @@
 """`pmg_whitelist_list` — the whitelist that answers with a surface, not with rows.
 
-The V64 half of the PMG whitelist pair. `pmg_whitelist_search` answers a membership
+The summary-plus-URL half of the PMG whitelist pair. `pmg_whitelist_search` answers a membership
 question in the transcript; this one answers "what is on this node?" by parking its entries in
 `tool_result_tables` and handing back a summary plus the address of the page that renders them.
 
 **The second producer of that surface**, after `whm_list_accounts`, and the reason this
-file exists as well as that one: V64 says the table surface is a shared capability rather than
+file exists as well as that one: the table surface is a shared capability rather than
 a per-tool special case, and a claim like that is only checkable once two tools from two
 different systems route through it with nothing added for either.
 
@@ -16,23 +16,25 @@ accepts the insert is `test_result_tables_live.py`'s claim, not this file's.
 
 Five properties carry the weight.
 
-**No entry reaches the model** (§V.64, §V.26). Asserted against the serialized `ToolResult`,
+**No entry reaches the model** — summary plus URL, and the URL carries an id only.
+Asserted against the serialized `ToolResult`,
 with a sentinel driven through the real writer — a row that only ever existed in a fixture
 proves nothing about what a tool emits.
 
-**The bound is stated and the order is reproducible** (§V.85). `cap_rows` keeps a prefix and
+**The bound is stated and the order is reproducible** — a capped READ ships total count and
+truncation flag. `cap_rows` keeps a prefix and
 never re-sorts, and `pmgsh ls` prints in whatever order PMG stores, so the sort is this tool's
 debt: without it a capped page is an arbitrary subset that differs between two identical calls.
 
-**One `pmgsh` read, argv-safe** (§V.58). The exact command is asserted, and so is the fact that
+**One `pmgsh` read, argv-safe.** The exact command is asserted, and so is the fact that
 it is the only one — a listing must not sync, create or delete.
 
-**A duplicate line is listed twice.** `mynetworks` really holds both, T29's removal has to take
+**A duplicate line is listed twice.** `mynetworks` really holds both, the remove tool has to take
 each, and a listing that collapsed them would describe a file PMG does not have.
 
 **A dead address is worse than a refusal.** A table that could not be written refuses the READ;
 a URL to a table that was never stored is discovered later, by an operator, in a transcript
-that persists (§V.26).
+that persists.
 """
 
 from __future__ import annotations
@@ -101,8 +103,8 @@ async def listing(
 ) -> tuple[Any, UUID]:
     """Call the tool inside a real request context; return its answer and the caller's id.
 
-    The identity is read by `park_table_result` from the authenticated request rather than
-    passed in (§V.27), so the tool has to run inside the contextvar the auth middleware sets.
+    The identity is read by `park_table_result` from the authenticated request rather than passed in
+    — requester-match — so the tool has to run inside the contextvar the auth middleware sets.
     """
     user, resolved = authenticated_caller(user_id)
     with http_request_context({}, user=user):
@@ -124,7 +126,8 @@ def parked_cidrs(fixture: ToolFixture) -> list[str]:
 
 
 async def test_it_answers_with_a_summary_block_and_the_table_iframe(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.25, §V.64: two blocks, text first — the address survives a frame that will not load."""
+    """Two blocks, text first — the address ships as plain text beside the frame, so it survives
+    a frame that will not load."""
     fixture, _ = whitelist_context(
         monkeypatch,
         answer=command_result(stdout=mynetworks_output("10.10.10.0/24", "1.2.3.4/32")),
@@ -142,7 +145,9 @@ async def test_it_answers_with_a_summary_block_and_the_table_iframe(monkeypatch)
 
 
 async def test_the_address_in_the_text_is_the_parked_table_s(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The URL an operator can copy names the row that was just written (§V.25, §V.94)."""
+    """The URL an operator can copy names the row that was just written — the address ships as text,
+    never a link alone.
+    """
     fixture, _ = whitelist_context(
         monkeypatch, answer=command_result(stdout=mynetworks_output("1.2.3.4/32"))
     )
@@ -175,7 +180,7 @@ async def test_an_empty_whitelist_is_a_parked_table_with_no_rows(monkeypatch) ->
     """Nothing has gone wrong: PMG answered and `mynetworks` holds nothing NOA can read.
 
     A refusal here would be a tool reporting an outage for a true answer, and the page says
-    "this read matched no rows" rather than rendering headings over nothing (§V.38's family).
+    "this read matched no rows" rather than rendering headings over nothing.
     """
     fixture, _ = whitelist_context(monkeypatch, answer=command_result(stdout=mynetworks_output()))
 
@@ -189,7 +194,8 @@ async def test_an_empty_whitelist_is_a_parked_table_with_no_rows(monkeypatch) ->
 
 
 async def test_both_spellings_of_an_entry_are_parked(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """PMG's own token and the normalised form, because the two differ (§V.59).
+    """PMG's own token and the normalised form, because the two differ — single hosts normalize
+    to `/32` and membership matches exact, never containment.
 
     Only the raw form tells an operator what is in the file; only the normalised one says what
     NOA compared against. A page with one of them hides the other.
@@ -205,8 +211,8 @@ async def test_both_spellings_of_an_entry_are_parked(monkeypatch) -> None:  # ty
 
 async def test_a_repeated_entry_is_listed_twice_rather_than_collapsed(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """`noa-old` deduplicated while parsing. Two spellings of one address in `mynetworks` are
-    two lines in the file, T29's removal has to take each, and a listing that collapsed them
-    would report a whitelist its own source does not have (§V.85/§V.86's family)."""
+    two lines in the file, the remove tool has to take each, and a listing that collapsed them
+    would report a whitelist its own source does not have."""
     fixture, _ = whitelist_context(
         monkeypatch, answer=command_result(stdout=mynetworks_output("1.2.3.4", "1.2.3.4/32"))
     )
@@ -217,11 +223,11 @@ async def test_a_repeated_entry_is_listed_twice_rather_than_collapsed(monkeypatc
     assert fixture.result_tables.only.total_rows == 2
 
 
-# --- V64, V26: what the model is handed ---
+# --- What the model is handed: summary plus URL, id only ---
 
 
 async def test_no_whitelist_entry_reaches_the_tool_result(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The whole point of §V.64, asserted on the serialized result.
+    """The whole point of summary-plus-URL, asserted on the serialized result.
 
     Driven through the real writer, so the sentinel is a row that genuinely reached the table
     and not one that only ever existed in this file.
@@ -237,7 +243,7 @@ async def test_no_whitelist_entry_reaches_the_tool_result(monkeypatch) -> None: 
 
 
 async def test_the_result_carries_no_credential_material(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.2, §V.8, §V.26: neither the ciphertext in the column nor the plaintext behind it."""
+    """Neither the ciphertext in the column nor the plaintext behind it reaches the result."""
     fixture, _ = whitelist_context(
         monkeypatch, answer=command_result(stdout=mynetworks_output("1.2.3.4/32"))
     )
@@ -249,11 +255,11 @@ async def test_the_result_carries_no_credential_material(monkeypatch) -> None:  
         assert secret not in serialized
 
 
-# --- V85: the bound belongs to the surface, and the order belongs to the producer ---
+# --- The bound belongs to the surface, and the order belongs to the producer ---
 
 
 async def test_the_entries_are_parked_in_a_reproducible_network_order(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.85's ordering clause. `cap_rows` is a prefix, so the order it is handed is the answer.
+    """The cap's ordering clause. `cap_rows` is a prefix, so the order it is handed is the answer.
 
     `pmgsh ls` prints in whatever order PMG stores, which is documented nowhere — an unsorted
     capped page would be an arbitrary subset that differs between two identical calls.
@@ -287,14 +293,15 @@ async def test_the_entries_are_parked_in_a_reproducible_network_order(monkeypatc
 
 
 async def test_a_capped_listing_stores_the_pre_cut_total_and_says_so(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.85: the cap is the surface's, and it reports itself in the text and in the envelope.
+    """The cap is the surface's, and it reports itself in the text and in the envelope.
 
-    The envelope is also what the audit path reads a status and a summary off (§V.20, §V.45):
+    The envelope is also what the audit path reads a status and a summary off — risk and
+    status are separate columns, and every READ writes a run row:
     a content-only result would file a successful listing as a FAILED run with nothing in its
-    summary (T20 (a)).
+    summary.
 
     The fixture's cap is deliberately not `Settings`' 5000, so a tool that read the production
-    default could not pass this (§V.87).
+    default could not pass this — compare what the code decides, not what the constant says.
     """
     entries = [
         f"10.{index // 256}.{index % 256}.0/24" for index in range(RESULT_TABLE_MAX_ROWS + 3)
@@ -319,7 +326,7 @@ async def test_a_capped_listing_stores_the_pre_cut_total_and_says_so(monkeypatch
 
 
 async def test_an_uncapped_listing_does_not_claim_truncation(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The negative control (§V.87): without it, the case above passes against a constant."""
+    """The negative control: without it, the case above passes against a constant."""
     fixture, _ = whitelist_context(
         monkeypatch, answer=command_result(stdout=mynetworks_output("1.2.3.4/32"))
     )
@@ -337,11 +344,11 @@ async def test_an_uncapped_listing_does_not_claim_truncation(monkeypatch) -> Non
 
 
 async def test_there_is_no_limit_argument_to_hide_entries_behind() -> None:
-    """§V.64 offloads a listing *whole*; §V.85's cap is the one an operator asked for.
+    """A listing offloads *whole*; the surface's cap is the one an operator asked for.
 
-    A `limit` here would be a second bound, applied before the table's own and invisible on the
-    page — the shape §V.85 exists to stop, one surface further back. §C.8 rides along: a READ
-    has no reason field either, and a schema is where one would appear.
+    A `limit` here would be a second bound, applied before the table's own and invisible on the page
+    — the fabrication the stored bound exists to stop, one surface further back. The reason rule
+    rides along: a READ has no reason field either, and a schema is where one would appear.
     """
     server = build_mcp_server(tool_context=build_tool_context().context)
     tools = {tool.name: tool for tool in await server.list_tools(run_middleware=False)}
@@ -352,11 +359,11 @@ async def test_there_is_no_limit_argument_to_hide_entries_behind() -> None:
     assert schema["required"] == ["server_ref"]
 
 
-# --- V58: one argv-safe read, and only one ---
+# --- One argv-safe read, and only one ---
 
 
 async def test_the_listing_sends_one_argv_safe_mynetworks_read(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.58: `pmgsh` over SSH, argv-only, against `/config/mynetworks` and nothing else.
+    """`pmgsh` over SSH, argv-only, against `/config/mynetworks` and nothing else.
 
     Asserted as the *whole* command list, so a listing that also synced, created or deleted
     fails here — a READ tool that mutates is the one failure the READ/CHANGE split exists to
@@ -370,7 +377,7 @@ async def test_the_listing_sends_one_argv_safe_mynetworks_read(monkeypatch) -> N
 
 
 async def test_a_non_root_ssh_user_escalates_end_to_end(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.55 through the tool: the row's `ssh_username` decides, and the command that goes out
+    """`sudo -n` through the tool: the row's `ssh_username` decides, and the command that goes out
     is built from the config that opened the connection."""
     fixture, fake = whitelist_context(monkeypatch, ssh_username="noa-ops")
 
@@ -379,11 +386,11 @@ async def test_a_non_root_ssh_user_escalates_end_to_end(monkeypatch) -> None:  #
     assert fake.commands == [f"TERM=dumb sudo -n {PMGSH_BINARY} ls {MYNETWORKS_PATH}"]
 
 
-# --- V27: whose table is it ---
+# --- Whose table is it ---
 
 
 async def test_the_table_is_parked_for_the_caller_the_token_authenticated(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.27: the requester is the authenticated identity, never anything off the arguments.
+    """The requester is the authenticated identity, never anything off the arguments.
 
     That column is what the surface matches on later, so a tool that could name a requester
     would be a tool that could park a whitelist under somebody else's name.
@@ -405,7 +412,8 @@ async def test_the_parked_table_is_named_after_the_tool_that_produced_it(monkeyp
 
 
 async def test_the_database_session_closes_before_the_ssh_hop(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """T21's rule, and the park's own session is opened after the hop rather than around it.
+    """The account search's rule, and the park's own session is opened after the hop rather than
+    around it.
 
     A pooled Postgres connection held across a hop to someone else's host is how a slow PMG
     node becomes a database outage — and parking inside the first session would put the write
@@ -441,7 +449,7 @@ async def test_the_database_session_closes_before_the_ssh_hop(monkeypatch) -> No
 
 
 def test_every_column_names_a_field_a_parsed_entry_carries() -> None:
-    """§V.66: two lists of the same fields, and they must not drift apart."""
+    """Two lists of the same fields, and they must not drift apart."""
     [entry] = parse_mynetworks_entries(mynetworks_output("1.2.3.4"))
 
     assert {column.key for column in PMG_WHITELIST_TABLE_COLUMNS} == set(entry.as_payload())
@@ -453,11 +461,11 @@ def test_the_raw_spelling_is_the_first_column() -> None:
     assert [column.key for column in PMG_WHITELIST_TABLE_COLUMNS] == ["cidr", "normalized"]
 
 
-# --- V18, V19, V21, V82: refusals ---
+# --- Refusals ---
 
 
 async def test_an_ambiguous_server_ref_returns_choices(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.18: a tie is candidates, never a pick — a guess lists another node's whitelist."""
+    """A tie is candidates, never a pick — a guess lists another node's whitelist."""
     cipher = build_cipher()
     shared = "gw.example.com"
     fixture, fake = whitelist_context(
@@ -490,7 +498,7 @@ async def test_an_unknown_server_ref_is_host_not_found(monkeypatch) -> None:  # 
 
 
 async def test_a_blank_server_ref_is_refused(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.21 on the one required string this tool takes."""
+    """Whitespace-only rejected on the one required string this tool takes."""
     fixture, fake = whitelist_context(monkeypatch)
 
     answer, _ = await listing(fixture, server_ref="   ")
@@ -502,7 +510,7 @@ async def test_a_blank_server_ref_is_refused(monkeypatch) -> None:  # type: igno
 
 
 async def test_an_unpinned_server_is_refused_before_any_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.82: no pin, no connection — and the refusal names the *server* rather than reporting
+    """No pin, no connection — and the refusal names the *server* rather than reporting
     a failed `pmgsh` command, which would send the operator to fix the wrong thing."""
     cipher = build_cipher()
     fixture, fake = whitelist_context(
@@ -534,7 +542,7 @@ async def test_a_failed_pmgsh_read_keeps_pmg_s_own_code(monkeypatch) -> None:  #
 
 
 async def test_a_failed_park_refuses_the_read_rather_than_a_dead_address(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """Fail-closed (T33's rule, one surface over), through the real error boundary.
+    """Fail-closed — the gate's rule, one surface over — through the real error boundary.
 
     The refusal is visible at the moment it happens; a result carrying the address of a table
     that was never written is discovered later, by an operator, in a persisted transcript.
@@ -586,7 +594,7 @@ class ExplodingPMGServerRepository:
 async def test_an_exception_reaches_the_caller_as_a_named_failure(
     error: BaseException, expected_code: str, expected_message: str
 ) -> None:
-    """§V.19's two mappings, and the original text never travels (§V.8, §V.26).
+    """Raw exceptions sanitize to a code — two mappings — and the original text never travels.
 
     The success path answers with content blocks, so this is also where "a failure is the same
     envelope whatever the success was" is held — `sanitize_tool_errors` widens a return type
@@ -618,9 +626,11 @@ async def test_cancellation_is_not_swallowed() -> None:
         await pmg_whitelist_list(server_ref=SERVER_NAME, context=context)
 
 
-# --- V83a: the tool ships with its gate ---
+# --- The tool ships with its gate ---
 
 
 def test_the_tool_name_matches_the_catalog() -> None:
-    """The registered name is the one RBAC grants are written against (§V.10)."""
+    """The registered name is the one RBAC grants are written against — admin bypass covers known
+    tools only.
+    """
     assert TOOL_PMG_WHITELIST_LIST in TOOL_CATALOG

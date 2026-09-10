@@ -1,7 +1,7 @@
 /**
- * Sending one decision (§T.41, §T.42 — V15, V22, V39, V80).
+ * Sending one decision — the approval card's POST, cookie plus CSRF, reason required.
  *
- * **A JS `fetch`, never a form submit.** V80 is not a style preference: the sandbox LibreChat
+ * **A JS `fetch`, never a form submit.** Not a style preference: the sandbox LibreChat
  * renders this frame under was measured at pin `45cc53c4` and is `allow-scripts
  * allow-same-origin` (plus `allow-popups` on one of the two render sites) with **`allow-forms`
  * absent**. A native `<form>` submit therefore dies silently inside the frame — no
@@ -9,11 +9,11 @@
  * measured returning 200 from inside that same frame, with the `noa_session` cookie riding.
  *
  * **Same-origin, so the cookie rides and there is no CORS surface.** The path is this app's
- * `/api/*` proxy (§T.44), whose allowlist already carries both decision routes; the proxy adds the
+ * `/api/*` proxy, whose allowlist already carries both decision routes; the proxy adds the
  * hop to the API server-side. `credentials: 'same-origin'` is the default and is stated anyway,
  * because it is the whole mechanism.
  *
- * **The reason is not validated here.** V15 puts the gate on the endpoint — a blank reason is a
+ * **The reason is not validated here.** The gate sits on the endpoint — a blank reason is a
  * 409 `change_reason_required` from the API, under a row lock, checked against the same rule the
  * database CHECK holds. A client-side refusal in front of that would be a second definition of
  * "blank" (the API strips whitespace; so does the DB predicate) and two spellings of blank is one
@@ -24,7 +24,7 @@ import type { DecisionOutcome } from '@/lib/approvals/outcome'
 
 export type DecisionKind = 'approve' | 'deny'
 
-/** Body shape the API expects (§I.embed). Two fields, and neither is a status. */
+/** Body shape the API expects per the embed app's contract. Two fields, neither a status. */
 type DecisionBody = {
   reason: string
   csrf: string
@@ -34,7 +34,7 @@ type DecisionBody = {
  * Where a decision POST goes.
  *
  * A relative path on this origin — never `NOA_API_URL`, which is server-only and which a browser
- * cannot reach anyway (AGENTS.md, §T.44).
+ * cannot reach anyway (AGENTS.md — browser never calls FastAPI direct).
  */
 export function decisionPath(actionRequestId: string, decision: DecisionKind): string {
   return `/api/action-requests/${encodeURIComponent(actionRequestId)}/${decision}`

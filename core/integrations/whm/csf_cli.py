@@ -2,10 +2,10 @@
 
 Copied from `noa-old` branch `MCP` (`whm/integrations/csf_cli.py`). One structural change:
 `noa-old` had `build_csf_command(args, *, escalate: bool)` and every call site passed
-`escalate=should_escalate(config)`. T14 moved that decision into
-`core.remote_exec.sudo.build_remote_command`, which reads the resolved username itself — V55 is
-a biconditional (prefix ⟺ user ≠ `root`) and a boolean parameter lets one forgetful call site
-break it in either direction (T16 deviation (a)). The emitted token order is unchanged:
+`escalate=should_escalate(config)`. That decision moved into
+`core.remote_exec.sudo.build_remote_command`, which reads the resolved username itself — the
+escalation rule is a biconditional (prefix ⟺ user ≠ `root`) and a boolean parameter lets one
+forgetful call site break it in either direction. The emitted token order is unchanged:
 
     TERM=dumb sudo -n /usr/sbin/csf -g 1.2.3.4
 
@@ -31,17 +31,19 @@ Both `SSHExecutionError` and a non-zero exit surface as `CSFCLIError`, so a call
 tree (see `core.integrations.whm.errors`).
 
 **A resolved `SSHConnectionConfig` comes in, not a `whm_servers` row**. `noa-old` — and
-this module until T24 — took the row plus a `SecretCipher` and called `resolve_whm_ssh_config`
+this module until the firewall read — took the row plus a `SecretCipher` and called
+`resolve_whm_ssh_config`
 per command. The caller resolves it once instead, because the caller is a tool that has to
 close its database session *before* the SSH round trip: holding a pooled connection open across
-a hop to someone else's host is how a slow server becomes a database outage (T21's rule), and an
+a hop to someone else's host is how a slow server becomes a database outage — the account
+search's rule — and an
 ORM row cannot be read after its session closes. One resolve per call also means one decrypt of
 the stored credentials rather than one per command, and the row's three pre-socket refusals
 (`ssh_invalid_host`, `ssh_not_configured`, `ssh_host_key_not_validated`) now name the WHM server
 to the operator instead of arriving as a firewall-command failure.
 
 `command_output_text` came from `core.remote_exec.output` rather than being copied a third
-time — see that module for the count (T16 deviation (f), V66).
+time — one helper, not two; see that module for the count.
 """
 
 from __future__ import annotations

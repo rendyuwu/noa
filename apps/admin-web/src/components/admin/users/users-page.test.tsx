@@ -15,7 +15,7 @@ const state = vi.hoisted(() => ({
 vi.mock('@/lib/admin/users/use-users', () => ({
   useUsers: () => state.controller,
 }))
-// The "MCP tokens" row action navigates to a route (§T76), so the page now
+// The "MCP tokens" row action navigates to a route, so the page now
 // reads the router.
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: state.push, replace: vi.fn() }),
