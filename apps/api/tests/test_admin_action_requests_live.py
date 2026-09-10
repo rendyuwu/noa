@@ -245,7 +245,6 @@ async def approved_change(session: AsyncSession) -> tuple[UUID, UUID, UUID]:
 # --- The claim: the operator's reason becomes readable ---
 
 
-@pytest.mark.anyio
 async def test_the_reason_a_decision_wrote_comes_back_whole(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -264,7 +263,6 @@ async def test_the_reason_a_decision_wrote_comes_back_whole(
     assert detail.item.decided_at is not None
 
 
-@pytest.mark.anyio
 async def test_a_pending_request_reads_back_with_no_reason(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -288,7 +286,6 @@ async def test_a_pending_request_reads_back_with_no_reason(
 # --- The relocation checklist, end to end ---
 
 
-@pytest.mark.anyio
 async def test_every_field_the_card_stops_rendering_survives_the_round_trip(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -318,7 +315,6 @@ async def test_every_field_the_card_stops_rendering_survives_the_round_trip(
     assert receipt.after == RECEIPT_DATA["after"]
 
 
-@pytest.mark.anyio
 async def test_the_gate_context_is_returned_as_stored(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -334,7 +330,6 @@ async def test_the_gate_context_is_returned_as_stored(
     assert detail.approval_context == GATE_CONTEXT
 
 
-@pytest.mark.anyio
 async def test_the_receipt_comes_back_with_its_delta(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -350,7 +345,6 @@ async def test_the_receipt_comes_back_with_its_delta(
     assert receipt.action_request_id == request_id
 
 
-@pytest.mark.anyio
 async def test_a_stored_receipt_without_a_delta_reads_back_as_none(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -390,7 +384,6 @@ async def test_a_stored_receipt_without_a_delta_reads_back_as_none(
 # --- What only a database can settle ---
 
 
-@pytest.mark.anyio
 async def test_a_decision_that_outlived_its_operator_stays_visible(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -411,7 +404,6 @@ async def test_a_decision_that_outlived_its_operator_stays_visible(
     assert page.items[0].has_receipt is True
 
 
-@pytest.mark.anyio
 async def test_a_request_with_no_receipt_is_still_listed(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -455,7 +447,6 @@ async def test_a_request_with_no_receipt_is_still_listed(
     assert await reader.receipt_detail(action_request_id=approved) is not None
 
 
-@pytest.mark.anyio
 async def test_the_page_tiles_a_trail_whose_timestamps_are_identical(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -483,7 +474,6 @@ async def test_the_page_tiles_a_trail_whose_timestamps_are_identical(
     assert set(seen) == set(opened)
 
 
-@pytest.mark.anyio
 async def test_each_filter_narrows_against_postgres(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -528,7 +518,6 @@ async def test_each_filter_narrows_against_postgres(
     assert {item.action_request_id for item in everything.items} == {mine, theirs}
 
 
-@pytest.mark.anyio
 async def test_a_percent_in_an_address_is_matched_as_a_literal(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -561,7 +550,6 @@ async def test_a_percent_in_an_address_is_matched_as_a_literal(
     }
 
 
-@pytest.mark.anyio
 async def test_the_date_window_keeps_what_is_inside_it_and_drops_what_is_not(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:
@@ -601,7 +589,6 @@ async def test_the_date_window_keeps_what_is_inside_it_and_drops_what_is_not(
     assert {item.action_request_id for item in ceiling_only.items} == {inside, before}
 
 
-@pytest.mark.anyio
 async def test_the_existence_read_answers_for_a_real_row_and_an_absent_one(
     session: AsyncSession, reader: ActionRequestAdminService
 ) -> None:

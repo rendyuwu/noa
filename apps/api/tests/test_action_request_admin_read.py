@@ -332,7 +332,6 @@ def test_the_walk_covers_every_read_on_the_protocol() -> None:
     assert PROTOCOL_METHODS == DRIVEN_READS
 
 
-@pytest.mark.anyio
 async def test_the_reader_issues_only_selects() -> None:
     """Property one of two: every statement the reader issues is a `SELECT`.
 
@@ -352,7 +351,6 @@ async def test_the_reader_issues_only_selects() -> None:
         assert compiled(statement).lstrip().startswith("SELECT")
 
 
-@pytest.mark.anyio
 async def test_the_reader_never_commits() -> None:
     """Property two of two: no `commit`, and nothing else on the session either.
 
@@ -368,7 +366,6 @@ async def test_the_reader_never_commits() -> None:
     assert session.other_calls == []
 
 
-@pytest.mark.anyio
 async def test_the_recording_session_would_catch_a_commit() -> None:
     """The negative control for the test above.
 
@@ -386,7 +383,6 @@ async def test_the_recording_session_would_catch_a_commit() -> None:
 # --- The service's own bound ---
 
 
-@pytest.mark.anyio
 async def test_the_service_clamps_the_page_size() -> None:
     """The ceiling holds here as well as at the route's `Query(le=…)`.
 

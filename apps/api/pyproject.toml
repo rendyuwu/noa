@@ -54,6 +54,11 @@ packages = ["src/noa_api"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# Same line as the root config, for the same reason, because whichever config file pytest picks up
+# is the one that decides: running from this directory must not load a second async plugin that the
+# repo-root invocation excludes. See the root `pyproject.toml` for why two async drivers cannot
+# coexist here.
+addopts = "-p no:anyio"
 testpaths = ["tests"]
 
 [tool.uv]

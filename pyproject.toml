@@ -35,6 +35,18 @@ default-groups = ["dev"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# One async driver, and it is pytest-asyncio. `anyio` arrives as a transitive dependency of
+# starlette/httpx and its pytest plugin registers itself, so with both loaded an async fixture is
+# claimed by whichever of the two `pytest_fixture_setup` wrappers pluggy happens to run
+# outermost — and neither declares `tryfirst`, so that order comes from plugin registration order,
+# which is environment-dependent. When the two split a test — fixture driven by one plugin, test
+# body by the other — they run on two different event loops, and a database connection opened in
+# the test body then cannot be closed in fixture teardown: asyncpg raises "got Future attached to a
+# different loop", the connection leaks, and the scratch-database DROP fails with ObjectInUseError.
+# That is not theoretical: it is what turned the GitLab `test:python` job red while the same tree
+# stayed green locally. Disabling the plugin makes the choice structural rather than incidental, so
+# a future `@pytest.mark.anyio` cannot quietly hand one file to the other driver.
+addopts = "-p no:anyio"
 testpaths = ["apps/api/tests"]
 
 [tool.ruff]
