@@ -129,9 +129,10 @@ def _frame_html(*, action_request_id: str, mode: str) -> str:
 
   set('origin', 'v-origin', String(window.location.origin));
 
-  // `document.cookie` THROWS in an opaque-origin document, which is exactly what the // negative
-  control is. Guarded so the control still reports the rest of its state instead // of dying on line
-  one and leaving every field reading "pending". try {{
+  // `document.cookie` THROWS in an opaque-origin document, which is exactly what the negative
+  // control is. Guarded so the control still reports the rest of its state instead of dying on
+  // line one and leaving every field reading "pending".
+  try {{
     set('cookieVisible', 'v-cookie', document.cookie === '' ? '(empty)' : document.cookie);
   }} catch (err) {{
     set('cookieVisible', 'v-cookie', 'threw: ' + err);
