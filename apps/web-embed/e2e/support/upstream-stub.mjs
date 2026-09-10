@@ -61,6 +61,43 @@ function reflowArguments() {
   return argument
 }
 
+/**
+ * The two cards whose receipt carries a DELTA — what the change did, as the runner stated it.
+ *
+ * Their own ids because every other card here answers `receipt: null` or a receipt with no delta,
+ * and a layout claim about the delta section cannot be made against a card that has none.
+ *
+ * Two of them, because the two claims need opposite fixtures. The account change is the ordinary
+ * one: an identity, a verification state and a single field that moved, which is the card that has
+ * to be worth one screenshot. The firewall change is the widest answer any runner produces — two
+ * backend rows, a source that went silent, a resolved expiry and a capped reading — with names
+ * long enough that a narrow frame has to wrap them.
+ */
+const DELTA_ACCOUNT_ID = process.env.STUB_DELTA_ACCOUNT_ID ?? ''
+const DELTA_FIREWALL_ID = process.env.STUB_DELTA_FIREWALL_ID ?? ''
+
+/** A finished run and the receipt it wrote, for the two delta cards. */
+function deltaCardBody(id, toolName, delta, after) {
+  return {
+    ...cardBody(id, { pending: false }),
+    tool_name: toolName,
+    run: {
+      tool_run_id: TOOL_RUN_ID,
+      status: 'COMPLETED',
+      result_summary: RUN_RESULT,
+      created_at: '2026-08-08T09:30:00+00:00',
+      completed_at: '2026-08-08T09:30:12+00:00',
+    },
+    receipt: {
+      ok: true,
+      before: { suspended: false, domain: 'acme.example' },
+      after,
+      error_code: null,
+      delta,
+    },
+  }
+}
+
 /** `GET` reads per id, so the polling card can answer differently the second time. */
 const reads = {}
 
@@ -278,6 +315,64 @@ const server = createServer((request, response) => {
         ...cardBody(id, { pending: true }),
         arguments: reflowArguments(),
       })
+      return
+    }
+
+    if (id === DELTA_ACCOUNT_ID) {
+      json(
+        response,
+        200,
+        deltaCardBody(
+          id,
+          'whm_suspend_account',
+          {
+            identity: { server: 'alpha', username: 'acmeco' },
+            verification: 'verified',
+            changed_fields: [{ field: 'suspended', old: false, new: true }],
+          },
+          { ok: true, suspended: true, suspended_at: RECEIPT_AFTER },
+        ),
+      )
+      return
+    }
+
+    if (id === DELTA_FIREWALL_ID) {
+      json(
+        response,
+        200,
+        deltaCardBody(
+          id,
+          'whm_firewall_release_and_allow',
+          {
+            // The keys `whm_firewall_change.py::_release_delta` actually publishes.
+            identity: { server: 'alpha', target: '203.0.113.24' },
+            // No `changed_fields` key at all — one backend never answered the confirming read, so
+            // there is no field diff to state. Absent, not empty: the two are different claims.
+            verification: 'unavailable',
+            backends: [
+              {
+                name: 'csf-alpha.storage-07.jakarta-dc1.internal.acme.example',
+                driven: true,
+                answered: true,
+                verdict: 'allowed',
+                error_code: null,
+              },
+              {
+                name: 'csf-beta.storage-11.jakarta-dc2.internal.acme.example',
+                driven: true,
+                answered: false,
+                verdict: null,
+                error_code: null,
+              },
+            ],
+            unanswered: ['csf-beta.storage-11.jakarta-dc2.internal.acme.example'],
+            // Verbatim from the runner: an ISO stamp and the window it was resolved from.
+            new_values: { expires_at: '2026-08-08T11:06:12+07:00', duration_minutes: 60 },
+            bound: { total: 20, truncated: true },
+          },
+          { ok: true, verdict: 'allowed' },
+        ),
+      )
       return
     }
 

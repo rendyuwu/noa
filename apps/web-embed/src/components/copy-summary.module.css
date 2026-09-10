@@ -1,0 +1,77 @@
+/*
+ * The copy control's own classes.
+ *
+ * A module of its own rather than rows added to the approval card's stylesheet: this component is
+ * mounted beside the card and beside whatever renders an outcome, and a shared sheet would make
+ * every change here a change to a file another surface owns. Only `.actions` and `.button` are
+ * borrowed, from `notice.module.css`, so the control looks like the other doors on the card.
+ *
+ * Hand-written, reading the tokens `src/app/globals.css` defines. No design system here — the
+ * eslint firewall refuses `@gio/*`.
+ */
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--noa-space-2);
+  /*
+   * The card's `.header` is a flex column at the default `align-items: stretch`, so without this
+   * the control runs the full width of the card and reads as a primary action rather than as the
+   * secondary one it is. Set here rather than as `align-items` on `.header`, so neither this
+   * component nor the card has to edit a stylesheet the other owns.
+   */
+  align-self: flex-start;
+}
+
+/*
+ * Off-screen but laid out, which is the whole mechanism.
+ *
+ * `display: none` would be smaller and would break it: a box with no layout cannot be inside a
+ * selection range, and the copy is a selection. `left: -10000px` keeps the text out of sight while
+ * leaving it a real box a `Range` can cover — and, unlike `visibility: hidden` or a zero size,
+ * leaves it reachable by a screen reader.
+ *
+ * `position: fixed` rather than `absolute` so the block never joins the flow the card measures.
+ * The frame asks its host for a height equal to this document's `scrollHeight`
+ * (`components/frame-sizer.tsx`), and a 40rem block in the flow would ask for a frame sized to
+ * content nobody can see.
+ */
+.offscreen {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  /* A width, so the lines inside have somewhere to lay out rather than collapsing to one column. */
+  width: 40rem;
+}
+
+/*
+ * The same block, brought on-screen after a refused copy.
+ *
+ * The escape hatch is the content itself, not a message about the content: an operator who is told
+ * the copy failed and given nothing to copy has lost the record.
+ */
+.exposed {
+  border: 1px solid var(--noa-border);
+  border-radius: var(--noa-radius);
+  padding: var(--noa-space-3);
+  max-height: 20rem;
+  overflow-y: auto;
+  font-size: 0.8125rem;
+  /* Explicit, because the point of this state is that the operator selects it by hand. */
+  user-select: text;
+}
+
+.copied,
+.failed {
+  margin: 0;
+  font-size: 0.8125rem;
+}
+
+.copied {
+  color: var(--noa-muted);
+}
+
+.failed {
+  color: var(--noa-fg);
+  font-weight: 600;
+}

@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { type Page, expect, test } from '@playwright/test'
 
 import {
   APPROVAL_IDS,
@@ -52,15 +52,54 @@ test.beforeEach(async ({ context }) => {
   await signIn(context)
 })
 
+/**
+ * Everything on the card except the block that only leaves it through the clipboard.
+ *
+ * The copy control renders the whole record a second time, off screen but laid out
+ * (`components/copy-summary.tsx` — a selection cannot cover a `display: none` element). So any
+ * substring assertion over the card body now matches twice, and an *absence* assertion over it
+ * cannot fail at all. Playwright has no ignore option, so the exclusion happens here: a clone of
+ * the card with the block removed, which is the text an operator can actually see.
+ *
+ * Used only where a value moved between the two. A presence assertion needs no scoping — those
+ * are true of the card itself and would throw on ambiguity rather than swallow it.
+ */
+async function visibleCardText(page: Page): Promise<string> {
+  const framed = await framedDocument(page)
+  return await framed.evaluate(() => {
+    const card = document.querySelector('main')
+    if (card === null) return ''
+    const clone = card.cloneNode(true) as HTMLElement
+    for (const block of Array.from(clone.querySelectorAll('[data-noa-copy-block]'))) block.remove()
+    return clone.textContent ?? ''
+  })
+}
+
 test('the card renders its provenance and before-state inside the frame', async ({ page }) => {
   // What an operator is asked to recognise, and the preflight the model never sees.
   const card = await frameCard(page, APPROVAL_IDS.pending)
 
-  await expect(card.locator('h1')).toHaveText('whm_suspend_account')
+  // Both halves of the heading. The label is what an operator reads; the raw tool name is what
+  // they quote to an administrator and what `/admin` shows, so it has to stay reachable from the
+  // same element. Asserting only the label would let the raw name be dropped silently.
+  await expect(card.locator('h1')).toHaveText('Suspend Account')
+  await expect(card.locator('h1')).toHaveAttribute('title', 'whm_suspend_account')
+
   await expect(cardBody(card)).toContainText('operator@noa.internal')
-  await expect(cardBody(card)).toContainText('librechat-user-1')
   await expect(cardBody(card)).toContainText('acme.example')
   await expect(card.getByRole('button', { name: 'Approve' })).toBeVisible()
+
+  // The LibreChat account id left the display and went into the block that leaves the frame, and
+  // this is the pair that says *moved* rather than *gone*. Deleting the old assertion would have
+  // proved nothing, and keeping it unscoped would have been worse than either: the copy block is
+  // laid out inside `main`, so a substring match over the card body still finds the id and the
+  // spec goes green while claiming the opposite of what it now means.
+  expect(await visibleCardText(page)).not.toContain('librechat-user-1')
+  await expect(card.locator('[data-noa-copy-block]')).toContainText('librechat-user-1')
+
+  // The control for the line above. Without it, "absent from the visible card" would also pass
+  // against a helper that returned an empty string — an assertion that cannot fail.
+  expect(await visibleCardText(page)).toContain('operator@noa.internal')
 })
 
 test('the frame is on NOA’s own origin, and the operator’s cookie reached the API', async ({
@@ -157,7 +196,15 @@ test('a decided card shows the outcome and no live buttons', async ({ page }) =>
 
   await expect(cardBody(card)).toContainText('Approved')
   await expect(cardBody(card)).toContainText('no longer awaiting a decision')
-  await expect(cardBody(card).getByRole('button')).toHaveCount(0)
+
+  // Named rather than counted. The claim this protects is "no live decision on a decided card",
+  // and the card now carries a control that is not a decision — so a bare count of zero would go
+  // red for a copy button, and restating it as a count of one would pass for any single button
+  // that ever appeared here, which is softer than the spec is today.
+  await expect(cardBody(card).getByRole('button', { name: /approve|deny/i })).toHaveCount(0)
+  // And the control that is allowed to be here really is, so the assertion above is not passing
+  // because the card rendered no buttons at all.
+  await expect(cardBody(card).getByRole('button', { name: /copy/i })).toHaveCount(1)
   await expect(cardBody(card)).not.toContainText(STUB_CSRF)
 })
 

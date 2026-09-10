@@ -115,6 +115,7 @@ describe('parseApprovalCard', () => {
       before: { suspended: false },
       after: { suspended: true, suspended_at: '2026-08-08T09:31:00+00:00' },
       errorCode: null,
+      delta: null,
     })
     expect(card.receipt?.before).not.toEqual(card.receipt?.after)
   })

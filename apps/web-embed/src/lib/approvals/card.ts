@@ -21,6 +21,8 @@
  * shape is where "do not collapse this into 'done'" is enforced, not the component.
  */
 
+import { type ChangeDelta, parseChangeDelta } from './delta'
+
 /** The four `ActionRequestStatus` values the API can send. */
 export const APPROVAL_STATUSES = ['PENDING', 'APPROVED', 'DENIED', 'EXPIRED'] as const
 
@@ -66,6 +68,11 @@ export type ApprovalReceipt = {
   after: Record<string, unknown>
   /** The named cause when the change did not complete. `null` when there is none. */
   errorCode: string | null
+  /**
+   * What the runner measured, stated by it and never re-derived here. `null` when the receipt
+   * carried none, which is itself an answer: nothing was measured, so nothing is claimed.
+   */
+  delta: ChangeDelta | null
 }
 
 export type ApprovalCard = {
@@ -176,6 +183,7 @@ function parseReceipt(value: unknown): ApprovalReceipt | null {
     // Empty string reads as no code: the API sends `null` when there is none, and a blank one
     // would render as a labelled row saying nothing.
     errorCode: errorCode === '' ? null : errorCode,
+    delta: parseChangeDelta(value['delta']),
   }
 }
 

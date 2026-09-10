@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ApprovalCardLoad } from '@/lib/approvals/card'
 import { POLL_INTERVAL_PENDING_MS, POLL_INTERVAL_RUN_MS, RUN_POLL_LIMIT } from '@/lib/approvals/poll'
 
+import { COPY_BLOCK_IGNORE } from '@/components/copy-summary'
+
 import { CardView } from './card-view'
 import {
   CARD_ID,
@@ -28,6 +30,23 @@ import {
 
 const RESULT = 'Account acmeco suspended on alpha.'
 const SIGN_IN = 'https://admin.noa.internal/login'
+
+/**
+ * What "the visible card says this" means, now that the copy control renders the record twice.
+ *
+ * The off-screen block is in the DOM deliberately — a selection cannot cover a `display: none`
+ * element — and Testing Library does not filter on visibility, so an assertion that a value is
+ * *not* printed matches the copy of it in there and reads as a pass. The selector is the copy
+ * control's own export, because both halves of it are load-bearing and the reason is written
+ * where the block is: a card keeping its own spelling of it is one edit away from the half that
+ * does the work going missing.
+ *
+ * `script, style` is Testing Library's own default, restated because passing `ignore` replaces it.
+ *
+ * Used on the assertions that would otherwise pass or drift silently: absences, and counts. A
+ * presence assertion needs no scoping — it throws on the ambiguity rather than swallowing it.
+ */
+const CARD_ONLY = { ignore: COPY_BLOCK_IGNORE } as const
 
 function load(body: Record<string, unknown>): ApprovalCardLoad {
   return { kind: 'card', card: approvalCard(body) }
@@ -160,7 +179,7 @@ describe('CardView', () => {
 
     expect(screen.queryByRole('button', { name: /approve/i })).toBeNull()
     expect(screen.queryByLabelText(/why is this change/i)).toBeNull()
-    expect(screen.getByText(/expired without an answer/i)).toBeTruthy()
+    expect(screen.getByText(/expired without an answer/i, CARD_ONLY)).toBeTruthy()
   })
 
   it('replaces the card with the 401 state and no live decision', async () => {
@@ -196,7 +215,9 @@ describe('CardView', () => {
     })
 
     expect(polls.calls).toBe(2)
-    expect(screen.getByText('whm_suspend_account')).toBeTruthy()
+    // The heading is the humanised label now, with the raw name in its `title`; what this asserts
+    // is unchanged, that a card came back rather than a notice.
+    expect(screen.getByText('Suspend Account')).toBeTruthy()
     expect(screen.getByText('STARTED')).toBeTruthy()
 
     // And the loop is live again — the retry is not a one-shot read that leaves a static card.
@@ -259,7 +280,8 @@ describe('CardView', () => {
 
     await tick(POLL_INTERVAL_RUN_MS)
     expect(polls.calls).toBe(1)
-    expect(screen.getByText('whm_suspend_account')).toBeTruthy()
+    // Still a card and not a notice: the heading is the humanised label, raw name in `title`.
+    expect(screen.getByText('Suspend Account')).toBeTruthy()
     expect(screen.getByText('STARTED')).toBeTruthy()
 
     await tick(POLL_INTERVAL_RUN_MS)
@@ -280,7 +302,7 @@ describe('CardView', () => {
 
     // Before the receipt lands there is no outcome section at all — an empty one over a change
     // nobody has recorded would be a claim NOA cannot make.
-    expect(screen.queryByText(/what the change did/i)).toBeNull()
+    expect(screen.queryByText(/what the change did/i, CARD_ONLY)).toBeNull()
 
     await tick(POLL_INTERVAL_RUN_MS)
 
@@ -324,8 +346,8 @@ describe('CardView', () => {
     // both would put one fact on the card twice under two headings.
     renderCardView(load(approvedBody({ status: 'COMPLETED' }, receiptBody())))
 
-    expect(screen.getAllByText('domain')).toHaveLength(1)
-    expect(screen.getAllByText('acme.example')).toHaveLength(1)
+    expect(screen.getAllByText('domain', CARD_ONLY)).toHaveLength(1)
+    expect(screen.getAllByText('acme.example', CARD_ONLY)).toHaveLength(1)
   })
 
   it('stops watching a run that never moves, and says so', async () => {

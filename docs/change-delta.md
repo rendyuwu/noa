@@ -255,3 +255,146 @@ Ask what kind of thing moved.
 If none of these fits the new tool, that is worth a conversation before a facet is added: the cost
 of an eighth facet is that every renderer grows a branch, and the cost of reusing one badly is a
 receipt that reads as a measurement it is not.
+
+## What the facet looks like pasted into a ticket
+
+A delta has two readers. The approval card renders it for an operator deciding something now, and
+the copy-summary block carries it out of the frame for whoever reads the ticket six months later.
+The builder is `apps/web-embed/src/lib/approvals/summary.ts`.
+
+**What the blocks below are, exactly.** They are that builder's own output, run over two fixtures
+whose keys are copied from the runners named beside them — not hand-composed, and not a capture of
+a live run either. So the key names and the shape are the real ones and the values are invented.
+The binding record of what the builder does with any given input is its own suite,
+`apps/web-embed/src/lib/approvals/summary.test.ts`; these are here to show a reader what lands in a
+ticket, and if the builder changes they will drift until someone re-runs it.
+
+The copied block deliberately states **more** than the card renders. No image reaches the clipboard
+from inside the frame on the pinned host, so this text is the only durable record that can leave —
+and a field the card drops as noise on screen is exactly the field a ticket is searched by later.
+Hence the reference block at the end: the request id, the run id, the LibreChat account and the
+conversation reference, none of which the card displays any more. Every timestamp is absolute and
+carries `+07:00` (`apps/web-embed/src/lib/format/jakarta-time.ts`), because a bare wall-clock time
+is read in whatever zone the reader is in.
+
+### A firewall change with a multi-backend result
+
+One backend answered the confirming read and one did not, on the branch where the commands were
+accepted. `whm_firewall_change.py::_release_delta` states why each facet falls the way it does
+here: a silent backend leaves `measured_verdict` at `None`, a comparison needs both sides, so
+`changed_fields` is **absent** rather than empty; the resolved expiry still rides as a new value
+because every command was accepted and no backend answered that it holds nothing; and the reading
+the verdict rests on was capped at twenty lines by csf's own `max_matches`.
+
+```text
+NOA approval record
+
+Change
+  Tool: whm_firewall_release_and_allow
+  Status: Approved
+  Target: server=alpha, target=203.0.113.24
+
+What moved
+  Verification: unavailable
+  Field changes: not measured. Nothing here says that nothing moved.
+  New values: expires_at=2026-09-11T11:06:12+07:00, duration_minutes=60
+
+Result
+  The change completed.
+  Backend alpha: driven, answered, verdict allowlisted
+  Backend beta: driven, no answer
+  Unanswered sources: beta
+  Evidence bound: 20 entries, truncated — the claim above rests on a capped reading, not on the whole list.
+
+Timing
+  Requested: 2026-09-11 09:00:00 +07:00
+  Approval window ends: 2026-09-11 10:00:00 +07:00
+  Decided: 2026-09-11 09:06:12 +07:00
+  Run status: COMPLETED
+  Run started: 2026-09-11 09:06:12 +07:00
+  Run completed: 2026-09-11 09:06:20 +07:00 (8.0s)
+
+Reference
+  Request id: 7d3a1c02-9e44-4f61-b0d2-5c8ea1f37b90
+  Run id: 5c2f1a90-0000-4000-8000-000000000001
+  LibreChat account: operator@noa.internal (user librechat-user-1)
+  Conversation: 1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12
+```
+
+Three things in that block are the rules above, seen from the reading end.
+
+`The change completed.` and `Verification: unavailable` sit four lines apart and do not contradict
+each other: the first is the runner's envelope and the second is whether anything read the target
+back. A block that let the envelope speak for both would be the collapse this whole document exists
+to prevent.
+
+`Unanswered sources: beta` names the machine. A count would tell an operator that something is
+wrong and not where to go, and no `verification_cause` rides beside it because *which* source said
+nothing is the cause.
+
+`New values` prints the runner's own pair verbatim — an ISO timestamp and the window it came from,
+because `renderValue` returns a string as it stands and does not reformat one. The absolute
+timestamps in the `Timing` block below are a different thing: those are the card's own fields, put
+through the Jakarta formatter.
+
+`Field changes: not measured` is printed rather than omitted. That facet and the unanswered-sources
+line are the two that print in all three of their states — measured, measured-as-nothing, and not
+measured — because for those two the benign reading of a hole is the one that misleads. Every other
+absent facet is simply left out: a missing `list_delta` says this family's change is not list
+membership, which is nothing to report.
+
+### A mail gateway list change
+
+An entry was added to `mynetworks` and the step that puts it into effect did not run — the state
+that is neither a change nor a refusal.
+
+```text
+NOA approval record
+
+Change
+  Tool: pmg_whitelist
+  Status: Approved
+  Target: server=mail-1, action=add, target=198.51.100.7, normalized_target=198.51.100.7/32
+
+What moved
+  Verification: not_in_force (pmg_sync_failed)
+  Field changes: not measured. Nothing here says that nothing moved.
+  List entries added: 198.51.100.7/32
+  List entries removed: none
+  List size: 42 entries
+
+Result
+  The change did not complete.
+  Error code: pmg_sync_failed
+  Unanswered sources: not measured.
+
+Timing
+  Requested: 2026-09-11 11:10:00 +07:00
+  Approval window ends: 2026-09-11 12:10:00 +07:00
+  Decided: 2026-09-11 11:12:30 +07:00
+  Run status: FAILED
+  Run started: 2026-09-11 11:12:30 +07:00
+  Run completed: 2026-09-11 11:14:06 +07:00 (1m 36s)
+
+Reference
+  Request id: b41f8e77-2c05-4a9d-8f13-6ad0c9e25a44
+  Run id: 5c2f1a90-0000-4000-8000-000000000002
+  LibreChat account: operator@noa.internal (user librechat-user-1)
+  Conversation: 9c7d2b10-4e88-4a51-b7c6-2e4f1a09d833
+```
+
+`List entries added` carries the gateway's own spelling of the line, `198.51.100.7/32`, beside the
+`198.51.100.7` the operator typed — both are in the identity line for the same reason. An operator
+holding this block can go to the box and grep for either.
+
+The line an author of a new runner should look at hardest is `Verification: not_in_force
+(pmg_sync_failed)` sitting above `The change did not complete.` Read together they say the config
+moved and Postfix did not, which is the one state that sends an operator to the right place. A
+runner that answered a bare failure here would send them to re-add an entry that is already in the
+file.
+
+Two things a delta must never put in this block. **A reason**: the operator's justification is
+typed at decision time and travels outward only, and the builder has nowhere to put one because the
+card carries none back. **A credential's delivery link**: a delivered credential is *stated* in the
+copied block and its one-open URL is not, because a link pasted into a ticket is spent by whoever
+reads the ticket first. The link stays on the card.

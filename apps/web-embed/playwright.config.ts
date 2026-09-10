@@ -114,6 +114,16 @@ export const APPROVAL_IDS = {
    * starts, which would make a convergence spec pass without measuring anything.
    */
   reflow: '9f1c2b7e-0000-4000-8000-000000000005',
+  /**
+   * The two cards whose receipt carries a delta — an account change and a firewall change.
+   *
+   * Their own ids because every other card here answers with no delta at all, and a layout claim
+   * about the delta section cannot be made against a card that does not render one. Two, because
+   * the ordinary one and the widest one are opposite fixtures: what each is for is stated beside
+   * the bodies in `e2e/support/upstream-stub.mjs`.
+   */
+  deltaAccount: '9f1c2b7e-0000-4000-8000-000000000006',
+  deltaFirewall: '9f1c2b7e-0000-4000-8000-000000000007',
 } as const
 
 /**
@@ -204,6 +214,8 @@ export default defineConfig({
         STUB_POLLING_ID: APPROVAL_IDS.polling,
         STUB_RECOVERS_ID: APPROVAL_IDS.recovers,
         STUB_REFLOW_ID: APPROVAL_IDS.reflow,
+        STUB_DELTA_ACCOUNT_ID: APPROVAL_IDS.deltaAccount,
+        STUB_DELTA_FIREWALL_ID: APPROVAL_IDS.deltaFirewall,
         STUB_RUN_RESULT,
         STUB_RECEIPT_AFTER,
         STUB_CSRF,

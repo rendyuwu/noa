@@ -2,17 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react'
 
-import {
-  type ApprovalCard,
-  type ApprovalCardLoad,
-  type ApprovalReceipt,
-  canDecide,
-  statusLabel,
-} from '@/lib/approvals/card'
+import { type ApprovalCard, type ApprovalCardLoad, canDecide, statusLabel } from '@/lib/approvals/card'
 import { fetchApprovalCard, isRunning, isStalled, isTerminal, pollIntervalMs } from '@/lib/approvals/poll'
+import { buildSummary } from '@/lib/approvals/summary'
 import { CARD_FRAME_POLICY } from '@/lib/embed/frame-size'
+import { formatCountdown, formatDuration, formatRelative } from '@/lib/format/jakarta-time'
 
 import { DecisionControls } from './decision-controls'
+// `Fact` and `FactList` live there rather than here so one definition renders every payload block
+// on this card — the arguments, the before-state and the receipt's own halves.
+import { Fact, FactList, Outcome } from './outcome-view'
+import { CopySummary } from '@/components/copy-summary'
 import { FrameSizer } from '@/components/frame-sizer'
 import { Notice } from '@/components/notice'
 import { SignInNotice } from '@/components/sign-in-notice'
@@ -62,32 +62,67 @@ type LiveCard = {
   runPolls: number
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <dt className={styles.factKey}>{label}</dt>
-      <dd className={styles.factValue}>{value}</dd>
-    </>
-  )
+const KNOWN_TOOL_PREFIXES = ['proxmox_', 'whm_', 'pmg_']
+const TOOL_WORD_OVERRIDES: Record<string, string> = {
+  csf: 'CSF',
+  whm: 'WHM',
+  rbac: 'RBAC',
+  ldap: 'LDAP',
+  vm: 'VM',
+  pmg: 'PMG',
 }
 
-/** A JSONB payload as flat text. Nested values are shown as JSON rather than dropped. */
-function FactList({ values }: { values: Record<string, unknown> }) {
-  const entries = Object.entries(values)
-
-  if (entries.length === 0) return <p className={styles.empty}>Nothing recorded.</p>
-
-  return (
-    <dl className={styles.facts}>
-      {entries.map(([key, value]) => (
-        <Fact
-          key={key}
-          label={key}
-          value={typeof value === 'string' ? value : JSON.stringify(value)}
-        />
-      ))}
-    </dl>
+/**
+ * A raw tool name as a readable label. The raw name stays on the card in the heading's `title`.
+ *
+ * **Duplicated from `apps/admin-web/src/lib/admin/audit/audit-format.ts`, deliberately, and it
+ * stays duplicated.** The two web apps are independent packages with their own lockfiles, their
+ * own CI and their own deploy; this one's eslint refuses any `apps/admin-web` import outright, and
+ * the `core/` the two really do share is Python. Sharing these fifteen lines would cost either a
+ * third npm package or the cross-app import the fence exists to forbid, and both are more than
+ * the duplication is worth. Kept byte-identical to the other copy so a reader diffing the two can
+ * see at a glance that they have not drifted.
+ */
+function humanizeToolName(value: string): string {
+  const raw = value.trim()
+  const withoutPrefix = KNOWN_TOOL_PREFIXES.reduce(
+    (current, prefix) => (current.startsWith(prefix) ? current.slice(prefix.length) : current),
+    raw,
   )
+  const words = withoutPrefix
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLowerCase()
+      return TOOL_WORD_OVERRIDES[lower] ?? lower.charAt(0).toUpperCase() + lower.slice(1)
+    })
+  return words.length === 0 ? raw : words.join(' ')
+}
+
+/**
+ * A nested payload as one row per leaf, keyed by its path.
+ *
+ * A nested object serialised into a single row is one line of JSON in a frame this narrow, which
+ * is the least readable thing on the card and the reason the arguments block gets this treatment.
+ * Lists are left whole: a firewall match list runs to twenty entries, and twenty rows would cost
+ * more of the one screen this card gets than the list is worth.
+ */
+function flattenValues(values: Record<string, unknown>, prefix = ''): Record<string, unknown> {
+  const flat: Record<string, unknown> = {}
+
+  for (const [key, value] of Object.entries(values)) {
+    const path = prefix ? `${prefix}.${key}` : key
+    const nested =
+      typeof value === 'object' && value !== null && !Array.isArray(value)
+        ? (value as Record<string, unknown>)
+        : null
+
+    // An empty object has no leaves, so it renders as itself rather than as no row at all.
+    if (nested && Object.keys(nested).length > 0) Object.assign(flat, flattenValues(nested, path))
+    else flat[path] = value
+  }
+
+  return flat
 }
 
 function KeyValues({ title, values }: { title: string; values: Record<string, unknown> }) {
@@ -100,11 +135,18 @@ function KeyValues({ title, values }: { title: string; values: Record<string, un
 }
 
 /**
- * Provenance: when it was asked for, by whom, from which conversation, and until when.
+ * Provenance: when it was asked for, by whom, and how long there is left to answer.
  *
- * The requester and the LibreChat account are the identity the gate persisted at request time
- *, not a join done now — the requester FK is `SET NULL`, so a deleted operator would
- * otherwise erase the identity from a decision that was made.
+ * The requester is the identity the gate persisted at request time, not a join done now — the
+ * requester FK is `SET NULL`, so a deleted operator would otherwise erase the identity from a
+ * decision that was made.
+ *
+ * **Times are read the way an operator reads them.** "17 minutes ago" and "expires in 43 minutes"
+ * are what a decision actually turns on; the exact instant is one hover away in `title` and, for
+ * the operator who has to quote it to an administrator, in the copy summary. The LibreChat account
+ * id and the conversation id left this block for the same reason: they identify the request to
+ * NOA and to `/admin`, not to the person deciding it, and the copy summary carries both for the
+ * operator who cannot open the admin panel.
  */
 function Provenance({ card }: { card: ApprovalCard }) {
   return (
@@ -112,11 +154,11 @@ function Provenance({ card }: { card: ApprovalCard }) {
       <h2 className={styles.sectionTitle}>Requested</h2>
       <dl className={styles.facts}>
         <Fact label="Requested by" value={card.requester.email || 'unrecorded'} />
-        <Fact label="LibreChat account" value={card.requester.librechatUserId || 'unrecorded'} />
-        <Fact label="Conversation" value={card.conversationRef ?? 'not supplied'} />
-        <Fact label="Opened" value={card.createdAt} />
-        <Fact label="Expires" value={card.expiresAt} />
-        {card.decidedAt ? <Fact label="Decided" value={card.decidedAt} /> : null}
+        <Fact label="Opened" value={formatRelative(card.createdAt)} title={card.createdAt} />
+        <Fact label="Expires" value={formatCountdown(card.expiresAt)} title={card.expiresAt} />
+        {card.decidedAt ? (
+          <Fact label="Decided" value={formatRelative(card.decidedAt)} title={card.decidedAt} />
+        ) : null}
       </dl>
     </section>
   )
@@ -128,18 +170,34 @@ function Provenance({ card }: { card: ApprovalCard }) {
  * `stalled` is the one thing here the row does not say: the card gave up asking. It is not an
  * error — the run may still be going — so it says what is true and what to do about it, rather
  * than reporting a failure NOA has no evidence of.
+ *
+ * The run's own id is not on the card. It is the identifier an administrator needs and the
+ * operator does not, it costs a row of a card that has to fit one screen, and the copy summary
+ * carries it for the operator who has to hand it to someone. The two timestamps are one duration
+ * for the same reason: "took 41s" is the fact, and both instants are still on the row in `/admin`.
  */
 function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
   if (card.run === null) return null
+
+  // `null` while the run is still in flight, and also when the two stamps cannot yield a duration.
+  // Both answer with when it started instead: a run in progress has no duration yet, and inventing
+  // one for a pair that cannot produce it would state a measurement nobody made.
+  const duration = formatDuration(card.run.createdAt, card.run.completedAt)
 
   return (
     <section className={styles.section}>
       <h2 className={styles.sectionTitle}>Execution</h2>
       <dl className={styles.facts}>
-        <Fact label="Run" value={card.run.toolRunId} />
         <Fact label="Status" value={card.run.status} />
-        <Fact label="Started" value={card.run.createdAt} />
-        {card.run.completedAt ? <Fact label="Finished" value={card.run.completedAt} /> : null}
+        {duration === null ? (
+          <Fact
+            label="Started"
+            value={formatRelative(card.run.createdAt)}
+            title={card.run.createdAt}
+          />
+        ) : (
+          <Fact label="Duration" value={duration} title={card.run.createdAt} />
+        )}
         {card.run.resultSummary ? <Fact label="Result" value={card.run.resultSummary} /> : null}
       </dl>
       {stalled ? (
@@ -152,31 +210,25 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
 }
 
 /**
- * What the change did, once something recorded it (DECISIONS.md section 6.5).
+ * The keys the before-state block does not print.
  *
- * **Two halves, never one word.** The requirement this section exists for is that an operator can
- * read back the state they authorised against *and* what the change did to it, separately — so a
- * failed change still shows its before-state, and a successful one shows more than "done". The
- * verdict line is a third thing beside them, not a replacement for either.
+ * Two identifiers NOA needs and the operator does not (`server_id` is the machine's row, and
+ * `api_username` the credential the preflight was read with), and the raw account record a WHM
+ * preflight carries whole — which is the biggest single value on the card and the least readable
+ * one.
  *
- * The before-state renders here rather than in the section above once a receipt exists, and that
- * is one heading either way: `receipt.before` is the copy the approved-change executor's writer
- * took at execution time, so
- * showing both would be the same payload twice under two labels, which reads as two facts.
- *
- * `errorCode` is the API's own string, shown verbatim. It is the word an operator will quote to an
- * administrator, and translating it here would make the card and the audit trail disagree.
+ * **These three are admin-only by design, and the copy summary does not carry them.** That is the
+ * difference between this block and the identifiers that left the provenance and execution
+ * blocks: those are what an operator quotes into a ticket, so they ride in the copied summary,
+ * while these three answer an administrator's question and are reached through `/admin` (held by
+ * `apps/api/tests/test_admin_action_request_routes.py`). They stay in the database and in the
+ * API's body either way; what changes here is only which of the two surfaces prints them.
  */
-function Outcome({ receipt }: { receipt: ApprovalReceipt }) {
-  return (
-    <section className={styles.section}>
-      <h2 className={styles.sectionTitle}>What the change did</h2>
-      <dl className={styles.facts}>
-        <Fact label="Outcome" value={receipt.ok ? 'Completed' : 'Did not complete'} />
-        {receipt.errorCode ? <Fact label="Reason" value={receipt.errorCode} /> : null}
-      </dl>
-      <FactList values={receipt.after} />
-    </section>
+const BEFORE_STATE_HIDDEN = new Set(['server_id', 'api_username', 'account'])
+
+function shown(values: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(values).filter(([key]) => !BEFORE_STATE_HIDDEN.has(key)),
   )
 }
 
@@ -195,16 +247,28 @@ function Card({
     <>
       <main className={styles.card} ref={scrollContainer}>
         <header className={styles.header}>
-          <h1 className={styles.tool}>{card.toolName}</h1>
+          {/* Humanised, with the raw name in `title` and in the copy summary. The raw name is what
+              an operator quotes to an administrator and what `/admin` shows, so a card that
+              renders a label has to keep the name itself reachable from the same place. */}
+          <h1 className={styles.tool} title={card.toolName}>
+            {humanizeToolName(card.toolName)}
+          </h1>
           <p className={styles.status}>{statusLabel(card.status)}</p>
+          <CopySummary summary={buildSummary(card)} />
         </header>
 
         <Provenance card={card} />
-        <KeyValues title="Arguments" values={card.arguments} />
+        <KeyValues title="Arguments" values={flattenValues(card.arguments)} />
         {/* The in-process preflight: the before-state this card exists to show, and the
             one thing on the row the model is never told (`core.approvals.results`). Off the receipt
-            once there is one — see `Outcome` for why that is one heading and not two. */}
-        <KeyValues title="Before state" values={card.receipt?.before ?? card.evidence} />
+            once there is one — `receipt.before` is the copy the approved-change executor's writer
+            took at execution time, so rendering both would be one payload under two headings,
+            which reads as two facts.
+
+            Nothing predicted joins it while the request is PENDING: the delta is written at
+            execution time, so at this point nothing has measured what the change will do, and a
+            templated after-column or sentence would be a claim with no measurement behind it. */}
+        <KeyValues title="Before state" values={shown(card.receipt?.before ?? card.evidence)} />
         <Run card={card} stalled={stalled} />
         {card.receipt ? <Outcome receipt={card.receipt} /> : null}
 

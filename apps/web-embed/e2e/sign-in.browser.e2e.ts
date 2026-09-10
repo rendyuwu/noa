@@ -152,8 +152,12 @@ test('Try again picks the session up without leaving the card URL', async ({
 
   await cardBody(card).getByRole('button', { name: 'Try again' }).click()
 
-  // The card the second read answers, rendered in place.
-  await expect(card.locator('h1')).toHaveText('whm_suspend_account')
+  // The card the second read answers, rendered in place. Both halves of the heading, for the
+  // reason the provenance spec states: the label is what an operator reads and the raw tool name
+  // is what they quote to an administrator, so swapping the assertion to the label alone would
+  // stop watching the string that has to survive.
+  await expect(card.locator('h1')).toHaveText('Suspend Account')
+  await expect(card.locator('h1')).toHaveAttribute('title', 'whm_suspend_account')
   await expect(card.getByRole('button', { name: 'Approve' })).toBeVisible()
 
   // Same document, same URL: nothing navigated, and no login form ever entered the frame.

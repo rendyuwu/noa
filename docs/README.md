@@ -9,6 +9,9 @@ Integration and operations reference.
   `apps/api/tests/test_librechat_config_doc.py` rather than merely written down.
 - `admin-web.md` — the BIGSU admin panel: what was ported and what deviates, BIGSU registry access
   and the internal-runner requirement it forces on CI, config and health.
+- `embed-frame.md` — the height an embed surface asks its host for: the message shape, the resolved
+  target origin, and why every bound on that number is this app's to hold. A contract with any host
+  that frames NOA, which is why it is not a section of `integrations/librechat.md`.
 - `deployment.md` — the three images and their build contexts, build-time versus runtime
   configuration, the domain and session-cookie layout, the local compose stack, and the
   single-replica and readiness decisions. Its machine-readable blocks are asserted by
