@@ -94,14 +94,17 @@ REASON = "Customer confirmed the account is compromised; suspending per ticket N
 # What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`.
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
-# V31's cap for a support-built service. Deliberately not `Settings`' own default of 1:
+# The per-user in-flight cap for a support-built service. Deliberately not `Settings`' own default
+# of 1:
 # four live files approve a request or two and none of them is about the cap, so a helper
 # carrying the production number would make every one of them a cap test by accident — and a
-# helper that agreed with the default would be unseparable from one that hardcoded it (T33(e)'s
+# helper that agreed with the default would be unseparable from one that hardcoded it (the gate
+# that opens the request's
 # argument for a 900-second test TTL). A test that *is* about the cap passes its own number.
 SUPPORT_MAX_INFLIGHT_PER_USER = 8
 
-# The gate's `approval_context` shape (T33's `build_approval_context`), already redacted.
+# The gate's `approval_context` shape (`build_approval_context`, from the gate that opens the
+# request), already redacted.
 APPROVAL_CONTEXT: dict[str, Any] = {
     "arguments": {"server_ref": "alpha", "account": "acmeco"},
     "requester": {"email": OPERATOR_EMAIL, "librechat_user_id": "librechat-user-1"},
@@ -120,7 +123,8 @@ def locked_request(
 ) -> LockedActionRequest:
     """A pending request as `lock_for_decision` would return it.
 
-    `expires_in_seconds` may be negative — that is how a test reaches V32's check-on-read
+    `expires_in_seconds` may be negative — that is how a test reaches the TTL-expiry
+    check-on-read
     without waiting for a TTL.
     """
     moment = now or datetime.now(UTC)
@@ -171,9 +175,9 @@ class FakeActionDecisionRepository:
         self.commits: list[str] = []
         self.journal = journal if journal is not None else []
         self._pending: list[RecordedDecision] = []
-        # V31's count, as this double reports it. Per user rather than a single number,
-        # so a cap test can put one operator at their limit and leave another free — which is
-        # what proves the count is scoped by requester and not global.
+        # The per-user in-flight cap's count, as this double reports it. Per user rather than a
+        # single number, so a cap test can put one operator at their limit and leave another free —
+        # which is what proves the count is scoped by requester and not global.
         self.inflight_by_user: dict[UUID, int] = {}
 
     def add(self, request: LockedActionRequest) -> LockedActionRequest:
@@ -299,7 +303,8 @@ def build_decision_service(
 ) -> ActionDecisionService:
     """The production service over whatever repository a test hands it.
 
-    One construction site for nine call sites. It exists because T38 made V31's cap a
+    One construction site for nine call sites. It exists because the approved-change executor
+    made the per-user in-flight cap a
     required argument: nine copies of the constructor meant nine places to decide what the cap
     is, and eight of them are in files that have nothing to say about it.
 
@@ -322,11 +327,12 @@ def build_live_decision_service(
     """The production service over the production repository, and the recorder it hands off to.
 
     Only the executor is doubled: the SQL, the lock, the guards, the ordering and the error
-    classes are all production code — which is what makes these files claims about V28 and V29
+    classes are all production code — which is what makes these files claims about the one-decision
+    row lock and the async-run handoff
     rather than about a service calling a repository.
 
     Both `*_live` files that race the two writers had this verbatim; it landed here when
-    T38's cap argument made it two places to decide what a cap is.
+    the approved-change executor's cap argument made it two places to decide what a cap is.
     """
     recorder = executor or RecordingApprovedChangeExecutor()
     return (
@@ -463,10 +469,10 @@ def decision_harness(
         repository=auth_repository,
         jwt_service=jwt_service,
     )
-    # The real `ActionDecisionService` over a fake repository: the ordering, the guards and
-    # the error classes are all production code. V31's cap comes off *this harness's* settings,
-    # the way `get_action_decision_service` reads it off the app's — so a cap test sets it with
-    # `build_settings(approval_max_inflight_per_user=...)` and there is one source either way.
+    # The real `ActionDecisionService` over a fake repository: the ordering, the guards and the
+    # error classes are all production code. The per-user in-flight cap comes off *this harness's*
+    # settings, the way `get_action_decision_service` reads it off the app's — so a cap test sets it
+    # with `build_settings(approval_max_inflight_per_user=...)` and there is one source either way.
     app.dependency_overrides[get_action_decision_service] = lambda: build_decision_service(
         repository,
         executor=executor,
@@ -565,16 +571,19 @@ class ObservedDecisionRepository(SQLActionDecisionRepository):
     """The production repository, with its two locks narrated and optionally held open.
 
     Four hooks and no substitutions: `before_read`/`after_read` fire around the row lock's
-    `SELECT … FOR UPDATE`, `before_count`/`after_count` around V31's advisory lock and the
+    `SELECT … FOR UPDATE`, `before_count`/`after_count` around the per-user in-flight cap's
+    advisory lock and the
     count it holds open, and the journal records all of them plus the commit. The SQL under
     test is the real SQL — what is added is the ability to say *when* each statement happened
-    relative to the other transaction's, which is the whole of V89's obligation (a): the window
+    relative to the other transaction's, which is the whole of holding the window open on purpose:
+    the window
     is held open on purpose rather than hoped for.
 
     Two locks and therefore two races, and they are different races. Two decisions on **one
     request** contend on the row; two approvals of **different requests by one operator** do not
-    touch each other's rows at all, and contend only on the advisory key — which is why V31 needs
-    its own overlap test rather than inheriting V28's.
+    touch each other's rows at all, and contend only on the advisory key — which is why the
+    per-user in-flight cap needs
+    its own overlap test rather than inheriting the one-decision row lock's.
     """
 
     def __init__(
@@ -624,13 +633,14 @@ class ObservedDecisionRepository(SQLActionDecisionRepository):
 
 
 class UnlockedCountDecisionRepository(ObservedDecisionRepository):
-    """`ObservedDecisionRepository` with V31's advisory lock removed and nothing else changed.
+    """`ObservedDecisionRepository` with the per-user in-flight cap's advisory lock removed and
+    nothing else changed.
 
     The negative control's instrument. "The second count landed after the first commit" is
     worthless as an assertion if *every* count would land there — if the harness simply never
     overlapped the two transactions. This runs the identical handshake with a plain count in
     place of the locked one, which is the same shape
-    `test_an_unlocked_read_of_the_same_row_does_not_wait` uses for V28's row lock.
+    `test_an_unlocked_read_of_the_same_row_does_not_wait` uses for the one-decision row lock.
     """
 
     async def inflight_changes_under_user_lock(self, *, requested_by_user_id: UUID) -> int:

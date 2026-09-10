@@ -10,7 +10,8 @@ Two levels, for two different claims — the split `test_action_receipts_schema.
   string until a real `DELETE` runs against it, and a `UniqueConstraint` in metadata says
   nothing about what the migration built. Skipped (never failed) when Postgres is unreachable.
 
-The `SET NULL` is the one worth reading twice. Every other user FK since T35 is `SET NULL`
+The `SET NULL` is the one worth reading twice. Every other user FK since the `tool_runs`
+schema is `SET NULL`
 because the row still describes something without its subject, and here the reason is
 narrower and sharper: the reader matches on that column, so NULL has to mean *nobody* rather
 than *anybody*. The live half asserts that a deleted operator's table is still on disk
@@ -36,8 +37,8 @@ SCRATCH_DB = "noa_tool_result_tables_schema_test"
 
 TOOL_RESULT_TABLES = Base.metadata.tables["tool_result_tables"]
 
-# §T.56's column list. A column added without a task to specify it is a guess; one removed
-# takes a V64 or V85 property with it.
+# The table surface's column list. A column added without a task to specify it is a guess;
+# one removed takes the summary-plus-URL or the stated-bound property with it.
 T56_COLUMNS = {
     "id",
     "token",
@@ -53,19 +54,19 @@ T56_COLUMNS = {
 
 # What this table refuses, each named so a failure says which boundary was crossed.
 FORBIDDEN_COLUMNS = {
-    # C8, V43: the reason is operator-typed on an approval card and lives on
-    # `action_requests`. A READ has no reason at all — nothing was authorised.
-    "reason": "C8, V43 — one reason, and a READ has none",
-    # V27 matches on `requested_by_user_id`. A second identity column would be a second
-    # answer to who may read the table.
-    "requested_by_email": "V27 — one requester column, and it is the FK",
+    # The one operator-typed reason field: the reason is operator-typed on an approval card
+    # and lives on `action_requests`. A READ has no reason at all — nothing was authorised.
+    "reason": "the one operator-typed reason field — a READ has none",
+    # The requester-match matches on `requested_by_user_id`. A second identity column would
+    # be a second answer to who may read the table.
+    "requested_by_email": "the requester-match — one requester column, and it is the FK",
     # A parked table is written once and read many times. There is no second moment to
-    # stamp, and a `status` would be a lifecycle nothing drives (T34's third-truth rule).
+    # stamp, and a `status` would be a lifecycle nothing drives.
     "updated_at": "written once; there is no second moment to stamp",
     "status": "nothing transitions here — the deadline is the whole lifecycle",
     # The audit row for the same call lives in `tool_runs`. A link would be a second
     # record of one moment, and nothing reads it.
-    "tool_run_id": "T73 owns the audit row; a link here would be a second record",
+    "tool_run_id": "the tool-run writer owns the audit row; a link here would be a second record",
 }
 
 
@@ -89,7 +90,7 @@ def test_one_row_per_token_is_a_constraint_not_a_convention() -> None:
     """The token names one table. Two rows under it would make "the table" mean "some table".
 
     Also the lookup index: every reader arrives holding a token, which is why there is no
-    second index here (T36's discipline).
+    second index here — the same discipline as the receipt table's UNIQUE.
     """
     unique = {
         tuple(column.name for column in constraint.columns)
@@ -102,7 +103,7 @@ def test_one_row_per_token_is_a_constraint_not_a_convention() -> None:
 
 
 def test_the_requester_link_fails_closed() -> None:
-    """V27: nullable with `SET NULL`, so a deleted operator's table matches nobody.
+    """The requester-match: nullable with `SET NULL`, so a deleted operator's table matches nobody.
 
     The nullability is what makes the refusal possible at all — a NOT NULL column with
     `CASCADE` would delete the audit-adjacent row instead, and one with `RESTRICT` would make
@@ -118,7 +119,8 @@ def test_the_requester_link_fails_closed() -> None:
 
 @pytest.mark.parametrize("column", ["column_labels", "rows"])
 def test_the_payload_columns_are_required_and_have_no_default(column: str) -> None:
-    """V64: a table with no columns and no rows is a failed insert, not a parked page.
+    """Summary-plus-URL discipline: a table with no columns and no rows is a failed insert,
+    not a parked page.
 
     Deliberately unlike `tool_runs.args` (`'{}'` there so "took no arguments" and "not
     recorded" stay distinguishable) and exactly like `approval_context` and `receipt_data`.
@@ -131,7 +133,7 @@ def test_the_payload_columns_are_required_and_have_no_default(column: str) -> No
 
 @pytest.mark.parametrize("column", ["total_rows", "truncated"])
 def test_the_bound_is_stored_not_derived(column: str) -> None:
-    """V85: the count before the cut and whether there was one, both NOT NULL.
+    """The stated-bound rule: the count before the cut and whether there was one, both NOT NULL.
 
     Stored rather than computed from `rows`, because `len(rows)` is precisely the number a
     capped table must not report as its total.
@@ -140,7 +142,8 @@ def test_the_bound_is_stored_not_derived(column: str) -> None:
 
 
 def test_the_deadline_is_required_and_aware() -> None:
-    """T34's rule one table over: a row without a deadline cannot expire."""
+    """The `action_requests` table's rule, one table over: a row without a deadline cannot
+    expire."""
     expires_at = TOOL_RESULT_TABLES.c.expires_at
 
     assert expires_at.nullable is False
@@ -230,7 +233,8 @@ async def test_two_tokens_are_two_rows(session: AsyncSession) -> None:
 async def test_deleting_the_operator_leaves_the_table_owned_by_nobody(
     session: AsyncSession,
 ) -> None:
-    """V27, fail-closed: `SET NULL` proven by a real `DELETE`, not by reading `ondelete`.
+    """The requester-match, fail-closed: `SET NULL` proven by a real `DELETE`, not by reading
+    `ondelete`.
 
     The row survives — deleting an operator does not erase what NOA did — and it stops
     matching the id it used to belong to, which is what makes an abandoned table unreadable

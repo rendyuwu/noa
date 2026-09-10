@@ -78,7 +78,8 @@ SEPARABLE_CONTEXT: dict[str, object] = {
 
 # The receipt's after-state. Its own sentinel, because "the receipt did not travel" has to
 # separate from "the evidence did not travel" — the two halves fail for different reasons if the
-# model path ever grows the join (V17 for one, V76 for the pair).
+# model path ever grows the join: evidence staying in-process is one reason, the receipt
+# staying off the read path is the other.
 RECEIPT_SENTINEL = "after-state-only-the-approval-card-may-see"
 
 
@@ -168,7 +169,8 @@ async def delete_user(factory: async_sessionmaker[AsyncSession], user_id: UUID) 
 
 
 async def test_a_request_reads_back_with_its_arguments_and_its_deadline(factory) -> None:  # type: ignore[no-untyped-def]
-    """The reader answers about the row T33's gate wrote, not about a copy of it."""
+    """The reader answers about the row the gate that opens the request wrote, not about a
+    copy of it."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id)
 
@@ -187,12 +189,12 @@ async def test_a_request_reads_back_with_its_arguments_and_its_deadline(factory)
 
 
 # --------------------------------------------------------------------------------------
-# V27 / V76: the requester-match is the statement's
+# The requester-match is the statement's
 # --------------------------------------------------------------------------------------
 
 
 async def test_another_operators_request_is_not_readable(factory) -> None:  # type: ignore[no-untyped-def]
-    """V27/V76: the row is not fetched, so there is nothing for a later branch to drop.
+    """The row is not fetched, so there is nothing for a later branch to drop.
 
     The intruder here is a real user with a real id — the refusal is the requester-match and
     not a missing row.
@@ -213,7 +215,7 @@ async def test_an_unknown_id_reads_as_nothing(factory) -> None:  # type: ignore[
 
 
 async def test_a_request_whose_requester_was_deleted_is_not_readable(factory) -> None:  # type: ignore[no-untyped-def]
-    """V27 fails closed on the row only a real `DELETE` can produce.
+    """The requester-match fails closed on the row only a real `DELETE` can produce.
 
     `requested_by_user_id` is `SET NULL`, so deleting the operator leaves the request
     behind with a NULL requester: `NULL = :caller` is NULL, never true, so it matches nobody —
@@ -233,16 +235,16 @@ async def test_a_request_whose_requester_was_deleted_is_not_readable(factory) ->
 
 
 # --------------------------------------------------------------------------------------
-# C8 / V15 / V43 / V17: what the model is never told
+# What the model is never told
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_decided_requests_reason_never_reaches_the_result(factory) -> None:  # type: ignore[no-untyped-def]
-    """C8/V15/V43: the operator's reason is on this row, and the LLM never sees it.
+    """The operator's reason is on this row, and the LLM never sees it.
 
     The row genuinely holds one — asserted, so this is not a test that passes because nothing
-    wrote a reason in the first place (V87's shape). What the reader returns has no field for
-    it and no copy of it anywhere in the payload.
+    wrote a reason in the first place, the failure a missing negative control would hide. What
+    the reader returns has no field for it and no copy of it anywhere in the payload.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id)
@@ -259,7 +261,7 @@ async def test_a_decided_requests_reason_never_reaches_the_result(factory) -> No
 
 
 async def test_preflight_evidence_never_reaches_the_result(factory) -> None:  # type: ignore[no-untyped-def]
-    """V17: the evidence is born in-process and stays out of the transcript.
+    """The evidence is born in-process and stays out of the transcript.
 
     It sits on the same JSONB payload the arguments come out of, so the compare has to
     separate: the arguments *do* arrive, and the evidence and the requester block do not. The
@@ -288,15 +290,17 @@ async def test_preflight_evidence_never_reaches_the_result(factory) -> None:  # 
 
 
 async def test_a_receipt_never_reaches_the_result(factory) -> None:  # type: ignore[no-untyped-def]
-    """V76, V17: T42's card renders the receipt; this reader does not even fetch one.
+    """The card renders the receipt; this reader does not even fetch one.
 
-    The receipt is the same before-state one table over (T38 copies `approval_context`'s
-    evidence onto it), so a join added here would put V17's in-process evidence back on the
-    path that answers into a transcript LibreChat persists. The row genuinely exists —
-    asserted against the table — so this is not green because nothing wrote a receipt.
+    The receipt is the same before-state one table over (the approved-change executor copies
+    `approval_context`'s evidence onto it), so a join added here would put the in-process
+    evidence back on the path that answers into a transcript LibreChat persists. The row
+    genuinely exists — asserted against the table — so this is not green because nothing wrote
+    a receipt.
 
     Both sentinels, because both halves would arrive together: the before-state that must not
-    travel for V17's reason, and the after-state that must not for V76's.
+    travel because evidence stays in-process, and the after-state that must not because the
+    reader never fetches the receipt.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(
@@ -328,15 +332,15 @@ async def test_a_receipt_never_reaches_the_result(factory) -> None:  # type: ign
 
 
 # --------------------------------------------------------------------------------------
-# V47: the run an approval started
+# The run an approval started
 # --------------------------------------------------------------------------------------
 
 
 async def test_an_approved_requests_run_is_reported(factory) -> None:  # type: ignore[no-untyped-def]
-    """V29/V47: the link T37 wrote in the decision's transaction is what this reads.
+    """The link the decision endpoint wrote in its transaction is what this reads.
 
-    `STARTED` with no summary is today's honest answer — T38's executor, which moves the row,
-    is unbuilt. A model told "started" tells an operator to wait, which is true.
+    `STARTED` with no summary is today's honest answer — the approved-change executor, which
+    moves the row, is unbuilt. A model told "started" tells an operator to wait, which is true.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id)
@@ -375,12 +379,12 @@ async def test_a_denied_request_reports_no_run(factory) -> None:  # type: ignore
 
 
 # --------------------------------------------------------------------------------------
-# V32: no stale PENDING, and no write to a row that is not the caller's
+# No stale PENDING, and no write to a row that is not the caller's
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_request_past_its_deadline_reads_expired_and_is_written_expired(factory) -> None:  # type: ignore[no-untyped-def]
-    """V32/V23: the check-on-read makes the row terminal, so the next reader finds it so.
+    """The check-on-read makes the row terminal, so the next reader finds it so.
 
     Both halves, because either alone is a different bug: reporting `EXPIRED` without writing
     leaves the next reader to make the same discovery, and writing without reporting hands the
@@ -398,7 +402,7 @@ async def test_a_request_past_its_deadline_reads_expired_and_is_written_expired(
     stored = await read_request(factory, request_id)
     assert stored.status is ActionRequestStatus.EXPIRED
     assert stored.decided_at is not None
-    # An expiry is the absence of an answer, so it carries no reason — T34's CHECK exempts
+    # An expiry is the absence of an answer, so it carries no reason — the table's CHECK exempts
     # `EXPIRED` precisely so it can, which means nothing at the database level would catch one
     # that did.
     assert stored.reason is None
@@ -417,7 +421,7 @@ async def test_a_live_request_is_left_pending(factory) -> None:  # type: ignore[
 
 
 async def test_a_request_exactly_on_its_deadline_reads_expired(factory) -> None:  # type: ignore[no-untyped-def]
-    """`<=`, the same comparison the sweep and the decision door make (T39(a)).
+    """`<=`, the same comparison the sweep and the decision door make (the expiry loop's rule).
 
     A row exactly on `expires_at` has to be one thing at all three doors. This one shares the
     sweep's statement, so the boundary is inherited rather than re-implemented — and asserted
@@ -434,7 +438,7 @@ async def test_a_request_exactly_on_its_deadline_reads_expired(factory) -> None:
 
 
 async def test_a_foreign_due_request_is_not_expired_by_this_read(factory) -> None:  # type: ignore[no-untyped-def]
-    """V27/V32: the read path touches nothing that is not the caller's.
+    """The read path touches nothing that is not the caller's.
 
     `expire_if_due` narrows the sweep's statement to one id and takes no requester — so a read
     path that ran it before the requester-matched read would let a prompt-injected id make NOA

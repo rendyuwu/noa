@@ -4,14 +4,16 @@ No Postgres: `support.approval_cards.card_harness` swaps the card repository and
 writer for in-memory doubles and leaves the router, the error handler, `JWTService`, the real
 `AuthService` behind `require_session_user`, the real `ApprovalCardService` and the real CSRF
 mint and verify as production code. The SQL gets its own coverage in
-`test_approval_cards_live.py`, which is where V27's `WHERE` is actually provable.
+`test_approval_cards_live.py`, which is where the requester-match's `WHERE` is actually
+provable.
 
 Three things this file is careful about, and all three are the design:
 
-- **Refusal bodies are compared, not just statuses.** V27 makes another operator's request
-  answer the same as an absent one, and "same status" is a much weaker claim than "same body" —
-  an `error_code` that differed would be an existence oracle with a 404 painted on it (B1's
-  shape, and the reason T37's route tests compare bodies too).
+- **Refusal bodies are compared, not just statuses.** The requester-match rule makes another
+  operator's request answer the same as an absent one, and "same status" is a much weaker claim
+  than "same body" — an `error_code` that differed would be an existence oracle with a 404
+  painted on it (a differing code leaking existence, and the reason the decision endpoints'
+  route tests compare bodies too).
 - **The CSRF token is verified through the production verifier**, never string-matched. What
   matters about it is what `verify_decision_csrf_token` accepts, so that is what is asked.
 - **Order is asserted, not inferred.** The doubles share one journal, so a foreign id
@@ -65,8 +67,8 @@ def body(response: Response) -> dict:
 # --------------------------------------------------------------------------------------
 
 
-def test_the_card_carries_the_provenance_v35_names(harness: CardHarness) -> None:
-    """V35: created-at, conversation ref, origin, requesting identity.
+def test_the_card_carries_the_provenance_fields(harness: CardHarness) -> None:
+    """Created-at, conversation ref, origin, requesting identity.
 
     All four in one response, because the operator authorising a change is being asked to
     recognise it: which tool, asked for by whom, from which conversation, when. The requester
@@ -90,7 +92,7 @@ def test_the_card_carries_the_provenance_v35_names(harness: CardHarness) -> None
 
 
 def test_the_card_carries_the_gate_time_before_state(harness: CardHarness) -> None:
-    """V17, V33, V35: the in-process preflight is what the card describes the change with.
+    """The in-process preflight is what the card describes the change with.
 
     Built once at gate time and persisted, never rebuilt from a transcript — and shown
     here and nowhere else: `noa_get_action_result` has no field for it
@@ -105,7 +107,7 @@ def test_the_card_carries_the_gate_time_before_state(harness: CardHarness) -> No
 
 
 def test_the_card_body_carries_no_reason(harness: CardHarness) -> None:
-    """C8, V15, V43: exactly one reason exists and the operator types it into this card.
+    """Exactly one reason exists and the operator types it into this card.
 
     Asserted on the key set rather than on a value: a `reason` field that happened to be
     `None` today is a field a later edit fills in, and the point is that there is nowhere for
@@ -134,7 +136,7 @@ def test_the_card_body_carries_no_reason(harness: CardHarness) -> None:
 
 
 def test_the_card_reports_the_run_an_approval_started(harness: CardHarness) -> None:
-    """V29, V34: one URL owns the lifecycle, so the card reports what the answer did.
+    """One URL owns the lifecycle, so the card reports what the answer did.
 
     `STARTED` with no summary is the honest state between the decision and the executor's
     terminal write, and a card that says so tells the operator to keep the tab open, which is
@@ -169,7 +171,7 @@ def test_a_request_with_no_run_says_so_rather_than_omitting_the_key(
 
 
 def test_the_card_body_carries_the_receipts_two_halves(harness: CardHarness) -> None:
-    """T42(b), V34, V46, DECISIONS §6.5: before-state and after-state, each on its own.
+    """DECISIONS.md section 6.5: before-state and after-state, each on its own.
 
     The two halves are asserted as two keys with two different payloads, which is the property
     the requirement is about — a body that answered `{"outcome": "done"}` would satisfy "the
@@ -178,7 +180,8 @@ def test_the_card_body_carries_the_receipts_two_halves(harness: CardHarness) -> 
 
     Five keys, and the fifth is what the runner said the change moved. It is asserted in the
     same equality as the other four because the two are one contract: the body enumerated here
-    is the executable form of the row §I.embed carries for this route, and a body that grew a
+    is the executable form of the row the embed app's contract carries for this route, and a
+    body that grew a
     key the row does not name is the pair disagreeing. The delta is a third distinct value for
     the same reason the halves are two, so a card that echoed one of them here would pass a
     weaker test than this one.
@@ -212,7 +215,8 @@ def test_a_receipt_with_no_delta_says_so_rather_than_omitting_the_key(
 ) -> None:
     """`null`, not absent — the opposite of the stored row's rule, and deliberately so.
 
-    T38's writer omits the key when a runner measured nothing, so that the absence on the row is
+    The approved-change executor's writer omits the key when a runner measured nothing, so that
+    the absence on the row is
     itself the fact. A renderer switches on the field, and a missing key there reads as one it
     forgot, so the card turns that absence into `null` — the rule `run`, `receipt` and
     `error_code` already follow on this body.
@@ -233,7 +237,7 @@ def test_a_receipt_with_no_delta_says_so_rather_than_omitting_the_key(
 def test_a_failed_changes_receipt_keeps_its_before_state_and_names_the_cause(
     harness: CardHarness,
 ) -> None:
-    """V46: a receipt with a before-state and a refused after-state is the truthful record.
+    """A receipt with a before-state and a refused after-state is the truthful record.
 
     The half that must not disappear is `before` — a change that failed is exactly when an
     operator needs to read what the system looked like when they authorised it.
@@ -269,7 +273,7 @@ def test_the_card_answers_for_every_status(
     harness: CardHarness,
     request_status: ActionRequestStatus,
 ) -> None:
-    """V34: one URL through the whole lifecycle, not a PENDING-only surface.
+    """One URL through the whole lifecycle, not a PENDING-only surface.
 
     A card that 404'd once a decision landed would send an operator who clicked twice to a
     dead page, and the second click is exactly when they want to read the outcome.
@@ -291,10 +295,12 @@ def test_the_card_answers_for_every_status(
 def test_another_operators_request_and_an_unknown_id_answer_identically(
     harness: CardHarness,
 ) -> None:
-    """V27, as amended by T37: "⊥ leak" is bound at the **body**, not at the status.
+    """The requester-match rule, as amended by the decision endpoints: "never leak" is bound at
+    the **body**, not at the status.
 
     A differing `error_code` is a 403 spelled differently, and a status-only test would not
-    catch it (B1's shape). Only `request_id` may differ, and V73 says why it must.
+    catch it (a differing code leaking existence). Only `request_id` may differ, and the shared
+    request-id rule says why it must.
     """
     other = harness.add_operator(OTHER_EMAIL)
     foreign = harness.add_card_for(other.id)
@@ -315,7 +321,7 @@ def test_another_operators_request_and_an_unknown_id_answer_identically(
 def test_a_request_whose_requester_was_deleted_belongs_to_nobody(
     harness: CardHarness,
 ) -> None:
-    """T34's FK is `SET NULL`, so a deleted operator leaves a NULL requester behind.
+    """The table's FK is `SET NULL`, so a deleted operator leaves a NULL requester behind.
 
     It matches nobody, which is the fail-closed direction — the alternative is a row anyone
     can read because it belongs to no one.
@@ -341,7 +347,7 @@ def test_the_read_asks_about_the_cookies_operator_never_the_url(
 
 
 def test_without_a_session_cookie_the_card_is_not_read_at_all(harness: CardHarness) -> None:
-    """V6: `require_session_user` runs before the handler, so an anonymous GET touches nothing.
+    """`require_session_user` runs before the handler, so an anonymous GET touches nothing.
 
     The empty journal is the assertion that matters — a 401 produced *after* a read would look
     the same from outside and would mean an unauthenticated caller had reached the row.
@@ -356,7 +362,7 @@ def test_without_a_session_cookie_the_card_is_not_read_at_all(harness: CardHarne
 
 
 def test_a_disabled_operator_loses_the_card_on_the_next_request(harness: CardHarness) -> None:
-    """V6: the session JWT has no revocation path, so the row re-read is the only bound."""
+    """The session JWT has no revocation path, so the row re-read is the only bound."""
     card = harness.add_card()
     harness.operator.is_active = False
 
@@ -377,7 +383,7 @@ def test_a_disabled_operator_loses_the_card_on_the_next_request(harness: CardHar
 def test_a_card_past_its_deadline_reads_expired_and_is_written_expired(
     harness: CardHarness,
 ) -> None:
-    """V32: a render path never serves a stale PENDING, and it makes the row terminal.
+    """A render path never serves a stale PENDING, and it makes the row terminal.
 
     Both halves, because either alone is the bug: reporting `EXPIRED` without the write leaves
     a row the next reader has to rediscover, and writing without reporting hands the operator a
@@ -413,7 +419,7 @@ def test_a_live_card_is_not_expired_by_being_read(harness: CardHarness) -> None:
 
 
 def test_a_foreign_id_never_reaches_the_expiry_writer(harness: CardHarness) -> None:
-    """V27 before V32, and this is the whole reason for that order.
+    """Requester-match before check-on-read, and this is the whole reason for that order.
 
     `expire_if_due` takes an id and no requester, and the id in this URL reaches an operator
     through a tool result that persists in LibreChat's MongoDB — so an expiry-first card
@@ -448,7 +454,7 @@ def _verify(harness: CardHarness, token: str, *, action_request_id: UUID) -> Non
 def test_the_card_carries_a_token_the_production_verifier_accepts(
     harness: CardHarness,
 ) -> None:
-    """V39, T46: the card is where a decision token comes from — there is no minting route.
+    """The card is where a decision token comes from — there is no minting route.
 
     Verified rather than pattern-matched: what matters about the token is that
     `verify_decision_csrf_token` accepts it for this operator and this request, which is
@@ -463,7 +469,7 @@ def test_the_card_carries_a_token_the_production_verifier_accepts(
 
 
 def test_a_token_from_one_card_does_not_authorise_another(harness: CardHarness) -> None:
-    """V39 binds the token to the request as well as the session.
+    """The CSRF token binds to the request as well as the session.
 
     So a second card left open in another tab is not a spare key. The separating half of the
     test above: a token bound to the operator alone would pass both.
@@ -480,7 +486,7 @@ def test_a_token_from_one_card_does_not_authorise_another(harness: CardHarness) 
 def test_a_token_minted_for_one_operator_does_not_verify_for_another(
     harness: CardHarness,
 ) -> None:
-    """V39's session binding, from the other side."""
+    """The CSRF token's session binding, from the other side."""
     card = harness.add_card()
     token = body(harness.get_card(card.action_request_id))["csrf"]
 
@@ -505,11 +511,11 @@ def test_a_terminal_card_carries_no_token(
     harness: CardHarness,
     request_status: ActionRequestStatus,
 ) -> None:
-    """V39: no live token for a card nobody may decide.
+    """No live token for a card nobody may decide.
 
     The decision door would refuse the POST anyway, so this is not the guard — it is
     the absence of a key with no door, and what the renderer reads to decide whether to draw
-    live buttons at all (V38's family: never a live Approve button on something inert).
+    live buttons at all (never a live Approve button on something inert).
     """
     card = harness.add_card(status=request_status, decided_at=CREATED_AT)
 
@@ -533,7 +539,7 @@ def test_an_expired_on_read_card_carries_no_token(harness: CardHarness) -> None:
 
 
 def test_a_broken_read_answers_the_shared_envelope(harness: CardHarness) -> None:
-    """V73: every error body carries `request_id`, and no route builds its own shape."""
+    """Every error body carries `request_id`, and no route builds its own shape."""
     card = harness.add_card()
     harness.repository.fail = RuntimeError("connection reset")
 
@@ -548,7 +554,8 @@ def test_a_broken_read_answers_the_shared_envelope(harness: CardHarness) -> None
 def test_a_malformed_id_does_not_reach_the_repository(harness: CardHarness) -> None:
     """A non-UUID path segment is a 422 from the path parameter, before any read.
 
-    Unlike T63's tool, where a malformed id had to answer with the *same* shape as an unknown
+    Unlike the action-result tool, where a malformed id had to answer with the *same* shape as
+    an unknown
     one because a model would otherwise learn which ids are well-formed, this is a
     browser on NOA's own origin reaching a URL NOA itself built. The 422 says the URL is
     wrong, which is the truth and the useful thing to say.

@@ -1,17 +1,18 @@
 """The CSRF token that guards a decision POST.
 
-V39 says the token is server-minted, signed and session-bound, and that a double-submit
-cookie is not enough. Each of those is a separate claim and each gets its own case here:
+The CSRF rule says the token is server-minted, signed and session-bound, and that a
+double-submit cookie is not enough. Each of those is a separate claim and each gets its own
+case here:
 
 - *server-minted and signed* — a token this process did not sign is refused, and the
   signature is over a key that is not the session-signing key;
 - *session-bound* — a token minted for one operator is refused for another;
-- *request-bound* — and for one approval card, refused for another. Stronger than V39 asks;
-  the point is that a card left open in a second tab is not a spare key.
+- *request-bound* — and for one approval card, refused for another. Stronger than the CSRF
+  rule asks; the point is that a card left open in a second tab is not a spare key.
 
 Plus the two the mechanism needs to be a mechanism at all: the comparison is constant-time,
-and it still *separates* (V87 — a comparator that has degraded into a tautology passes every
-run, including the ones it was written to catch).
+and it still *separates* (the compare-must-still-separate rule — a comparator that has
+degraded into a tautology passes every run, including the ones it was written to catch).
 
 No Postgres and no app: this is the primitive, driven directly. Its behaviour inside the two
 routes is `test_action_request_decision_routes.py`.
@@ -41,8 +42,9 @@ from core.approvals.errors import DecisionCsrfInvalidError
 from core.auth.jwt_service import JWTService
 from support.auth import JWT_SECRET, build_settings
 
-# A fixed moment, so an age assertion is arithmetic rather than a race. V87: nothing here
-# compares two tokens minted a fraction of a second apart and calls that equality.
+# A fixed moment, so an age assertion is arithmetic rather than a race. The
+# compare-must-still-separate rule: nothing here compares two tokens minted a fraction of a
+# second apart and calls that equality.
 NOW = datetime(2026, 8, 8, 12, 0, 0, tzinfo=UTC)
 
 USER = UUID("11111111-1111-4111-8111-111111111111")
@@ -86,7 +88,7 @@ def test_a_minted_token_verifies_for_its_own_operator_and_request(settings) -> N
 
 
 def test_verification_separates_distinct_tokens(settings) -> None:
-    """V87: the comparator still tells two genuinely different tokens apart.
+    """The comparator still tells two genuinely different tokens apart.
 
     A refusal test proves nothing on its own if the verifier could be rejecting everything,
     and an acceptance test proves nothing if it could be accepting everything. This asserts
@@ -152,7 +154,7 @@ def test_malformed_tokens_are_refused(settings, token: str) -> None:
 
     Named one by one rather than left to the signature check, because several of these would
     otherwise reach `int()` or an index and raise something that is *not* a
-    `DecisionCsrfInvalidError` — a 500 where V39 wants a 403.
+    `DecisionCsrfInvalidError` — a 500 where the CSRF rule wants a 403.
     """
     with pytest.raises(DecisionCsrfInvalidError):
         verify(settings, token)
@@ -202,7 +204,8 @@ def test_a_token_minted_under_a_different_secret_is_refused(settings) -> None:
 
 
 def test_another_operators_token_is_refused(settings) -> None:
-    """Session-bound, V39's own word. A planted cookie plus a borrowed token is not enough."""
+    """Session-bound, the CSRF rule's own word. A planted cookie plus a borrowed token is
+    not enough."""
     with pytest.raises(DecisionCsrfInvalidError):
         verify(settings, mint(settings, user_id=OTHER_USER))
 
@@ -214,7 +217,7 @@ def test_a_token_for_another_request_is_refused(settings) -> None:
 
 
 # --------------------------------------------------------------------------------------
-# Age: the pending TTL, with V79's clock discipline
+# Age: the pending TTL, with zero-leeway clock discipline
 # --------------------------------------------------------------------------------------
 
 
@@ -249,7 +252,8 @@ def test_the_ttl_follows_the_configured_pending_window(settings) -> None:
 
 
 def test_a_future_token_is_refused(settings) -> None:
-    """V79's rule, one mechanism over: zero leeway, and `issued_at` ahead of now is invalid.
+    """The zero-leeway rule, one mechanism over: zero leeway, and `issued_at` ahead of now
+    is invalid.
 
     Holds because mint and verify share one process clock. More than one API replica makes
     drift a real term, and the fix then is an explicit leeway rather than a silent widening.
@@ -266,7 +270,8 @@ def test_a_future_token_is_refused(settings) -> None:
 def test_the_comparison_is_constant_time() -> None:
     """`hmac.compare_digest`, asserted on the source rather than by timing it.
 
-    A timing assertion is the flakiest test that could be written here (V87's neighbourhood).
+    A timing assertion is the flakiest test that could be written here (the
+    compare-must-still-separate rule's neighbourhood).
     What is checkable is that the byte comparison in this module is the constant-time one and
     that no bare `==` sneaked in beside it — a plain comparison leaks the expected signature
     one byte at a time to a caller who may retry as often as they like.
@@ -305,7 +310,7 @@ def test_the_derived_key_is_not_the_session_secret() -> None:
 
 
 def test_a_minted_token_carries_no_secret_material(settings) -> None:
-    """V8, one mechanism over: the token is a MAC, not an envelope.
+    """The safe-payload rule, one mechanism over: the token is a MAC, not an envelope.
 
     Nothing readable travels in it — not the operator's id, not the request's, not the
     signing key. A verifier recomputes the message from values it already holds, which is

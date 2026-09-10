@@ -13,8 +13,8 @@ reader can diff them: the keys they share cannot yield a change, and the change 
 shared key. The only party holding both vocabularies is the runner that produced one of them and
 read the other. Held by `apps/api/tests/test_change_receipt_halves.py`, which drives each tool's
 gate and then its runner and compares the two halves a receipt is actually built from. It was
-prose alone until then, and the prose had the count wrong (V69's shape: a property asserted by
-nothing is worth what the assertion is worth).
+prose alone until then, and the prose had the count wrong — the shape of a control asserted by
+prose and held by nothing.
 
 The runner also knows more than either half says — which backend answered the confirming read,
 whether the write landed but the apply step did not — and that knowledge has no key in `after`
@@ -44,7 +44,8 @@ delta has, plus facets a family fills or leaves out.
 
 **Absence is structural.** Every facet is `Optional` in the type and omitted from
 `as_payload` when it is `None`, so a renderer that fabricates a measurement has to work at it.
-A missing outcome is absent, never `false` — the rule V86 states for a CHANGE whose confirming
+A missing outcome is absent, never `false` — the partial-verdict rule states this for a CHANGE
+whose confirming
 read came back partial, applied to every facet: an absent field beats a `false` nobody measured.
 
 `changed_fields` carries that distinction twice over, and the difference is load-bearing:
@@ -78,7 +79,7 @@ code already:
   `pmg_whitelist`'s `pmg_sync_failed` is the instance: the config moved and Postfix did not,
   which is neither a change nor a refusal.
 
-**The delta carries no reason.** C8's single field is operator-typed on the card, and the LLM
+**The delta carries no reason.** The one reason field is operator-typed on the card, and the LLM
 never authors, relays or sees it; a runner must not echo it back in its payload, because
 `result_summary` is derived from that payload and `noa_get_action_result` hands the summary to a
 model. A receipt key is the same door one step over, so the fence is checked here
@@ -208,8 +209,9 @@ class BackendOutcome:
 
     Four facts kept apart because they fail apart. `driven` is about the commands — whether this
     backend could be made to run them at all. `answered` is about the confirming read, taken
-    separately and from a fresh look, and it is the fact V86 turns on: a backend that said
-    nothing has not said the change took. `verdict` is that backend's own word, `None` when it
+    separately and from a fresh look, and it is the fact the partial-verdict rule turns on: a
+    backend that said nothing has not said the change took. `verdict` is that backend's own
+    word, `None` when it
     did not produce one. `error_code` names the remedy when the commands were refused.
 
     These render regardless of whether the envelope beside them said `ok`, because a refused
@@ -259,7 +261,8 @@ class ChangeDelta:
     """What one approved change moved, as the runner that moved it states it.
 
     `identity` and `verification` are always present: a delta that cannot say what it is about
-    describes nothing, and one that cannot say whether it was confirmed is the claim V86 refuses.
+    describes nothing, and one that cannot say whether it was confirmed is the claim the
+    partial-verdict rule refuses.
     Everything else is a facet, `Optional` in the type, and omitted from `as_payload` when
     absent — see the module docstring for what each `None` means, and for why `changed_fields`
     distinguishes `None` from `()`.
@@ -297,7 +300,7 @@ class ChangeDelta:
         - an empty `identity` — a delta about nothing;
         - a `verification_cause` on a `verified` delta, which is a reason for a non-answer
           attached to an answer;
-        - a reason-bearing key anywhere inside it (C8, V15, V43, and the module docstring);
+        - a reason-bearing key anywhere inside it (see the module docstring);
         - a `changed_fields` row whose two sides are equal, which is "changed only" broken;
         - a negative `bound.total`, which is not a bound and would render as one.
 

@@ -2,7 +2,7 @@
 
 `test_action_results_live.py` runs `SQLActionResultRepository` against a real Postgres,
 because the states a requester-match has to fail closed on are the database's: a NULL
-`requested_by_user_id` left behind by deleting an operator (the FK is `SET NULL`, T34), and a
+`requested_by_user_id` left behind by deleting an operator (the FK is `SET NULL`), and a
 row that three different writers in `core.approvals` have touched.
 
 What this double buys is the other half: the *order* `ActionResultService` does things in,
@@ -32,7 +32,7 @@ from core.db.lifecycle import ActionRequestStatus, ToolRunStatus
 # A CHANGE tool. Named rather than built: these tests are about the read path.
 CHANGE_TOOL = "whm_suspend_account"
 
-# The gate's `approval_context` shape (T33's `build_approval_context`), already redacted.
+# The gate's `approval_context` shape (`build_approval_context`), already redacted.
 ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 
 # What an operator typed on the card and what the preflight found. Neither may
@@ -118,7 +118,7 @@ class StoredResult:
 class FakeActionResultRepository:
     """In-memory `ActionResultRepository`, with the read breakable.
 
-    `fail` exists because V19's guarantee is that *no* raw exception reaches the model, and
+    `fail` exists because no raw exception may ever reach the model, and
     the read is the one place on this tool's path that can raise for reasons nobody predicted.
     """
 

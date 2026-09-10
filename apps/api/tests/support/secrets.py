@@ -3,7 +3,7 @@
 `build_cipher` started in `support/whm.py`. Proxmox needs it too, PMG and the admin
 server routes will, and importing a WHM-named helper from a Proxmox test would be a lie
 about what it is — so it lives here. This is its one home; the re-export `support/whm.py`
-carried through T18 is gone as of T72.
+carried through the PMG port is gone since the doubles moved to their one home.
 """
 
 from __future__ import annotations

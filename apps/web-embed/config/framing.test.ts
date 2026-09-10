@@ -10,7 +10,7 @@ import {
 } from './framing'
 
 /**
- * The framing allowlist (§T.45, V41).
+ * The framing allowlist.
  *
  * Built against an env object passed in rather than `process.env`: the value is read from the
  * repo-root `.env` at build time, so a test that read the real environment would pass or fail on
@@ -23,7 +23,8 @@ const env = (value?: string): Record<string, string | undefined> =>
 describe('resolveFrameAncestor', () => {
   it('is the deployed LibreChat origin when nothing is configured', () => {
     // The shipped value. `.env.example` and `core/config.py::noa_librechat_origin` carry the same
-    // string, and V41 names it; pinning it here means a change to it is a change to this line.
+    // string, and the framing-header rule names it; pinning it here means a change to it is a
+    // change to this line.
     expect(resolveFrameAncestor(env())).toBe('https://chat.noa.internal')
     expect(DEFAULT_LIBRECHAT_ORIGIN).toBe('https://chat.noa.internal')
   })
@@ -37,7 +38,7 @@ describe('resolveFrameAncestor', () => {
 
   it('reads the configured origin — the separating case', () => {
     // Without this the whole suite passes against a function that ignores its input and always
-    // answers the default. It is also the mechanism the C21 re-verify rig needs: the spike
+    // answers the default. It is also the mechanism the render-path re-verify rig needs: the spike
     // harness runs LibreChat on `http://chat.noa.internal:3080`.
     expect(resolveFrameAncestor(env('http://chat.noa.internal:3080'))).toBe(
       'http://chat.noa.internal:3080',
@@ -62,7 +63,8 @@ describe('resolveFrameAncestor', () => {
     ['data:', 'a scheme-source allows every document of that scheme'],
   ])('refuses %s — %s', (value: string) => {
     // A throw, not a silent fallback: under `next build`/`next dev` this is a build or boot
-    // failure, which is what §T.8 asks of a config error. A default here would ship a header
+    // failure, which is what the fail-at-boot-not-as-a-500 rule asks of a config error. A
+    // default here would ship a header
     // nobody meant and read as success.
     expect(() => resolveFrameAncestor(env(value))).toThrow(LIBRECHAT_ORIGIN_ENV_VAR)
   })
@@ -82,13 +84,13 @@ describe('buildFramingHeaders', () => {
 
   it('covers every path, not just the pages', () => {
     // Config headers are applied during route resolution without ending the match, so one entry
-    // covers the pages, the `/api/*` proxy (§T.44), `/healthz` and the 404. A page-shaped pattern
+    // covers the pages, the `/api/*` proxy, `/healthz` and the 404. A page-shaped pattern
     // would leave the next route to remember a guard for itself.
     expect(FRAMING_SOURCE).toBe('/(.*)')
   })
 
   it('sends no X-Frame-Options', () => {
-    // §T.45: none is needed — `frame-ancestors` supersedes it, and `ALLOW-FROM` (the only form
+    // None is needed — `frame-ancestors` supersedes it, and `ALLOW-FROM` (the only form
     // that could name one origin) is dead. Adding one back would break framing in any client that
     // honours XFO over CSP, so its absence is asserted rather than assumed.
     const keys = buildFramingHeaders(env()).flatMap((entry) =>

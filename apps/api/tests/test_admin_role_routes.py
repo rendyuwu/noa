@@ -9,11 +9,12 @@ ends its transaction while a refused one does not.
 
 `support.admin.admin_harness` runs the real routers, the real `require_admin`, the real
 `AuthorizationService` and the shared error handler; only SQL and LDAP are faked. So a 403 here
-is the shipped 403. The live `commit()` — the half a double cannot witness (B10, V100c) — is
+is the shipped 403. The live `commit()` — the half a double cannot witness — is
 asserted against Postgres in
 `test_rbac_repository.py::test_commit_makes_a_role_grant_outlive_the_request`.
 
-**`last_active_admin` cannot reach these routes at all**, unlike T51's: no role route touches a
+**`last_active_admin` cannot reach these routes at all**, unlike the admin user management
+routes: no role route touches a
 user's admin status. The nearest thing, deleting the `admin` role itself, is refused earlier by
 `reserved_role`.
 """
@@ -45,7 +46,7 @@ from support.admin import (
 )
 from support.rbac import INTERNAL_ROLE, ROLE_NOC, ROLE_SUPPORT, TOOL_CHANGE, TOOL_READ, TOOL_UNKNOWN
 
-# The six routes T52 ships, as (method, path template, body). Parametrized rather than repeated
+# The six role routes, as (method, path template, body). Parametrized rather than repeated
 # so a seventh route added without its own gate test fails the ones below.
 ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", ROLES_PATH, None),
@@ -77,7 +78,7 @@ def _call(harness: AdminHarness, method: str, path: str, body: dict[str, Any] | 
     return harness.client.request(method, path.format(role=role), json=body)
 
 
-# --- V13 + V6: the gate, on every route ---
+# --- Admin refusal and the re-read: the gate, on every route ---
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ROUTES)
@@ -98,7 +99,8 @@ def test_an_admin_reaches_every_role_route(
 def test_every_role_route_refuses_a_non_admin(
     method: str, path: str, body: dict[str, Any] | None
 ) -> None:
-    """V13: authenticated, holds a role, still refused — on all six.
+    """Non-admin refused on admin endpoints: authenticated, holds a role, still refused — on all
+    six.
 
     The role name is random *and well-formed* on purpose: the gate must decide before anything
     is looked up or validated, so a non-admin cannot use the 403/404/400 split to learn which
@@ -126,7 +128,7 @@ def test_every_role_route_refuses_a_missing_cookie(
 
 
 def test_a_disabled_admin_loses_the_role_routes_on_the_next_request() -> None:
-    """V6: the row re-read runs before the role check, and the cookie is still valid.
+    """The row re-read runs before the role check, and the cookie is still valid.
 
     The session JWT has no revocation path before `exp`, so this re-read is the only thing that
     bounds a disabled admin's live session — and a grant editor is the surface where that
@@ -150,8 +152,8 @@ def test_a_disabled_admin_loses_the_role_routes_on_the_next_request() -> None:
 def test_the_list_carries_assignable_roles_and_admin() -> None:
     """`admin` is a real row and stays visible; the panel's users page assigns it.
 
-    Hiding it would make the displayed role set smaller than the assignable one, which is the
-    same disagreement V10 refuses one read over (see `test_the_admin_role_reports_the_whole_
+    Hiding it would make the displayed role set smaller than the assignable one, which is the same
+    disagreement the admin bypass refuses one read over (see `test_the_admin_role_reports_the_whole_
     catalog`).
     """
     with admin_harness() as harness:
@@ -163,7 +165,8 @@ def test_the_list_carries_assignable_roles_and_admin() -> None:
 
 
 def test_the_list_omits_internal_roles() -> None:
-    """V13, V75: `user:` roles are NOA's bookkeeping. Offering one would ask the panel for a
+    """Internal roles and the 410 on direct grants: `user:` roles are NOA's bookkeeping. Offering
+    one would ask the panel for a
     name `PUT /admin/users/{id}/roles` refuses with 400."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -174,7 +177,7 @@ def test_the_list_omits_internal_roles() -> None:
 
 
 def test_the_wire_shapes_are_the_ones_the_panel_reads() -> None:
-    """§I.admin-api, field for field: `{roles}`, `{name}`, `{tools}`, `{ok}`.
+    """The admin API's contract, field for field: `{roles}`, `{name}`, `{tools}`, `{ok}`.
 
     The ported panel already parses these, so a renamed key is a broken page rather than
     a caught type error — its reader is `roles-api.ts`, not a generated client.
@@ -258,7 +261,7 @@ def test_a_malformed_role_name_is_refused(name: str) -> None:
     assert response.json()["error_code"] == "invalid_role_name"
 
 
-# --- V13: `admin` is reserved ---
+# --- `admin` is reserved ---
 
 
 @pytest.mark.parametrize(
@@ -274,8 +277,8 @@ def test_the_admin_role_refuses_every_write(
 ) -> None:
     """403 `reserved_role`, not 404: pretending it is absent would be a lie the panel renders.
 
-    V10 gives `admin` every known tool by bypassing the grant table, so rows written here would
-    be decoration implying a limit NOA does not enforce.
+    The admin bypass gives `admin` every known tool by skipping the grant table, so rows written
+    here would be decoration implying a limit NOA does not enforce.
     """
     with admin_harness() as harness:
         harness.sign_in()
@@ -287,7 +290,7 @@ def test_the_admin_role_refuses_every_write(
 
 
 def test_the_admin_role_reports_the_whole_catalog() -> None:
-    """V10: displayed state equals enforced state.
+    """Displayed state equals enforced state.
 
     `admin` holds no `role_tool_permissions` rows, so a read that answered from the table alone
     would show a role permitting nothing while it permits everything.
@@ -303,7 +306,8 @@ def test_the_admin_role_reports_the_whole_catalog() -> None:
 
 
 def test_deleting_a_role_removes_it_and_its_assignments() -> None:
-    """V14: everyone who held it loses those tools on their next request — there is no orphaned
+    """Effective immediately: everyone who held it loses those tools on their next request — there
+    is no orphaned
     grant row left to resolve."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -363,7 +367,7 @@ def test_a_grant_replaces_rather_than_adds() -> None:
 
 
 def test_a_grant_change_is_visible_on_the_very_next_user_list() -> None:
-    """V14: permission updates take effect immediately — nothing between these two routes
+    """Permission updates take effect immediately — nothing between these two routes
     caches, and they are the pair an operator judges a grant by."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -377,7 +381,8 @@ def test_a_grant_change_is_visible_on_the_very_next_user_list() -> None:
 
 
 def test_unknown_tools_are_refused_as_a_set() -> None:
-    """V10: a name outside the catalog is 400 `unknown_tools`, and every offender is named in
+    """Unknown names refused as a set: a name outside the catalog is 400 `unknown_tools`, and every
+    offender is named in
     `detail` at once so an admin who mistyped one of twenty does not bisect the list."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -407,7 +412,8 @@ def test_the_grant_routes_404_an_absent_role(method: str) -> None:
 @pytest.mark.parametrize("method", ["GET", "PUT"])
 def test_a_malformed_role_name_is_400_not_404_on_the_grant_routes(method: str) -> None:
     """The validator runs on reads too, so the 400/404 split cannot be used to probe what it
-    accepts. `{name}` is a free-form path segment here, unlike T51's `UUID` params, so this is
+    accepts. `{name}` is a free-form path segment here, unlike the admin user management
+    routes' `UUID` params, so this is
     the one place that split is reachable at all."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -451,7 +457,7 @@ def test_the_tools_route_follows_the_services_own_catalog() -> None:
     assert refused.json()["error_code"] == "unknown_tools"
 
 
-# --- V14: one audit event per change, from the route ---
+# --- One audit event per change, from the route ---
 
 
 @pytest.mark.parametrize(("method", "path", "body", "event_type", "target"), MUTATIONS)
@@ -473,7 +479,8 @@ def test_every_mutating_role_route_records_one_audit_event(
 
 
 def test_the_role_read_routes_record_nothing() -> None:
-    """V14 is about changes. A trail of list calls is V45's job, on another surface."""
+    """Audit is about changes. A trail of list calls is the tool-run trail's job, on another
+    surface."""
     with admin_harness() as harness:
         harness.sign_in()
         harness.grant(ROLE_SUPPORT, TOOL_READ)
@@ -485,14 +492,15 @@ def test_the_role_read_routes_record_nothing() -> None:
         assert harness.audit.events == []
 
 
-# --- V100: the transaction boundary, from the route ---
+# --- The commit boundary, from the route ---
 
 
 @pytest.mark.parametrize(("method", "path", "body", "event_type", "target"), MUTATIONS)
 def test_every_mutating_role_route_commits_once(
     method: str, path: str, body: dict[str, Any] | None, event_type: str, target: str
 ) -> None:
-    """V100: `get_db_session` never commits, so a write that does not end its transaction
+    """A service owning a mutation owns its commit boundary: `get_db_session` never commits,
+    so a write that does not end its transaction
     answers 200 over a rollback. One commit per request, not one per statement."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -505,7 +513,7 @@ def test_every_mutating_role_route_commits_once(
 
 
 def test_a_reserved_role_refusal_commits_nothing() -> None:
-    """V100(a): every guard raises before the commit, so a refused write persists nothing.
+    """Every guard raises before the commit, so a refused write persists nothing.
 
     The committed snapshot is the assertion surface, not the mutable dict: a future guard
     ordered *after* the write would pass a "no rows" check on the dict alone and fail this one.
@@ -524,8 +532,9 @@ def test_a_reserved_role_refusal_commits_nothing() -> None:
 
 
 def test_an_unknown_tool_refusal_leaves_the_existing_grants_alone() -> None:
-    """V100(a) again, where it can actually bite: the refusal sits between the role lookup and
-    the replacement, so a guard moved after `replace_role_tool_permissions` would revoke the
+    """The same commit-boundary rule again, where it can actually bite: the refusal sits between the
+    role lookup and the replacement, so a guard moved after `replace_role_tool_permissions` would
+    revoke the
     role's real grants while answering 400."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -540,11 +549,12 @@ def test_an_unknown_tool_refusal_leaves_the_existing_grants_alone() -> None:
         assert harness.repository.role_tools[ROLE_SUPPORT] == {TOOL_READ}
 
 
-# --- V8 + V73: the error envelope, from a real route ---
+# --- The error envelope, from a real route ---
 
 
 def test_a_404_body_carries_no_internal_detail() -> None:
-    """V8: `detail` names the role that is absent. Body gets `error_code`, `message`,
+    """The envelope shape: `detail` names the role that is absent. Body gets `error_code`,
+    `message`,
     `request_id` — nothing else, so a refusal cannot echo back what was submitted."""
     with admin_harness() as harness:
         harness.sign_in()
@@ -557,11 +567,11 @@ def test_a_404_body_carries_no_internal_detail() -> None:
 
 
 def test_an_unknown_tools_body_does_not_echo_the_submitted_names() -> None:
-    """V8: `UnknownToolError` carries the offenders for the log, and the body carries the code.
+    """`UnknownToolError` carries the offenders for the log, and the body carries the code.
 
     The panel branches on `unknown_tools` and re-renders the operator's own selection, which it
     already holds — so nothing here needs the names, and a body that echoed request content
-    would be a second echo path beside the two T64 closed.
+    would be a second echo path beside the two the shared error handler closed.
     """
     with admin_harness() as harness:
         harness.sign_in()
@@ -576,7 +586,8 @@ def test_an_unknown_tools_body_does_not_echo_the_submitted_names() -> None:
 
 
 def test_an_error_body_and_header_share_one_request_id() -> None:
-    """V73: same value in the body and in `x-request-id`, so an operator can quote either."""
+    """The request id survives the hop: same value in the body and in `x-request-id`, so an
+    operator can quote either."""
     with admin_harness() as harness:
         harness.sign_in()
 
@@ -587,7 +598,7 @@ def test_an_error_body_and_header_share_one_request_id() -> None:
 
 def test_the_users_route_still_answers_beside_the_role_routes() -> None:
     """Both admin routers on one app, one `AuthorizationService`, one repository — the wiring
-    every V14 assertion above depends on."""
+    every effective-immediately assertion above depends on."""
     with admin_harness() as harness:
         harness.sign_in()
 

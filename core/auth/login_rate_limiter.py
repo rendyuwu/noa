@@ -1,8 +1,9 @@
 """Login rate limiter.
 
-Ported from `noa-old` branch `MCP` (`core/auth/login_rate_limiter.py`, C13).
+Ported from `noa-old` branch `MCP` (`core/auth/login_rate_limiter.py`).
 
-The clock arithmetic moved to `core.auth.attempt_limiter.AttemptLimiter` when T12 needed
+The clock arithmetic moved to `core.auth.attempt_limiter.AttemptLimiter` when the MCP
+identity resolver needed
 the same counting for failed MCP authentication. What is left here is the part that
 is about *login*: which keys an attempt lands in, and which error a block raises.
 
@@ -52,7 +53,7 @@ UNKNOWN_IP: Final = UNKNOWN_KEY
 
 DETAIL_BLOCKED = "login blocked by rate limiter"
 
-# The shared shapes, under the names T8's callers already import.
+# The shared shapes, under the names the login flow's callers already import.
 LoginRateLimitBucket = AttemptBucket
 LoginRateLimitRepository = AttemptLimitRepository
 

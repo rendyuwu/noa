@@ -1,4 +1,4 @@
-"""A skipped lane is not a passed one (§V.102).
+"""A skipped lane is not a passed one.
 
 `support/database.py::migrated_database` skips when Postgres is unreachable, and that is the right
 default: 92 of this suite's 115 files need no database, and a laptop without Docker should still
@@ -6,15 +6,16 @@ run them. The cost is that `uv run pytest -q` also exits **0** when the other 23
 files that carry every live auth, RBAC, approval-decision, audit, migration and repository
 behaviour. In CI that is a green pipeline over a data layer that was never exercised.
 
-`NOA_REQUIRE_POSTGRES` is the opt-out, and these are its negative controls. §V.87 and §V.89 both
-say the same thing about a control like this: without a case proving the *forbidden* outcome is
-reachable, the flag passes with its `if` deleted. So the pair is asserted in both directions, and
+`NOA_REQUIRE_POSTGRES` is the opt-out, and these are its negative controls. The rule that holds
+for a clock-stamp compare and for a concurrency race says the same thing about a control like
+this: without a case proving the *forbidden* outcome is reachable, the flag passes with its
+`if` deleted. So the pair is asserted in both directions, and
 the truthiness rule is asserted too — a variable pinned `0` reading as "required" would turn a job
 strict by writing it off, which is the opposite of what that line means.
 
 The behaviour is tested through `unreachable_postgres` rather than by pointing `migrated_database`
 at a dead server: the subject here is the skip-versus-fail decision, and a real connection attempt
-would put a socket timeout between the test and its assertion (§V.90 — the gate must not be the
+would put a socket timeout between the test and its assertion (the gate must not be the
 thing under test).
 """
 
@@ -52,7 +53,7 @@ def test_unreachable_postgres_fails_when_the_flag_is_set(
     """The negative control for the case above: the forbidden outcome is reachable.
 
     Without this, the test above passes against a `unreachable_postgres` that can only ever skip
-    — which is exactly the function §V.102 was written to replace.
+    — which is exactly the function that rule was written to replace.
     """
     monkeypatch.setenv(REQUIRE_POSTGRES_ENV_VAR, "1")
 

@@ -1,4 +1,4 @@
-"""MCP token management: list, mint, revoke — admin and self-service (T53, I.admin-api).
+"""MCP token management: list, mint, revoke — admin and self-service.
 
 **Six routes and no policy**, the rule `admin_users.py` and `admin_roles.py` state one file
 over: every one of them lives in `core.auth.mcp_token_service` — the 256-bit generator, the
@@ -18,21 +18,21 @@ session the cookie resolved to, so there is no path segment, query parameter or 
 caller could substitute to reach a colleague's tokens — the scoping is structural rather than
 checked. On the revoke route the *token* id is still a path parameter, and the service puts
 both ids in the WHERE clause, so a colleague's token id answers exactly as a fabricated one
-does: 404 `mcp_token_not_found`, never 403 (V2, the V27/V76 existence-⊥-leak principle).
+does: 404 `mcp_token_not_found`, never 403.
 
 **The plaintext exists in exactly one response.** `MintedTokenResponse` is the only model in
-this app with a `plaintext` field, and only `POST` returns it (V2 show-once). Every read path
+this app with a `plaintext` field, and only `POST` returns it (show-once). Every read path
 returns `McpTokenView`, which has no field that could hold one — a mistake here is not
 "remember to strip it" but "there is nothing to strip". `token_hash` is likewise absent rather
 than redacted.
 
 **Nothing here builds an `HTTPException`.** Refusals are `McpTokenError` /
-`UserNotFoundError` subclasses and `noa_api.api.errors` owns status, body and `request_id`
-(V8, V73), so a 404 for an unknown user and a 404 for an unknown token cannot drift apart.
+`UserNotFoundError` subclasses and `noa_api.api.errors` owns status, body and `request_id`,
+so a 404 for an unknown user and a 404 for an unknown token cannot drift apart.
 
 **An inactive user may still be minted a token, and that is deliberate** — the service's call,
-documented there: the credential grants nothing while `is_active=False` (V11 zeroes their
-permissions, V1 re-checks per request), and setting an operator up before activating them is a
+documented there: the credential grants nothing while `is_active=False` (permissions zero out
+while inactive, re-checked per request), and setting an operator up before activating them is a
 legitimate order of operations. Note the asymmetry: `/me` is unreachable for such an operator
 anyway, because `require_session_user` refuses their session first.
 """
@@ -110,7 +110,7 @@ class MintedTokenResponse(BaseModel):
 
 
 class RevokeTokenResponse(BaseModel):
-    """`{ok: true}`. The row is gone, so there is nothing to return (V2: revoke = delete)."""
+    """`{ok: true}`. The row is gone, so there is nothing to return (revoke = delete)."""
 
     ok: bool
 
@@ -171,8 +171,7 @@ async def mint_user_token(
 
     `actor_email` is the admin's, not the target's: the audit event answers "who issued this
     credential", which for a token minted on someone else's behalf is the question worth
-    logging. The event carries ids, prefix and label, never the digest or the plaintext
-    (V2, V8).
+    logging. The event carries ids, prefix and label, never the digest or the plaintext.
     """
     minted = await tokens.mint(user_id, label=payload.label, actor_email=admin_user.email)
     return MintedTokenResponse(
@@ -226,7 +225,7 @@ async def mint_own_token(
 
     Self-service, and it grants no privilege: an MCP token authenticates *as* the operator and
     nothing more, so what it can call is whatever their roles already permit — zero for an
-    operator with none (V1 re-checks per call, V11 zeroes a disabled account). The escalation
+    operator with none (re-checked per call, zero for a disabled account). The escalation
     a self-mint route would have to enable does not exist, because the token carries no scope
     of its own.
     """

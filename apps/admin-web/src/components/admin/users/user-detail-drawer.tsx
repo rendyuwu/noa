@@ -236,7 +236,7 @@ function UserDetailContent({
         </dl>
 
         {/*
-          A link out, not a second list (§T76). Rendering the token table here
+          A link out, not a second list. Rendering the token table here
           would put a DataTable with its own loading/empty/error states and a
           mint dialog inside a 360px panel, and would give this drawer a second
           action competing with "Save roles". The tokens route owns all of that.
@@ -288,8 +288,8 @@ function UserDetailContent({
 
           {/*
             One tool list, not two. The ported drawer also rendered "Legacy direct
-            grants" from `direct_tools`, a field NOA's API does not send: V75 makes
-            per-user grants a 410 and `AdminUserResponse` has no such key.
+            grants" from `direct_tools`, a field NOA's API does not send: direct per-user
+            grants are a 410 and `AdminUserResponse` has no such key.
             A block that can only ever render empty is a capability the operator is
             invited to look for.
           */}

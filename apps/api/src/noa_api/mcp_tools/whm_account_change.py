@@ -121,11 +121,11 @@ from core.db.lifecycle import ToolRisk
 from core.integrations.whm.accounts import WHMAccount
 from noa_api.mcp_tools.change_gate import build_change_gate_response, open_change_request
 from noa_api.mcp_tools.change_target import (
-    # Hoisted to `change_target` at T25, when the firewall runner became the second caller of
-    # the same refusals and the same status words. Re-exported below, so every name this
-    # module already published keeps working from here — including the two the runners one
-    # module over are now the only readers of, because a code's home is where a reader looking
-    # it up expects to find it.
+    # Hoisted to `change_target` with the release-and-allow tool, when the firewall runner became
+    # the second caller of the same refusals and the same status words. Re-exported below, so every
+    # name this module already published keeps working from here — including the two the runners one
+    # module over are now the only readers of, because a code's home is where a reader looking it up
+    # expects to find it.
     ERROR_SERVER_UNAVAILABLE,
     MESSAGE_SERVER_UNAVAILABLE,
     STATUS_CHANGED,
@@ -141,9 +141,9 @@ from noa_api.mcp_tools.results import (
     tool_ok,
 )
 from noa_api.mcp_tools.whm_account_owner_gate import (
-    # Hoisted at T78, when the runner became the second caller of the same refusal — the shape
-    # `change_target` was hoisted in. Re-exported below, so every name this module publishes
-    # keeps working from here.
+    # Hoisted with the owner-vs-credential guard, when the runner became the second caller of the
+    # same refusal — the shape `change_target` was hoisted in. Re-exported below, so every name this
+    # module publishes keeps working from here.
     ERROR_ACCOUNT_OWNER_UNKNOWN,
     ERROR_WRONG_CREDENTIAL_FOR_OWNER,
     EVIDENCE_API_USERNAME,
@@ -163,7 +163,8 @@ TOOL_WHM_UNSUSPEND_ACCOUNT = "whm_unsuspend_account"
 
 # The evidence keys the tools write and the runners read back. Constants because they cross a
 # boundary in time as well as in code — a tool writes them into `approval_context` JSONB and
-# the runner reads them minutes later — and a misspelt key in JSONB reads as an absent one (V66,
+# the runner reads them minutes later — and a misspelt key in JSONB reads as an absent one
+# (reusable functions over duplication,
 # the argument `core.approvals.context` makes one level up).
 EVIDENCE_SERVER_ID = "server_id"
 EVIDENCE_SERVER_NAME = "server"
@@ -222,9 +223,12 @@ DESCRIPTION_WHM_UNSUSPEND_ACCOUNT = (
 # two schemas cannot drift into describing one argument two ways.
 #
 # It does **not** mean what it means on the read tools, and this is where a model learns that
-# (§V106). Both branches are stated because neither covers the other: reseller rows are named
-# after their credential (V109(b)) and hidden from `whm_list_servers` (V109(a)), while the root
-# rows cannot all be called `root` — so for the 56 of 451 measured `owner=root` accounts (§R.33)
+# (owner-as-`server_ref`). Both branches are stated because neither covers the other: reseller
+# rows are named
+# after their credential (the name == `api_username` rule) and hidden from `whm_list_servers`
+# (filtered from its output), while the root
+# rows cannot all be called `root` — so for the 56 of 451 measured `owner=root` accounts
+# (measured live on the host)
 # the machine's own row is the answer. `refuse_unproven_ownership` carries the rest, including
 # why "pass the owner" alone would be false.
 SERVER_REF_DESCRIPTION: Final = (
@@ -246,7 +250,7 @@ async def collect_account_state(
     username: str,
     context: McpToolContext,
 ) -> ToolPayload:
-    """One account's current state on one WHM server. Internal — ⊥ an MCP tool.
+    """One account's current state on one WHM server. Internal — never an MCP tool.
 
     The before-state an operator authorises against, and the same function both account CHANGE
     tools call. Not decorated with `sanitize_tool_errors`: its callers are exposed
@@ -264,16 +268,17 @@ async def collect_account_state(
     — those strings say which system to fix.
 
     The match is exact on `user`. A CHANGE that guessed which account an operator meant is what
-    C10 exists to prevent, and `whm_search_accounts` is the discovery step in front of it.
+    refusing to guess exists to prevent, and `whm_search_accounts` is the discovery step in front of
+    it.
 
     **The credential comes back beside the account.** `api_username` and the host are the row's,
-    captured by `fetch_whm_accounts` off the row that won resolution rather than read again
-    here; `owner` is the account's, lifted out of the summary onto the payload because the
-    ownership compare and the audit trail both ask for it by name and neither should have to
-    know the shape of a `listaccts` row (§V106, §V108). Raw as their sources gave them —
-    `None` when a source did not answer — because the compare has to be able to tell a name it
-    could not read from one it read and disliked; the word for a non-answer is written where
-    the evidence is built.
+    captured by `fetch_whm_accounts` off the row that won resolution rather than read again here;
+    `owner` is the account's, lifted out of the summary onto the payload because the ownership
+    compare and the audit trail both ask for it by name and neither should have to know the shape of
+    a `listaccts` row (owner-as-`server_ref`, the four recorded fields). Raw as their sources gave
+    them — `None` when a source did not answer — because the compare has to be able to tell a name
+    it could not read from one it read and disliked; the word for a non-answer is written where the
+    evidence is built.
     """
     listed = await fetch_whm_accounts(server_ref=server_ref, context=context)
     if listed.get("ok") is not True:
@@ -329,11 +334,13 @@ async def whm_suspend_account(
     - the preflight's failures pass straight through with their own codes and `choices`.
     - an account that is **already suspended** is answered `no_op` and no request is opened. That
       payload names the account and the server and carries nothing else: it is transcript,
-      and the account summary holds WHM's own `suspendreason`, which as of T22 is the operator's
+      and the account summary holds WHM's own `suspendreason`, which as of the suspend tool is
+      the operator's
       reason.
-    - otherwise `open_change_request` writes the PENDING row with the preflight as evidence (V33,
-      V35) and `build_change_gate_response` turns its id into the card's address and the iframe
-      (V24, V25).
+    - otherwise `open_change_request` writes the PENDING row with the preflight as evidence
+      (context persisted at gate time; provenance the card shows) and `build_change_gate_response`
+      turns its id into the card's address and the iframe
+      (one function shapes every CHANGE result; link-out text beside the frame).
 
     No `reason` parameter, and nowhere to add one: the word is typed by an operator on the card,
     after this result has been rendered and forgotten. The gate refuses a
@@ -401,12 +408,15 @@ async def whm_unsuspend_account(
     - otherwise the question is opened, exactly as for a suspension.
 
     Both answers that reach a transcript are built from the username and the server name rather
-    than from the account summary, and here that matters more than it did at T22: an account
+    than from the account summary, and here that matters more than it did at the suspend tool:
+    an account
     being unsuspended is suspended right now, so its summary carries `suspendreason` — the
-    operator's own words from the suspension (C8, V26, V96a).
+    operator's own words from the suspension (the reason field the LLM never sees, an id-only
+    URL, no path back for a value once written).
 
     No `reason` parameter, and nowhere to add one. Nothing is written out to WHM
-    on this path either: `unsuspendacct` has no note field, so V96's return paths do not open.
+    on this path either: `unsuspendacct` has no note field, so no path back for a value once
+    written opens.
     """
     normalized_username = username.strip()
     if not normalized_username:
@@ -462,10 +472,12 @@ async def whm_unsuspend_account(
 def register_whm_account_change_tools(
     server: FastMCP, *, context: McpToolContext
 ) -> dict[str, ToolRisk]:
-    """Register the WHM account CHANGE tools; return each name with its risk (I.mcp, V20).
+    """Register the WHM account CHANGE tools; return each name with its risk (the MCP `tools/call`
+    contract, risk and status kept as separate columns).
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for
-    these calls — they open an approval request and execute nothing, and V46's row belongs
+    these calls — they open an approval request and execute nothing, and the run-plus-receipt
+    row belongs
     to the executor that runs after a decision. It is also what makes
     `registry.assert_change_runners_cover` demand a runner for each name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
@@ -500,7 +512,7 @@ def register_whm_account_change_tools(
         name=TOOL_WHM_UNSUSPEND_ACCOUNT,
         description=DESCRIPTION_WHM_UNSUSPEND_ACCOUNT,
         # `destructiveHint` is False and that is the whole reason the pair is not one tool with
-        # an `action` enum (DECISIONS §9): lifting a suspension restores service rather than
+        # an `action` enum (DECISIONS section 9): lifting a suspension restores service rather than
         # removing it, so the two names carry opposite risk and RBAC can grant them apart.
         annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True},
     )
@@ -542,21 +554,24 @@ async def _open_account_change(
     The preflight `state` becomes the row's evidence verbatim, so the card describes the read
     that decided there was something to approve. `server_ref` is recorded as the model
     passed it, because the arguments are a record of what was asked for; what the change will
-    actually run against is `evidence["server_id"]` (V33, `_resolve_change_target`).
+    actually run against is `evidence["server_id"]` (context persisted at gate time,
+    `_resolve_change_target`).
 
-    **The ownership compare is here rather than in each tool** (§V106). This is the one door both
+    **The ownership compare is here rather than in each tool** (owner-as-`server_ref`). This is
+    the one door both
     account CHANGE tools reach `open_change_request` through, so putting the guard at the door
     makes "no card is opened for a credential that cannot perform the change" a property of the
     mechanism instead of a line two tools each have to remember — and a third account CHANGE
     tool inherits it by calling this function at all.
 
-    Ownership is **proven** here or the change is refused (§V106, V86): three of the four
+    Ownership is **proven** here or the change is refused (owner-as-`server_ref`, folding a
+    non-answer into the benign value): three of the four
     verdicts stop at this line, the two unreported ones included.
 
-    The evidence names the credential as well as the machine (§V108). `owner` and `api_username`
-    go in straight rather than defensively: a card is only built past the guard above, which
-    proved both readable. The account summary keeps its own `owner` too — the flat key is what
-    the card labels and what the runner compares, the summary is what WHM said.
+    The evidence names the credential as well as the machine (the four recorded fields). `owner` and
+    `api_username` go in straight rather than defensively: a card is only built past the guard
+    above, which proved both readable. The account summary keeps its own `owner` too — the flat key
+    is what the card labels and what the runner compares, the summary is what WHM said.
     """
     owner = state.get(EVIDENCE_OWNER)
     api_username = state.get(EVIDENCE_API_USERNAME)

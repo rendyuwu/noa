@@ -19,26 +19,27 @@ import { SignInNotice } from '@/components/sign-in-notice'
 import styles from './card.module.css'
 
 /**
- * The card itself, and the loop that keeps it true (§T.41, §T.42 — V27, V29, V33, V34, V35, V38).
+ * The card itself, and the loop that keeps it true.
  *
  * **Seeded by the server, not fetched by the browser.** `page.tsx` reads the card with the incoming
  * cookie and hands the result here as `initial`, so the HTML that reaches the frame is already the
  * authenticated card — there is no moment where an operator watches an empty box while a client
  * fetch decides who they are, and the CSRF token is part of the render rather than something a page
- * could ask for without having been allowed to read the request first (§T.41(c), V39).
+ * could ask for without having been allowed to read the request first.
  *
  * **Then it asks again, because the state lives in the database**. Approve returns 202 and the
  * change runs elsewhere; the only way for this frame to learn the outcome is to re-read the row.
  * `/approvals/[id]` owns the whole lifecycle of one request, and a card that showed the
  * question but never the answer would own half of it. The answer arrives in two parts — the run's
- * terminal status, and the receipt saying what it did (§T.42(b), V46) — and the second is what a
+ * terminal status, and the receipt saying what it did — and the second is what a
  * poll is actually waiting for.
  *
  * **A poll can discover every state the first read could.** A session that expires under an open
- * frame answers 401, and that renders V38's explicit "cannot authenticate here" rather than leaving
- * a live Approve button standing on a card nobody may decide any more — with §T.43's way out of it
- * beside it (`sign-in-notice.tsx`), which is a link-out and a retry and never a form in the frame
- *. A transient failure is the one answer that changes nothing: the card stays, the loop stays,
+ * frame answers 401, and that renders the 401 card's explicit "cannot authenticate here" rather
+ * than leaving a live Approve button standing on a card nobody may decide any more — with the
+ * escape hatch's way out of it beside it (`sign-in-notice.tsx`), which is a link-out and a retry
+ * and never a form in the frame. A transient failure is the one answer that changes nothing: the
+ * card stays, the loop stays,
  * because "NOA could not be reached just now" is not "there is nothing more to wait for".
  *
  * **It asks the host for a frame it fits in** (`components/frame-sizer.tsx`). The box LibreChat
@@ -151,7 +152,7 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
 }
 
 /**
- * What the change did, once something recorded it (§T.42(b) — V34, V46, DECISIONS §6.5).
+ * What the change did, once something recorded it (DECISIONS.md section 6.5).
  *
  * **Two halves, never one word.** The requirement this section exists for is that an operator can
  * read back the state they authorised against *and* what the change did to it, separately — so a
@@ -159,7 +160,8 @@ function Run({ card, stalled }: { card: ApprovalCard; stalled: boolean }) {
  * verdict line is a third thing beside them, not a replacement for either.
  *
  * The before-state renders here rather than in the section above once a receipt exists, and that
- * is one heading either way: `receipt.before` is the copy T38's writer took at execution time, so
+ * is one heading either way: `receipt.before` is the copy the approved-change executor's writer
+ * took at execution time, so
  * showing both would be the same payload twice under two labels, which reads as two facts.
  *
  * `errorCode` is the API's own string, shown verbatim. It is the word an operator will quote to an
@@ -209,7 +211,7 @@ function Card({
         {canDecide(card) && card.csrf ? (
           <DecisionControls actionRequestId={card.actionRequestId} csrf={card.csrf} />
         ) : (
-          // No reason box and no buttons once nothing may be decided (V38's family): a live
+          // No reason box and no buttons once nothing may be decided (the explicit-state family): a live
           // Approve button over a decided or expired request is an action that was never
           // available, shown as one that was refused.
           <p className={styles.empty}>
@@ -240,7 +242,7 @@ export function CardView({
    *
    * A 401 or a 404 carries no card and therefore no id, so a retry offered from one of those states
    * would have nothing to re-read — this is the page's own parameter, which is true whatever the
-   * last read answered (§T.43).
+   * last read answered.
    */
   actionRequestId: string
   /** Where an operator signs in, or `null` when nothing usable is configured (`lib/sign-in.ts`). */
@@ -287,7 +289,7 @@ export function CardView({
   }, [live])
 
   /**
-   * One read, on demand, from the state that has nothing to poll (§T.43).
+   * One read, on demand, from the state that has nothing to poll.
    *
    * The poll's reader, not a second one — and the poll's rule for what to do with the answer:
    * "NOA could not be reached just now" leaves the operator looking at the notice they were already
@@ -317,18 +319,18 @@ export function CardView({
 
   // Every state below is a notice, and each one carries `frameOrigin` for the same reason the card
   // above does: it measures itself and asks the host for a frame it fits in. The 401 is the one that
-  // needs it — its printed address is the escape hatch V94 makes the rule, and at the box the host
+  // needs it — its printed address is what the escape-hatch rule requires, and at the box the host
   // opens with that address started below the fold (`components/notice.tsx`).
   if (load.kind === 'unauthenticated') {
-    // V38, V42: an explicit state, never a blank card and never a live Approve button — and §T.43's
-    // way out of it, which is a top-level link-out plus a retry. This app has no login page and no
-    // LDAP form, and nothing in that notice navigates the frame.
+    // An explicit state, never a blank card and never a live Approve button — and the escape
+    // hatch's way out of it, which is a top-level link-out plus a retry. This app has no login
+    // page and no LDAP form, and nothing in that notice navigates the frame.
     return <SignInNotice signInUrl={signInUrl} onRetry={retryRead} frameOrigin={frameOrigin} />
   }
 
   if (load.kind === 'not-found') {
-    // V27: absent, another operator's, and one whose requester was deleted all answer alike —
-    // the API gives one body for the three, and this page gives one sentence.
+    // The requester-match: absent, another operator's, and one whose requester was deleted all
+    // answer alike — the API gives one body for the three, and this page gives one sentence.
     return (
       <Notice
         title="Request not available"

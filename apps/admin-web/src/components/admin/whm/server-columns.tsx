@@ -18,7 +18,7 @@ import {
 // through Badge. updated_at keeps its raw accessorKey so the header sort orders by
 // the real timestamp while the cell shows the friendly relative form. The Server
 // cell also carries a "Reseller credential" Badge, shown only on `true` rows
-// (§V.109) — an operator scanning the list should not have to open every row to
+// (the reseller-flag rule) — an operator scanning the list should not have to open every row to
 // tell a scoped credential from root.
 export function buildServerColumns(
   validateResultById: Record<string, ValidateWhmServerResponse>,

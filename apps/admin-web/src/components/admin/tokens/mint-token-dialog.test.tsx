@@ -15,7 +15,7 @@ import { MintTokenDialog } from './mint-token-dialog'
 // Every sink a minted plaintext could reach is spied here, and every spy is shown
 // catching something real — the controls in the last describe block. A spy wired
 // to nothing passes every not-logged assertion ever written; those controls are
-// what make the negative results mean something. (§V103 per-sink, §V105 sinks.)
+// what make the negative results mean something.
 const toast = vi.hoisted(() => ({
   success: vi.fn(),
   warning: vi.fn(),
@@ -111,8 +111,8 @@ const primaryButtons = () =>
     button.classList.contains('bg-action-primary'),
   )
 
-// The "cleared when the render site closes" probe (§V103). `innerHTML` is what
-// §V103 specifies and the stronger half — a plaintext parked in any attribute
+// The "cleared when the render site closes" probe. `innerHTML` is what the
+// write-once display rule specifies and the stronger half — a plaintext in any attribute
 // (`title`, `data-*`, `aria-label`) is in the markup and nowhere else. Not a
 // SUPERSET though, so the input scan stays: the Label field is an uncontrolled
 // react-hook-form input, and what is typed into one lives as a DOM property with
@@ -303,10 +303,10 @@ describe('MintTokenDialog — show-once plaintext', () => {
     expect(nav.push).not.toHaveBeenCalled()
     expect(nav.replace).not.toHaveBeenCalled()
     expect(looksLikeTokenPlaintext(setItem.mock.calls)).toBe(false)
-    // The address bar (§V103: not in a URL), bounded as the control below
+    // The address bar (not in a URL), bounded as the control below
     // measures — this sees a client-side history write, nothing else. A native
     // GET from Enter in a form field is invisible under jsdom, so it is asserted
-    // structurally instead in minted-token-panel.test.tsx:88. (§V105.)
+    // structurally instead in minted-token-panel.test.tsx:88.
     expect(urlSink()).toEqual(CLEAN_URL)
   })
 
@@ -415,8 +415,8 @@ describe('MintTokenDialog — sink reachability controls', () => {
 
   it('the URL check can fail: a history write IS seen', () => {
     try {
-      // §V105's other branch: rather than delete the URL assertion, give it a
-      // control. This is the one URL sink jsdom implements, and the shape a leak
+      // The sink-naming rule's other branch: rather than delete the URL assertion,
+      // give it a control. This is the one URL sink jsdom implements, and the shape a leak
       // would take here — App Router navigations land in `window.history`, and
       // Next documents `pushState` as a supported way to set the URL. It bounds
       // the claim too: `location.assign`, writing `location.search` and a native

@@ -5,27 +5,34 @@ what the two firewall ones share with each other and with nothing else: the befo
 cards are built from, the shape a backend's answer takes, the two release commands whose refusal
 is an ordinary answer, and the machine-and-address a runner resolves out of the evidence.
 
-**Born at T25 inside `whm_firewall_change.py`, hoisted at T26 when the allowlist removal became
+**Born with the release-and-allow tool inside `whm_firewall_change.py`, hoisted with the
+allowlist-remove tool when the allowlist removal became
 the second caller.** The same move `change_target.py` was made by, for the same reason: a second
 caller is when shared code stops being one module's internals. It is a leaf on purpose —
 it imports the READ layer's vocabulary and nothing from either tool module — because the
-alternative, letting T26 import its machinery from T25's module, makes the second tool a
+alternative, letting the allowlist-remove tool import its machinery from the release-and-allow
+tool's module, makes the second tool a
 dependent of the first and the aggregate registrar a cycle.
 
-**Its own file rather than `whm_firewall.py`.** T24's module is the READ tool, and half of what
-is here drives mutations. C14 would have allowed the merge; V22's boundary is the reason not to
-take it, and it is the same reason T25 did not append itself to that file either
-(`docs/AS-BUILT.md` §T25(a)).
+**Its own file rather than `whm_firewall.py`.** The dual-backend firewall read's module is the
+READ tool, and half of what
+is here drives mutations. The file-size cap would have allowed the merge; the cookie/CSRF
+boundary is the reason not to
+take it, and it is the same reason the release-and-allow tool did not append itself to that file
+either
+(see `docs/AS-BUILT.md`).
 
 **The evidence keys are shared, and that is a narrower claim than it looks.** They are shared
 between the two *firewall* tools, whose evidence genuinely is the same shape — a server, an
 address, and one dual-backend reading of that address. They are deliberately not shared with the
 account tools, which spell two of them the same way by coincidence: a key that means two things
-in two contracts is how a JSONB read silently returns the wrong field (T25's own note, kept).
+in two contracts is how a JSONB read silently returns the wrong field (the release-and-allow
+tool's own note, kept).
 `whm_firewall_release_and_allow` adds `duration_minutes` to this set and owns that one alone.
 
 The AST fan-out guard covers this module through `whm_firewall*.py`, so nothing here can
-hand-roll an `asyncio.gather` past V57's door without failing `test_whm_firewall_gate.py`.
+hand-roll an `asyncio.gather` past the zero-backend error's door without failing
+`test_whm_firewall_gate.py`.
 """
 
 from __future__ import annotations
@@ -110,8 +117,10 @@ def backend_change_failure(error_code: str, message: str) -> BackendChange:
     reaches `result_summary`, which `noa_get_action_result` returns to a model, so it is cut on
     the way in rather than trusted to be harmless.
 
-    It applies to a removal as much as to a write, and that is the part worth stating: T26 writes
-    no comment of its own, but the entry it deletes was written by T25 and still carries one, so
+    It applies to a removal as much as to a write, and that is the part worth stating: the
+    allowlist-remove tool writes
+    no comment of its own, but the entry it deletes was written by the release-and-allow tool
+    and still carries one, so
     a refusal that quotes it is the same leak through the same door.
     """
     return BackendChange(ok=False, error_code=error_code, message=without_noa_comment_text(message))
@@ -130,10 +139,10 @@ async def tolerated_csf_step(
     command could not run" after the fact. An SSH-level failure still raises through
     `run_csf_command` — that one is not an answer about the list, it is the absence of one.
 
-    **A sudo-rights refusal is not tolerated either** (V55, `noa-old` GH #82). sudoers can permit
-    `csf -v` — which is what the availability probe runs — and refuse `csf -ar`, and in that
-    arrangement every step here would report "not in that list" and the change would read as
-    having found nothing to do. `ssh_sudo_required` names a remedy; silence names none.
+    **A sudo-rights refusal is not tolerated either** (two causes, two remedies, `noa-old` GH #82).
+    sudoers can permit `csf -v` — which is what the availability probe runs — and refuse `csf -ar`,
+    and in that arrangement every step here would report "not in that list" and the change would
+    read as having found nothing to do. `ssh_sudo_required` names a remedy; silence names none.
 
     `event` is the caller's, not this function's: a log event names the tool a reader is looking
     for, and it is the first thing they filter on. `tool` rides beside it as a field.
@@ -191,15 +200,18 @@ def firewall_state(
 ) -> ToolPayload:
     """One dual-backend read, shaped as the before-state a card and a receipt show.
 
-    The same fields T24's tool answers with, and deliberately so: an operator authorising a
+    The same fields the dual-backend firewall read's tool answers with, and deliberately so: an
+    operator authorising a
     firewall change is looking at the reading they would have got from the preflight, which is
-    what makes the card honest about what it is approving (DECISIONS §6.5).
+    what makes the card honest about what it is approving (DECISIONS section 6.5).
 
-    **Uncut**, unlike T24's own `matches`. These lines go onto `action_requests.approval_context`
+    **Uncut**, unlike the dual-backend firewall read's own `matches`. These lines go onto
+    `action_requests.approval_context`
     and from there to the approval card and the receipt, both of which are the operator's own
     surfaces behind their cookie — and `noa_get_action_result` reaches neither
     (`ActionResultView` has no evidence field, and `core.approvals.results` never joins
-    `action_receipts`, V76). V96 withholds from the surface that answers a *model*; withholding
+    `action_receipts` — the requester-match rule, and the card renders the receipt). The
+    no-path-back rule withholds from the surface that answers a *model*; withholding
     here would take the reason off the two places that exist to show it.
     """
     matches = [line for lookup in lookups.values() for line in lookup.matches]
@@ -209,10 +221,11 @@ def firewall_state(
         # Present-but-denied ≠ absent: the operator is told to fix sudoers, not to install csf.
         "sudo_required": availability.sudo_required,
         "combined_verdict": combine_firewall_verdict(list(lookups.values())),
-        # V86: a verdict read from a subset says so, on the card as much as in a tool result.
+        # Folding a non-answer into the benign value is refused: a verdict read from a subset
+        # says so, on the card as much as in a tool result.
         "unanswered_backends": unanswered_backends(lookups),
         "matches": matches,
-        # V85: the cut is csf's (`max_matches`), so the bound travels with the rows.
+        # The cap's own bound: the cut is csf's (`max_matches`), so the bound travels with the rows.
         "total_matches": total_matches,
         "truncated": total_matches > len(matches),
     }
@@ -309,7 +322,7 @@ def evidence_verdict(evidence: Mapping[str, object]) -> str | None:
 
     `None` when the evidence has no usable verdict, and a caller treats that as "no field change
     can be stated" rather than substituting a benign word — a delta whose `old` side was invented
-    is exactly the fabrication V86 refuses one surface over.
+    is exactly the fabrication folding a non-answer into the benign value refuses one surface over.
     """
     firewall = evidence.get(EVIDENCE_FIREWALL)
     if not isinstance(firewall, Mapping):
@@ -340,10 +353,11 @@ async def resolve_firewall_change_target(
     Two refusals, both before anything is changed and each naming what an administrator should
     do: the address did not survive its JSONB round trip as a usable value, or the server row is
     gone. A caller with a further evidence field of its own checks it before calling this and
-    answers `change_evidence_unusable` the same way (T25's `duration_minutes`).
+    answers `change_evidence_unusable` the same way (the release-and-allow tool's
+    `duration_minutes`).
 
-    The database session closes before the SSH hops, T21's rule, and here it matters twice over:
-    the executor's own session is open for the whole of the call.
+    The database session closes before the SSH hops, the account search's rule, and here it matters
+    twice over: the executor's own session is open for the whole of the call.
     """
     target = evidence.get(EVIDENCE_TARGET)
     if not isinstance(target, str) or not target.strip():

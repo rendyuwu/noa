@@ -9,13 +9,12 @@ one exists because something in the fastmcp/SDK stack does not do it:
    Every MCP request passes through it exactly once, via `NoaTokenVerifier.verify_token`.
 
 2. **`McpAuthErrorMiddleware` — the named body.** `TokenVerifier.verify_token` has no
-   response hook: returning `None` makes `RequireAuthMiddleware` answer
-   `{"error": "invalid_token", "error_description": "Authentication required"}`
-   (`mcp/server/auth/middleware/bearer_auth.py`), which cannot tell "you forgot the header"
-   from "this token belongs to someone else's LibreChat account" — the two cases V3 fixes
-   client-visible strings for. So the refusal is stashed on the ASGI scope and this
-   middleware renders it through the same `status_for`/`error_body`/`error_headers` the
-   FastAPI handler uses.
+   response hook: returning `None` makes `RequireAuthMiddleware` answer `{"error": "invalid_token",
+   "error_description": "Authentication required"}` (`mcp/server/auth/middleware/bearer_auth.py`),
+   which cannot tell "you forgot the header" from "this token belongs to someone else's LibreChat
+   account" — the two cases the named 401 bodies separate, each with its own client-visible string.
+   So the refusal is stashed on the ASGI scope and this middleware renders it through the same
+   `status_for`/`error_body`/`error_headers` the FastAPI handler uses.
 
 3. **`current_mcp_identity` — identity for tools.** Tools read
    `get_access_token().claims`, never the bearer again. The claim keys are constants here
@@ -40,12 +39,14 @@ and, on a first call, a TOFU bind performed by whichever one ran first.
 **Why it still reads the `Authorization` header itself.** `BearerAuthBackend.authenticate`
 returns `None` *without calling* `verify_token` when the header is absent or not `Bearer `,
 so `mcp_token_missing` is unreachable from inside the verifier. The read goes through
-`get_http_headers(include={"authorization"})`: R5 records that the default exclusion list
+`get_http_headers(include={"authorization"})`: verified against the installed SDK, the default
+exclusion list
 strips `authorization` (and `mcp-session-id`), so the obvious spelling silently returns
 nothing and every request would look like a missing token.
 
-T12 mounts nothing. `build_mcp_auth_context` is the production wiring T13 calls; until then
-`/mcp` is unreachable and V1 holds trivially.
+The identity resolver mounts nothing. `build_mcp_auth_context` is the production wiring the
+FastMCP mount calls; until then
+`/mcp` is unreachable and the execution-time permission re-check holds trivially.
 """
 
 from __future__ import annotations
@@ -91,7 +92,7 @@ from noa_api.api.errors import error_body, error_headers, status_for
 from noa_api.api.request_context import REQUEST_ID_HEADER, request_id_for
 
 # One structured event for every refusal, so a query on this name shows the whole denial
-# stream and `error_code` says which gate closed (V8: nothing else in the payload).
+# stream and `error_code` says which gate closed (the envelope shape: nothing else in the payload).
 LOG_DENIED: Final = "mcp_auth_denied"
 
 AUTHORIZATION_HEADER: Final = "authorization"
@@ -122,7 +123,7 @@ class McpSessionFactory(Protocol):
     """What this path needs from `async_sessionmaker`: call it, get a session.
 
     A Protocol rather than the concrete `async_sessionmaker[AsyncSession]` so the whole
-    request path can be exercised without Postgres. That matters specifically here: the R4
+    request path can be exercised without Postgres. That matters specifically here: the
     claim — that `get_http_headers()` works *inside* `verify_token` — is the one thing in
     this area no source read can settle for our wiring, and a check that skips when Docker
     is absent is a check that stops running.
@@ -135,7 +136,7 @@ class McpSessionFactory(Protocol):
 class McpAuthContext:
     """Everything `resolve_mcp_identity` needs, built once at startup.
 
-    A value object rather than parameters on the verifier: T13 wires one of these into
+    A value object rather than parameters on the verifier: the FastMCP mount wires one of these into
     `NoaTokenVerifier`, and a test builds one over doubles. Both repository factories are
     injectable for that reason, and only for that reason — production never passes them.
 
@@ -163,7 +164,7 @@ def build_mcp_auth_context(
     directory: DirectoryPresence,
     settings: Settings,
 ) -> McpAuthContext:
-    """Production wiring, from `Settings` (T13 calls this in the app lifespan)."""
+    """Production wiring, from `Settings` (the FastMCP mount calls this in the app lifespan)."""
     return McpAuthContext(
         session_factory=session_factory,
         directory=directory,
@@ -222,20 +223,20 @@ async def resolve_mcp_identity(
 ) -> McpIdentity:
     """Resolve the caller behind this request's bearer, or raise a named refusal.
 
-    The function V5 names on the HTTP side: `NoaTokenVerifier.verify_token` is its only
-    caller, so there is exactly one place a presented bearer becomes a NOA user per
-    request, and swapping the auth mechanism is a change to this file plus
-    `core.auth.mcp_identity`.
+    The function the single identity resolver's rule names on the HTTP side:
+    `NoaTokenVerifier.verify_token` is its only caller, so there is exactly one place a presented
+    bearer becomes a NOA user per request, and swapping the auth mechanism is a change to this file
+    plus `core.auth.mcp_identity`.
 
     `presented_token` exists because `verify_token` is *handed* the token by the SDK and
     re-parsing the header there would be a second parse that could disagree with the first.
     Omitted, the header is read — that is the path the middleware needs when the SDK
     never called the verifier at all.
 
-    Raises `McpTokenMissingError` before touching the database, then
-    `McpAuthRateLimitedError`, then whatever `McpIdentityResolver.resolve` raises in
-    gate order, plus `LdapUnavailableError` straight through (V4 — deny, do not revoke).
-    Every refusal is logged once, here, because this is where the cause is known.
+    Raises `McpTokenMissingError` before touching the database, then `McpAuthRateLimitedError`, then
+    whatever `McpIdentityResolver.resolve` raises in gate order, plus `LdapUnavailableError`
+    straight through (the LDAP-staleness rule — deny, do not revoke). Every refusal is logged once,
+    here, because this is where the cause is known.
     """
     bearer = (presented_token if presented_token is not None else read_presented_bearer()) or ""
     bearer = bearer.strip()
@@ -391,7 +392,7 @@ def mount_relative_path(scope: Scope) -> str:
     `root_path` again when it matches. So under `app.mount("/mcp", mcp_app)` a request
     to `/mcp/` arrives here as `path="/mcp/"`, `root_path="/mcp"` — comparing `scope["path"]`
     to the sub-app's own `/` would never match, the refusal would pass straight through, and
-    V3's named bodies would silently become the SDK's bare `invalid_token` while the status
+    the named 401 bodies would silently become the SDK's bare `invalid_token` while the status
     code stayed 401. That failure has no symptom other than the body, which is why it is
     computed here rather than assumed.
 
@@ -493,7 +494,7 @@ class McpAuthErrorMiddleware:
             (name.lower().encode(), value.encode()) for name, value in error_headers(error).items()
         )
         if status_code == status.HTTP_401_UNAUTHORIZED:
-            # RFC 6750 §3: a 401 owes the client a challenge. The SDK's own 401 sends one,
+            # RFC 6750 section 3: a 401 owes the client a challenge. The SDK's own 401 sends one,
             # and dropping it would regress a spec-compliant client to guessing.
             challenge = f'Bearer error="invalid_token", error_description="{error.error_code}"'
             headers.append((b"www-authenticate", challenge.encode()))

@@ -7,15 +7,16 @@ import { AuthRedirectError } from '@/lib/auth/session'
 import type { McpToken, MintedToken, TokenScope } from './types'
 import { useTokens, type MintOutcome, type RevokeOutcome } from './use-tokens'
 
-// The pre-settle window §V104 is about: a mutation dispatched before the first
+// The pre-settle window the cancel-must-re-issue-or-report guard is about: a mutation
+// dispatched before the first
 // load for its scope has answered. It lives in its own file because
-// `use-tokens.test.tsx` is at 424 of the 450 lines C14 allows a `.tsx`, and
+// `use-tokens.test.tsx` is at 424 of the 450 lines the file-size cap allows a `.tsx`, and
 // because every test there enters through a helper that waits for
-// `loading === false` first — which is §V104(c) exactly, and precisely why this
+// `loading === false` first — which is exactly the case that guard covers, and precisely why this
 // window went unentered until it was found by execution.
 //
 // Each case holds the initial `fetchTokens` OPEN, dispatches the mutation into
-// that window, and only then lets the load answer (V89: the two parties have to
+// that window, and only then lets the load answer (the two parties have to
 // genuinely overlap, and the assertion is on ORDER). The observable being
 // defended is not a row count — it is that the panel is still USABLE afterwards:
 // `loading` false, and the list equal to what the server last said. A panel
@@ -90,7 +91,7 @@ async function mountedAt(scope: TokenScope) {
 // `await settleCurrentScope()` from the mutation it exercises in `use-tokens.ts`
 // — named per case, because they are different call sites.
 
-describe('a mutation before the first load settles (§V104)', () => {
+describe('a mutation before the first load settles (the cancel-must-re-issue-or-report guard)', () => {
   it('mint answers first: the panel recovers from the server, not from the dropped load', async () => {
     // Red without `void settleCurrentScope()` on mint's SUCCESS path.
     const initial = deferred<McpToken[]>()

@@ -10,7 +10,7 @@ import { Button, ErrorState, LoadingSkeleton, bigsuToast } from '@gio/bigsu-ui'
 // (404), and unexpected-error. Actionable failures always render an inline
 // recovery path here — they are never toast-only.
 
-// Where "home" goes. `/home` is the role-aware dispatcher (§T76): it sends an
+// Where "home" goes. `/home` is the role-aware dispatcher: it sends an
 // admin to the first admin vertical and everyone else to their own MCP tokens,
 // so this escape works for a non-admin too. Pointing it at `/admin/users`
 // answered a 403 with a link to another 403.
@@ -51,7 +51,7 @@ function StateBadge({
 // Labelled for where it GOES, not for what is behind it: `/home` sends an admin
 // and a non-admin to different places, so naming one of them would be wrong for
 // the other — and a 403 offering "back to administration" is the case that made
-// the old wording wrong (§T76).
+// the old wording wrong.
 function HomeButton() {
   return (
     <Button variant="secondary" onClick={() => window.location.assign(HOME_HREF)}>

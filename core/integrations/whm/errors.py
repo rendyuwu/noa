@@ -4,8 +4,9 @@
 both bare `Exception` subclasses with hand-rolled `code`/`message` attributes. Here they
 collect into one module under a shared base and derive from `core.errors.NoaError`, for the
 reason `core/remote_exec/errors.py` and `core/secrets/errors.py` already state: these reach an
-HTTP response — T54's `POST /admin/whm/servers/{id}/validate` probes the firewall binaries over
-SSH — and V73 requires one handler shaping every body. A second parallel taxonomy would make
+HTTP response — the admin validate route's `POST /admin/whm/servers/{id}/validate` probes the
+firewall binaries over SSH — and the shared request-id rule requires one handler shaping every
+body. A second parallel taxonomy would make
 "one handler" a lie.
 
 The keyword-only `code=` / `message=` constructor is kept verbatim from `noa-old` so the copied
@@ -28,7 +29,7 @@ Codes raised by this package, all stable strings tests and tools branch on:
                               when a firewall command dies on `sudo -n` rights. Distinct from
                               a missing binary on purpose: the remedy is a sudoers entry, and
                               reporting "no firewall tools" would send an operator hunting an
-                              install that is already there (`noa-old` GH #82, V55).
+                              install that is already there (`noa-old` GH #82).
 - every `SSHExecutionError` code — `run_*_command` converts the transport failure rather than
   letting two exception trees escape one call (`ssh_timeout`, `ssh_auth_failed`,
   `ssh_host_key_mismatch`, `ssh_host_key_not_validated`, `ssh_not_configured`, …).
@@ -47,7 +48,7 @@ class WHMFirewallCLIError(NoaError):
 
     Instance-level `error_code` / `message`, matching `SSHExecutionError`: one class per
     backend covers its whole surface, and splitting each into a subclass per code would be the
-    rewrite C13/V69 forbid.
+    rewrite the port-not-rewrite rule forbids.
     """
 
     error_code: str = "firewall_command_failed"

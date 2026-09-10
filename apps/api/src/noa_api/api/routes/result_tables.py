@@ -1,26 +1,28 @@
-"""The large-READ table surface's read: one parked table, for its requester (T56, I.embed).
+"""The large-READ table surface's read: one parked table, for its requester, per the embed
+app's contract.
 
 **Read-only, and there is nothing here to decide.** The approval routes next door own the
 one door on an authorization; this one owns a listing that a READ already produced.
 No POST, no CSRF token, no reason — a table has nothing to authorise, and the embed page
-that renders it carries no decision controls either (§I.embed).
+that renders it carries no decision controls either, per the embed app's contract.
 
 **The access control is the cookie plus the requester-match**. `SessionUserDep` is the
-first half and V6's row re-read with it: a disabled operator loses the table on their next
-request rather than at cookie expiry. The second half sits inside the statement
+first half and the `is_active` row re-read alongside it: a disabled operator loses the table
+on their next request rather than at cookie expiry. The second half sits inside the statement
 (`core.results.tables.select_table_for_requester`), so a table that is not this caller's is
 never fetched — and neither is one past its lifetime, which is judged by the same `WHERE`.
 
 **One refusal for four causes.** Unknown token, another operator's, one whose requester was
-deleted, one expired: all 404 `result_table_not_found`, one body, only `request_id` differing
-(V73). The token is unguessable (32 random bytes) but that is defence beside the guard, never
-instead of it — the URL travels in a tool result that persists in LibreChat's MongoDB,
-so it is a name, not a key.
+deleted, one expired: all 404 `result_table_not_found`, one body, only `request_id` differing —
+the one field every error envelope must carry. The token is unguessable (32 random bytes) but
+that is defence beside the guard, never instead of it — the URL travels in a tool result that
+persists in LibreChat's MongoDB, so it is a name, not a key.
 
 **The bound rides in the body**. `total_rows` and `truncated` are stored on the row and
 carried here, so the page can say how many matches there were rather than how many it was
 given. A body that shipped rows alone would leave the surface reporting a capped table as a
-complete one, which is the fabrication V85 exists to stop.
+complete one — the fabrication the row cap's own bound (total plus truncation flag) exists
+to stop.
 """
 
 from __future__ import annotations
@@ -71,10 +73,11 @@ async def read_table(
 ) -> ResultTableResponse:
     """One parked table, for the operator whose READ produced it.
 
-    `token` is a plain `str`, not a shaped identifier: V27 owns what an absent, malformed or
-    foreign token answers and answers all of them alike, so a format check here would be a
-    second, more talkative judge in front of it — and a 422 for a malformed one would say that
-    well-formed tokens are the ones worth guessing (T63(e)'s argument, one surface over).
+    `token` is a plain `str`, not a shaped identifier: the identical-404 rule owns what an
+    absent, malformed or foreign token answers and answers all of them alike, so a format
+    check here would be a second, more talkative judge in front of it — and a 422 for a
+    malformed one would say that well-formed tokens are the ones worth guessing (the
+    action-result tool's argument, one surface over).
     """
     table = await tables.table_for(token=token, requester_user_id=current_user.user_id)
     if table is None:

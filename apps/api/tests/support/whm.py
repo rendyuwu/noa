@@ -1,15 +1,17 @@
 """Doubles for the WHM integration layer.
 
 What is left here is the WHM-specific part: a `whm_servers`-shaped row. Everything else these
-tests reach for is shared, and lives where its name is honest (V66, the same reason
-`support/auth.py` exists):
+tests reach for is shared, and lives where its name is honest (one helper, not two — the same
+reason `support/auth.py` exists):
 
-- `build_cipher` → `support/secrets.py`, once T17 needed it too.
+- `build_cipher` → `support/secrets.py`, once the Proxmox layer needed it too.
 - the SSH transport doubles (`ssh_config`, `command_result`, `FakeSSH`, `install_fake_ssh_exec`,
-  the fingerprint/password/sudo constants) → `support/remote_exec.py`, once T18 needed them.
+  the fingerprint/password/sudo constants) → `support/remote_exec.py`, once the PMG layer needed
+  them.
 
-Both moves left a re-export here so the WHM test files could stay untouched; T72 removed them
-and pointed those files at the real homes, so this module is not an alias hub. The two
+Both moves left a re-export here so the WHM test files could stay untouched; the
+doubles-imported-direct cleanup removed them and pointed those files at the real homes, so this
+module is not an alias hub. The two
 constants imported below are used, not forwarded — `FakeWHMServer` takes them as field
 defaults. `test_support_layout.py` holds that line.
 

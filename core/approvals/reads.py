@@ -1,28 +1,32 @@
 """Reading one approval request back, for whoever asked for it.
 
-Two surfaces read an `action_requests` row for someone rather than deciding it: T63's
-`noa_get_action_result` answers a model (`core.approvals.results`) and T41's approval card
-answers the operator in front of it (`core.approvals.card`). They must render *different*
+Two surfaces read an `action_requests` row for someone rather than deciding it: the
+action-result tool's `noa_get_action_result` answers a model (`core.approvals.results`) and the
+approval card answers the operator in front of it (`core.approvals.card`). They must render
+*different*
 things — the model may not be shown the preflight evidence and the card exists to show
 it — but they must **guard the row identically**, and that is what lives here.
 
 That difference is why the receipt join is a parameter and not the default. `action_receipts`
 carries the same before-state one table over, so fetching it on the model's path
-would put V17's evidence in that process holding nothing but a projection between it and the
+would put the in-process preflight's evidence in that process holding nothing but a projection
+between it and the
 transcript. The card asks for it; `core.approvals.results` does not.
 
 **The access control is one statement.** `select_requester_matched` carries
 `requested_by_user_id = :caller` in the `WHERE`, so a row that is not the caller's is never
 fetched by either surface and there is no later branch that could forget to drop it. A NULL
 requester — the FK is `SET NULL`, so a deleted operator leaves one behind — matches
-nobody under SQL's NULL semantics, which is the fail-closed direction V27 names. Two copies of
+nobody under SQL's NULL semantics, which is the fail-closed direction the requester-match rule
+names. Two copies of
 that clause would be two places for it to be got wrong, and only one of them would be the one
 someone reads.
 
-**The expiry ordering is one function.** `apply_due_expiry` runs V32's check-on-read *after*
+**The expiry ordering is one function.** `apply_due_expiry` runs the check-on-read rule *after*
 the requester-matched read, because `expire_if_due` takes an id and no requester: calling it
 first lets a prompt-injected identifier make NOA write to a request belonging to somebody the
-caller cannot see. V32 allows a surface that resolves the row itself to call it first; both
+caller cannot see. The check-on-read rule allows a surface that resolves the row itself to call
+it first; both
 callers here decline, on purpose — reading first makes a foreign id a pure no-op, no row, no
 write, one refusal. What it costs is one poll of freshness (see `apply_due_expiry`).
 
@@ -56,8 +60,9 @@ class ActionRunView:
     `core.approvals.reaper` for one nobody finished) — nothing here re-derives it, for the reason
     `LockedActionRequest.redacted_arguments` gives one field over.
 
-    `STARTED` with a NULL summary is a change still running: T37 opens this row inside the
-    decision's transaction and T38's executor moves it when the change ends. Reporting that
+    `STARTED` with a NULL summary is a change still running: the decision endpoint opens this
+    row inside the decision's transaction and the approved-change executor moves it when the
+    change ends. Reporting that
     plainly is the point — a model that is told "started" tells an operator to wait, which is
     true, and a card that says the same is telling them to keep the tab open. A run that stays
     `STARTED` past the reaper's deadline becomes `FAILED` with a summary saying the outcome was
@@ -106,7 +111,8 @@ async def select_requester_matched(
     the moment the executor moves the run and writes the receipt in one commit.
 
     `None` covers "no such request" *and* "not yours" *and* "its requester was deleted", which
-    is V27's whole point — the caller cannot tell those apart, so both surfaces have one
+    is the requester-match rule's whole point — the caller cannot tell those apart, so both
+    surfaces have one
     refusal for all of them.
 
     That the refusal holds is asserted by test. That it holds *here* rather than after the
@@ -115,15 +121,17 @@ async def select_requester_matched(
     so even the deleted-requester case still refuses. What the statement buys is that the
     foreign row does not exist in this process to be logged, returned by a later edit, or half
     dropped by a refactor — defence in depth, said here rather than in a test name that would
-    imply otherwise (V69: a control asserted by prose is worth what the prose is worth).
+    imply otherwise (a control asserted by prose is worth what the prose is worth).
 
     **`include_receipt` defaults to off, and that is the model path's guard**. A
-    receipt's `before` half is the gate's in-process preflight evidence, which V17 keeps out of
+    receipt's `before` half is the gate's in-process preflight evidence, which the same rule
+    keeps out of
     the transcript — so `core.approvals.results` leaves this false and the receipt is never
     *fetched* rather than fetched and then dropped by a projection somebody could widen. The
     join itself is bound by the same `WHERE` as everything else here: a receipt hangs off an
     `action_requests` row that was already requester-matched, so there is no second access
-    control to get right. T36's `UNIQUE (action_request_id)` is what keeps this join from
+    control to get right. The receipt table's `UNIQUE (action_request_id)` is what keeps this
+    join from
     multiplying the row.
     """
     # Both joins hang off `ActionRequest`, so their order in the chain does not change the SQL.
@@ -181,9 +189,9 @@ async def apply_due_expiry(
 
     What that ordering costs is one poll of freshness: if a decision commits between the read
     and this `UPDATE`, the update finds the row no longer PENDING, skips it (which is exactly
-    the property T39 relies on) and the caller answers with the PENDING it read. That window
-    exists for any unlocked read, the next call closes it, and V23 keeps the authority in the
-    row rather than in this answer.
+    the property the expiry loop relies on) and the caller answers with the PENDING it read.
+    That window exists for any unlocked read, the next call closes it, and the verdict-from-
+    status rule keeps the authority in the row rather than in this answer.
 
     The returned view reports `EXPIRED` at `now` — the moment the `UPDATE` stamped — rather
     than re-reading, which would be a second round trip that could disagree with the write

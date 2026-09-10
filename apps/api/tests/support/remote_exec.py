@@ -2,15 +2,16 @@
 
 These started in `support/whm.py`. None of them is WHM-specific — they are about
 `core/remote_exec`: a resolved `SSHConnectionConfig`, a `CommandResult`, and a stand-in for
-`ssh_exec`. PMG is the second caller and T54's validate routes are the third, so they
-live here (V66, exactly the move `support/secrets.py` made for `build_cipher` at T17). This is
-their one home — the re-export `support/whm.py` carried through T18 is gone as of T72.
+`ssh_exec`. PMG is the second caller and the admin validate routes are the third, so they
+live here (the reuse rule, exactly the move `support/secrets.py` made for `build_cipher` when
+secrets were ported). This is their one home — the re-export `support/whm.py` carried through
+the PMG port is gone since the doubles moved to their one home.
 
 Mostly no live host: the layers under test are command composition, output parsing and failure
 classification — none of which needs a socket. **The exception is the loopback `asyncssh` server
-at the bottom**, which is not a double at all and moved here at T54 for the reason recorded
-beside it: the host-key pin is only observable against a real key exchange, and two
-copies of the server that proves it are two copies that can stop proving it.
+at the bottom**, which is not a double at all and moved here with the admin validate routes for
+the reason recorded beside it: the host-key pin is only observable against a real key exchange,
+and two copies of the server that proves it are two copies that can stop proving it.
 """
 
 from __future__ import annotations
@@ -101,7 +102,8 @@ def install_fake_ssh_exec_in(
     `from core.remote_exec.ssh import ssh_exec` — patching the source module would leave those
     names bound to the original.
 
-    Several modules at once because a tool call crosses them: T24's preflight probes through
+    Several modules at once because a tool call crosses them: the dual-backend firewall read's
+    preflight probes through
     `availability` and then queries through `csf_cli` and `imunify_cli`, and one shared `FakeSSH`
     is what lets a test assert the *whole* command sequence and its order.
     """
@@ -123,24 +125,25 @@ def install_fake_ssh_exec(
 # --- A real SSH server on loopback ---
 #
 # **The one rig in this file that is not a double**, and the reason it is here rather than in
-# the test file that first needed it. B2 shipped because the pin's test called
+# the test file that first needed it. The inert-pin defect shipped because the pin's test called
 # `validate_host_public_key` itself: that proves the callback works when something calls it,
 # and what was broken was that nothing did. Only a real key exchange can tell the difference,
 # and only a real server can report that it was never asked to authenticate anybody.
 #
 # `test_remote_exec_ssh.py` owns the pin itself; `test_server_host_key_validation.py`
 # owns the trust-on-first-use rule that decides *when* a pin is written. Both need the
-# same server, so it lives here — the move T39 made for the concurrency rig rather than copying
-# it, and V89's reason: two copies of the thing that holds a property are two things that can
-# silently stop holding it.
+# same server, so it lives here — the move the expiry sweep made for the concurrency rig rather
+# than copying it, and the concurrency-test rule's reason: two copies of the thing that holds a
+# property are two things that can silently stop holding it.
 
 
 @dataclass
 class RecordingSSHServer(asyncssh.SSHServer):
     """A loopback server that remembers whether a client ever got as far as authenticating.
 
-    `auth_attempts` staying empty is the assertion V82 is really about: a pin compared *after*
-    the connection would raise the same error, having already handed the password to whatever
+    `auth_attempts` staying empty is the assertion the live-pin rule is really about: a pin
+    compared *after* the connection would raise the same error, having already handed the
+    password to whatever
     answered the socket.
     """
 

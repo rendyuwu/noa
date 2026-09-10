@@ -9,14 +9,15 @@
 //
 // Per-reseller WHM API tokens are still NOT part of this contract. The legacy
 // vertical had a whm_server_tokens table and a token sub-resource; NOA's schema
-// has no such table and §I.admin-api names no such route, so adding one is a
-// spec change rather than a build decision. The dead surface was removed with
-// §T.54, following §T.65's precedent for the direct-grant controls.
+// has no such table and the admin API's contract names no such route, so
+// adding one is a spec change rather than a build decision. The dead surface
+// was removed with the admin CRUD-and-validate work, following the precedent
+// set by retiring direct per-user grants.
 //
-// `is_reseller_credential` (§T.77, §V.109) is a different thing: a flag on an
+// `is_reseller_credential` is a different thing: a flag on an
 // ordinary row, not a sub-resource. It marks that the row's api_username
 // belongs to a reseller rather than to root — visibility/naming only, never
-// authorization (§V.106's owner compare is the only write gate) — and it is
+// authorization (the owner compare is the only write gate) — and it is
 // why a `true` row's `name` must equal its `api_username` (enforced server-side;
 // the form mirrors the check for legible client-side feedback).
 

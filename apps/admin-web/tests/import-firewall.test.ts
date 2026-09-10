@@ -5,12 +5,13 @@ import { ESLint } from 'eslint'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 /**
- * The import firewall in `eslint.config.mjs` (C12, C13, V69, §T.48).
+ * The import firewall in `eslint.config.mjs` — one repo, three independent deploy
+ * packages; port, never import from `noa-old`; copied, not rewritten.
  *
  * Two boundaries live in that config and nowhere else in the code:
  *
  *  - `apps/web-embed` is a separate package. The two web apps share no source.
- *  - `noa-old` is a reference repo. §T.48 COPIES its files; a copy that keeps an
+ *  - `noa-old` is a reference repo. The admin port COPIES its files; a copy that keeps an
  *    import back to the original is not a copy, and the path only resolves on
  *    the machine that has both trees checked out side by side.
  *
@@ -34,7 +35,7 @@ async function restrictedImportMessages(source: string): Promise<string[]> {
     .map((message) => message.message)
 }
 
-describe('C12/C13 — the import firewall rejects the boundaries it names', () => {
+describe('one repo, three packages; port, never import — the import firewall rejects the boundaries it names', () => {
   // The first `lintText` in this file loads the whole flat config — Next's plugin,
   // typescript-eslint, the rest — and measured here that first call costs ~1.2s
   // against ~20ms for every call after it. Left implicit, that one-off is charged

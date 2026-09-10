@@ -5,11 +5,12 @@ Ported from `noa-old` branch `MCP`, where these helpers sat in
 (`csf_cli.build_csf_command`, `imunify_cli.build_imunify_command`). Two changes, both
 required here:
 
-1. **Moved to `core/`.** PMG needs the same escalation as WHM, and §T.14 names
-   `sudo -n` as `remote_exec`'s job. One home, ⊥ a copy per integration.
+1. **Moved to `core/`.** PMG needs the same escalation as WHM, and this move names
+   `sudo -n` as `remote_exec`'s job. One home, never a copy per integration.
 2. **The escalation decision is not a caller argument.** `noa-old` exposed
    `build_*_command(args, escalate=…)` and each call site passed
-   `escalate=should_escalate(config)`. V55 is a biconditional — prefix ⟺ user ≠ `root` — and a
+   `escalate=should_escalate(config)`. The sudo-prefix rule is a biconditional — prefix ⟺
+   user ≠ `root` — and a
    boolean parameter lets one forgetful call site break it in either direction (root running
    under `sudo`, or a non-root command silently failing on permissions). `build_remote_command`
    reads the resolved username itself, so the ⟺ holds by construction.
@@ -33,8 +34,8 @@ from core.remote_exec.errors import SSHExecutionError
 from core.remote_exec.ssh import command_from_argv
 from core.remote_exec.types import CommandResult, SSHConnectionConfig
 
-# Dedicated error code for a `sudo -n` missing-rights failure (`noa-old` GH #82, V55):
-# distinct from binary-missing (`no_firewall_backend`, V57) and from generic command-failed.
+# Dedicated error code for a `sudo -n` missing-rights failure (`noa-old` GH #82):
+# distinct from binary-missing (`no_firewall_backend`) and from generic command-failed.
 SSH_SUDO_REQUIRED_CODE = "ssh_sudo_required"
 
 # sudo emits these on policy-denial / -n password-required. The plain

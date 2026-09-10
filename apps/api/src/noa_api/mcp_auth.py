@@ -1,12 +1,12 @@
 """FastMCP bearer verification.
 
-The adapter between fastmcp's auth contract and NOA's request-path authentication.
-Everything that decides *whether* a caller may act lives in `core.auth.mcp_identity`;
-everything about how a request reaches that decision lives in `noa_api.mcp_request_auth`.
-What is left here is only what fastmcp specifically requires: the `TokenVerifier` subclass,
-and the `AccessToken` an accepted identity becomes. V5 wants one identity-resolution path,
-so this class holds no repository, opens no session, reads no header and makes no policy
-decision — swap fastmcp for something else and this is the file that changes.
+The adapter between fastmcp's auth contract and NOA's request-path authentication. Everything that
+decides *whether* a caller may act lives in `core.auth.mcp_identity`; everything about how a request
+reaches that decision lives in `noa_api.mcp_request_auth`. What is left here is only what fastmcp
+specifically requires: the `TokenVerifier` subclass, and the `AccessToken` an accepted identity
+becomes. The single identity resolver's rule wants one identity-resolution path, so this class holds
+no repository, opens no session, reads no header and makes no policy decision — swap fastmcp for
+something else and this is the file that changes.
 
 Verified against the installed `fastmcp==3.4.5` and `mcp==1.29.0`, not against docs:
 
@@ -52,12 +52,13 @@ __all__ = ["LOG_DENIED", "NoaTokenVerifier"]
 class NoaTokenVerifier(TokenVerifier):
     """Resolve a NOA-minted bearer into a fastmcp `AccessToken`.
 
-    Constructed once at startup and passed as `FastMCP(..., auth=<instance>)` — keyword
-    only, the instance directly, with no provider wrapper, because `TokenVerifier` is
-    already an `AuthProvider`. T13 does that wiring; T11 shipped the class.
+    Constructed once at startup and passed as `FastMCP(..., auth=<instance>)` — keyword only, the
+    instance directly, with no provider wrapper, because `TokenVerifier` is already an
+    `AuthProvider`. The FastMCP mount does that wiring; the token verifier shipped the class.
 
     No `base_url` and no `required_scopes`: those drive RFC 9728 protected-resource
-    metadata routes, and C5 puts NOA on per-user minted tokens rather than OAuth. Scopes
+    metadata routes, and NOA is on per-user minted tokens rather than OAuth — token auth, never
+    OAuth. Scopes
     stay empty for the reason in `_to_access_token`.
     """
 
@@ -68,7 +69,8 @@ class NoaTokenVerifier(TokenVerifier):
     async def verify_token(self, token: str) -> AccessToken | None:
         """Verify one bearer. `None` rejects.
 
-        Every refusal is one `McpAuthError` (or `LdapUnavailableError`, V4's fail-closed
+        Every refusal is one `McpAuthError` (or `LdapUnavailableError`, the LDAP-staleness rule's
+        fail-closed
         answer) caught here and left on the request scope for the middleware to name.
         Nothing else is caught: a broken database or a bug in the resolver must surface as a
         500, because answering 401 to an infrastructure fault would tell an operator their
@@ -94,15 +96,16 @@ class NoaTokenVerifier(TokenVerifier):
         Four choices worth naming:
 
         - **`token` carries the digest, not the plaintext.** `AccessToken` is a pydantic
-          model that renders in tracebacks, in structlog values and in any debug dump of
-          the request scope; holding the live credential there would put it one exception
-          away from a log file (V2 "⊥ logged", V8). Nothing on a resource-server path reads
-          `.token` — only the OAuth-proxy providers and a cache-key hash do — so the digest
-          costs nothing and the identity is still uniquely keyed.
+          model that renders in tracebacks, in structlog values and in any debug dump of the request
+          scope; holding the live credential there would put it one exception away from a log file
+          (never logged; the envelope shape). Nothing on a resource-server path reads `.token` —
+          only the OAuth-proxy providers and a cache-key hash do — so the digest costs nothing and
+          the identity is still uniquely keyed.
         - **`scopes` stays empty.** RBAC is not OAuth scope. Putting the permitted tools
           here would create a second authorization source that lives for the connection,
-          and V1/V74 require the execution-time re-check to be the authority — a cached
-          scope list is exactly the stale catalog V74 refuses to trust.
+          and the execution-time permission re-check and the RBAC backstop require the
+          execution-time re-check to be the authority — a cached
+          scope list is exactly the stale catalog that backstop refuses to trust.
         - **`client_id` and `subject` are per user, not per token.**
           `streamable_http_manager` pins an `Mcp-Session-Id` to the principal that created
           it and 404s anything else (`authorization_context`), so keying on the token id

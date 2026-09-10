@@ -20,9 +20,9 @@ import { buildActionRequestColumns } from './action-request-columns'
 
 const ACTION_REQUEST_COLUMNS = buildActionRequestColumns()
 
-// The CHANGE authorisation surface (§I.admin-api). Its own page rather than a
-// tab beside `/admin/audit`: T55 removed the tab strip when the ported second
-// tab turned out to call routes NOA did not serve, and the recorded call was
+// The CHANGE authorisation surface — the admin API's contract. Its own page rather than a
+// tab beside `/admin/audit`: the audit reader build removed the tab strip when the ported
+// second tab turned out to call routes NOA did not serve, and the recorded call was
 // that `/admin/audit` is *the* audit view rather than a container for tabs. Two
 // addresses for two questions keeps that true — what ran, and who authorised it
 // — and neither view has to stay in step with the other's URL state.

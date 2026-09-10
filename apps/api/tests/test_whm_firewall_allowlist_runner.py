@@ -1,4 +1,5 @@
-"""The half that runs after an operator approved — T26's runner (V22's far side).
+"""The half that runs after an operator approved — the allowlist-remove tool's runner
+(the far side of the cookie/CSRF boundary).
 
 `test_whm_tools_firewall_allowlist_remove.py` covers the tool, which changes nothing. This
 covers the thing that does, and the two are separate files because the boundary between them is
@@ -12,21 +13,21 @@ Four claims carry the weight.
 allow and `csf -ar` the `csf.allow` entry; an address lives in one of them, so the other always
 reports "not in that list" and that is the ordinary answer rather than a failure.
 
-**Nothing here is required to succeed, so the postflight is the only authority.** T25 could keep
-one strict command — the allow entry the operator asked to *exist* — and a removal has no
-equivalent. The exception is a sudo-rights refusal, which is never "the entry was not there"
-(§V.55): sudoers can permit the probe and refuse the write, and tolerating that would report a
-change that could not run as a change that found nothing to do.
+**Nothing here is required to succeed, so the postflight is the only authority.** The
+release-and-allow tool could keep one strict command — the allow entry the operator asked to *exist*
+— and a removal has no equivalent. The exception is a sudo-rights refusal, which is never "the entry
+was not there": sudoers can permit the probe and refuse the write, and tolerating that would report
+a change that could not run as a change that found nothing to do.
 
 **"Still allowlisted" is read from `allow_entry`, not from the verdict.** Both backends resolve
 block-over-allow, so on an address csf also denies the verdict cannot see a surviving allow
 entry. Its own case here, because it is the difference between reporting a failed removal and
 reporting it as done.
 
-**The reason goes nowhere, and this tool never wrote one** (C8, §V.43, §V.96). What it deletes is
-an entry T25 wrote, which carries `noa:<id> <reason>` — so the doors back are a backend failure
-message that quotes it and the postflight lines the verdict is read from, and both are closed
-here.
+**The reason goes nowhere, and this tool never wrote one.** What it deletes is an entry the
+release-and-allow tool wrote, which carries `noa:<id> <reason>` — so the doors back are a backend
+failure message that quotes it and the postflight lines the verdict is read from, and both are
+closed here.
 """
 
 from __future__ import annotations
@@ -94,8 +95,9 @@ async def test_the_runner_clears_both_allow_lists_then_re_reads(
 ) -> None:
     """Both lists, in `noa-old`'s order, and the confirming read last.
 
-    Both commands are sent because NOA does not know which list holds the entry: T25 writes
-    temporary allows, an operator's own hand-added ones are permanent. Asserted as a sequence,
+    Both commands are sent because NOA does not know which list holds the entry: the
+    release-and-allow tool writes temporary allows, an operator's own hand-added ones are
+    permanent. Asserted as a sequence,
     which is what a dropped command breaks and what a membership test would not.
     """
     fixture, fake = release_context(monkeypatch, box=removed_box())
@@ -118,8 +120,9 @@ async def test_a_confirmed_removal_says_so_once_and_names_the_server(
 ) -> None:
     """The success shape: one outcome, because a removal is one claim.
 
-    T25 keeps `released` and `allowlisted` apart because it makes two claims. This makes one,
-    and inventing a second boolean to mirror T25 would be a field nobody measured.
+    The release-and-allow tool keeps `released` and `allowlisted` apart because it makes two
+    claims. This makes one, and inventing a second boolean to mirror it would be a field nobody
+    measured.
     """
     fixture, _ = release_context(monkeypatch, box=removed_box())
     runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))
@@ -137,9 +140,10 @@ async def test_a_confirmed_removal_says_so_once_and_names_the_server(
 async def test_the_runner_acts_on_the_server_the_card_named(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V33: inventory can change between a request and its approval, and `server_ref` is a string
-    the model supplied. The evidence carries the id of the machine the preflight read and the
-    operator saw, so that is what the change reaches — asserted on the host the transport was
+    """Context persisted at gate time: inventory can change between a request and its approval, and
+    `server_ref` is a string the model supplied. The evidence carries the id of the machine the
+    preflight read and the operator saw, so that is what the change reaches — asserted on the
+    host the transport was
     handed, which is the only way "it ran somewhere else" would show."""
     cipher = build_cipher()
     alpha = preflight_server(SERVER_NAME, cipher=cipher)
@@ -221,11 +225,13 @@ async def test_a_blocked_address_with_no_allow_entry_is_a_clean_removal(
 async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V86 on a CHANGE, which is where V57's zero-case bound runs out.
+    """The unknown-when-silent rule on a CHANGE, which is where the zero-backend error's bound runs
+    out.
 
     CSF says the address is clean; Imunify's confirming read is unreadable. Answering "removed"
-    from the half that spoke is the fabrication T24 was written to stop, one side worse — and
-    answering "failed" would send an operator to repeat a removal that already took (V62's rule).
+    from the half that spoke is the fabrication the dual-backend firewall read was written to
+    stop, one side worse — and
+    answering "failed" would send an operator to repeat a removal that already took.
     So: it happened, it is not verified, and the silent backend is named.
     """
     fixture, _ = release_context(
@@ -251,7 +257,7 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
 async def test_a_backend_that_answered_alone_is_still_verified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above, and V86's own bound.
+    """The negative control for the case above, and the subset-naming rule's own bound.
 
     One backend *installed* is not one backend silent: a box without Imunify is answered in full
     by CSF, and refusing to verify there would make the unverified branch fire for every
@@ -301,7 +307,7 @@ async def test_a_step_that_finds_nothing_is_not_a_failure(
 
 
 async def test_a_step_sudo_refuses_is_not_tolerated(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V55, and the hole tolerating everything would otherwise leave.
+    """The sudo-prefix rule, and the hole tolerating everything would otherwise leave.
 
     sudoers can permit `csf -v` — which is what the availability probe runs, so the box looks
     usable — and refuse `csf -ar`. Every command would then report "not in that list", and a
@@ -362,7 +368,8 @@ async def test_evidence_without_a_usable_target_is_refused(
 async def test_zero_usable_backends_after_approval_raises_for_the_executor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V57 on the runner side, where the silent no-op would be an approved change.
+    """The zero-backend error on the runner side, where the silent no-op would be an approved
+    change.
 
     A runner is not decorated with `sanitize_tool_errors` — the executor catches `NoaError` and
     keeps its code (`core.approvals.execution`), so the receipt names `no_firewall_backend`
@@ -381,7 +388,7 @@ async def test_zero_usable_backends_after_approval_raises_for_the_executor(
 async def test_a_non_root_user_escalates_every_firewall_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V55 is a biconditional, and the runner is where it has the most to lose.
+    """The sudo-prefix rule is a biconditional, and the runner is where it has the most to lose.
 
     Every command the change sends — probes, both removals and the confirming read — runs under
     `sudo -n` when the resolved SSH user is not root. One unescalated write is a change that
@@ -408,12 +415,13 @@ async def test_a_root_user_escalates_nothing(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # --------------------------------------------------------------------------------------
-# C8, V43, V96: nothing is written out, and nothing comes back
+# The reason field: nothing is written out, and nothing comes back
 # --------------------------------------------------------------------------------------
 
 
 async def test_no_command_carries_a_comment(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V43 is not used on this side, and that is worth asserting rather than assuming.
+    """The one-reason-field rule is not used on this side, and that is worth asserting rather than
+    assuming.
 
     `csf -tra` / `-ar` and Imunify's delete take no comment, so a removal writes none of the
     operator's words anywhere — the marker appears in no command NOA sends. Without this, "the
@@ -433,14 +441,14 @@ async def test_no_command_carries_a_comment(monkeypatch: pytest.MonkeyPatch) -> 
 async def test_the_runner_payload_never_carries_the_reason_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V96b: `result_summary` is derived from this payload, and `noa_get_action_result` returns
-    the summary to a model.
+    """The no-path-back rule's audit half: `result_summary` is derived from this payload, and
+    `noa_get_action_result` returns the summary to a model.
 
     The reason is on the `ChangeExecutionRequest` — the executor reads it off the row for every
     approved change — so it is in front of this runner throughout, and the entry it just
     deleted carried it too. Asserted on the derived summary as well as on the payload, because
-    the summary is the thing a model actually reads (V96's own "on the serialized result ∧ on
-    the derived summary").
+    the summary is the thing a model actually reads — the no-path-back rule's own "on the
+    serialized result and on the derived summary" requirement.
     """
     fixture, _ = release_context(
         monkeypatch, box=removed_box(csf_after=f"{CSF_ALLOW_LINE} noa:{uuid4()} {REASON}")
@@ -458,10 +466,10 @@ async def test_the_postflight_evidence_never_reaches_the_payload(
 ) -> None:
     """The door this tool opens widest.
 
-    The confirming read is `csf -g`, and on a failed removal its output is the allow entry T25
-    wrote — marker, reason and all. Those lines are read for a verdict and go no further: the
-    after-state says what changed, not what csf printed. Asserted on the failing branch, because
-    that is the branch where the lines exist.
+    The confirming read is `csf -g`, and on a failed removal its output is the allow entry the
+    release-and-allow tool wrote — marker, reason and all. Those lines are read for a verdict and go
+    no further: the after-state says what changed, not what csf printed. Asserted on the failing
+    branch, because that is the branch where the lines exist.
     """
     surviving = f"{CSF_ALLOW_LINE} noa:{uuid4()} {REASON}"
     fixture, _ = release_context(monkeypatch, box=removed_box(csf_after=surviving))
@@ -481,9 +489,9 @@ async def test_a_backend_failure_message_is_cut_before_it_reaches_the_payload(
     """V96b again, through the door a failure opens.
 
     A backend that refuses a removal frequently quotes the entry it could not remove — and that
-    entry is the one T25 wrote, comment included. The message becomes `tool_runs.result_summary`,
-    which `noa_get_action_result` hands to a model, so it is cut on the way into the payload
-    rather than trusted to be harmless.
+    entry is the one the release-and-allow tool wrote, comment included. The message becomes
+    `tool_runs.result_summary`, which `noa_get_action_result` hands to a model, so it is cut on the
+    way into the payload rather than trusted to be harmless.
 
     The marker is the real request's, because a cut aimed at a marker this call never saw would
     pass without cutting anything.
@@ -519,18 +527,18 @@ async def test_a_backend_failure_message_is_cut_before_it_reaches_the_payload(
 
 
 # --------------------------------------------------------------------------------------
-# V46, DECISIONS §6.5: the receipt an operator reads
+# The one-commit receipt rule, DECISIONS section 6.5: the receipt an operator reads
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_receipt_keeps_the_before_and_after_apart(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V46, through the real `build_receipt`.
+    """The one-commit receipt rule, through the real `build_receipt`.
 
     `before` is the gate's own preflight — the allow entry the operator decided against, read
     with its own comment intact, because a receipt is behind the operator's cookie and is one of
-    the two surfaces V96 deliberately does *not* cut. `after` is what the change
+    the two surfaces the no-path-back rule deliberately does *not* cut. `after` is what the change
     answered.
     """
     fixture, _ = release_context(monkeypatch, box=removed_box())
@@ -548,7 +556,8 @@ async def test_the_receipt_keeps_the_before_and_after_apart(
 
 
 async def test_a_failed_change_keeps_its_before_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V46: a receipt with a before-state and no working after-state IS the record of a change
+    """The one-commit receipt rule: a receipt with a before-state and no working after-state IS the
+    record of a change
     that did not complete — so the half the operator authorised against survives the failure."""
     fixture, _ = release_context(monkeypatch, box=removed_box(csf_after=CSF_ALLOW_LINE))
     runner = payload_runner(build_whm_firewall_allowlist_remove_runner(context=fixture.context))

@@ -1,14 +1,14 @@
 import type { NextRequest } from 'next/server'
 
 /**
- * Same-origin proxy primitives (§T.50, §I.admin-web).
+ * Same-origin proxy primitives.
  *
- * Ported from `noa-old` branch `MCP`, `apps/web-bigsu/src/lib/proxy/http.ts`, per C13/V69: copy
- * the mature layer, do not rewrite it. Every guard below closes a defect that was found and fixed
- * there — an encoded path traversal, an open redirect attributable to this origin, the internal
- * backend host leaking to the browser, and a decompression mismatch that truncates responses.
- * V69 also says provenance is not evidence: `http.test.ts` re-proves each one against this copy
- * rather than citing the old repo.
+ * Ported from `noa-old` branch `MCP`, `apps/web-bigsu/src/lib/proxy/http.ts` — port, never
+ * import: copy the mature layer, do not rewrite it. Every guard below closes a defect that was
+ * found and fixed there — an encoded path traversal, an open redirect attributable to this
+ * origin, the internal backend host leaking to the browser, and a decompression mismatch that
+ * truncates responses. Provenance is not evidence a control works: `http.test.ts` re-proves each
+ * one against this copy rather than citing the old repo.
  *
  * `apps/web-embed` carries the same file. That is a COPY, not a shared module: the two web apps
  * are independent packages with their own lockfiles, own CI and own deploy artifact, and
@@ -44,7 +44,7 @@ function getConnectionHeaderNames(headers: Headers): Set<string> {
 }
 
 // Server-only upstream base. Browsers never see this — they call same-origin
-// /api/* which this proxy forwards (AGENTS.md: "Browser ⊥ call FastAPI direct").
+// /api/* which this proxy forwards (AGENTS.md: "Browser never calls FastAPI direct").
 // There is no NEXT_PUBLIC_* fallback: NOA_API_URL is the single server-only
 // source, and the repo-root `.env` is the single place local dev sets it
 // (`next.config.ts` loads that file via `config/root-env.ts`).
@@ -249,7 +249,7 @@ function scrubBackendOriginHeader(headers: Headers, name: string): void {
 // Link) is rewritten so the NOA_API_URL host is never leaked to the browser.
 //
 // The status is passed through as-is on purpose: a 401 has to arrive at the
-// browser as a 401 so `fetchWithAuth` runs the session-expiry flow (V6's
+// browser as a 401 so `fetchWithAuth` runs the session-expiry flow (the
 // per-request `is_active` re-read is what makes that 401 meaningful), and
 // `x-request-id` rides along with the rest of the safe headers so the id in the
 // body still names a log line.

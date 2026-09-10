@@ -7,24 +7,24 @@ credentials were sent, what command went out, and what the output means.
 
 Five properties carry the weight.
 
-**Membership is exact** (§V.59). `1.2.3.4` and `1.2.3.4/32` are one entry; `1.2.3.0/24` in the
+**Membership is exact**. `1.2.3.4` and `1.2.3.4/32` are one entry; `1.2.3.0/24` in the
 whitelist is *not* a match for `1.2.3.4`. Both directions, because getting either wrong is a
 confident wrong answer rather than a visible failure.
 
-**One `pmgsh` read, argv-safe** (§V.58). The exact command is asserted, and so is the fact that
+**One `pmgsh` read, argv-safe**. The exact command is asserted, and so is the fact that
 it is the only one — a search must not sync, create or delete.
 
-**The session closes before the SSH hop.** T21's rule, and the reason
+**The session closes before the SSH hop.** The account search's rule, and the reason
 `core.integrations.pmg.pmgsh_cli` takes a config rather than a row as of this task.
 
-**A refusal names its cause** (§V.18, §V.19, §V.21). An ambiguous `server_ref` comes back with
+**A refusal names its cause**. An ambiguous `server_ref` comes back with
 `choices`; a blank or unparseable target is refused before any I/O; an unpinned row answers
-`ssh_host_key_not_validated` and never opens a connection (§V.82); a `pmgsh` failure keeps the
+`ssh_host_key_not_validated` and never opens a connection; a `pmgsh` failure keeps the
 code that names its remedy.
 
-**Nothing a result carries is credential material** (§V.2, §V.8), asserted against both the
+**Nothing a result carries is credential material**, asserted against both the
 ciphertext in the column and the plaintext behind it — a leak of either into a LibreChat
-transcript (§V.26) is the same leak.
+transcript is the same leak.
 """
 
 from __future__ import annotations
@@ -118,8 +118,8 @@ async def test_an_absent_address_is_a_success_with_no_matches(monkeypatch) -> No
 
 
 async def test_a_bare_address_matches_its_host_route_entry(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.59 end to end, in the direction that matters most: the operator types an address and
-    PMG stores a /32. Comparing raw strings would answer "not whitelisted"."""
+    """Exact membership end to end, in the direction that matters most: the operator types an
+    address and PMG stores a /32. Comparing raw strings would answer "not whitelisted"."""
     fixture, _ = whitelist_context(
         monkeypatch, answer=command_result(stdout=mynetworks_output("1.2.3.4/32"))
     )
@@ -144,7 +144,7 @@ async def test_a_host_route_matches_a_bare_entry(monkeypatch) -> None:  # type: 
 
 
 async def test_a_containing_network_is_not_a_match(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.59 says exact membership. `1.2.3.0/24` in `mynetworks` does not make `1.2.3.4` an
+    """Exact membership means `1.2.3.0/24` in `mynetworks` does not make `1.2.3.4` an
     entry — and telling the operator it does sends them to remove a CIDR they never named."""
     fixture, _ = whitelist_context(
         monkeypatch, answer=command_result(stdout=mynetworks_output("1.2.3.0/24"))
@@ -183,7 +183,7 @@ async def test_a_network_target_reports_what_was_actually_tested(monkeypatch) ->
 
 async def test_a_repeated_entry_is_reported_rather_than_collapsed(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """`noa-old` deduplicated while parsing. Two spellings of one address in `mynetworks` is a
-    fact about the whitelist, and T29's removal has to know both lines are there."""
+    fact about the whitelist, and removing one has to know both lines are there."""
     fixture, _ = whitelist_context(
         monkeypatch, answer=command_result(stdout=mynetworks_output("1.2.3.4", "1.2.3.4/32"))
     )
@@ -206,11 +206,11 @@ async def test_an_empty_whitelist_says_it_read_nothing(monkeypatch) -> None:  # 
     assert result["total_entries"] == 0
 
 
-# --- V58: one argv-safe read, and only one ---
+# --- One argv-safe read, and only one ---
 
 
 async def test_the_search_sends_one_argv_safe_mynetworks_read(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.58: `pmgsh` over SSH, argv-only, against `/config/mynetworks` and nothing else.
+    """`pmgsh` over SSH, argv-only, against `/config/mynetworks` and nothing else.
 
     Asserted as the *whole* command list, so a search that also synced, created or deleted
     fails here — a READ tool that mutates is the one failure the READ/CHANGE split exists to
@@ -238,9 +238,9 @@ async def test_a_hostile_target_never_reaches_the_command(monkeypatch) -> None: 
 
 
 async def test_a_non_root_ssh_user_escalates_end_to_end(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.55 as a biconditional, through the tool rather than through the builder: the row's
-    `ssh_username` decides, and the command that goes out is built from the config that opened
-    the connection."""
+    """The sudo-prefix rule as a biconditional, through the tool rather than through the builder:
+    the row's `ssh_username` decides, and the command that goes out is built from the config that
+    opened the connection."""
     fixture, fake = whitelist_context(monkeypatch, ssh_username="noa-ops")
 
     await search(fixture)
@@ -257,12 +257,12 @@ async def test_a_root_row_sends_no_sudo(monkeypatch) -> None:  # type: ignore[no
     assert "sudo" not in fake.commands[0]
 
 
-# --- V21: the argument guards, before any I/O ---
+# --- The argument guards, before any I/O ---
 
 
 @pytest.mark.parametrize("target", ["", "   ", "\t\n"])
 async def test_a_blank_target_is_refused_before_any_io(monkeypatch, target: str) -> None:  # type: ignore[no-untyped-def]
-    """§V.21. The schema cannot express it — `min_length` counts whitespace — so this is the
+    """The schema cannot express it — `min_length` counts whitespace — so this is the
     gate, and searching for "" is not a question."""
     fixture, fake = whitelist_context(monkeypatch)
 
@@ -302,7 +302,7 @@ async def test_a_target_that_is_not_an_ip_or_cidr_is_refused(monkeypatch, target
 
 
 async def test_a_blank_server_ref_is_refused(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.21 on the other required string."""
+    """Whitespace refused on the other required string too."""
     fixture, fake = whitelist_context(monkeypatch)
 
     result = await search(fixture, server_ref="   ")
@@ -312,11 +312,11 @@ async def test_a_blank_server_ref_is_refused(monkeypatch) -> None:  # type: igno
     assert fake.runs == []
 
 
-# --- V18: which server did they mean? ---
+# --- Which server did they mean? ---
 
 
 async def test_an_ambiguous_server_ref_returns_choices(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.18: a tie is candidates, never a pick — a guess answers about a node the operator
+    """A tie is candidates, never a pick — a guess answers about a node the operator
     never named."""
     cipher = build_cipher()
     shared = "gw.example.com"
@@ -385,11 +385,11 @@ async def test_a_server_ref_by_id_resolves(monkeypatch) -> None:  # type: ignore
     assert fake.commands == [READ_COMMAND]
 
 
-# --- V82, C7, V48: the connection the row produces ---
+# --- The connection the row produces ---
 
 
 async def test_an_unpinned_server_is_refused_before_any_ssh(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.82: no pin, no connection — and the refusal names the *server*.
+    """No pin, no connection — and the refusal names the *server*.
 
     This case lived in `test_pmg_pmgsh_cli.py` until the CLI layer stopped taking rows. It
     belongs here now, and it is worth more here: reaching the box with an unpinned row would
@@ -426,7 +426,7 @@ async def test_a_server_with_no_credentials_is_refused_before_any_ssh(monkeypatc
 
 
 async def test_the_ssh_connection_uses_the_decrypted_credentials(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """C7, §V.48. The columns hold `enc:v1:fernet:…`; the transport has to receive plaintext.
+    """The columns hold `enc:v1:fernet:…`; the transport has to receive plaintext.
 
     This is the assertion that keeps the one decrypt site in the path. A tool that passed the
     column value straight through would still "work" against a doubled transport and fail only
@@ -443,7 +443,7 @@ async def test_the_ssh_connection_uses_the_decrypted_credentials(monkeypatch) ->
 
 
 async def test_the_database_session_closes_before_the_ssh_hop(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """T21's rule, and the reason the PMG SSH layer takes a config rather than a row.
+    """The account search's rule, and the reason the PMG SSH layer takes a config rather than a row.
 
     A pooled Postgres connection held across a hop to someone else's host is how a slow PMG
     node becomes a database outage.
@@ -472,11 +472,11 @@ async def test_the_database_session_closes_before_the_ssh_hop(monkeypatch) -> No
     assert events == ["session-open", "session-close", "ssh"]
 
 
-# --- V8, V26: what leaves the process ---
+# --- What leaves the process ---
 
 
 async def test_the_result_carries_no_credential_material(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """§V.2, §V.8: neither the ciphertext in the column nor the plaintext behind it (§V.26).
+    """Neither the ciphertext in the column nor the plaintext behind it.
 
     Against the whole serialized payload rather than key by key: what must hold is that the
     *values* appear nowhere, however they are nested.
@@ -510,7 +510,7 @@ async def test_the_result_carries_no_server_row_fields(monkeypatch) -> None:  # 
     }
 
 
-# --- V19: failures ---
+# --- Failures ---
 
 
 async def test_a_denied_sudo_keeps_its_own_code(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -577,7 +577,7 @@ class ExplodingPMGServerRepository:
 async def test_an_exception_reaches_the_caller_as_a_named_failure(
     error: BaseException, expected_code: str, expected_message: str
 ) -> None:
-    """§V.19's two mappings, and the original text never travels (§V.8, §V.26)."""
+    """The sanitizer's two mappings, and the original text never travels."""
     context = replace(
         build_tool_context().context,
         pmg_server_repository_factory=lambda _session: ExplodingPMGServerRepository(error),
@@ -602,16 +602,16 @@ async def test_cancellation_is_not_swallowed() -> None:
         await pmg_whitelist_search(server_ref=SERVER_NAME, target="1.2.3.4", context=context)
 
 
-# --- V83a, C8: the tool ships with its gate, and its schema ---
+# --- The tool ships with its gate, and its schema ---
 
 
 def test_the_tool_name_matches_the_catalog() -> None:
-    """The registered name is the one RBAC grants are written against (§V.10)."""
+    """The registered name is the one RBAC grants are written against."""
     assert TOOL_PMG_WHITELIST_SEARCH in TOOL_CATALOG
 
 
 async def test_the_schema_takes_a_server_and_a_target_and_nothing_else() -> None:
-    """C8: a READ tool has no reason either, and a schema is where one would appear.
+    """A READ tool has no reason either, and a schema is where one would appear.
 
     Read off the registered tool rather than restated, so a signature that grew a parameter
     fails here instead of quietly accepting one from a client.

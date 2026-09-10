@@ -4,7 +4,7 @@ Revision ID: 0003_tool_runs
 Revises: 0002_login_rate_limits
 Create Date: 2026-08-07
 
-T35. `risk` and `status` are separate checked columns so a failed
+`risk` and `status` are separate checked columns so a failed
 READ is representable — folding them into one lifecycle set would make `FAILED`
 and `READ` compete for the same cell.
 
@@ -12,9 +12,9 @@ Both enums are `native_enum=False` with `create_constraint=True`: a VARCHAR plus
 CHECK, not a Postgres enum type. Adding a member to a native enum is `ALTER TYPE`,
 and the type outlives the table on downgrade; a CHECK is dropped with it.
 
-Indexes cover the audit filter set of §I.admin-api (`toolName`, `status`,
+Indexes cover the admin API's audit filter set (`toolName`, `status`,
 `conversationRef`, requester, date range) plus the `created_at` ordering the cursor
-pagination in T55 pages on. No index on `risk` — nothing filters by it.
+pagination in the admin audit reader pages on. No index on `risk` — nothing filters by it.
 """
 
 from __future__ import annotations
@@ -57,7 +57,7 @@ def upgrade() -> None:
             nullable=False,
             server_default="STARTED",
         ),
-        # Audit/grouping label only, never a security scope (DECISIONS §3.2).
+        # Audit/grouping label only, never a security scope (DECISIONS.md section 3.2).
         sa.Column("conversation_ref", sa.String(length=255), nullable=True),
         # Redacted by the writer. `'{}'` so "no arguments" and "not recorded" differ.
         sa.Column(

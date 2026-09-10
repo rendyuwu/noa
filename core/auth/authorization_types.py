@@ -1,8 +1,8 @@
 """Shapes the RBAC engine passes around.
 
-Ported from `noa-old` branch `MCP` (`core/auth/authorization_types.py`, C13), minus the
+Ported from `noa-old` branch `MCP` (`core/auth/authorization_types.py`), minus the
 direct-grant fields. `AuthorizationUser` there carried `direct_tools` alongside `tools`;
-V75 turns direct per-user grants into a 410 (`direct_tool_grants_disabled`, T65), so a
+direct per-user grants become a 410 (`direct_tool_grants_disabled`), so a
 field for them would be a slot nothing can ever fill.
 
 `AuthorizedUser` is the answer to "who is this and what may they call". It is built from a
@@ -12,7 +12,7 @@ on it and have the engine believe them.
 
 The repository is a Protocol so `AuthorizationService`'s policy — admin bypass, the
 last-admin guards, internal-role preservation — is tested against in-memory dicts, while
-`SQLAuthorizationRepository` is tested against a live database. Same split as T8's
+`SQLAuthorizationRepository` is tested against a live database. Same split as the login flow's
 `AuthRepository`.
 """
 
@@ -71,8 +71,9 @@ class AuthorizationRepository(Protocol):
 
     async def list_users(self) -> list[AuthorizationUserRecord]: ...
 
-    # T66's audience. Not on the permission path — it answers "whose catalog did this write
-    # move?", which is a question about who to *tell*, never about who may call what.
+    # The list-changed emitter's audience. Not on the permission path — it answers "whose
+    # catalog did this write move?", which is a question about who to *tell*, never about who
+    # may call what.
     async def list_user_ids_with_role(self, role_name: str) -> list[UUID]: ...
 
     # --- Roles and grants ---
@@ -105,7 +106,7 @@ class AuthorizationRepository(Protocol):
 
     async def delete_user(self, user_id: UUID) -> bool: ...
 
-    # V4's cascade revoke. On the RBAC repository rather than T10's token repository
+    # The cascade revoke. On the RBAC repository rather than the token service's own repository
     # because `set_user_active` is what triggers it, and a disable that revoked through a
     # second repository would need a second transaction to go wrong in.
     async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int: ...

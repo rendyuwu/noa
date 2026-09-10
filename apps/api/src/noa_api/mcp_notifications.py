@@ -1,6 +1,7 @@
 """`notifications/tools/list_changed` on a live MCP session.
 
-V74 requires NOA to emit this notification when a permission changes. The awkward part is not
+Permission changes must emit this notification — backstopped by the execution-time RBAC
+re-check, so a stale catalog is no hole. The awkward part is not
 the emit — `ServerSession.send_tool_list_changed()` is one call — it is that the *trigger* and
 the *session* are on opposite sides of the app. A grant changes inside an admin REST request
 authenticated by a cookie; the session that has to be told belongs to a Streamable HTTP
@@ -16,12 +17,13 @@ Three pieces, in the order a notification travels:
    committed write.
 
 **Read this before reading the rest: at the pinned client, none of it changes what an operator
-sees.** R30 settled it by measurement at LibreChat `45cc53c4` — `ToolListChangedNotificationSchema`
+sees.** Measurement at LibreChat `45cc53c4` settled it — `ToolListChangedNotificationSchema`
 has zero handlers tree-wide, `connection.ts:1852` registers the *resource* list-changed schema
 only, and a notification NOA provably put on a session's stream drew no `tools/list` after it.
 So this ships because it is protocol-correct, costs almost nothing, and a later client may
-honour it. What actually keeps a revoked grant from being callable is V1's execution-time
-re-check (`noa_api.mcp_rbac`), which is a different mechanism and the one with teeth. Nothing
+honour it. What actually keeps a revoked grant from being callable is the execution-time
+permission re-check (`noa_api.mcp_rbac`), which is a different mechanism and the one with
+teeth. Nothing
 here is a security control, and no test in this repo asserts that a client refetched — that
 would be an assertion about behaviour NOA does not control, red on an upstream whim.
 
@@ -167,7 +169,8 @@ class McpSessionRegistryMiddleware(Middleware):
     (`RequireAuthMiddleware` answers 401 first), so an unresolved identity means a mount
     assumption stopped holding, and refusing the call over a bookkeeping problem would trade a
     working request for a broken one. The consequence of skipping is a session that misses a
-    catalog notification — which V74 already treats as acceptable.
+    catalog notification — which the notify-on-permission-change rule already treats as
+    acceptable.
     """
 
     def __init__(self, *, registry: McpSessionRegistry) -> None:
@@ -225,7 +228,8 @@ class McpToolListChangedNotifier:
 
         Exposed so a test can assert the two ends are the *same* object — the MCP mount writes
         one and the admin surface reads one, and if they were ever two the emit would reach zero
-        sessions with nothing failing (V74's best-effort makes that silent). Read-only, and the
+        sessions with nothing failing (the notify rule's best-effort delivery makes that
+        silent). Read-only, and the
         register itself answers only counts and ids: nothing here decides a permission.
         """
         return self._registry

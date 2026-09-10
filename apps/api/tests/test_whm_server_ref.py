@@ -1,7 +1,8 @@
 """Resolving an operator's word to one WHM server.
 
-V18 is a rule about what NOA does when it *cannot* tell: it returns candidates, it does not
-pick. So most of this file is about the failure shapes, and the assertions are on the
+Ambiguous identifier resolution is a rule about what NOA does when it *cannot* tell: it
+returns candidates, it does not pick. So most of this file is about the failure shapes, and
+the assertions are on the
 `error_code` and the `choices` rather than on the prose — those strings are what the model
 and the admin panel branch on.
 
@@ -55,7 +56,7 @@ async def test_a_name_resolves_case_insensitively() -> None:
 
 
 async def test_a_base_url_hostname_resolves_when_the_name_does_not() -> None:
-    """V18's third form: the host out of `base_url`, not the NOA name.
+    """The ambiguous-identifier rule's third form: the host out of `base_url`, not the NOA name.
 
     Operators read hostnames off tickets and monitoring, so the reference they have is often
     the machine's, not the label NOA stores.
@@ -86,11 +87,11 @@ async def test_a_name_wins_over_another_servers_hostname() -> None:
     assert resolution.server is named
 
 
-# --- V18: a tie returns candidates, never a pick ---
+# --- A tie returns candidates, never a pick ---
 
 
 async def test_two_servers_sharing_a_name_return_candidates_not_a_guess() -> None:
-    """V18, the case that matters: `Node1` and `node1` both match `NODE1`.
+    """The case that matters: `Node1` and `node1` both match `NODE1`.
 
     Reachable despite `whm_servers.name` being `unique=True` — Postgres uniqueness is
     case-sensitive and the match is not. A resolver that picked one would route a CHANGE to
@@ -129,7 +130,8 @@ async def test_two_servers_sharing_a_hostname_return_candidates() -> None:
 async def test_candidate_lists_are_capped() -> None:
     """A tie between forty servers must not paste forty rows into the transcript.
 
-    V64 is the answer for genuinely large results; a refusal is not the place for one.
+    Summary-plus-URL is the answer for genuinely large results; a refusal is not the place for
+    one.
     """
     servers = [
         whm_server(f"node-{index}", base_url="https://shared.example.net:2087")
@@ -161,10 +163,11 @@ async def test_candidates_carry_no_credential_material() -> None:
 
 
 async def test_an_unmatched_reference_is_not_found_rather_than_the_only_server() -> None:
-    """V18 again, from the other side: one server does not make it the answer.
+    """Ambiguous-identifier resolution again, from the other side: one server does not make it
+    the answer.
 
     The tempting shortcut — "there is only one WHM server, so they must mean that one" —
-    is exactly the guess V18 forbids, and it is most dangerous in the deployment where it
+    is exactly the guess the rule forbids, and it is most dangerous in the deployment where it
     looks safest, because a second server appearing later silently changes behaviour.
     """
     repository = FakeWHMServerRepository([whm_server("alpha")])
@@ -193,7 +196,7 @@ async def test_a_well_formed_id_that_matches_nothing_stops_at_not_found() -> Non
 
 
 async def test_a_whitespace_only_reference_is_refused() -> None:
-    """V21: a required string that is only whitespace is a bad call, not a broad search."""
+    """A required string that is only whitespace is a bad call, not a broad search."""
     repository = FakeWHMServerRepository([whm_server("alpha")])
 
     resolution = await resolve_whm_server_ref("   ", repository=repository)

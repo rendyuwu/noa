@@ -1,10 +1,11 @@
-"""Operator word → one PMG server (T31, §V.18, §V.21).
+"""Operator word → one PMG server.
 
 The PMG sibling of `test_whm_server_ref.py`, and the same property is the one that matters:
-**a tie produces candidates, never a pick.** At T31 a guess answers "is this address
-whitelisted?" about a node the operator never named; at T29 the same guess whitelists on one.
+**a tie produces candidates, never a pick.** At the whitelist search a guess answers "is this
+address whitelisted?" about a node the operator never named; at the pmg-whitelist tool the same
+guess whitelists on one.
 
-Ties are reachable even though `pmg_servers.name` is `unique=True` (§T.4): Postgres uniqueness
+Ties are reachable even though `pmg_servers.name` is `unique=True`: Postgres uniqueness
 is case-sensitive and the match is not, so `Pmg1` and `pmg1` can both exist and both answer to
 `PMG1`. Dropping the ambiguity branch because "the column is unique" would be wrong for exactly
 that case, so it is asserted rather than reasoned about.
@@ -75,11 +76,12 @@ async def test_a_name_wins_over_another_server_s_host() -> None:
     assert resolution.server is by_name
 
 
-# --- V18: a tie is candidates ---
+# --- A tie is candidates ---
 
 
 async def test_a_name_tie_returns_choices_rather_than_a_pick() -> None:
-    """§V.18. Reachable because Postgres uniqueness is case-sensitive and matching is not."""
+    """Ambiguous identifier resolves to candidates. Reachable because Postgres uniqueness is
+    case-sensitive and matching is not."""
     repository = FakePMGServerRepository([pmg_server("Pmg1"), pmg_server("pmg1")])
 
     resolution = await resolve_pmg_server_ref("PMG1", repository=repository)
@@ -105,7 +107,8 @@ async def test_a_host_tie_returns_choices() -> None:
 
 
 async def test_choices_are_bounded() -> None:
-    """A tie between forty nodes must not paste forty rows into a transcript (§V.26)."""
+    """A tie between forty nodes must not paste forty rows into a transcript — nothing exposed
+    to the transcript should carry raw ops data."""
     repository = FakePMGServerRepository(
         [pmg_server(f"pmg{index}", ssh_host="gw.example.com") for index in range(MAX_CHOICES + 5)]
     )
@@ -116,7 +119,7 @@ async def test_choices_are_bounded() -> None:
 
 
 def test_a_choice_names_the_server_without_a_credential() -> None:
-    """§V.8, §V.26: the three fields that let an operator recognise a node and then name it
+    """The three fields that let an operator recognise a node and then name it
     unambiguously, and nothing that would be a leak in a LibreChat transcript."""
     server = pmg_server("pmg1", ssh_host="gw.example.com")
 
@@ -127,11 +130,11 @@ def test_a_choice_names_the_server_without_a_credential() -> None:
     }
 
 
-# --- V21 and the not-found cases ---
+# --- Rejected inputs and the not-found cases ---
 
 
 async def test_a_blank_reference_is_refused() -> None:
-    """§V.21: a whitespace-only required string is a bad call, not a wildcard."""
+    """A whitespace-only required string is a bad call, not a wildcard."""
     repository = FakePMGServerRepository([pmg_server("pmg1")])
 
     resolution = await resolve_pmg_server_ref("   ", repository=repository)

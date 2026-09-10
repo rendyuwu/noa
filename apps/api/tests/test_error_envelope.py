@@ -1,9 +1,8 @@
-"""The error envelope: `request_id` in every error body, `x-request-id` on the response
-(T64 — V73).
+"""The error envelope: `request_id` in every error body, `x-request-id` on the response.
 
-V73's wording is "∀ error response", so the tests here are organised by *which code writes
-the response*, not by which route was called — there are five such writers and each one is a
-separate way for the envelope to go missing:
+The rule's wording is "every error response", so the tests here are organised by *which code
+writes the response*, not by which route was called — there are five such writers and each
+one is a separate way for the envelope to go missing:
 
 1. `noa_api.api.errors.handle_noa_error` — everything routes raise.
 2. `handle_http_exception` — Starlette's routing failures (404, 405).
@@ -54,7 +53,7 @@ ENVELOPE_KEYS = {"error_code", "message", "request_id"}
 
 
 def assert_enveloped(response, expected_status: int, expected_code: str) -> str:
-    """Assert the V73 envelope and return the id both halves agreed on."""
+    """Assert the envelope and return the id both halves agreed on."""
     assert response.status_code == expected_status, response.text
 
     body = response.json()
@@ -90,7 +89,7 @@ def raising_app() -> Iterator[TestClient]:
 
 
 def test_noa_error_carries_request_id_matching_header() -> None:
-    """V73: a raised `NoaError` answers with the id in the body and on the response."""
+    """A raised `NoaError` answers with the id in the body and on the response."""
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
 
@@ -101,7 +100,7 @@ def test_noa_error_carries_request_id_matching_header() -> None:
 
 
 def test_retry_after_survives_the_envelope() -> None:
-    """V9 not regressed by T64: a 429 still says when to come back, *and* carries the id."""
+    """The 429 still says when to come back, *and* carries the id."""
     repository = FakeAuthRepository()
     repository.add_active_user(OPERATOR_EMAIL)
     settings = build_settings(
@@ -122,7 +121,7 @@ def test_retry_after_survives_the_envelope() -> None:
 
 
 def test_unknown_path_carries_envelope() -> None:
-    """V73: the 404 for an unrouted path is an error response like any other."""
+    """The 404 for an unrouted path is an error response like any other."""
     with auth_harness() as harness:
         response = harness.client.get("/no-such-endpoint")
 
@@ -130,7 +129,7 @@ def test_unknown_path_carries_envelope() -> None:
 
 
 def test_method_not_allowed_carries_envelope() -> None:
-    """V73 again, on a status FastAPI produces without any NOA code running."""
+    """The envelope again, on a status FastAPI produces without any NOA code running."""
     with auth_harness() as harness:
         response = harness.client.get("/auth/login")
 
@@ -141,7 +140,7 @@ def test_method_not_allowed_carries_envelope() -> None:
 
 
 def test_validation_error_carries_envelope() -> None:
-    """V73: a malformed body answers in the envelope, not pydantic's `detail` list."""
+    """A malformed body answers in the envelope, not pydantic's `detail` list."""
     with auth_harness() as harness:
         response = harness.client.post("/auth/login", json={"email": OPERATOR_EMAIL})
 
@@ -149,7 +148,8 @@ def test_validation_error_carries_envelope() -> None:
 
 
 def test_validation_error_does_not_echo_the_submitted_password() -> None:
-    """V8: pydantic puts the failing value in `input`; on a login that is the password.
+    """Secrets never reach a log or an error body: pydantic puts the failing value in `input`;
+    on a login that is the password.
 
     The whole reason this handler does not forward `exc.errors()` the way `noa-old` did.
     """
@@ -164,7 +164,8 @@ def test_validation_error_does_not_echo_the_submitted_password() -> None:
 
 
 def test_redacted_validation_errors_keep_only_location_and_type() -> None:
-    """V8 at the log boundary: `input` and `ctx` never reach the log either."""
+    """The secrets-redaction rule at the log boundary: `input` and `ctx` never reach the log
+    either."""
     redacted = redacted_validation_errors(
         [
             {
@@ -183,7 +184,7 @@ def test_redacted_validation_errors_keep_only_location_and_type() -> None:
 
 
 def test_unhandled_exception_carries_envelope() -> None:
-    """V73 on the one path `RequestContextMiddleware`'s `send` wrapper cannot reach."""
+    """The envelope on the one path `RequestContextMiddleware`'s `send` wrapper cannot reach."""
     with raising_app() as client:
         response = client.get("/boom")
 
@@ -191,7 +192,8 @@ def test_unhandled_exception_carries_envelope() -> None:
 
 
 def test_unhandled_exception_body_omits_the_cause() -> None:
-    """V8: an unhandled exception is by definition text nobody vetted for a body."""
+    """The no-internal-text-in-a-body rule: an unhandled exception is by definition text nobody
+    vetted for a body."""
     with raising_app() as client:
         response = client.get("/boom")
 
@@ -203,7 +205,8 @@ def test_unhandled_exception_body_omits_the_cause() -> None:
 
 
 def test_mcp_refusal_carries_request_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V73 + V3: the named 401 the MCP middleware writes itself is enveloped too."""
+    """The envelope, and the named-cause 401 rule: the 401 the MCP middleware writes itself
+    is enveloped too."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)
 
@@ -316,7 +319,7 @@ def test_current_request_id_is_none_off_request() -> None:
 
 
 def test_error_body_without_request_id_is_unchanged() -> None:
-    """The two-key V8 shape other test modules assert against still exists."""
+    """The two-key envelope shape other test modules assert against still exists."""
     assert error_body(AuthInvalidCredentialsError()) == {
         "error_code": AuthInvalidCredentialsError.error_code,
         "message": AuthInvalidCredentialsError.message,

@@ -4,10 +4,11 @@ Two classes, and the split is what the caller can do about it: one says "no such
 says "that continuation token is not usable".
 
 `ToolRunNotFoundError` answers **two** causes with one body — no such id, and an id that is not a
-UUID at all. Not because either is sensitive (this surface is admin-only, V13) but because a
+UUID at all. Not because either is sensitive (this surface is admin-only) but because a
 second, more talkative judge in front of the lookup would be describing what the *validator*
 accepts rather than what exists, and a 422 for a malformed id would say that well-formed ids are
-the ones worth guessing. T63(e) made the same call for `noa_get_action_result`, and V27 makes it
+the ones worth guessing. The same design choice was made for `noa_get_action_result`,
+and the requester-match rule makes it
 for the embed; this is the admin spelling of it.
 
 `InvalidAuditCursorError` is a 400: the caller sent a token NOA cannot read, and the remedy is to

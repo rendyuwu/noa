@@ -15,7 +15,7 @@ export type TokensPanelProps = {
 }
 
 // One panel, parameterised by scope — mirroring why the backend keeps both
-// routers in one module over one response model (mcp_tokens.py:9-14, V66). The
+// routers in one module over one response model (mcp_tokens.py:9-14). The
 // scope is threaded straight to the controller, which hands it to the single
 // place a token path is built; this component never assembles a URL.
 //

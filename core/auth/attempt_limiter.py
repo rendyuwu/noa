@@ -1,9 +1,10 @@
 """Attempt counting shared by every rate-limited auth surface.
 
-Extracted from `core.auth.login_rate_limiter` when T12 needed the same arithmetic for
-failed MCP authentication. Nothing here is new behaviour — the window rollover, the
-`>=` on the maximum and the `>` on `blocked_until` are the semantics T8 shipped and
-`test_login_rate_limiter.py` pins. What changed is that they are now stated once:
+Extracted from `core.auth.login_rate_limiter` when MCP token auth needed the same
+arithmetic for failed MCP authentication. Nothing here is new behaviour — the window
+rollover, the `>=` on the maximum and the `>` on `blocked_until` are the semantics the
+LDAP-to-JWT login flow shipped and `test_login_rate_limiter.py` pins. What changed is
+that they are now stated once:
 duplicating ~60 lines of clock arithmetic per surface is how two limiters end up
 disagreeing about whether a bucket at exactly its window boundary still counts.
 
@@ -29,8 +30,8 @@ record failures for credential-class denials only (`core.auth.auth_service`,
 `core.auth.mcp_auth_rate_limiter.COUNTED_DENIALS`).
 
 Not a defence against a distributed attack: an attacker who can vary every key gets a
-fresh bucket each time. That is the shape V9 asks for — attempt limiting, not bot
-detection.
+fresh bucket each time. That is the shape rate limiting asks for — attempt limiting,
+not bot detection.
 """
 
 from __future__ import annotations

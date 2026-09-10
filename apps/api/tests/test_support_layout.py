@@ -4,12 +4,12 @@ The SSH transport doubles and `build_cipher` were born in `support/whm.py` and m
 as soon as a second caller appeared — `support/remote_exec.py` for PMG,
 `support/secrets.py` for Proxmox. Both moves left a re-export behind so the four WHM
 test files could stay untouched, which meant nine shared names had two import paths at once.
-T72 removed the shims.
+The shims are gone now.
 
 Nothing stops the next port from re-adding one, and a re-export is invisible at the call site:
 `from support.whm import command_result` reads exactly like a WHM-owned double. So the property
-is asserted rather than left to discipline (V84c, the same reason `test_pins.py` binds the pin
-prose to the SDK).
+is asserted rather than left to discipline — grep the claim, not the citation, the same reason
+`test_pins.py` binds the pin prose to the SDK.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def _import_froms(path: Path) -> list[ast.ImportFrom]:
 
 
 def test_whm_support_owns_only_its_own_double() -> None:
-    """T72: `support/whm.py` declares the WHM row and nothing else."""
+    """`support/whm.py` declares the WHM row and nothing else."""
     assert support.whm.__all__ == sorted(WHM_OWNED)
 
 

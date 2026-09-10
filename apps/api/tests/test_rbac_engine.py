@@ -4,9 +4,9 @@ Postgres is not required: the service runs against `support.rbac`'s in-memory re
 so every assertion here is about policy rather than SQL. `SQLAuthorizationRepository` has
 its own coverage in `test_rbac_repository.py`.
 
-Two invariants are about *when* the row is read, not what it says — V6 (permission
-resolution reads the row, never the cookie's claims) and V14 (permission updates take
-effect immediately). Those tests mutate the store behind a held reference and assert the
+Two invariants are about *when* the row is read, not what it says — permission
+resolution reads the row, never the cookie's claims, and permission updates take
+effect immediately. Those tests mutate the store behind a held reference and assert the
 next call disagrees with the last one.
 """
 
@@ -55,8 +55,8 @@ ADMIN_EMAIL = "admin@example.com"
 OTHER_ADMIN_EMAIL = "second-admin@example.com"
 OPERATOR_EMAIL = "operator@example.com"
 
-# §I.mcp's exposed list, transcribed independently of `core.auth.tool_catalog` so the
-# conformance test compares the spec against the code rather than the code against itself.
+# The MCP server contract's exposed list, transcribed independently of `core.auth.tool_catalog` so
+# the conformance test compares the spec against the code rather than the code against itself.
 SPEC_EXPOSED_TOOLS = {
     "whm_suspend_account",
     "whm_unsuspend_account",
@@ -80,13 +80,13 @@ def rbac() -> RbacFixture:
     return build_service()
 
 
-# --- Catalog (V10, C22, I.mcp) ---
+# --- Catalog (admin bypass, never-implement policy, MCP contract) ---
 
 
 def test_catalog_matches_spec_exposed_tools() -> None:
-    """§I.mcp lists 14 exposed tools; the catalog is that list, exactly.
+    """The MCP server contract lists 14 exposed tools; the catalog is that list, exactly.
 
-    Fails when a tool lands in code without a spec row or vice versa — the drift T13 will
+    Fails when a tool lands in code without a spec row or vice versa — the drift will
     otherwise inherit silently when the catalog becomes registry-derived.
     """
     assert TOOL_CATALOG == SPEC_EXPOSED_TOOLS
@@ -94,7 +94,7 @@ def test_catalog_matches_spec_exposed_tools() -> None:
 
 
 def test_catalog_excludes_never_implement_tools() -> None:
-    """C22 is a policy boundary: those names must not be grantable."""
+    """The never-implement list is a policy boundary: those names must not be grantable."""
     assert TOOL_CATALOG.isdisjoint(NEVER_IMPLEMENT_TOOLS)
     for tool_name in NEVER_IMPLEMENT_TOOLS:
         assert not is_known_tool(tool_name)
@@ -108,7 +108,7 @@ def test_catalog_membership_is_exact_not_normalized() -> None:
 
 
 async def test_list_tools_answers_the_services_own_catalog(rbac: RbacFixture) -> None:
-    """T52: the vocabulary a grant may name, off the same set that validates a write.
+    """The role routes: the vocabulary a grant may name, off the same set that validates a write.
 
     Read against a *narrowed* `known_tools`, not the default: an implementation that returned
     `TOOL_CATALOG` directly would pass an equality with the default and hand a caller names
@@ -139,7 +139,7 @@ async def test_role_grant_resolves_to_permitted_tools(rbac: RbacFixture) -> None
 
 
 async def test_admin_role_gets_every_known_tool(rbac: RbacFixture) -> None:
-    """V10: `admin` bypasses the grant table entirely — no rows needed."""
+    """`admin` bypasses the grant table entirely — no rows needed."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
 
     assert await rbac.service.get_permitted_tools(admin.id) == set(TOOL_CATALOG)
@@ -147,7 +147,7 @@ async def test_admin_role_gets_every_known_tool(rbac: RbacFixture) -> None:
 
 
 async def test_admin_authorize_rejects_unregistered_tool(rbac: RbacFixture) -> None:
-    """V10's other half: the bypass covers known tools only."""
+    """The other half of admin bypass: it covers known tools only."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
 
     assert await rbac.service.authorize_tool(admin.id, TOOL_READ)
@@ -191,7 +191,7 @@ async def test_user_without_roles_has_no_permitted_tools(rbac: RbacFixture) -> N
 
 
 async def test_disabled_user_has_zero_permitted_tools(rbac: RbacFixture) -> None:
-    """V11: `is_active=False` means zero permissions regardless of roles."""
+    """`is_active=False` means zero permissions regardless of roles."""
     rbac.repository.grant(ROLE_SUPPORT, TOOL_READ, TOOL_CHANGE)
     user = rbac.repository.add_user(OPERATOR_EMAIL, is_active=False, roles=(ROLE_SUPPORT,))
 
@@ -200,7 +200,7 @@ async def test_disabled_user_has_zero_permitted_tools(rbac: RbacFixture) -> None
 
 
 async def test_disabled_admin_has_zero_permitted_tools(rbac: RbacFixture) -> None:
-    """V11 is checked before V10's bypass, so a disabled admin gets nothing."""
+    """Disabled is checked before the admin bypass, so a disabled admin gets nothing."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, is_active=False, roles=(ADMIN_ROLE_NAME,))
 
     assert await rbac.service.get_permitted_tools(admin.id) == set()
@@ -216,11 +216,11 @@ async def test_permitted_tools_raise_for_a_deleted_user(rbac: RbacFixture) -> No
         await rbac.service.get_permitted_tools(uuid4())
 
 
-# --- V6: resolution reads the row, not the claims ---
+# --- Resolution reads the row, not the claims ---
 
 
 async def test_permitted_tools_reread_row_after_disable(rbac: RbacFixture) -> None:
-    """V6: the row is re-read per call, so a disable lands on the next request.
+    """The row is re-read per call, so a disable lands on the next request.
 
     The session JWT has no revocation path before `exp`, so this re-read is the only thing
     bounding a disabled operator's live session. A cached tool set would defeat it.
@@ -248,7 +248,7 @@ async def test_each_permission_check_reads_the_user_row(rbac: RbacFixture) -> No
 
 
 async def test_grant_change_takes_effect_on_next_call(rbac: RbacFixture) -> None:
-    """V14: permission updates are effective immediately, with no cache to invalidate."""
+    """Permission updates are effective immediately, with no cache to invalidate."""
     rbac.repository.grant(ROLE_SUPPORT, TOOL_READ)
     user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,))
 
@@ -308,7 +308,7 @@ async def test_create_role_is_idempotent_and_records_one_event(rbac: RbacFixture
 
 
 async def test_internal_roles_are_not_listed_as_assignable(rbac: RbacFixture) -> None:
-    """V13: internal `user:` roles are NOA's bookkeeping, never offered to an admin."""
+    """Internal `user:` roles are NOA's bookkeeping, never offered to an admin."""
     user = rbac.repository.add_user(OPERATOR_EMAIL)
     rbac.repository.assign_internal_role(user.id, INTERNAL_ROLE)
     await rbac.service.create_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
@@ -328,13 +328,13 @@ async def test_admin_role_cannot_be_created(rbac: RbacFixture) -> None:
 
 
 async def test_admin_role_cannot_be_deleted(rbac: RbacFixture) -> None:
-    """V13: `admin` is reserved."""
+    """`admin` is reserved."""
     with pytest.raises(ReservedRoleError):
         await rbac.service.delete_role(ADMIN_ROLE_NAME, actor_email=ADMIN_EMAIL)
 
 
 async def test_admin_role_tools_cannot_be_set(rbac: RbacFixture) -> None:
-    """V13: editing `admin`'s grants would imply a limit V10 does not enforce."""
+    """Editing `admin`'s grants would imply a limit the admin bypass does not enforce."""
     with pytest.raises(ReservedRoleError):
         await rbac.service.set_role_tools(ADMIN_ROLE_NAME, [TOOL_READ], actor_email=ADMIN_EMAIL)
 
@@ -373,7 +373,7 @@ async def test_set_role_tools_replaces_the_whole_set(rbac: RbacFixture) -> None:
 
 
 async def test_set_role_tools_rejects_unknown_tools_as_a_set(rbac: RbacFixture) -> None:
-    """V10: unknown names are named back, all of them, so a typo is one round trip."""
+    """Unknown names are named back, all of them, so a typo is one round trip."""
     rbac.repository.grant(ROLE_SUPPORT)
 
     with pytest.raises(UnknownToolError) as excinfo:
@@ -406,7 +406,7 @@ async def test_set_user_roles_replaces_assignable_roles(rbac: RbacFixture) -> No
 
 
 async def test_role_replacement_preserves_internal_roles(rbac: RbacFixture) -> None:
-    """V13/V75: internal roles survive an admin replacing a user's roles."""
+    """Internal roles survive an admin replacing a user's roles."""
     rbac.repository.grant(ROLE_SUPPORT, TOOL_READ)
     user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,))
     rbac.repository.assign_internal_role(user.id, INTERNAL_ROLE)
@@ -417,7 +417,7 @@ async def test_role_replacement_preserves_internal_roles(rbac: RbacFixture) -> N
 
 
 async def test_internal_role_cannot_be_assigned(rbac: RbacFixture) -> None:
-    """V13: `internal_role_forbidden`, not a generic name-validation error."""
+    """`internal_role_forbidden`, not a generic name-validation error."""
     user = rbac.repository.add_user(OPERATOR_EMAIL)
 
     with pytest.raises(InternalRoleError):
@@ -439,11 +439,12 @@ async def test_set_user_roles_for_missing_user_raises_not_found(rbac: RbacFixtur
         await rbac.service.set_user_roles(uuid4(), [], actor_email=ADMIN_EMAIL)
 
 
-# --- V12 guards ---
+# --- Last-admin guards ---
 
 
 async def test_cannot_disable_last_active_admin(rbac: RbacFixture) -> None:
-    """V12, and the disabled admin alongside proves the count ignores inactive rows.
+    """The last-admin guard, and the disabled admin alongside proves the count ignores inactive
+    rows.
 
     `actor_user_id=None` on purpose: through the admin routes an *active* admin is always
     the actor, so the count includes them and only the self-guard can fire. This guard is
@@ -472,7 +473,8 @@ async def test_can_disable_an_admin_while_another_stays_active(rbac: RbacFixture
 
 
 async def test_admin_cannot_self_deactivate(rbac: RbacFixture) -> None:
-    """V12, and it fires even with other admins around: nobody can undo it for them."""
+    """The last-admin guard, and it fires even with other admins around: nobody can undo it
+    for them."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
     rbac.repository.add_user(OTHER_ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
 
@@ -504,13 +506,14 @@ async def test_enabling_a_user_is_never_guarded(rbac: RbacFixture) -> None:
     assert updated.is_active is True
 
 
-# --- V4 cascade revoke on disable ---
+# --- Cascade revoke on disable ---
 
 
 async def test_disabling_a_user_revokes_their_mcp_tokens(rbac: RbacFixture) -> None:
-    """V4: disable is the admin-side half of cascade revoke, alongside the LDAP path.
+    """Disable is the admin-side half of cascade revoke, alongside the LDAP staleness
+    revalidation.
 
-    Not what stops them calling tools — V1's per-request `is_active` re-check already
+    Not what stops them calling tools — the execution-time permission re-check already
     does. This is what kills the credential, so a token in a LibreChat config cannot come
     back to life when the row is re-enabled later.
     """
@@ -524,7 +527,7 @@ async def test_disabling_a_user_revokes_their_mcp_tokens(rbac: RbacFixture) -> N
 async def test_the_disable_audit_event_reports_how_many_tokens_went(
     rbac: RbacFixture,
 ) -> None:
-    """V14: "disabled, held none" and "disabled, lost three" are different facts."""
+    """ "Disabled, held none" and "disabled, lost three" are different facts."""
     user = rbac.repository.add_user(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,), mcp_tokens=3)
 
     await rbac.service.set_user_active(user.id, is_active=False, actor_email=ADMIN_EMAIL)
@@ -574,7 +577,7 @@ async def test_a_refused_disable_revokes_nothing(rbac: RbacFixture) -> None:
 
 
 async def test_admin_self_delete_conflicts(rbac: RbacFixture) -> None:
-    """V12: admin self-delete → 409, carried by `SelfDeleteAdminError`."""
+    """Admin self-delete → 409, carried by `SelfDeleteAdminError`."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
     rbac.repository.add_user(OTHER_ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
 
@@ -619,7 +622,7 @@ async def test_delete_missing_user_raises_not_found(rbac: RbacFixture) -> None:
 
 
 async def test_cannot_remove_own_admin_role(rbac: RbacFixture) -> None:
-    """V12: the one demotion nobody else can undo for them."""
+    """The last-admin guard: the one demotion nobody else can undo for them."""
     admin = rbac.repository.add_user(ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
     rbac.repository.add_user(OTHER_ADMIN_EMAIL, roles=(ADMIN_ROLE_NAME,))
 
@@ -651,11 +654,11 @@ async def test_removing_admin_from_a_disabled_admin_is_allowed(rbac: RbacFixture
     assert updated.roles == []
 
 
-# --- V14: audit events ---
+# --- Audit events ---
 
 
 async def test_every_mutating_operation_records_an_audit_event(rbac: RbacFixture) -> None:
-    """V14: admin changes produce audit events — one per change, none for reads.
+    """Admin changes produce audit events — one per change, none for reads.
 
     All six mutations in sequence, so a new operation added without a `_record` call shows
     up as a missing event rather than as nothing at all.
@@ -675,7 +678,8 @@ async def test_every_mutating_operation_records_an_audit_event(rbac: RbacFixture
     await rbac.service.delete_user(target.id, actor_email=ADMIN_EMAIL, actor_user_id=admin.id)
     await rbac.service.delete_role(ROLE_SUPPORT, actor_email=ADMIN_EMAIL)
 
-    # Reads must not log: an audit trail of `tools/list` calls is V45's job, not V14's.
+    # Reads must not log: an audit trail of `tools/list` calls is the tool-run trail's job,
+    # not admin audit's.
     await rbac.service.list_roles()
     await rbac.service.get_permitted_tools(admin.id)
 
@@ -700,7 +704,7 @@ async def test_audit_event_names_the_actor_and_target(rbac: RbacFixture) -> None
     event = rbac.audit.events[-1]
     assert event.actor_email == ADMIN_EMAIL
     assert event.target == str(target.id)
-    # `revoked_mcp_tokens` joined the payload with T11's cascade revoke; an enable
+    # `revoked_mcp_tokens` joined the payload with the token verifier's cascade revoke; an enable
     # never revokes, so it reports zero. Asserted as an exact dict on purpose — a field
     # appearing here without a decision is what this equality is for.
     assert event.metadata == {
@@ -725,7 +729,7 @@ async def test_refused_mutations_record_no_audit_event(rbac: RbacFixture) -> Non
 
 
 async def test_audit_event_carries_no_credentials(rbac: RbacFixture) -> None:
-    """V8: an event payload holds identifiers, roles and tool names. Nothing else."""
+    """An event payload holds identifiers, roles and tool names. Nothing else."""
     rbac.repository.grant(ROLE_SUPPORT)
 
     await rbac.service.set_role_tools(ROLE_SUPPORT, [TOOL_READ], actor_email=ADMIN_EMAIL)
@@ -735,11 +739,11 @@ async def test_audit_event_carries_no_credentials(rbac: RbacFixture) -> None:
         assert forbidden not in payload.lower()
 
 
-# --- T51: the transaction boundary (V14's premise) ---
+# --- The transaction boundary behind admin user management ---
 
 
 async def test_every_mutation_commits_exactly_once(rbac: RbacFixture) -> None:
-    """T51: a write that never ends its transaction takes effect never.
+    """The admin user management routes: a write that never ends its transaction takes effect never.
 
     The same six mutations the audit test walks, counted instead of listed: the repository
     flushes and nothing else commits on the request path, so a mutation added without a

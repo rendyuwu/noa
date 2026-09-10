@@ -2,8 +2,8 @@
 
 `tool_runs.status` defaults to `STARTED` so that a process which dies mid-call leaves evidence
 rather than nothing. That is only worth having if something eventually resolves those
-rows — otherwise `STARTED` means both "running" and "abandoned", and V31's cap, which counts
-`STARTED` CHANGE runs, spends an operator's allowance on a crash nobody noticed.
+rows — otherwise `STARTED` means both "running" and "abandoned", and the per-user in-flight cap,
+which counts `STARTED` CHANGE runs, spends an operator's allowance on a crash nobody noticed.
 
 Two populations, and the reaper **repairs one and only reports the other.**
 
@@ -11,21 +11,24 @@ Two populations, and the reaper **repairs one and only reports the other.**
 with a summary that says the outcome is *unknown*. Not "failed": a change interrupted between
 its SSH round trip and its terminal write may well have applied on the remote host, and
 `ToolRunStatus` offers no third terminal state, so the distinction lives in `result_summary`
-where an operator and the audit surface can read it. READ runs are covered too — T73's audit
-middleware swallows a failed closing write and names this reaper as what resolves the row.
+where an operator and the audit surface can read it. READ runs are covered too — the tool-run
+writer's audit middleware swallows a failed closing write and names this reaper as what resolves
+the row.
 
-A stranded run linked to an `action_requests` row also gets a **receipt**, because V46 wants one
-per approved change and "we do not know how this ended" is an outcome. It is written through
-`create_if_missing`, so the executor and the reaper both reaching one finished run leaves one
-receipt — which is exactly why T36 stated `UNIQUE (action_request_id)` rather than inheriting it.
+A stranded run linked to an `action_requests` row also gets a **receipt**, because the
+run-plus-receipt-plus-audit rule wants one per approved change and "we do not know how this
+ended" is an outcome. It is written through `create_if_missing`, so the executor and the reaper
+both reaching one finished run leaves one receipt — which is exactly why the receipt table
+stated `UNIQUE (action_request_id)` rather than inheriting it.
 
-**Requests `APPROVED` with no run** are logged and left alone. T37 writes the run and the link
-inside the decision's own transaction, so the decision path cannot produce this pair. It
-is still reachable: `action_requests.tool_run_id` is `SET NULL`, so deleting a
+**Requests `APPROVED` with no run** are logged and left alone. The decision endpoint writes the
+run and the link inside the decision's own transaction, so the decision path cannot produce this
+pair. It is still reachable: `action_requests.tool_run_id` is `SET NULL`, so deleting a
 `tool_runs` row nulls the link — and in *that* case the change may well have completed. Opening
 a `FAILED` run to fill the gap would put a claim in the audit trail that nothing observed, and
-`§T.38` reserves both the row's creation and the link to T37. So this half is a detector: it
-says the pair exists and names the request, and a human decides what it means.
+the executor's design reserves both the row's creation and the link to the decision endpoint. So
+this half is a detector: it says the pair exists and names the request, and a human decides what
+it means.
 
 **A pass is BOUNDED, and says so.** Both populations are read under
 `APPROVAL_STRANDED_RUN_REAP_BATCH_SIZE`, and a pass that hit the bound reports how many rows it
@@ -36,7 +39,8 @@ every row lock it takes plus its own xmin until the last of N updates and N rece
 lands. Drain rate is the batch over the interval — 100 per 120s by default; the argument that
 this beats the rate stranded rows appear at lives beside the setting in `core.config`.
 
-**The loop is `core.tasks.periodic.PeriodicTask`**, shared with T39's sweeper — one session per
+**The loop is `core.tasks.periodic.PeriodicTask`**, shared with the expiry loop's sweeper — one
+session per
 pass, sleeps before the first one, survives a pass that raises, stopped by the lifespan before
 the engine is disposed.
 """
@@ -117,7 +121,7 @@ class StrandedRun:
     tool_name: str
     # `None` for a READ run, and for a CHANGE run whose `action_requests` row was deleted.
     # Whether a receipt is owed is read off this and nothing else: a receipt has nowhere to
-    # point without a request (T36 made that FK NOT NULL).
+    # point without a request (the receipt table made that FK NOT NULL).
     action_request_id: UUID | None
     # The gate-time preflight, for the receipt's before-state. `{}` when there is no request.
     evidence: dict[str, Any]
@@ -166,7 +170,7 @@ class ReapOutcome:
 
     @property
     def stranded_truncated(self) -> bool:
-        """Whether the bound bit. What V85 says may not go unreported.
+        """Whether the bound bit. What the row-cap rule says may not go unreported.
 
         Derived rather than stored, and derived *here* rather than on `BoundedRows`, so there is
         one definition of "this pass was capped" and the log line cannot disagree with the
@@ -246,11 +250,13 @@ class SQLStrandedRunRepository:
         The join is from the request's `tool_run_id`, which is the direction the link is stored
         in, and it is the same edge `core.approvals.reads` joins for the card.
 
-        `<=` on the deadline, matching both expiry doors (T39(a)): a row exactly on its cutoff
+        `<=` on the deadline, matching both expiry doors (the expiry loop's own rule): a row
+        exactly on its cutoff
         is one thing, not two.
 
         **Ordered by `(created_at, id)` before the cut**. Oldest first because the
-        oldest stranded run has spent the most of its operator's V31 allowance, and `id` behind
+        oldest stranded run has spent the most of its operator's in-flight-cap allowance, and
+        `id` behind
         it because `created_at` is not unique — without a tiebreaker two passes over an
         untouched backlog could each take a different half of a tied group and neither would
         finish it.
@@ -282,7 +288,8 @@ class SQLStrandedRunRepository:
         """The oldest `limit` APPROVED requests with no run linked, decided at or before
         `cutoff`, and how many there were.
 
-        Unrepresentable through the decision path (T37 writes both in one transaction, V29) and
+        Unrepresentable through the decision path (the decision endpoint writes both in one
+        transaction, state kept in the database) and
         reachable through a deleted run row, whose `SET NULL` nulls this column. The `cutoff`
         keeps a decision committing right now out of the answer — not because the window is
         wide, but because a detector that reports a healthy in-flight approval as an anomaly
@@ -398,7 +405,7 @@ class StrandedRunReaperService:
         **What the pass leaves is part of what it reports.** `stranded_remaining` and
         `approved_without_run_remaining` ride out on the outcome and into the log line, because
         a capped pass reporting only what it resolved reads as one that resolved everything
-        (V85, V92).
+        (the row-cap rule, the bounded-write-reports-what-it-hid rule).
 
         **The read takes no row locks, on purpose.** `FOR UPDATE ... SKIP LOCKED` would make
         two reapers' batches disjoint, and it would also make this pass hold each run from the
@@ -407,11 +414,11 @@ class StrandedRunReaperService:
         `status = STARTED` predicate false. That converts "a change finished a little
         late" into "reported abandoned", deterministically, in the reaper's favour. A repair
         loop must not outrank the worker, so the two writers keep racing on commit order, which
-        is the race V91 already answers. Two replicas therefore both reap the same rows: the
-        second's updates match nothing and its receipts conflict away, so the *outcome* is
-        right and the cost is duplicated work — a known limit recorded in `§T.38`, whose remedy
-        if it ever bites is one advisory lock around the pass (T38(d)'s instrument), not a lock
-        on the rows.
+        is the race the first-wins UPDATE predicate already answers. Two replicas therefore both
+        reap the same rows: the second's updates match nothing and its receipts conflict away,
+        so the *outcome* is right and the cost is duplicated work — a known limit recorded with
+        the approved-change executor's design, whose remedy if it ever bites is one advisory
+        lock around the pass (that same design's own instrument), not a lock on the rows.
         """
         moment = now_utc(now)
         cutoff = moment - timedelta(seconds=self._reap_after_seconds)
@@ -502,11 +509,13 @@ def _log(outcome: ReapOutcome, *, stranded: Sequence[StrandedRun], cutoff: datet
 
 
 class StrandedRunReaper:
-    """The background half of V30: an asyncio task that resolves abandoned runs.
+    """The background half of the in-process reaper: an asyncio task that resolves abandoned
+    runs.
 
     Same shape as `PendingExpirySweeper` and for the same reasons — one task, its own session
     per pass, started and stopped by the app lifespan that owns the engine it draws from — and
-    literally the same loop (`core.tasks.periodic`), so the four properties T39 proved hold here
+    literally the same loop (`core.tasks.periodic`), so the four properties the expiry loop
+    proved hold here
     without a second copy of them.
     """
 

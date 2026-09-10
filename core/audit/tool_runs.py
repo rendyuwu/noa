@@ -1,6 +1,6 @@
 """SQL behind the `tool_runs` audit trail.
 
-T35 built the table and wrote nothing to it. This is the writer, and it has four callers:
+The schema landed and wrote nothing to it. This is the writer, and it has four callers:
 `noa_api.mcp_audit` on the READ path; `core.approvals.decisions`, opening the `STARTED` row an
 approval authorises inside the decision's own transaction; `core.approvals.execution`,
 moving that row to a terminal state once the change has run; and `core.approvals.reaper`,
@@ -11,7 +11,7 @@ table, four transactions, because they are four different moments.
 commits *before* the tool body runs; `finish_run` moves it to `COMPLETED` or `FAILED` after.
 One transaction spanning the call would make the row appear only once the call ended, so a
 process that died mid-call would leave nothing — which is the exact case `STARTED` exists
-for (T35's model docstring; T38's reaper sweeps them).
+for (the schema's model docstring; the reaper sweeps them).
 
 **This repository owns its session and commits**, unlike `SQLWHMServerRepository` and
 `SQLAuthorizationRepository`, which flush into a caller's transaction. Same split, same
@@ -104,7 +104,7 @@ class SQLToolRunRepository:
         status: ToolRunStatus,
         result_summary: str | None,
     ) -> None:
-        """Move a run to its terminal state and stamp `completed_at` (V47 timing).
+        """Move a run to its terminal state and stamp `completed_at`.
 
         A bare `UPDATE` rather than load-mutate-save: the row was written by this same
         request moments ago and nothing else touches it, so reading it back only to write
@@ -113,8 +113,8 @@ class SQLToolRunRepository:
         duration and, unlike a second `now()`, provable in a test.
 
         **`status = STARTED` is in the predicate: the first terminal write wins.** Two of
-        the four callers can reach one run — T38's executor, finishing a change that ran
-        long, and T38's reaper, calling the same run abandoned past its deadline — and
+        the four callers can reach one run — the approved-change executor, finishing a change
+        that ran long, and the reaper, calling the same run abandoned past its deadline — and
         without this the second one silently overwrites the first. Both directions produce a
         lie: a change that completed re-written as "outcome never observed", or a reaped run
         flipped to `COMPLETED` beside the abandonment receipt `create_if_missing` already

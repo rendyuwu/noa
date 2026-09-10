@@ -5,21 +5,22 @@ import { useState } from 'react'
 import { type DecisionKind, submitDecision } from '@/lib/approvals/decide'
 import { type DecisionOutcome, describeDecision } from '@/lib/approvals/outcome'
 
-// `.actions` and `.button` live with the notice states since §T.56 hoisted them; the two
+// `.actions` and `.button` live with the notice states since the table surface hoisted them;
+// the two
 // colour modifiers below are the card's own, so the class names compose across both modules.
 import shared from '@/components/notice.module.css'
 
 import styles from './card.module.css'
 
 /**
- * The reason box and the two buttons (§T.41 — V15, V22, V39, V80).
+ * The reason box and the two buttons.
  *
  * **The only client component on this card.** Everything else is rendered on the server, so what
  * ships to the browser is this: two `<button type="button">` elements, a `<textarea>`, and one
  * `fetch`.
  *
  * **There is no `<form>` in this tree, and that is load-bearing.** The sandbox LibreChat
- * renders the frame under omits `allow-forms` (R13, measured again live at R29), so a native
+ * renders the frame under omits `allow-forms` (measured live at the render gate), so a native
  * submit would do nothing at all — no request, no error, a button that lies. `type="button"` on
  * both is the same rule stated twice: even if a `<form>` were introduced above this component by
  * some future layout, neither button would submit it.

@@ -1,13 +1,13 @@
 # noa — Decision Notes
 
-**Status:** design decisions from the 2026-08-04 discussion. Input for `SPEC.md`, not a spec itself.
+**Status:** design decisions from the 2026-08-04 discussion. Why-record, not a spec.
 **Date:** 2026-08-04
 **Amended:** 2026-08-04 — three factual corrections applied after a fact-check pass against the old
 repo and upstream sources. See the inline correction blocks in sections 2, 7.1, 7.2, plus the
-resolved spike in section 7.3. `SPEC.md` now exists and supersedes this file where they disagree.
+resolved spike in section 7.3.
 
-**Becomes:** `SPEC.md` (per `FORMAT.md`) — **written 2026-08-04.** Live at repo root. This file is
-now historical input, not the working document. Amend `SPEC.md`, not this.
+**Rules live inline where enforced** — `AGENTS.md` hard boundaries, module docstrings, tests. No
+numbered registry. This file keeps the why; amend a rule at its enforcement site.
 
 Every question raised in this session is answered. Nothing is marked OPEN. Two items are
 deliberately deferred rather than open: phasing (section 8.7, owner-owned) and LibreChat Mongo
@@ -557,7 +557,7 @@ as inert `sandbox=""` srcDoc.
   is now urgent rather than hypothetical: pin an exact LibreChat commit, and on every bump
   re-verify (a) no mcp-ui proxy at any render site, (b) `text/uri-list` still maps to `src` mode.
 - ~~Add a spike: confirm LibreChat's merged HITL gate stays **out of the path** for NOA tools.~~
-  **RESOLVED 2026-08-04 — spike closed, do not carry it into `SPEC.md`.** Verified directly in
+  **RESOLVED 2026-08-04 — spike closed, do not carry it forward.** Verified directly in
   `packages/api/src/agents/hitl/policy.ts`:
 
   ```ts
@@ -621,7 +621,7 @@ future tools can consume it, not welded to the password-reset tool.
 **8.6 LibreChat Mongo retention / access list → not needed now.** Old T123 remains a go-live gate:
 answer before this carries real ops data, not before it is built.
 
-**8.7 Phasing → deferred, owner-owned.** Owner will research phases and author `SPEC.md` in a later
+**8.7 Phasing → deferred, owner-owned.** Owner will research phases in a later
 session. **Do not design phases here.** Consequence: whether a READ-only-first phase
 (`mcp_change_tools_enabled`) exists at all is undecided, so READ-only-first is parked (section 10.5).
 
@@ -658,7 +658,7 @@ pair.
 
 ## 10. DECIDED — invariant carry-over from the old repo's spec (section 8.4, my call)
 
-My pass, as delegated. This is **triage input for the owner's future `SPEC.md`**, not a spec.
+My pass, as delegated. This is **triage input**, not a spec.
 Numbering is the old repo's, kept so every line stays traceable to `git show MCP:SPEC.md`.
 Per section 8.7, nothing here implies a phase.
 
@@ -735,7 +735,7 @@ place it surfaces.
 
 | Old | Blocked on |
 |---|---|
-| V171 | READ-only first (`mcp_change_tools_enabled` default false, CHANGE absent from `tools/list`). Purely a phasing device, so owner decides when authoring `SPEC.md`. |
+| V171 | READ-only first (`mcp_change_tools_enabled` default false, CHANGE absent from `tools/list`). Purely a phasing device, so owner decides the phasing. |
 
 ### 10.6 Not in the MCP range, but must not be dropped
 

@@ -8,7 +8,7 @@ import { CARD_FRAME_POLICY, FRAME_POST_BUDGET, TABLE_FRAME_POLICY } from '@/lib/
 import { FrameSizer } from './frame-sizer'
 
 /**
- * What the sizer sends, and when it stops (§T.41, §T.56 — V67).
+ * What the sizer sends, and when it stops (the approval card, the large-result table surface).
  *
  * **What this lane can prove is the message and the bookkeeping**, and that is deliberate: jsdom
  * computes no layout, so `scrollHeight` here is a number this file chose rather than one a layout

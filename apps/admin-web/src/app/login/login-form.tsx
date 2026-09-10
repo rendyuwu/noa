@@ -14,7 +14,7 @@ import { getApiUrl, jsonOrThrow } from '@/lib/auth/fetch-helper'
 import { sanitizeReturnTo } from '@/lib/auth/return-to'
 
 /**
- * LDAP sign-in (§T.50, §I.admin-api `/auth/login`).
+ * LDAP sign-in — admin auth/session plumbing, the admin API's `/auth/login` contract.
  *
  * BIGSU's standard entry is an SSO hand-off; this scoped email/password form exists because NOA
  * authenticates operators against LDAP. The Biznet Gio wordmark is used verbatim, the page
@@ -23,16 +23,17 @@ import { sanitizeReturnTo } from '@/lib/auth/return-to'
  *
  * **The primary action is a `type="button"` click handler, not a form submit, and that is the whole
  * point of this file.** `NOA_SIGN_IN_URL` points at this route, and one of the two
- * places an operator arrives from is a click on the embed 401 card's link-out. R32 MEASURED what
- * that tab is: top-level, but it inherits the frame's sandbox, and `allow-forms` is absent at both
+ * places an operator arrives from is a click on the embed 401 card's link-out. MEASURED: that
+ * tab is top-level, but it inherits the frame's sandbox, and `allow-forms` is absent at both
  * of LibreChat's render sites. A sandboxed document never even fires the `submit` event — the
  * form submission algorithm returns at the sandbox check, before the event — so a login built on
  * `<form onSubmit>` plus a submit button is silently inert in exactly the tab NOA sent the operator
- * to. Nothing throws and nothing appears; the button just does nothing. V80 is the same shape one
- * origin over.
+ * to. Nothing throws and nothing appears; the button just does nothing. The embed's fetch-not-form
+ * rule is the same shape one origin over.
  *
- * The `<form>` element stays, with an `onSubmit` that routes to the SAME handler (V66, one
- * definition): where forms do work — an operator who COPIED the address into a fresh tab, which has
+ * The `<form>` element stays, with an `onSubmit` that routes to the SAME handler (reuse over
+ * duplication, one definition): where forms do work — an operator who COPIED the address into a
+ * fresh tab, which has
  * no opener to inherit from — Enter in a field and a password manager's submit both behave. It
  * carries no `action`, so there is no non-JS path that would post a credential anywhere.
  */

@@ -1,54 +1,58 @@
 """`tool_runs` written from the tool path, once, for every READ.
 
-T19 shipped the first tool with its RBAC gate and no audit trail; T19(g) recorded the hole
-and named this task as the fix. This is that fix, and it is a `Middleware` for the same
-reason `RbacToolMiddleware` is (V83b): **one place, not per-tool code.** A tool can forget a
-call to an audit helper; it cannot forget a middleware. T20-T31 and T63 inherit the row by
-existing, and the tool functions stay free of the word "audit".
+The server-list tool shipped first, with its RBAC gate and no audit trail; a finding on it
+recorded the hole and named this task as the fix. This is that fix, and it is a `Middleware`
+for the same reason `RbacToolMiddleware` is: **one place, not per-tool code.** A tool can forget
+a call to an audit helper; it cannot forget a middleware. Every READ tool since inherits the row
+by existing, and the tool functions stay free of the word "audit".
 
 **Where it sits: inside the RBAC gate.** `FastMCP._run_middleware` builds its chain over
 `reversed(self.middleware)` (`fastmcp/server/server.py:513`), so the first middleware added
 is the outermost. `build_mcp_server` adds RBAC first and this second, which means a *refused*
-call writes no row. That is deliberate on two counts: a denial is not an execution — V45
-covers what NOA did, and the refusal already has its own structured log line
+call writes no row. That is deliberate on two counts: a denial is not an execution — the
+tool-run trail covers what NOA did, and the refusal already has its own structured log line
 (`mcp_tool_denied`) — and the gate refuses uncatalogued names, so auditing outside it would
 let any caller mint `tool_runs` rows for arbitrary strings.
 
 **READ only, here.** `risk` comes from the registration map, not from a guess, and a CHANGE
 tool is skipped: its `tools/call` opens an approval gate rather than executing anything
-(T33), and V46's row is written by the executor that runs after approval (T38). Recording
+(the request-opening gate), and the run-plus-receipt row is written by the executor that runs
+after approval. Recording
 the gate call as a CHANGE run would put a row in the audit trail for a change that has not
 happened and may be denied. The map is why this is a decision rather than an accident — see
 `noa_api.mcp_tools.registry`.
 
 **Fail closed on the opening write.** If the `STARTED` row cannot be committed, the tool
-does not run and the caller gets `tool_audit_unavailable`. V45 says *every* READ writes a
-row; running anyway would leave that invariant asserted by prose and held by nothing, which
-is the shape B2 shipped. The closing write is different: by then the tool has already
-run, so a failure there is logged loudly and the row is left `STARTED` — exactly the state
-T38's reaper exists to sweep. Turning a completed call into an error would be a lie in the
+does not run and the caller gets `tool_audit_unavailable`. The audit rule says *every* READ
+writes a row; running anyway would leave that invariant asserted by prose and held by nothing,
+which is the same shape the inert host-key pin shipped. The closing write is different: by then
+the tool has already run, so a failure there is logged loudly and the row is left `STARTED` —
+exactly the state the reaper for runs stuck STARTED exists to sweep. Turning a completed call
+into an error would be a lie in the
 other direction.
 
 **What "failed" means.** `sanitize_tool_errors` converts an exception into a
 *returned* `{"ok": False, ...}` payload, so a failure normally arrives as an ordinary
 result, not as a raise. Status is therefore read off `ok`, and `result_summary` gets the
-`error_code` — T35 left out an `error` column precisely because a sanitized code fits here.
+`error_code` — the `tool_runs` schema left out an `error` column precisely because a sanitized
+code fits here.
 A raise that still escapes (argument validation, a bug above the decorator) is recorded
 FAILED and re-raised unchanged: this middleware audits, it does not sanitize.
 
 Both of those rules — the status read off `ok`, and the bounded redacted summary — moved to
-`core.audit.summaries` at T38, because the post-approval executor records the same field
+`core.audit.summaries` alongside it, because the post-approval executor records the same field
 from the same envelope. They are re-exported below so this module stays the one name
 its callers and tests reach for.
 
-**`conversation_ref` is a label, never a scope** (DECISIONS §10.4, old V165). It arrives as
+**`conversation_ref` is a label, never a scope** (DECISIONS section 10.4). It arrives as
 `X-Noa-Conversation-Ref` because LibreChat sends no conversation identifier in the call
 itself — at pin `45cc53c4` `MCPManager.callTool` sends `params: {name, arguments}` with no
 `_meta` — but its header templating does resolve `{{LIBRECHAT_BODY_CONVERSATIONID}}`
-(`packages/api/src/utils/env.ts`, `ALLOWED_BODY_FIELDS`). T57 writes that into
-`librechat.yaml`; absent or unusable, the column is NULL and the call proceeds. It is
-sanitized before it is stored because it lands in both Postgres and structlog — the same
-log-forging surface V73 closed for `x-request-id`, so it reuses that check.
+(`packages/api/src/utils/env.ts`, `ALLOWED_BODY_FIELDS`). The LibreChat config reference
+documents writing that into `librechat.yaml`; absent or unusable, the column is NULL and the
+call proceeds. It is sanitized before it is stored because it lands in both Postgres and
+structlog — the same log-forging surface already closed for `x-request-id`, so it reuses that
+check.
 """
 
 from __future__ import annotations
@@ -109,11 +113,11 @@ logger = structlog.get_logger(__name__)
 def read_conversation_ref() -> str | None:
     """The grouping label on the current request, or `None`.
 
-    Sanitized, not echoed: the value is written to `tool_runs` and to structured log output,
-    so it is accepted only bounded and on the character allowlist V73 established. A
-    rejected value is `None` — dropping a label costs an audit filter one row's grouping,
-    while refusing the call would let a malformed header from a client NOA does not control
-    turn every tool off.
+    Sanitized, not echoed: the value is written to `tool_runs` and to structured log output, so it
+    is accepted only bounded and on the character allowlist the request-id sanitizer established.
+    A rejected value is `None` — dropping a label costs an audit filter one row's grouping, while
+    refusing the call would let a malformed header from a client NOA does not control turn every
+    tool off.
     """
     return sanitize_header_label(
         get_http_headers().get(CONVERSATION_REF_HEADER),
@@ -132,7 +136,7 @@ def redacted_args(arguments: Mapping[str, Any] | None) -> dict[str, Any]:
 
 
 class ToolRunAuditMiddleware(Middleware):
-    """Write one `tool_runs` row per READ tool call (V45, V47, V83b)."""
+    """Write one `tool_runs` row per READ tool call."""
 
     def __init__(self, *, context: McpToolContext, tool_risks: Mapping[str, ToolRisk]) -> None:
         self._context = context
@@ -175,7 +179,7 @@ class ToolRunAuditMiddleware(Middleware):
         except BaseException as exc:
             # Includes `ToolError` raised above `sanitize_tool_errors` (argument validation),
             # and cancellation. Recorded, then re-raised untouched: shaping the error is
-            # V19's job and it belongs to the decorator on the tool, not here.
+            # the sanitizer's job and it belongs to the decorator on the tool, not here.
             await self._finish_run(started, ToolRunStatus.FAILED, type(exc).__name__)
             raise
 
@@ -243,7 +247,8 @@ class ToolRunAuditMiddleware(Middleware):
 
         Swallows its own failure, unlike `_start_run`. The tool has already run by now, so refusing
         the caller would misreport a call that happened; the row stays `STARTED`, which is a state
-        the schema defines and T38's reaper resolves, and the log line names it.
+        the schema defines and the reaper for runs stuck STARTED resolves, and the log line
+        names it.
         """
         try:
             async with self._context.session_factory() as session:

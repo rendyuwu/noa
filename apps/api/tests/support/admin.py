@@ -3,47 +3,47 @@
 Same split every route test in this suite uses: the router, `require_admin`,
 `require_session_user`, the real `AuthService`, the real `AuthorizationService`, the real
 `JWTService` and the shared error handler are all production code — only SQL and LDAP are faked.
-So a 403 here is the shipped 403, a 409 is the shipped 409, and the V12 guards run for real.
+So a 403 here is the shipped 403, a 409 is the shipped 409, and the last-admin guards run for real.
 `SQLAuthorizationRepository` gets its own live-database coverage in `test_rbac_repository.py`.
 
-**Three repositories, one identity.** The session path resolves the caller through
-`support.auth`'s `FakeAuthRepository`, the admin routes read and write `support.rbac`'s
-`FakeAuthorizationRepository`, and T53's token routes read and write
-`support.mcp_tokens`'s `FakeMcpTokenRepository` — the same split production has, where three
-services hold different repositories over one session. `sign_in` and `add_target` therefore
-write each user into *all three*, under one id. Without that, `actor_user_id` could never equal
-a target's id and V12's self-deactivate, self-delete and self-demote refusals would be
-unreachable from HTTP — the tests would pass while asserting nothing — and every token route
-would answer 404 `user_not_found` for a user the panel can see.
+**Three repositories, one identity.** The session path resolves the caller through `support.auth`'s
+`FakeAuthRepository`, the admin routes read and write `support.rbac`'s
+`FakeAuthorizationRepository`, and the token routes read and write `support.mcp_tokens`'s
+`FakeMcpTokenRepository` — the same split production has, where three services hold different
+repositories over one session. `sign_in` and `add_target` therefore write each user into *all
+three*, under one id. Without that, `actor_user_id` could never equal a target's id and the
+last-admin guards' self-deactivate, self-delete and self-demote refusals would be unreachable from
+HTTP — the tests would pass while asserting nothing — and every token route would answer 404
+`user_not_found` for a user the panel can see.
 
-**Every router is mounted, not one per harness.** T52's role routes and T51's user routes
-share the actor, the gate and one `AuthorizationService` over one repository, and V14's
-"permission updates take effect immediately" is a claim that spans them: a `PUT
+**Every router is mounted, not one per harness.** The role routes and the user routes
+share the actor, the gate and one `AuthorizationService` over one repository, and the
+"permission updates take effect immediately" claim spans them: a `PUT
 /admin/roles/{name}/tools` has to be visible in the very next `GET /admin/users`. Two harnesses
 could not express that without a second repository, i.e. without the thing being asserted.
-T53's routers join for a second reason: `/me/mcp-tokens` is gated by `require_session_user`
+The token routers join for a second reason: `/me/mcp-tokens` is gated by `require_session_user`
 while `/admin/users/{id}/tokens` is gated by `require_admin`, and the difference between them
 is only observable when one signed-in actor can try both.
 
-T54's three server routers join for a third: `require_admin` is a parameter on all fifteen of
+The three server-CRUD routers join for a third: `require_admin` is a parameter on all fifteen of
 their handlers, and "every admin route is admin-only" is a claim about the whole surface — a
 test that walks it needs the whole surface mounted under one actor. Their write repositories
 are `support.server_admin`'s, their CRUD services are the **real** ones over those, and only
 the validate services are stubbed (that module records why).
 
-T55's audit router joins for that third reason, and adds nothing else to the harness: its service
+The audit router joins for that third reason, and adds nothing else to the harness: its service
 is the **real** `ToolRunAuditService` over `support.tool_run_audit`'s in-memory reader, so the page
 bound, the cursor minting and the payload shape all run for real. What is *not* modelled there is
 filtering — that lives in the SQL, and `support.tool_run_audit` records why a Python copy of it
 would be a test agreeing with a double.
 
-The action-request admin router (§I.admin-api) joins on the same terms, and on a fourth: "every
-admin route is admin-only" is a claim about the whole surface, and a router mounted in its own
-harness would be walked by its own copy of that test rather than by the one that already counts
-the routes. Its service is the **real** `ActionRequestAdminService` over
+The action-request admin router — part of the admin API's contract — joins on the same terms, and on
+a fourth: "every admin route is admin-only" is a claim about the whole surface, and a router mounted
+in its own harness would be walked by its own copy of that test rather than by the one that already
+counts the routes. Its service is the **real** `ActionRequestAdminService` over
 `support.action_request_admin`'s in-memory reader. Nothing in this harness can write an
-`action_requests` row — the writers are `core.approvals.decisions` and the expiry sweep, both on
-the far side of V22's boundary — which is exactly the shape the surface is supposed to have.
+`action_requests` row — the writers are `core.approvals.decisions` and the expiry sweep, both on the
+far side of the cookie/CSRF boundary — which is exactly the shape the surface is supposed to have.
 """
 
 from __future__ import annotations
@@ -200,20 +200,20 @@ class AdminHarness:
     token_repository: FakeMcpTokenRepository
     audit: RecordingAuditSink
     notifier: RecordingToolListNotifier
-    # T54's three verticals. The write repositories are what the routes mutate; the validation
-    # services are stubs (see `support.server_admin.RecordingValidationService` for why).
+    # The three server-CRUD verticals. The write repositories are what the routes mutate; the
+    # validation services are stubs (see `support.server_admin.RecordingValidationService` for why).
     whm_servers: FakeWHMServerAdminRepository
     proxmox_servers: FakeProxmoxServerAdminRepository
     pmg_servers: FakePMGServerAdminRepository
     whm_validation: RecordingValidationService
     proxmox_validation: RecordingValidationService
     pmg_validation: RecordingValidationService
-    # T55. The audit trail this harness serves; a test appends items to it directly, because the
-    # writers that fill the real table are on the MCP side of V22's boundary.
+    # The audit trail this harness serves; a test appends items to it directly, because the
+    # writers that fill the real table are on the MCP side of the cookie/CSRF boundary.
     tool_runs: FakeToolRunAuditReader
-    # The CHANGE authorisation trail (§I.admin-api). Appended to directly, like `tool_runs` above
-    # and for a stronger version of the same reason: the writers are the decision path and the
-    # expiry sweep, and neither is reachable from a read-only admin surface.
+    # The CHANGE authorisation trail (the admin API's contract). Appended to directly, like
+    # `tool_runs` above and for a stronger version of the same reason: the writers are the decision
+    # path and the expiry sweep, and neither is reachable from a read-only admin surface.
     action_requests: FakeActionRequestAdminReader
 
     def sign_in(
@@ -328,7 +328,7 @@ def admin_harness(
 
     Three dependency overrides and nothing else: `get_auth_service` (so the cookie resolves
     without Postgres or LDAP), `get_authorization_service` (so the routes read the fake RBAC
-    repository) and `get_mcp_token_service` (so T53's routes read the fake token repository).
+    repository) and `get_mcp_token_service` (so the token routes read the fake token repository).
     `require_admin` and `require_session_user` are never overridden — they are the thing under
     test on every route.
     """
@@ -337,9 +337,10 @@ def admin_harness(
     repository = FakeAuthorizationRepository()
     token_repository = FakeMcpTokenRepository()
     audit = RecordingAuditSink()
-    # T66/V74. Shares the repository's ordered `calls` log, so a route test can assert the
-    # notification followed the commit — the property that keeps a client from being told to
-    # refetch a catalog built from rows that may still roll back.
+    # The list-changed emitter and the execution-time RBAC re-check both need this: shares the
+    # repository's ordered `calls` log, so a route test can assert the notification followed the
+    # commit — the property that keeps a client from being told to refetch a catalog built from rows
+    # that may still roll back.
     notifier = RecordingToolListNotifier(calls=repository.calls)
     jwt_service = JWTService(resolved_settings)
 
@@ -398,9 +399,9 @@ def admin_harness(
         repository=token_repository,
         audit_sink=audit,
     )
-    # T54. The CRUD services are the **real** ones over fake repositories and the real cipher,
-    # so encrypt-on-write, the name check, the audit event and the commit call all run — the
-    # same split every other service above uses. Only the validate services are stubs, and
+    # WHM/Proxmox/PMG CRUD. The CRUD services are the **real** ones over fake repositories and the
+    # real cipher, so encrypt-on-write, the name check, the audit event and the commit call all run
+    # — the same split every other service above uses. Only the validate services are stubs, and
     # `support.server_admin.RecordingValidationService` records why.
     cipher = build_cipher()
     app.dependency_overrides[get_whm_server_admin_service] = lambda: WHMServerAdminService(
@@ -415,7 +416,7 @@ def admin_harness(
     app.dependency_overrides[get_whm_server_validation_service] = lambda: whm_validation
     app.dependency_overrides[get_proxmox_server_validation_service] = lambda: proxmox_validation
     app.dependency_overrides[get_pmg_server_validation_service] = lambda: pmg_validation
-    # T55. The **real** service over the in-memory reader: the page bound, the cursor minting and
+    # The **real** service over the in-memory reader: the page bound, the cursor minting and
     # the payload shape are the shipped ones, and only the SQL is doubled.
     app.dependency_overrides[get_tool_run_audit_service] = lambda: ToolRunAuditService(
         repository=audit_reader

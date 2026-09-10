@@ -7,7 +7,7 @@ import { resolveSignInUrl } from '@/lib/sign-in'
 import { CardView } from './card-view'
 
 /**
- * The approval card (§T.41, §T.42 — §I.embed, V27, V29, V32, V33, V34, V35, V38, V39, V80).
+ * The approval card.
  *
  * One URL owns the whole lifecycle of one request: this page asks the question while the
  * request is PENDING, and `CardView` keeps re-reading the row until there is nothing left to wait
@@ -23,7 +23,7 @@ import { CardView } from './card-view'
  * The only decision that leaves this page is a JS `fetch`, because the sandbox this frame runs
  * under omits `allow-forms`. Nothing here is a `<form>`.
  *
- * **The sign-in address is resolved here** (§T.43) rather than in the component that renders it: it
+ * **The sign-in address is resolved here** rather than in the component that renders it: it
  * comes from a server-side variable with no `NEXT_PUBLIC_*` twin, so the page reads it and passes it
  * down. Resolved per request rather than in `next.config.ts`, because `output: 'standalone'` never
  * runs that config at runtime — the framing header is baked there on purpose, and this is not.
@@ -38,7 +38,7 @@ import { CardView } from './card-view'
 
 // Reading `headers()` already opts this route out of prerendering; saying so as well means a
 // future edit that stops reading them cannot quietly make one operator's card cacheable for the
-// next request. Same declaration the proxy route carries (§T.44(g)).
+// next request. Same declaration the proxy route carries.
 export const dynamic = 'force-dynamic'
 
 export default async function ApprovalCardPage({ params }: { params: Promise<{ id: string }> }) {

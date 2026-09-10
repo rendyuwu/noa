@@ -1,8 +1,9 @@
-"""Reading the `tool_runs` audit trail for the admin panel (T55 — V45, V47, §I.admin-api).
+"""Reading the `tool_runs` audit trail for the admin panel.
 
-T35 built the table, T73 wrote to it, and until now nothing could ask about it. V45's last clause
-is "queryable in admin audit", so this module is what turns that phrase from prose into a
-statement — the shape V69 keeps insisting on.
+The schema built the table, the READ writer wrote to it, and until now nothing could ask about it.
+The audit rule's last clause is "queryable in admin audit", so this module is what turns that
+phrase from prose into a statement — the shape the provenance-is-not-evidence rule keeps insisting
+on.
 
 **Reader beside the writer, split by what it can do.** `core.audit.tool_runs` inserts and
 commits; nothing here commits and no statement here is anything but a `SELECT`. Same discipline
@@ -10,20 +11,22 @@ as `core.results.tables` and `core.approvals`: the write side is reachable from 
 this side only from behind a session cookie and `require_admin`, and neither can be reached
 from the other's side of that line.
 
-**Every filter is in the `WHERE`, and the statements are functions so a test can prove it**
-(V93). A filter applied after the fetch is not a filter here — it also breaks paging, because the
+**Every filter is in the `WHERE`, and the statements are functions so a test can prove it.**
+A filter applied after the fetch is not a filter here — it also breaks paging, because the
 `LIMIT` would have already cut the rows that the filter was going to remove, so a page could come
 back short (or empty) while `nextCursor` insisted there was more. `test_tool_run_audit_read.py`
 compiles these and reads the SQL.
 
 **One order, and the tie-break is part of it**: `created_at DESC, id DESC`. `created_at` is not
 unique — two calls in the same millisecond are ordinary on the MCP path — and paging by a
-non-unique key splits a tied group differently per call, which is V92(c)'s rule one surface over.
+non-unique key splits a tied group differently per call, which is the same page-stability
+discipline as the capped-pass-and-report rule, one surface over.
 The page asks for `limit + 1` rows and returns `limit` of them; the extra row is how "there is
 another page" is decided, and it is never serialised.
 
-**The requester is an outer join.** `tool_runs.requested_by_user_id` is `SET NULL` (T35: an audit
-trail a user deletion erases is not one), so an inner join would hide precisely the rows that
+**The requester is an outer join.** `tool_runs.requested_by_user_id` is `SET NULL` (the schema's
+own reasoning: an audit trail a user deletion erases is not one), so an inner join would hide
+precisely the rows that
 outlived their operator. A missing email is `null` on the wire, which reads as "the account is
 gone" rather than as "nobody ran this".
 
@@ -34,8 +37,9 @@ A second redactor under the read would be a quieter second home for one rule and
 audit reader would have to trust without seeing it; the same argument `core.audit.tool_runs` makes
 about not redacting under the SQL.
 
-**Duration is derived, never stored** (T35's model docstring): `completed_at - created_at` at read
-time, so the pair cannot disagree with a third column. `null` while a run is `STARTED`.
+**Duration is derived, never stored** (the schema's own model docstring):
+`completed_at - created_at` at read time, so the pair cannot disagree with a third column.
+`null` while a run is `STARTED`.
 """
 
 from __future__ import annotations
@@ -56,7 +60,8 @@ from core.db.models import ToolRun, User
 
 # Page size bounds, shared with the route's `Query(ge=…, le=…)` so the API and the statement agree
 # on one answer. A ceiling at all because a page is loaded into memory and serialised whole — an
-# unbounded `limit` is the audit surface's version of the unbounded pass V92(a) forbids.
+# unbounded `limit` is the audit surface's version of the unbounded pass the capped-pass rule
+# forbids.
 DEFAULT_PAGE_SIZE: Final = 50
 MAX_PAGE_SIZE: Final = 200
 
@@ -87,7 +92,7 @@ def escape_like(value: str) -> str:
 
 @dataclass(frozen=True)
 class ToolRunAuditFilters:
-    """What an admin narrowed the list to (§I.admin-api, V47).
+    """What an admin narrowed the list to.
 
     All optional, and an empty object means "everything" — the panel's first load. Held as one
     frozen value rather than seven parameters threaded through three layers, so the route maps
@@ -124,8 +129,8 @@ def _duration_ms(created_at: datetime, completed_at: datetime | None) -> int | N
 class ToolRunListItem:
     """One run as the audit list renders it.
 
-    Every field V47 names except `args`, which the detail read carries: a list page of fifty runs
-    would otherwise ship fifty JSONB payloads to draw five columns.
+    Every field the run row records except `args`, which the detail read carries: a list page of
+    fifty runs would otherwise ship fifty JSONB payloads to draw five columns.
 
     `requested_by_email` rather than the user id — the panel shows people, and the id is on the
     detail. `duration_ms` is derived (see `_duration_ms`).
@@ -146,8 +151,8 @@ class ToolRunListItem:
         """JSON-native fields for the HTTP body, camelCase like the rest of the admin surface.
 
         One spelling of this body: the route's response model is built from this dict rather than
-        re-listing the fields, the way `ResultTableView.as_payload()` is T56's single spelling.
-        Two hand-maintained copies of one payload is one that can disagree.
+        re-listing the fields, the way `ResultTableView.as_payload()` is the table surface's
+        single spelling. Two hand-maintained copies of one payload is one that can disagree.
         """
         return {
             "toolRunId": str(self.tool_run_id),
@@ -165,7 +170,7 @@ class ToolRunListItem:
 
 @dataclass(frozen=True)
 class ToolRunDetailView:
-    """One run in full: the list item plus the redacted arguments (§I.admin-api).
+    """One run in full: the list item plus the redacted arguments.
 
     Composed rather than subclassed so the extra field is visible at the call site and so the list
     item's payload keys cannot drift from the detail's.
@@ -178,9 +183,8 @@ class ToolRunDetailView:
     def as_payload(self) -> dict[str, Any]:
         """The list item's fields, plus `args` and the requester's id.
 
-        `args` is `{}` for a call that took none — the column's server default says the same thing
-        (T35), because "no arguments" and "arguments not recorded" must not read alike in an audit
-        view.
+        `args` is `{}` for a call that took none — the column's server default says the same thing,
+        because "no arguments" and "arguments not recorded" must not read alike in an audit view.
         """
         return {
             **self.item.as_payload(),
@@ -195,8 +199,8 @@ class ToolRunDetailView:
 class ToolRunPage:
     """One page of runs, and the token for the next one — `None` on the last page.
 
-    `next_cursor` is the bound this surface owes (V85's family): a client can tell "that is all of
-    them" from "there is more" without counting rows against the limit it asked for.
+    `next_cursor` is the bound this surface owes (the capped-read bound's family): a client can tell
+    "that is all of them" from "there is more" without counting rows against the limit it asked for.
     """
 
     items: list[ToolRunListItem]

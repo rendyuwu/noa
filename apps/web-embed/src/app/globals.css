@@ -1,10 +1,10 @@
 /*
  * Hand-written styles. This app carries no design-system dependency: it renders a
  * card inside a small iframe on the NOA origin, and the whole surface is a few
- * fields and two buttons (§T.40 as built, §I.embed).
+ * fields and two buttons.
  *
  * Everything below is scaffold-level: a reset, the type scale, and the tokens the
- * approval card (§T.41) and the table surface (§T.56) will read.
+ * approval card and the table surface will read.
  */
 
 :root {
@@ -57,7 +57,7 @@ body {
   line-height: 1.5;
   /*
    * The card scrolls itself. The frame LibreChat gives it is fixed-height, so a
-   * document that grows past it has to own the overflow (§I.embed: "compact,
+   * document that grows past it has to own the overflow (the embed app's contract: "compact,
    * self-scrolling").
    */
   min-height: 100vh;

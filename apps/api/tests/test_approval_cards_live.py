@@ -4,7 +4,8 @@
 refusals and the order it does things in. Three claims here are claims *about the database*:
 
 - **The provenance and the before-state come out of JSONB.** The requester block and the
-  preflight evidence are keys on `action_requests.approval_context`, written by T33's gate and
+  preflight evidence are keys on `action_requests.approval_context`, written by the gate that
+  opens the request and
   round-tripped through asyncpg. A double handing back a dict proves the mapper; it does not
   prove that what the gate wrote is what the card reads.
 - **A deleted requester's row is refused.** `requested_by_user_id` is `SET NULL`, so only
@@ -13,13 +14,15 @@ refusals and the order it does things in. Three claims here are claims *about th
   the run an approval starts are written by other classes in `core.approvals`; this is where the
   card is put against them rather than against a fixture that agrees with it.
 - **The receipt is a join, not a copy.** `action_receipts` is its own table with its own writer
-  (T36, T38), and what a double can prove about that is only that a dict came back. Whether the
+  — the receipt table's UNIQUE, the approved-change executor — and what a double can prove
+  about that is only that a dict came back. Whether the
   join hangs off the requester-matched row — so a receipt is never fetched for a request the
   caller may not read — is a claim about the statement, and only Postgres answers it.
 
-The requester-matched `SELECT` itself is shared with T63 (`core.approvals.reads`) and is covered
-there too. It is re-asserted here rather than cited, because what a *shared* statement guarantees
-about this repository is exactly what V69 says provenance does not: the card is its own caller,
+The requester-matched `SELECT` itself is shared with the action-result tool's reads
+(`core.approvals.reads`) and is covered there too. It is re-asserted here rather than cited,
+because what a *shared* statement guarantees about this repository is exactly what upstream
+provenance does not prove: the card is its own caller,
 so the card's own refusal is what gets tested.
 
 Skipped, never failed, when Postgres is unreachable — like every other DB-backed test here.
@@ -170,12 +173,13 @@ async def delete_user(factory: async_sessionmaker[AsyncSession], user_id: UUID) 
 
 
 # --------------------------------------------------------------------------------------
-# V35: the provenance and the before-state, out of the row the gate wrote
+# Provenance and the before-state, out of the row the gate wrote
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_card_reads_the_provenance_and_the_evidence_the_gate_persisted(factory) -> None:  # type: ignore[no-untyped-def]
-    """V33/V35: built once at gate time, persisted, read back — not rebuilt at render time.
+    """Context persisted at gate time: built once, persisted, read back — not rebuilt at render
+    time.
 
     The compare separates: the arguments, the requester block *and* the evidence all arrive,
     and each sentinel lives in one branch of the payload only, so a mapper that read the wrong
@@ -207,10 +211,11 @@ async def test_the_card_reads_the_provenance_and_the_evidence_the_gate_persisted
 
 
 async def test_a_decided_requests_reason_is_on_the_row_and_not_on_the_card(factory) -> None:  # type: ignore[no-untyped-def]
-    """C8/V15/V43: the card collects a reason; it does not replay one.
+    """The one operator-typed reason field: the card collects a reason; it does not replay one.
 
     The row genuinely holds one — asserted, so this is not green because nothing wrote a reason
-    (V87's shape). The view has no field for it and the payload has no copy of it.
+    (the case that proves the compare still separates). The view has no field for it and the
+    payload has no copy of it.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id)
@@ -250,12 +255,12 @@ async def test_a_context_the_gate_did_not_write_renders_empty_rather_than_raisin
 
 
 # --------------------------------------------------------------------------------------
-# V27: the requester-match, against rows only a database produces
+# The requester-match, against rows only a database produces
 # --------------------------------------------------------------------------------------
 
 
 async def test_another_operators_card_is_not_readable(factory) -> None:  # type: ignore[no-untyped-def]
-    """V27: the row is not fetched, so no later branch can forget to drop it.
+    """The requester-match: the row is not fetched, so no later branch can forget to drop it.
 
     The intruder is a real user with a real id, so the refusal is the requester-match and not a
     missing row; and the owner's read succeeding is what makes the pair separate.
@@ -276,7 +281,8 @@ async def test_an_unknown_id_reads_as_nothing(factory) -> None:  # type: ignore[
 
 
 async def test_a_card_whose_requester_was_deleted_belongs_to_nobody(factory) -> None:  # type: ignore[no-untyped-def]
-    """V27 fails closed on the row only a real `DELETE` can produce (T34's `SET NULL`).
+    """The requester-match fails closed on the row only a real `DELETE` can produce (the
+    table's `SET NULL`).
 
     `NULL = :caller` is NULL, never true, so the request matches nobody — including the
     operator who is now gone.
@@ -294,12 +300,13 @@ async def test_a_card_whose_requester_was_deleted_belongs_to_nobody(factory) -> 
 
 
 # --------------------------------------------------------------------------------------
-# V29 / V34: one URL, through the answer
+# The run started at approve time, one URL through the receipt
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_card_reports_the_run_the_approval_started(factory) -> None:  # type: ignore[no-untyped-def]
-    """V29/V34/V47: the link T37 wrote inside the decision's transaction is what this reads."""
+    """The run started at approve time, one URL through the receipt: the link the decision
+    endpoints wrote inside the transaction is what this reads."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id)
     tool_run_id = await approve(factory, request_id, caller_user_id=user_id)
@@ -316,12 +323,14 @@ async def test_the_card_reports_the_run_the_approval_started(factory) -> None:  
 
 
 # --------------------------------------------------------------------------------------
-# V46 / V34 / DECISIONS §6.5: the receipt, in the two halves it was written as
+# Run-plus-receipt, one URL through receipt, DECISIONS.md section 6.5: the receipt, in the
+# two halves it was written as
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_card_carries_the_receipt_its_writer_wrote(factory) -> None:  # type: ignore[no-untyped-def]
-    """T42(b): the row T38 writes is the row this card reads, through a real join.
+    """The approval card: the row the approved-change executor writes is the row this card
+    reads, through a real join.
 
     The compare separates on the property the requirement is about — before and after are two
     payloads with two sentinels, neither of which appears in the other. A reader that showed
@@ -373,7 +382,8 @@ async def test_a_card_with_no_receipt_reports_none(factory) -> None:  # type: ig
 
 
 async def test_another_operators_receipt_is_not_readable(factory) -> None:  # type: ignore[no-untyped-def]
-    """V27: the receipt rides on the requester-matched statement, so it is never fetched either.
+    """The requester-match: the receipt rides on the requester-matched statement, so it is
+    never fetched either.
 
     The receipt genuinely exists — the owner's read proves it — which is what makes the
     intruder's `None` a refusal rather than an empty table.
@@ -398,12 +408,12 @@ async def test_another_operators_receipt_is_not_readable(factory) -> None:  # ty
 async def test_a_receipt_payload_no_writer_would_emit_renders_empty_rather_than_raising(  # type: ignore[no-untyped-def]
     factory,
 ) -> None:
-    """V38: a card in front of an operator is the wrong place for a `TypeError`.
+    """A card in front of an operator is the wrong place for a `TypeError`.
 
-    `receipt_data` is unversioned JSONB, so a row written by something other than T38's
-    two writers is expressible. Both halves render as "nothing recorded", and `ok` fails closed
-    on a truthy value that is not `True` — reading `"yes"` as success is the one direction that
-    must not be permissive.
+    `receipt_data` is unversioned JSONB, so a row written by something other than the
+    approved-change executor's two writers is expressible. Both halves render as "nothing recorded",
+    and `ok` fails closed on a truthy value that is not `True` — reading `"yes"` as success is the
+    one direction that must not be permissive.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     request_id = await open_request(factory, requested_by_user_id=user_id)
@@ -426,12 +436,12 @@ async def test_a_receipt_payload_no_writer_would_emit_renders_empty_rather_than_
 
 
 # --------------------------------------------------------------------------------------
-# V32: no stale PENDING, and no write to a row that is not the caller's
+# No stale PENDING — TTL expiry — and no write to a row that is not the caller's
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_card_past_its_deadline_reads_expired_and_is_written_expired(factory) -> None:  # type: ignore[no-untyped-def]
-    """V32: the render path makes the row terminal, so the next reader finds it so.
+    """TTL expiry: the render path makes the row terminal, so the next reader finds it so.
 
     Both halves: reporting `EXPIRED` without the write leaves the next reader to rediscover it,
     and writing without reporting hands the operator a live Approve button over a request the
@@ -449,7 +459,7 @@ async def test_a_card_past_its_deadline_reads_expired_and_is_written_expired(fac
 
     stored = await read_request(factory, request_id)
     assert stored.status is ActionRequestStatus.EXPIRED
-    # An expiry is the absence of an answer, so it carries no reason — T34's CHECK exempts
+    # An expiry is the absence of an answer, so it carries no reason — the table's CHECK exempts
     # `EXPIRED` precisely so it can, which means nothing at the database level would catch one
     # that did.
     assert stored.reason is None
@@ -468,7 +478,8 @@ async def test_a_live_card_is_not_expired_by_being_read(factory) -> None:  # typ
 
 
 async def test_a_foreign_card_is_never_written_to(factory) -> None:  # type: ignore[no-untyped-def]
-    """V27 before V32, and the table is the only place that ordering is visible.
+    """The requester-match before the TTL expiry, and the table is the only place that
+    ordering is visible.
 
     `expire_if_due` takes an id and no requester, and the id in this URL reaches the operator
     through a tool result that persists in LibreChat's MongoDB. An expiry-first card would
@@ -486,7 +497,8 @@ async def test_a_foreign_card_is_never_written_to(factory) -> None:  # type: ign
 
 
 async def test_the_deadline_boundary_is_the_same_at_the_card_as_at_the_door(factory) -> None:  # type: ignore[no-untyped-def]
-    """T39(a): `<=` at both doors, so a row exactly on its deadline is one thing, not two."""
+    """The expiry loop's boundary: `<=` at both doors, so a row exactly on its deadline is one
+    thing, not two."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     deadline = datetime.now(UTC) + timedelta(seconds=30)
     request_id = await open_request(factory, requested_by_user_id=user_id, expires_at=deadline)

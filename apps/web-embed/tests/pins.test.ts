@@ -7,11 +7,11 @@ import { describe, expect, it } from 'vitest'
 /**
  * Dependency-pin guards.
  *
- * C2 puts the web stack on the same footing as C1 puts Python: the versions are
+ * Exact pins put the web stack on the same footing as Python's window: the versions are
  * a decision, and a bump has to be deliberate. `next`, `react` and `react-dom`
  * are named there explicitly because a bump on any of them re-opens the
- * LibreChat render gate (§T.59, C21) — the sandbox string and the render mode
- * that let the approval card work were measured against a pinned pair, not
+ * LibreChat render gate (re-verified on every LibreChat bump) — the sandbox string and
+ * the render mode that let the approval card work were measured against a pinned pair, not
  * inferred.
  *
  * Mirrors `apps/api/tests/test_pins.py::test_all_dependencies_exactly_pinned`.
@@ -35,7 +35,7 @@ function packageJson(): PackageJson {
   return JSON.parse(readFileSync(path.join(APP_ROOT, 'package.json'), 'utf8')) as PackageJson
 }
 
-describe('C2 — web dependencies are pinned exactly', () => {
+describe('Exact pins — web dependencies are pinned exactly', () => {
   it.each(['next', 'react', 'react-dom'])(
     'pins %s to a bare version, never a range',
     (name: string) => {
@@ -46,7 +46,7 @@ describe('C2 — web dependencies are pinned exactly', () => {
     },
   )
 
-  it('pins next to 16 and react to 19 (C2 names the majors)', () => {
+  it('pins next to 16 and react to 19 (the exact-pins rule names the majors)', () => {
     const deps = packageJson().dependencies
 
     expect(deps['next']).toMatch(/^16\./)
@@ -63,8 +63,8 @@ describe('C2 — web dependencies are pinned exactly', () => {
     expect(floating).toEqual([])
   })
 
-  it('declares the Node floor C2 sets', () => {
-    // C2 says Node 20+. Stated on the package so `pnpm install` refuses an older
+  it('declares the Node floor the exact-pins rule sets', () => {
+    // The exact-pins rule says Node 20+. Stated on the package so `pnpm install` refuses an older
     // runtime, rather than left to the README to remember.
     expect(packageJson().engines['node']).toBe('>=20.9.0')
   })

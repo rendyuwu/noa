@@ -11,7 +11,7 @@ import {
   type AuditActionRequestListItem,
 } from './types'
 
-// Action-request list controller (§I.admin-api). Binds the same generic
+// Action-request list controller (the admin API's contract). Binds the same generic
 // server-paged controller the tool-run list uses to the authorisation trail's
 // endpoint and query builder — the hook's own docstring says it was written for
 // two audit lists, and this is the second one arriving four tasks later.

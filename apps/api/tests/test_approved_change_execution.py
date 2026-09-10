@@ -80,7 +80,7 @@ async def execute(
 
 
 async def test_a_request_that_is_not_approved_is_never_executed() -> None:
-    """V23: "may this run?" comes off the row, not off the two ids a caller supplied.
+    """ "May this run?" comes off the row, not off the two ids a caller supplied.
 
     `load_authorized` answering `None` covers every way that can be false — PENDING, DENIED,
     EXPIRED, or a run belonging to a different request — because the predicate is in the
@@ -131,14 +131,14 @@ async def test_the_authorization_is_read_before_anything_else_happens() -> None:
 
 
 async def test_the_runner_is_handed_what_the_gate_recorded() -> None:
-    """C9/V17: the arguments and the before-state are the gate's own, carried on the row.
+    """The arguments and the before-state are the gate's own, carried on the row.
 
     Not re-gathered here, and not taken from anything the caller passed: what an operator
     approved against is what the change runs against.
 
     **The reason travels too**. It is not an authorization — that was settled by
     `status = APPROVED` before this call — but WHM's `suspendacct` takes a suspension note, and
-    C8's single operator-typed field is the only text NOA has that belongs in one. What the
+    the single operator-typed reason field is the only text NOA has that belongs in one. What the
     runner must not do with it is echo it back; that is asserted where the runner is, in
     `test_whm_tools_suspend_account.py`.
     """
@@ -158,7 +158,7 @@ async def test_the_runner_is_handed_what_the_gate_recorded() -> None:
 
 
 async def test_a_tool_with_no_runner_fails_the_run_by_name() -> None:
-    """Still reachable: the WHM account pair has runners, T25-T29 do not.
+    """Still reachable: the WHM account pair has runners, later CHANGE tools do not.
 
     A named terminal failure rather than a run left `STARTED` until the reaper — which is what
     makes shipping the executor before its first CHANGE tool safe rather than a silent hole.
@@ -188,8 +188,9 @@ async def test_a_change_whose_arguments_were_redacted_is_refused() -> None:
     """Fail-closed rather than running a change with `[redacted]` where a value belonged.
 
     Vacuous today — no CHANGE tool NOA plans declares a sensitive-named argument, because
-    C15/V49 generate secrets server-side — and a guard at the mechanism so that the tool which
-    eventually does inherits it instead of discovering it (T68's rule).
+    server-side password generation keeps secrets on the yopass path — and a guard at the
+    mechanism so that the tool which eventually does inherits it instead of discovering it
+    (the no-backend rule).
     """
     repository = FakeApprovedChangeExecutionRepository(
         authorized=authorized_change(arguments={"account": "acmeco", "password": REDACTED}),
@@ -230,7 +231,7 @@ async def test_the_redaction_guard_reads_key_names_not_values() -> None:
 
     Redaction is by key name (`core.secrets.redaction`), so an ordinary argument whose *value*
     happens to be the placeholder string is not a redacted argument — and a guard that compared
-    values would refuse a legitimate change for the wrong cause (T33(d)'s argument for an
+    values would refuse a legitimate change for the wrong cause (the gate's own argument for an
     explicit key set over a substring rule).
     """
     repository = FakeApprovedChangeExecutionRepository(
@@ -250,7 +251,7 @@ async def test_the_redaction_guard_reads_key_names_not_values() -> None:
 
 
 async def test_a_successful_change_completes_its_run() -> None:
-    """V20/V47: the status comes off the envelope's `ok`, the same rule the READ path uses."""
+    """The status comes off the envelope's `ok`, the same rule the READ path uses."""
     authorized = authorized_change()
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized)
 
@@ -278,7 +279,7 @@ async def test_a_runner_that_answers_a_refusal_records_failed() -> None:
 async def test_a_failed_runner_records_failed_with_a_named_code() -> None:
     """A `NoaError` keeps its own code, so the thing an admin has to fix survives the boundary.
 
-    The same pass-through V19's decorator makes one layer up: collapsing
+    The same pass-through the exception-sanitizing decorator makes one layer up: collapsing
     `ssh_host_key_not_validated` into a generic failure would send an operator hunting an
     outage rather than a pinned fingerprint.
     """
@@ -298,8 +299,8 @@ async def test_a_failed_runner_records_failed_with_a_named_code() -> None:
 
 
 async def test_a_raising_runner_does_not_leak_its_message() -> None:
-    """V8: the cause is logged, never stored. This row is read by the card, by T63's tool and
-    by the admin audit surface, and a traceback names hosts, paths and configuration."""
+    """The cause is logged, never stored. This row is read by the card, by the action-result
+    tool and by the admin audit surface, and a traceback names hosts, paths and configuration."""
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
     runner = RecordingChangeRunner()
     runner.fail = RuntimeError("connect root@db.internal password=hunter2")
@@ -346,11 +347,12 @@ async def test_a_long_result_is_bounded_before_it_is_stored() -> None:
 
 
 async def test_a_credential_in_a_result_is_redacted_before_it_is_stored() -> None:
-    """V8, and the reason redaction is applied to results and not only to arguments: this row
-    outlives the call and the receipt outlives the row.
+    """The safe-payload rule, and the reason redaction is applied to results and not only to
+    arguments: this row outlives the call and the receipt outlives the row.
 
-    Both artifacts, because they carry the same payload in front of the same readers — T42's
-    card, T63's tool, the admin audit surface. Redacting only the summary would put the
+    Both artifacts, because they carry the same payload in front of the same readers — the
+    approval card, the action-result tool, the admin audit surface. Redacting only the summary
+    would put the
     credential one JSONB column over, where nothing looks for it.
     """
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
@@ -370,7 +372,8 @@ async def test_a_credential_in_a_result_is_redacted_before_it_is_stored() -> Non
 
 
 async def test_the_receipt_is_two_part() -> None:
-    """DECISIONS §6.5 and §T.25: before-state and after-state, never collapsed into "done".
+    """DECISIONS section 6.5 and the release-and-allow tool: before-state and after-state,
+    never collapsed into "done".
 
     The before-state is the gate's evidence — the state the operator authorised against — so
     the two halves describe one decision rather than two readings taken minutes apart.
@@ -386,8 +389,8 @@ async def test_the_receipt_is_two_part() -> None:
 
 
 async def test_a_failed_change_still_gets_a_receipt() -> None:
-    """V46 is literal, and a receipt with a before-state and no working after-state is the
-    truthful record of a change that did not complete — not an absence."""
+    """The run-plus-receipt rule is literal, and a receipt with a before-state and no working
+    after-state is the truthful record of a change that did not complete — not an absence."""
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
     runner = RecordingChangeRunner({"ok": False, "error_code": "ssh_sudo_required"})
 
@@ -412,7 +415,8 @@ async def test_the_receipt_points_at_the_request_and_the_run() -> None:
 
 
 async def test_the_run_and_the_receipt_share_one_commit() -> None:
-    """A `COMPLETED` run whose receipt rolled back is V46 asserted by prose and held by nothing.
+    """A `COMPLETED` run whose receipt rolled back is the run-plus-receipt rule asserted by
+    prose and held by nothing.
 
     Asserted as a count *and* as order: two commits would satisfy "both were written".
     """
@@ -426,7 +430,8 @@ async def test_the_run_and_the_receipt_share_one_commit() -> None:
 
 
 async def test_an_already_written_receipt_is_not_an_error() -> None:
-    """The reaper may have got to this run first (T36's UNIQUE). Whichever writer arrives second
+    """The reaper may have got to this run first (the receipt table's UNIQUE). Whichever writer
+    arrives second
     is a no-op, and the change is still recorded as having completed."""
     repository = FakeApprovedChangeExecutionRepository(authorized=authorized_change())
     repository.receipt_exists = True
@@ -449,7 +454,8 @@ def test_build_receipt_treats_a_missing_ok_as_failure() -> None:
 
 
 async def test_the_start_is_logged_with_the_identifiers_and_not_the_arguments() -> None:
-    """V46's audit-log third, and V8's bound on it: the log names the change, never its payload.
+    """The run-plus-receipt rule's audit-log third, and the safe-payload rule's bound on it:
+    the log names the change, never its payload.
 
     "Why did this account get suspended at 03:00" has to be answerable from the logs; "what was
     the account's password" must not be.

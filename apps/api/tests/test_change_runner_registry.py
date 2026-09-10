@@ -9,17 +9,18 @@ the change answers `change_runner_unavailable` and does not run.
 So the check happens where both facts meet, beside `assert_names_in_catalog`, which refuses an
 uncatalogued name for the same reason (`noa_api.mcp_tools.registry`).
 
-**The guard was written before its first instance and is not vacuous any more.** T22 registered
-`whm_suspend_account` with the runner that performs it, T23 `whm_unsuspend_account` with its own,
-T25 `whm_firewall_release_and_allow` from a second module and T26 `whm_firewall_allowlist_remove`
-from a third — which is the case the equality below is actually for, since a registrar and a
-runner-builder that live in different packages are where the two halves can drift apart. T27
-added `proxmox_reset_vm_password`, the first from a system other than WHM, and T28
-`proxmox_vm_nic`, the first *second* CHANGE tool on one system — which is where a runner map
-keyed off the integration rather than the tool name would collide. T29 closed the set with
-`pmg_whitelist`, the third system and the last exposed CHANGE name. The probe that registers a
-CHANGE tool with no runner stays, because a predicate that is now satisfied by every name still
-has to separate — and it is what the *next* CHANGE tool will meet before an operator does.
+**The guard was written before its first instance and is not vacuous any more.**
+`whm_suspend_account` registered first, with the runner that performs it; `whm_unsuspend_account`
+second, with its own; `whm_firewall_release_and_allow` third, from a second module; and
+`whm_firewall_allowlist_remove` fourth, from a third — which is the case the equality below is
+actually for, since a registrar and a runner-builder that live in different packages are where
+the two halves can drift apart. `proxmox_reset_vm_password` came next, the first from a system
+other than WHM, then `proxmox_vm_nic`, the first *second* CHANGE tool on one system — which is
+where a runner map keyed off the integration rather than the tool name would collide.
+`pmg_whitelist` closed the set, the third system and the last exposed CHANGE name. The probe
+that registers a CHANGE tool with no runner stays, because a predicate that is now satisfied by
+every name still has to separate — and it is what the *next* CHANGE tool will meet before an
+operator does.
 """
 
 from __future__ import annotations
@@ -48,26 +49,29 @@ from support.servers import build_tool_context
 
 
 async def noop_runner(request: object) -> dict[str, object]:
-    """A runner that would be registered by T22-T29. Never called here."""
+    """A runner that would be registered by any of the CHANGE tools. Never called here."""
     return {"ok": True}
 
 
 def test_every_change_tool_is_registered_with_its_runner() -> None:
-    """T22 is the guard's first real instance; before it, this file asserted the emptiness.
+    """`whm_suspend_account` is the guard's first real instance; before it, this file asserted
+    the emptiness.
 
     Two halves that live in different modules, asserted to name the same tools: a runner
     registered under a name nothing exposes is as invisible as a tool with no runner, and
     `assert_change_runners_cover` only catches the second.
 
-    An equality on both sets rather than a membership test, so T23's second pair had to be added
-    here to stay green — and so the next one does too (V66: one builder, both directions). T25 is
-    the first name whose two halves come from different modules, which is what the second
-    assertion is worth having for; T26 is the first whose registrar and runner-builder are
-    reached from two different aggregators, which is the same drift one level up; T27 is the
-    first from a system other than WHM, so a runner map keyed off the wrong integration would
-    show here rather than at an approval; T28 is the first system to contribute a *second* CHANGE
-    tool, which is where a runner map returning one entry per module rather than per tool name
-    would silently drop one; T29 is the third system and the name that completes the set.
+    An equality on both sets rather than a membership test, so `whm_unsuspend_account`'s second
+    pair had to be added here to stay green — and so the next one does too (one builder, both
+    directions). `whm_firewall_release_and_allow` is the first name whose two halves come from
+    different modules, which is what the second assertion is worth having for;
+    `whm_firewall_allowlist_remove` is the first whose registrar and runner-builder are reached
+    from two different aggregators, which is the same drift one level up;
+    `proxmox_reset_vm_password` is the first from a system other than WHM, so a runner map keyed
+    off the wrong integration would show here rather than at an approval; `proxmox_vm_nic` is the
+    first system to contribute a *second* CHANGE tool, which is where a runner map returning one
+    entry per module rather than per tool name would silently drop one; `pmg_whitelist` is the
+    third system and the name that completes the set.
     """
     context = build_tool_context().context
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
@@ -142,7 +146,7 @@ def test_the_real_registry_passes_the_guard() -> None:
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
     assert_change_runners_cover(registered, build_change_runners(context=context))
-    # And the guard is not passing because there is nothing to cover: T22 registered a
+    # And the guard is not passing because there is nothing to cover: `whm_suspend_account` is a
     # CHANGE tool, so this call has something to be right about.
     assert ToolRisk.CHANGE in set(registered.values())
 
@@ -150,7 +154,7 @@ def test_the_real_registry_passes_the_guard() -> None:
 def test_registering_a_change_tool_without_a_runner_raises_from_the_registry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The guard's *call site*, not just the guard (found by mutation, V87).
+    """The guard's *call site*, not just the guard (found by mutation, the still-separates rule).
 
     `test_a_change_tool_without_a_runner_fails_at_startup` calls `assert_change_runners_cover`
     directly, so deleting the call from `register_mcp_tools` left it — and every other test here

@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation'
 import { PageLoadingSkeleton } from '@/components/states'
 import { useAuthUser } from '@/lib/auth/auth-context'
 
-// The role-aware landing (§T76). Every "home" in this app — `/`, the post-login
+// The role-aware landing. Every "home" in this app — `/`, the post-login
 // return-to default, the 403/404 escape, the shell logo — points here, and here
 // is the only place that decides where an operator actually belongs.
 //

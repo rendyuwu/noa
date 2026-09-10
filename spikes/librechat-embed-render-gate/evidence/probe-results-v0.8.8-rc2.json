@@ -140,7 +140,7 @@
       "detail": null
     },
     {
-      "name": "POST /embed-probe/decide from inside the frame is authenticated (V22 path)",
+      "name": "POST /embed-probe/decide from inside the frame is authenticated (cookie + CSRF path)",
       "detail": null
     }
   ],

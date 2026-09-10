@@ -58,8 +58,8 @@ describe('/admin/users route gate', () => {
   })
 
   it('shows the 403 state to a verified non-admin, never a blank page', () => {
-    // Role-denied resolves to a state instead of a redirect. Since §T76 there
-    // IS somewhere else to send them — `/me/tokens`, via `/home` — but a
+    // Role-denied resolves to a state instead of a redirect. Since the MCP token UI shipped
+    // there IS somewhere else to send them — `/me/tokens`, via `/home` — but a
     // redirect would answer a refusal by silently moving the operator, leaving
     // them to guess why the page they asked for is not the page they got. The
     // 403 state names the refusal and offers that route as a choice instead

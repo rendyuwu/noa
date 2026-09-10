@@ -10,12 +10,13 @@ import {
 } from './http'
 
 /**
- * The proxy primitives, proven against THIS copy (§T.50).
+ * The proxy primitives, proven against THIS copy.
  *
  * Every guard here was ported from `noa-old`, and `apps/web-embed` carries the same file.
- * V69 is why the tests came with it rather than a citation: upstream — or sibling — provenance is
- * not evidence that a control works. B2 shipped an inert host-key pin precisely because the port
- * trusted its source. So each case below exercises the mechanism in this package.
+ * The provenance-is-not-evidence rule is why the tests came with it rather than a citation:
+ * upstream — or sibling — provenance is not evidence that a control works. The inert-pin bug
+ * shipped an inert host-key pin precisely because the port trusted its source. So each case
+ * below exercises the mechanism in this package.
  */
 
 describe('proxy/http', () => {
@@ -33,7 +34,8 @@ describe('proxy/http', () => {
 
   describe('filterRequestHeaders — what the browser sends onward', () => {
     it('forwards the browser Cookie header upstream unchanged', () => {
-      // V40: the session rides on `noa_session`, scoped to the registrable domain so it reaches
+      // The registrable-parent rule: the session rides on `noa_session`, scoped to the
+      // registrable domain so it reaches
       // this app as well as the embed. If the proxy dropped or rewrote it, every call from the
       // panel would authenticate as nobody and `/auth/me` would answer 401 forever — which
       // `fetchWithAuth` reads as an expired session and turns into a redirect loop.
@@ -88,7 +90,8 @@ describe('proxy/http', () => {
 
   describe('copySetCookies — the session coming back', () => {
     it('preserves every Set-Cookie value with its Domain attribute intact', () => {
-      // The `Domain=.noa.internal` scoping is V40 itself. A proxy that re-emitted the cookie
+      // The `Domain=.noa.internal` scoping is the registrable-parent rule itself. A proxy that
+      // re-emitted the cookie
       // without it would confine the session to whichever origin answered, and the embed's
       // approval card would stop seeing the same login.
       const from = new Headers([
@@ -106,7 +109,8 @@ describe('proxy/http', () => {
     })
 
     it('carries the logout clear as well as the login set', () => {
-      // `clearAuth` POSTs `/api/auth/logout`, and V6 says the cookie clear is `max-age=0`. A
+      // `clearAuth` POSTs `/api/auth/logout`, and the no-revocation rule says the cookie clear
+      // is `max-age=0`. A
       // proxy that only carried a cookie with a value would leave the operator signed in.
       const from = new Headers([
         ['set-cookie', 'noa_session=; Domain=.noa.internal; Path=/; Max-Age=0; HttpOnly'],
@@ -251,7 +255,8 @@ describe('proxy/http', () => {
 
     it('passes a 401 through as a 401, with its request id', () => {
       // Not remapped, deliberately. `fetchWithAuth` keys the whole session-expiry flow off this
-      // status, and V73's id has to survive the hop or the body names a log line the browser
+      // status, and the request-id rule's id has to survive the hop or the body names a log
+      // line the browser
       // cannot correlate.
       const upstream = new Response('{"error_code":"not_authenticated"}', {
         status: 401,

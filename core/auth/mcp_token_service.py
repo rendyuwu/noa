@@ -1,14 +1,14 @@
 """MCP bearer token mint / list / revoke.
 
 New work, not a port: `noa-old` had no per-user MCP credential — its `/mcp` surface was
-reached from NOA's own chat, so there was nothing to mint. The shapes here follow T8's
-`AuthService` and T9's `AuthorizationService` (Protocol repository, frozen result
-dataclasses, an audit event per mutation) so the three read the same.
+reached from NOA's own chat, so there was nothing to mint. The shapes here follow the login
+flow's `AuthService` and the RBAC engine's `AuthorizationService` (Protocol repository, frozen
+result dataclasses, an audit event per mutation) so the three read the same.
 
 This is the *MCP* credential and it shares nothing with the session JWT: opaque
 rather than signed, hashed at rest rather than verified by key, and revocable by deleting
 one row rather than not at all. Keeping them separate is what lets `mcp_tokens` carry a
-real revocation story while V6 records that sessions do not have one.
+real revocation story while the session cookie has none.
 
 Three properties the implementation is shaped around:
 
@@ -16,26 +16,28 @@ Three properties the implementation is shaped around:
    and `McpTokenView` — the shape every read path returns — has no field that could hold
    it. A response serializer therefore cannot leak one by accident. `MintedMcpToken`
    hides it from `repr()` for the same reason: a dataclass printed into a log line or a
-   traceback would otherwise publish the credential (V2 "⊥ logged", V8).
-2. **Hashing lives in one function.** T11's `verify_token` hashes the *presented* bearer
-   and looks the digest up; if it computed the digest differently from `mint()`, every
-   token would silently fail to authenticate. `hash_mcp_token` is that single
+   traceback would otherwise publish the credential — credentials never get logged, never
+   land in an error body.
+2. **Hashing lives in one function.** The token verifier's `verify_token` hashes the
+   *presented* bearer and looks the digest up; if it computed the digest differently from
+   `mint()`, every token would silently fail to authenticate. `hash_mcp_token` is that single
    implementation.
 3. **Revoke is scoped by user in the query, not checked afterwards.** `/me/mcp-tokens/{id}`
    and `/admin/users/{id}/tokens/{token_id}` both call `revoke(user_id, token_id)`,
    so neither can delete a row belonging to someone else by guessing an id, and a foreign
-   id answers exactly as an unknown one does (existence ⊥ leak, the V27/V76 principle).
+   id answers exactly as an unknown one does — the same requester-match principle that keeps
+   existence from leaking elsewhere.
 4. **Every mutation commits, and the commit is the last thing it does**. Added
-   with the routes rather than at T10, and the gap in between is the lesson: the repository
-   flushed, `noa_api.api.deps.get_db_session` never commits, and no test could see the
-   difference because a flushed row reads back identically inside its own session. B10 found
-   the same hole in T9's engine. Both guards raise before the commit, so a refused mint
-   persists nothing.
+   with the routes rather than when this service first landed, and the gap in between is the
+   lesson: the repository flushed, `noa_api.api.deps.get_db_session` never commits, and no
+   test could see the difference because a flushed row reads back identically inside its own
+   session. The same flush-only rollback hole showed up in the RBAC engine. Both guards raise
+   before the commit, so a refused mint persists nothing.
 
 Deliberately NOT here, each owned by a later task: TOFU binding of `librechat_user_id` and
-LDAP staleness revalidation (T11, V3/V4 — mint leaves the column NULL, which is the
-precondition C20 requires), `resolve_mcp_identity`, and cascade revoke on admin
-disable. The HTTP routes landed at T53
+LDAP staleness revalidation (both live in the token verifier — mint leaves the column NULL
+until first use binds it), `resolve_mcp_identity`, and cascade revoke on admin
+disable. The HTTP routes landed with token management
 (`noa_api.api.routes.mcp_tokens`) and hold no policy — every rule is here.
 """
 
@@ -72,7 +74,8 @@ TOKEN_ENTROPY_BYTES: Final = 32
 TOKEN_PREFIX_LENGTH: Final = len(TOKEN_MARKER) + 8
 
 # `mcp_tokens.label` is `String(255)`. Checked here so an over-long label is a 400
-# rather than a database error surfacing as a 500 — same reasoning as T9's role-name cap.
+# rather than a database error surfacing as a 500 — same reasoning as the RBAC engine's
+# role-name cap.
 MAX_LABEL_LENGTH: Final = 255
 
 DETAIL_LABEL_TOO_LONG = f"token label exceeds {MAX_LABEL_LENGTH} characters"
@@ -103,12 +106,11 @@ class McpTokenView:
     """One `mcp_tokens` row as every read path returns it.
 
     Carries no `token_hash` and no plaintext — not redacted, absent. A field that does not
-    exist cannot be serialized into a response by a future route that forgets to strip it
-    (V2, V8).
+    exist cannot be serialized into a response by a future route that forgets to strip it.
 
-    `librechat_user_id` is NULL until T11 binds it on first use. `last_used_at`
-    and `last_ldap_check_at` are likewise written by T11's verify path; T10 only reads
-    them, so a freshly minted token shows all three as `None`.
+    `librechat_user_id` is NULL until the token verifier binds it on first use. `last_used_at`
+    and `last_ldap_check_at` are likewise written by the token verifier's verify path; this
+    service only reads them, so a freshly minted token shows all three as `None`.
     """
 
     id: UUID
@@ -128,8 +130,8 @@ class MintedMcpToken:
 
     `repr=False` on `plaintext` is load-bearing. Structlog renders unknown values with
     `repr()`, and so does every traceback frame that shows a local — either would put the
-    credential in a log file (V2 "⊥ logged", V8). The caller has to reach for the field by
-    name, which is the only place it should ever appear.
+    credential in a log file, and credentials never get logged, never land in an error body.
+    The caller has to reach for the field by name, which is the only place it should ever appear.
     """
 
     plaintext: str = field(repr=False)
@@ -140,11 +142,13 @@ class McpTokenRepository(Protocol):
     """Persistence behind `McpTokenService`.
 
     `delete_for_user` takes both ids rather than one: the scoping is part of the query,
-    not a check the caller may forget (V2, and the V27/V76 principle for the 404 shape).
+    not a check the caller may forget (the same requester-match principle that keeps a
+    foreign id from leaking, for the 404 shape).
 
     `commit` is on the Protocol rather than left to the caller. The alternative —
     a route that commits after calling the service — puts the boundary on the *subset of
-    mutations today's caller happens to reach*, which is precisely the trap V100(b) names.
+    mutations today's caller happens to reach*, which is precisely the trap the
+    whole-class commit-boundary rule names.
     """
 
     async def user_exists(self, user_id: UUID) -> bool: ...
@@ -179,7 +183,7 @@ class McpTokenService:
         self._repository = repository
         self._audit = audit_sink
         # `MCP_TOKEN_TTL_SECONDS`, `None` by default: a token lives until someone deletes
-        # the row. An expiry is an extra bound, never the primary one — V4's LDAP
+        # the row. An expiry is an extra bound, never the primary one — LDAP staleness
         # revalidation and admin revoke are what actually retire a credential.
         self._ttl_seconds = ttl_seconds
 
@@ -201,8 +205,8 @@ class McpTokenService:
 
         An *inactive* user is not refused. Minting before activation is a legitimate
         order for an admin setting someone up, and the credential grants nothing while
-        the row says `is_active=False` — V11 zeroes their permissions and V1 re-checks on
-        every request. Refusing here would add a rule neither invariant asks for.
+        the row says `is_active=False` — a disabled account has zero permissions,
+        re-checked at every request. Refusing here would add a rule neither invariant asks for.
         """
         if not await self._repository.user_exists(user_id):
             raise UserNotFoundError(f"no `users` row for `{user_id}`")
@@ -219,7 +223,8 @@ class McpTokenService:
         )
 
         await self._record(EVENT_MCP_TOKEN_MINTED, actor_email, view)
-        # Last statement, after both guards and after the audit event (V100(a)): a refused mint
+        # Last statement, after both guards and after the audit event — the commit-is-last
+        # rule: a refused mint
         # persists nothing, and the plaintext is not handed back until the row it hashes to is
         # durable. Returning one over an uncommitted row is worse than failing — the operator
         # pastes a credential into a config and it authenticates nothing, with no error anywhere.
@@ -265,7 +270,8 @@ class McpTokenService:
             token_id=token_id,
             user_id=user_id,
         )
-        # V100(b): the *class* of mutations commits, not the one a route reaches first. An
+        # The whole-class commit rule: the *class* of mutations commits, not the one a route
+        # reaches first. An
         # uncommitted revoke is the dangerous half of the pair — the panel would report the
         # credential gone while the row, and every request it authenticates, survives.
         await self._repository.commit()

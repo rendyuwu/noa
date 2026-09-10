@@ -1,12 +1,12 @@
-"""NOA's own READ tool (T63 — `noa_get_action_result`).
+"""NOA's own READ tool (`noa_get_action_result`).
 
 Every other tool here asks a hosting system a question. This one asks NOA: **what happened to
-the change I asked for?** It is the read side of the approval loop — T33's gate opens a
-request, an operator answers it from the card, and this is how the model finds out,
-from the row that *is* the authorization rather than from anything it was told.
+the change I asked for?** It is the read side of the approval loop — the gate that opens the
+request opens a request, an operator answers it from the card, and this is how the model finds
+out, from the row that *is* the authorization rather than from anything it was told.
 
 **The caller is the access control**. The requester comes from the MCP access token
-(`current_mcp_identity`, T12), never from an argument, and the repository puts it in the
+(`current_mcp_identity`), never from an argument, and the repository puts it in the
 `WHERE` — so a request that is not the caller's is not fetched at all. A foreign id and an
 unknown id answer the same bytes, which is what stops this tool being an enumeration oracle
 and what stops a prompt injection pulling another operator's action into the transcript.
@@ -15,7 +15,7 @@ and what stops a prompt injection pulling another operator's action into the tra
 requester-deleted *and* malformed — the last one because the identifier is taken as a `str` and
 parsed here rather than declared as a UUID in the schema. A schema-level UUID would answer a
 pydantic-shaped error for a malformed id, which is a second envelope for "there is no such
-request", and one code is what V83(d) settled for the RBAC gate one layer up.
+request", and one code is what the one-seam rule settled for the RBAC gate one layer up.
 
 **What the model is not told.** The operator's reason never appears here and
 neither does the in-process preflight evidence. Neither is stripped: `ActionResultView`
@@ -23,7 +23,8 @@ has no field for either, so this module cannot emit what it never loads — see
 `core.approvals.results`.
 
 Registration declares `ToolRisk.READ`, so `ToolRunAuditMiddleware` writes this
-call's own `tool_runs` row beside the RBAC gate (V45, V83b). Reading an approval is itself an
+call's own `tool_runs` row beside the RBAC gate (the audit-every-read rule, the one-seam rule).
+Reading an approval is itself an
 audited read.
 """
 
@@ -43,7 +44,8 @@ from noa_api.mcp_tools.results import ToolPayload, sanitize_tool_errors, tool_fa
 
 TOOL_NOA_GET_ACTION_RESULT = "noa_get_action_result"
 
-# Read off the class rather than retyped, so this tool and T37's endpoint answer one code for
+# Read off the class rather than retyped, so this tool and the decision endpoint answer one
+# code for
 # one fact: "no such request, or not yours". The *message* is this surface's own — the endpoint
 # says "not yours to decide", and nothing is being decided here.
 ERROR_ACTION_REQUEST_NOT_FOUND = ActionRequestNotFoundError.error_code
@@ -90,7 +92,8 @@ async def noa_get_action_result(
         view = await service.result_for(
             action_request_id=request_id,
             # The token's caller, never an argument: an argument-supplied requester would be
-            # an argument-supplied authorization, and this is the surface V76 names.
+            # an argument-supplied authorization, and this is the surface the requester-match
+            # rule names.
             requester_user_id=identity.user_id,
         )
 
@@ -113,9 +116,11 @@ def _not_found() -> ToolPayload:
 
 
 def register_noa_read_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
-    """Register NOA's own READ tools on `server`; return each name with its risk (I.mcp, V20).
+    """Register NOA's own READ tools on `server`; return each name with its risk (the MCP
+    server's contract, risk and status kept separate).
 
-    One entry, and §I.mcp lists no other tool about NOA itself. It sits in its own module
+    One entry, and the MCP server's contract lists no other tool about NOA itself. It sits in
+    its own module
     rather than beside a system's tools because its subject is the approval gate, not WHM,
     Proxmox or PMG.
     """

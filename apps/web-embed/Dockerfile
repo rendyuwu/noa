@@ -1,8 +1,8 @@
-# NOA embed image — approval card iframe + large-result tables (§T.60, C2, C12, §I.embed).
+# NOA embed image — approval card iframe + large-result tables.
 #
 # Build context is THIS directory, not the repo root, for the reason in `apps/admin-web`'s copy:
 # the two web packages are independent deploy artifacts and share nothing. This one has no
-# `.npmrc` and no `@gio/*` dependency at all — eslint refuses both (§T.40) — so unlike the admin
+# `.npmrc` and no `@gio/*` dependency at all — eslint refuses both — so unlike the admin
 # image it builds from the public registry alone.
 #
 #   docker build --build-arg NOA_LIBRECHAT_ORIGIN=https://chat.noa.internal -t noa-embed apps/web-embed
@@ -35,7 +35,7 @@ COPY . .
 
 # The one build-time input this repo has, and the only place it can be supplied.
 #
-# `Content-Security-Policy: frame-ancestors` is emitted from `next.config.ts` (V41, §T.45), and
+# `Content-Security-Policy: frame-ancestors` is emitted from `next.config.ts` (the framing-headers rule), and
 # `output: 'standalone'` never executes that config at runtime — the origin is baked into the
 # compiled output here. So a runtime variable cannot widen the allowlist, and cannot change it
 # either: moving LibreChat means rebuilding this image. A declared ARG is visible to `pnpm build`
@@ -47,8 +47,8 @@ COPY . .
 #
 # Deliberately absent from the runtime stage below. An `ENV NOA_LIBRECHAT_ORIGIN` there — or the
 # same key in a compose service or a ConfigMap — would read as the lever that moves this value
-# while doing nothing at all: exactly the silently-wrong-address failure V95 exists to stop, one
-# setting over. `apps/api/tests/test_deployment.py` asserts both halves.
+# while doing nothing at all: exactly the silently-wrong-address failure the no-silent-dev-
+# default rule exists to stop, one setting over. `apps/api/tests/test_deployment.py` asserts both halves.
 ARG NOA_LIBRECHAT_ORIGIN
 
 RUN pnpm build
@@ -65,12 +65,12 @@ ENV NODE_ENV=production \
     HOSTNAME=0.0.0.0
 
 # Runtime configuration, both read server-side per request and neither with a `NEXT_PUBLIC_*`
-# twin, because the browser never calls FastAPI direct (AGENTS.md, C5):
-#   NOA_API_URL     — the same-origin proxy's target (§T.44). Required; the proxy raises without it.
-#   NOA_SIGN_IN_URL — where the 401 card points an operator (§T.43, V38/V42). Absent, blank or
+# twin, because the browser never calls FastAPI direct (AGENTS.md):
+#   NOA_API_URL     — the same-origin proxy's target. Required; the proxy raises without it.
+#   NOA_SIGN_IN_URL — where the 401 card points an operator. Absent, blank or
 #                     not an http(s) URL leaves the card naming the state with no link, which is
 #                     the intended answer rather than a door to a host nobody deployed.
-# Neither is given a default here: a default address is the failure V95 describes.
+# Neither is given a default here: a default address is the failure the no-silent-dev-default rule describes.
 
 COPY --from=builder --chown=node:node /app/.next/standalone ./
 COPY --from=builder --chown=node:node /app/.next/static ./.next/static

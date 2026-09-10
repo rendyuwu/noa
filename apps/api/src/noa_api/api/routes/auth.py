@@ -1,11 +1,13 @@
-"""Session routes: login, logout, current user (T8, I.admin-api).
+"""Session routes: login, logout, current user (the admin API's contract).
 
 Three routes, and the asymmetry between them is the design:
 
 - `POST /auth/login` — the only route that authenticates. The session token leaves in
   an httpOnly cookie and **not** in the response body: a body-borne token is
-  reachable from JavaScript, which is the whole reason V6 specifies httpOnly.
-- `POST /auth/logout` — no dependencies at all. V6 makes logout idempotent and callable
+  reachable from JavaScript, which is the whole reason the session-cookie rule specifies
+  httpOnly.
+- `POST /auth/logout` — no dependencies at all. The session-cookie rule makes logout idempotent
+  and callable
   without authentication, so requiring a valid session here would mean an operator whose
   token just expired cannot clear their own cookie.
 - `GET /auth/me` — cookie-only, and it re-reads the row through
@@ -16,10 +18,10 @@ body shape, so no route here builds an `HTTPException`.
 
 `source_ip` for the rate limiter is `request.client.host`. `X-Forwarded-For` is
 deliberately **not** consulted: it is client-supplied, so trusting it would let an
-attacker mint a fresh rate-limit bucket per request and defeat V9 entirely. Behind a
-reverse proxy that means every request shares the proxy's bucket — the email-scoped
-bucket still bounds per-account guessing. Reading a forwarded header requires a
-trusted-proxy allowlist, which arrives with the deployment topology in T60.
+attacker mint a fresh rate-limit bucket per request and defeat the rate-limiter's 429 rule
+entirely. Behind a reverse proxy that means every request shares the proxy's bucket — the
+email-scoped bucket still bounds per-account guessing. Reading a forwarded header requires a
+trusted-proxy allowlist, which arrives with the deployment topology.
 """
 
 from __future__ import annotations
@@ -105,7 +107,8 @@ async def logout(jwt_service: JWTServiceDep) -> Response:
     No session dependency and no DB access: idempotent, and it works for a caller whose
     token already expired — that operator most needs the stale cookie gone.
 
-    V6 is explicit that this kills the *cookie*, not the token. A copy captured before
+    The session-cookie rule is explicit that this kills the *cookie*, not the token. A copy
+    captured before
     logout keeps verifying until `exp`, because the session JWT has no `jti` and no
     denylist. That is a recorded deviation, which is why every authenticated route
     re-reads `users.is_active` instead of trusting that logout ended anything.
@@ -119,7 +122,8 @@ async def logout(jwt_service: JWTServiceDep) -> Response:
 async def me(current_user: SessionUserDep) -> SessionResponse:
     """Current operator, read fresh from the database on every call.
 
-    Cookie-only per I.admin-api. The row read is in `require_session_user`, shared with
+    Cookie-only per the admin API's contract. The row read is in `require_session_user`, shared
+    with
     every other session-authed route so the check cannot be forgotten on one of them.
     """
     return SessionResponse(user=SessionUserResponse.from_session_user(current_user))

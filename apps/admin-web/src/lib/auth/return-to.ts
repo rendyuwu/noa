@@ -1,10 +1,11 @@
 // Safe return-to validation (issue #99). A returnTo must be an origin-relative
-// path on this single shared host (topology.md §5, §7.2 — single-host routing,
-// every auth URL is origin-relative). Anything that could send the user off the
-// origin, back into a login loop, or into the API/callback surface is rejected
-// and the caller falls back to the default landing.
+// path on this single shared host (topology.md section 5, section 7.2 —
+// single-host routing, every auth URL is origin-relative). Anything that could
+// send the user off the origin, back into a login loop, or into the
+// API/callback surface is rejected and the caller falls back to the default
+// landing.
 
-// `/home` rather than a vertical: it is the role-aware dispatcher (§T76), so a
+// `/home` rather than a vertical: it is the role-aware dispatcher, so a
 // post-login landing sends an admin to `/admin/users` and everyone else to
 // `/me/tokens`. The previous default sent every non-admin straight into a 403.
 export const DEFAULT_RETURN_TO = '/home'

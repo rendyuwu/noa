@@ -1,6 +1,6 @@
 """A CHANGE `tools/call` opens a request; it never runs a change.
 
-T34 built `action_requests` and wrote nothing to it. This is the test that the gate writes
+The schema landed and wrote nothing to it. This is the test that the gate writes
 the row, that the row is the authorization rather than a note about one, and that neither an
 argument nor a claim can move it past PENDING.
 
@@ -9,18 +9,20 @@ Three levels, for three different claims:
 - **Against `open_change_request`** — the whole gate, driven through the real identity and
   header contextvars (`http_request_context` with an `AuthenticatedUser`), so
   `current_mcp_identity` and `read_conversation_ref` are the production functions rather than
-  patched names. This is where V22, V23 and V43 are provable.
+  patched names. This is where the cookie/CSRF decision boundary, the status-read verdict and
+  the single reason field are provable.
 - **Against the guards** — the reason check and the context builder on their own. Cheap, and
   they say which piece broke.
 - **Live** — `SQLActionRequestRepository` against a scratch Postgres. "The gate called a
-  repository" and "a PENDING row exists that V23 can be answered from" are different claims,
-  and only the second one is the invariant.
+  repository" and "a PENDING row exists that the status verdict can be answered from" are
+  different claims, and only the second one is the invariant.
 
 **There is no mount-level test here, and that gap is closed elsewhere.** When this file was
 written no CHANGE tool was registered, so nothing reached the gate through `tools/call` — the
-same shape as T73's CHANGE branch, driven at middleware level for the same reason
-(`test_mcp_tool_audit.py::test_a_change_tool_writes_no_row_here`). T22 put the gate on the real
-mount and T23 added the second lane; those mount tests live beside their tools
+same shape as the tool-run writer's CHANGE branch, driven at middleware level for the same reason
+(`test_mcp_tool_audit.py::test_a_change_tool_writes_no_row_here`). The suspend tool put the gate
+on the real mount and the unsuspend tool added the second lane; those mount tests live beside
+their tools
 (`test_whm_tools_{suspend,unsuspend}_account.py`), because a mount lane asserts a tool's
 registration as much as this function.
 """
@@ -82,7 +84,7 @@ CHANGE_TOOL = "whm_suspend_account"
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
 # A CHANGE call's arguments and the preflight those arguments produced. The evidence is what
-# V35's card shows as before-state and V17 says is born in-process.
+# the card shows as before-state — born in-process, never crossing a tool boundary.
 ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "acme.example"}
 
@@ -111,12 +113,13 @@ async def open_gate(
 
 
 # --------------------------------------------------------------------------------------
-# V23: the row is the authorization, and it starts PENDING
+# The row is the authorization, and it starts PENDING
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_gate_opens_a_pending_request() -> None:
-    """V16/V23: a CHANGE call produces a question in the database, not an execution."""
+    """CHANGE goes through the approval gate: a call produces a question in the database,
+    not an execution."""
     tools = build_tool_context()
 
     opened, user_id = await open_gate(tools)
@@ -131,7 +134,8 @@ async def test_the_gate_opens_a_pending_request() -> None:
 
 
 async def test_the_requester_comes_from_the_token_not_the_arguments() -> None:
-    """V23/V27: an argument-supplied requester would be an argument-supplied authorization.
+    """The requester match: an argument-supplied requester would be an argument-supplied
+    authorization.
 
     `requested_by_user_id` is what the approval endpoint compares the deciding operator
     against, so a caller who could name someone else in the arguments could hand their
@@ -152,7 +156,7 @@ async def test_the_requester_comes_from_the_token_not_the_arguments() -> None:
 async def test_an_approved_request_named_in_the_arguments_still_only_opens_a_new_pending_one() -> (
     None
 ):
-    """V23: "may this run?" is read from the row's own `status`, never from a tool argument.
+    """ "May this run?" is read from the row's own `status`, never from a tool argument.
 
     The shape of the attack this closes: a model that has seen one approval — or been talked
     into claiming one — calls the CHANGE tool again carrying the approved id. The gate has no
@@ -178,14 +182,14 @@ async def test_an_approved_request_named_in_the_arguments_still_only_opens_a_new
 
 
 async def test_the_gate_writes_no_decision() -> None:
-    """V22: deciding is a cookie POST from a NOA-origin document, and this is not one.
+    """Deciding is a cookie POST from a NOA-origin document, and this is not one.
 
     Asserted against the writer's surface rather than against the recorded row's NULLs: a
     row is only evidence that this particular call decided nothing, while the absence of any
     way to write `reason`, `decided_at`, `tool_run_id` or a non-PENDING `status` is evidence
     that no call from the MCP path can. `status` is on that list too — a repository that
-    took it as a parameter would put a second door on the authorization beside the one V22
-    names, on the side an LLM can reach.
+    took it as a parameter would put a second door on the authorization beside the cookie-POST
+    boundary, on the side an LLM can reach.
     """
     tools = build_tool_context()
     await open_gate(tools)
@@ -214,9 +218,9 @@ async def test_the_gate_commits_its_own_transaction() -> None:
 
 
 async def test_the_gate_writes_no_tool_run_row() -> None:
-    """V45/V46: the gate call is not an execution, so it is not a run.
+    """The gate call is not an execution, so it is not a run.
 
-    V46's row belongs to the executor that runs after approval. Recording one here
+    The run-plus-receipt row belongs to the executor that runs after approval. Recording one here
     would put a change that has not happened — and may be denied — into the audit trail.
     """
     tools = build_tool_context()
@@ -227,13 +231,13 @@ async def test_the_gate_writes_no_tool_run_row() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# C8 / V43: no reason exists at call time, under any spelling
+# No reason exists at call time, under any spelling
 # --------------------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("key", sorted(FORBIDDEN_REASON_KEYS))
 async def test_an_argument_named_like_a_reason_refuses_the_gate(key: str) -> None:
-    """C8/V15/V43: the reason is typed by an operator at approve time and nowhere else.
+    """The reason is typed by an operator at approve time and nowhere else.
 
     Refused rather than silently dropped: dropping the key would leave the offending tool's
     schema wrong, the LLM still being asked to author a reason, and nothing red.
@@ -247,7 +251,7 @@ async def test_an_argument_named_like_a_reason_refuses_the_gate(key: str) -> Non
 
 
 def test_the_reason_guard_reads_keys_the_way_redaction_does() -> None:
-    """Case and surrounding whitespace must not be a way past C8."""
+    """Case and surrounding whitespace must not be a way past the no-reason rule."""
     with pytest.raises(ChangeReasonForbiddenError):
         assert_no_reason_argument({"  Reason  ": "x"})
     with pytest.raises(ChangeReasonForbiddenError):
@@ -276,13 +280,13 @@ async def test_a_nested_payload_key_is_not_a_reason() -> None:
 
 
 async def test_every_registered_change_tool_declares_no_reason_parameter() -> None:
-    """C8 on the schema, swept over what the server actually exposes.
+    """The no-reason rule on the schema, swept over what the server actually exposes.
 
-    Written while every registered tool was still a READ, for the reason V85 was: the rule has
-    to exist before the second instance, because the second is where nobody re-reads it. It
-    stopped being vacuous at T22 and covers two CHANGE tools since T23 — `build_mcp_server`
-    registers them, so the sweep is over the real surface. The case below is what keeps it from
-    passing as a tautology.
+    Written while every registered tool was still a READ — same reason as the row-cap rule: it
+    has to exist before the second instance, because the second is where nobody re-reads it. It
+    stopped being vacuous at the suspend tool and covers two CHANGE tools since the unsuspend
+    tool — `build_mcp_server` registers them, so the sweep is over the real surface. The case
+    below is what keeps it from passing as a tautology.
     """
     tools = build_tool_context()
     server = build_mcp_server(tool_context=tools.context)
@@ -295,9 +299,10 @@ async def test_every_registered_change_tool_declares_no_reason_parameter() -> No
 async def test_the_schema_sweep_separates_a_tool_that_carries_a_reason() -> None:
     """The sweep above must be able to fail.
 
-    A probe server, because `register_mcp_tools` refuses an uncatalogued name (V83a) and
-    there is no CHANGE tool to break. What is asserted is the predicate the sweep applies,
-    against a schema that genuinely carries the parameter C8 forbids.
+    A probe server, because `register_mcp_tools` refuses an uncatalogued name (a tool ships
+    with its gate, never per-tool code) and there is no CHANGE tool to break. What is asserted
+    is the predicate the sweep applies, against a schema that genuinely carries the parameter
+    the no-reason rule forbids.
     """
     probe = FastMCP("probe")
 
@@ -314,12 +319,12 @@ async def test_the_schema_sweep_separates_a_tool_that_carries_a_reason() -> None
 
 
 # --------------------------------------------------------------------------------------
-# V33 / V35: the context is built at gate time and persisted
+# The context is built at gate time and persisted
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_context_holds_arguments_provenance_and_preflight_evidence() -> None:
-    """V33/V35: what the approval card renders, captured once, at the moment of the call."""
+    """What the approval card renders is captured once, at the moment of the call."""
     tools = build_tool_context()
 
     await open_gate(tools)
@@ -332,11 +337,11 @@ async def test_the_context_holds_arguments_provenance_and_preflight_evidence() -
 
 
 async def test_the_context_holds_only_what_no_column_holds() -> None:
-    """T34's rule, one layer up: two records of one moment can disagree.
+    """The schema's rule, one layer up: two records of one moment can disagree.
 
     `tool_name`, `conversation_ref`, the requester's id and the created-at stamp are all
     columns on `action_requests`. Copying any of them into the JSONB would be the mistake
-    T34 avoided by dropping `args`, `risk`, `decided_by_user_id` and `updated_at`.
+    the table's design avoided by dropping `args`, `risk`, `decided_by_user_id` and `updated_at`.
     """
     tools = build_tool_context()
 
@@ -350,11 +355,11 @@ async def test_the_context_holds_only_what_no_column_holds() -> None:
 
 
 async def test_a_gate_call_without_preflight_evidence_is_refused() -> None:
-    """C9/V17/V35: a card that asks for authorisation and describes nothing.
+    """A card that asks for authorisation and describes nothing.
 
-    T34's model docstring already says the gate always holds provenance, arguments and the
-    in-process preflight. This is that sentence as a mechanism, so T22-T29 inherit it by
-    construction rather than by each remembering.
+    The table's model docstring already says the gate always holds provenance, arguments and
+    the in-process preflight. This is that sentence as a mechanism, so every CHANGE tool
+    inherits it by construction rather than by each remembering.
     """
     tools = build_tool_context()
 
@@ -365,11 +370,11 @@ async def test_a_gate_call_without_preflight_evidence_is_refused() -> None:
 
 
 async def test_a_credential_shaped_argument_is_redacted_in_the_stored_context() -> None:
-    """V8: the same redactor the audit path uses, not a second copy of the rule.
+    """The same redactor the audit path uses, not a second copy of the rule.
 
-    CHANGE arguments should carry no credential by construction — C15/V49 generate passwords
-    server-side — so this is the net rather than the fix, and the net is where a future
-    tool's argument name lands.
+    CHANGE arguments should carry no credential by construction — server-side password
+    generation keeps secrets on the yopass path — so this is the net rather than the fix, and
+    the net is where a future tool's argument name lands.
     """
     tools = build_tool_context()
 
@@ -389,8 +394,8 @@ def test_the_context_builder_is_json_native() -> None:
     """The payload lands in JSONB and comes back as plain Python.
 
     A `Mapping` subclass or a `datetime` handed in here would round-trip into something an
-    equality against the original no longer matches, which is how a V33 assertion becomes
-    "the shapes are close enough".
+    equality against the original no longer matches, which is how a persisted-context assertion
+    becomes "the shapes are close enough".
     """
     context = build_approval_context(
         arguments={"a": 1},
@@ -405,12 +410,12 @@ def test_the_context_builder_is_json_native() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V32: every pending request carries a deadline
+# Every pending request carries a deadline
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_deadline_comes_from_the_configured_ttl() -> None:
-    """V32: a request without one cannot expire, and "pending forever" is what V32 removes.
+    """A request without one cannot expire, and "pending forever" is what the TTL removes.
 
     Asserted as a window rather than an equality: `expires_at` is computed from the clock at
     call time, so a bare `==` would be a coin flip across a second boundary. The
@@ -445,8 +450,9 @@ def test_the_mount_hands_the_tool_path_the_configured_pending_ttl(
     The configured value is deliberately **not** the `Settings` default. `mounted_app` is
     not used here for exactly that reason: it patches `get_settings` with the harness's own
     builder, whose `approval_pending_ttl_seconds` is 3600 — the same number a hardcoded
-    literal in `create_app` would produce, so the assertion could not separate the two
-    (V87). Patching `get_settings` here instead makes the number one nothing else holds.
+    literal in `create_app` would produce, so the assertion could not separate the two — the
+    compare has to keep separating the cases, not just pass. Patching `get_settings` here
+    instead makes the number one nothing else holds.
     """
     from noa_api import main
     from noa_api.mcp_tools.context import build_mcp_tool_context
@@ -474,10 +480,10 @@ def test_the_mount_hands_the_tool_path_the_configured_pending_ttl(
 
 
 async def test_a_write_failure_refuses_the_change() -> None:
-    """V23 has no truthful answer without a row, so the change does not proceed.
+    """The status verdict has no truthful answer without a row, so the change does not proceed.
 
-    The same argument T73(c) made for the opening `tool_runs` write, one table over: running
-    anyway would leave the invariant asserted by prose and held by nothing.
+    The same argument the tool-run writer made for the opening `tool_runs` write, one table
+    over: running anyway would leave the invariant asserted by prose and held by nothing.
     """
     requests = FakeActionRequestRepository()
     requests.fail_create = RuntimeError("connection refused")
@@ -491,7 +497,8 @@ async def test_a_write_failure_refuses_the_change() -> None:
 
 
 async def test_the_refusal_names_no_internal_detail_to_the_model() -> None:
-    """V8/V19: `message` is what a model and an operator read; the cause stays in the logs."""
+    """`message` is what a model and an operator read; the cause stays in the logs — raw
+    exceptions never reach the model."""
     requests = FakeActionRequestRepository()
     requests.fail_create = RuntimeError("password=hunter2 host=db.internal")
     tools = build_tool_context(action_requests=requests)
@@ -505,7 +512,7 @@ async def test_the_refusal_names_no_internal_detail_to_the_model() -> None:
 
 
 async def test_the_opened_request_is_logged_without_its_payload() -> None:
-    """V8: identifiers only — never the arguments, never the evidence."""
+    """Identifiers only — never the arguments, never the evidence."""
     tools = build_tool_context()
 
     with capture_logs() as logs:
@@ -518,7 +525,7 @@ async def test_the_opened_request_is_logged_without_its_payload() -> None:
 
 
 def test_every_change_gate_error_is_mapped_explicitly() -> None:
-    """V73: no gate refusal may reach the 503 *fallback* — that means "unclassified"."""
+    """No gate refusal may reach the 503 *fallback* — that means "unclassified"."""
 
     def subclasses(klass: type[ChangeGateError]) -> set[type[ChangeGateError]]:
         found = {klass}
@@ -539,7 +546,7 @@ def _mapped_error_classes() -> set[type[Exception]]:
 
 
 # --------------------------------------------------------------------------------------
-# Live: a row V23 can be answered from
+# Live: a row the status verdict can be answered from
 # --------------------------------------------------------------------------------------
 
 
@@ -569,14 +576,14 @@ async def insert_user(session: AsyncSession) -> UUID:
     return user.id
 
 
-async def test_the_repository_writes_a_row_v23_can_be_answered_from(
+async def test_the_repository_writes_a_row_the_status_verdict_can_be_answered_from(
     session: AsyncSession,
 ) -> None:
-    """V23/V33: the row exists, it says PENDING, and the context survives the round trip.
+    """The row exists, it says PENDING, and the context survives the round trip.
 
-    The JSONB is compared byte-equal to what the gate built, because V33's claim is that the
-    payload is *persisted* rather than rebuilt at render time — a comparison on a subset
-    would pass against a row that dropped half of it.
+    The JSONB is compared byte-equal to what the gate built, because the persisted-context rule
+    is that the payload is *persisted* rather than rebuilt at render time — a comparison on a
+    subset would pass against a row that dropped half of it.
     """
     user_id = await insert_user(session)
     context = build_approval_context(
@@ -609,7 +616,7 @@ async def test_the_repository_writes_a_row_v23_can_be_answered_from(
     assert (stored.reason, stored.decided_at, stored.tool_run_id) == (None, None, None)
 
 
-async def test_the_status_a_v23_read_sees_is_pending(session: AsyncSession) -> None:
+async def test_the_status_a_verdict_read_sees_is_pending(session: AsyncSession) -> None:
     """Read back through SQL rather than through the ORM identity map.
 
     `session.get` above can answer from the object it just flushed; this asks Postgres.

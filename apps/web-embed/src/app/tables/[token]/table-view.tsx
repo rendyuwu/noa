@@ -11,9 +11,10 @@ import { type ResultTable, type ResultTableLoad, cellText, describeBound } from 
 import styles from './table.module.css'
 
 /**
- * The large READ's rows, on NOA's own origin (§T.56 — V27, V38, V64, V85, V94).
+ * The large READ's rows, on NOA's own origin — the table surface for large results:
+ * requester-matched, explicit 401 state, bound stated beside the cut, escape hatch as plain text.
  *
- * **No decision controls, and nowhere to put one** (§I.embed). This page renders a listing a READ
+ * **No decision controls, and nowhere to put one** (the embed app's contract). This page renders a listing a READ
  * already produced: there is no approve, no deny, no reason box, no `<form>` and no CSRF token,
  * because there is nothing here to authorise. The approval card is the surface that decides; a
  * table is the surface that shows.
@@ -33,8 +34,8 @@ import styles from './table.module.css'
  * without a taller frame pushes the expiry line below `.page`'s cut, and answering "no rows" with
  * "no expiry" is not a fix.
  *
- * **A client component for two reasons: the 401 state's retry** (§T.43's way out, V38, V42, V94)
- * **and the measurement above.**
+ * **A client component for two reasons: the 401 state's retry** (the 401 card's link-out,
+ * plain-text address included) **and the measurement above.**
  * The first read is the server's (`page.tsx` → `lib/tables/detail.ts`), so the HTML that reaches the
  * frame is already the authenticated page. What ships to the browser is the retry, and it is a
  * `fetch` — nothing here navigates the frame and nothing submits a form, because the sandbox
@@ -42,7 +43,8 @@ import styles from './table.module.css'
  *
  * The retry goes through the app's own route rather than the API: this page is server-rendered, so
  * re-reading means re-rendering it, and `location.reload()` is the one navigation a framed document
- * can always do to itself. That keeps the proxy allowlist at the four entries §T.44 pinned — a
+ * can always do to itself. That keeps the proxy allowlist at the four entries the proxy route
+ * pinned — a
  * table needs no browser-reachable API route at all.
  */
 
@@ -65,7 +67,7 @@ function TableRows({
     <div className={styles.scroller} ref={scrollerRef}>
       {table.rows.length === 0 ? (
         // A table that matched nothing is a real answer — an empty page with headings would read
-        // as a listing that failed to load (V38's family).
+        // as a listing that failed to load — the same family as the explicit-401-state rule.
         <p className={styles.empty}>This read matched no rows.</p>
       ) : (
         <table className={styles.table}>
@@ -150,11 +152,12 @@ export function TableView({
   const [load] = useState<ResultTableLoad>(initial)
 
   /**
-   * One retry, from the state that has nothing to show (§T.43's shape, V42).
+   * One retry, from the state that has nothing to show (the 401 card's shape, link-out plus
+   * address).
    *
    * A reload rather than a re-fetch: the read is the server component's, so the way to repeat it is
    * to re-render the page. The frame stays on its own URL — this navigates the document to itself,
-   * never to a login page, which is the absence §T.43 bound as an absence.
+   * never to a login page, which is the absence the 401 card bound as an absence.
    *
    * The answer is unknowable from here (the reload replaces this document), so it reports
    * `unavailable` if the reload has not happened by the time the promise resolves. Saying nothing
@@ -171,10 +174,11 @@ export function TableView({
 
   // Every state below is a notice, and each one carries `frameOrigin` for the same reason the table
   // above does: it measures itself and asks the host for a frame it fits in. The 401 is the one that
-  // needs it — its printed address is the escape hatch V94 makes the rule, and at the box the host
-  // opens with that address started below the fold (`components/notice.tsx`).
+  // needs it — its printed address is the escape hatch's own rule: plain text, never a link
+  // alone, and at the box the host opens with that address started below the fold
+  // (`components/notice.tsx`).
   if (load.kind === 'unauthenticated') {
-    // V38, V42, V94: an explicit state with a way out — a top-level link-out *and* the same address
+    // An explicit state with a way out — a top-level link-out *and* the same address
     // as text, because the render site whose sandbox omits `allow-popups` opens neither silently.
     return <SignInNotice signInUrl={signInUrl} onRetry={retryRead} frameOrigin={frameOrigin} />
   }

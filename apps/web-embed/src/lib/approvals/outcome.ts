@@ -1,5 +1,5 @@
 /**
- * What an operator is told after a decision (§T.41).
+ * What an operator is told after a decision.
  *
  * Split out of `decide.ts` so the wording is testable without a `fetch` and so the client
  * component imports one thing rather than two — the sentence an operator reads after clicking
@@ -38,7 +38,8 @@ const REFUSAL_FALLBACKS: Record<string, string> = {
 /**
  * One sentence for one outcome.
  *
- * The API's own `message` wins when there is one: it is the operator-safe text V8 requires and the
+ * The API's own `message` wins when there is one: it is the operator-safe text the error envelope
+ * requires and the
  * remedy `core.approvals.errors` chose, and duplicating that wording here would give NOA two
  * answers to the same refusal that can drift apart.
  */

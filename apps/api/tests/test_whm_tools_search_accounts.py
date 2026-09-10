@@ -7,17 +7,17 @@ fake client would never produce: WHM reports a refusal as **HTTP 200** with
 
 Four properties carry the weight here.
 
-**The token that reaches WHM is the decrypted one** (C7, §V.48). The row holds
+**The token that reaches WHM is the decrypted one.** The row holds
 `enc:v1:fernet:…`, and the assertion is on the `Authorization` header the transport captured —
 so the decrypt site is exercised rather than assumed.
 
-**Nothing a result carries is credential material** (§V.2, §V.8). Asserted against *both* the
+**Nothing a result carries is credential material.** Asserted against *both* the
 ciphertext in the column and the plaintext behind it: a leak of either into a LibreChat
-transcript (§V.26) is the same leak.
+transcript is the same leak.
 
-**A refusal names its cause** (§V.18, §V.19, §V.21). An ambiguous `server_ref` comes back with
+**A refusal names its cause.** An ambiguous `server_ref` comes back with
 `choices`; a blank query and an out-of-range limit are refused before any I/O; a WHM failure
-keeps WHM's own code; an exception becomes one of §V.19's two mappings.
+keeps WHM's own code; an exception becomes one of the sanitizer's two mappings.
 
 **A truncated answer says so.** `noa-old` returned the first N rows silently, which lets a
 model tell the operator "there are twenty accounts" when there are two hundred.
@@ -125,7 +125,7 @@ async def test_it_returns_the_matching_accounts_with_their_operational_fields() 
 
 
 async def test_fetch_whm_accounts_carries_the_resolved_credential_facts() -> None:
-    """§V106, §V108: the internal function carries `api_username` and `host` off the row
+    """The internal function carries `api_username` and `host` off the row
     that just won resolution, so the CHANGE module's preflight compare and the audit trail
     get them at 0 extra round trips. Both are asserted by value, not just by key presence —
     a control that only proved the keys existed would pass against an empty string.
@@ -163,8 +163,9 @@ class _StubWHMClient:
 
 
 async def test_fetch_whm_accounts_falls_back_to_the_raw_base_url_when_it_does_not_parse() -> None:
-    """The other branch of `host = hostname_of(base_url) or base_url` (§V86): a `base_url`
-    `urlsplit` cannot find a hostname in still produces *something* — the raw string —
+    """The other branch of `host = hostname_of(base_url) or base_url` — never fold a non-answer
+    into the benign value: a `base_url` `urlsplit` cannot find a hostname in still produces
+    *something* — the raw string —
     rather than `None`. A card/receipt field that silently read blank here would be worse
     than one carrying the unparsed URL verbatim.
     """
@@ -184,8 +185,8 @@ async def test_fetch_whm_accounts_falls_back_to_the_raw_base_url_when_it_does_no
 async def test_whm_search_accounts_does_not_forward_api_username_or_host() -> None:
     """The exposed half of the boundary above: `whm_search_accounts` picks `accounts` back
     out of `fetch_whm_accounts`' payload and builds its own `tool_ok(...)`, so the two
-    credential facts `fetch_whm_accounts` carries for §V106/§V108 never reach this tool's
-    answer — and never a LibreChat transcript (§V26).
+    credential facts `fetch_whm_accounts` carries for the owner compare and the audit fields
+    never reach this tool's answer — and never a LibreChat transcript.
 
     Asserted against the whole serialized payload, not a top-level key check: a leak nested
     inside `accounts[i]`, or under any future key, would still pass `"host" not in result`
@@ -253,14 +254,14 @@ async def test_an_account_whm_cannot_name_is_never_offered() -> None:
     assert [account["user"] for account in result["accounts"]] == ["acme2"]
 
 
-# --- V85: a capped READ carries its own bound ---
+# --- A capped READ carries its own bound ---
 
 
 async def test_it_truncates_at_the_limit_and_says_so() -> None:
-    """§V.85, first clause. Without the two fields, five rows read as "there are five".
+    """The bound's count half: without the two fields, five rows read as "there are five".
 
-    This tool is where §V.85 was written, so these three cases are the invariant's only
-    coverage until a second capped READ lands.
+    This tool is where the capped-read bound was written, so these three cases are the
+    invariant's only coverage until a second capped READ lands.
     """
     fixture, _ = search_context(
         accounts=[whm_account(f"acme{index}") for index in range(5)],
@@ -274,7 +275,7 @@ async def test_it_truncates_at_the_limit_and_says_so() -> None:
 
 
 async def test_a_result_exactly_at_the_limit_is_not_truncated() -> None:
-    """Off-by-one guard: five of five is a complete answer (§V.85)."""
+    """Off-by-one guard: five of five is a complete answer."""
     fixture, _ = search_context(accounts=[whm_account(f"acme{index}") for index in range(5)])
 
     result = await search(fixture, query="acme", limit=5)
@@ -284,7 +285,7 @@ async def test_a_result_exactly_at_the_limit_is_not_truncated() -> None:
 
 
 async def test_matches_are_sorted_by_username_before_the_cut() -> None:
-    """§V.85, second clause. `listaccts` order is WHM's own and undocumented.
+    """The bound's ordering half: `listaccts` order is WHM's own and undocumented.
 
     Sorting first makes "the first two" reproducible across calls; an unsorted cut is an
     arbitrary subset that can differ between two identical searches.
@@ -298,12 +299,13 @@ async def test_matches_are_sorted_by_username_before_the_cut() -> None:
     assert [account["user"] for account in result["accounts"]] == ["acme-alpha", "acme-beta"]
 
 
-# --- V21: the argument guards, before any I/O ---
+# --- The argument guards, before any I/O ---
 
 
 @pytest.mark.parametrize("query", ["", "   ", "\t\n"])
 async def test_a_blank_query_is_refused(query: str) -> None:
-    """§V.21. The schema cannot express it — `min_length` counts whitespace — so this is it.
+    """Whitespace-only input is refused. The schema cannot express it — `min_length` counts
+    whitespace — so this is it.
 
     Returning every account for `"   "` would be the opposite of a search.
     """
@@ -327,10 +329,11 @@ async def test_a_blank_query_is_refused(query: str) -> None:
     ],
 )
 async def test_a_limit_outside_one_to_a_hundred_is_refused(limit: int) -> None:
-    """§T.21's bound, held by the tool and not only by its schema.
+    """This tool's bound, held by the tool and not only by its schema.
 
-    Over MCP the schema refuses first; this branch is what holds for an in-process call
-    (C9, §V.17) and it is what makes the bound a property of the tool.
+    Over MCP the schema refuses first; this branch is what holds for an in-process call (one
+    workflow, one tool — evidence stays in-process) and it is what makes the bound a property of the
+    tool.
     """
     fixture, endpoint = search_context(accounts=[whm_account("acme")])
 
@@ -370,7 +373,7 @@ async def test_the_schema_bounds_limit_to_a_hundred() -> None:
 
 
 async def test_the_schema_carries_no_reason_parameter() -> None:
-    """C8: a READ tool has no reason either, and a schema is where one would appear."""
+    """A READ tool has no reason either, and a schema is where one would appear."""
     server = build_mcp_server(tool_context=build_tool_context().context)
     tools = {tool.name: tool for tool in await server.list_tools(run_middleware=False)}
 
@@ -380,17 +383,18 @@ async def test_the_schema_carries_no_reason_parameter() -> None:
 
 
 async def test_a_suspension_note_never_reaches_the_model() -> None:
-    """C8 by round trip, and the reason this file changed at T22.
+    """The reason rule, by round trip — and the reason this file changed when the suspend tool
+    landed.
 
-    A schema with no reason parameter is only half the boundary. As of T22 NOA writes the
-    operator's approval reason into WHM's suspension note, WHM returns it as `suspendreason` on
+    A schema with no reason parameter is only half the boundary. As of the suspend tool, NOA writes
+    the operator's approval reason into WHM's suspension note, WHM returns it as `suspendreason` on
     every later `listaccts`, and this tool's rows go into the transcript — so a search would hand
-    the model the one string C8 says it must never see, by way of the system NOA just wrote it
-    to.
+    the model the one string the reason rule says it must never see, by way of the system NOA just
+    wrote it to.
 
-    Asserted on the serialized result rather than on the row dict: what C8 bounds is what reaches
-    the model, and a field dropped from one place and kept in another is exactly the kind of
-    thing a key-set assertion alone would miss. The normaliser still carries the field, and
+    Asserted on the serialized result rather than on the row dict: what the reason rule bounds is
+    what reaches the model, and a field dropped from one place and kept in another is exactly the
+    kind of thing a key-set assertion alone would miss. The normaliser still carries the field, and
     `whm_list_accounts`' parked table still renders it — that page is behind the operator's own
     cookie, which is where the reason may be read.
     """
@@ -416,11 +420,11 @@ async def test_a_suspension_note_never_reaches_the_model() -> None:
     )
 
 
-# --- V18: which server did they mean? ---
+# --- Which server did they mean? ---
 
 
 async def test_an_ambiguous_server_ref_returns_choices() -> None:
-    """§V.18: a tie is candidates, never a pick — a guess would search the wrong server."""
+    """A tie is candidates, never a pick — a guess would search the wrong server."""
     shared = "https://shared.example.net:2087"
     fixture, endpoint = search_context(
         accounts=[whm_account("acme")],
@@ -447,7 +451,7 @@ async def test_an_unknown_server_ref_is_host_not_found() -> None:
 
 
 async def test_a_blank_server_ref_is_refused() -> None:
-    """§V.21 again, on the other required string."""
+    """Whitespace-only input refused again, on the other required string."""
     fixture, _ = search_context(accounts=[whm_account("acme")])
 
     result = await search(fixture, server_ref="   ")
@@ -487,7 +491,7 @@ async def test_a_server_ref_by_id_resolves() -> None:
     assert endpoint.requests
 
 
-# --- C7, V48: the credential path ---
+# --- The credential path ---
 
 
 async def test_the_whm_call_authenticates_with_the_decrypted_token() -> None:
@@ -505,7 +509,7 @@ async def test_the_whm_call_authenticates_with_the_decrypted_token() -> None:
 
 
 async def test_the_result_carries_no_credential_material() -> None:
-    """§V.2, §V.8: neither the ciphertext nor the plaintext behind it (§V.26).
+    """Neither the ciphertext nor the plaintext behind it reaches the result.
 
     Against the whole serialized payload rather than key by key: what must hold is that the
     *values* appear nowhere, however they are nested.
@@ -530,7 +534,7 @@ async def test_the_result_carries_no_server_row_fields() -> None:
     assert set(result) == {"ok", "query", "accounts", "total_matches", "truncated"}
 
 
-# --- V19: failures ---
+# --- Failures ---
 
 
 @pytest.mark.parametrize(
@@ -616,7 +620,7 @@ class ExplodingWHMServerRepository:
 async def test_an_exception_reaches_the_caller_as_a_named_failure(
     error: BaseException, expected_code: str, expected_message: str
 ) -> None:
-    """§V.19's two mappings, and the original text never travels (§V.8, §V.26)."""
+    """The sanitizer's two mappings, and the original text never travels."""
     fixture, _ = search_context(accounts=[whm_account("acme")])
     context = replace(
         fixture.context,
@@ -643,9 +647,9 @@ async def test_cancellation_is_not_swallowed() -> None:
         await whm_search_accounts(server_ref=SERVER_NAME, query="acme", context=context)
 
 
-# --- V83a: the tool ships with its gate ---
+# --- The tool ships with its gate ---
 
 
 def test_the_tool_name_matches_the_catalog() -> None:
-    """The registered name is the one RBAC grants are written against (§V.10)."""
+    """The registered name is the one RBAC grants are written against."""
     assert TOOL_WHM_SEARCH_ACCOUNTS in TOOL_CATALOG

@@ -108,7 +108,7 @@ export function validateWhmServerForm(
     return { field: 'apiToken', message: 'API token is required for WHM API operations' }
   }
 
-  // §V.109(b): a reseller credential must resolve back to itself via
+  // The name-equals-api_username rule: a reseller credential must resolve back to itself via
   // resolve_whm_server_ref's name match, since api_username is not one of the
   // forms that resolver tries. Mirrors the server's normalized (trim + lower)
   // compare; the server enforces this regardless of what the client sends.

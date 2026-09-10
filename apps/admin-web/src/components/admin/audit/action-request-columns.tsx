@@ -7,7 +7,7 @@ import type { AuditActionRequestListItem } from '@/lib/admin/audit/types'
 
 import { AuditStatusCell } from './audit-status-cell'
 
-// DataTable columns for the CHANGE authorisation list (§I.admin-api). Same
+// DataTable columns for the CHANGE authorisation list (the admin API's contract). Same
 // shape as the tool-run columns beside it, over the other half of the story:
 // that list says what ran, this says who authorised it.
 //

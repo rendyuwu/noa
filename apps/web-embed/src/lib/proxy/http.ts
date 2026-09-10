@@ -1,13 +1,13 @@
 import type { NextRequest } from 'next/server'
 
 /**
- * Same-origin proxy primitives (§T.44).
+ * Same-origin proxy primitives.
  *
- * Ported from `noa-old` branch `MCP`, `apps/web-bigsu/src/lib/proxy/http.ts`, per C13/V69:
- * copy the mature layer, do not rewrite it. Every guard below closes a defect that was found
+ * Ported from `noa-old` branch `MCP`, `apps/web-bigsu/src/lib/proxy/http.ts` — copy the mature
+ * layer, do not rewrite it. Every guard below closes a defect that was found
  * and fixed there — an encoded path traversal, an open redirect attributable to this origin,
  * the internal backend host leaking to the browser, and a decompression mismatch that
- * truncates responses. V69 also says provenance is not evidence: `http.test.ts` re-proves each
+ * truncates responses. Upstream provenance is also not evidence: `http.test.ts` re-proves each
  * one against this copy rather than citing the old repo.
  *
  * What this module does *not* decide is which routes exist — see `routes.ts`.
@@ -41,7 +41,7 @@ function getConnectionHeaderNames(headers: Headers): Set<string> {
 }
 
 // Server-only upstream base. Browsers never see this — they call same-origin
-// /api/* which this proxy forwards (AGENTS.md: "Browser ⊥ call FastAPI direct").
+// /api/* which this proxy forwards (AGENTS.md: "Browser never call FastAPI direct").
 // There is no NEXT_PUBLIC_* fallback: NOA_API_URL is the single server-only
 // source, and the repo-root `.env` is the single place local dev sets it
 // (`next.config.ts` loads that file).

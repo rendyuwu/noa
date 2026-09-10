@@ -1,10 +1,10 @@
 """Trust-on-first-use, against a real SSH handshake.
 
-**This file is the gate V69 demands.** The rule it covers is a *security* control ported from
-`noa-old`, and V69 is explicit that upstream provenance is not evidence a control works: a
-ported control lands with a test against the real mechanism before any §V or doc calls it
-hardened. B2 is why that sentence exists — the host-key pin was inert for months behind a test
-that called the validation callback itself.
+**This file is the gate a ported control demands.** The rule it covers is a *security* control
+ported from `noa-old`: upstream provenance is not evidence a control works, so a ported control
+lands with a test against the real mechanism before any doc calls it hardened. The inert
+host-key pin is why that sentence exists — it stayed inert for months behind a test that called
+the validation callback itself.
 
 So none of the four cases below uses a fake handshake. Each stands on
 `support.remote_exec.loopback_ssh_server`: a real `asyncssh.create_server` on 127.0.0.1 with a
@@ -24,8 +24,9 @@ The four properties, and what each would look like if it were wrong:
    written until the probe passes), and asserted anyway, because "by construction" is a claim
    about today's code.
 4. **The credential never crosses the wire on a mismatch.** `RecordingSSHServer.auth_attempts`
-   staying empty is the assertion V82 is really about — a pin compared *after* the connection
-   would raise the same error, having already handed the password to whatever was listening.
+   staying empty is the assertion that the pin enforces inside the handshake — a pin compared
+   *after* the connection would raise the same error, having already handed the password to
+   whatever was listening.
 
 Case 2 ships with its negative control (case 1's sibling,
 `test_a_matching_pin_validates_over_a_real_handshake`): "the pin was not overwritten" passes
@@ -68,7 +69,8 @@ def cipher() -> SecretCipher:
 
 
 def whm_api_ok() -> FakeWHMApi:
-    """A `myprivs` answer that clears the ACL gate (§V111), so the host key is what is tested."""
+    """A `myprivs` answer that clears the ACL gate — validate reports the ACL set, not only `ok` —
+    so the host key is what is tested."""
     return FakeWHMApi(body=myprivs_body(reseller_privileges()))
 
 
@@ -161,7 +163,7 @@ async def test_a_matching_pin_validates_over_a_real_handshake(cipher: SecretCiph
     """The negative control for the two tests below.
 
     Without it, "no pin was written" and "the connection was refused" both pass against a
-    validate that never connects at all (V87: a check that stops separating degrades silently).
+    validate that never connects at all (a check that stops separating degrades silently).
     """
     async with loopback_ssh_server() as remote:
         row = whm_row_on(remote, cipher=cipher, fingerprint=remote.host_key_fingerprint)
@@ -182,7 +184,8 @@ async def test_a_matching_pin_validates_over_a_real_handshake(cipher: SecretCiph
 async def test_a_changed_host_key_refuses_and_records_zero_auth_attempts(
     cipher: SecretCipher,
 ) -> None:
-    """V82 through the validate route: the mismatch lands in key exchange, before auth.
+    """The pin enforced inside the handshake, through the validate route: the mismatch lands in
+    key exchange, before auth.
 
     Two assertions, and both matter. `ssh_host_key_mismatch` says NOA noticed; `auth_attempts
     == []` says it noticed *in time* — a post-connect comparison would report the same code
@@ -269,7 +272,7 @@ async def test_a_capture_whose_probe_fails_leaves_no_pin_behind(cipher: SecretCi
 
 
 async def test_both_systems_reach_one_prober(cipher: SecretCipher) -> None:
-    """V66: WHM and PMG capture and pin through the same function, so the rule cannot drift.
+    """WHM and PMG capture and pin through the same function, so the rule cannot drift.
 
     Asserted behaviourally rather than by reading imports: a PMG validate over the same loopback
     server captures the same key under the same conditions, and refuses the same way when the

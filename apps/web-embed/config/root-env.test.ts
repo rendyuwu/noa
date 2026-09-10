@@ -7,7 +7,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { findUp, loadRootEnv, parseEnvFile } from './root-env'
 
 /**
- * The repo-root `.env` loader (§T.44, C11).
+ * The repo-root `.env` loader — landed with the proxy-route session plumbing; list env vars are
+ * JSON arrays.
  *
  * Built against a temporary tree rather than the real repo: the real `.env` is gitignored, so a
  * test that read it would pass or fail on whatever a developer happens to have configured.
@@ -44,7 +45,7 @@ describe('parseEnvFile', () => {
     ])
   })
 
-  it('keeps a JSON array value intact — C11 spells list env vars that way', () => {
+  it('keeps a JSON array value intact — list env vars are JSON arrays', () => {
     // `AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]`: the brackets are the value, and a
     // loader that unquoted per-character would hand the app a broken list.
     expect(parseEnvFile('AUTH_BOOTSTRAP_ADMIN_EMAILS=["a@b.com"]')).toEqual([

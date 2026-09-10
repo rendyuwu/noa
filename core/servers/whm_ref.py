@@ -1,8 +1,8 @@
 """Operator word → one WHM server, or a structured refusal.
 
-Ported from `noa-old` branch `MCP` (`whm/server_ref.py`, C13).
+Ported from `noa-old` branch `MCP` (`whm/server_ref.py`).
 
-**Shrunk 2026-08-15 at T27 to what is WHM's alone.** The policy — id, then name, then host, any
+**Shrunk 2026-08-15 to what is WHM's alone.** The policy — id, then name, then host, any
 tie is `choices`, a well-formed id stops rather than falling through, case-insensitive fallbacks
 — moved to `core.servers.reference`, which the package docstring parked at "the third system
 shows whether that difference is two parameters or a third shape". Proxmox is this module's
@@ -14,7 +14,7 @@ What is left here is what a WHM row is: the host lives inside `base_url` rather 
 of its own, and a candidate is recognised by id, name and that URL.
 
 **The resolved row keeps its own type**. Matching only ever reads id, name and `base_url` —
-the `WHMServerRowLike` bound — but the tools of T20-T26 need the credentials off the row that was
+the `WHMServerRowLike` bound — but the WHM tools need the credentials off the row that was
 resolved, and re-reading it by id would let a second query disagree with the list the tie was
 judged against. So `resolve_whm_server_ref` is generic in the row: hand it a
 `WHMServerReadRepository[WHMServer]` and `resolution.server` is a `WHMServer`, credentials

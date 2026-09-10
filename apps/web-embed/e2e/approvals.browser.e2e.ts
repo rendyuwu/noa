@@ -21,19 +21,18 @@ import {
 } from './support/frame'
 
 /**
- * The approval card in a real browser, inside the frame LibreChat actually gives it (§T.41 — V22,
- * V35, V38, V39, V80).
+ * The approval card in a real browser, inside the frame LibreChat actually gives it.
  *
  * **This is the lane jsdom cannot stand in for.** The unit specs prove the card has no `<form>` and
- * that `submitDecision` builds the right request. What they cannot prove is the thing V80 exists
- * for: that a decision leaves a frame whose sandbox omits `allow-forms`. So the parent here frames
- * the card under `MEASURED_SANDBOX` — the exact string R29 recorded at pin `45cc53c4` — and the
- * stub upstream's hit counter says whether the POST arrived.
+ * that `submitDecision` builds the right request. What they cannot prove is the thing the JS-fetch
+ * rule exists for: that a decision leaves a frame whose sandbox omits `allow-forms`. So the parent
+ * here frames the card under `MEASURED_SANDBOX` — the exact string measured live at pin
+ * `45cc53c4` — and the stub upstream's hit counter says whether the POST arrived.
  *
  * **The negative control is a separate document in the same sandbox** (`/__sandbox-control` on the
  * stub), which fires both a `fetch` and a native form submit at two paths. If the browser performed
- * both, the sandbox is not withholding forms and V80's premise has changed — which would make the
- * positive assertion above true for a reason that has nothing to do with the card.
+ * both, the sandbox is not withholding forms and the JS-fetch rule's premise has changed — which
+ * would make the positive assertion above true for a reason that has nothing to do with the card.
  *
  * **Every test that counts hits uses an id of its own.** The stub is one process shared by every
  * spec file and Playwright runs files in parallel, so its counter is cumulative and cannot be reset
@@ -54,7 +53,7 @@ test.beforeEach(async ({ context }) => {
 })
 
 test('the card renders its provenance and before-state inside the frame', async ({ page }) => {
-  // V35 and V17: what an operator is asked to recognise, and the preflight the model never sees.
+  // What an operator is asked to recognise, and the preflight the model never sees.
   const card = await frameCard(page, APPROVAL_IDS.pending)
 
   await expect(card.locator('h1')).toHaveText('whm_suspend_account')
@@ -67,17 +66,17 @@ test('the card renders its provenance and before-state inside the frame', async 
 test('the frame is on NOA’s own origin, and the operator’s cookie reached the API', async ({
   page,
 }) => {
-  // V37/C17 from inside: `allow-same-origin` plus a `src` on this origin is what lets the session
-  // cookie ride, and the render is server-side, so the cookie has to reach the API through the
-  // page's own read — not only through the browser-facing proxy (§T.44).
+  // The on-NOA-origin rule, from inside: `allow-same-origin` plus a `src` on this origin is what
+  // lets the session cookie ride, and the render is server-side, so the cookie has to reach the
+  // API through the page's own read — not only through the browser-facing proxy.
   const id = pendingId('a1')
   const card = await frameCard(page, id)
   await expect(card.locator('h1')).toBeVisible()
 
   const frame = await framedDocument(page)
   expect(await frame.evaluate(() => window.location.origin)).toBe(EMBED_ORIGIN)
-  // `document.cookie` is empty because the session cookie is httpOnly — the same reading R29
-  // recorded. The cookie's arrival is asserted on the API's side instead.
+  // `document.cookie` is empty because the session cookie is httpOnly — the same reading
+  // measured live. The cookie's arrival is asserted on the API's side instead.
   expect(await frame.evaluate(() => document.cookie)).toBe('')
 
   expect((await hits(page))[`GET /action-requests/${id}`]).toBe(1)
@@ -121,9 +120,10 @@ test('Deny posts to the other door', async ({ page }) => {
 })
 
 test('in that same sandbox a fetch reaches NOA and a form submit does not', async ({ page }) => {
-  // The negative control for V80, and the reason the assertions above mean anything: if a form
-  // submit worked in here, "the fetch worked" would be a claim about nothing. Both probes are
-  // same-origin with the document firing them, so neither is decided by CORS.
+  // The negative control for the JS-fetch rule, and the reason the assertions above mean
+  // anything: if a form submit worked in here, "the fetch worked" would be a claim about
+  // nothing. Both probes are same-origin with the document firing them, so neither is decided
+  // by CORS.
   await page.goto(parentUrl(`${UPSTREAM_ORIGIN}/__sandbox-control`))
   await expect(page.frameLocator('#card').locator('#viaForm')).toBeAttached()
 
@@ -137,7 +137,7 @@ test('in that same sandbox a fetch reaches NOA and a form submit does not', asyn
   await expect.poll(async () => (await hits(page))['POST /__probe/fetch']).toBeGreaterThan(0)
 
   // The form never left the frame. Asserted on the counter, not on an exception: the sandbox
-  // blocks the submission silently, which is exactly why V80 forbids relying on one.
+  // blocks the submission silently, which is exactly why the JS-fetch rule forbids relying on one.
   expect((await hits(page))['POST /__probe/form']).toBeUndefined()
 })
 
@@ -161,11 +161,12 @@ test('a decided card shows the outcome and no live buttons', async ({ page }) =>
   await expect(cardBody(card)).not.toContainText(STUB_CSRF)
 })
 
-test('the card follows its run to a terminal state, on the same URL (§T.42 — V29, V34)', async ({
+test('the card follows its run to a terminal state, on the same URL', async ({
   page,
 }) => {
-  // V29's whole point in a real browser: the state lives in the database, so the frame re-reads the
-  // row rather than being told the outcome by whoever started it. Nothing here reloads, navigates
+  // The whole point of state-in-DB, in a real browser: the state lives in the database, so the
+  // frame re-reads the row rather than being told the outcome by whoever started it. Nothing
+  // here reloads, navigates
   // or clicks — the only thing that happens between the two assertions is time.
   const id = APPROVAL_IDS.polling
   const card = await frameCard(page, id)
@@ -179,8 +180,9 @@ test('the card follows its run to a terminal state, on the same URL (§T.42 — 
   await expect(cardBody(card)).toContainText('COMPLETED', { timeout: 20_000 })
   await expect(cardBody(card)).toContainText(STUB_RUN_RESULT)
 
-  // §T.42(b), V46, DECISIONS §6.5: the answer this URL owns is the receipt's two halves, rendered
-  // in the frame R29 measured — the before-state the operator authorised against, and what the
+  // The card's receipt render, run-plus-receipt, and DECISIONS section 6.5: the answer this URL
+  // owns is the receipt's two halves, rendered in the frame measured live — the before-state
+  // the operator authorised against, and what the
   // change did, never one word standing in for both.
   await expect(cardBody(card)).toContainText('What the change did')
   await expect(cardBody(card)).toContainText('Completed')
@@ -188,7 +190,7 @@ test('the card follows its run to a terminal state, on the same URL (§T.42 — 
   await expect(cardBody(card)).toContainText('Before state')
   await expect(cardBody(card)).toContainText('acme.example')
 
-  // And the reads came from the browser through §T.44's proxy, not only from the page's own
+  // And the reads came from the browser through the same proxy, not only from the page's own
   // server-side render: that first read is hit 1, so anything past it is the poll.
   expect((await hits(page))[`GET /action-requests/${id}`]).toBeGreaterThan(1)
 })

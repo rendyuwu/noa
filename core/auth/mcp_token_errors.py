@@ -7,7 +7,7 @@ answer "who are you?" and "may you do this?"; these answer "does this credential
 
 Folding them into `authorization_errors` would also have mixed MCP-credential codes into
 a module whose `error_code` strings are lifted verbatim from `noa-old`'s admin API, where
-the admin panel ported in T48 already branches on them.
+the admin panel, ported (not imported) from `noa-old`, already branches on them.
 
 `noa_api.api.errors` maps each class to a status, and a test walks the subclass tree so a
 class added later without a mapping fails there instead of returning 503.
@@ -17,12 +17,13 @@ Statuses and why:
 - 404 `mcp_token_not_found` — no such token *for this user*. Deliberately the same answer
   for a token that never existed and one belonging to a colleague: the lookup is scoped by
   `user_id` in the WHERE clause, so a caller cannot use the 404/403 split to discover
-  which ids are real (the V27/V76 existence-⊥-leak principle, applied to tokens).
+  which ids are real (the requester-match existence-never-leaks principle, applied to
+  tokens).
 - 400 `invalid_token_label` — the label is longer than the column holds. Caught here so it
   is a bad request rather than a database error surfacing as a 500.
 
-V2/V8 throughout: no message, and no `detail`, carries a token plaintext, a prefix, or a
-hash.
+The token-scope and envelope assertions throughout: no message, and no `detail`, carries a
+token plaintext, a prefix, or a hash.
 """
 
 from __future__ import annotations
@@ -55,7 +56,7 @@ class McpTokenNotFoundError(McpTokenError):
 
 
 class InvalidTokenLabelError(McpTokenError):
-    """Label exceeds what `mcp_tokens.label` holds (T4: `String(255)`).
+    """Label exceeds what `mcp_tokens.label` holds (`String(255)` in the schema).
 
     A blank label is not an error — it normalizes to `None`, because a token with no name
     is a legitimate thing to mint and refusing it would add a required field the schema

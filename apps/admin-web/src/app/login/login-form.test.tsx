@@ -5,18 +5,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { LoginForm } from './login-form'
 
 /**
- * The login POST does not travel through a form submission (§T.50 — V94, R32).
+ * The login POST does not travel through a form submission.
  *
  * **Why this is a test and not a comment.** `NOA_SIGN_IN_URL` points at this route, and one of the
- * two ways an operator arrives is a click on the embed 401 card's link-out. R32 measured that tab:
+ * two ways an operator arrives is a click on the embed 401 card's link-out. The measured tab:
  * top-level, but it inherits the frame's sandbox, and `allow-forms` is absent at both of
  * LibreChat's render sites. A sandboxed document returns at the sandbox check *before* the
  * `submit` event is fired, so a submit-driven login is refused with nothing an operator can see —
- * V80's failure shape, one origin over. The property that survives that is: no form submission
- * participates in the POST at all.
+ * the JS-fetch-never-a-form rule's failure shape, one origin over. The property that survives
+ * that is: no form submission participates in the POST at all.
  *
  * **What this lane can and cannot claim.** jsdom does not implement sandboxing, so these specs do
- * not re-measure LibreChat's frame — that is R32's, in `apps/web-embed/e2e/sign-in.browser.e2e.ts`,
+ * not re-measure LibreChat's frame — that is the sandbox-inheritance measurement's, in
+ * `apps/web-embed/e2e/sign-in.browser.e2e.ts`,
  * at both pinned sandbox strings. What is bound here is the half that is NOA's: the fetch is
  * reachable with the `submit` event never firing, and the control that reaches it is not a submit
  * button. A negative control pairs with it, because "zero submit events" passes just as well
@@ -77,7 +78,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-describe('§T.50 — the sign-in control', () => {
+describe('the JS-fetch sign-in control', () => {
   it('signs in with no form submission event at all', async () => {
     const submits = countSubmits()
     render(<LoginForm />)
@@ -91,7 +92,8 @@ describe('§T.50 — the sign-in control', () => {
     expect((init as RequestInit).method).toBe('POST')
     expect((init as RequestInit).credentials).toBe('include')
 
-    // The assertion R32 makes necessary: the credential reached the API without the one mechanism
+    // The assertion the sandbox-inheritance measurement makes necessary: the credential reached
+    // the API without the one mechanism
     // the sandbox withholds.
     expect(submits.count()).toBe(0)
     submits.stop()
@@ -100,7 +102,7 @@ describe('§T.50 — the sign-in control', () => {
   it('separates — a submit-driven login records the event this one does not', async () => {
     // The negative control. Without it, "zero submit events" is satisfied by a button that never
     // did anything, and this whole lane would pass against a broken page. The fixture is the
-    // shape §T.50 rejects: one `<form onSubmit>` and a `type="submit"` button.
+    // shape the JS-fetch rule rejects: one `<form onSubmit>` and a `type="submit"` button.
     const submits = countSubmits()
 
     function SubmitDrivenLogin() {
@@ -134,7 +136,8 @@ describe('§T.50 — the sign-in control', () => {
   })
 
   it('the form path routes to the same handler, once', async () => {
-    // The copied-address case §T.50 names: a fresh tab has no opener to inherit a sandbox from, so
+    // The copied-address case the JS-fetch rule names: a fresh tab has no opener to inherit a
+    // sandbox from, so
     // Enter in a field and a password manager's submit both work there. One handler serves both
     // triggers — two definitions would be two places for the endpoint to drift.
     render(<LoginForm />)
@@ -150,7 +153,7 @@ describe('§T.50 — the sign-in control', () => {
   })
 })
 
-describe('§T.50 — after the verdict', () => {
+describe('after the verdict', () => {
   it('lands on the sanitized returnTo', async () => {
     search.params = new URLSearchParams({ returnTo: '/admin/roles' })
     render(<LoginForm />)
@@ -170,7 +173,7 @@ describe('§T.50 — after the verdict', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Sign in' }))
 
-    // The fallback is `DEFAULT_RETURN_TO`, which §T76 repointed to the role-aware dispatcher:
+    // The fallback is `DEFAULT_RETURN_TO`, repointed to the role-aware dispatcher:
     // landing every rejected returnTo on `/admin/users` sent non-admins to a 403.
     await waitFor(() => expect(nav.push).toHaveBeenCalledWith('/home'))
   })

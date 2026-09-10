@@ -6,7 +6,7 @@ import type { VerifiedUser } from '@/lib/auth/use-verified-auth'
 
 import { UserDetailDrawer, type UserDetailDrawerProps } from './user-detail-drawer'
 
-// The drawer links out to the tokens route (§T76) rather than embedding a
+// The drawer links out to the tokens route rather than embedding a
 // second table, so it now reads the router.
 const nav = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
 vi.mock('next/navigation', () => ({ useRouter: () => nav }))

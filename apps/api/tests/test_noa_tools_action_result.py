@@ -9,20 +9,21 @@ row three different writers have touched — are the database's rather than a do
 
 Four properties carry the weight.
 
-**One refusal for the whole family** (§V.27, §V.76). Absent, foreign, requester-deleted and
+**One refusal for the whole family.** Absent, foreign, requester-deleted and
 malformed all answer the same `error_code`, the same `message` and nothing else. Asserted as
 byte-equality between the answers rather than as "both were errors" — a differing code is a
-403 spelled differently, and B1's shape is a test that only looked at the status.
+403 spelled differently, and a status-only test misses exactly that — a differing code leaking
+existence.
 
-**The requester comes from the access token** (§V.76). Never from an argument; the tool takes
+**The requester comes from the access token.** Never from an argument; the tool takes
 one parameter and it is the request id.
 
-**A request that is not the caller's is never written to** (§V.27, §V.32). The expiry
+**A request that is not the caller's is never written to.** The expiry
 check-on-read takes an id and nothing else, so the read path runs it *after* the
 requester-matched read. The journal is what pins the order: a foreign id produces `["read"]`
 and stops there.
 
-**The reason and the evidence never reach the model** (C8, §V.15, §V.43, §V.17). Not filtered
+**The reason and the evidence never reach the model.** Not filtered
 — `ActionResultView` has no field for either — and asserted against real values rather than
 against nothing, because a payload that never had them cannot be shown to have dropped them.
 """
@@ -167,12 +168,13 @@ async def test_a_request_that_never_ran_says_so_rather_than_omitting_the_field()
 
 
 async def test_the_reason_and_the_evidence_never_reach_the_model() -> None:
-    """C8/V15/V43 and V17, at the one surface that could break either.
+    """The reason rule, at the one surface that could break either.
 
     The operator's reason is on the row this tool reads and the preflight evidence is in the
     same JSONB payload the arguments come out of — so "the LLM never sees it" is a claim
     about *this path*. What is asserted here is the emitted shape, including that a nested
-    copy did not travel either (V26 — this lands in LibreChat's MongoDB). The compare that
+    copy did not travel either — the no-ops-data-out rule, since this lands in LibreChat's
+    MongoDB. The compare that
     *separates* — evidence in the row, absent from the payload, arguments still present —
     needs a real row and lives in `test_action_results_live.py`.
     """
@@ -192,12 +194,12 @@ async def test_the_reason_and_the_evidence_never_reach_the_model() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V27 / V76: one refusal, and the caller is the token's
+# One refusal, and the caller is the token's
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_foreign_id_an_unknown_id_and_a_malformed_id_answer_the_same_bytes() -> None:
-    """V27/V76: the refusal is not an oracle for which requests exist.
+    """The refusal is not an oracle for which requests exist.
 
     Byte-equality, not "all three were errors": a differing `error_code` is a 403 spelled
     differently, and a caller could walk it to learn that an id is real but someone else's.
@@ -219,7 +221,7 @@ async def test_a_foreign_id_an_unknown_id_and_a_malformed_id_answer_the_same_byt
 
 
 async def test_a_request_whose_requester_was_deleted_is_not_readable() -> None:
-    """V27 fails closed: the FK is `SET NULL`, so a NULL requester matches nobody.
+    """Requester-match fails closed: the FK is `SET NULL`, so a NULL requester matches nobody.
 
     That the *statement* behaves this way is `test_action_results_live.py`'s claim; this is
     the tool answering the same refusal when the reader says there is no row for the caller.
@@ -234,7 +236,7 @@ async def test_a_request_whose_requester_was_deleted_is_not_readable() -> None:
 
 
 async def test_the_requester_asked_about_is_the_tokens_caller() -> None:
-    """V76: the identity comes from the access token, never from an argument.
+    """The identity comes from the access token, never from an argument.
 
     The tool has one parameter and it is the request id — so the assertion is on what reached
     the repository: the caller `current_mcp_identity` resolved, and nothing else.
@@ -260,12 +262,12 @@ async def test_a_malformed_id_is_refused_before_any_read() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V32: no stale PENDING, and no write to a row that is not the caller's
+# No stale PENDING, and no write to a row that is not the caller's
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_request_past_its_deadline_reads_expired() -> None:
-    """V32/V23: the check-on-read makes the row terminal and reports what it wrote.
+    """The check-on-read makes the row terminal and reports what it wrote.
 
     Not a PENDING the model would tell an operator they can still approve — nobody may act on
     this request any more, and the row now says so.
@@ -298,7 +300,7 @@ async def test_a_live_request_is_left_pending() -> None:
 
 
 async def test_a_request_that_is_not_the_callers_is_never_expired_by_this_read() -> None:
-    """V27/V32: a prompt-injected id must not make NOA write to a stranger's row.
+    """A prompt-injected id must not make NOA write to a stranger's row.
 
     `expire_if_due` takes an id and nothing else, so an implementation that ran it before the
     requester-matched read would expire another operator's request on demand — while still
@@ -316,12 +318,12 @@ async def test_a_request_that_is_not_the_callers_is_never_expired_by_this_read()
 
 
 # --------------------------------------------------------------------------------------
-# V19: nothing raw reaches the model
+# Nothing raw reaches the model
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_read_failure_reaches_the_model_as_a_named_failure() -> None:
-    """V19/V8: the database's own words never cross the boundary."""
+    """The database's own words never cross the boundary."""
     tools = build_tool_context()
     tools.action_results.fail = RuntimeError("connection to server at 10.0.0.9 failed: no pg_hba")
 
@@ -341,7 +343,7 @@ async def test_a_read_failure_reaches_the_model_as_a_named_failure() -> None:
 
 
 def test_it_is_registered_as_a_read_tool() -> None:
-    """V10/V20/V83a: in the catalog, and classified where it is defined."""
+    """In the catalog, and classified where it is defined."""
     context = build_tool_context().context
 
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
@@ -351,7 +353,7 @@ def test_it_is_registered_as_a_read_tool() -> None:
 
 
 async def test_the_schema_takes_one_argument_and_it_is_not_a_reason() -> None:
-    """C8's boundary read from the other end: this tool cannot carry an operator's words.
+    """The reason rule read from the other end: this tool cannot carry an operator's words.
 
     Read off the registered tool rather than restated, so a signature that grew a parameter —
     a `reason` above all — fails here instead of quietly accepting one from a client.
@@ -399,7 +401,7 @@ def scenario(monkeypatch: pytest.MonkeyPatch) -> Iterator[Any]:
 
 
 def test_a_permitted_call_answers_and_writes_one_read_row(scenario) -> None:  # type: ignore[no-untyped-def]
-    """V45/V83b: reading an approval is itself an audited READ, recorded beside the gate."""
+    """Reading an approval is itself an audited READ, recorded beside the gate."""
     sign_in, tools = scenario
     session, user_id = sign_in("operator@example.com")
     request_id = seed_pending(tools, owner=user_id)
@@ -417,7 +419,7 @@ def test_a_permitted_call_answers_and_writes_one_read_row(scenario) -> None:  # 
 
 
 def test_the_tool_is_refused_without_a_grant(scenario) -> None:  # type: ignore[no-untyped-def]
-    """V1: the one RBAC gate covers this tool like every other, and it never runs."""
+    """The one RBAC gate covers this tool like every other, and it never runs."""
     sign_in, tools = scenario
     session, user_id = sign_in("operator@example.com", grants=())
     request_id = seed_pending(tools, owner=user_id)
@@ -434,7 +436,7 @@ def test_the_tool_is_refused_without_a_grant(scenario) -> None:  # type: ignore[
 
 
 def test_another_operators_request_is_not_readable_over_the_mount(scenario) -> None:  # type: ignore[no-untyped-def]
-    """V27/V76 end to end: two real tokens, two real identities, one refusal.
+    """Requester-match end to end: two real tokens, two real identities, one refusal.
 
     The identity here is the one the verifier and the auth middleware resolved from a bearer
     token, not one the test planted — which is the difference between asserting the tool's

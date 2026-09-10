@@ -34,7 +34,7 @@ PROD_REQUIRED = {
     "auth_jwt_secret": "x" * MIN_JWT_SECRET_LENGTH,
     "noa_secret_encryption_key": Fernet.generate_key().decode(),
     "ldap_server_uri": "ldaps://ldap.example.com:636",
-    # V95: a production build that leaves these on their dev defaults is refused, so every
+    # A production build that leaves these on their dev defaults is refused, so every
     # production fixture below has to state them — which is the guard working, not noise.
     "noa_embed_base_url": PROD_EMBED_BASE_URL,
     "noa_api_url": PROD_API_URL,
@@ -48,11 +48,11 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 ENCRYPTION_KEY_FIELD = "noa_secret_encryption_key"
 ENCRYPTION_KEY_ENV_VAR = ENCRYPTION_KEY_FIELD.upper()
 
-# The name T67 rejects: the key encrypts server credentials, not the database.
+# The rejected name: the key encrypts server credentials, not the database.
 LEGACY_ENCRYPTION_KEY_FIELD = "noa_db_secret_key"
 
 # Files that carry the rejected name legitimately, because their subject is the prohibition:
-# the spec artifacts, T67's as-built archive, and this module.
+# the spec artifacts, the as-built archive, and this module.
 LEGACY_NAME_ALLOWED_IN = frozenset(
     {
         "SPEC.md",
@@ -152,18 +152,18 @@ def test_non_development_environments_are_production(environment: str) -> None:
     assert settings.is_production is True
 
 
-# --- V53: JWT secret ---
+# --- JWT secret ---
 
 
 def test_jwt_secret_generated_in_dev() -> None:
-    """V53: auto-generated in dev, and long enough to be usable."""
+    """Auto-generated in dev, and long enough to be usable."""
     settings = build(environment="development")
 
     assert len(settings.jwt_secret) >= MIN_JWT_SECRET_LENGTH
 
 
 def test_jwt_secret_required_in_production() -> None:
-    """V53: absent secret is a startup failure, not a generated one."""
+    """Absent secret is a startup failure, not a generated one."""
     with pytest.raises(ValidationError, match="auth_jwt_secret is required"):
         build(
             environment="production",
@@ -173,7 +173,7 @@ def test_jwt_secret_required_in_production() -> None:
 
 
 def test_short_jwt_secret_rejected_in_production() -> None:
-    """V53: ≥32 chars in production."""
+    """≥32 chars in production."""
     with pytest.raises(ValidationError, match="at least 32 characters"):
         build_production(auth_jwt_secret="tooshort")
 
@@ -183,11 +183,11 @@ def test_short_jwt_secret_allowed_in_dev() -> None:
     assert build(environment="development", auth_jwt_secret="short").jwt_secret == "short"
 
 
-# --- V52 / C7: Fernet key ---
+# --- Fernet key ---
 
 
 def test_encryption_key_generated_in_dev_is_valid_fernet() -> None:
-    """V52: generated in dev, and actually round-trips."""
+    """Generated in dev, and actually round-trips."""
     key = build(environment="development").secret_encryption_key
     cipher = Fernet(key.encode())
 
@@ -195,7 +195,7 @@ def test_encryption_key_generated_in_dev_is_valid_fernet() -> None:
 
 
 def test_encryption_key_required_in_production() -> None:
-    """V52: no silent generation in production — the ciphertext would be orphaned."""
+    """No silent generation in production — the ciphertext would be orphaned."""
     with pytest.raises(ValidationError, match="noa_secret_encryption_key is required"):
         build(
             environment="production",
@@ -212,7 +212,7 @@ def test_malformed_encryption_key_rejected(bad_key: str) -> None:
 
 
 def test_encryption_key_name_reflects_scope() -> None:
-    """V52: the var encrypts server credentials, not the DB. No legacy alias."""
+    """The var encrypts server credentials, not the DB. No legacy alias."""
     fields = Settings.model_fields
 
     assert ENCRYPTION_KEY_FIELD in fields
@@ -220,7 +220,7 @@ def test_encryption_key_name_reflects_scope() -> None:
 
 
 def test_secrets_are_not_exposed_by_repr() -> None:
-    """V8: a settings dump in a log must not print secrets."""
+    """A settings dump in a log must not print secrets."""
     settings = build_production(ldap_bind_password="ldap-bind-password")
     rendered = f"{settings!r} {settings.model_dump()}"
 
@@ -229,7 +229,7 @@ def test_secrets_are_not_exposed_by_repr() -> None:
     assert "**********" in rendered
 
 
-# --- V95: operator-facing addresses ---
+# --- Operator-facing addresses ---
 
 
 @pytest.mark.parametrize(
@@ -242,7 +242,7 @@ def test_secrets_are_not_exposed_by_repr() -> None:
     ],
 )
 def test_dev_default_address_rejected_in_production(field: str, env_var: str, value: str) -> None:
-    """V95: the laptop address is a startup failure outside development.
+    """The laptop address is a startup failure outside development.
 
     The trailing-slash rows are not padding: `_normalize_base_url` runs first, so a deployment
     that pasted the `.env.example` line with a slash on the end is on the default too, and a
@@ -256,7 +256,8 @@ def test_dev_default_address_rejected_in_production(field: str, env_var: str, va
 
 
 def test_explicit_addresses_boot_in_production() -> None:
-    """V95 refuses the *default*, not the field: a stated address boots and survives intact."""
+    """The guard refuses the *default*, not the field: a stated address boots and survives
+    intact."""
     settings = build_production()
 
     assert settings.noa_embed_base_url == PROD_EMBED_BASE_URL
@@ -276,11 +277,11 @@ def test_dev_default_addresses_boot_in_development() -> None:
 
 
 def test_refused_addresses_are_the_field_defaults() -> None:
-    """V95's guard has to refuse what an unset var actually produces, not a lookalike string.
+    """The guard has to refuse what an unset var actually produces, not a lookalike string.
 
     Without this the rejection tests are tautological: they hand the guard the constant the
     guard compares against, and both could drift away from the field default together, leaving
-    a deployment that forgot the var booting clean — the exact failure V95 exists to stop.
+    a deployment that forgot the var booting clean — the exact failure the guard exists to stop.
     """
     fields = Settings.model_fields
 
@@ -304,7 +305,7 @@ def test_both_missing_addresses_are_named_in_one_message() -> None:
     assert "NOA_API_URL" in message
 
 
-# --- C4: LDAP transport ---
+# --- LDAP transport ---
 
 
 def test_insecure_ldap_rejected_in_production() -> None:
@@ -327,7 +328,7 @@ def test_insecure_ldap_allowed_in_dev() -> None:
 
 
 def test_dev_ldap_bypass_rejected_in_production() -> None:
-    """C4: the bypass exists for local dev only."""
+    """The bypass exists for local dev only."""
     with pytest.raises(ValidationError, match="auth_dev_bypass_ldap"):
         build_production(auth_dev_bypass_ldap=True)
 
@@ -336,7 +337,7 @@ def test_dev_ldap_bypass_allowed_in_dev() -> None:
     assert build(environment="development", auth_dev_bypass_ldap=True).auth_dev_bypass_ldap is True
 
 
-# --- V6 / V40: session cookie ---
+# --- Session cookie ---
 
 
 def test_cookie_secure_forced_off_in_dev() -> None:
@@ -348,7 +349,7 @@ def test_cookie_secure_forced_off_in_dev() -> None:
 
 
 def test_cookie_kwargs_shared_by_set_and_clear() -> None:
-    """V6, V40: httpOnly, SameSite=Lax, `.noa.internal`, one definition."""
+    """httpOnly, SameSite=Lax, `.noa.internal`, one definition."""
     settings = build_production(auth_session_cookie_domain=".noa.internal")
 
     kwargs = settings.session_cookie_kwargs()
@@ -398,7 +399,7 @@ def test_samesite_none_rejected_when_secure_explicitly_disabled() -> None:
         build_production(auth_session_cookie_samesite="none", auth_session_cookie_secure=False)
 
 
-# --- C11: JSON-array env vars ---
+# --- JSON-array env vars ---
 
 
 @pytest.mark.parametrize(
@@ -417,7 +418,7 @@ def test_cors_origins_accept_json_array_or_csv(raw: str, expected: list[str]) ->
 
 
 def test_bootstrap_admin_emails_lowercased() -> None:
-    """V7: emails compare case-insensitively; normalize once, at the edge."""
+    """Emails compare case-insensitively; normalize once, at the edge."""
     settings = build(auth_bootstrap_admin_emails='["Admin@Example.COM"]')
 
     assert settings.auth_bootstrap_admin_emails == ["admin@example.com"]
@@ -429,24 +430,24 @@ def test_bootstrap_admin_emails_lowercased() -> None:
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("approval_max_inflight_per_user", 0),  # V31: a cap of 0 blocks all CHANGE
-        ("approval_pending_ttl_seconds", 5),  # V32: TTL must be usable
-        # V32: a sweep interval of 0 is a sweeper that never sleeps; a negative one is a
-        # sweeper that never runs. Either way the background half of V32 is held by nothing.
+        ("approval_max_inflight_per_user", 0),  # a cap of 0 blocks all CHANGE
+        ("approval_pending_ttl_seconds", 5),  # TTL must be usable
+        # A sweep interval of 0 is a sweeper that never sleeps; a negative one is a
+        # sweeper that never runs. Either way the background half of the sweep is held by nothing.
         ("approval_expiry_sweep_interval_seconds", 0),
-        # V30/T38: a reap deadline under a minute would call a merely slow change abandoned,
+        # A reap deadline under a minute would call a merely slow change abandoned,
         # and a reaped run reads as an outcome nobody observed.
         ("approval_stranded_run_reap_after_seconds", 59),
         ("approval_stranded_run_reap_interval_seconds", 0),
-        # V92: a batch of 0 is a reaper that resolves nothing, and a batch with no ceiling is
+        # A batch of 0 is a reaper that resolves nothing, and a batch with no ceiling is
         # the unbounded pass again, spelled in an env var.
         ("approval_stranded_run_reap_batch_size", 0),
         ("approval_stranded_run_reap_batch_size", 1001),
         ("yopass_secret_expiration_seconds", 0),
-        ("secret_password_length", 4),  # V49: no trivially guessable password
+        ("secret_password_length", 4),  # no trivially guessable password
         ("db_pool_size", 0),
         ("ldap_timeout_seconds", 0),
-        ("auth_login_rate_limit_max_attempts", 0),  # V9: 0 would lock everyone out
+        ("auth_login_rate_limit_max_attempts", 0),  # 0 would lock everyone out
     ],
 )
 def test_out_of_range_values_rejected(field: str, value: int) -> None:
@@ -456,7 +457,7 @@ def test_out_of_range_values_rejected(field: str, value: int) -> None:
 
 
 def test_approval_defaults_match_invariants() -> None:
-    """V31 default cap of 1; V32 pending TTL and the sweep interval that enforces it."""
+    """Default cap of 1; pending TTL and the sweep interval that enforces it."""
     settings = build()
 
     assert settings.approval_max_inflight_per_user == 1
@@ -470,7 +471,7 @@ def test_approval_defaults_match_invariants() -> None:
 def test_reaper_defaults_are_a_lifetime_a_resolution_and_a_bound(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V30/T38: how long a run may sit STARTED, how often the reaper looks, and how much one
+    """How long a run may sit STARTED, how often the reaper looks, and how much one
     pass may resolve.
 
     Two settings rather than one derived from the other, matching the sweep pair one invariant
@@ -478,8 +479,8 @@ def test_reaper_defaults_are_a_lifetime_a_resolution_and_a_bound(
     than its own deadline would leave a run abandoned for up to two deadlines.
 
     The deadline also has to be *under* the pending TTL: a stranded change spends its operator's
-    V31 allowance until it is reaped, and holding that longer than a request may stay pending
-    would make one crash cost more than a whole approval window.
+    in-flight-cap allowance until it is reaped, and holding that longer than a request may stay
+    pending would make one crash cost more than a whole approval window.
     """
     settings = build()
 
@@ -490,7 +491,7 @@ def test_reaper_defaults_are_a_lifetime_a_resolution_and_a_bound(
         < settings.approval_stranded_run_reap_after_seconds
     )
     assert settings.approval_stranded_run_reap_after_seconds < settings.approval_pending_ttl_seconds
-    # V92. The drain rate is the batch over the interval — 100 per 120s, so 50 a minute. It is
+    # The drain rate is the batch over the interval — 100 per 120s, so 50 a minute. It is
     # asserted as a rate rather than as the number alone, because the number on its own says
     # nothing: what has to beat the rate stranded rows appear at is batch ÷ interval.
     assert settings.approval_stranded_run_reap_batch_size == 100
@@ -503,13 +504,13 @@ def test_reaper_defaults_are_a_lifetime_a_resolution_and_a_bound(
 
 
 def test_mcp_token_ttl_optional() -> None:
-    """V2: no TTL -> non-expiring until revoked."""
+    """No TTL -> non-expiring until revoked."""
     assert build(mcp_token_ttl_seconds="").mcp_token_ttl_seconds is None
     assert build(mcp_token_ttl_seconds=3600).mcp_token_ttl_seconds == 3600
 
 
 def test_base_urls_lose_trailing_slashes() -> None:
-    """Keeps URL joins predictable (V26 approval URLs, V50 yopass POST)."""
+    """Keeps URL joins predictable (approval URLs, yopass POST)."""
     settings = build(
         yopass_base_url="https://yopass.example.com/",
         noa_embed_base_url="https://embed.noa.internal//",
@@ -522,7 +523,7 @@ def test_base_urls_lose_trailing_slashes() -> None:
 
 
 def test_yopass_unconfigured_by_default() -> None:
-    """C15: absent yopass is a tool-level error, not a boot failure."""
+    """Absent yopass is a tool-level error, not a boot failure."""
     settings = build()
 
     assert settings.yopass_base_url is None
@@ -541,7 +542,7 @@ def test_field_names_map_to_documented_env_vars(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_the_process_env_is_what_the_isolation_holds_back() -> None:
-    """The negative control for `_process_env_cannot_reach_these_tests` (§V.87).
+    """The negative control for `_process_env_cannot_reach_these_tests`.
 
     Reproduces the CI failure exactly — the pytest lane's own service DSN — inside a monkeypatch
     that lands after the autouse fixture. If `Settings` ever stopped reading `os.environ`, this
@@ -576,23 +577,24 @@ def test_env_example_documents_every_required_var() -> None:
 
 @pytest.mark.parametrize("doc_name", [".env.example", "README.md"])
 def test_operator_docs_name_the_env_var_the_settings_field_defines(doc_name: str) -> None:
-    """T67: the two operator-facing files name the var the field above defines.
+    """The two operator-facing files name the var the field above defines.
 
     `.env.example` is already bound to the field set by the test above; `README.md` is the loose
-    restatement (V84a), and it is the file that carries the scope claim C7 exists for — "encrypts
-    server credentials, not the database". A rename that stops here leaves that sentence pointing
-    at a var nothing reads.
+    restatement, and it is the file that carries the scope claim itself — "encrypts server
+    credentials, not the database". A rename that stops here leaves that sentence pointing at a
+    var nothing reads.
     """
     assert ENCRYPTION_KEY_ENV_VAR in (REPO_ROOT / doc_name).read_text(encoding="utf-8")
 
 
 def test_legacy_encryption_key_name_absent_from_every_tracked_file() -> None:
-    """T67/C7: the rejected name stays out of the files this task cannot reach.
+    """The rejected name stays out of the files this task cannot reach.
 
-    T67 lists Dockerfiles and `docker-compose.yml` among its rename targets and neither exists —
-    T60 writes them, by which time this row is closed and a `NOA_DB_SECRET_KEY` there would meet
-    nothing red. Scanning every tracked file binds the property instead of trusting the next
-    author to have read this row (V84c, the reason `test_pins.py` binds the pin prose to the SDK).
+    The rename lists Dockerfiles and `docker-compose.yml` among its targets and neither exists —
+    the compose work writes them, by which time this row is closed and a `NOA_DB_SECRET_KEY`
+    there would meet nothing red. Scanning every tracked file binds the property instead of
+    trusting the next author to have read this row (the reason `test_pins.py` binds the pin
+    prose to the SDK).
     """
     offenders = sorted(
         relative

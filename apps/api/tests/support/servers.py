@@ -8,7 +8,7 @@ that holds them. The system-specific doubles stay in their own modules — `supp
 
 Two decisions here carry the weight of the tests that use this module.
 
-**Rows are real `WHMServer` instances, not stand-ins.** The V8 assertion is that nothing a
+**Rows are real `WHMServer` instances, not stand-ins.** The assertion is that nothing a
 tool emits carries credential material, and the thing that decides that is
 `WHMServer.to_safe_dict`. A hand-written fake with a hand-written `to_safe_dict` would test
 the fake. So `whm_server()` constructs the mapped class and fills the three server-defaulted
@@ -126,7 +126,8 @@ def whm_server(
     build the two rows `resolve_whm_ssh_config` refuses: no credentials at all, and no pin.
 
     `api_username` and `is_reseller_credential` are overridable together, because the pair is
-    what V109(b) constrains: a reseller row is named after its API username. The flag is set
+    what the name-equals-api_username rule constrains: a reseller row is named after its API
+    username. The flag is set
     explicitly rather than left to the column's server default, which never runs on an instance
     that has not reached Postgres — a `None` here would read as `false` at every call site while
     being neither.
@@ -196,7 +197,7 @@ def proxmox_server(
     *,
     base_url: str | None = None,
     server_id: UUID | None = None,
-    api_token_id: str = "root@pam!noa",  # noqa: S107 — a token *id*, ⊥ the secret
+    api_token_id: str = "root@pam!noa",  # noqa: S107 — a token *id*, never the secret
     api_token_secret: str = PROXMOX_API_TOKEN_SECRET,
     verify_ssl: bool = True,
 ) -> ProxmoxServer:
@@ -239,7 +240,7 @@ class FakeWHMServerRepository:
 
     def __init__(self, servers: Iterable[WHMServer] = ()) -> None:
         self.servers: list[WHMServer] = list(servers)
-        # Read counter: V1/V14 care that inventory is read per call, never memoized.
+        # Read counter: permission resolution cares that inventory is read per call, never memoized.
         self.reads = 0
 
     async def list_servers(self) -> Sequence[WHMServer]:
@@ -382,13 +383,14 @@ def build_tool_context(
     app, not only the audit ones. That is deliberate: the middleware refuses a call it
     cannot record, so without a working writer in the shared fixture the RBAC tests would
     start failing for an unrelated reason — and a fixture that quietly disabled the audit
-    path would let the whole suite pass with V45 unheld.
+    path would let the whole suite pass with the tool-run-trail rule unheld.
 
-    The `action_requests` writer is a double for the same reason and on the same terms
-    (T33): it is the only thing standing between a CHANGE gate call and Postgres, and the
+    The `action_requests` writer is a double for the same reason and on the same terms: it is
+    the only thing standing between a CHANGE gate call and Postgres, and the
     live SQL has its own coverage in `test_mcp_change_gate.py`.
 
-    `action_results` and `action_expiry` are T63's pair, and they are two doubles rather than
+    `action_results` and `action_expiry` are the action-result tool's pair, and they are two
+    doubles rather than
     one because production has two classes: a reader that holds only `SELECT`s and a writer
     whose one reachable status is `EXPIRED`. Both are handed the same journal, so a test can
     assert the *order* the read path took them in — which is what pins "a request that is not
@@ -401,7 +403,8 @@ def build_tool_context(
     that read the setting from one that hardcoded it; this value is a number nothing else in
     the tree holds. `embed_base_url` is the same trick one field over.
 
-    `cipher` and `whm_transport` are T21's two seams, and neither replaces production code.
+    `cipher` and `whm_transport` are the account search's two seams, and neither replaces
+    production code.
     The cipher is a real `SecretCipher` on a throwaway key, so a tool that decrypts an API
     token runs the real decrypt (pass the same instance a row's `api_token` was encrypted
     with). `whm_transport` reaches `build_whm_client` — the production factory — so the real

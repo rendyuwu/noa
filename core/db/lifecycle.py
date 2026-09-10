@@ -1,6 +1,6 @@
 """Lifecycle enums for the tool-call path.
 
-V20 keeps these as *separate* enums rather than one flat set of states, because they
+Kept as *separate* enums rather than one flat set of states, because they
 answer different questions about the same call:
 
 - :class:`ToolRisk` classifies the tool — READ or CHANGE. It is not a status; it never
@@ -21,9 +21,9 @@ rows in another.
 CHECK constraint (`native_enum=False`), not a Postgres enum type, so reads come back as
 plain strings and queries can be written against either form.
 
-Ported from `noa-old` branch `MCP` (`storage/postgres/lifecycle.py`) per C13; values are
-verbatim, so rows written by either codebase read the same — except `EXPIRED`, which V20
-adds and `noa-old` never had.
+Ported from `noa-old` branch `MCP` (`storage/postgres/lifecycle.py`); values are
+verbatim, so rows written by either codebase read the same — except `EXPIRED`, which the
+three-enum split adds and `noa-old` never had.
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ class ToolRunStatus(StrEnum):
     """How far the execution got.
 
     STARTED is the row's initial state, written before the tool body runs, so a process
-    that dies mid-call leaves evidence rather than nothing (T38's reaper sweeps those).
+    that dies mid-call leaves evidence rather than nothing (the reaper sweeps those).
     COMPLETED and FAILED are terminal.
     """
 
@@ -63,8 +63,9 @@ class ActionRequestStatus(StrEnum):
 
     `EXPIRED` is new here — `noa-old` had only the first three, so a request nobody
     answered stayed PENDING forever and "may this run?" had no truthful answer after the
-    TTL passed. V32 makes the expiry terminal; it is written by the decision door on read
-    and by T39's background sweep, which is what makes it true without traffic. The
+    TTL passed. The TTL rule makes the expiry terminal; it is written by the decision door
+    on read and by the expiry loop's background sweep, which is what makes it true without
+    traffic. The
     same sweep's predicate serves the render path, so a stale PENDING is never served.
 
     DENIED and EXPIRED are deliberately separate members rather than one "not approved":

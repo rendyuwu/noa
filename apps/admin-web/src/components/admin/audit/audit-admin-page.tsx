@@ -22,7 +22,7 @@ const TOOL_COLUMNS = buildToolRunColumns()
 // server paging off the cursor the API returns.
 //
 // It was ported with two tabs. The other one listed action requests and linked to
-// a receipt page, both against routes §I.admin-api does not name and NOA does not
+// a receipt page, both against routes the admin API's contract does not name and NOA does not
 // serve, so every load 404'd; the tab went with the transports rather than being
 // stubbed. With one view there is no tab strip and no URL/pushState dance
 // to keep in step with it — `/admin/audit` is the whole surface, which is where

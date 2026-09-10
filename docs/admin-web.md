@@ -1,8 +1,8 @@
 # apps/admin-web — BIGSU admin panel
 
 Reference for the admin panel: what it is, where it came from, and what a build or deploy has to
-satisfy. Design rationale lives in `DECISIONS.md`; the invariants are `SPEC.md` §V — this file
-restates neither. Landed by §T.47 (scaffold), §T.48 (port), §T.49 (framing) and §T.50 (session).
+satisfy. Design rationale lives in `DECISIONS.md` — this file restates none of it. Landed as the
+scaffold, the port from `noa-old`, the framing header and the session plumbing.
 
 ## What it is
 
@@ -11,14 +11,14 @@ runs, receipts). One of three deployables, with its own `package.json`, lockfile
 deploy artifact. It shares no source with `apps/web-embed` — `eslint.config.mjs` holds that as a
 rule and `tests/import-firewall.test.ts` exercises the rule.
 
-Never framed: it sends `Content-Security-Policy: frame-ancestors 'none'` (V41, §T.49) — the rule is
+Never framed: it sends `Content-Security-Policy: frame-ancestors 'none'` — the rule is
 `config/framing.ts`, applied by `next.config.ts`'s `headers()`. See "Framing" below.
 
 ## Ported, not written
 
-The panel came from `noa-old` branch `MCP`, `apps/web-bigsu/`, copied rather than rewritten (C13,
-V69). The old app's admin verticals shipped with their own test suites, and those came across with
-the code — 50 files, 371 tests.
+The panel came from `noa-old` branch `MCP`, `apps/web-bigsu/`, copied rather than rewritten. The
+old app's admin verticals shipped with their own test suites, and those came across with the code —
+50 files, 371 tests.
 
 Four deliberate deviations from the source:
 
@@ -53,8 +53,8 @@ cannot install `@gio/*` at all. The build must run on a runner inside the Biznet
 CI for this repo is maintained on company GitLab (`gitlab.biznetgio.pt:simondayce/noa`, branches
 `master` and `staging`) out of band; this file states the requirement, it does not add a workflow.
 The GitHub remote (`origin`, `rendyuwu/noa`) is the working and pull-request surface, not the CI
-surface, so `.github/workflows/*` is not where a CI requirement gets satisfied — treat §T.61 as a
-specification the GitLab pipeline must meet. Runner expectations: **Node 22**, pnpm via Corepack
+surface, so `.github/workflows/*` is not where a CI requirement gets satisfied — the GitLab pipeline
+must meet it as a specification. Runner expectations: **Node 22**, pnpm via Corepack
 (the `packageManager` field pins the version), an ephemeral workspace per job, no registry
 credential in the pipeline, and internal-runner jobs restricted to protected branches — a runner
 with routable access to the internal registry that also runs untrusted merge requests is a
@@ -64,7 +64,7 @@ Node 22 and not the "Node 20 LTS" this line used to say: those two clauses contr
 other. `engines.node` allows `>=20.9.0` and `next@16.3.0` agrees, so 20 runs the built app — but
 the pinned pnpm 11.x declares `engines.node: >=22.13`, and on Node 20 `pnpm install` dies with
 `ERR_UNKNOWN_BUILTIN_MODULE: No such built-in module: node:sqlite` before resolving a single
-package. Measured at §T.60 while building this app's image; `apps/api/tests/test_deployment.py`
+package. Measured while building this app's image; `apps/api/tests/test_deployment.py`
 now holds the floor, and holds it to pnpm 11 specifically, so a pnpm major bump has to re-measure
 rather than inherit.
 
@@ -81,20 +81,20 @@ Config comes from the repo-root `.env` via `config/root-env.ts`; there is no per
 because two env files for one deployment is two places for `NOA_API_URL` to disagree. Anything
 already set in the real environment wins over the file.
 
-- `NOA_API_URL` — the API the same-origin `/api/*` proxy forwards to (server-side only, §T.50).
+- `NOA_API_URL` — the API the same-origin `/api/*` proxy forwards to (server-side only).
 - Dev port 3000. `apps/web-embed` owns 3001, and the root `.env.example` already points
   `NOA_SIGN_IN_URL` at `http://localhost:3000/login`.
 
 `/healthz` is liveness only: it touches no dependency, so a backend outage is never reported as
-this app's. There is **no readiness probe, and there will not be one** — §T.60 decided it rather
-than deferring it further. A `/readyz` that reads `NOA_API_URL` would make this app's readiness a
+this app's. There is **no readiness probe, and there will not be one** — that call was made rather
+than deferred further. A `/readyz` that reads `NOA_API_URL` would make this app's readiness a
 function of another deployable's health, so a rolling API restart pulls both web apps out of
 rotation at once, and this app does not need the API to serve the error and 401 states an operator
 sees during exactly that window. Readiness that means something is expressed as ordering instead:
-`docs/deployment.md`. An earlier draft of this file promised the probe here; the promise was never
-in `SPEC.md` §T.50, and the row is the source.
+`docs/deployment.md`. An earlier draft of this file promised the probe here; that promise never
+matched the decision.
 
-## Session and the API hop (§T.50)
+## Session and the API hop
 
 The browser never calls FastAPI directly (AGENTS.md). Every call goes to `/api/*` on this origin,
 and `src/app/api/[...path]/route.ts` forwards it server-side to `NOA_API_URL` with the httpOnly
@@ -113,9 +113,9 @@ packages and duplication across that line is the boundary working.
 embed allowlists four routes because it is the one NOA origin LibreChat may frame — a
 pass-through there would put `/auth/login` and `/admin/*` inside that frame with the operator's
 cookie. This app answers `frame-ancestors 'none'`, so no foreign document can drive it, and what it
-needs is `§I.admin-api` in full: users, roles, tokens, three server verticals, audit, `/auth/*`,
-`/me/mcp-tokens`. An allowlist would have to be edited by §T.51–§T.55 to stay correct, and a stale
-entry there fails as a 404 the panel cannot explain.
+needs is the admin API's contract in full: users, roles, tokens, three server verticals, audit,
+`/auth/*`, `/me/mcp-tokens`. An allowlist would have to be edited on every new vertical to stay
+correct, and a stale entry there fails as a 404 the panel cannot explain.
 
 `/login` is the LDAP sign-in form. It sits outside `(protected)` — that layout runs the `/auth/me`
 gate, and a login page behind it would 401 its way back to itself. `session.ts::clearAuth` is what
@@ -123,10 +123,11 @@ sends an operator here, with `?reason=` and a sanitized `?returnTo=` (`return-to
 
 **The primary action is a `type="button"` click handler, not a form submit.** This is not
 a style choice. `NOA_SIGN_IN_URL` points at this route, and one of the two ways an operator arrives
-is a click on the embed 401 card's link-out. R32 measured that tab: top-level, but it inherits the
+is a click on the embed 401 card's link-out. Measured: that tab is top-level, but it inherits the
 frame's sandbox, and `allow-forms` is absent at both of LibreChat's render sites. A sandboxed
 document returns at the sandbox check *before* the `submit` event fires, so a submit-driven login is
-refused with nothing an operator can see — V80's failure shape, one origin over. The `<form>` stays
+refused with nothing an operator can see — the same absent-`allow-forms` failure shape, one origin
+over. The `<form>` stays
 and routes to the same handler, because an operator who *copies* the address into a fresh tab
 has no opener to inherit from and Enter should work there. It carries no `action`: there is no
 non-JS path that would post a credential anywhere.
@@ -134,28 +135,29 @@ non-JS path that would post a credential anywhere.
 What that lane can claim is bounded on purpose. `src/app/login/login-form.test.tsx` proves the POST
 happens with **zero** `submit` events, and pairs it with a submit-driven fixture that records one —
 otherwise "zero" passes against a button that does nothing. It does not re-measure LibreChat's
-sandbox: jsdom cannot enforce one, and that measurement is R32's, in
+sandbox: jsdom cannot enforce one, and that measurement lives in
 `apps/web-embed/e2e/sign-in.browser.e2e.ts`, taken at both pinned sandbox strings.
 
 Refusal copy is `login-messages.ts`. Every refused credential answers one vague pair whatever the
 cause, so the page cannot be used to learn which half was wrong; the states that are *not* a wrong
-credential (pending approval V7, rate limited V9, LDAP unreachable V4) stay distinguishable, because
+credential (pending approval, rate limited, LDAP unreachable) stay distinguishable, because
 retrying the password is not the remedy for any of them. The backend `detail` is never echoed.
 
 `tests/proxy-live.server.test.ts` proves the hop on the wire against a recording stub upstream —
 what arrived, not what a mocked `fetch` was handed. Mutations proven red before it landed: the
 `Authorization` drop removed (the stub then sees the bearer), and the sign-in button changed to
-`type="submit"` (the V94 specs then see one `submit` event and the wrong `type` attribute).
+`type="submit"` (the escape-hatch specs then see one `submit` event and the wrong `type`
+attribute).
 
 ## Framing
 
-`Content-Security-Policy: frame-ancestors 'none'` on every response (§T.49, V41). The rule is
+`Content-Security-Policy: frame-ancestors 'none'` on every response. The rule is
 `config/framing.ts`; `next.config.ts` returns it from `headers()` as ONE entry on `/(.*)`, so the
 pages, `/login`, `/healthz`, the 404 and the `/api/*` proxy are covered by the mechanism rather than
 by each route remembering a guard.
 
 It has no configuration, which is the difference from the embed's copy: `apps/web-embed` names one
-legitimate parent through `NOA_LIBRECHAT_ORIGIN` (§T.45), and this app has none, so
+legitimate parent through `NOA_LIBRECHAT_ORIGIN`, and this app has none, so
 `buildFramingHeaders()` takes no argument and no variable in the shared repo-root `.env` reaches it.
 `tests/next-config-headers.test.ts` asserts the embed's variable means nothing here.
 
@@ -165,12 +167,12 @@ assumed.
 
 `tests/framing-live.server.test.ts` boots `next dev` on an OS-assigned free port and reads the
 header off `/healthz`, `/` (a 307), `/admin/users`, `/login`, `/api/auth/me` and a 404 — the last two
-added by §T.50, and they are the two this app most needs covered: the login route is the address
-`NOA_SIGN_IN_URL` sends an operator to from inside a LibreChat frame, so it is the one page anyone
-has a reason to try to frame, and the proxy is the surface that would carry a cookie if they
-succeeded. The mechanism §T.45 measured for the
-embed is the same one, but a sibling package's measurement is not evidence about this one (B2's
-lesson). Its readiness gate is a TCP connect, not a request to a route under test: a gate pointed at
+added with the session work, and they are the two this app most needs covered: the login route is
+the address `NOA_SIGN_IN_URL` sends an operator to from inside a LibreChat frame, so it is the one
+page anyone has a reason to try to frame, and the proxy is the surface that would carry a cookie if
+they succeeded. The mechanism the embed's framing headers measured is the same one, but a sibling
+package's measurement is not evidence about this one. Its readiness gate is a TCP connect, not a
+request to a route under test: a gate pointed at
 the subject turns the subject's failure into a timeout. Mutations proven red before it landed:
 the value changed to `'self'`, the source narrowed to `/admin/:path*` (which leaves `/healthz`, `/`
 and the 404 bare), the header key renamed to `X-Frame-Options`, `headers()` dropped from the config,
@@ -184,17 +186,19 @@ pnpm test:server   # the lane that boots a server; own config, excluded from `pn
 ```
 
 Package-level guards live in `tests/`: `pins.test.ts`, `npmrc.test.ts` (registry routing),
-`hygiene.test.ts` (C14/V65 file-size caps) and `import-firewall.test.ts` (C12/C13 boundaries).
+`hygiene.test.ts` (file-size caps) and `import-firewall.test.ts` (deploy-boundary and
+port-not-import rules).
 
 ## Not here yet
 
-- **The admin API routes the ported pages call** (§T.51–§T.55). The pages, hooks and their tests are
-  here and the proxy now carries them; several of the `§I.admin-api` endpoints behind them are not
-  built yet.
-- **A readiness probe.** Not coming. §T.60 decided against one and recorded why — see "Config and
+- **The admin API routes the ported pages call.** The pages, hooks and their tests are
+  here and the proxy now carries them; several of the admin API's contract endpoints behind them
+  are not built yet.
+- **A readiness probe.** Not coming. Ruled out and recorded why — see "Config and
   health" above and `docs/deployment.md`.
-- **Browser e2e for the admin verticals.** They stayed in the old repo. §T.50 gives them a target
-  (the proxy and the login route), but this package has no Playwright lane: `apps/web-embed` owns
+- **Browser e2e for the admin verticals.** They stayed in the old repo. The session plumbing gives
+  them a target (the proxy and the login route), but this package has no Playwright lane:
+  `apps/web-embed` owns
   the browser lane today, and adding one here is its own decision with its own dependency and CI
   cost. Until then the jsdom specs are what run, and the one place that matters — the sign-in
   control's independence from form submission — is bounded as described above rather than implied.

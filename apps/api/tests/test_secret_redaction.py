@@ -1,8 +1,9 @@
 """One-way redaction of anything persisted or logged.
 
 Ported with `core/secrets/redaction.py` from `noa-old` branch `MCP`. The tests are
-not ported: the source had none for this module, which is part of why T15 left it out until
-something called it (V69 — a control lands with a test against the real mechanism).
+not ported: the source had none for this module, which is part of why the secrets port left it
+out until something called it (the provenance-is-not-evidence rule — a control lands with a
+test against the real mechanism).
 
 The claim under test is narrow and worth stating: **redaction is by key name, one-way, and
 recursive.** Not by value shape, not reversible, and not top-level only.
@@ -20,7 +21,7 @@ from core.secrets.redaction import (
     sensitive_key_paths,
 )
 
-# Argument names the CHANGE tools of T25-T29 carry, plus the credential columns of schema
+# Argument names the CHANGE tools carry, plus the credential columns of schema
 # v1. Named individually so a failure says which one stopped being covered.
 CREDENTIAL_KEYS = [
     "api_token",
@@ -37,7 +38,7 @@ SECRET = "hunter2-correct-horse"
 
 @pytest.mark.parametrize("key", CREDENTIAL_KEYS)
 def test_every_credential_key_is_replaced(key: str) -> None:
-    """V8: a value under one of these names never reaches storage or a log."""
+    """A value under one of these names never reaches storage or a log."""
     assert redact_sensitive_data({key: SECRET}) == {key: REDACTED}
 
 
@@ -54,7 +55,8 @@ def test_matching_ignores_case_and_surrounding_space() -> None:
 def test_ordinary_fields_survive_untouched() -> None:
     """The audit trail has to still say what was asked for.
 
-    A redactor that flattened everything would satisfy V8 and make the audit surface
+    A redactor that flattened everything would satisfy the safe-payload rule and make the
+    audit surface
     useless, so the passthrough is as much the contract as the replacement is.
     """
     args = {"server_ref": "whm-1", "target": "1.2.3.4", "duration_minutes": 120}
@@ -93,8 +95,9 @@ def test_redaction_is_one_way() -> None:
     """The departure from `noa-old`, asserted rather than left in a comment.
 
     That repo *encrypted* sensitive audit args so the admin UI could decrypt them back
-    (`storage/postgres/action_tool_runs.py::_encrypt_sensitive_args`). §V45/V47 say
-    redacted, and a recoverable audit table turns one Fernet key into every credential ever
+    (`storage/postgres/action_tool_runs.py::_encrypt_sensitive_args`). The run row's
+    redacted-args rule says redacted, and a recoverable audit table turns one Fernet key into
+    every credential ever
     passed to a tool. Nothing here carries the plaintext forward, in any encoding.
     """
     redacted = redact_sensitive_data({"password": SECRET})
@@ -105,7 +108,8 @@ def test_redaction_is_one_way() -> None:
 def test_the_locator_walks_exactly_where_the_redactor_replaces() -> None:
     """`sensitive_key_paths` answers "where" for a caller that must refuse rather than rewrite.
 
-    T38's executor will not run a change whose arguments came back `[redacted]`, and the two
+    The approved-change executor will not run a change whose arguments came back `[redacted]`,
+    and the two
     walks disagreeing is the failure that matters: a shallower locator passes a nested
     credential through to a runner as the literal placeholder.
     """

@@ -1,16 +1,18 @@
 # Proxmox Integration Reference
 
-Canonical reference for how NOA talks to Proxmox VE. Ported from `noa-old` branch `MCP` with the
-integration layer itself (§T.17, C13), scoped to what exists here today.
+Canonical reference for how NOA talks to Proxmox VE. Ported, never imported, from `noa-old`
+branch `MCP` with the integration layer itself — HTTP API only, no SSH path — scoped to what
+exists here today.
 
 Update this file whenever a Proxmox-backed feature or upstream call changes — in the same commit
 as the code.
 
 ## One transport
 
-Unlike WHM (§T.16), Proxmox exposes everything NOA needs over its HTTP API, so there is no SSH
-path in this layer and a `proxmox_servers` row carries **no SSH credentials**: `base_url`,
-`api_token_id`, `api_token_secret`, `verify_ssl` (I.ext).
+Unlike WHM — JSON API for accounts, SSH for CSF and Imunify — Proxmox exposes everything NOA
+needs over its HTTP API, so there is no SSH path in this layer and a `proxmox_servers` row carries
+**no SSH credentials**: `base_url`, `api_token_id`, `api_token_secret`, `verify_ssl` — its own
+external-system transport.
 
 ## Connection base
 
@@ -58,11 +60,12 @@ curl -k -H 'Authorization: …' \
 
 `<new-password>` is generated server-side by `core.secrets.password` and delivered out-of-band
 through yopass. It is never a tool argument and never a result field — only `yopass_url` crosses
-back (C15, §V.49, and `docs/integrations/yopass.md`).
+back (see `docs/integrations/yopass.md`).
 
 **Exact node, always.** Every VM path names the node. NOA asks the operator for it rather than
 sweeping cluster-wide discovery endpoints — the `/cluster/resources` scan is expensive on a large
-cluster and its results are exactly the kind of large output §V.64 exists to keep out of context.
+cluster and its results are exactly the large output kept out of context — summary plus table
+URL, never the full table.
 
 ## Four failure shapes, one result shape
 
@@ -82,7 +85,8 @@ call funnels through `ProxmoxClient._request_json`, which normalises all of them
 | any other HTTP ≥ 400 | `http_error` |
 | body not JSON, or not an object | `invalid_response` |
 
-These strings are stable; tools branch on them and §V.19 sanitises one layer up.
+These strings are stable; tools branch on them, and raw exceptions get sanitised to a code one
+layer up.
 
 Two splits are load-bearing:
 
@@ -103,11 +107,13 @@ Two splits are load-bearing:
 That is not defensive noise. A NIC change is read-digest-then-write: `update_qemu_config` sends
 the digest in the same body as the change it guards, and Proxmox refuses the write if the config
 moved in between. A digest-free config handed back to the caller would turn that fail-closed CAS
-into a blind overwrite of whatever another operator just did (§V.62's fail-closed discipline).
+into a blind overwrite of whatever another operator just did — fail closed, no verdict without
+verification.
 
-**Whose read the digest comes from is a decision, and §T.28 made it — §V.98 carries it**: the
-runner's own, taken milliseconds before the write, not the one the approval card was built from
-minutes earlier. See `proxmox_vm_nic` below for what a gate-time digest would cost.
+**Whose read the digest comes from is a decision, and the NIC tool made it — the
+CAS-token-from-the-runner rule carries it**: the runner's own, taken milliseconds before the
+write, not the one the approval card was built from minutes earlier. See `proxmox_vm_nic` below
+for what a gate-time digest would cost.
 
 ## Sync or async, same endpoint
 
@@ -126,8 +132,9 @@ present.
 
 One asymmetry, ported deliberately: `regenerate_qemu_cloudinit` returns a UPID but does **not**
 go through the task wrapper, so its result carries `data`, not `upid`. On `noa-old` the reset
-workflow verified by re-reading cloud-init rather than by waiting on that task. **§T.27 answered
-that question and kept the asymmetry**: the reset polls the *config write*'s task and then
+workflow verified by re-reading cloud-init rather than by waiting on that task. **The
+password-reset runner answered that question and kept the asymmetry**: the reset polls the
+*config write*'s task and then
 re-reads cloud-init until the crypt compare agrees, which is a stronger check than waiting on the
 regeneration task would have been.
 
@@ -151,22 +158,23 @@ every tool call left behind a socket and a TLS context; `async with` is the shap
 ## Credentials at rest
 
 `api_token_secret` is Fernet-encrypted with the `enc:v1:fernet:` prefix under
-`NOA_SECRET_ENCRYPTION_KEY` (C7, §V.48, §V.52). Decryption happens in exactly one place,
+`NOA_SECRET_ENCRYPTION_KEY`, required in production. Decryption happens in exactly one place,
 `build_proxmox_client_from_creds`, taking an injected `SecretCipher` — `noa-old` decrypted in
 three (admin validate service, tool-layer `client_for_server`, workflow postflight). It uses
 `maybe_decrypt_text`, so a row written before encryption still works, which is what lets the
 column be migrated in place.
 
-## `proxmox_reset_vm_password` (§T.27)
+## `proxmox_reset_vm_password`
 
-Built 2026-08-15. Two halves either side of the approval gate (§V.22):
+Built 2026-08-15. Two halves either side of the approval gate:
 
-- `noa_api/mcp_tools/proxmox_password.py` — the tool. Runs the preflight in-process (C9, §V.17),
-  opens an `action_requests` row, executes nothing.
+- `noa_api/mcp_tools/proxmox_password.py` — the tool. Runs the preflight in-process — one
+  workflow, one tool, evidence stays in-process — opens an `action_requests` row, executes
+  nothing.
 - `noa_api/mcp_tools/proxmox_password_runner.py` — the runner, reached only from
   `core.approvals.execution` once an operator approved.
 
-**The order is the safety property** (§V.62): generate → deliver to yopass → write `cipassword` →
+**The order is the safety property**: generate → deliver to yopass → write `cipassword` →
 poll the task → regenerate the drive → crypt-verify. A delivery failure aborts with the VM
 untouched.
 
@@ -176,11 +184,11 @@ cannot rule out that the new password reached the VM.
 | Outcome | Link |
 |---|---|
 | yopass failed | no link — nothing was stored, nothing was written |
-| Proxmox refused the config write, or its task exited non-`OK` | **no link** — the VM never took the password, and the old credentials still work (§V.62's named residual case) |
+| Proxmox refused the config write, or its task exited non-`OK` | **no link** — the VM never took the password, and the old credentials still work — the reset's own named residual case |
 | regeneration failed, task poll timed out, verification unavailable, verification mismatched | **link ships** — the write was accepted, so withholding the only copy of a possibly-live credential is a lockout NOA created |
 
 `noa-old` withheld the link on the verification branches. That is the one behavioural correction
-to its flow beyond §T.69.
+to its flow beyond the crypt verdict.
 
 **Refused, not gated**: a VM whose `ciuser` is set to somebody other than the requested
 `username`. The password would change `ciuser`'s credentials while the delivered blob named
@@ -190,15 +198,15 @@ image's default account — and the card shows `ciuser: null` so the operator se
 **What the result carries**: the server, node, vmid, username, a verdict, and `yopass_url`. It
 carries nothing read out of the cloud-init dump. That payload becomes `tool_runs.result_summary`
 and `noa_get_action_result` hands the summary to a model, so the crypt hash of the password NOA
-just set would otherwise reach the LLM through §V.45's audit row (C15, §V.49).
+just set would otherwise reach the LLM through the tool-run trail's audit row.
 
-## `proxmox_vm_nic` (CHANGE, §T.28)
+## `proxmox_vm_nic` (CHANGE)
 
 One tool with an `action` enum where `noa-old` had `proxmox_enable_vm_nic` and
-`proxmox_disable_vm_nic` (DECISIONS §9). Two halves again:
+`proxmox_disable_vm_nic` (DECISIONS.md section 9). Two halves again:
 
 - `core/integrations/proxmox/nic.py` — the `netN` codec. Here rather than in `mcp_tools/` because
-  the grammar is Proxmox's, and because both halves need it (§V.66).
+  the grammar is Proxmox's, and because both halves need it — one helper, not two.
 - `noa_api/mcp_tools/proxmox_nic.py` — the tool. Preflight in-process, opens the row, executes
   nothing.
 - `noa_api/mcp_tools/proxmox_nic_runner.py` — the runner, reached only after an approval.
@@ -210,7 +218,7 @@ VM. `set_link_down` keeps order, keeps unrecognised segments, and never emits a 
 Proxmox, and it makes a never-disabled NIC and a re-enabled one read identically. `link_down=0` is
 *up*, and a valueless `link_down` is *down*: Proxmox's truthiness, not Python's.
 
-**The digest is the runner's own, not the gate's** (§V.98) — the one place §T.28 departs from
+**The digest is the runner's own, not the gate's** — the one place the NIC tool departs from
 `noa-old` deliberately, and it is why the section above says the CAS window matters. There the
 digest was a
 *tool argument*: a preflight read it and the model handed it back on the change call, seconds
@@ -231,33 +239,36 @@ state**:
 | already in the state that was asked for | `no_op` — somebody reached it first, and nothing is written |
 | the interface is gone | `net_not_found` — a line that no longer exists cannot be edited |
 
-**Which interface** (C10, §V.18): a VM with exactly one NIC has it inferred, and the card records
+**Which interface**: a VM with exactly one NIC has it inferred, and the card records
 `auto_selected: true` so the operator sees that NOA chose. Two or more without `net` named returns
-the list as `choices` rather than a pick — disabling the wrong interface is a machine cut off the
-network on the strength of a coin flip.
+the list as `choices` rather than a pick — ambiguous identifier resolves to candidates, never a
+guess, and disabling the wrong interface is a machine cut off the network on the strength of a
+coin flip.
 
-**The postflight asks the change's own question** (§V.97): it re-reads the `netN` line and
+**The postflight asks the change's own question**: it re-reads the `netN` line and
 recomputes the link state from it, not from the task's exit status, which says only that Proxmox
 accepted a write. A read that cannot answer is `changed` + `verified: false` +
-`verification: unavailable` — never a bare `false` (§V.62, §V.86: unavailable is not verified, and
-not refuted either).
+`verification: unavailable` — never a bare `false`; no verdict without verification, and
+unavailable is neither verified nor refuted.
 
 **What the result carries**: the server, node, vmid, net, action, a link state and a verdict. Not
 the interface line, its MAC or its bridge — that payload becomes `tool_runs.result_summary` and
-`noa_get_action_result` hands it to a model (§V.45, §V.76, §V.26).
+the action-result tool hands it to a model — requester-matched, and the card carries an id-only
+URL.
 
 ## Not built yet
 
 | Surface | Task |
 |---|---|
-| Internal reads `proxmox_get_vm_status_current` / `_config` / `_pending`, `proxmox_list_servers`, `proxmox_validate_server` | I.mcp |
+| Internal reads `proxmox_get_vm_status_current` / `_config` / `_pending`, `proxmox_list_servers`, `proxmox_validate_server` | MCP server contract |
 
-## Admin surface (§T.54)
+## Admin surface
 
-Five routes under `/admin/proxmox/servers`, all behind `require_admin` (§V.13): `GET` / `POST`
-on the collection, `PATCH` / `DELETE` on `{id}`, and `POST {id}/validate`. `api_token_secret` is
-never returned — the safe view reports `has_api_token_secret` (§V.2, §V.8) — and the service
-encrypts on the way in (§C.7, §V.48).
+Five routes under `/admin/proxmox/servers`, all behind `require_admin` — a non-admin gets 403 on
+every one: `GET` / `POST` on the collection, `PATCH` / `DELETE` on `{id}`, and
+`POST {id}/validate`. `api_token_secret` is never returned — the safe view reports
+`has_api_token_secret`, the token-scope and envelope assertions — and the service encrypts on
+the way in, stored as `enc:v1:fernet:`.
 
 **The narrowest of the three verticals, and the table says why**: Proxmox is an HTTP API and
 nothing else, so there is no SSH block, no host key to pin, and the validate flow writes
@@ -268,11 +279,12 @@ write path is structural rather than a rule it follows.
 offers. A refusal is a **200 with `ok: false`** and the client's own normalised code, not a 502:
 the operator asked whether the endpoint answers.
 
-`verify_ssl` defaults **off** here — on both the request model and the column (§T.4) — because
+`verify_ssl` defaults **off** here — on both the request model and the column in the schema —
+because
 Proxmox ships a self-signed certificate and defaulting on would make every fresh row fail
 validation for a reason that is not a misconfiguration.
 
-**Never implement** (C22, management policy — not a technical limit):
+**Never implement** — the never-implement names, management policy, not a technical limit:
 `proxmox_move_vms_between_pools`, `proxmox_preflight_move_vms_between_pools`,
 `proxmox_get_user_by_email`. The `ProxmoxClient` methods behind them — `get_user`, `get_pool`,
 `get_effective_permissions`, `add_vms_to_pool`, `remove_vms_from_pool` — are deliberately absent,
@@ -285,37 +297,40 @@ what the missing methods were for.
 ## Caveats for the tools that will use this
 
 - A cloud-init password change is **not** an immediate in-guest reset. The guest reads its
-  cloud-init drive at next boot, and §T.27's result message says so; the card carries the VM's run
-  state so an operator can see whether a restart is owed.
+  cloud-init drive at next boot, and the password-reset tool's result message says so; the card
+  carries the VM's run state so an operator can see whether a restart is owed.
 - NIC selection: when a VM has exactly one NIC, preflight may infer it; otherwise it must return
-  the NIC list and refuse to guess (C10, §V.18). The CHANGE then uses the concrete `netN` key.
-  **Built at §T.28**, and the inference is recorded (`auto_selected`) rather than hidden — an
-  operator approving a change to a `netN` key they never typed should be able to see it.
-- libcrypt absent ⇒ the reset reports `verification: unavailable`, ⊥ a silent pass and ⊥ a
-  mismatch. Verification-unavailable ≠ verified, and ≠ refuted (§V.62, §T.69). Built in
-  `core/integrations/proxmox/cloudinit.py`: `CryptVerdict` has three values, and each unavailable
-  one carries the cause (`crypt_library_unavailable`, `cloudinit_password_hash_absent`,
-  `crypt_refused_stored_hash`). `noa-old` answered a `bool` and collapsed all three into "does not
-  match", which reported a change that had in fact succeeded as one to repeat.
+  the NIC list and refuse to guess — ambiguous identifier resolves to candidates, never a guess.
+  The CHANGE then uses the concrete `netN` key. **Built with the NIC tool**, and the inference is
+  recorded (`auto_selected`) rather than hidden — an operator approving a change to a `netN` key
+  they never typed should be able to see it.
+- libcrypt absent means the reset reports `verification: unavailable`, never a silent pass and
+  never a mismatch. Verification-unavailable ≠ verified, and ≠ refuted — no verdict without
+  verification. Built in `core/integrations/proxmox/cloudinit.py`: `CryptVerdict` has three
+  values, and each unavailable one carries the cause (`crypt_library_unavailable`,
+  `cloudinit_password_hash_absent`, `crypt_refused_stored_hash`). `noa-old` answered a `bool` and
+  collapsed all three into "does not match", which reported a change that had in fact succeeded
+  as one to repeat.
 
 ## Code references
 
 - Package overview: `core/integrations/proxmox/__init__.py`
 - API client + credential factory: `core/integrations/proxmox/client.py`
-- Cloud-init reading + the crypt guard: `core/integrations/proxmox/cloudinit.py` (§T.69)
-- The `netN` codec: `core/integrations/proxmox/nic.py` (§T.28)
+- Cloud-init reading + the crypt guard: `core/integrations/proxmox/cloudinit.py`
+- The `netN` codec: `core/integrations/proxmox/nic.py`
 - Server-ref resolution: `core/servers/proxmox_ref.py` over the shared
-  `core/servers/reference.py` (§T.27 extracted the policy the three systems share, §V.66)
+  `core/servers/reference.py` (the password-reset tool extracted the policy the three systems
+  share — one helper, not two)
 - Admin CRUD + validate: `apps/api/src/noa_api/api/routes/admin_servers.py`,
   `core/servers/admin_service.py`, `core/servers/admin_repository.py`,
-  `core/servers/validation.py` (§T.54)
+  `core/servers/validation.py`
 - Tests: `apps/api/tests/test_proxmox_client.py` (failure classification, digest, credentials,
   lifecycle), `test_proxmox_client_endpoints.py` (literal request contracts),
-  `test_proxmox_cloudinit_crypt.py` (§T.69's three verdicts + the negative control),
+  `test_proxmox_cloudinit_crypt.py` (the crypt verdict's three values + the negative control),
   `test_proxmox_server_ref.py`, `test_proxmox_server_repository.py`,
   `test_proxmox_tools_reset_password.py` (the tool half),
   `test_proxmox_reset_password_runner.py` (the runner half),
-  `test_proxmox_nic_codec.py` (§T.28's grammar, no tool context),
+  `test_proxmox_nic_codec.py` (the NIC tool's grammar, no tool context),
   `test_proxmox_tools_vm_nic.py` (the enum, the ambiguity refusals, the no-op),
   `test_proxmox_nic_runner.py` (the re-read, the lost-update case, the postflight)
-- Secret delivery for §T.27: `docs/integrations/yopass.md`
+- Secret delivery for the password-reset tool: `docs/integrations/yopass.md`

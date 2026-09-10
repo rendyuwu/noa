@@ -1,9 +1,9 @@
 """The halves of `whm_suspend_account` and `whm_unsuspend_account` that change WHM.
 
-Beside `whm_account_change.py` rather than inside it, and the reason is the same one that split
-the Proxmox and PMG tools from their runners: a CHANGE tool is two halves on opposite sides of
-V22's boundary, and together they run past C14's 900-line budget. That module reached the budget
-exactly, so the next line either lands here or does not land at all.
+Beside `whm_account_change.py` rather than inside it, and the reason is the same one that split the
+Proxmox and PMG tools from their runners: a CHANGE tool is two halves on opposite sides of the
+cookie/CSRF boundary, and together they run past the file-size cap's 900-line budget. That module
+reached the budget exactly, so the next line either lands here or does not land at all.
 
 The split falls where the design already draws a line — **nothing in the tool module can change
 anything, and nothing here is reachable without an approval.** The tool names, the evidence keys,
@@ -19,22 +19,22 @@ request into the client that performs it and re-proves the credential's ownershi
 `_verify_account_state` is the postflight, and `_AccountChangeDirection` carries the only thing
 that differs, which is the value `suspended` must hold once the change took.
 
-**The operator's reason reaches WHM through the suspend runner and nowhere else.**
-`suspendacct` has a suspension-note field and C8's single field is the only honest text for it;
-`unsuspendacct` takes no note, so that runner never reads the value — which is what "a value,
-not a permission" looks like from the other side. Neither payload echoes it back, because
-`result_summary` is derived from the payload and `noa_get_action_result` hands the summary to a
-model, and neither delta carries it either: `ChangeDelta` refuses a reason-bearing key at
-construction, and WHM's own echo of the note (`suspendreason`, on every later `listaccts` row) is
-among the names it refuses. That last part is not hypothetical here — the account summary this
-runner reads back *is* the shape that carries it, which is why the identity a delta is built from
-is two named strings rather than the summary.
+**The operator's reason reaches WHM through the suspend runner and nowhere else.** `suspendacct` has
+a suspension-note field and the operator-typed reason field is the only honest text for it;
+`unsuspendacct` takes no note, so that runner never reads the value — which is what "a value, not a
+permission" looks like from the other side. Neither payload echoes it back, because `result_summary`
+is derived from the payload and `noa_get_action_result` hands the summary to a model, and neither
+delta carries it either: `ChangeDelta` refuses a reason-bearing key at construction, and WHM's own
+echo of the note (`suspendreason`, on every later `listaccts` row) is among the names it refuses.
+That last part is not hypothetical here — the account summary this runner reads back *is* the shape
+that carries it, which is why the identity a delta is built from is two named strings rather than
+the summary.
 
 **The delta states a field change, and the `old` side comes off the evidence.** What moved is one
 boolean, `suspended`, and the value it moved from is the reading the operator authorised against
 rather than a second reading taken later. Where the evidence cannot say, no field change is
 stated at all: an `old` side nobody recorded is not an `old` side of `false`, and a delta whose
-before-value was invented is the fabrication V86 refuses one surface over.
+before-value was invented is the fabrication refused one surface over.
 """
 
 from __future__ import annotations
@@ -173,7 +173,7 @@ def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
         what this knew.
 
         The server and the account both come from the **evidence**, never from the arguments —
-        `_resolve_change_target` is where that rule lives, shared with T23's runner.
+        `_resolve_change_target` is where that rule lives, shared with the unsuspend tool's runner.
 
         The resolution refusal carries **no delta**: nothing was asked of WHM, so nothing was
         measured and nothing is stated. WHM's own refusal of the mutation does carry one,
@@ -183,9 +183,9 @@ def build_whm_suspend_runner(*, context: McpToolContext) -> ChangeRunner:
         if not isinstance(target, _ChangeTarget):
             return ChangeOutcome(payload=target)
 
-        # C8's single field, written where WHM keeps a suspension note. The operator typed it,
+        # The reason field, written where WHM keeps a suspension note. The operator typed it,
         # the LLM never saw it, and it is not echoed back in the payload below — `result_summary`
-        # is derived from that payload and `noa_get_action_result` returns it to a model (V96b).
+        # is derived from that payload and `noa_get_action_result` returns it to a model.
         mutation = await target.client.suspend_account(
             username=target.username, reason=request.reason
         )
@@ -204,7 +204,7 @@ def build_whm_unsuspend_runner(*, context: McpToolContext) -> ChangeRunner:
     `unsuspendacct` takes only a username. `request.reason` is on the request — the executor
     reads it off the row for every approved change — and this runner does not touch it,
     because there is no field on the target system it belongs in. Nothing to write out means
-    none of V96's return paths open here.
+    no path back to a model opens here.
     """
 
     async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
@@ -252,7 +252,7 @@ async def _resolve_change_target(
     through JSONB, and a value that no longer parses is a request NOA refuses rather than guesses
     at), or the server row is gone.
 
-    **A third refuses on the identity of the credential** (§V106). The row's `api_username` is
+    **A third refuses on the identity of the credential**. The row's `api_username` is
     read here, now, and compared against the `owner` the card was built from: a row is editable
     between a request and its decision, so the credential this change would run as need
     not be the one the operator authorised — repointing `api_username` at another reseller after
@@ -269,8 +269,9 @@ async def _resolve_change_target(
     delta an operator reads, and a summary written by something other than WHM's own `listaccts`
     must not be able to make a non-boolean read as a state.
 
-    The database session closes before the caller's WHM round trips, T21's rule — and here it
-    matters twice over, because the executor's own session is open for the whole of the call.
+    The database session closes before the caller's WHM round trips, the account search's rule — and
+    here it matters twice over, because the executor's own session is open for the whole of the
+    call.
     """
     server_id = uuid_or_none(request.evidence.get(EVIDENCE_SERVER_ID))
     account = request.evidence.get(EVIDENCE_ACCOUNT)
@@ -299,7 +300,8 @@ async def _resolve_change_target(
             owner=owner,
             api_username=api_username,
             # What the model asked for, as the gate recorded it. The resolved row's name
-            # is a reseller's `api_username` by V109(b) and stays out of the answer; it goes to
+            # is a reseller's `api_username` by the name-equals-api_username rule and stays out
+            # of the answer; it goes to
             # the log instead.
             server_ref=request.arguments.get("server_ref"),
             server_name=server_name,
@@ -326,7 +328,8 @@ def _account_delta(
 
     The identity is two named strings — the server and the account — and deliberately not the
     account summary the postflight just read. That summary carries WHM's `suspendreason`, which
-    as of T22 is the operator's own words coming back off the target system, and a delta is a
+    as of the suspend tool is the operator's own words coming back off the target system, and a
+    delta is a
     receipt key a model can reach through the audit trail. `ChangeDelta` would
     refuse it, and the point of building the identity by hand is that the refusal never has to
     fire.
@@ -381,7 +384,8 @@ async def _verify_account_state(
     direction: _AccountChangeDirection,
     request: ChangeExecutionRequest,
 ) -> ChangeOutcome:
-    """Re-read the account and say whether the change took (V62's rule, one system over).
+    """Re-read the account and say whether the change took (the crypt-verify rule, one system
+    over).
 
     Three answers, and the middle one is why this is a function rather than a boolean:
 

@@ -13,8 +13,9 @@ gets its hostname out of a parsed `base_url`. A `pmg_servers` row stores the bar
 `https://pmg:8006`, `user@pmg`, `pmg/path` and `pmg example.com` all reach this function
 unexamined — and each would send the command somewhere other than where the operator meant.
 
-The username default is tested against `requires_escalation` rather than in isolation. V55 is a
-biconditional — `sudo -n` ⟺ user ≠ `root` — and a blank `ssh_username` column resolving to `root`
+The username default is tested against `requires_escalation` rather than in isolation. The
+sudo-escalation rule is a biconditional — `sudo -n` ⟺ user ≠ `root` — and a blank `ssh_username`
+column resolving to `root`
 is the half of it that lives in this module.
 """
 
@@ -38,7 +39,8 @@ def _resolve(server: FakePMGServer, *, require_host_key_fingerprint: bool = True
     )
 
 
-# --- V69: refuse before connecting, with the code that names the remedy ---
+# --- A ported control needs its own test: refuse before connecting, with the code that names
+# the remedy ---
 
 
 def test_resolve_ssh_config_requires_pinned_fingerprint() -> None:
@@ -49,7 +51,7 @@ def test_resolve_ssh_config_requires_pinned_fingerprint() -> None:
 
 
 def test_blank_fingerprint_counts_as_absent() -> None:
-    """An admin who cleared the field left the server unvalidated, ⊥ pinned to `""`."""
+    """An admin who cleared the field left the server unvalidated, never pinned to `""`."""
     with pytest.raises(SSHExecutionError) as exc:
         _resolve(FakePMGServer(ssh_host_key_fingerprint="   "))
 
@@ -57,7 +59,8 @@ def test_blank_fingerprint_counts_as_absent() -> None:
 
 
 def test_resolve_ssh_config_allows_an_unpinned_row_for_the_tofu_capture_path() -> None:
-    """T54's validate flow connects unpinned on purpose, to capture the value it will store."""
+    """The admin validate flow connects unpinned on purpose, to capture the value it will
+    store."""
     config = _resolve(
         FakePMGServer(ssh_host_key_fingerprint=None), require_host_key_fingerprint=False
     )
@@ -72,7 +75,7 @@ def test_resolve_ssh_config_requires_ssh_credentials() -> None:
     assert exc.value.error_code == "ssh_not_configured"
 
 
-# --- V58: the stored host is a bare host, and nothing else ---
+# --- The stored host is a bare host, and nothing else ---
 
 
 @pytest.mark.parametrize(
@@ -104,7 +107,8 @@ def test_plain_host_and_bare_ipv4_are_accepted() -> None:
 
 
 def test_surrounding_whitespace_is_trimmed_rather_than_rejected() -> None:
-    """A pasted trailing newline is an admin artifact, ⊥ an unusable row. Interior whitespace is
+    """A pasted trailing newline is an admin artifact, never an unusable row. Interior
+    whitespace is
     the hazard, and it is rejected above."""
     assert _resolve(FakePMGServer(ssh_host=f"  {PMG_HOST}  ")).host == PMG_HOST
     assert _resolve(FakePMGServer(ssh_host=f"{PMG_HOST}\n")).host == PMG_HOST
@@ -130,7 +134,7 @@ def test_explicit_ssh_port_is_honoured() -> None:
     assert _resolve(FakePMGServer(ssh_port=2222)).port == 2222
 
 
-# --- V55: the resolved username is what escalation reads ---
+# --- Sudo escalation: the resolved username is what escalation reads ---
 
 
 @pytest.mark.parametrize("stored", [None, "", "   "])
@@ -148,7 +152,7 @@ def test_non_root_username_escalates() -> None:
     assert requires_escalation(config) is True
 
 
-# --- C7 / V48: credentials are decrypted here, and tolerate a pre-encryption row ---
+# --- Encrypted at rest: credentials are decrypted here, and tolerate a pre-encryption row ---
 
 
 def test_resolve_ssh_config_decrypts_stored_credentials() -> None:

@@ -1,8 +1,8 @@
-"""Shared column helpers (V66 — reuse over duplication).
+"""Shared column helpers (reuse over duplication).
 
 Every table repeats the same shapes: a server-generated UUID primary key,
-created/updated timestamps, encrypted-secret text, and — since T35 — lifecycle
-enum columns. Declaring them once keeps the models readable and the DDL uniform.
+created/updated timestamps, encrypted-secret text, and — since the `tool_runs` table —
+lifecycle enum columns. Declaring them once keeps the models readable and the DDL uniform.
 """
 
 from __future__ import annotations
@@ -53,10 +53,10 @@ def lifecycle_enum_type(enum_class: type[StrEnum], *, name: str) -> Enum:
     servers and leaves the type behind on downgrade. A VARCHAR plus a CHECK constraint
     is dropped with the table.
 
-    `create_constraint=True` is the point of the helper — SQLAlchemy 2.0 defaults it to
-    `False`, which would leave `native_enum=False` as a plain unconstrained VARCHAR and
-    V20's "machine-stable" resting on application code alone. With the constraint, a
-    renamed member fails at the DB and has to be a migration.
+    `create_constraint=True` is the point of the helper — SQLAlchemy 2.0 defaults it to `False`,
+    which would leave `native_enum=False` as a plain unconstrained VARCHAR and the lifecycle enums'
+    "machine-stable" contract resting on application code alone. With the constraint, a renamed
+    member fails at the DB and has to be a migration.
 
     `validate_strings=True` catches the same mistake earlier, on the Python side, before
     a flush.

@@ -5,15 +5,15 @@ Three claims here are claims *about the database* and cannot be made anywhere el
 - **`status = APPROVED AND tool_run_id = :run` is in the statement**, so a row that is PENDING,
   DENIED, EXPIRED, or linked to a different run is never fetched. A double can be told to
   answer `None`; only Postgres can be asked whether the predicate is really there.
-- **One receipt per request**, enforced by T36's `UNIQUE (action_request_id)` through
-  `ON CONFLICT DO NOTHING`. T36 stated that constraint naming *this* pair as the reason — the
+- **One receipt per request**, enforced by the receipt table's `UNIQUE (action_request_id)`
+  through `ON CONFLICT DO NOTHING`. That constraint names *this* pair as the reason — the
   executor and the reaper can both reach one finished run — so the end-to-end version of that
-  sentence belongs here, with the negative control V87 requires.
+  sentence belongs here, with the negative control the compare-must-still-separate rule requires.
 - **The run's terminal status and the receipt commit together**, which is a property of one
   transaction and not of two calls.
 
-The row under test is always produced by the production writers: T33's gate opens the request,
-T37's decision approves it and opens the `STARTED` run. Nothing here hand-inserts an
+The row under test is always produced by the production writers: the gate opens the request,
+the decision endpoint approves it and opens the `STARTED` run. Nothing here hand-inserts an
 `action_requests` row, so a change to either writer shows up in this file rather than being
 papered over by a fixture that agrees with the test instead of with the code.
 """
@@ -123,7 +123,8 @@ async def reap(factory: async_sessionmaker[AsyncSession]) -> None:
             # Zero, so every `STARTED` row is past its cutoff: this file's subject is the
             # collision between the two writers, not the deadline.
             reap_after_seconds=0,
-            # Wide enough to be no part of the claim either — the bound is T38(n)'s subject,
+            # Wide enough to be no part of the claim either — the bound is the approved-change
+            # executor's subject,
             # asserted in `test_stranded_run_reaper_live.py`.
             batch_size=100,
         )
@@ -145,7 +146,8 @@ async def set_status(
     action_request_id: UUID,
     status: ActionRequestStatus,
 ) -> None:
-    """Force a terminal status by hand, to reach V23's refusal for a row that *exists*."""
+    """Force a terminal status by hand, to reach the status verdict's refusal for a row
+    that *exists*."""
     async with factory() as session:
         await session.execute(
             sa.update(ActionRequest)
@@ -161,11 +163,12 @@ async def set_status(
 
 
 async def test_an_approved_run_reaches_completed_with_a_receipt(factory) -> None:  # type: ignore[no-untyped-def]
-    """V29 end to end: the gate opens a request, a decision approves it and opens the run, the
-    executor finishes it — and V46's three artifacts all exist.
+    """State-in-DB, end to end: the gate opens a request, a decision approves it and opens the
+    run, the executor finishes it — and run, receipt and audit all exist in one commit.
 
-    Before T38 this run sat `STARTED` for as long as the database existed, which is what made
-    `noa_get_action_result` and the approval card answer "started" forever.
+    Before the approved-change executor this run sat `STARTED` for as long as the database
+    existed, which is what made `noa_get_action_result` and the approval card answer "started"
+    forever.
     """
     _, request_id, run_id = await approved_change(factory)
     runner = RecordingChangeRunner()
@@ -176,7 +179,7 @@ async def test_an_approved_run_reaches_completed_with_a_receipt(factory) -> None
     run = next(row for row in await read_runs(factory) if row.id == run_id)
     assert run.status is ToolRunStatus.COMPLETED
     assert json.loads(run.result_summary or "") == RUNNER_OK
-    # V47's timing pair: `completed_at` is what makes a duration derivable on read.
+    # The timing pair: `completed_at` is what makes a duration derivable on read.
     assert run.completed_at is not None
     assert run.completed_at >= run.created_at
 
@@ -187,15 +190,16 @@ async def test_an_approved_run_reaches_completed_with_a_receipt(factory) -> None
 
 
 async def test_the_operator_reason_travels_from_the_row_to_the_runner(factory) -> None:  # type: ignore[no-untyped-def]
-    """T22, C8: the note WHM's `suspendacct` receives is what the operator typed on the card.
+    """The suspend tool: the note WHM's `suspendacct` receives is what the operator typed
+    on the card.
 
     The link this file owns is the SELECT. `test_whm_tools_suspend_account.py` proves the runner
     puts `request.reason` on the wire, and `test_approved_change_execution.py` proves the service
     passes it along — both against values a test handed them. Only here is the reason the one an
-    approval actually *wrote*: `build_live_decision_service` stores it under T34's
+    approval actually *wrote*: `build_live_decision_service` stores it under the table's
     `ck_action_requests_decided_reason`, and `load_authorized` reads it back out of the row.
     Without this, `load_authorized` could answer `""` and every other assertion in the chain
-    would still be green (V93's shape — a value is fetched or it is not).
+    would still be green (the bind-at-fetch rule's shape — a value is fetched or it is not).
     """
     _, request_id, run_id = await approved_change(factory)
     runner = RecordingChangeRunner()
@@ -208,7 +212,7 @@ async def test_the_operator_reason_travels_from_the_row_to_the_runner(factory) -
 
 
 async def test_the_receipt_carries_the_gates_evidence_as_its_before_state(factory) -> None:  # type: ignore[no-untyped-def]
-    """C9/V17/V33: the before-state on the receipt is the preflight the *gate* persisted, so the
+    """The before-state on the receipt is the preflight the *gate* persisted, so the
     operator's authorisation and the record of what happened describe one moment."""
     _, request_id, run_id = await approved_change(factory)
 
@@ -225,10 +229,10 @@ async def test_the_receipt_carries_the_gates_evidence_as_its_before_state(factor
 
 
 async def test_the_approval_row_is_untouched_by_the_execution(factory) -> None:  # type: ignore[no-untyped-def]
-    """V23/V28: the row *is* the authorization, and running the change is not a decision.
+    """The row *is* the authorization, and running the change is not a decision.
 
     The executor holds no writer that can touch `action_requests` at all — the same split that
-    keeps T39's expiry repository off the decision path, one table over.
+    keeps the expiry loop's repository off the decision path, one table over.
     """
     _, request_id, run_id = await approved_change(factory)
     before = await read_request(factory, request_id)
@@ -263,7 +267,8 @@ async def test_a_failed_change_records_failed_and_still_writes_its_receipt(facto
 
 
 async def test_a_change_with_no_runner_is_terminal_rather_than_stuck(factory) -> None:  # type: ignore[no-untyped-def]
-    """Still reachable (T25-T29 unbuilt), and the reason it was safe to ship the executor
+    """Still reachable (later CHANGE tools unbuilt at the time), and the reason it was safe to
+    ship the executor
     first: the operator gets a named answer instead of a run that never moves."""
     _, request_id, run_id = await approved_change(factory)
 
@@ -284,7 +289,7 @@ async def test_a_change_with_no_runner_is_terminal_rather_than_stuck(factory) ->
     [ActionRequestStatus.PENDING, ActionRequestStatus.DENIED, ActionRequestStatus.EXPIRED],
 )
 async def test_a_request_that_is_not_approved_is_not_executed(factory, status) -> None:  # type: ignore[no-untyped-def]
-    """V23: "may this run?" is the row's `status`, and the predicate is in the statement.
+    """ "May this run?" is the row's `status`, and the predicate is in the statement.
 
     Parameterized over all three non-APPROVED states rather than one, because the guard is a
     single `==` and a mutation to `!=` would still refuse whichever one a single case picked.
@@ -342,12 +347,13 @@ async def test_an_unknown_request_id_is_not_executed(factory) -> None:  # type: 
 
 
 # --------------------------------------------------------------------------------------
-# One receipt (V46, T36's UNIQUE)
+# One receipt (run-plus-receipt in one commit, the receipt table's UNIQUE)
 # --------------------------------------------------------------------------------------
 
 
 async def test_executor_and_reaper_together_leave_one_receipt(factory) -> None:  # type: ignore[no-untyped-def]
-    """T36 stated `UNIQUE (action_request_id)` naming exactly this pair as the reason.
+    """The receipt table's constraint states `UNIQUE (action_request_id)` naming exactly this
+    pair as the reason.
 
     A second receipt turns "the receipt" into "some receipt" and a reader picks one arbitrarily.
     The reaper runs first here with a zero deadline, so it finds the `STARTED` row and writes the
@@ -417,7 +423,7 @@ async def test_the_conflict_target_names_a_constraint_the_schema_has(factory) ->
     """`create_if_missing` conflicts on a *named* constraint, so the name has to be real.
 
     Named rather than inferred on purpose: a bare `ON CONFLICT DO NOTHING` swallows every
-    conflict, including one from some future index that has nothing to do with V46's
+    conflict, including one from some future index that has nothing to do with the
     one-receipt-per-request rule. The cost of naming it is that a rename in the model or the
     migration breaks every receipt insert — at runtime, loudly, but at runtime. This binds the
     reference instead.
@@ -435,7 +441,8 @@ async def test_the_conflict_target_names_a_constraint_the_schema_has(factory) ->
 
 
 async def test_a_failing_receipt_write_rolls_back_the_terminal_status(factory) -> None:  # type: ignore[no-untyped-def]
-    """A `COMPLETED` run whose receipt never landed is V46 held by nothing.
+    """A `COMPLETED` run whose receipt never landed is the run-plus-receipt rule held
+    by nothing.
 
     The receipt write is broken by handing the repository a receipts writer that raises, so what
     is exercised is the real transaction boundary rather than a claim about it: the run must

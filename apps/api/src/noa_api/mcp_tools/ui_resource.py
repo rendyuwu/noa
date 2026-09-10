@@ -1,11 +1,12 @@
 """The two surfaces NOA renders inside LibreChat's frame, shaped once.
 
 Two tool results carry a NOA-origin document: a CHANGE's approval card and a large
-READ's table. V64 says the table's mechanism is *the same* one V37 names — path A, the
-iframe UI resource — and not a second one, so the three fields that make an iframe render at
-all are stated here rather than twice.
+READ's table. The summary-plus-URL rule says the table's mechanism is *the same* one the
+approval card's path names — path A, the iframe UI resource — and not a second one, so the
+three fields that make an iframe render at all are stated here rather than twice.
 
-**All three are load-bearing together** (R12, R29, R31c, measured at pin `45cc53c4`):
+**All three are load-bearing together** — measured live in Chromium, pinned to LibreChat commit
+`45cc53c4`:
 
 - the `ui://` scheme is what LibreChat's parser classifies on. Without it the resource
   arrives as an ordinary attachment and never renders (`packages/api/src/mcp/parsers.ts:183`);

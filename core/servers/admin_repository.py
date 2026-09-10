@@ -29,8 +29,8 @@ every credential, which is the whole reason the panel's secret fields are write-
 **The host-key pin is invalidated here, not by the caller.** A pin belongs to one
 `(host, port)` pair, so a PATCH that moves either has invalidated it. Doing that where the
 old row is already loaded makes it a fact of construction rather than an obligation a second
-caller can forget — the argument V29 and V31 both make one table over. Two consequences worth
-stating:
+caller can forget — the same construction-not-obligation argument made one table over, twice.
+Two consequences worth stating:
 
 - the comparison is on the whole `base_url` (WHM) / `ssh_host` (PMG), not on the SSH hostname
   derived from it. Re-deriving that hostname here would be a second implementation of
@@ -42,7 +42,7 @@ stating:
 
 `commit()` sits on every Protocol here rather than being left to the route, because
 `noa_api.api.deps.get_db_session` does not commit and a repository that only `flush()`es
-answers 200 over a rollback — B10 and B11 both, one table apart.
+answers 200 over a rollback — the same flush-only rollback hole, one table apart, twice.
 """
 
 from __future__ import annotations
@@ -76,9 +76,9 @@ SSH_VALUE_FIELDS: Final[tuple[str, ...]] = (
 class SSHCredentials:
     """The SSH columns WHM and PMG share, as a create carries them.
 
-    Every secret is **already encrypted** (see the module docstring). `ssh_username` `None`
-    means "connect as root", which is coupled to V55: `resolve_*_ssh_config` resolves a blank
-    column to `root` and therefore adds no `sudo -n`.
+    Every secret is **already encrypted** (see the module docstring). `ssh_username` `None` means
+    "connect as root", which is coupled to the sudo-prefix rule: `resolve_*_ssh_config` resolves a
+    blank column to `root` and therefore adds no `sudo -n`.
     """
 
     ssh_username: str | None = None
@@ -136,7 +136,8 @@ class WHMServerUpdate:
     api_token: str | None = None
     verify_ssl: bool | None = None
     # `None` means "leave alone" here too, so a PATCH that renames a row does not silently
-    # turn its reseller flag off. The service is what refuses the combinations V109(b) bans.
+    # turn its reseller flag off. The service is what refuses the combinations the
+    # owner-name-match rule bans.
     is_reseller_credential: bool | None = None
     ssh: SSHCredentialsPatch = SSHCredentialsPatch()
 
@@ -145,7 +146,7 @@ class WHMServerUpdate:
 class ProxmoxServerCreate:
     """A new `proxmox_servers` row. `api_token_secret` is ciphertext.
 
-    No SSH block: Proxmox is an HTTP API and nothing else (I.ext), so the table has no SSH
+    No SSH block: Proxmox is an HTTP API and nothing else, so the table has no SSH
     columns to write and no host key to pin.
     """
 
@@ -172,7 +173,7 @@ class PMGServerCreate:
     """A new `pmg_servers` row.
 
     `ssh_host` is required and there is no `base_url` or `verify_ssl`: PMG is reached over SSH
-    + `pmgsh` only (V58, I.ext).
+    + `pmgsh` only.
     """
 
     name: str
@@ -333,7 +334,7 @@ class SQLWHMServerAdminRepository:
 class ProxmoxServerAdminRepository(Protocol):
     """What `ProxmoxServerAdminService` needs from `proxmox_servers`.
 
-    No `set_host_key_fingerprint`: there is no SSH path to pin (I.ext), so the validate flow
+    No `set_host_key_fingerprint`: there is no SSH path to pin, so the validate flow
     for this system writes nothing at all.
     """
 
@@ -477,7 +478,7 @@ class SQLPMGServerAdminRepository:
 # `noa_api.api.deps` makes for `SQLApprovalCardRepository`: a reachability probe must not hold
 # an object that can rewrite a credential or delete a row. What it may do is read the server it
 # was asked about and store the host key that server presented — nothing else. Proxmox has no
-# equivalent because it has no SSH path to pin (I.ext); its validate reads through the
+# equivalent because it has no SSH path to pin; its validate reads through the
 # `SELECT`-only `SQLProxmoxServerRepository` and writes nothing at all.
 
 

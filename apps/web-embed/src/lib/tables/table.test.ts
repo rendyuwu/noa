@@ -3,11 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { cellText, describeBound, parseResultTable } from './table'
 
 /**
- * Parsing a parked table, and the one number it may never invent (§T.56 — V38, V85).
+ * Parsing a parked table, and the one number it may never invent.
  *
  * Two rules pull in opposite directions here and both are deliberate. Parsing is **permissive**:
  * a missing label falls back to the key, a row that is not an object is dropped, and nothing
- * throws — a page that throws is a blank iframe, which V38 refuses. What is **fail-closed** is the
+ * throws — a page that throws is a blank iframe, which the no-blank-card rule refuses. What is
+ * **fail-closed** is the
  * bound: `truncated` may be inferred from the counts but never cleared by their absence, because
  * the direction that must not fail open is the one where a capped table looks complete.
  */

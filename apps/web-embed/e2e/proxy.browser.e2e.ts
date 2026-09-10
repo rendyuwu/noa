@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test'
 import { UPSTREAM_ORIGIN } from '../playwright.config'
 
 /**
- * The session hop, in a real browser (§T.44, V40).
+ * The session hop, in a real browser.
  *
  * This is the one claim jsdom cannot make. The unit specs prove the proxy forwards whatever
  * `Cookie` header it is handed; what a browser decides to *send* to its own origin is a
@@ -71,9 +71,9 @@ test('an allowed decision POST reaches the API', async ({ page }) => {
     return response.status
   }, `/api/action-requests/${ID}/approve`)
 
-  // 202, which is what the real endpoint answers (V29: the decision is durable, the change has
-  // not run yet) and what the stub mirrors since §T.41. The status is passed through untouched, so
-  // this is also the assertion that the proxy does not normalise one.
+  // 202, which is what the real endpoint answers (the decision is durable, the change has
+  // not run yet) and what the stub mirrors since the approvals card landed. The status is passed
+  // through untouched, so this is also the assertion that the proxy does not normalise one.
   expect(status).toBe(202)
 
   const hits = await (await page.request.get(`${UPSTREAM}/__hits`)).json()
@@ -81,7 +81,7 @@ test('an allowed decision POST reaches the API', async ({ page }) => {
 })
 
 test('the login route answers 404 and the API records no hit', async ({ page }) => {
-  // V42: this app has no login page, no LDAP form and no credential handling. The
+  // This app has no login page, no LDAP form and no credential handling. The
   // hit count is the assertion that matters — a 404 produced upstream would look
   // identical from the browser and mean the opposite.
   await page.goto('/healthz')
@@ -102,7 +102,7 @@ test('the login route answers 404 and the API records no hit', async ({ page }) 
 })
 
 test('the admin surface is not reachable from the frameable origin', async ({ page }) => {
-  // V41: the admin app answers `frame-ancestors 'none'`. Proxying `/admin/*` here
+  // The admin app answers `frame-ancestors 'none'` on every response. Proxying `/admin/*` here
   // would hand that surface to anything running inside the LibreChat frame.
   await page.goto('/healthz')
 

@@ -1,14 +1,14 @@
 """SSH value objects.
 
-Ported from `noa-old` branch `MCP` (`core/remote_exec/types.py`, C13/V69) unchanged.
+Ported from `noa-old` branch `MCP` (`core/remote_exec/types.py`) unchanged.
 
 Both are frozen with `slots=True`: `SSHConnectionConfig` carries decrypted credentials, so
 an accidental mutation mid-flight would be a security bug, and a `__dict__`-less instance
 cannot pick up stray attributes that a logger might later serialise.
 
-`CommandResult` keeps *four* output fields, not two, and that split is V56: `stdout` is
-banner-stripped and safe to parse, `raw_stdout` is what the host actually sent and is what
-an auditor needs when a parse goes wrong. Callers parse `stdout`; audit stores raw.
+`CommandResult` keeps *four* output fields, not two, and that split is the banner-strip rule:
+`stdout` is banner-stripped and safe to parse, `raw_stdout` is what the host actually sent and is
+what an auditor needs when a parse goes wrong. Callers parse `stdout`; audit stores raw.
 """
 
 from __future__ import annotations

@@ -119,7 +119,8 @@ describe('jsonOrThrow', () => {
 
   it("surfaces NOA's `message`, which is the field its error envelope actually carries", async () => {
     // The API's envelope is { error_code, message, request_id } — `detail` is the internal
-    // diagnostic and is deliberately kept out of response bodies (§V.8). Reading only `detail`
+    // diagnostic and is deliberately kept out of response bodies (the envelope carries only
+    // error_code, message, request_id). Reading only `detail`
     // rendered every refusal as "Request failed (409)".
     const res = new Response(
       JSON.stringify({

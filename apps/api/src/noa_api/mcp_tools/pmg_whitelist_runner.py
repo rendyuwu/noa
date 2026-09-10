@@ -1,13 +1,16 @@
 """The half of `pmg_whitelist` that edits `mynetworks`.
 
-Beside `pmg_whitelist.py` rather than inside it, for C14 and on the boundary the design already
+Beside `pmg_whitelist.py` rather than inside it, for the file-size cap and on the boundary the
+design already
 draws — **nothing in the tool module can change anything, and nothing here is reachable without an
-approval**. T27 and T28 made the same split for the same reason. The evidence keys, the
+approval**. The password-reset runner and the NIC tool made the same split for the same reason.
+The evidence keys, the
 action words and the tool's name come from that module; nothing there imports this one, so
 `registry.py` reaches the tool and `change_runners.py` reaches the runner with no cycle between
 them.
 
-**The re-read is the design, not an optimisation.** PMG has no compare-and-set token, so V98's
+**The re-read is the design, not an optimisation.** PMG has no compare-and-set token, so the
+CAS-token-from-the-runner rule's
 first half — a CAS token taken from the runner's own read — has no instance here. Its second half
 does: what the approval window is checked against is the **fact** the operator approved, which is
 whether the target is on the list, re-measured now. Three ways that goes and only one is a failure:
@@ -19,7 +22,8 @@ whether the target is on the list, re-measured now. Three ways that goes and onl
 - the list cannot be read → refuse with the integration's own code. A change decided against a
   read that did not answer is a change decided against nothing.
 
-**Two deliberate departures from `noa-old`** (C13, V69: a port carries the code, not the defect):
+**Two deliberate departures from `noa-old`** (port, never import; ported code is copied, not
+rewritten: a port carries the code, not the defect):
 
 1. **A removal takes every matching line, each by PMG's own spelling.** `mynetworks` can hold two
    spellings of one address — `1.2.3.4` and `1.2.3.4/32` are one entry to a reader and two
@@ -42,7 +46,8 @@ first is a lie and the second sends an operator back to re-add into a no-op.
 **The postflight asks the change's own question**. It re-reads `mynetworks` and re-tests
 membership — not the `200 OK` on stdout, which says PMG accepted a write, and not the sync's exit
 code. A read that cannot answer is `unavailable`, never `false`: silence is not evidence of absence
-(V86), and V62's rule holds one system over — **verification-unavailable is not verified, and it is
+(folding a non-answer into the benign value), and the password-reset verdict-on-verify rule holds
+one system over — **verification-unavailable is not verified, and it is
 not refuted either.**
 
 One bound stated rather than implied: this postflight verifies PMG's **config**. `pmgconfig sync`'s
@@ -50,11 +55,14 @@ own success is the only thing saying Postfix picked the change up, because NOA r
 through `pmgsh` and has no view of Postfix's live table. That is why the sync is a step whose
 failure is reported by name instead of being folded into the verdict.
 
-**V96 has no instance here, and that is worth stating rather than assuming.** This runner never
+**The no-path-back rule has no instance here, and that is worth stating rather than assuming.**
+This runner never
 reads `request.reason`: a `mynetworks` entry is a CIDR and nothing else — no comment, no note, no
-description — so nothing C8 keeps from the LLM is written onto a PMG node, and nothing NOA wrote
+description — so nothing the operator-typed reason field keeps from the LLM is written onto a PMG
+node, and nothing NOA wrote
 comes back through a later READ. It is also why a backend failure message travels whole here while
-T26 cuts its own (`backend_change_failure`): csf quotes an entry NOA wrote a comment onto, and
+the allowlist-remove tool cuts its own (`backend_change_failure`): csf quotes an entry NOA wrote a
+comment onto, and
 `pmgsh` has no comment to quote.
 """
 
@@ -136,7 +144,8 @@ LOG_WHITELIST_RUN_UNVERIFIED: Final = "pmg_whitelist_unverified"
 logger = structlog.get_logger(__name__)
 
 
-# --- The runner: reachable only after an operator approved (V22's far side) ---
+# --- The runner: reachable only after an operator approved (the far side of the cookie/CSRF
+# boundary) ---
 
 
 @dataclass(frozen=True)
@@ -163,13 +172,15 @@ class WhitelistChangeTarget:
 def build_pmg_whitelist_runner(*, context: McpToolContext) -> ChangeRunner:
     """The half that edits `mynetworks`, once an operator approved.
 
-    A closure over the tool context rather than a class, for T22's reason: what it needs is the
+    A closure over the tool context rather than a class, for the suspend tool's reason: what it
+    needs is the
     same session factory, cipher and repository the tool used, so the change goes through the
     production decrypt site rather than a second copy of it.
 
     `request.reason` is on the request — the executor reads it off the row for every approved
     change — and this runner never touches it. A `mynetworks` entry has no field for one, so
-    nothing C8 keeps from the LLM leaves NOA here and V96's bound has no instance on this tool.
+    nothing the operator-typed reason field keeps from the LLM leaves NOA here and the no-path-back
+    rule's bound has no instance on this tool.
     """
 
     async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
@@ -273,13 +284,14 @@ async def _resolve_change_target(
     operator actually saw on the card.
 
     Every value is re-checked as it comes back out of JSONB, `action` included — that is the third
-    place the enum is bounded (T25's discipline, V63's shape one system over): what `tools/list`
+    place the enum is bounded (the release-and-allow tool's discipline, the
+    enum-bounded-in-three-places shape one system over): what `tools/list`
     publishes, what the tool body re-checks, and what survived the round trip. The normalised
     target is re-parsed rather than trusted, because it becomes an argv token in a `pmgsh` command
     and a value that no longer reads as a network is one NOA declines rather than sends.
 
-    The database session closes before the SSH hop, T21's rule, and here it matters twice over: the
-    executor's own session is open for the whole of the call.
+    The database session closes before the SSH hop, the account search's rule, and here it matters
+    twice over: the executor's own session is open for the whole of the call.
     """
     action = evidence.get(EVIDENCE_ACTION)
     target = evidence.get(EVIDENCE_TARGET)
@@ -326,8 +338,8 @@ async def _read_matches(target: WhitelistChangeTarget) -> list[MynetworksEntry] 
 
     A `PMGSHCLIError` becomes the envelope rather than travelling as an exception, because a runner
     that raises arrives at the executor as a coarser code than the integration layer already knew
-    (V19). `ssh_sudo_required` and `pmgsh_command_failed` keep naming different remedies here for
-    the same reason they do in the READ tools (`noa-old` GH #82).
+    (raw exceptions never reach the LLM). `ssh_sudo_required` and `pmgsh_command_failed` keep naming
+    different remedies here for the same reason they do in the READ tools (`noa-old` GH #82).
     """
     try:
         output = await run_pmg_mynetworks_list(target.config)
@@ -465,12 +477,12 @@ async def _verify_membership(
     request: ChangeExecutionRequest,
     moved: ListDelta,
 ) -> ChangeOutcome:
-    """Is the address on the list now? Read off `mynetworks`, ⊥ off the exit code.
+    """Is the address on the list now? Read off `mynetworks`, never off the exit code.
 
     `pmgsh` printing `200 OK` says PMG accepted a write; it does not say what the whitelist now
     holds. So this re-reads the list and re-tests membership, which is the fact the change is about.
 
-    Three answers, and the middle one is V62's rule one system over:
+    Three answers, and the middle one is the password-reset verdict-on-verify rule one system over:
 
     1. **verified** — the list carries the state that was asked for.
     2. **unavailable** — the postflight read could not answer. `status: changed` with
@@ -557,9 +569,9 @@ async def _verify_membership(
 def _common(target: WhitelistChangeTarget) -> ToolPayload:
     """The identifiers every answer from this runner carries.
 
-    Both spellings, for V59's reason: this payload becomes `tool_runs.result_summary` and
-    `noa_get_action_result` hands that to a model, and a model told only that
-    `1.2.3.4/24` was whitelisted would report a host where a network was changed.
+    Both spellings, for the exact-membership rule's reason: this payload becomes
+    `tool_runs.result_summary` and `noa_get_action_result` hands that to a model, and a model told
+    only that `1.2.3.4/24` was whitelisted would report a host where a network was changed.
 
     The whitelist's other entries are deliberately not among them. What a model needs is which
     address on which node moved which way — not the rest of a mail gateway's allow list.

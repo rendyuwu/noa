@@ -1,8 +1,8 @@
 """Request-scoped dependencies.
 
 Long-lived objects — `Settings`, `JWTService`, `LDAPService`, the engine, the session
-factory — are built once in the app lifespan and read off `app.state` here. T8 requires
-that for `JWTService` specifically: its algorithm allowlist and key-length guards raise
+factory — are built once in the app lifespan and read off `app.state` here. The login flow
+requires that for `JWTService` specifically: its algorithm allowlist and key-length guards raise
 at construction, so building it per request turns a configuration error into a 500 on
 the first login instead of a failure to boot. The rest follow the same rule because a
 per-request engine would open a fresh pool every request.
@@ -11,10 +11,10 @@ Per-request objects — the DB session, the repositories, the rate limiter, `Aut
 — are built here, one set per request, and share a single transaction.
 
 `require_session_user` is the important export. Every session-authenticated route in
-this app depends on it, so the `users.is_active` re-read V6 demands happens once,
-centrally, and a new route cannot forget it. `require_admin` layers on top of it, so
+this app depends on it, so the `users.is_active` re-read the no-revocation rule demands happens
+once, centrally, and a new route cannot forget it. `require_admin` layers on top of it, so
 the role check always happens *after* that re-read — a disabled admin loses the panel on
-their next request, not at cookie expiry. T37's decision routes depend on it for the same
+their next request, not at cookie expiry. The decision endpoints depend on it for the same
 reason, one boundary over: a disabled operator cannot approve a change with a cookie that
 has not expired yet.
 """
@@ -192,10 +192,11 @@ async def require_session_user(
 
     Three gates, all raising `AuthError` subclasses the shared handler turns into
     responses: no cookie → 401 `session_invalid`; cookie that fails signature/claim
-    verification or is past `exp` → 401 (V79 pins zero clock leeway); row absent or
+    verification or is past `exp` → 401 (zero clock leeway); row absent or
     `is_active=False` → 401 / 403.
 
-    The third gate is the one V6 makes non-optional: the session JWT has no revocation
+    The third gate is the one the no-revocation rule makes non-optional: the session JWT has
+    no revocation
     path before `exp`, so this re-read is the only thing that stops a disabled
     operator's cookie from working for the rest of its TTL.
     """
@@ -211,10 +212,11 @@ SessionUserDep = Annotated[SessionUser, Depends(require_session_user)]
 
 
 def get_approved_change_executor(request: Request) -> ApprovedChangeExecutor:
-    """The executor an approval hands its run to (T37's seam, T38's implementation).
+    """The executor an approval hands its run to (the decision endpoint's seam, the
+    approved-change executor's implementation).
 
-    Long-lived and read off `app.state` like the rest: T38's real executor owns background
-    tasks and a reaper, and one per request would mean one reaper per request.
+    Long-lived and read off `app.state` like the rest: the approved-change executor owns
+    background tasks and a reaper, and one per request would mean one reaper per request.
 
     `ApprovedChangeExecutor` is `runtime_checkable`, so `_from_state`'s type guard works on
     it — the check is structural (does it have `start`), which is exactly the promise this
@@ -232,12 +234,12 @@ def get_action_decision_service(
 
     Built per request on the request's session, like `AuthService`, so the decision, the
     `tool_runs` row it starts and their commit are one transaction — and so a handler that
-    raises rolls all of it back together. V31's per-user count is taken on that same session
-    and inside that same transaction, which is what its advisory lock is holding open.
+    raises rolls all of it back together. The per-user in-flight cap is taken on that same
+    session and inside that same transaction, which is what its advisory lock is holding open.
 
     Deliberately absent from `McpToolContext`. `SQLActionRequestRepository` is what the tool
     path gets, and it can write only `PENDING`; this can write `APPROVED`, so it lives on the
-    side of the boundary V22 draws — behind a session cookie, never behind a bearer token.
+    side of the cookie/CSRF boundary — behind a session cookie, never behind a bearer token.
     """
     return ActionDecisionService(
         repository=SQLActionDecisionRepository(session),
@@ -250,15 +252,16 @@ ActionDecisionServiceDep = Annotated[ActionDecisionService, Depends(get_action_d
 
 
 def get_action_request_expiry_service(session: SessionDep) -> ActionRequestExpiryService:
-    """V32's check-on-read, for a path that renders a request rather than decides one.
+    """The TTL's check-on-read, for a path that renders a request rather than decides one.
 
     Built per request on the request's session, like the decision service above, so the
     expiry and whatever the handler reads next are one transaction's worth of truth.
 
     It is a *different* service from `ActionDecisionService` on purpose: this one can write
     only `EXPIRED`, so a render path cannot hold something that could grant an authorization.
-    T41's GET calls `expire_if_due` after loading the row, which is what keeps a card from
-    showing a `PENDING` nobody may act on any more. T63's result tool does the same on the MCP
+    The card's GET calls `expire_if_due` after loading the row, which is what keeps a card from
+    showing a `PENDING` nobody may act on any more. The action-result tool does the same on
+    the MCP
     side, where it builds the service on its own session instead of this one. Both run it
     *after* their requester-matched read, so an id belonging to another operator is not a way to
     make NOA write (`core.approvals.reads`).
@@ -306,8 +309,8 @@ def get_result_table_service(session: SessionDep) -> ResultTableService:
 
     No expiry service here, unlike the card: a parked table past its deadline needs no write to
     become unreadable. The statement judges the deadline, so the row simply stops matching —
-    there is no status column anybody reads, so there is nothing to correct (V32 is about a
-    PENDING that V23 answers from, and nothing here answers a question like that).
+    there is no status column anybody reads, so there is nothing to correct (the TTL is about a
+    PENDING that the status verdict answers from, and nothing here answers a question like that).
     """
     return ResultTableService(repository=SQLToolResultTableReader(session))
 
@@ -320,7 +323,8 @@ def get_tool_run_audit_service(session: SessionDep) -> ToolRunAuditService:
 
     A *reader*, the third of them on this session dependency and for the same reason as the two
     above: `SQLToolRunAuditReader` has no `commit` and issues no statement that is not a `SELECT`.
-    The writers of that table sit on the other side of V22's boundary — the MCP tool path
+    The writers of that table sit on the other side of the cookie/CSRF boundary — the MCP tool
+    path
     and the approval executor — and none of them is reachable from here.
 
     No settings and no clock: the page bound is a module constant shared with the route's
@@ -334,7 +338,8 @@ ToolRunAuditServiceDep = Annotated[ToolRunAuditService, Depends(get_tool_run_aud
 
 
 def get_action_request_admin_service(session: SessionDep) -> ActionRequestAdminService:
-    """What the admin panel reads the CHANGE authorisation trail through (§I.admin-api, V13, V15).
+    """What the admin panel reads the CHANGE authorisation trail through (the admin API's
+    contract, admin-only access, the reason rule).
 
     The fourth reader on this session dependency, and the same argument holds:
     `SQLActionRequestAdminReader` has no `commit` and issues no statement that is not a `SELECT`.
@@ -342,7 +347,8 @@ def get_action_request_admin_service(session: SessionDep) -> ActionRequestAdminS
     terminal-status transition, `ActionRequestExpiryService` owns the other, and
     `core.audit.receipts` writes the receipt — and none of them is reachable from this object.
 
-    No expiry service and no clock, unlike `get_approval_card_service`. V32's check-on-read is a
+    No expiry service and no clock, unlike `get_approval_card_service`. The TTL's check-on-read
+    is a
     *write*, and this dependency exists to be unable to make one: an admin opening a stale PENDING
     row reads it as PENDING with a past deadline, which is what the database says.
     """
@@ -355,12 +361,13 @@ ActionRequestAdminServiceDep = Annotated[
 
 
 def get_tool_list_notifier(request: Request) -> ToolListChangedNotifier:
-    """T66's emitter, holding the MCP session register the mount writes.
+    """The list-changed emitter, holding the MCP session register the mount writes.
 
     Long-lived and read off `app.state`, unlike the audit sink beside it: the register it reads
     is written by the MCP middleware over the life of the process, so a per-request notifier
     would be one holding an empty register and every emit would reach nobody — silently, since
-    V74 makes the notification best-effort.
+    the execution-time RBAC re-check already backstops a stale catalog, so the notification can
+    stay best-effort.
 
     `ToolListChangedNotifier` is a plain `Protocol`, so `_from_state`'s `isinstance` guard
     cannot check it. The concrete class is named instead, which is the stronger check anyway:
@@ -381,12 +388,13 @@ def get_authorization_service(
     `StructlogAdminAuditSink` holds only a logger; when a database-backed sink lands it will
     need this request's session anyway.
 
-    The tool catalog is left at its default (`core.auth.tool_catalog.TOOL_CATALOG`, V10).
-    T13 mounted the FastMCP server but registers no tools, so the live registry is empty;
-    the swap to a registry-derived catalog belongs with T19-T31/T63, when there is one.
+    The tool catalog is left at its default (`core.auth.tool_catalog.TOOL_CATALOG`).
+    The FastMCP mount registers no tools, so the live registry is empty;
+    the swap to a registry-derived catalog belongs with the MCP tools, when there is one.
 
     The notifier is the one collaborator that is *not* request-scoped, and the asymmetry is
-    T66's whole shape: a permission change is a transaction, and telling the MCP sessions about
+    the list-changed emitter's whole shape: a permission change is a transaction, and telling
+    the MCP sessions about
     it is not part of that transaction — it happens after the commit, over connections that
     outlive this request.
     """
@@ -409,12 +417,12 @@ def get_mcp_token_service(session: SessionDep, settings: SettingsDep) -> McpToke
 
     No tool-list notifier, unlike the RBAC engine beside it. Minting or revoking a credential
     changes *who* a caller is, never *what* their roles permit, so there is no catalog for a
-    connected client to refetch — and V1's per-call re-check is what makes a revoked token stop
-    working, on the next request, with nothing to announce.
+    connected client to refetch — and the execution-time permission re-check is what makes a
+    revoked token stop working, on the next request, with nothing to announce.
 
     `mcp_token_ttl_seconds` is `None` by default, which means the row lives until someone
-    deletes it. That is the primary retirement path by design: V4's LDAP revalidation and admin
-    revoke retire a credential, an expiry is only an extra bound.
+    deletes it. That is the primary retirement path by design: LDAP revalidation on a staleness
+    interval and admin revoke retire a credential, an expiry is only an extra bound.
     """
     return McpTokenService(
         repository=SQLMcpTokenRepository(session),
@@ -502,7 +510,8 @@ def get_whm_server_validation_service(
     **Takes the session factory, not this request's session**, unlike the three CRUD services
     above — and this is the one dependency in this file that deliberately does not use
     `SessionDep`. A validate opens a socket to somebody else's host, and holding a pooled
-    connection across that hop is how a slow server becomes a database outage (T21's rule);
+    connection across that hop is how a slow server becomes a database outage, the same
+    discipline the account search established;
     `core.approvals.expiry`'s sweeper draws its own sessions for the same reason. The service
     reads its row in one short session, closes it, does the network work, and opens a second
     session only when there is a host key to store.
@@ -528,7 +537,8 @@ def get_proxmox_server_validation_service(
 
     Same session discipline as WHM's above, and a strictly weaker repository:
     `SQLProxmoxServerRepository` is the `SELECT`-only read repository, because Proxmox has no
-    SSH path and therefore no host key to pin (I.ext). This validate writes nothing at all, and
+    SSH path and therefore no host key to pin (per the external-system transports). This
+    validate writes nothing at all, and
     the type says so.
     """
     return ProxmoxServerValidationService(
@@ -566,7 +576,7 @@ PMGServerValidationServiceDep = Annotated[
 async def require_admin(current_user: SessionUserDep) -> SessionUser:
     """Gate every `/admin` route on the `admin` role.
 
-    Depends on `require_session_user`, so the V6 row re-read runs first and the roles
+    Depends on `require_session_user`, so the no-revocation row re-read runs first and the roles
     checked here are the ones in the database, never the cookie's claims — the session JWT
     carries no role claim precisely so this cannot be spoofed by an old cookie.
 

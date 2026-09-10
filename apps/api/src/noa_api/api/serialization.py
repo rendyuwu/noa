@@ -1,7 +1,7 @@
 """Wire formats shared by the admin routers.
 
 One function, and it is here rather than duplicated because two routers now render the same
-nullable timestamp: `admin_users.py` has since T51, `mcp_tokens.py` does for six
+nullable timestamp: `admin_users.py` has since the user routes landed, `mcp_tokens.py` does for six
 columns at once. Two private copies would be two places for a format to drift, and the panel
 parses both with the same `formatDate` / `formatRelativeTime` helpers.
 

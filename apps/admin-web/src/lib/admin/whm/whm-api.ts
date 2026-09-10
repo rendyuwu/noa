@@ -15,8 +15,8 @@ import type {
 // whm_server_not_found) stay authoritative. Secrets are only ever in request
 // bodies, never in responses.
 //
-// Five reseller-token calls lived here until §T.54 removed them: NOA has no
-// whm_server_tokens table and §I.admin-api names no such route (see ./types.ts).
+// Five reseller-token calls lived here until the admin validate route removed them: NOA has no
+// whm_server_tokens table and the admin API's contract names no such route (see ./types.ts).
 
 export async function fetchWhmServers(): Promise<WhmServer[]> {
   const response = await fetchWithAuth('/admin/whm/servers')

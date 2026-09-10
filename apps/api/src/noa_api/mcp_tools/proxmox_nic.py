@@ -1,21 +1,22 @@
 """`proxmox_vm_nic` — one tool for two directions.
 
-The second Proxmox CHANGE tool, and the first of the two **enum collapses** DECISIONS §9 adopted:
-`proxmox_enable_vm_nic` and `proxmox_disable_vm_nic` become one tool with an `action` parameter.
-That is a schema decision with a recorded cost — RBAC gets coarser, because a role can no longer
-be granted one direction without the other (DECISIONS §9) — and it is not re-litigated here.
+The second Proxmox CHANGE tool, and the first of the two **enum collapses** DECISIONS section 9
+adopted: `proxmox_enable_vm_nic` and `proxmox_disable_vm_nic` become one tool with an `action`
+parameter. That is a schema decision with a recorded cost — RBAC gets coarser, because a role can
+no longer be granted one direction without the other (DECISIONS section 9) — and it is not
+re-litigated here.
 
 **Two halves, and only the first is here.** This module runs the in-process preflight
 and opens an `action_requests` row; it executes nothing, and the LLM can reach it. The half that
 flips the link is `proxmox_nic_runner.py`, reachable only from `core.approvals.execution` after an
-operator approved. Two files for C14, split on the boundary the design already draws, and
-the dependency runs one way — T27's arrangement, one tool over.
+operator approved. Two files for the file-size cap, split on the boundary the design already
+draws, and the dependency runs one way — the password-reset tool's arrangement, one tool over.
 
 **No reason parameter, and nowhere to add one**. `open_change_request` refuses a
 reason-shaped argument even for a caller reaching this function directly.
 
-**No `digest` parameter either, and no digest on the evidence** — this is where T28 departs from
-`noa-old` deliberately. There, the digest was a *tool argument*: a preflight read it, the model
+**No `digest` parameter either, and no digest on the evidence** — this is where this tool departs
+from `noa-old` deliberately. There, the digest was a *tool argument*: a preflight read it, the model
 handed it back on the change call seconds later, and Proxmox refused the write if the config had
 moved. An approval gate turns those seconds into minutes, and two things follow. A gate-time
 digest would make any unrelated edit to the VM — memory, a disk, a description — refuse a change
@@ -30,14 +31,15 @@ an ambiguity, and refusing it would make the common case a two-turn conversation
 recorded on the evidence (`auto_selected`), so the card tells the operator NOA picked rather than
 hiding it behind a `netN` key they never typed.
 
-**A no-op branch, unlike T27.** A NIC already in the state being asked for has nothing to
-authorise, so this answers `no_op` and opens nothing — T22, T23 and T26's shape. That answer is
-transcript, so it is built from the server name, the VM and one measured boolean rather than
-from the config it was decided from.
+**A no-op branch, unlike the password-reset tool.** A NIC already in the state being asked for has
+nothing to authorise, so this answers `no_op` and opens nothing — the suspend, unsuspend and
+allowlist-remove tools' shape. That answer is transcript, so it is built from the server name, the
+VM and one measured boolean rather than from the config it was decided from.
 
-**V96 has no instance here.** A `netN` line has no note field and NOA writes no `description`, so
-nothing C8 keeps from the LLM is written onto this VM, and nothing NOA wrote comes back to a model
-— T27's situation, stated rather than assumed, and asserted on the runner's payload.
+**No reason value has an instance here.** A `netN` line has no note field and NOA writes no
+`description`, so nothing kept from the LLM is written onto this VM, and nothing NOA wrote comes
+back to a model — the password-reset tool's situation, stated rather than assumed, and asserted on
+the runner's payload.
 """
 
 from __future__ import annotations
@@ -74,20 +76,17 @@ from noa_api.mcp_tools.results import (
 
 TOOL_PROXMOX_VM_NIC: Final = "proxmox_vm_nic"
 
-# --- The action enum ---
-#
-# Two words, and the pair is the whole of DECISIONS §9's collapse. They are constants rather than
-# literals at each site because they cross three boundaries: the published schema, the JSONB
-# evidence, and the runner reading that evidence back minutes later.
+# --- The action enum --- Two words, and the pair is the whole of DECISIONS section 9's collapse.
+# They are constants rather than literals at each site because they cross three boundaries: the
+# published schema, the JSONB evidence, and the runner reading that evidence back minutes later.
 ACTION_ENABLE: Final = "enable"
 ACTION_DISABLE: Final = "disable"
 ACTIONS: Final[tuple[str, ...]] = (ACTION_ENABLE, ACTION_DISABLE)
 
-# --- Evidence keys ---
-#
-# This tool's own. They are written into `approval_context` here and read back by the runner after
-# a decision, so a misspelling reads as an absent value rather than as an error — T27's warning,
-# and the reason these are constants shared by both halves rather than string literals twice.
+# --- Evidence keys --- This tool's own. They are written into `approval_context` here and read back
+# by the runner after a decision, so a misspelling reads as an absent value rather than as an error
+# — the password-reset tool's warning, and the reason these are constants shared by both halves
+# rather than string literals twice.
 EVIDENCE_SERVER_ID: Final = "server_id"
 EVIDENCE_SERVER_NAME: Final = "server"
 EVIDENCE_NODE: Final = "node"
@@ -108,9 +107,9 @@ ERROR_INVALID_VMID: Final = "invalid_vmid"
 MESSAGE_INVALID_VMID: Final = "A VM id must be a positive whole number."
 
 # The schema publishes an enum, so a well-behaved client cannot produce this. It is here for the
-# caller that reaches the function directly, which is T25's three-place discipline for a bounded
-# argument: what `tools/list` publishes, what the body re-checks, and what the runner re-checks
-# after the JSONB round trip.
+# caller that reaches the function directly, which is the release-and-allow tool's three-place
+# discipline for a bounded argument: what `tools/list` publishes, what the body re-checks, and
+# what the runner re-checks after the JSONB round trip.
 ERROR_INVALID_ACTION: Final = "invalid_action"
 MESSAGE_INVALID_ACTION: Final = (
     "The action must be `enable` or `disable`, exactly — nothing else names a link state."
@@ -164,8 +163,9 @@ async def proxmox_vm_nic(
     schema, because a caller reaching this function directly bypasses pydantic and this value goes
     into a URL path, and an `action` outside the enum is refused for the same reason.
 
-    Then one database session — resolve the operator's word to a server (V18: a tie is `choices`,
-    never a pick) — and the session closes before the HTTP hops, which is T21's rule.
+    Then one database session — resolve the operator's word to a server (a tie is `choices`,
+    never a pick) — and the session closes before the HTTP hops, which is the account search's
+    rule.
 
     The preflight is this call's own and runs in-process: the VM's interfaces and its run
     state, born here, milliseconds old, same user, reaching the operator through
@@ -269,7 +269,7 @@ class VMNICState:
 
     A fixed set of fields, built by naming what goes in rather than by sanitizing what came out of
     Proxmox — a VM config carries a hundred keys, and a structure with nowhere to put one cannot
-    leak by an omission nobody noticed (V26, V93's shape).
+    leak by an omission nobody noticed.
 
     `unavailable_reads` names any preflight read that could not answer, rather than letting an
     absent field read as a measured absence. Only the run state is allowed to be missing:
@@ -282,7 +282,7 @@ class VMNICState:
     unavailable_reads: list[str]
 
     def as_evidence(self) -> dict[str, Any]:
-        """JSON-native, for `approval_context` JSONB (T33's rule).
+        """JSON-native, for `approval_context` JSONB (the gate's rule).
 
         Every NIC, not only the selected one: an operator deciding whether to cut a VM off the
         network is deciding about *this* VM's connectivity, and whether the machine keeps another
@@ -301,7 +301,7 @@ class VMNICState:
 class NICSelection:
     """Which NIC the change is about, and whether the operator named it.
 
-    `auto_selected` rides onto the card. A VM with one interface does not need naming (C10 is
+    `auto_selected` rides onto the card. A VM with one interface does not need naming (that rule is
     about ambiguity, and one candidate is not ambiguous), but an operator approving a change to a
     `netN` key they never typed should be able to see that NOA chose it.
     """
@@ -313,16 +313,15 @@ class NICSelection:
 async def collect_nic_state(
     client: ProxmoxClient, *, node: str, vmid: int, requested_net: str | None
 ) -> VMNICState | ToolPayload:
-    """Read one VM's interfaces and run state, or refuse. Internal — ⊥ an MCP tool.
+    """Read one VM's interfaces and run state, or refuse. Internal — never an MCP tool.
 
     One required read and one tolerated. The config carries the `netN` lines the whole decision
     rests on, so a failure there is a refusal — a card that cannot describe what it is asking
-    about is the state V35 exists to prevent.
+    about is the state the provenance rule exists to prevent.
 
     The run state is tolerated because it changes nothing about what the change *does*. It tells
     an operator what taking the link down will interrupt, and losing that is worth less than
-    refusing the change over it. It is named in `unavailable_reads` rather than silently absent
-    (V86).
+    refusing the change over it. It is named in `unavailable_reads` rather than silently absent.
 
     The digest this read also returns is deliberately dropped — see the module docstring. The
     runner re-reads and writes under a fresh one, so carrying it here would be a stale token in
@@ -396,9 +395,9 @@ def select_requested_nic(
 
 
 def register_proxmox_nic_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
-    """Register the Proxmox NIC CHANGE tool; return its name and risk (I.mcp, V20, V63).
+    """Register the Proxmox NIC CHANGE tool; return its name and risk.
 
-    **One tool, one `action`** — the whole of DECISIONS §9's collapse, and the reason this
+    **One tool, one `action`** — the whole of DECISIONS section 9's collapse, and the reason this
     registrar returns a single entry where `noa-old` had two tools. `Literal` rather than a free
     string is what puts the two words into the published input schema, so a model reads the pair
     from `tools/list` instead of from the description.

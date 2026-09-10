@@ -14,13 +14,14 @@ Folding them together would put a 404 about a revoke request in the same tree as
 about a stolen credential, and the subclass-tree test in `test_mcp_token_service.py` (which
 asserts every `McpTokenError` maps to 400 or 404) would have to be loosened to allow 401.
 
-V3 fixes two of these strings verbatim — `librechat_user_header_missing` and
+The named-401-body rule fixes two of these strings verbatim — `librechat_user_header_missing` and
 `librechat_user_mismatch` — so a client can tell "you forgot the header" from "this token
 belongs to someone else's LibreChat account". The rest follow the same one-code-per-cause
 rule, because a single `mcp_unauthorized` would make an expired token and a mismatched
 binding indistinguishable in the logs, and those two have completely different remedies.
 
-Deliberately NOT here: `LdapUnavailableError` (`core.auth.errors`). V4 says a directory
+Deliberately NOT here: `LdapUnavailableError` (`core.auth.errors`). The LDAP-revalidation rule
+says a directory
 outage fails closed *without* concluding anything about the user, and that class already
 carries the retry-friendly message and the 503 mapping. Inventing an MCP-flavoured copy
 would be two classes for one condition.
@@ -30,8 +31,9 @@ Statuses live in `noa_api.api.errors`. 401 for "this credential does not authent
 a disabled operator or one the directory has dropped — and 429 for "stop asking", the one
 answer that is about the caller's rate rather than their credential.
 
-V2/V8 throughout: no message and no `detail` in this module carries a token plaintext, a
-digest, or a prefix. `detail` names ids and reasons, and stays in the logs.
+The token-scope and safe-payload rules throughout: no message and no `detail` in this module
+carries a token plaintext, a digest, or a prefix. `detail` names ids and reasons, and stays
+in the logs.
 
 Who raises what: `core.auth.mcp_identity.McpIdentityResolver`, in gate order, plus
 `McpAuthRateLimitedError` from `core.auth.mcp_auth_rate_limiter` before the gates run.
@@ -72,8 +74,8 @@ class McpTokenMissingError(McpAuthError):
 class McpTokenInvalidError(McpAuthError):
     """No `mcp_tokens` row for the presented digest.
 
-    One message for "never existed", "mistyped" and "revoked": revocation is a row delete
-    (V2), so after the fact NOA genuinely cannot tell them apart, and a message that
+    One message for "never existed", "mistyped" and "revoked": revocation is a row delete,
+    so after the fact NOA genuinely cannot tell them apart, and a message that
     guessed would be wrong some of the time.
     """
 
@@ -96,9 +98,9 @@ class McpTokenExpiredError(McpAuthError):
 class LibreChatUserHeaderMissingError(McpAuthError):
     """`X-Noa-LibreChat-User` absent.
 
-    Required for bound *and* unbound tokens: C24 makes LibreChat the sole client, so a
+    Required for bound *and* unbound tokens: LibreChat being the sole MCP client means a
     request without the header is not a client NOA supports rather than a client that has
-    not bound yet. Code string fixed by V3.
+    not bound yet. Code string fixed by the named-401-body rule.
     """
 
     error_code: str = "librechat_user_header_missing"
@@ -112,7 +114,8 @@ class LibreChatUserMismatchError(McpAuthError):
 
     The TOFU failure that matters: the token authenticated, but it is pinned to another
     LibreChat account, which is what a copied credential looks like. Code string fixed by
-    V3. The message names neither the bound value nor the presented one — that comparison
+    the named-401-body rule. The message names neither the bound value nor the presented
+    one — that comparison
     belongs in the logs, not in an answer to whoever presented it.
     """
 

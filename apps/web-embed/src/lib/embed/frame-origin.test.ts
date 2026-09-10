@@ -5,7 +5,7 @@ import { DEFAULT_LIBRECHAT_ORIGIN, LIBRECHAT_ORIGIN_ENV_VAR } from '../../../con
 import { resolveFrameTargetOrigin } from './frame-origin'
 
 /**
- * Where a sizing message is allowed to go (§T.45, V41, V66 — V67).
+ * Where a sizing message is allowed to go.
  *
  * One resolver, reused: what is asserted here is the *wrapping*, because the parsing rules already
  * have a test of their own in `config/framing.test.ts` and a second copy of them here would be the

@@ -2,12 +2,13 @@ import { buildBackendUrl } from '@/lib/proxy/http'
 import { type ResultTableLoad, parseResultTable } from '@/lib/tables/table'
 
 /**
- * Loading one parked table, server-side (§T.56, §I.embed).
+ * Loading one parked table, server-side (the table surface, the embed app's contract).
  *
  * **Server-side, not from the browser**, for the reason `lib/approvals/detail.ts` gives one surface
  * over: the HTML that reaches the frame is already the authenticated page, so there is no moment
  * where an operator looks at an empty box while a client fetch decides who they are. It also means
- * this app's proxy allowlist stays at the four entries §T.44 pinned — nothing here polls, because a
+ * this app's proxy allowlist stays at the four entries the proxy route pinned — nothing here
+ * polls, because a
  * parked table does not change once it is written.
  *
  * The browser still never calls FastAPI directly (AGENTS.md). This runs inside the Next server on
@@ -15,8 +16,8 @@ import { type ResultTableLoad, parseResultTable } from '@/lib/tables/table'
  *
  * **The cookie is forwarded and `Authorization` is not.** Every surface this app reaches is
  * cookie-authenticated; a bearer token is LibreChat's to send, never a browser's,
- * and this loader adds no header a caller could use to relay one — the same departure §T.44(d)
- * makes in the proxy and §T.41(c) makes in the card's loader.
+ * and this loader adds no header a caller could use to relay one — the same departure the proxy
+ * and the card's loader both make.
  *
  * **Four outcomes, because four of them render differently** — `ResultTableLoad` says which.
  */
@@ -31,7 +32,8 @@ export type ResultTableRequest = {
 
 function upstreamUrl(token: string): string {
   // Encoded, then joined by `buildBackendUrl`, which also refuses anything that escapes the
-  // backend's base prefix (§T.44). The token is not shape-checked here: the API owns what an
+  // backend's base prefix (the proxy route). The token is not shape-checked here: the API owns
+  // what an
   // absent, malformed, foreign or expired token answers and answers all four alike, so a check in
   // front of it would be a second, more talkative judge.
   return buildBackendUrl(`tables/${encodeURIComponent(token)}`).toString()
@@ -77,7 +79,8 @@ export async function loadResultTable(
 
   const table = parseResultTable(body)
   // A 200 whose body is not a table is a broken deployment, not an empty table. Rendering the
-  // headings over nothing would tell an operator the listing came back empty (V38's family).
+  // headings over nothing would tell an operator the listing came back empty (the
+  // never-a-blank-surface family).
   if (table === null) return { kind: 'unavailable', status: response.status }
 
   return { kind: 'table', table }

@@ -12,11 +12,11 @@ that build their own `HTTPException` per failure are how two callers end up retu
 different codes for the same condition — `noa-old`'s admin routes did exactly that, in
 ~40 lines per endpoint.
 
-V8: the response body carries `error_code`, `message` and `request_id` only. `detail` is the
+The response body carries `error_code`, `message` and `request_id` only. `detail` is the
 internal diagnostic — it names configuration faults, directory internals and the ids of rows
 that vanished mid-request — and stays in the logs. A test asserts it never appears in a body.
 
-**T64: every error response, not only the ones NOA raises.** A `NoaError` handler
+**Every error response carries it, not only the ones NOA raises.** A `NoaError` handler
 alone leaves three surfaces answering in Starlette's default shape — no `error_code`, no
 `request_id`:
 
@@ -25,8 +25,8 @@ alone leaves three surfaces answering in Starlette's default shape — no `error
   Starlette's MRO lookup.
 - `RequestValidationError` — a 422 for a malformed body. **The pydantic errors are not
   echoed.** `noa-old` returned `exc.errors()` whole, and every entry carries the value that
-  failed: on `POST /auth/login` that is the submitted password, in the response body. V8
-  forbids it. Only `loc` and `type` reach the log, for the same reason.
+  failed: on `POST /auth/login` that is the submitted password, in the response body. The
+  envelope shape forbids it. Only `loc` and `type` reach the log, for the same reason.
 - `Exception` — the 500 for a bug. Registered here, but note it runs in Starlette's
   `ServerErrorMiddleware`, which sits *outside* the user middleware stack: its response
   never passes through `RequestContextMiddleware`'s `send` wrapper, so this file sets
@@ -150,7 +150,7 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     AuthPendingApprovalError: status.HTTP_403_FORBIDDEN,
     AuthAccountDisabledError: status.HTTP_403_FORBIDDEN,
     AuthRateLimitedError: status.HTTP_429_TOO_MANY_REQUESTS,
-    # NOA's own fault, and the operator's credentials are fine (V8: the specific
+    # NOA's own fault, and the operator's credentials are fine (the specific
     # misconfiguration stays in `detail`, out of the body).
     AuthConfigurationError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     LdapUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -187,7 +187,7 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # --- MCP tokens ---
     # 404 for a token that is absent *or* another user's: the lookup is scoped by user id,
     # so the two cases answer identically and the response is not an enumeration oracle
-    # (V2, and the V27/V76 principle).
+    # (the token-scope assertion, and the requester-match principle).
     McpTokenNotFoundError: status.HTTP_404_NOT_FOUND,
     # The label is longer than the column holds — a malformed request, not a server fault.
     InvalidTokenLabelError: status.HTTP_400_BAD_REQUEST,
@@ -197,7 +197,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # --- Admin audit reads ---
     # 404 for a run that does not exist *and* for an id that is not a UUID: this surface is
     # admin-only, so the reason is not secrecy — a 422 for a malformed id would describe
-    # what the validator accepts rather than what exists (`core.audit.errors`, T63(e)).
+    # what the validator accepts rather than what exists (`core.audit.errors`, the
+    # action-result tool's own rule).
     ToolRunNotFoundError: status.HTTP_404_NOT_FOUND,
     # The caller sent a page token NOA cannot decode. 400 rather than 422: the envelope is the
     # shared one, not FastAPI's validation-error list, which is what `noa-old` raised here.
@@ -209,7 +210,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # The credential did not authenticate the caller. 401 across all four: absent,
     # unknown, expired and wrong-binding share a remedy (present a valid token of your
     # own), and splitting them by status would let a caller probe which tokens are real.
-    # `verify_token` returns `None` for every one of these (R2 gives it no body hook);
+    # `verify_token` returns `None` for every one of these (the AccessToken shape gives it no
+    # body hook);
     # `noa_api.mcp_request_auth.McpAuthErrorMiddleware` is what renders them, and these
     # mappings are what it renders with.
     McpTokenMissingError: status.HTTP_401_UNAUTHORIZED,
@@ -240,7 +242,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     WHMServerNameExistsError: status.HTTP_409_CONFLICT,
     ProxmoxServerNameExistsError: status.HTTP_409_CONFLICT,
     PMGServerNameExistsError: status.HTTP_409_CONFLICT,
-    # 409 for the same reading, one field over (V109(b)): a reseller WHM row must be named
+    # 409 for the same reading, one field over (the name == `api_username` rule): a reseller
+    # WHM row must be named
     # after its `api_username`, and on a PATCH both operands may be stored columns — so what
     # refuses is the state of the resulting row, not a malformed body, and a caller cannot tell
     # from the schema which combination is legal.
@@ -256,25 +259,28 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # broken remote. One entry for the whole SSH surface because `SSHExecutionError` carries
     # the specific `error_code`.
     #
-    # T54 does **not** refine this per code, contrary to what this comment predicted at T14.
+    # The admin validate route does **not** refine this per code, contrary to what this
+    # comment predicted when `core/remote_exec/` was ported.
     # Its validate route catches the whole tree and answers **200** with
     # `{ok:false, error_code, message}`: an operator pressing Validate asked "does this server
     # answer?", and "no, `ssh_timeout`" is that question's *answer*, not a failure of the
     # request. The panel reads `result.ok` for exactly that reason
     # (`apps/admin-web/.../whm-status.ts::deriveWhmValidationStatus`), so a 502 there would
     # throw at the transport and render as an unhandled error instead of a red status chip.
-    # This 502 therefore covers the *tool* paths only, where the tools sanitise per V19.
+    # This 502 therefore covers the *tool* paths only, where the tools sanitise raw exceptions
+    # to a code.
     SSHExecutionError: status.HTTP_502_BAD_GATEWAY,
     # --- WHM firewall backends ---
     # 502, same reading as `SSHExecutionError`: NOA works, csf or imunify360-agent on the
     # remote did not answer usably. One entry for the tree — `CSFCLIError` and
     # `ImunifyCLIError` inherit via the MRO walk, and which backend failed is already in
-    # `error_code`. T54's validate route answers 200 with `ok:false` instead (see above).
+    # `error_code`. The admin validate route answers 200 with `ok:false` instead (see above).
     WHMFirewallCLIError: status.HTTP_502_BAD_GATEWAY,
     # --- PMG `pmgsh` CLI ---
     # 502, same reading again: NOA works, `pmgsh`/`pmgconfig` on the PMG node did not answer
     # usably. One entry for the whole surface — `PMGSHCLIError` carries the specific
-    # `error_code`, including the `SSHExecutionError` codes it converts. T54's validate route
+    # `error_code`, including the `SSHExecutionError` codes it converts. The admin validate
+    # route
     # answers 200 with `ok:false` instead (see above).
     PMGSHCLIError: status.HTTP_502_BAD_GATEWAY,
     # --- Secrets ---
@@ -283,7 +289,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # Which of those it is stays in `detail`. Subclasses inherit via the MRO walk.
     SecretCryptoError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     # 502 for the delivery hop, same reading as `SSHExecutionError`: NOA works, the system it
-    # depends on did not answer usably. C15's deliver-first ordering means nothing was
+    # depends on did not answer usably. Server-side generation's deliver-first ordering means
+    # nothing was
     # changed when this is raised.
     YopassError: status.HTTP_502_BAD_GATEWAY,
     # ...except when yopass was never configured. That is NOA's own gap, not the upstream's,
@@ -294,7 +301,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # The operator did nothing wrong and retrying is the remedy, which is what 503 says.
     ChangeGateUnavailableError: status.HTTP_503_SERVICE_UNAVAILABLE,
     # 500 for both of the gate's other refusals. Neither is reachable from anything a client
-    # sends: a reason-shaped argument means a CHANGE tool declared a parameter C8 forbids,
+    # sends: a reason-shaped argument means a CHANGE tool declared a parameter the reason rule
+    # forbids,
     # and missing evidence means it skipped its own in-process preflight. Those are
     # NOA's bugs, and answering 400 would blame the caller for one.
     ChangeReasonForbiddenError: status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -309,11 +317,13 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # is mapped, so reaching this line means a new class arrived without a decision.
     ChangeGateError: status.HTTP_503_SERVICE_UNAVAILABLE,
     # --- Decisions on an existing request ---
-    # 404 for absent *and* for another operator's, which is V27's whole point: a 403 would
+    # 404 for absent *and* for another operator's, which is the requester-match rule's whole
+    # point: a 403 would
     # confirm the request exists. `ActionDecisionError` sits at the end of this group, so
     # note the pairing — these two answer with different statuses and must not collapse.
     ActionRequestNotFoundError: status.HTTP_404_NOT_FOUND,
-    # 404 for a request that is real and carries no receipt (§I.admin-api). Its own class rather
+    # 404 for a request that is real and carries no receipt (the admin API's contract). Its own
+    # class rather
     # than the one above, because the two say different things to an administrator: "no such
     # request" is a dead link, "that decision started no run" is the answer for every deny and
     # every expiry. Not a 204 — the panel reaches this address from a `hasReceipt` bit that may
@@ -324,11 +334,12 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     # read the outcome versus ask for the change again.
     ActionRequestAlreadyDecidedError: status.HTTP_409_CONFLICT,
     ActionRequestExpiredError: status.HTTP_409_CONFLICT,
-    # 409, and the status is V15's own: a decision without a non-blank reason. Not a 422 —
-    # `reason` is a well-formed string, it is the *decision* that is refused, and V15 names
-    # both this code and this status.
+    # 409, and the status is the reason rule's own: a decision without a non-blank reason. Not
+    # a 422 — `reason` is a well-formed string, it is the *decision* that is refused, and the
+    # reason rule names both this code and this status.
     ChangeReasonRequiredError: status.HTTP_409_CONFLICT,
-    # 409 for V31's cap. Same reading as "already decided": the caller may approve changes
+    # 409 for the per-user in-flight cap. Same reading as "already decided": the caller may
+    # approve changes
     # in general, just not one more right now. Not 429 — nothing is rate-limiting them, and
     # `Retry-After` would be a number NOA cannot honestly produce.
     ChangeExecutionLimitReachedError: status.HTTP_409_CONFLICT,
@@ -341,7 +352,8 @@ STATUS_BY_ERROR: Final[dict[type[NoaError], int]] = {
     ActionDecisionError: status.HTTP_409_CONFLICT,
     # --- Large READ tables ---
     # 404 for all four of its causes — unknown token, another operator's, one whose requester
-    # was deleted, and one past its lifetime. V27's rule against an existence oracle, spelled
+    # was deleted, and one past its lifetime. The requester-match rule against an existence
+    # oracle, spelled
     # against another table: a status that varied by cause would say which tokens are real.
     ResultTableNotFoundError: status.HTTP_404_NOT_FOUND,
     # 503: the rows could not be parked, so the READ has no surface to point at. Retrying the
@@ -418,7 +430,8 @@ def envelope(error_code: str, message: str, request_id: str | None = None) -> di
 def error_body(error: NoaError, *, request_id: str | None = None) -> dict[str, str]:
     """Response body for a `NoaError`.
 
-    `request_id` is keyword-optional because callers that only care about the V8 shape — the
+    `request_id` is keyword-optional because callers that only care about the envelope shape —
+    the
     tests asserting `detail` never leaks — have no request to read one from. Every path that
     actually answers a client passes it; `error_response` below is how.
     """
@@ -453,9 +466,9 @@ def error_headers(error: NoaError) -> dict[str, str]:
     """Response headers an error carries beyond the body.
 
     Only `Retry-After` today, keyed on `RetryAfterMixin` rather than on a list of classes:
-    V9 requires a 429 to say when to retry, and the previous `isinstance(...,
-    AuthRateLimitedError)` test would have silently dropped the header for T12's
-    `McpAuthRateLimitedError`.
+    The rate-limiter's 429 rule requires it to say when to retry, and the previous
+    `isinstance(..., AuthRateLimitedError)` test would have silently dropped the header for the
+    MCP identity resolver's `McpAuthRateLimitedError`.
 
     A function beside `error_body` because the FastAPI handler is no longer the only thing
     that renders a `NoaError`: `noa_api.mcp_request_auth.McpAuthErrorMiddleware` writes a
@@ -493,8 +506,9 @@ def redacted_validation_errors(errors: list[Any]) -> list[dict[str, str]]:
 def install_error_handling(app: FastAPI) -> None:
     """Install the request-id middleware and every error handler on `app`.
 
-    One function, called by `noa_api.main` and by both test harnesses, because V73's "shared
-    handler, not per-route" is only true if there is one place that decides. Four handlers:
+    One function, called by `noa_api.main` and by both test harnesses, because the shared
+    request-id rule's "shared handler, not per-route" is only true if there is one place that
+    decides. Four handlers:
 
     - `NoaError` — one registration on the base class, not one per taxonomy. Starlette
       dispatches by MRO, so `AuthError` and `AuthorizationError` both land here and a third

@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# E1 — the rig is the pin C21 measured, and the render path still reads the way R11-R13 say.
+# E1 — the rig is the pin the bump re-verify duty measured, and the render path still reads the
+# way the pinned-version and render-mode checks below say.
 #
 # Every assertion here runs against *artifacts on disk* rather than against GitHub. That is
-# the point: C21's chain was established by reading upstream, and V69 is the rule that says a
-# read is not evidence the mechanism behaves. This script proves the tree under test is the
-# one the SPEC names, so the live run that follows can be attributed to that pin.
+# the point: this chain was established by reading upstream, and upstream provenance is no
+# evidence a control works — a read is not evidence the mechanism behaves. This script proves
+# the tree under test is the one the SPEC names, so the live run that follows can be attributed
+# to that pin.
 #
-# It also runs V88's config binding before touching the clone, so "the three keys are
-# there" is a check rather than a habit.
+# It also runs the three-settings config binding before touching the clone, so "the three keys
+# are there" is a check rather than a habit.
 #
 #   spikes/librechat-embed-render-gate/verify_librechat_pin.sh [clone-dir]
 #
@@ -25,15 +27,15 @@ pass() { printf 'ok    %s\n' "$1"; }
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-# V88's three keys, the header set and the trailing slash, asserted against this directory's
-# `librechat.yaml` *and* against the config block of `docs/integrations/librechat.md`.
+# The three config settings' keys, the header set and the trailing slash, asserted against this
+# directory's `librechat.yaml` *and* against the config block of `docs/integrations/librechat.md`.
 # First, and before the clone gate, because it needs no clone: a config or doc drift should be
 # catchable without 2 GB of LibreChat on disk. The predicate itself lives in the test rather than
-# here so there is one copy of it; this is where C21's trigger reaches it.
+# here so there is one copy of it; this is where the bump re-verify duty's trigger reaches it.
 # A subshell, so the script's own working directory is still the caller's afterwards.
 (cd "$REPO_ROOT" && uv run pytest -q apps/api/tests/test_librechat_config_doc.py) \
   || fail "config binding red — see apps/api/tests/test_librechat_config_doc.py"
-pass "librechat.yaml + docs/integrations/librechat.md carry V88's keys"
+pass "librechat.yaml + docs/integrations/librechat.md carry the three config keys"
 
 [ -d "$CLONE_DIR" ] || fail "no clone at $CLONE_DIR"
 
@@ -41,7 +43,7 @@ head_sha="$(git -C "$CLONE_DIR" rev-parse HEAD)"
 [ "$head_sha" = "$PIN" ] || fail "clone HEAD is $head_sha, not the pin $PIN"
 pass "clone HEAD == $PIN"
 
-# R11: the versions are locked, not merely declared with a caret.
+# The pinned-versions check: the versions are locked, not merely declared with a caret.
 lock_versions="$(python3 - "$CLONE_DIR" <<'PY'
 import json, sys, pathlib
 lock = json.loads((pathlib.Path(sys.argv[1]) / "package-lock.json").read_text())
@@ -62,26 +64,28 @@ installed_version="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1
 [ "$installed_version" = "$MCP_UI_VERSION" ] || fail "installed @mcp-ui/client is $installed_version"
 pass "installed @mcp-ui/client == $installed_version"
 
-# R12: `text/uri-list` is still a branch in the shipped bytes, not only in the repo source.
+# The src-render-mode check: `text/uri-list` is still a branch in the shipped bytes, not only in
+# the repo source.
 grep -q 'text/uri-list' "$installed/dist/index.mjs" || fail "no text/uri-list branch in shipped bytes"
 pass "shipped bytes still branch on text/uri-list"
 
-# R13 / V80: same-origin granted, forms not. The second half is the one V80 depends on, and
-# it is asserted as an absence — if a bump adds `allow-forms`, V80's reason evaporates and
-# this line is where that gets noticed.
+# The no-allow-forms check: same-origin granted, forms not. The second half is the one the
+# JS-fetch-only design depends on, and it is asserted as an absence — if a bump adds
+# `allow-forms`, that design's reason evaporates and this line is where that gets noticed.
 grep -q 'allow-scripts allow-same-origin' "$installed/dist/index.mjs" \
   || fail "shipped bytes no longer merge 'allow-scripts allow-same-origin'"
 pass "shipped bytes merge 'allow-scripts allow-same-origin'"
 if grep -q 'allow-forms' "$installed/dist/index.mjs"; then
-  fail "shipped bytes now mention allow-forms — V80's premise changed, re-read R13"
+  fail "shipped bytes now mention allow-forms — the JS-fetch-only design's premise changed, re-read the no-allow-forms check"
 fi
-pass "shipped bytes never mention allow-forms (V80 premise holds)"
+pass "shipped bytes never mention allow-forms (JS-fetch-only premise holds)"
 
-# V69: the shipped @mcp-ui/client bytes, not the repo source, are what actually runs — same
-# standard as the text/uri-list and allow-forms checks above. V69's own subject is a ported SSH
-# host-key control; its RULE — upstream provenance is not evidence a control works, so a control
-# needs a test against the real mechanism — is applied here one surface over, to shipped bytes
-# versus the source they were published from. The real mechanism is what npm installed.
+# The provenance-is-not-evidence rule: the shipped @mcp-ui/client bytes, not the repo source, are
+# what actually runs — same standard as the text/uri-list and allow-forms checks above. That
+# rule's own subject is a ported SSH host-key control; its RULE — upstream provenance is not
+# evidence a control works, so a control needs a test against the real mechanism — is applied
+# here one surface over, to shipped bytes versus the source they were published from. The real
+# mechanism is what npm installed.
 #
 # Frame sizing needs TWO things from these bytes, and either check alone is blind to the other:
 #
@@ -98,7 +102,7 @@ pass "shipped bytes never mention allow-forms (V80 premise holds)"
 # 5.7.0 the destructured binding is a single letter — so a pattern naming the binding would break
 # on any rebuild without the property having changed.
 #
-# C21's re-verify-on-bump duty is what these two lines discharge.
+# The re-verify-on-bump duty is what these two lines discharge.
 grep -q 'ui-size-change' "$installed/dist/index.mjs" \
   || fail "shipped bytes no longer handle the ui-size-change message"
 pass "shipped bytes still handle ui-size-change"
@@ -106,13 +110,14 @@ grep -q 'autoResizeIframe' "$installed/dist/index.mjs" \
   || fail "shipped bytes no longer accept the autoResizeIframe option"
 pass "shipped bytes still accept the autoResizeIframe option"
 
-# R15: the draft that would kill the uri-list path is not in this tree.
+# The open-draft check: the draft that would kill the uri-list path is not in this tree.
 if grep -rq '@modelcontextprotocol/ext-apps' "$CLONE_DIR/client/package.json" 2>/dev/null; then
-  fail "client depends on ext-apps — PR #13831 landed, C21's drift source is live"
+  fail "client depends on ext-apps — PR #13831 landed, the re-verify duty's drift source is live"
 fi
 pass "no ext-apps dependency (PR #13831 still out of tree)"
 
-# C21 / R12: R12 names these 3 sites as where LibreChat delegates render mode to
+# The re-verify duty and the src-render-mode check: that check names these 3 sites as where
+# LibreChat delegates render mode to
 # `UIResourceRenderer`; `autoResizeIframe` is what makes the frame the frame-sizing work
 # depends on report its own size instead of a fixed one. A bump can drop the prop at one site
 # without touching the others, so each site is its own assertion — a single combined grep

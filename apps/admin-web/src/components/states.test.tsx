@@ -14,7 +14,7 @@ describe('shared application states', () => {
     vi.restoreAllMocks()
   })
 
-  // The escape is labelled "Back to home" since §T76: it leads to `/home`, which
+  // The escape is labelled "Back to home" since the role-aware dispatcher: it leads to `/home`, which
   // dispatches by role, so wording that named the admin surface was wrong for
   // exactly the operator most likely to be reading a 403.
   it('403 explains the refusal and offers a route home (never a dead end)', () => {

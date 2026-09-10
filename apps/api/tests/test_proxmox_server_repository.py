@@ -124,7 +124,7 @@ async def test_get_by_id_finds_the_row(
 async def test_get_by_id_answers_none_for_a_missing_row(
     repository: SQLProxmoxServerRepository,
 ) -> None:
-    """`None`, not a raise: `resolve_proxmox_server_ref` turns it into `host_not_found` (§V.18),
+    """`None`, not a raise: `resolve_proxmox_server_ref` turns it into `host_not_found`,
     and on the CHANGE path a raise here would reach an operator as a failed run rather than
     as a question they can answer."""
     assert await repository.get_by_id(uuid4()) is None
@@ -152,7 +152,8 @@ async def test_verify_ssl_defaults_off_for_a_row_that_does_not_set_it() -> None:
     NOA validates a certificate with nothing else to notice.
     """
     # Deliberately a claim about the *column*, not about an instance: an unsaved instance carries
-    # `None` here, and the database is what applies `server_default` (V87's B9 note).
+    # `None` here, and the database is what applies `server_default` — an ORM attribute set to
+    # `None` inserts JSON `null`, not an omission, so it never touches the default.
     assert ProxmoxServer.__table__.c.verify_ssl.server_default.arg == "false"
 
 
@@ -172,10 +173,11 @@ async def test_verify_ssl_round_trips_when_it_is_set(
 async def test_a_stored_row_renders_safely(
     session: AsyncSession, repository: SQLProxmoxServerRepository
 ) -> None:
-    """`to_safe_dict` on a real row: identifiers present, the secret absent (§V.2, §V.8).
+    """`to_safe_dict` on a real row: identifiers present, the secret absent.
 
-    Not on `ProxmoxServerRowLike`'s account alone — the admin routes of §T.54 will render one —
-    but the row already has the method, so the guarantee is checked where the row is real.
+    Not on `ProxmoxServerRowLike`'s account alone — the admin routes of the admin CRUD build
+    will render one — but the row already has the method, so the guarantee is checked where
+    the row is real.
     """
     await insert(session, "pve1")
 

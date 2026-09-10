@@ -4,10 +4,11 @@ import { loginErrorMessage } from './login-messages'
 import { ApiError } from '@/lib/auth/fetch-helper'
 
 /**
- * The sign-in copy (§T.50 — V8, V9, V7, V4).
+ * The sign-in copy.
  *
- * V8 keeps the submitted value out of an error body API-side; this is the browser half of the same
- * rule. A refused credential answers one vague pair whatever the cause, so the page cannot be used
+ * The envelope shape keeps the submitted value out of an error body API-side; this is the
+ * browser half of the same rule. A refused credential answers one vague pair whatever the
+ * cause, so the page cannot be used
  * to find out which half was wrong — while the states that are *not* a wrong credential stay
  * distinguishable, because retrying the password is not the remedy for any of them.
  */
@@ -31,7 +32,7 @@ describe('loginErrorMessage', () => {
   })
 
   it('never carries the backend detail into operator-facing copy', () => {
-    // `detail` is a log-line diagnostic (V8: body = error_code + message + request_id). On the
+    // `detail` is a log-line diagnostic (body = error_code + message + request_id). On the
     // credential path it can name the account or the bind failure, so no branch may echo it.
     const codes = [
       'invalid_credentials',
@@ -48,7 +49,8 @@ describe('loginErrorMessage', () => {
   })
 
   it('separates a pending account from a wrong password', () => {
-    // The credentials were right and the account exists; V7 provisions it `is_active=False`. This
+    // The credentials were right and the account exists; the login flow provisions it
+    // `is_active=False`. This
     // one names a state an administrator has to clear, not a field an attacker can probe.
     expect(loginErrorMessage(withCode('user_pending_approval', 403)).title).toBe(
       'Account pending approval',

@@ -2,7 +2,7 @@ import { fetchWithAuth, jsonOrThrow } from '@/lib/auth/fetch-helper'
 
 import type { McpToken, McpTokensResponse, MintedToken, TokenScope } from './types'
 
-// Transport for the MCP token vertical (§T76). Every call goes through the
+// Transport for the MCP token vertical. Every call goes through the
 // shared fetchWithAuth + jsonOrThrow helpers, so a 401 triggers the session-
 // expiry flow and any non-OK response throws a typed ApiError preserving the
 // backend's stable message / error_code / request_id. Callers surface that
@@ -10,7 +10,7 @@ import type { McpToken, McpTokensResponse, MintedToken, TokenScope } from './typ
 // stay the API's to phrase.
 //
 // Nothing in this file logs a response. The mint answer carries a credential
-// (V2 show-once), and a transport that logged it would defeat every guard above
+// (shown once), and a transport that logged it would defeat every guard above
 // it — so the rule is the file's, not the caller's.
 
 // The one place a token path is built. Both routers expose the same three verbs

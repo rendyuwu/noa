@@ -3,7 +3,7 @@ import type { StatusChipStatus } from '@gio/bigsu-ui'
 import { coerceStringArray } from './users-api'
 import type { AdminUser } from './types'
 
-// Relative-time rendering moved to the shared admin layer (§T76) so the MCP
+// Relative-time rendering moved to the shared admin layer so the MCP
 // token tables render `Never` exactly as the Users table does. Re-exported here
 // so existing Users call sites keep importing it from user-status — the same
 // pattern `users-api.ts:14` uses for the coercers.

@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-// The Zod schema for the mint-token form (§T76).
+// The Zod schema for the mint-token form.
 //
 // 255 is the label cap in `core/auth/mcp_token_service.py:76`, and THAT is the
 // authoritative one: the service normalises a blank label to `None` and rejects

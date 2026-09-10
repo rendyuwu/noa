@@ -1,9 +1,10 @@
 import { ApiError } from '@/lib/auth/fetch-helper'
 
-// Operator-facing copy for the backend's auth error contract (§I.admin-api `/auth/login`, V8, V9).
+// Operator-facing copy for the admin API's `/auth/login` contract.
 //
-// The raw backend `detail` is never echoed on the credential path. V8 already keeps the submitted
-// value out of the response body API-side; this is the browser half of the same rule: a precise
+// The raw backend `detail` is never echoed on the credential path. The no-internal-text-in-a-body
+// rule already keeps the submitted value out of the response body API-side; this is the browser
+// half of the same rule: a precise
 // "which field was wrong" message is a credential-enumeration aid, so every
 // invalid-credential failure — wrong password, unknown account, LDAP says disabled — answers with
 // one deliberately vague pair. No password, token or cookie ever reaches this copy.
@@ -26,7 +27,7 @@ export const loginErrorMessage = (error: unknown): LoginMessage => {
       case 'invalid_credentials':
         return INVALID
       case 'user_pending_approval':
-        // V7: a new LDAP user is provisioned `is_active=False`. The account exists and the
+        // A new LDAP user is provisioned `is_active=False`. The account exists and the
         // credentials were right, so this one is allowed to be specific — it names a state an
         // administrator has to clear, not a field an attacker can probe.
         return {
@@ -35,14 +36,14 @@ export const loginErrorMessage = (error: unknown): LoginMessage => {
             'Your account is awaiting administrator approval. You can sign in once it is activated.',
         }
       case 'login_rate_limited':
-        // V9: 429 with `Retry-After`. The wait is stated without the number, which is a server
+        // 429 with `Retry-After`. The wait is stated without the number, which is a server
         // detail this copy would have to keep in step with.
         return {
           title: 'Too many attempts',
           description: 'Too many sign-in attempts. Wait a moment before trying again.',
         }
       case 'authentication_service_unavailable':
-        // V4's fail-closed side: LDAP is unreachable, so nobody can sign in. Distinct from bad
+        // The fail-closed side of an unreachable LDAP: nobody can sign in. Distinct from bad
         // credentials, because retrying the password is not the remedy.
         return {
           title: 'Sign-in unavailable',

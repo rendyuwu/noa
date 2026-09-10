@@ -1,6 +1,7 @@
-"""`mynetworks` normalisation and line parsing (T31, §V.58, §V.59).
+"""`mynetworks` normalisation and line parsing.
 
-§V.59 is one rule applied twice — `1.2.3.4` ≡ `1.2.3.4/32` — and it has to hold on *both* sides
+The exact-membership rule is one rule applied twice — `1.2.3.4` ≡ `1.2.3.4/32` — and it has to
+hold on *both* sides
 of a comparison, so this file exercises the normaliser directly rather than only through the
 tool: the operator's target and every stored line go through the same function, and a rule that
 held on one side would report "not whitelisted" for an address PMG whitelists.
@@ -27,7 +28,7 @@ from core.integrations.pmg.mynetworks import (
 )
 from support.pmg import mynetworks_output
 
-# --- V59: one host and its host route are one entry ---
+# --- One host and its host route are one entry ---
 
 
 @pytest.mark.parametrize(
@@ -40,8 +41,8 @@ from support.pmg import mynetworks_output
     ],
 )
 def test_a_bare_address_normalizes_to_its_host_route(value: str, expected: str) -> None:
-    """§V.59's exact words. Without this, membership is a string comparison against whichever
-    spelling PMG happens to store."""
+    """The exact-membership rule's exact words. Without this, membership is a string comparison
+    against whichever spelling PMG happens to store."""
     assert normalize_cidr(value) == expected
 
 
@@ -72,7 +73,8 @@ def test_surrounding_whitespace_is_trimmed() -> None:
     ],
 )
 def test_anything_that_is_not_an_address_or_network_is_none(value: str) -> None:
-    """`None`, never a raise: the callers are a tool refusing an argument (§V.18, §V.19) and a
+    """`None`, never a raise: the callers are a tool refusing an argument — never guessing, never
+    raising raw — and a
     parser skipping a line that was never meant to be an address.
 
     `"200"` is in here on purpose — it is the status line `pmgsh` prints, and `ipaddress`
@@ -144,7 +146,7 @@ def test_a_repeated_cidr_is_not_deduplicated_away() -> None:
 
 
 def test_a_repeated_cidr_never_makes_the_id_column_stand_in_for_the_address() -> None:
-    """The `noa-old` defect not carried forward (T21 (b)).
+    """The `noa-old` defect not carried forward (the account search's defect note, part (b)).
 
     There a candidate already in the `seen` set was skipped and the *next column* was tried, so
     a repeated CIDR could put the id column's value in the entry list. Here the first parsable
@@ -159,11 +161,11 @@ def test_a_repeated_cidr_never_makes_the_id_column_stand_in_for_the_address() ->
     assert [entry.cidr for entry in entries] == ["1.2.3.4/32", "1.2.3.4/32"]
 
 
-# --- V85: a listing's order, which parsing deliberately does not impose ---
+# --- A listing's order, which parsing deliberately does not impose ---
 
 
 def test_entries_sort_by_address_rather_than_by_text() -> None:
-    """§V.85's ordering clause, for `pmg_whitelist_list`.
+    """The row-cap's ordering clause, for `pmg_whitelist_list`.
 
     `10.9.0.0/24` belongs before `10.10.0.0/24`, and sorting the strings puts it after. That is
     the whole reason this is a key rather than `sorted(entries, key=lambda e: e.normalized)`.
@@ -209,7 +211,7 @@ def test_sorting_an_empty_whitelist_is_an_empty_list() -> None:
     assert sort_entries([]) == []
 
 
-# --- V59: exact membership, never containment ---
+# --- Exact membership, never containment ---
 
 
 def test_a_target_matches_its_own_entry() -> None:
@@ -221,8 +223,9 @@ def test_a_target_matches_its_own_entry() -> None:
 
 
 def test_a_containing_network_is_not_a_match() -> None:
-    """§V.59 says exact CIDR membership. Answering otherwise tells an operator their address is
-    whitelisted when the entry a removal would have to name is a different CIDR."""
+    """The exact-membership rule says exact CIDR membership. Answering otherwise tells an
+    operator their address is whitelisted when the entry a removal would have to name is a
+    different CIDR."""
     entries = parse_mynetworks_entries(mynetworks_output("1.2.3.0/24"))
 
     assert find_matching_entries(entries, normalized_target="1.2.3.4/32") == []

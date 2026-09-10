@@ -1,22 +1,23 @@
-"""Admin user management: list, enable/disable, delete, assign roles (T51, I.admin-api).
+"""Admin user management: list, enable/disable, delete, assign roles.
 
 **Four routes and no policy.** Every guard these handlers rely on lives in
 `core.auth.authorization_service` — the last-active-admin refusal, the self-deactivate and
-self-delete refusals, the reserved `admin` role and the internal-role rules. That is
-deliberate and it is T9's own rule: those are invariants about the data, so they must hold for a
+self-delete refusals, the reserved `admin` role and the internal-role rules. That is deliberate and
+it is the RBAC engine's own rule: those are invariants about the data, so they must hold for a
 future CLI or a migration script too, not only for whoever calls these paths. A handler here
 resolves the actor, calls one service method, and shapes the answer.
 
 **There is no `POST /users`.** A NOA operator is born at login: `AuthService._provision` writes
-the row `is_active=False` on the first successful LDAP bind and an admin enables it from here
-(V7, C4). That is where "create" belongs, because LDAP — not this API — is the source of truth
+the row `is_active=False` on the first successful LDAP bind and an admin enables it from here.
+That is where "create" belongs, because LDAP — not this API — is the source of truth
 for who is employed, and a row minted here would be one NOA invented. `noa-old` shipped no create
 route either, and the ported panel has no create control.
 
 **`admin` is checked per handler, not once on the router.** `AdminUserDep` is a parameter on all
-four, so the actor object the V12 guards need (`actor_email`, `actor_user_id`) and the gate that
-authorises the call are the same read — there is no way to have one without the other. It also
-inherits V6 through `require_session_user`: a disabled or demoted admin loses these routes on
+four, so the actor object the last-admin guards need (`actor_email`, `actor_user_id`) and the gate
+that authorises the call are the same read — there is no way to have one without the other. It
+also inherits the per-request re-read rule through `require_session_user`: a disabled or demoted
+admin loses these routes on
 their next request rather than at cookie expiry, which is what
 `test_admin_user_routes.py::test_a_disabled_admin_loses_the_routes_on_the_next_request` asserts.
 
@@ -31,8 +32,8 @@ per endpoint.
   that set back, so shipping an internal role would make the UI ask for something the API
   refuses with 400. They survive replacement server-side either way, in the repository's
   subquery.
-- `direct_tools`. `noa-old`'s response carried it; V75 disables direct per-user grants (410,
-  T65), so there is no field to fill and no key to send.
+- `direct_tools`. `noa-old`'s response carried it; direct per-user grants are disabled (410), so
+  there is no field to fill and no key to send.
 
 **The fifth route refuses rather than acts.** `PUT /admin/users/{user_id}/tools` answers 410
 `direct_tool_grants_disabled`. It exists because `noa-old` shipped it and the ported
@@ -160,7 +161,8 @@ async def update_user_active(
 ) -> UpdateUserResponse:
     """Enable or disable one user.
 
-    Disabling is the operation V6 leans on: there is no session revocation, so `is_active=False`
+    Disabling is the operation the per-request re-read rule leans on: there is no session
+    revocation, so `is_active=False`
     takes effect through the per-request row re-read. It also deletes every `mcp_tokens` row the
     operator holds — inside the service, so no route can forget it, and only on a genuine
     True→False transition.
@@ -193,8 +195,9 @@ async def delete_user(
     cookie does not, which is why a deleted operator's next request is `session_invalid` rather
     than a working session for a row that no longer exists.
 
-    Refusals: 404, 409 `last_active_admin`, 409 `self_delete` / `self_delete_admin` — V12 names
-    the admin case explicitly and self-delete is refused for non-admins too.
+    Refusals: 404, 409 `last_active_admin`, 409 `self_delete` / `self_delete_admin` — the
+    last-admin guards name the admin case explicitly and self-delete is refused for non-admins
+    too.
     """
     await authorization.delete_user(
         user_id,
@@ -246,7 +249,8 @@ async def set_user_tools(
 
     **No `AuthorizationServiceDep` either.** Nothing is looked up: `user_id` is not checked for
     existence, so an unknown id answers 410 rather than 404. That is not laziness about the
-    404 — it is the same rule V27 spells out for a different table. A status that varied with
+    404 — it is the same rule the identical-404 principle spells out for a different table. A
+    status that varied with
     whether the row existed would make this route an existence oracle for `users`, and it would
     make a caller believe the grant might have worked for a *real* user.
 
@@ -259,7 +263,7 @@ async def set_user_tools(
     it, and the annotated `None` return is unreachable.
     """
     raise DirectGrantsDisabledError(
-        f"direct tool grants refused for `{user_id}` (V75: permissions flow role → user)"
+        f"direct tool grants refused for `{user_id}` (permissions flow role → user)"
     )
 
 

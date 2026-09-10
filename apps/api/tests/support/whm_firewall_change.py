@@ -5,13 +5,13 @@ probes, the transport double. This owns what a *test* needs to drive
 `whm_firewall_release_and_allow` and `whm_firewall_allowlist_remove`: the call
 helpers for each tool and each runner, and the fixture shapes all four lanes share.
 
-Its own module because those lanes are four test files, split so none runs past C14's line
-budget, and helpers duplicated across files are helpers that drift.
+Its own module because those lanes are four test files, split so none runs past the file-size
+cap, and helpers duplicated across files are helpers that drift.
 
 The `ChangeExecutionRequest`s here are assembled the way `core.approvals.execution` assembles
 one, because that is what the executor hands a runner — and their `arguments` deliberately name
 a different server from their evidence, so every runner test that resolves a target is also a
-V33 assertion.
+persisted-context assertion.
 """
 
 from __future__ import annotations
@@ -143,7 +143,7 @@ def imunify_commands(fake: Any) -> list[str]:
     return [command for command in changes(fake) if CSF_BINARY not in command]
 
 
-# --- T26: `whm_firewall_allowlist_remove` ---
+# --- The allowlist-remove tool: `whm_firewall_allowlist_remove` ---
 
 
 async def allowlist_remove(
@@ -152,7 +152,8 @@ async def allowlist_remove(
     server_ref: str = SERVER_NAME,
     target: str = TARGET,
 ) -> tuple[Any, UUID]:
-    """Call T26's tool inside a real request context; return its answer and the caller's id.
+    """Call the allowlist-remove tool inside a real request context; return its answer and
+    the caller's id.
 
     The context is not decoration, for `release`'s reason: `open_change_request` reads the
     requester from the authenticated identity rather than from an argument.
@@ -175,11 +176,13 @@ def removal_request(
     action_request_id: UUID | None = None,
     server_ref: str = SERVER_NAME,
 ) -> ChangeExecutionRequest:
-    """What `core.approvals.execution` hands T26's runner for an approved removal.
+    """What `core.approvals.execution` hands the allowlist-remove tool's runner for an
+    approved removal.
 
     The before-state on the evidence is an *allowlisted* reading, because that is the state an
-    operator approves a removal against — and it carries NOA's marker and the reason T25 wrote,
-    since that is the entry being deleted and the reason V96 has to keep off the way back.
+    operator approves a removal against — and it carries NOA's marker and the reason the
+    release-and-allow tool wrote, since that is the entry being deleted and the reason the
+    keep-off-the-return-path rule has to keep off the way back.
 
     `reason` is on the request the way it is on every approved change. This runner never
     reads it, and the tests assert that it does not reappear.
@@ -208,7 +211,8 @@ def removal_request(
 def removed_box(
     *, csf_after: str = CSF_CLEAN_OUTPUT, imunify_after: str = IMUNIFY_CLEAN
 ) -> FakeFirewallBox:
-    """A box for T26's **runner** lane, whose one read is the confirming one.
+    """A box for the allowlist-remove tool's **runner** lane, whose one read is the
+    confirming one.
 
     `released_box`' argument, one tool over: the runner reads exactly once and the point of that
     read is that it happens after the change, so a one-entry queue holds the *after* state. The

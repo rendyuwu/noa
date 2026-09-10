@@ -161,7 +161,8 @@ def test_a_verified_delta_cannot_name_a_cause() -> None:
 
 
 def test_a_negative_bound_is_refused() -> None:
-    """A total of minus one is not a bound, and V85's whole point is that the bound is readable."""
+    """A total of minus one is not a bound, and the row-cap rule's whole point is that the bound
+    is readable."""
     with pytest.raises(ValueError, match="negative"):
         ChangeDelta(
             identity={"server": SERVER_NAME},
@@ -175,7 +176,7 @@ def test_a_negative_bound_is_refused() -> None:
     ["reason", "Reason", " proposed_reason ", "suspendreason", "note", "comment"],
 )
 def test_no_reason_bearing_key_reaches_a_delta(key: str) -> None:
-    """C8, V15, V43: one reason exists, the operator types it, and it does not come back.
+    """The reason rule: one reason exists, the operator types it, and it does not come back.
 
     A receipt key is the same door `result_summary` is — the card and the admin audit surface
     read it, and `noa_get_action_result` reaches the audit trail — so the fence is checked where
@@ -317,7 +318,8 @@ def test_an_empty_delta_on_the_row_reads_as_nothing_measured() -> None:
 
 
 def test_a_credential_in_a_delta_is_redacted_on_its_own_line() -> None:
-    """V8, V45: the delta goes through the redactor separately, not on the payload's pass.
+    """The secrets-redaction rule and the redacted-args pattern: the delta goes through the
+    redactor separately, not on the payload's pass.
 
     Two values, redacted twice, because they are two values. A delta lifted off the payload the
     way `ok` is would be lifted *unredacted* — `ok` and `error_code` are read from the raw

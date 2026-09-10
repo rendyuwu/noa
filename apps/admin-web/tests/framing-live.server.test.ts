@@ -7,13 +7,13 @@ import { fileURLToPath } from 'node:url'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 /**
- * The framing header on the wire, from a server that is actually running (§T.49, V41).
+ * The framing header on the wire, from a server that is actually running.
  *
  * The unit specs prove what the config object says. Whether Next then puts that header on a
  * response is a different question, and it is the one the control exists to answer: a `headers()`
- * entry that is never applied looks identical from inside the process. §T.45 measured the same
- * mechanism for the embed, but upstream — or sibling — provenance is not evidence a control works
- * here (V69's lesson, B2), so this app proves its own.
+ * entry that is never applied looks identical from inside the process. The embed's
+ * framing-header test measured the same mechanism for the embed, but upstream — or sibling —
+ * provenance is not evidence a control works here, so this app proves its own.
  *
  * Own lane (`pnpm test:server`, `vitest.server.config.ts`): it boots a dev server, which does not
  * belong in the unit lane's runtime.
@@ -27,7 +27,8 @@ const NEXT_BIN = path.join(APP_ROOT, 'node_modules', '.bin', 'next')
 // nothing. One `headers()` entry on `/(.*)` has to cover all six — a page-shaped pattern would
 // leave `/healthz`, `/api/*` and the 404 bare.
 //
-// `/login` and `/api/auth/me` joined the list at §T.50, and they are the two this app most needs
+// `/login` and `/api/auth/me` joined the list when JS-fetch login landed, and they are the two
+// this app most needs
 // covered: the login route is the address `NOA_SIGN_IN_URL` sends an operator to from inside a
 // LibreChat frame, so it is the one page an attacker has a reason to try to frame, and the proxy is
 // the surface that would carry an operator's cookie if anyone succeeded.
@@ -123,14 +124,14 @@ afterAll(() => {
 
 async function get(pathname: string): Promise<Response> {
   return await fetch(`${baseUrl}${pathname}`, {
-    // `/` redirects to `/home` (§T76 — the role-aware dispatcher). Followed, the redirect's own
+    // `/` redirects to `/home` (the role-aware dispatcher). Followed, the redirect's own
     // headers would never be looked at, and the redirect is a response this app sends.
     redirect: 'manual',
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
 }
 
-describe('§T.49 — every response carries the framing header', () => {
+describe('every response carries the framing header', () => {
   it('answers at all — the server under test is the one being measured', async () => {
     // Without this the suite below could pass against a server that errors on everything: an error
     // page carries the config headers too. `/healthz` returning its own body is the proof that the
@@ -147,7 +148,7 @@ describe('§T.49 — every response carries the framing header', () => {
     expect(headers.get('content-security-policy'), `no CSP on ${pathname}`).toBe(
       "frame-ancestors 'none'",
     )
-    // §T.49: none is needed, and one added later would be honoured instead of this header by any
+    // None is needed, and one added later would be honoured instead of this header by any
     // client that reads X-Frame-Options first.
     expect(headers.get('x-frame-options'), `X-Frame-Options on ${pathname}`).toBeNull()
   }, REQUEST_TIMEOUT_MS)
@@ -157,7 +158,7 @@ describe('§T.49 — every response carries the framing header', () => {
     // fails as itself rather than as a header assertion somewhere in the list above.
     const root = await get('/')
     expect(root.status).toBe(307)
-    // §T76 moved the target from `/admin/users` to the role-aware dispatcher. It stays a SERVER
+    // The role-aware dispatcher moved the target from `/admin/users`. It stays a SERVER
     // redirect: making `/` a client page to do the dispatch would delete the only redirect this
     // lane covers, and the header assertions above would stop being exercised on one.
     // Resolved against the base so the assertion holds whether Next answers with a relative path

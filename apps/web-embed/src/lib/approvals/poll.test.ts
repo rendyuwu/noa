@@ -14,7 +14,7 @@ import {
 import { CARD_ID, approvalCard, approvedBody, cardBody, runBody } from '../../../tests/support/approval-card'
 
 /**
- * When the card asks again, and when it stops (§T.42 — V29, V34, V38, V27).
+ * When the card asks again, and when it stops.
  *
  * The predicates here are the whole loop: everything `card-view.tsx` does is wait
  * `pollIntervalMs`, call `fetchApprovalCard`, and stop when `isTerminal` or `isStalled` says so. So
@@ -24,7 +24,7 @@ import { CARD_ID, approvalCard, approvedBody, cardBody, runBody } from '../../..
 
 describe('pollPath', () => {
   it('is a path on this origin, never the API', () => {
-    // `NOA_API_URL` is server-only and a browser could not reach it anyway (§T.44, AGENTS.md). The
+    // `NOA_API_URL` is server-only and a browser could not reach it anyway (AGENTS.md). The
     // proxy's allowlist carries this exact entry, planted for this row.
     expect(pollPath(CARD_ID)).toBe(`/api/action-requests/${CARD_ID}`)
   })
@@ -37,7 +37,7 @@ describe('pollPath', () => {
 describe('isRunning', () => {
   it.each([
     ['a run still going', approvedBody({ status: 'STARTED' })],
-    // V29 puts the run row in the decision's transaction, so this is a read that straddled the
+    // The async-run design puts the run row in the decision's transaction, so this is a read that straddled the
     // commit, not a change that will never run — asking again is the right answer to it.
     ['an approval whose run has not been read yet', cardBody({ status: 'APPROVED', csrf: null })],
   ])('is true for %s', (_label: string, body: Record<string, unknown>) => {
@@ -103,7 +103,7 @@ describe('isStalled', () => {
   })
 
   it('is true once it has been watched for the limit', () => {
-    // §T.38's executor is unbuilt, so a STARTED run never moves today; without this cap an open
+    // The approved-change executor is unbuilt, so a STARTED run never moves today; without this cap an open
     // frame would poll every two seconds for as long as it stays open.
     expect(isStalled(running, RUN_POLL_LIMIT)).toBe(true)
   })
@@ -182,7 +182,7 @@ describe('fetchApprovalCard', () => {
 
   it('refuses a 200 whose body is not a card', async () => {
     // A broken deployment, not an empty card: rendering the fields as blanks would put an Approve
-    // button on top of nothing (V38's family).
+    // button on top of nothing (the no-blank-card family).
     stub(() => Response.json({ not: 'a card' }))
 
     expect(await fetchApprovalCard(CARD_ID)).toEqual({ kind: 'unavailable', status: 200 })

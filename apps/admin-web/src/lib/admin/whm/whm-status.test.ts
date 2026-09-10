@@ -3,8 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { ValidateWhmServerResponse } from './types'
 import { getWhmValidationMessage } from './whm-status'
 
-// §T.80 follow-up: `whm_token_acl_insufficient` is a validate failure code the panel can now
-// receive (myprivs replaced applist as the credential probe, §V111). BIGSU's status vocabulary
+// The admin validate route's follow-up: `whm_token_acl_insufficient` is a validate failure
+// code the panel can now receive (myprivs replaced applist as the credential probe, per the
+// ACL-set validate rule). BIGSU's status vocabulary
 // is fixed (rule 9), so the chip stays `Failed` for every code — what must not happen is an
 // operator reading a raw code string with no next step, which is what these cases hold.
 

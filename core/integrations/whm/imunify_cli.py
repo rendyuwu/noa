@@ -1,13 +1,14 @@
 """Run `imunify360-agent` over SSH and parse its JSON.
 
-Copied from `noa-old` branch `MCP` (`whm/integrations/imunify_cli.py`), less the binary-probe
-half, which moved to `core.integrations.whm.availability` (T16 deviation (d)) — on `MCP` the
-CSF probe and the `asyncio.gather` lived inside *this* module, which left `csf_cli` and
+Copied from `noa-old` branch `MCP` (`whm/integrations/imunify_cli.py`), less the binary-probe half,
+which moved to `core.integrations.whm.availability` (a deviation in the WHM port, item d) — on `MCP`
+the CSF probe and the `asyncio.gather` lived inside *this* module, which left `csf_cli` and
 `imunify_cli` asymmetric and the import graph pointing the wrong way.
 
 Same escalation change as `csf_cli`: `build_remote_command` decides `sudo -n` from the resolved
-username instead of a caller-passed boolean (V55, T16 deviation (a)). No `TERM=dumb` here —
-`imunify360-agent` does not colour its output, and `noa-old` did not set it either.
+username instead of a caller-passed boolean (two causes, two remedies; a deviation in the WHM port,
+item a). No `TERM=dumb` here — `imunify360-agent` does not colour its output, and `noa-old` did not
+set it either.
 
 Unqualified binary name, unlike csf's absolute `/usr/sbin/csf`: `imunify360-agent` installs to
 different prefixes across CloudLinux versions, and it is on `PATH` (and on sudoers'
@@ -19,12 +20,12 @@ first `{`/`[` and retries with `JSONDecoder.raw_decode`, so a leading non-JSON p
 lose the document. That prefix was the CloudLinux LVE/PAM login banner (`noa-old` GH #83). The
 real fix is `core.remote_exec.banner_strip`, which removes it at the SSH boundary — this
 is a belt-and-braces guard for a banner variant the signature gate does not recognise, and it
-is deliberately kept: a banner change should degrade to a parsed result, ⊥ to a failed CHANGE.
+is deliberately kept: a banner change should degrade to a parsed result, never to a failed CHANGE.
 The same pattern exists in `noa-old`'s `pmg/integrations/pmgsh_cli.py`.
 
 Failure codes, all distinct because their remedies are:
 
-- `ssh_sudo_required`       — sudoers entry missing (`noa-old` GH #82, V55).
+- `ssh_sudo_required`       — sudoers entry missing (`noa-old` GH #82; two causes, two remedies).
 - `imunify_command_failed`  — non-zero exit for any other reason; carries the agent's output.
 - `imunify_empty_response`  — exit 0, nothing on either stream. `--json` promised a document.
 - `imunify_invalid_response`— valid JSON, but not an object.

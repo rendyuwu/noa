@@ -159,8 +159,8 @@ export function ToolRunFilterBar({
 // language boundary: nothing reads the Python enum against this list, and
 // nothing in this package can. Said out loud rather than left silent, because a
 // fifth member added there would leave this dropdown quietly offering four and
-// those rows unfilterable (V119 takes a stated gap; it does not take a silent
-// one). The test beside this file pins the TypeScript half only, so a careless
+// those rows unfilterable (a stated gap beats a silent one). The test beside
+// this file pins the TypeScript half only, so a careless
 // edit here goes red and a deliberate one has to be made against the enum on
 // purpose. Contrast `ACTION_REQUEST_QUERY_KEYS`, which is asserted on both sides
 // of the boundary and is what a bound mirror looks like.

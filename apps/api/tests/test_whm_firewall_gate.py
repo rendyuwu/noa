@@ -5,23 +5,24 @@ unconditionally. With neither backend usable the mapping was empty, `gather()` r
 and the tool reported success having changed nothing — on an approved CHANGE, a firewall
 release that never happened, on a server NOA could not drive at all.
 
-T24 refused that for the exposed preflight READ, with a check written inside the tool. T68 moved
-it to the fan-out, because a per-tool check is a check the next tool can forget, and V57's harm
-lives on the CHANGE side where forgetting it is silent.
+The firewall-preflight READ refused that, with a check written inside the tool. The guard moved
+to the fan-out, because a per-tool check is a check the next tool can forget, and the
+zero-backend harm lives on the CHANGE side where forgetting it is silent.
 
 Four properties, and one that is about the *shape* of the code rather than its behaviour:
 
-- zero usable backends raises, and neither backend is asked (§V.57);
+- zero usable backends raises, and neither backend is asked;
 - zero backends with `sudo -n` denied says `ssh_sudo_required` instead — the binaries are there
-  and the remedy is a sudoers line, not an install (`noa-old` GH #82, §V.55);
+  and the remedy is a sudoers line, not an install (`noa-old` GH #82);
 - only usable backends run, and they run at once, not in sequence;
-- the fan-out has exactly one home, so T25/T26 inherit the guard rather than re-authoring it
-  (§V.84c: a machine-readable property is bound by a test, not by a docstring).
+- the fan-out has exactly one home, so the release-and-allow and allowlist-remove tools inherit
+  the guard rather than re-authoring it (a machine-readable property is bound by a test, not by
+  a docstring).
 
 No SSH here. The gate's whole input is a `FirewallAvailability` struct and two callables, so
 these tests exercise it directly; `test_whm_firewall_availability.py` covers how the struct is
 produced and `test_whm_tools_firewall_preflight.py` covers what the refusal looks like once it
-has travelled through `sanitize_tool_errors` to the model (§V.19).
+has travelled through `sanitize_tool_errors` to the model.
 """
 
 from __future__ import annotations
@@ -59,9 +60,10 @@ FIREWALL_FAN_OUT_SITES = {
 }
 
 # Where the scan looks: a directory, or a glob. The tool-layer entry is a glob rather than a
-# filename so a firewall tool module written later is scanned without being listed here — T25
-# split the CHANGE tools into `whm_firewall_change.py`, and a literal path would have quietly
-# stopped covering the half of the firewall path where V57's harm actually lives. Deliberately
+# filename so a firewall tool module written later is scanned without being listed here — the
+# release-and-allow tool split the CHANGE tools into `whm_firewall_change.py`, and a literal
+# path would have quietly stopped covering the half of the firewall path where the zero-backend
+# harm actually lives. Deliberately
 # not the whole `mcp_tools` package: a PMG tool's fan-out is not this guard's business, and a
 # rule that failed for an unrelated module is a rule the next author routes around.
 FIREWALL_MODULES = (
@@ -89,11 +91,11 @@ class Recorder:
         return self.answer
 
 
-# --- V57: zero usable backends is an error, never an empty success ---
+# --- Zero usable backends is an error, never an empty success ---
 
 
 async def test_zero_usable_backends_refuses_rather_than_gathering_nothing() -> None:
-    """§V.57, and `noa-old`'s bug stated as a test.
+    """The zero-backend rule, and `noa-old`'s bug stated as a test.
 
     An empty mapping back from here would be a caller's "done, nothing to report" — which on a
     CHANGE is a change that never happened, reported as success.
@@ -110,7 +112,7 @@ async def test_zero_usable_backends_refuses_rather_than_gathering_nothing() -> N
 
 
 async def test_zero_backends_with_denied_sudo_names_sudo_rather_than_the_install() -> None:
-    """`noa-old` GH #82, §V.55: two causes, two remedies, two codes.
+    """`noa-old` GH #82: two causes, two remedies, two codes.
 
     The binaries are installed; the sudoers line is not. "No firewall tools on this server"
     sends the operator to install software that is already there.
@@ -137,13 +139,13 @@ def test_a_usable_backend_beats_a_denied_one() -> None:
     """`sudo_required` alongside one working backend is not a refusal.
 
     It is why the other backend is missing, and the tool reports it beside a real answer — one
-    dead backend is no reason to withhold the other's (§V.86).
+    dead backend is no reason to withhold the other's.
     """
     assert usable_backends(availability(csf=True, sudo=True)) == (BACKEND_CSF,)
     assert require_usable_backends(availability(csf=True, sudo=True)) == (BACKEND_CSF,)
 
 
-# --- V57: only the usable backends, and both at once ---
+# --- Only the usable backends, and both at once ---
 
 
 async def test_only_usable_backends_run() -> None:
@@ -162,7 +164,7 @@ async def test_only_usable_backends_run() -> None:
 
 
 async def test_both_backends_are_in_flight_at_once() -> None:
-    """`asyncio.gather`, ⊥ two sequential awaits.
+    """`asyncio.gather`, never two sequential awaits.
 
     Each operation is a full SSH handshake to the same host while an operator waits on a chat
     turn. The wait below deadlocks unless the second starts before the first returns, so a
@@ -190,8 +192,8 @@ async def test_both_backends_are_in_flight_at_once() -> None:
 async def test_the_result_reads_in_a_fixed_backend_order() -> None:
     """Two identical calls produce one ordering, whichever backend answered first.
 
-    The preflight merges evidence in the key order it gets back, and §V.85 wants a bound that is
-    reproducible across identical calls — a race-ordered mapping is not.
+    The preflight merges evidence in the key order it gets back, and the row-cap rule wants a
+    bound that is reproducible across identical calls — a race-ordered mapping is not.
     """
     slow_csf_first = await run_on_usable_backends(
         availability(csf=True, imunify=True),
@@ -214,10 +216,11 @@ def _after(delay: float, answer: str):  # type: ignore[no-untyped-def]
 
 
 def test_the_firewall_fan_out_lives_in_one_place() -> None:
-    """T68: a hand-rolled `asyncio.gather` is how `noa-old`'s bug comes back.
+    """A hand-rolled `asyncio.gather` is how `noa-old`'s bug comes back.
 
-    Scans the whole firewall path rather than a list of tools, so T25/T26 — and anything after
-    them — inherit the rule without being named here (the shape `test_support_layout.py` and
+    Scans the whole firewall path rather than a list of tools, so the release-and-allow and
+    allowlist-remove tools — and anything after them — inherit the rule without being named
+    here (the shape `test_support_layout.py` and
     `test_pins.py` already use).
     """
     assert _gather_sites() == FIREWALL_FAN_OUT_SITES, (
@@ -243,8 +246,8 @@ def _firewall_sources() -> list[Path]:
     """Every `.py` on the firewall path, from a directory or a glob.
 
     A glob that matches nothing would make this whole guard vacuous, so it is refused rather than
-    silently scanning less than it says it does (V87's shape: a predicate that cannot fail is not
-    a predicate).
+    silently scanning less than it says it does (the compare-must-still-separate rule's shape:
+    a predicate that cannot fail is not a predicate).
     """
     sources: list[Path] = []
     for entry in FIREWALL_MODULES:

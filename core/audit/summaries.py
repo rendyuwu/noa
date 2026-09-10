@@ -1,6 +1,6 @@
 """Turning a tool result into an audit row's `result_summary`.
 
-Written at T73 for the READ path and hoisted here at T38, because the post-approval executor
+Written for the READ path and hoisted here, because the post-approval executor
 records the same field from the same envelope and two spellings of "bounded, redacted, compact
 JSON" is one too many. `noa_api.mcp_audit` imports both functions and re-exports them,
 so its own callers and tests keep naming one thing.

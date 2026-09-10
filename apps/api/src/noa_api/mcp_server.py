@@ -1,4 +1,6 @@
-"""The FastMCP server and its ASGI app (T13 — I.mcp, V1, V3, R3, R6, R7, R8).
+"""The FastMCP server and its ASGI app (the FastMCP mount, the MCP server contract, the
+execution-time permission re-check, the named 401 bodies, session-id minted per initialize
+unless sessions are off).
 
 Protocol era = handshake, negotiated per `initialize`. LibreChat is the sole MCP
 client and locks `@modelcontextprotocol/sdk` at exactly 1.29.0, whose client sends its own
@@ -10,24 +12,25 @@ neither SDK's list, so reaching it is an SDK bump rather than a setting. `fastmc
 is pinned for this; the pin is a decision, not an accident.
 
 Two functions, because two things need to be separable: what the server *is* (name, auth,
-and from T19-T31/T63 its tools) and how it becomes an ASGI app (`http_app`). Verified
+and its tools, from the READ, CHANGE and action-result tools) and how it becomes an ASGI app
+(`http_app`). Verified
 against the installed `fastmcp==3.4.5` rather than docs:
 
 - **`auth=` takes the verifier instance directly**. `TokenVerifier` already subclasses
   `AuthProvider`, so a provider wrapper would only exist to add RFC 9728 metadata routes
-  NOA has no use for (C5: per-user minted tokens, not OAuth).
+  NOA has no use for (per-user minted tokens, not OAuth).
 - **`auth` is read at `http_app()` time, not at request time** — `http_app` passes
-  `auth=self.auth` into `create_streamable_http_app`, which builds the authentication
-  middleware once. That is why `build_mcp_server` takes the verifier as an argument instead
-  of a module-level singleton getting one attached later: an app built before the verifier
-  exists is an app that never authenticates, and V1 would fail silently rather than loudly.
+  `auth=self.auth` into `create_streamable_http_app`, which builds the authentication middleware
+  once. That is why `build_mcp_server` takes the verifier as an argument instead of a module-level
+  singleton getting one attached later: an app built before the verifier exists is an app that never
+  authenticates, and the execution-time permission re-check would fail silently rather than loudly.
 - **No `stateless_http`, `json_response`, `host`, `port`, `log_level` on the constructor**
   — v3 raises `TypeError` for those; they belong on `http_app()` or `FASTMCP_*` env.
   Nothing here passes `stateless_http`, so sessions stay on and `Mcp-Session-Id` is minted
-  per `initialize`, which every era C23 admits expects.
-- **The middleware is not optional.** `TokenVerifier.verify_token` has no response hook
-  (R2), so without `McpAuthErrorMiddleware` every refusal collapses to the SDK's bare
-  `invalid_token` and V3's named bodies — `librechat_user_header_missing` versus
+  per `initialize`, which every era the handshake admits expects.
+- **The middleware is not optional.** `TokenVerifier.verify_token` has no response hook,
+  so without `McpAuthErrorMiddleware` every refusal collapses to the SDK's bare
+  `invalid_token` and the named 401 bodies — `librechat_user_header_missing` versus
   `librechat_user_mismatch` — do not ship. `fastmcp` appends caller middleware *after* its
   auth middleware, which is exactly where a reader of the stashed refusal has to sit
   (see `noa_api.mcp_request_auth`).
@@ -75,15 +78,19 @@ def build_mcp_server(
     than once in the test suite, and a shared instance would carry one app's verifier into
     another's mount.
 
-    `auth=None` builds an unauthenticated server. Nothing in production passes that — V1
+    `auth=None` builds an unauthenticated server. Nothing in production passes that — the
+    execution-time permission re-check
     requires every MCP request to resolve a user — but the default keeps a tool-registry
     test from having to construct a token verifier it will not use. `session_registry=None`
-    follows the same rule for T66: no register, no session middleware, and a server that
-    announces nothing (V74's emit is best-effort by decision, so its absence breaks nothing).
+    follows the same rule for the list-changed emitter: no register, no session middleware, and
+    a server that
+    announces nothing (the execution-time RBAC re-check already makes that acceptable, so its
+    absence breaks nothing).
 
     Five things happen here and all five belong together:
 
-    - **Tools are registered** (`register_mcp_tools`, T19-T31 and T63). That call is also
+    - **Tools are registered** (`register_mcp_tools`, the READ, CHANGE and action-result tools).
+      That call is also
       the guard that every exposed name is in `TOOL_CATALOG`, so a name no role can be
       granted fails at construction, and it is where each tool's `ToolRisk` is
       declared.
@@ -92,8 +99,9 @@ def build_mcp_server(
       exposes a tool without the gate serves it to every authenticated operator regardless
       of role, and the failure is invisible — the tool works. The registered set travels
       with it so a catalogued-but-unbuilt name is refused in NOA's shape rather than
-      fastmcp's (V10; see `noa_api.mcp_rbac`).
-    - **`ToolRunAuditMiddleware` is attached** (V45, V83b), for the same reason and with the
+      fastmcp's (the admin-bypass rule; see `noa_api.mcp_rbac`).
+    - **`ToolRunAuditMiddleware` is attached** (the tool-run trail's job, one seam for
+      catalog/RBAC/audit), for the same reason and with the
       same argument: a tool cannot forget a middleware. **Order matters and is load-bearing.**
       `FastMCP._run_middleware` composes over `reversed(self.middleware)`, so the first added
       is the outermost — RBAC decides, then audit wraps the execution. Added the other way
@@ -102,7 +110,8 @@ def build_mcp_server(
       unregistered name would not: it is absent from the risk map, so the audit middleware
       passes it through either way. The order is pinned by
       `test_a_call_refused_by_rbac_writes_no_row`, which is the case that can tell.)
-    - **`mask_error_details=True`** (V19, second line). fastmcp's default is `False`, and
+    - **`mask_error_details=True`** (raw exceptions never reach the LLM, second line).
+      fastmcp's default is `False`, and
       its unmasked branch raises `ToolError(f"Error calling tool {name!r}: {e}")` — `str(e)`
       verbatim in front of the model. The first line is `sanitize_tool_errors` on each tool
       (`noa_api.mcp_tools.results`); this catches whatever is raised outside one, such as
@@ -130,15 +139,16 @@ def build_mcp_http_app(
     tool_context: McpToolContext,
     session_registry: McpSessionRegistry | None = None,
 ) -> StarletteWithLifespan:
-    """The mountable Streamable HTTP app, authenticated per T11/T12.
+    """The mountable Streamable HTTP app, authenticated per the token verifier and the identity
+    resolver.
 
     Returns a Starlette app whose `lifespan` starts the session manager. It has to run:
     without it `StreamableHTTPASGIApp` has no session manager and every request fails at
     the transport. `noa_api.main` combines it with the app's own lifespan.
 
-    `session_registry` is T66's half: the register the admin surface reads to find the sessions
-    a permission change concerns. It is passed in rather than created here because the
-    *other* end of it — `McpToolListChangedNotifier` on `app.state` — has to be the same object,
+    `session_registry` is the list-changed emitter's half: the register the admin surface reads to
+    find the sessions a permission change concerns. It is passed in rather than created here because
+    the *other* end of it — `McpToolListChangedNotifier` on `app.state` — has to be the same object,
     and a register built inside this function would be one the admin routes could never reach.
     """
     server = build_mcp_server(

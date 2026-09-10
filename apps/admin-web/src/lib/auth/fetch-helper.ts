@@ -107,7 +107,7 @@ export const fetchWithAuth = async (
 //
 // `message` is read before `detail`, and it is what NOA actually sends: its error
 // envelope is { error_code, message, request_id } and `detail` is the *internal*
-// diagnostic, deliberately kept out of response bodies (§V.8). Reading only
+// diagnostic, deliberately kept out of response bodies — the envelope's own shape. Reading only
 // `detail` meant every refusal across the Users, Roles, Tokens and Servers
 // verticals rendered as "Request failed (409)" instead of the wording the API
 // guarantees. `detail` stays in the chain for any surface that still sends one.

@@ -7,7 +7,8 @@ arrives with the status and `error_code` the shared handler assigns, that the bo
 shape the ported panel already parses, and that a successful write ends its transaction while a
 refused one does not.
 
-**T65's fifth route lives here too**, because it is a property of this surface and nothing else:
+**The route that answers 410 for withdrawn direct grants lives here too**, because it is a
+property of this surface and nothing else:
 `PUT /admin/users/{id}/tools` answers 410 `direct_tool_grants_disabled`. It has no engine
 half to test — there is no user-level grant table and no service method — so the route *is* the
 whole implementation.
@@ -45,8 +46,9 @@ from noa_api.api.request_context import REQUEST_ID_HEADER
 from support.admin import ADMIN_EMAIL, OPERATOR_EMAIL, USERS_PATH, AdminHarness, admin_harness
 from support.rbac import INTERNAL_ROLE, ROLE_NOC, ROLE_SUPPORT, TOOL_CHANGE, TOOL_READ
 
-# The four routes T51 ships, as (method, path suffix, body). Parametrized rather than repeated
-# so a route added without its own gate test fails the ones below.
+# The four routes the user-management surface ships, as (method, path suffix, body).
+# Parametrized rather than repeated so a route added without its own gate test fails the ones
+# below.
 ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("GET", "", None),
     ("PATCH", "/{user_id}", {"is_active": False}),
@@ -54,8 +56,8 @@ ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("PUT", "/{user_id}/roles", {"roles": []}),
 )
 
-# T65's route, kept separate from `ROUTES` because it never answers 200: direct per-user grants
-# are withdrawn, so an admin gets 410. It shares the *gate* assertions below — being
+# The withdrawn-grants route, kept separate from `ROUTES` because it never answers 200: direct
+# per-user grants are withdrawn, so an admin gets 410. It shares the *gate* assertions below — being
 # refused is not being ungated, and a 410 served to a non-admin would say this path exists.
 REFUSING_ROUTES: tuple[tuple[str, str, dict[str, Any] | None], ...] = (
     ("PUT", "/{user_id}/tools", {"tools": []}),
@@ -81,7 +83,7 @@ def _call(harness: AdminHarness, method: str, suffix: str, body: dict[str, Any] 
     return harness.client.request(method, USERS_PATH + suffix.format(user_id=uid), json=body)
 
 
-# --- V13 + V6: the gate, on every route ---
+# --- The gate, on every route ---
 
 
 @pytest.mark.parametrize(("method", "suffix", "body"), ROUTES)
@@ -101,7 +103,7 @@ def test_an_admin_reaches_every_user_route(
 def test_every_user_route_refuses_a_non_admin(
     method: str, suffix: str, body: dict[str, Any] | None
 ) -> None:
-    """V13: authenticated, holds a role, still refused — on all five.
+    """Authenticated, holds a role, still refused — on all five.
 
     The target id is random on purpose: the gate must decide before anything is looked up, so a
     non-admin cannot use the 403/404 split to learn which ids exist.
@@ -128,7 +130,7 @@ def test_every_user_route_refuses_a_missing_cookie(
 
 
 def test_a_disabled_admin_loses_the_routes_on_the_next_request() -> None:
-    """V6: the row re-read runs before the role check, and the cookie is still valid.
+    """The row re-read runs before the role check, and the cookie is still valid.
 
     The session JWT has no revocation path before `exp`, so this re-read is the only thing that
     bounds a disabled admin's live session — `require_admin` inherits it by depending on
@@ -147,7 +149,7 @@ def test_a_disabled_admin_loses_the_routes_on_the_next_request() -> None:
 
 
 def test_the_admin_role_is_read_from_the_row_not_the_cookie() -> None:
-    """V14: a demotion lands on the next request — the cookie carries no role claim."""
+    """A demotion lands on the next request — the cookie carries no role claim."""
     with admin_harness() as harness:
         admin = harness.sign_in()
         assert harness.client.get(USERS_PATH).status_code == status.HTTP_200_OK
@@ -184,7 +186,7 @@ def test_the_list_carries_the_shape_the_panel_parses() -> None:
 
 
 def test_the_list_shows_no_tools_for_a_disabled_user() -> None:
-    """V11: `is_active=False` → zero permissions, whatever the roles say.
+    """`is_active=False` → zero permissions, whatever the roles say.
 
     Displayed state and enforced state stay equal: the panel must not show a grant the
     execution gate would refuse.
@@ -201,7 +203,7 @@ def test_the_list_shows_no_tools_for_a_disabled_user() -> None:
 
 
 def test_the_list_shows_the_whole_catalog_for_an_admin() -> None:
-    """V10: `admin` bypasses the grant table, bounded by the catalog."""
+    """`admin` bypasses the grant table, bounded by the catalog."""
     with admin_harness() as harness:
         harness.sign_in()
 
@@ -211,7 +213,7 @@ def test_the_list_shows_the_whole_catalog_for_an_admin() -> None:
 
 
 def test_the_list_hides_internal_roles() -> None:
-    """V13: internal `user:` roles are NOA's bookkeeping and are never assignable.
+    """Internal `user:` roles are NOA's bookkeeping and are never assignable.
 
     The panel renders `roles` as the assignable set and PUTs that set back, so shipping one
     here would make the UI ask for exactly what the API answers 400 to.
@@ -255,10 +257,10 @@ def test_disabling_a_user_flips_the_row_and_returns_it() -> None:
 
 
 def test_enabling_a_pending_user_is_how_a_login_provisioned_row_goes_live() -> None:
-    """V7: a first LDAP login writes the row `is_active=False`; this route is what enables it.
+    """A first LDAP login writes the row `is_active=False`; this route is what enables it.
 
-    That is also why T51 ships no create route — the row already exists by the time an admin
-    sees it.
+    That is also why the user routes ship no create route — the row already exists by the time
+    an admin sees it.
     """
     with admin_harness() as harness:
         harness.sign_in()
@@ -272,7 +274,7 @@ def test_enabling_a_pending_user_is_how_a_login_provisioned_row_goes_live() -> N
 
 
 def test_disabling_a_user_revokes_every_mcp_token() -> None:
-    """V4: the credential itself dies with the disable, and the trail says how many went."""
+    """The credential itself dies with the disable, and the trail says how many went."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target(mcp_tokens=3)
@@ -284,7 +286,7 @@ def test_disabling_a_user_revokes_every_mcp_token() -> None:
 
 
 def test_an_admin_disabling_their_own_account_is_409() -> None:
-    """V12: nobody else could undo it for them, so it is refused — and nothing persists."""
+    """Nobody else could undo it for them, so it is refused — and nothing persists."""
     with admin_harness() as harness:
         admin = harness.sign_in(mcp_tokens=2)
 
@@ -339,7 +341,10 @@ def test_deleting_a_user_answers_ok_and_removes_the_row() -> None:
 
 
 def test_an_admin_deleting_their_own_account_is_409() -> None:
-    """V12 names this one explicitly. It would also leave a valid cookie for a missing row."""
+    """The last-admin guard names this one explicitly.
+
+    It would also leave a valid cookie for a missing row.
+    """
     with admin_harness() as harness:
         admin = harness.sign_in()
 
@@ -383,7 +388,7 @@ def test_putting_roles_replaces_the_set_and_returns_the_effective_tools() -> Non
 
 
 def test_putting_an_internal_role_is_400() -> None:
-    """V13: `user:` roles are assigned by NOA only."""
+    """`user:` roles are assigned by NOA only."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()
@@ -399,7 +404,7 @@ def test_putting_an_internal_role_is_400() -> None:
 
 
 def test_putting_roles_preserves_an_internal_role_the_caller_never_sent() -> None:
-    """V13/V75: replacement clears assignable roles only. Even an empty list keeps `user:`."""
+    """Replacement clears assignable roles only. Even an empty list keeps `user:`."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target(roles=(ROLE_SUPPORT,))
@@ -427,7 +432,8 @@ def test_putting_an_unknown_role_is_400() -> None:
 
 
 def test_an_admin_removing_their_own_admin_role_is_409() -> None:
-    """V12: the one demotion nobody else can undo for them, and it can empty the admin set."""
+    """The last-admin guard: the one demotion nobody else can undo for them, and it can empty
+    the admin set."""
     with admin_harness() as harness:
         admin = harness.sign_in()
         harness.repository.grant(ROLE_SUPPORT)
@@ -454,7 +460,7 @@ def test_putting_roles_for_an_unknown_user_is_404() -> None:
 
 
 def test_a_role_change_is_visible_on_the_very_next_list() -> None:
-    """V14: permission updates take effect immediately — nothing behind these routes caches."""
+    """Permission updates take effect immediately — nothing behind these routes caches."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()
@@ -474,7 +480,7 @@ def _put_tools(harness: AdminHarness, user_id: UUID, **kwargs: Any):
 
 
 def test_setting_user_tools_directly_is_410_direct_tool_grants_disabled() -> None:
-    """V75: permissions flow role → user, so there is no per-user grant to write.
+    """Permissions flow role → user, so there is no per-user grant to write.
 
     410 rather than 404 or 403 — the route existed in `noa-old` and the capability behind it is
     withdrawn permanently, which is the one thing neither of the others says. The `error_code` is
@@ -540,7 +546,7 @@ def test_the_410_needs_no_valid_body(kwargs: dict[str, Any], why: str) -> None:
 
 
 def test_the_410_body_carries_the_shared_envelope() -> None:
-    """V8, V73: the withdrawn route answers in the same shape as every other failure.
+    """The withdrawn route answers in the same shape as every other failure.
 
     It raises rather than returning a response of its own, so `request_id` and `x-request-id`
     come from the shared handler — a route that built its own body is how one surface ends up
@@ -555,7 +561,7 @@ def test_the_410_body_carries_the_shared_envelope() -> None:
     body = response.json()
     assert set(body) == {"error_code", "message", "request_id"}
     assert response.headers[REQUEST_ID_HEADER] == body["request_id"]
-    # V8: the diagnostic names the id, the body does not.
+    # The envelope: the diagnostic names the id, the body does not.
     assert str(target.id) not in response.text
 
 
@@ -575,7 +581,7 @@ def test_the_410_leaves_the_users_effective_tools_alone() -> None:
         assert harness.user_in_list(OPERATOR_EMAIL)["tools"] == [TOOL_READ]
 
 
-# --- V14: one audit event per change, from the route ---
+# --- One audit event per change, from the route ---
 
 
 @pytest.mark.parametrize(
@@ -604,7 +610,8 @@ def test_every_mutating_route_records_one_audit_event(
 
 
 def test_the_read_route_records_nothing() -> None:
-    """V14 is about changes. A trail of list calls is V45's job, on another surface."""
+    """Audit events are about changes. A trail of list calls is the tool-run trail's job, on
+    another surface."""
     with admin_harness() as harness:
         harness.sign_in()
         harness.add_target()
@@ -614,11 +621,11 @@ def test_the_read_route_records_nothing() -> None:
         assert harness.audit.events == []
 
 
-# --- V8 + V73: the error envelope, from a real route ---
+# --- The error envelope, from a real route ---
 
 
 def test_a_404_body_carries_no_internal_detail() -> None:
-    """V8: `detail` names the row that vanished. Body gets `error_code`, `message`,
+    """`detail` names the row that vanished. Body gets `error_code`, `message`,
     `request_id` — nothing else."""
     missing = uuid4()
     with admin_harness() as harness:
@@ -632,7 +639,7 @@ def test_a_404_body_carries_no_internal_detail() -> None:
 
 
 def test_an_error_body_and_header_share_one_request_id() -> None:
-    """V73: same value in the body and in `x-request-id`, so an operator can quote either."""
+    """Same value in the body and in `x-request-id`, so an operator can quote either."""
     with admin_harness() as harness:
         harness.sign_in()
 

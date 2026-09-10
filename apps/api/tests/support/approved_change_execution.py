@@ -13,8 +13,8 @@ anything happens, the runner is dispatched after it, the terminal status and the
 are both written before the single commit, and there is exactly one commit — a receipt
 that committed separately from its run could survive a rollback of the status it describes.
 
-`RecordingSessionFactory` and `FakeSession` are imported from `support.action_expiry` rather
-than re-declared: T39's sweeper needed the same "a fresh session per unit of work, and it was
+`RecordingSessionFactory` and `FakeSession` are imported from `support.action_expiry` rather than
+re-declared: the expiry loop's sweeper needed the same "a fresh session per unit of work, and it was
 closed" instrument, and two copies of it are two things that can silently stop agreeing.
 """
 
@@ -34,12 +34,13 @@ from core.approvals.reaper import BoundedRows, StrandedRun
 from core.db.lifecycle import ToolRunStatus
 from support.action_decisions import APPROVAL_CONTEXT, CHANGE_TOOL, CONVERSATION_ID, REASON
 
-# The gate-time preflight as `APPROVAL_CONTEXT` carries it (T33's `build_approval_context`), so
+# The gate-time preflight as `APPROVAL_CONTEXT` carries it (`build_approval_context`, from the
+# gate that opens the request), so
 # a receipt's before-state is assertable against the same payload the card would show.
 EVIDENCE: dict[str, Any] = dict(APPROVAL_CONTEXT["evidence"])
 
 # The arguments the gate recorded, redacted (they carry no sensitive key, which is the normal
-# case — C15/V49 generate secrets server-side).
+# case — server-side generation keeps secrets on the yopass path).
 ARGUMENTS: dict[str, Any] = dict(APPROVAL_CONTEXT["arguments"])
 
 # What a runner answers on success. The ordinary tool envelope (`noa_api.mcp_tools.results`),
@@ -59,7 +60,7 @@ def authorized_change(
     """An approved request as `load_authorized` would return it.
 
     `reason` is non-blank by default because every row this stands in for is `APPROVED`, and
-    T34's `ck_action_requests_decided_reason` refuses a decided row without one. A test that
+    the table's `ck_action_requests_decided_reason` refuses a decided row without one. A test that
     wants the empty string passes it.
     """
     return AuthorizedChange(
@@ -94,7 +95,8 @@ class RecordedReceipt:
 class FakeApprovedChangeExecutionRepository:
     """In-memory `ApprovedChangeExecutionRepository` over one seeded authorization.
 
-    `authorized` is what `load_authorized` answers with, and `None` is how a test reaches V23's
+    `authorized` is what `load_authorized` answers with, and `None` is how a test reaches the
+    status-verdict rule's
     refusal — the same shape the SQL produces when the row is not APPROVED or names a different
     run, which is why the refusal is expressible here at all.
     """
@@ -112,7 +114,7 @@ class FakeApprovedChangeExecutionRepository:
         self.commits = 0
         self.journal = journal if journal is not None else []
         # Set to make the receipt insert report "already there", which is what the real one does
-        # when the reaper got to a finished run first (T36's UNIQUE).
+        # when the reaper got to a finished run first (the receipt table's UNIQUE).
         self.receipt_exists = False
 
     async def load_authorized(

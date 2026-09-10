@@ -1,9 +1,9 @@
 /*
- * The approval card's own styles (§T.41, §I.embed: "compact, self-scrolling").
+ * The approval card's own styles — the embed app's contract: "compact, self-scrolling".
  *
  * Hand-written, reading the tokens `src/app/globals.css` defines. No design system here — the
- * eslint firewall refuses `@gio/*` (§T.40 as built), and adopting BIGSU on the embed would be a
- * deliberate change to that rather than an import.
+ * eslint firewall refuses `@gio/*` (as built in the embed scaffold), and adopting BIGSU on the
+ * embed would be a deliberate change to that rather than an import.
  *
  * Compact because the frame LibreChat gives this document is small, and self-scrolling because a
  * document that outgrows its frame has to own the overflow — the parent cannot, and an iframe that

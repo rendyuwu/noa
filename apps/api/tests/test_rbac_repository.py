@@ -11,7 +11,8 @@ A scratch database is created, migrated with `alembic upgrade head`, and dropped
 the suite still runs without Docker.
 
 One end-to-end case sits at the bottom: the real `AuthorizationService` over this
-repository, so V10/V11 are proved once against real SQL and not only against the double.
+repository, so the admin-bypass and disabled-user branches are proved once against real SQL
+and not only against the double.
 """
 
 from __future__ import annotations
@@ -90,7 +91,7 @@ def repository(session: AsyncSession) -> SQLAuthorizationRepository:
 async def make_user(
     session: AsyncSession, email: str, *, is_active: bool = True, roles: tuple[str, ...] = ()
 ) -> User:
-    """Create a user with roles through T8's repository — the same path login uses."""
+    """Create a user with roles through the login flow's repository — the same path login uses."""
     auth_repository = SQLAuthRepository(session)
     user = await auth_repository.create_user(
         email=email, ldap_dn=f"CN={email}", display_name=email, is_active=is_active
@@ -142,7 +143,7 @@ async def test_ensure_role_is_idempotent(repository: SQLAuthorizationRepository)
 async def test_list_assignable_role_names_excludes_internal_roles(
     repository: SQLAuthorizationRepository,
 ) -> None:
-    """V13: `user:`-prefixed roles are NOA's own and never offered to an admin."""
+    """`user:`-prefixed roles are NOA's own and never offered to an admin."""
     await repository.ensure_role(ROLE_SUPPORT)
     await repository.ensure_role(ADMIN_ROLE_NAME)
     await repository.ensure_role(f"{INTERNAL_ROLE_PREFIX}{uuid4()}")
@@ -159,7 +160,7 @@ async def test_role_exists_reflects_the_row(repository: SQLAuthorizationReposito
 async def test_delete_role_cascades_grants_and_assignments(
     session: AsyncSession, repository: SQLAuthorizationRepository
 ) -> None:
-    """The FK cascades from T4 do the work — no orphan grant can resolve later."""
+    """The FK cascades from the schema do the work — no orphan grant can resolve later."""
     user = await make_user(session, EMAIL, roles=(ROLE_SUPPORT,))
     await repository.replace_role_tool_permissions(ROLE_SUPPORT, [TOOL_READ])
 
@@ -223,7 +224,7 @@ async def test_replace_role_tool_permissions_for_missing_role_is_a_no_op(
 async def test_grants_can_hold_a_tool_the_catalog_no_longer_knows(
     repository: SQLAuthorizationRepository,
 ) -> None:
-    """`tool_name` is a plain string, which is why V10's filter lives in the service."""
+    """`tool_name` is a plain string, which is why the known-tool filter lives in the service."""
     await repository.ensure_role(ROLE_SUPPORT)
 
     await repository.replace_role_tool_permissions(ROLE_SUPPORT, [TOOL_UNKNOWN])
@@ -248,7 +249,8 @@ async def test_replace_user_assignable_roles_sets_exactly_those_roles(
 async def test_replace_user_assignable_roles_preserves_internal_roles(
     session: AsyncSession, repository: SQLAuthorizationRepository
 ) -> None:
-    """V13/V75 at the SQL level: the delete is scoped by role name, not by the input list."""
+    """The internal-role and reserved-role rules at the SQL level: the delete is scoped by role
+    name, not by the input list."""
     internal_role = f"{INTERNAL_ROLE_PREFIX}legacy"
     user = await make_user(session, EMAIL, roles=(ROLE_SUPPORT, internal_role))
 
@@ -280,7 +282,7 @@ async def test_replace_user_assignable_roles_skips_names_with_no_role(
     assert await repository.get_role_names(user.id) == []
 
 
-# --- T66's notification audience ---
+# --- The list-changed emitter's notification audience ---
 
 
 async def test_list_user_ids_with_role_finds_exactly_the_holders(
@@ -405,13 +407,13 @@ async def test_delete_missing_user_returns_false(repository: SQLAuthorizationRep
     assert await repository.delete_user(uuid4()) is False
 
 
-# --- V4 cascade revoke on disable ---
+# --- Cascade revoke on disable ---
 
 
 async def test_delete_mcp_tokens_removes_only_that_users_rows(
     session: AsyncSession, repository: SQLAuthorizationRepository
 ) -> None:
-    """V4: disabling one operator must not touch a colleague's credentials."""
+    """Disabling one operator must not touch a colleague's credentials."""
     user = await make_user(session, EMAIL)
     colleague = await make_user(session, OTHER_EMAIL)
     token_repository = SQLMcpTokenRepository(session)
@@ -441,7 +443,7 @@ async def test_delete_mcp_tokens_for_a_user_with_none_is_zero(
 async def test_disabling_a_user_revokes_their_tokens_over_real_sql(
     session: AsyncSession,
 ) -> None:
-    """The whole V4 admin path: `set_user_active(False)` really empties `mcp_tokens`.
+    """The whole cascade-revoke admin path: `set_user_active(False)` really empties `mcp_tokens`.
 
     Through the service, not the repository, because the rule is that no caller can
     forget the revoke — a route calling `update_user_active` directly is the bug this
@@ -479,7 +481,8 @@ async def test_list_users_is_ordered_by_email(
 
 
 async def test_service_resolves_permissions_over_real_sql(session: AsyncSession) -> None:
-    """The engine's V10/V11 branches, proved once against Postgres rather than a double."""
+    """The engine's admin-bypass and disabled-user branches, proved once against Postgres rather
+    than a double."""
     repository = SQLAuthorizationRepository(session)
     service = AuthorizationService(repository=repository, audit_sink=RecordingAuditSink())
 
@@ -495,22 +498,23 @@ async def test_service_resolves_permissions_over_real_sql(session: AsyncSession)
     assert await service.get_permitted_tools(operator.id) == set()
 
 
-# --- T51: the transaction boundary, with a witness ---
+# --- The user routes' transaction boundary, with a witness ---
 
 
 async def test_commit_makes_a_disable_outlive_the_request(
     session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """T51: flushed is not persisted, and only a second connection can tell the difference.
+    """Flushed is not persisted, and only a second connection can tell the difference.
 
     The repository flushes; `commit()` is what the `/admin/users` routes need in order to mean
     anything, because `noa_api.api.deps.get_db_session` never commits. Inside this session both
     look identical — the flushed row reads back changed either way — so the assertion is made
     from a *separate* session.
 
-    `colleague` is the negative control (V89's shape, one mechanism over): the same write through
-    the repository alone, checked before anything commits, so a green result here cannot come
-    from an observer that simply reads its own session or one that cannot see a change at all.
+    `colleague` is the negative control (the negative-control shape, one mechanism over): the same
+    write through the repository alone, checked before anything commits, so a green result here
+    cannot come from an observer that simply reads its own session or one that cannot see a change
+    at all.
     """
     service = AuthorizationService(
         repository=SQLAuthorizationRepository(session), audit_sink=RecordingAuditSink()
@@ -534,13 +538,14 @@ async def test_commit_makes_a_disable_outlive_the_request(
     assert await observed_active(target.id) is False
 
 
-# --- T52: the same boundary, on the write that grants a tool ---
+# --- The role routes' same boundary, on the write that grants a tool ---
 
 
 async def test_commit_makes_a_role_grant_outlive_the_request(
     session: AsyncSession, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """T52: `PUT /admin/roles/{name}/tools` is the write V14's "immediately" is about.
+    """`PUT /admin/roles/{name}/tools` is the write the "permissions take effect immediately"
+    rule is about.
 
     The same shape as the disable above and for the same reason: the repository
     flushes, `noa_api.api.deps.get_db_session` never commits, and inside one session a flushed

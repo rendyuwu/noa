@@ -19,13 +19,14 @@ one `{"ok": False, "error_code": …, "message": …}` shape:
 | `metadata.result != 1` | `whm_api_error` (carries WHM's own `reason`) |
 
 Dict-returning, not exception-raising: these codes are the tool layer's material for a
-structured result, and V19's sanitisation boundary is one layer up. The strings are stable —
+structured result, and the exception-sanitisation boundary is one layer up. The strings are stable —
 tools and tests branch on them.
 
 **Credentials.** `WHMClient` takes a plaintext token; `build_whm_client_from_creds` is the one
 place ciphertext becomes plaintext. `noa-old` reached for a module-level `maybe_decrypt_text`
-there; T15 deleted that wrapper along with the settings singleton it hid, so the `SecretCipher`
-arrives as an argument (T16 deviation (b)) and `build_runtime` builds the single instance on
+there; the secrets port deleted that wrapper along with the settings singleton it hid, so the
+`SecretCipher` arrives as an argument (WHM-port deviation (b)) and `build_runtime` builds the
+single instance on
 `AppRuntime`.
 
 **A client per call, deliberately.** `httpx.AsyncClient` is opened and closed inside each
@@ -36,16 +37,16 @@ something.
 
 **What is not here**, and why — each was in the source:
 
-- `change_contact_email`, `change_primary_domain` — C22 never-implement boundary. Their tools
+- `change_contact_email`, `change_primary_domain` — the never-implement boundary. Their tools
   (`whm_change_contact_email`, `whm_change_primary_domain`) are a management policy decision,
-  ⊥ port, ⊥ re-add. Porting the client methods would leave the capability one line from
+  never port, never re-add. Porting the client methods would leave the capability one line from
   exposure.
-- `get_domain_owner` — only caller on `MCP` was the primary-domain preflight, which C22 drops
-  with its tool.
+- `get_domain_owner` — only caller on `MCP` was the primary-domain preflight, which the
+  never-implement boundary drops with its tool.
 - `list_zones` — zero callers on `MCP`.
 - `csf_grep`, `csf_request_action` — the `cgi/addon_csf.cgi` HTTP path, also uncalled on `MCP`.
-  I.ext puts WHM's firewall access on SSH (`core.integrations.whm.csf_cli`), which is what the
-  firewall tools use.
+  The external-transports contract puts WHM's firewall access on SSH
+  (`core.integrations.whm.csf_cli`), which is what the firewall tools use.
 """
 
 from __future__ import annotations
@@ -63,19 +64,19 @@ QueryValue = PrimitiveQueryValue | Sequence[PrimitiveQueryValue]
 # The two ACL names a WHM row's API token is read for. `suspend-acct` is ONE ACL covering BOTH
 # directions — cPanel's chart spells it "The user can suspend and unsuspend cPanel accounts" —
 # so there is no unsuspend name to check and no second gate that could fall out of step with
-# this one (§V112). `list-accts` is what a row an account listing is read from needs.
+# this one. `list-accts` is what a row an account listing is read from needs.
 WHM_ACL_SUSPEND_ACCOUNT = "suspend-acct"
 WHM_ACL_LIST_ACCOUNTS = "list-accts"
 
-# The granted spellings, and the whole of them (§V113). WHM's answer for the *same* function on
+# The granted spellings, and the whole of them. WHM's answer for the *same* function on
 # the *same* host differs by credential — root sends the integer `1` where a reseller sends the
-# string `"1"` (measured, §R.33) — so the value's type carries no information and only the value
+# string `"1"` (measured) — so the value's type carries no information and only the value
 # itself does.
 _GRANTED_TOKENS = frozenset({"1", "true", "yes", "y"})
 
 
 def whm_privilege_granted(value: object) -> bool:
-    """Is one `myprivs` value a granted privilege? (§V113)
+    """Is one `myprivs` value a granted privilege?
 
     The truth table lives here and nowhere else: two readers of one table drift, and the
     direction they drift in decides whether an operator is sent to type an approval reason for
@@ -87,13 +88,13 @@ def whm_privilege_granted(value: object) -> bool:
     *not* reused for this: `""` is not among its false tokens, so it answers `None`, and on
     this path "not granted" must never read as "not known".
 
-    **A string is matched after `strip().lower()`, deliberately** (§V113 carries the clause).
+    **A string is matched after `strip().lower()`, deliberately.**
     The accepted set is exactly `1`, `true`, `yes`, `y` and any non-zero integer; normalising a
     *spelling* is not the guess this rule forbids, because `" TRUE "` means granted — the
     forbidden move is answering granted for a value that carries no grant. Do not narrow it
     back to a literal comparison: that answers "not granted" for a token that holds the ACL, so
     validate refuses a row which can in fact suspend. A false refusal is not the safe
-    direction — §V111 exists to catch the real ACL gap at validate, not to invent one.
+    direction — validate exists to catch the real ACL gap, not to invent one.
     """
     if isinstance(value, bool):
         return value
@@ -107,7 +108,7 @@ def whm_privilege_granted(value: object) -> bool:
 def _unwrap_privileges(data: object) -> dict[str, object] | None:
     """`data.privileges` → the single object it holds, or `None` when that is not the shape.
 
-    The measured shape is a list holding exactly one object (§R.33, §V113), so `[0]` is the
+    The measured shape is a list holding exactly one object, so `[0]` is the
     unwrap. A bare object is accepted as well, because unwrapping one cannot invent a grant —
     every value still goes through `whm_privilege_granted`. Anything else is a parse failure
     and gets reported as one rather than as an empty ACL set.
@@ -198,7 +199,7 @@ class WHMClient:
         except httpx.TimeoutException:
             return {"ok": False, "error_code": "timeout", "message": "Request timed out"}
         except httpx.RequestError as exc:
-            # V8: `exc` reports transport state (host, errno), never the token in `_headers`.
+            # `exc` reports transport state (host, errno), never the token in `_headers`.
             return {
                 "ok": False,
                 "error_code": "request_failed",
@@ -259,7 +260,7 @@ class WHMClient:
 
     async def applist(self) -> dict[str, object]:
         """Cheapest authenticated call WHM offers. No longer the validate probe — `privileges`
-        replaced it (§V111), and the only callers left are the client's own normalisation
+        replaced it, and the only callers left are the client's own normalisation
         tests, which need a method with no unwrap of its own between them and `_get_json_api`.
         """
         return await self._get_json_api("applist")
@@ -267,7 +268,7 @@ class WHMClient:
     async def privileges(self) -> dict[str, object]:
         """`myprivs` → `{"ok": True, "acls": [...]}`, the granted ACL names, sorted.
 
-        The validate probe (§V111). It replaced `applist` because `applist` does not appear in
+        The validate probe. It replaced `applist` because `applist` does not appear in
         cPanel's ACL chart at all, so whatever gates it is undocumented, and a restricted token
         *is* refused on unmapped functions — a healthy reseller row could read RED for a reason
         with nothing to do with what it may actually do. `myprivs` answers the question that
@@ -277,7 +278,8 @@ class WHMClient:
         `data.acct` in `list_accounts`. A shape that will not unwrap answers `invalid_response`
         rather than an empty ACL set: "this token holds nothing" and "the answer could not be
         read" have different remedies, and reporting the first for the second sends an operator
-        to edit a credential that was fine (§V86).
+        to edit a credential that was fine (folding a non-answer into the benign value is what
+        this refuses).
         """
         result = await self._get_json_api("myprivs")
         if result.get("ok") is not True:
@@ -314,7 +316,7 @@ class WHMClient:
         """`suspendacct`. Backs `whm_suspend_account`.
 
         `reason` is WHM's own suspension-note field and is written from the operator-typed
-        approval reason at execute time — it is ⊥ a tool argument, and the LLM never authors
+        approval reason at execute time — it is never a tool argument, and the LLM never authors
         or sees it.
         """
         result = await self._get_json_api(

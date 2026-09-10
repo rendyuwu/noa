@@ -1,22 +1,25 @@
 """SQL behind the RBAC engine.
 
 Ported from `noa-old` branch `MCP` (`core/auth/authorization_repository.py` +
-`role_repository.py`, C13). Two departures:
+`role_repository.py`) — port, never import. Two departures:
 
 1. **No direct-grant methods.** `get_user_allowlist_tools` and
    `remove_user_allowlist_role` read and wrote the `user:<uuid>` pseudo-role that carried
-   per-user grants. V75 disables direct grants (410, T65), so those paths are gone. What
+   per-user grants. The 410 on direct grants disables direct grants, so those paths are gone. What
    survives is the *preservation* rule: `replace_user_assignable_roles` never touches a
    `user:`-prefixed assignment, because internal roles are NOA's own bookkeeping and an
    admin replacing a user's roles must not clear them.
 2. **The three shared role operations are delegated, not copied.** `ensure_role` and
-   `get_role_names` already exist on `SQLAuthRepository` (T8 put them there precisely so
-   T9 could read them, V66). `noa-old` used a mixin; composition keeps T8's class
+   `get_role_names` already exist on `SQLAuthRepository` (the login flow put them there
+   precisely so
+   the RBAC engine could read them — reusable functions over duplication). `noa-old` used a mixin;
+   composition keeps the login flow's class
    untouched and reads the same.
 
 Every method takes the caller's `AsyncSession` and flushes rather than commits, so a role
 rename and everything that follows it land together or not at all. `commit()` is the
-one method that ends the transaction, and `AuthorizationService` is its only caller: T9
+one method that ends the transaction, and `AuthorizationService` is its only caller: the RBAC
+engine
 shipped without it because it had no HTTP caller, which meant the first route to reach this
 class would have answered 200 and persisted nothing. `SQLAuthRepository.commit` is the same
 method one taxonomy over, for the same reason.
@@ -49,7 +52,7 @@ class SQLAuthorizationRepository:
 
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
-        # Composition, not duplication: T8 owns these three queries.
+        # Composition, not duplication: the login flow's class owns these three queries.
         self._auth_repository = SQLAuthRepository(session)
 
     # --- Reads on the permission path ---
@@ -57,9 +60,10 @@ class SQLAuthorizationRepository:
     async def get_user_by_id(self, user_id: UUID) -> User | None:
         """The `users` row, read for this call.
 
-        V6 and V11 both rest on this: `is_active` and role membership are read from the
-        database on every permission question, so disabling an operator takes effect on
-        their live session's next request rather than at cookie expiry.
+        The cookie's-claims-are-not-revocable rule and the disabled-account rule both rest on this:
+        `is_active` and role membership are read from the database on every permission question, so
+        disabling an operator takes effect on their live session's next request rather than at
+        cookie expiry.
         """
         return await self._auth_repository.get_user_by_id(user_id)
 
@@ -90,7 +94,7 @@ class SQLAuthorizationRepository:
         return list(result.scalars().all())
 
     async def list_user_ids_with_role(self, role_name: str) -> list[UUID]:
-        """Ids of the users holding `role_name` — T66's notification audience.
+        """Ids of the users holding `role_name` — the list-changed emitter's notification audience.
 
         Not a permission read, despite the shape: nothing decides anything from this. It
         answers "whose tool catalog did a grant change move?", so the emit reaches the
@@ -259,7 +263,8 @@ class SQLAuthorizationRepository:
         """Delete the user. False when the row was already gone.
 
         Role assignments and MCP tokens cascade from the foreign keys. The session
-        cookie does not: V6 records that a session JWT cannot be revoked before `exp`,
+        cookie does not: the cookie's-claims-are-not-revocable rule records that a session JWT
+        cannot be revoked before `exp`,
         which is why `AuthService.resolve_session_user` treats a missing row as
         `session_invalid` on the next request.
         """
@@ -280,7 +285,8 @@ class SQLAuthorizationRepository:
         pasted into a LibreChat config cannot come back to life the day someone re-enables
         the row for an unrelated reason.
 
-        A plain `DELETE`, matching T10: revocation is the row's absence. Flushed, not
+        A plain `DELETE`, matching the mint/list/revoke tokens pattern: revocation is the row's
+        absence. Flushed, not
         committed — the disable, this revoke and the audit event share the request's
         transaction, so a failure part-way leaves none of the three.
         """

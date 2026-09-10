@@ -17,25 +17,26 @@ import {
 } from './support/frame'
 
 /**
- * The large-READ table, in the frame LibreChat actually gives it (§T.56 — V27, V38, V64, V85, V94).
+ * The large-READ table, in the frame LibreChat actually gives it.
  *
  * **Why a browser lane at all**, when `table-view.test.tsx` renders the same component in jsdom:
  * two of these claims are about the frame rather than about the markup. That the rows render at all
- * under `MEASURED_SANDBOX` — the string R29 measured, with `allow-forms` absent — is a claim about a
- * document served into a sandbox, and that this page issues **no POST** is a claim about what the
- * browser did, read off the upstream's own counter rather than off an exception (V80's rule: the
- * refusal is silent, so assert on the counter).
+ * under `MEASURED_SANDBOX` — the string the render gate measured live, with `allow-forms` absent —
+ * is a claim about a document served into a sandbox, and that this page issues **no POST** is a
+ * claim about what the browser did, read off the upstream's own counter rather than off an
+ * exception (the JS-fetch-only design's rule: the refusal is silent, so assert on the counter).
  *
  * **The sandbox is the pinned constant**, not a string this file chose. A spec that quietly widened
  * it would be measuring a frame LibreChat does not serve.
  *
- * The 401 case reaches §T.43's way out, which this surface reuses rather than reimplements:
+ * The 401 case reaches the 401 card's way out, which this surface reuses rather than reimplements:
  * a link *and* the same address as text, because the render site whose sandbox omits `allow-popups`
  * opens the link silently. `sign-in.browser.e2e.ts` owns the two-sandbox measurement of
  * that door; what is asserted here is that this surface offers it.
  *
- * V90: no readiness wait of its own. The servers this leans on are gated on their open sockets by
- * `playwright.config.ts` (§T.40(f)), and the waits below are on the frame's own content.
+ * The readiness-gate-not-the-subject rule: no readiness wait of its own. The servers this leans on
+ * are gated on their open sockets by `playwright.config.ts`, and the waits below are on the
+ * frame's own content.
  */
 
 test.use({ launchOptions: { args: HOST_RESOLVER_ARGS } })
@@ -45,7 +46,7 @@ test.beforeEach(async ({ context }) => {
 })
 
 test('the rows render inside the measured sandbox', async ({ page }) => {
-  // The whole listing, on NOA's origin, in the frame — which is what V64 offloads it for: the model
+  // The whole listing, on NOA's origin, in the frame — which is what the summary-plus-URL design offloads it for: the model
   // was handed a summary and this address, and the body never entered the transcript.
   const table = await frameTable(page, TABLE_TOKENS.whole)
 
@@ -75,7 +76,7 @@ test('an uncapped page states its total without claiming truncation', async ({ p
   await expect(cardBody(table).getByText(/narrow the search/)).toHaveCount(0)
 })
 
-test('the table surface carries no decision control and issues no POST (§I.embed, V80)', async ({
+test('the table surface carries no decision control and issues no POST', async ({
   page,
 }) => {
   // Its own token, for the reason `pendingId` exists one surface over: the stub is one process
@@ -86,7 +87,7 @@ test('the table surface carries no decision control and issues no POST (§I.embe
   const table = await frameTable(page, token)
   await expect(cardBody(table).getByRole('table')).toBeVisible()
 
-  // The absences, by name — the rule §T.43 established: this page has controls of its own in other
+  // The absences, by name — the rule the 401 card established: this page has controls of its own in other
   // states, so a control *count* would go red for the right rule spelled wrongly.
   await expect(cardBody(table).getByRole('button', { name: /approve|deny/i })).toHaveCount(0)
   await expect(cardBody(table).locator('form')).toHaveCount(0)
@@ -94,8 +95,9 @@ test('the table surface carries no decision control and issues no POST (§I.embe
   await expect(cardBody(table).locator('textarea')).toHaveCount(0)
 
   // And nothing was sent about this table. Asserted on the upstream's counter rather than on an
-  // exception, because a request this page never makes throws nothing — the same reason V80's
-  // control counts hits. The GET is checked too, so this cannot pass by the page never loading.
+  // exception, because a request this page never makes throws nothing — the same reason the
+  // JS-fetch-only design's control counts hits. The GET is checked too, so this cannot pass by the
+  // page never loading.
   const seen = await hits(page)
   expect(seen[`GET /tables/${token}`]).toBe(1)
   expect(Object.keys(seen).filter((key) => key.startsWith('POST ') && key.includes(token))).toEqual(
@@ -106,7 +108,7 @@ test('the table surface carries no decision control and issues no POST (§I.embe
 test('the operator’s cookie reaches the API through the page’s own read', async ({
   page,
 }) => {
-  // The read is server-side (§T.56, §T.41(c)'s shape), so this is the assertion that the browser's
+  // The read is server-side, so this is the assertion that the browser's
   // session actually travels with it — without it every operator would see the 401 state.
   //
   // Measured against a token the stub serves **only** to a request carrying a cookie: every other
@@ -116,9 +118,9 @@ test('the operator’s cookie reaches the API through the page’s own read', as
   // **Top-level rather than framed, and that bound is honest.** In this harness the embed is
   // `localhost:3001` and the parent is `chat.noa.internal:8110` — cross-site, so a `SameSite=Lax`
   // cookie is withheld from the framed document by the browser itself. In production both are under
-  // `noa.internal` and the cookie is same-site, which is what R29 measured live against
+  // `noa.internal` and the cookie is same-site, which is what the render gate measured live against
   // LibreChat. So what this lane can prove is that the *loader* forwards the browser's cookie; that
-  // it arrives in the frame is R29's measurement, not this harness's.
+  // it arrives in the frame is the render gate's own measurement, not this harness's.
   await page.goto(`${EMBED_ORIGIN}/tables/${TABLE_TOKENS.needsCookie}`)
 
   await expect(page.getByRole('table')).toBeVisible()
@@ -126,7 +128,7 @@ test('the operator’s cookie reaches the API through the page’s own read', as
   expect(seen[`GET /tables/${TABLE_TOKENS.needsCookie}`]).toBeGreaterThan(0)
 })
 
-test('without a session the same token renders the 401 state (V87’s control)', async ({
+test('without a session the same token renders the 401 state (the negative control)', async ({
   browser,
 }) => {
   // The other half of the spec above: a context that never signed in gets no table at all. Without
@@ -156,7 +158,7 @@ test('a 401 renders the way out, with the address as text beside the link', asyn
   // The door the sandbox cannot withhold: the same address, as copyable text.
   await expect(cardBody(table).getByText(SIGN_IN_URL, { exact: false })).toBeVisible()
 
-  // V42: no login page, no credential handling — asserted as the absence it is, in the frame.
+  // No login page, no credential handling — asserted as the absence it is, in the frame.
   await expect(cardBody(table).locator('form')).toHaveCount(0)
   await expect(cardBody(table).locator('input')).toHaveCount(0)
 })
@@ -170,7 +172,7 @@ test('a 404 renders one sentence for every cause, and never an empty table', asy
   await expect(cardBody(table).getByRole('table')).toHaveCount(0)
 })
 
-test('the framed document stays on its own URL (§T.43’s absence, V42)', async ({ page }) => {
+test('the framed document stays on its own URL', async ({ page }) => {
   // Nothing on this surface navigates the frame: no redirect to a login page, no client-side route
   // change. Asserted after the 401 state has rendered, which is the state that would do it.
   await frameTable(page, TABLE_TOKENS.unauthorized, MEASURED_SANDBOX)

@@ -2,10 +2,10 @@
 
 New work: `noa-old` had no per-user MCP credential, so there is nothing to port.
 
-This is the function V5 names — *the* place a presented bearer becomes a NOA user. It is
+This is the one function — *the* place a presented bearer becomes a NOA user. It is
 deliberately framework-free: no fastmcp import, no Starlette request, nothing that knows
 how the token arrived. `noa_api.mcp_auth.NoaTokenVerifier` is the fastmcp adapter over it
-and T12's `resolve_mcp_identity` is the HTTP one; both call `resolve()` and neither
+and `resolve_mcp_identity` is the HTTP one; both call `resolve()` and neither
 re-implements a gate. "Auth mechanism swap = one file" only holds if the mechanism
 lives in exactly one file, and `core/` declares no dependencies (root `pyproject.toml`),
 so a `TokenVerifier` subclass could not live here anyway.
@@ -28,14 +28,14 @@ after the directory call means an LDAP outage never leaves a binding behind for 
 that was refused. A verifier that bound first would let one failed call pin a token
 forever to whoever happened to make it.
 
-Two things V4 keeps apart, and conflating them is the classic bug this module exists to
-avoid: "the directory says this person is gone" cascade-revokes every token they hold,
-while "the directory did not answer" denies the request and touches nothing.
+Two things the fail-closed LDAP rule keeps apart, and conflating them is the classic bug this
+module exists to avoid: "the directory says this person is gone" cascade-revokes every token they
+hold, while "the directory did not answer" denies the request and touches nothing.
 `LDAPService.user_exists_and_enabled` already separates them — `False` versus
-`LdapUnavailableError` — and that error propagates from here unchanged, because V4's
-fail-closed answer already has a class, a message and a 503 mapping.
+`LdapUnavailableError` — and that error propagates from here unchanged, because the
+fail-closed LDAP rule's answer already has a class, a message and a 503 mapping.
 
-V2/V8: the plaintext is a parameter and a digest input, nothing else. It is never stored,
+The plaintext is a parameter and a digest input, nothing else. It is never stored,
 never logged, never placed on `McpIdentity`, and never in an error message or `detail`.
 """
 
@@ -57,7 +57,8 @@ from core.auth.mcp_auth_errors import (
 )
 from core.auth.mcp_token_service import hash_mcp_token
 
-# The header C24 requires on every MCP request, bound and unbound alike. Lowercase because
+# The header every MCP request needs, bound and unbound alike, because LibreChat is the sole
+# MCP client. Lowercase because
 # that is how `fastmcp.server.dependencies.get_http_headers()` returns custom keys and
 # how HTTP/2 puts them on the wire; callers passing a raw dict should lowercase too.
 LIBRECHAT_USER_HEADER = "x-noa-librechat-user"
@@ -68,7 +69,7 @@ DETAIL_NO_BEARER = "no bearer token on the request"
 # S105: a log diagnostic naming the table, not a credential — the `TOKEN` in the constant
 # name is what trips the check.
 DETAIL_NO_TOKEN_ROW = "presented digest matched no `mcp_tokens` row"  # noqa: S105
-DETAIL_HEADER_ABSENT = f"`{LIBRECHAT_USER_HEADER}` absent; required ∀ states per C24"
+DETAIL_HEADER_ABSENT = f"`{LIBRECHAT_USER_HEADER}` absent; required — LibreChat is the sole client"
 
 
 @dataclass(frozen=True)
@@ -113,7 +114,7 @@ class McpAuthenticationRow(Protocol):
 class McpIdentityRepository(Protocol):
     """Persistence behind `McpIdentityResolver`.
 
-    Distinct from T10's `McpTokenRepository` because the transaction discipline is
+    Distinct from `McpTokenRepository` because the transaction discipline is
     different, not because the table is: the admin CRUD path flushes into the request's
     transaction, while this path owns its session and commits its own writes. `commit()` is
     therefore on the Protocol — the resolver decides when a binding becomes durable, and a
@@ -172,8 +173,8 @@ class McpIdentityResolver:
 
         Raises, in gate order: `McpTokenMissingError`, `McpTokenInvalidError`,
         `McpTokenExpiredError`, `McpUserInactiveError`, `LibreChatUserHeaderMissingError`,
-        `LibreChatUserMismatchError`, `McpUserNotInDirectoryError`, and
-        `LdapUnavailableError` straight from the directory (V4 — deny, do not revoke).
+        `LibreChatUserMismatchError`, `McpUserNotInDirectoryError`, and `LdapUnavailableError`
+        straight from the directory (the fail-closed LDAP rule — deny, do not revoke).
 
         `now` is injectable so expiry and staleness are asserted as equalities in tests
         rather than tolerances; production passes nothing.
@@ -245,7 +246,7 @@ class McpIdentityResolver:
     ) -> None:
         """Gate 5: the read half of TOFU.
 
-        Absent header refuses for bound *and* unbound tokens. C24 makes LibreChat the sole
+        Absent header refuses for bound *and* unbound tokens. LibreChat is the sole
         client, so "no header" is an unsupported client rather than a client that has not
         bound yet — and treating it as the latter would let anyone holding a copied token
         use it from `curl` forever, since an unbound token would never pin.
@@ -272,9 +273,9 @@ class McpIdentityResolver:
         - absent or disabled → cascade-revoke every token this operator holds, commit that
           revoke, and refuse
 
-        `LdapUnavailableError` is not caught. V4 fails closed, and swallowing it here would
-        turn a network blip into a mass revoke — the one mistake in this module that cannot
-        be undone.
+        `LdapUnavailableError` is not caught. The fail-closed LDAP rule holds, and swallowing it
+        here would turn a network blip into a mass revoke — the one mistake in this module that
+        cannot be undone.
         """
         if not self._is_stale(row.last_ldap_check_at, moment):
             return

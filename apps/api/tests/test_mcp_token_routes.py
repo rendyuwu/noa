@@ -1,5 +1,4 @@
-"""`/admin/users/{id}/tokens` and `/me/mcp-tokens` over HTTP (T53 — V2, V6, V8, V13, V14, V73,
-V100).
+"""`/admin/users/{id}/tokens` and `/me/mcp-tokens` over HTTP.
 
 `test_mcp_token_service.py` owns the policy: the label rule, the 404 shapes, what the audit
 event carries. This file owns what only a request can prove — that the three admin routes are
@@ -10,13 +9,13 @@ while a refused one does not.
 
 `support.admin.admin_harness` runs the real routers, the real gates, the real `McpTokenService`
 and the shared error handler; only SQL and LDAP are faked. So a 403 here is the shipped 403.
-The live `commit()` — the half a double cannot witness (B10, V100c) — is asserted against
+The live `commit()` — the half a double cannot witness — is asserted against
 Postgres in `test_mcp_token_repository.py::test_commit_makes_a_mint_outlive_the_request`.
 
 **The plaintext is the thing under test.** Most assertions below are about where it is *not*:
 not in a list, not in a stored row, not in an error body, not in a second read of the same
-token. V2 gives it exactly one appearance, and a surface that leaked a second one would look
-correct in every other respect.
+token. The show-once rule gives it exactly one appearance, and a surface that leaked a second
+one would look correct in every other respect.
 """
 
 from __future__ import annotations
@@ -86,7 +85,7 @@ def _without_request_id(body: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in body.items() if key != "request_id"}
 
 
-# --- V13 + V6: the gates ---
+# --- the gates ---
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ADMIN_ROUTES)
@@ -110,7 +109,7 @@ def test_an_admin_reaches_every_admin_token_route(
 def test_every_admin_token_route_refuses_a_non_admin(
     method: str, path: str, body: dict[str, Any] | None
 ) -> None:
-    """V13: authenticated, holds a role, still refused — on all three.
+    """Authenticated, holds a role, still refused — on all three.
 
     The ids are random on purpose: the gate must decide before anything is looked up, so a
     non-admin cannot use the 403/404 split to learn which users hold credentials.
@@ -142,7 +141,7 @@ def test_every_token_route_refuses_a_missing_cookie(
 
 
 def test_a_disabled_admin_loses_the_token_routes_on_the_next_request() -> None:
-    """V6: the row re-read runs before the role check, and the cookie is still valid.
+    """The row re-read runs before the role check, and the cookie is still valid.
 
     The session JWT has no revocation path before `exp`, so this re-read is the only thing that
     bounds a disabled admin's live session — and a route that mints MCP credentials is the
@@ -162,7 +161,7 @@ def test_a_disabled_admin_loses_the_token_routes_on_the_next_request() -> None:
 
 
 def test_a_disabled_operator_cannot_mint_their_own_token() -> None:
-    """V6 on the self-service half: `require_session_user` refuses before the service is built.
+    """On the self-service half: `require_session_user` refuses before the service is built.
 
     Worth its own case rather than folding into the admin one above: the service deliberately
     does *not* refuse an inactive user (an admin may set someone up before activating them), so
@@ -181,11 +180,11 @@ def test_a_disabled_operator_cannot_mint_their_own_token() -> None:
     assert harness.token_repository.tokens == {}
 
 
-# --- V2: the plaintext, exactly once ---
+# --- the plaintext, exactly once ---
 
 
 def test_mint_returns_the_plaintext_and_no_later_read_does() -> None:
-    """V2 show-once: `POST` carries it, and nothing afterwards can recover it."""
+    """Show-once: `POST` carries it, and nothing afterwards can recover it."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()
@@ -203,7 +202,7 @@ def test_mint_returns_the_plaintext_and_no_later_read_does() -> None:
 
 
 def test_a_minted_plaintext_is_stored_only_as_a_digest() -> None:
-    """V2 hashed at rest: the row holds the SHA-256 and no fragment of the credential.
+    """Hashed at rest: the row holds the SHA-256 and no fragment of the credential.
 
     Asserted against everything the repository holds, not only `token_hash` — a prefix column
     that had been sized wrong, or a label defaulted to the plaintext, would pass a narrower
@@ -221,7 +220,7 @@ def test_a_minted_plaintext_is_stored_only_as_a_digest() -> None:
 
 
 def test_a_listed_token_carries_the_prefix_and_no_credential_material() -> None:
-    """§I.admin-api's read shape, field for field.
+    """The admin API's read shape, field for field.
 
     `token_prefix` is published deliberately — it is what lets an admin match a row to the
     credential in a config file — and it is the *only* thing about the secret that is.
@@ -247,7 +246,7 @@ def test_a_listed_token_carries_the_prefix_and_no_credential_material() -> None:
     }
     assert listed[0]["token_prefix"] == str(minted["plaintext"])[: len(TOKEN_MARKER) + 8]
     assert listed[0]["label"] == LABEL
-    # C20/V3: NULL at mint is the precondition first-use binding needs.
+    # NULL at mint is the precondition first-use binding needs.
     assert listed[0]["librechat_user_id"] is None
     assert listed[0]["last_used_at"] is None
 
@@ -269,7 +268,7 @@ def test_the_wire_shapes_are_the_ones_i_admin_api_names() -> None:
 
 
 def test_two_mints_produce_two_different_credentials() -> None:
-    """V2: a fresh 256-bit draw per mint, so one leaked token says nothing about the next."""
+    """A fresh 256-bit draw per mint, so one leaked token says nothing about the next."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()
@@ -282,11 +281,11 @@ def test_two_mints_produce_two_different_credentials() -> None:
     assert len(set(harness.token_repository.stored_hashes)) == 2
 
 
-# --- V2: revoke = delete row ---
+# --- revoke = delete row ---
 
 
 def test_revoke_deletes_the_row_and_the_list_loses_it() -> None:
-    """V2: revocation is the row's absence — no tombstone, no status column."""
+    """Revocation is the row's absence — no tombstone, no status column."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()
@@ -301,7 +300,7 @@ def test_revoke_deletes_the_row_and_the_list_loses_it() -> None:
 
 
 def test_revoking_another_users_token_answers_the_same_404_as_an_unknown_id() -> None:
-    """V2, the V27/V76 existence-⊥-leak principle: one shape for "not yours" and "not there".
+    """The existence-never-leaks principle: one shape for "not yours" and "not there".
 
     Compared field for field rather than by status alone — a differing `error_code` or `message`
     would be the same oracle wearing a different hat. `request_id` differs per request by
@@ -430,7 +429,7 @@ def test_an_over_long_label_is_400_and_mints_nothing() -> None:
         assert harness.token_repository.tokens == {}
 
 
-# --- V14: one audit event per change, from the route ---
+# --- one audit event per change, from the route ---
 
 
 def test_mint_and_revoke_each_record_one_audit_event() -> None:
@@ -461,7 +460,7 @@ def test_mint_and_revoke_each_record_one_audit_event() -> None:
 
 
 def test_a_self_service_mint_names_the_operator_as_the_actor() -> None:
-    """V14: "who issued this credential" is the question the trail answers, and on `/me` the
+    """The question "who issued this credential" is what the trail answers, and on `/me` the
     answer is the operator themselves rather than an admin acting for them."""
     with admin_harness() as harness:
         harness.sign_in(OPERATOR_EMAIL, roles=(ROLE_SUPPORT,))
@@ -472,7 +471,7 @@ def test_a_self_service_mint_names_the_operator_as_the_actor() -> None:
 
 
 def test_the_token_read_routes_record_nothing() -> None:
-    """V14 is about changes. A trail of list calls is V45's job, on another surface."""
+    """This is about changes. A trail of list calls belongs to the tool-run trail."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()
@@ -483,11 +482,11 @@ def test_the_token_read_routes_record_nothing() -> None:
         assert harness.audit.events == []
 
 
-# --- V100: the transaction boundary, from the route ---
+# --- the transaction boundary, from the route ---
 
 
 def test_a_mint_and_a_revoke_each_commit_once() -> None:
-    """V100: `get_db_session` never commits, so a write that does not end its own transaction
+    """`get_db_session` never commits, so a write that does not end its own transaction
     answers 200 over a rollback — here, handing back a credential for a row that
     disappears at teardown. One commit per mutation, not one per statement."""
     with admin_harness() as harness:
@@ -505,7 +504,7 @@ def test_a_mint_and_a_revoke_each_commit_once() -> None:
 
 
 def test_a_refused_mint_and_a_refused_revoke_commit_nothing() -> None:
-    """V100(a): every guard raises before the commit, so a refused write persists nothing.
+    """Every guard raises before the commit, so a refused write persists nothing.
 
     The committed snapshot is the assertion surface, not the mutable dict: a future guard
     ordered *after* the write would pass a "no rows" check on the dict alone and fail this one.
@@ -524,11 +523,11 @@ def test_a_refused_mint_and_a_refused_revoke_commit_nothing() -> None:
         assert harness.token_repository.tokens == {}
 
 
-# --- V8 + V73: the error envelope, from a real route ---
+# --- the error envelope, from a real route ---
 
 
 def test_a_refusal_carries_request_id_and_no_credential_material() -> None:
-    """V8: the body is `error_code` + `message` + `request_id`, nothing else.
+    """The body is `error_code` + `message` + `request_id`, nothing else.
 
     The id that was refused stays in `detail`, which is a log field — so a 404 cannot become a
     way to have NOA echo an attacker's own guess back at them.
@@ -547,7 +546,7 @@ def test_a_refusal_carries_request_id_and_no_credential_material() -> None:
 
 
 def test_an_error_body_and_header_share_one_request_id() -> None:
-    """V73: same value in the body and in `x-request-id`, so an operator can quote either."""
+    """Same value in the body and in `x-request-id`, so an operator can quote either."""
     with admin_harness() as harness:
         harness.sign_in()
 
@@ -557,8 +556,8 @@ def test_an_error_body_and_header_share_one_request_id() -> None:
 
 
 def test_the_user_routes_still_answer_beside_the_token_routes() -> None:
-    """Every router on one app, one actor, one audit sink — the wiring the V14 assertions
-    above depend on."""
+    """Every router on one app, one actor, one audit sink — the wiring the change-audit
+    assertions above depend on."""
     with admin_harness() as harness:
         harness.sign_in()
         target = harness.add_target()

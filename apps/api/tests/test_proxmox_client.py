@@ -1,6 +1,6 @@
 """Proxmox VE client — failure classification, digest discipline, credentials, lifecycle.
 
-T17, C7, C22, V8, V48, V62, V69. Ported from `noa-old` branch `MCP`
+Ported from `noa-old` branch `MCP`
 (`test_proxmox_client_normalization.py`, `test_proxmox_client_endpoints.py`) and extended.
 
 The error-mapping cases are the point of the file. Proxmox reports a refusal in four shapes
@@ -9,7 +9,7 @@ or prose in `message` — and the tool layer branches on the resulting `error_co
 an operator should do about it. Two splits matter enough to have their own tests:
 
 - `permission_denied` vs `auth_failed` — an ACL gap is fixed in Proxmox, a bad token in NOA.
-- `digest_mismatch` vs `proxmox_api_error` — only the former means "re-read, ⊥ retry".
+- `digest_mismatch` vs `proxmox_api_error` — only the former means "re-read, never retry".
 
 Request-contract tests (literal verbs, URLs, bodies) live in `test_proxmox_client_endpoints.py`.
 
@@ -25,7 +25,7 @@ from core.integrations.proxmox.client import ProxmoxClient, build_proxmox_client
 from support.proxmox import BASE_URL, build_client, data_handler, json_handler
 from support.secrets import build_cipher
 
-# --- V19 (feeds): every failure gets a stable, distinct code ---
+# --- Every failure gets a stable, distinct code ---
 
 
 async def test_maps_401_to_auth_failed() -> None:
@@ -39,7 +39,7 @@ async def test_maps_401_to_auth_failed() -> None:
 
 
 async def test_maps_403_to_permission_denied_and_keeps_the_privilege_detail() -> None:
-    """⊥ folded into `auth_failed`: the token is fine, the ACL is not, and Proxmox names the
+    """Never folded into `auth_failed`: the token is fine, the ACL is not, and Proxmox names the
     exact path and privilege to grant — which is the whole fix."""
     payload = {
         "message": "Permission check failed (/sdn/zones/localnetwork/vmbr2/110, SDN.Use)\n",
@@ -138,7 +138,7 @@ async def test_maps_errors_nested_under_data_to_proxmox_api_error() -> None:
 
 async def test_maps_a_bare_failure_message_to_proxmox_api_error() -> None:
     """No `errors`, just prose on a 4xx. Pins which of `_payload_error`'s two branches answers:
-    the first (`proxmox_api_error`, carrying the prose), ⊥ its trailing `status_code >= 400`
+    the first (`proxmox_api_error`, carrying the prose), never its trailing `status_code >= 400`
     block — that block re-reads the same `message` the first branch already consumed, so it is
     unreachable. Ported that way; this test is what fails if someone "revives" it."""
     result = await build_client(
@@ -159,7 +159,7 @@ async def test_maps_a_4xx_with_no_message_at_all_to_http_error() -> None:
     assert "400" in str(result["message"])
 
 
-# --- V62: a digest conflict stays legible, because it means re-read, ⊥ retry ---
+# --- A digest conflict stays legible, because it means re-read, never retry ---
 
 
 async def test_digest_key_in_errors_maps_to_digest_mismatch() -> None:
@@ -187,7 +187,7 @@ async def test_digest_wording_in_a_bare_message_maps_to_digest_mismatch() -> Non
 
 async def test_the_word_digest_alone_is_not_a_digest_mismatch() -> None:
     """ "digest" needs a change word beside it — the token appears in ordinary config text, and
-    misreading one as a CAS failure would send T28 into a pointless fresh preflight."""
+    misreading one as a CAS failure would send the NIC tool into a pointless fresh preflight."""
     payload = {"errors": {"detail": "digest algorithm not supported"}}
 
     result = await build_client(json_handler(payload, status_code=400)).get_qemu_config("pve1", 101)
@@ -208,7 +208,7 @@ async def test_get_qemu_config_returns_the_digest_alongside_the_config() -> None
 @pytest.mark.parametrize("config", [{"net0": "virtio=AA:BB:CC"}, {"digest": "   "}, {"digest": 7}])
 async def test_get_qemu_config_without_a_usable_digest_is_invalid_response(config: object) -> None:
     """Fails closed. The digest is the compare-and-set token for `update_qemu_config`; handing
-    back a config without one would turn T28's fail-closed write into a blind overwrite."""
+    back a config without one would turn the NIC tool's fail-closed write into a blind overwrite."""
     result = await build_client(data_handler(config)).get_qemu_config("pve1", 101)
 
     assert result["ok"] is False
@@ -270,7 +270,7 @@ async def test_get_task_status_normalizes_both_status_fields() -> None:
 
 
 async def test_get_task_status_reports_a_missing_exit_status_as_none() -> None:
-    """`None`, ⊥ `""`: terminality is "an exit status is present while the task is not running",
+    """`None`, never `""`: terminality is "an exit status is present while the task is not running",
     and an empty string would read as present."""
     result = await build_client(
         data_handler({"status": "running", "exitstatus": "  "})
@@ -289,11 +289,11 @@ async def test_get_task_status_with_a_non_object_payload_is_invalid_response() -
     assert result["error_code"] == "invalid_response"
 
 
-# --- V8: the generated password does not come back out ---
+# --- The generated password does not come back out ---
 
 
 async def test_set_cloudinit_password_result_carries_no_password() -> None:
-    """C15/V49 generate it server-side and it stays in the caller's `execute()` scope. If the
+    """Generated server-side, it stays in the caller's `execute()` scope. If the
     client echoed it into the result it would reach a `tool_runs` row and an LLM transcript."""
     result = await build_client(data_handler("UPID:pve1:task")).set_qemu_cloudinit_password(
         "pve1", 101, "generated-s3cret"
@@ -303,7 +303,7 @@ async def test_set_cloudinit_password_result_carries_no_password() -> None:
     assert "generated-s3cret" not in str(result)
 
 
-# --- C22: the never-implement boundary holds at the client, not only at the tool ---
+# --- The never-implement boundary holds at the client, not only at the tool ---
 
 
 @pytest.mark.parametrize(
@@ -318,12 +318,13 @@ async def test_set_cloudinit_password_result_carries_no_password() -> None:
 )
 def test_never_implement_client_methods_are_absent(method: str) -> None:
     """These five backed `proxmox_move_vms_between_pools`, its preflight, and
-    `proxmox_get_user_by_email` — all C22. ⊥ port, ⊥ expose, ⊥ re-add: keeping the client method
+    `proxmox_get_user_by_email` — all on the never-implement list. Never port, never expose,
+    never re-add: keeping the client method
     would leave the capability one line from exposure, and re-adding it is an owner decision."""
     assert not hasattr(ProxmoxClient, method)
 
 
-# --- C7 / V48: one decrypt site, and it is the factory ---
+# --- One decrypt site, and it is the factory ---
 
 
 async def test_build_from_creds_decrypts_the_secret_into_the_pveapitoken_header() -> None:
@@ -350,8 +351,8 @@ async def test_build_from_creds_decrypts_the_secret_into_the_pveapitoken_header(
 
 
 async def test_build_from_creds_passes_through_an_unencrypted_column() -> None:
-    """`maybe_decrypt_text`, ⊥ `decrypt_text`: a row written before encryption still works,
-    which is what lets T54 migrate the column in place."""
+    """`maybe_decrypt_text`, never `decrypt_text`: a row written before encryption still works,
+    which is what lets the admin CRUD route migrate the column in place."""
     seen: dict[str, str] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -372,7 +373,7 @@ async def test_build_from_creds_passes_through_an_unencrypted_column() -> None:
     assert seen["auth"] == "PVEAPIToken=root@pam!token=PLAINTEXT_SECRET"
 
 
-# --- lifecycle: T17 deviation (c) ---
+# --- lifecycle: the Proxmox port's deviation (c) ---
 
 
 async def test_reuses_one_underlying_client_across_calls() -> None:

@@ -1,4 +1,4 @@
-// Wire shapes for the MCP token vertical (§T76), field-for-field from
+// Wire shapes for the MCP token vertical, field-for-field from
 // `McpTokenResponse` (apps/api/src/noa_api/api/routes/mcp_tokens.py:55-79). The
 // six routes share one response model across the admin and the /me router by
 // design, so one interface here serves both scopes.

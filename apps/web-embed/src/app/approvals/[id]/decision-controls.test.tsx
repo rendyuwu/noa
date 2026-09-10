@@ -4,9 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DecisionControls } from './decision-controls'
 
 /**
- * The reason box and the two buttons (§T.41 — V15, V22, V39, V80).
+ * The reason box and the two buttons.
  *
- * **What jsdom can prove here is the structure, and it is the half V80 is about**: there is no
+ * **What jsdom can prove here is the structure, and it is the half the JS-fetch-only design is
+ * about**: there is no
  * `<form>` in this tree and neither button submits one, so the sandbox LibreChat renders the frame
  * under — `allow-scripts allow-same-origin`, `allow-forms` absent — cannot silently
  * swallow a click. That the `fetch` really does reach NOA from inside such a frame is
@@ -39,7 +40,7 @@ function click(name: RegExp): void {
 
 async function settle(): Promise<void> {
   // One microtask turn past the `fetch`, which is all `submitDecision` awaits. `waitFor` would
-  // work too and would hide a hang behind a timeout — V90's family, one lane over.
+  // work too and would hide a hang behind a timeout — the readiness-gate-not-the-subject family, one lane over.
   await vi.waitFor(() => expect(screen.getByRole('status')).toBeTruthy())
 }
 
@@ -65,7 +66,7 @@ describe('DecisionControls', () => {
   it('offers exactly one reason box and two decisions', () => {
     render(<DecisionControls actionRequestId={ID} csrf={CSRF} />)
 
-    // Exactly one, because V43 says exactly one reason field exists anywhere.
+    // Exactly one, because the one-reason-field rule says exactly one reason field exists anywhere.
     expect(screen.getAllByLabelText(/why is this change/i)).toHaveLength(1)
     expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual([
       'Approve',

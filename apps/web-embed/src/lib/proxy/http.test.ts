@@ -10,12 +10,12 @@ import {
 } from './http'
 
 /**
- * The proxy primitives, proven against this copy (§T.44).
+ * The proxy primitives, proven against this copy.
  *
- * Every guard here was ported from `noa-old`. V69 is why the tests came with it: upstream
- * provenance is not evidence that a control works — B2 shipped an inert host-key pin precisely
- * because the port trusted the source. So each case below exercises the mechanism in this file,
- * not the one it was copied from.
+ * Every guard here was ported from `noa-old`. The provenance-is-not-evidence rule is why the
+ * tests came with it: upstream provenance is not evidence that a control works — the inert-pin
+ * bug shipped an inert host-key pin precisely because the port trusted the source. So each case
+ * below exercises the mechanism in this file, not the one it was copied from.
  */
 
 describe('proxy/http', () => {
@@ -33,7 +33,8 @@ describe('proxy/http', () => {
 
   describe('filterRequestHeaders — what the browser sends onward', () => {
     it('forwards the browser Cookie header upstream unchanged', () => {
-      // V40: the session rides on `noa_session`, scoped to the registrable domain
+      // The registrable-parent rule: the session rides on `noa_session`, scoped to the
+      // registrable domain
       // so it reaches this app as well as the admin one. If the proxy dropped or
       // rewrote it, every call from the card would authenticate as nobody and the
       // whole decision path would answer 401.
@@ -78,7 +79,8 @@ describe('proxy/http', () => {
 
   describe('copySetCookies — the session coming back', () => {
     it('preserves every Set-Cookie value with its Domain attribute intact', () => {
-      // The `Domain=.noa.internal` scoping is V40 itself. A proxy that re-emitted
+      // The `Domain=.noa.internal` scoping is the registrable-parent rule itself. A proxy that
+      // re-emitted
       // the cookie without it would confine the session to whichever origin
       // happened to answer, and the admin app would stop seeing the same login.
       const from = new Headers([

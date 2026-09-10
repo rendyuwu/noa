@@ -1,42 +1,47 @@
 """`whm_firewall_release_and_allow` — the WHM firewall release CHANGE tool.
 
-**Two steps of the operator's real job, merged into one approval** (DECISIONS §6.5,
+**Two steps of the operator's real job, merged into one approval** (DECISIONS section 6.5,
 owner-confirmed 2026-08-04). The working pattern is *check whether an IP is denied → release it →
 allowlist it*, and steps 2 and 3 are almost always run together, so one card matches the real
 unit of work instead of asking twice for one decision. The check in front of it stays its own
 exposed tool, because that verdict is what an operator reads before deciding to call this
-at all. The undo path is a third module and a third name (T26, DECISIONS §6.5: "keep
-`whm_firewall_allowlist_remove` separate — it is the undo path, run on its own").
+at all. The undo path is a third module and a third name (the allowlist-remove tool, DECISIONS
+section 6.5: "keep `whm_firewall_allowlist_remove` separate — it is the undo path, run on its
+own").
 
 Beside `whm_firewall.py` rather than inside it. A CHANGE tool is two halves on opposite sides of
-V22's boundary — a tool the LLM can reach that changes nothing, and a runner reachable only from
-`core.approvals.execution` — and both of those plus T26 would push one module past C14's 900-line
-budget. What is shared is code, not a file: `gather_firewall_entries` is the before-state,
-and `noa_firewall_comment` / `without_noa_comment_text` are the two ends of V96's bound, which
-belong beside the READ surface that has to honour them.
+the cookie/CSRF boundary — a tool the LLM can reach that changes nothing, and a runner reachable
+only from `core.approvals.execution` — and both of those plus the allowlist-remove tool would push
+one module past the file-size cap's 900-line budget. What is shared is code, not a file:
+`gather_firewall_entries` is the before-state,
+and `noa_firewall_comment` / `without_noa_comment_text` are the two ends of the no-path-back bound,
+which belong beside the READ surface that has to honour them.
 
-**What T26 became the second caller of moved to `whm_firewall_change_common.py`** — the
+**What the allowlist-remove tool became the second caller of moved to
+`whm_firewall_change_common.py`** — the
 before-state shape, `BackendChange`, the tolerated release commands, the evidence keys, and the
 resolution of a machine and address out of an approved row. Hoisted rather than imported from
 here, so the two tool modules are siblings instead of one depending on the other; re-exported
 below, so nothing that already named them here moved (the same shape `change_target` was hoisted
-in at T25).
+in with the release-and-allow tool).
 
-**The preflight is T24's, run in-process**. Not T24's *tool* — its internals: the same
+**The preflight is the dual-backend firewall read's, run in-process**. Not its *tool* — its
+internals: the same
 availability probe, the same dual-backend lookup, the same verdict combination. That evidence is
 born inside this call, lives milliseconds, belongs to the same user, and reaches the operator
 through `approval_context` rather than through a transcript. It is also literally the before-state
-DECISIONS §6.5 asks the receipt for: why the address was blocked, and the `csf.deny` /
+DECISIONS section 6.5 asks the receipt for: why the address was blocked, and the `csf.deny` /
 Imunify lines it was read from.
 
-**There is no no-op branch, and that is a decision rather than an omission.** T22 and T23 answer
+**There is no no-op branch, and that is a decision rather than an omission.** The suspend and
+unsuspend tools answer
 instead of gating when the account is already in the state the change would produce. Nothing here
 is ever in that state: the allow entry carries a TTL, so a repeat always moves the expiry, and an
 address that is already allowlisted is exactly the case an operator re-runs this for when the old
 window is about to close. An address that no backend has ever heard of is not a no-op either —
 the release finds nothing and the allow is still the change that was asked for.
 
-**One approval, two outcomes, never collapsed** (DECISIONS §6.5). The runner answers with
+**One approval, two outcomes, never collapsed** (DECISIONS section 6.5). The runner answers with
 `released` and `allowlisted` as separate booleans and fails with separate codes
 (`firewall_release_failed` / `firewall_allow_failed`), because "we let it through the deny list"
 and "we put it on the allow list" are two claims and a single "done" hides which one is false.
@@ -56,23 +61,30 @@ whether the change took: the postflight is, and it is a fresh read through the s
 
 **Every backend operation goes through `run_on_usable_backends`** — the change and the
 postflight both. Zero usable backends is that door's refusal, not a check written here: a
-per-tool copy is a copy the next tool forgets, and V57's harm lives exactly here, on an approved
+per-tool copy is a copy the next tool forgets, and the zero-backend error's harm lives exactly
+here, on an approved
 CHANGE that reports done and did nothing.
 
-**A postflight that did not answer is not a verified change** (V86, and V62's rule one system
+**A postflight that did not answer is not a verified change** (folding a non-answer into the
+benign value, and the password-reset verdict-on-verify rule one system
 over). If any usable backend stays silent on the confirming read, the change is reported as
 having happened and *not* verified, with the silent backend named. A combined verdict built from
-whichever half answered is the fabrication V86 was written at T24 to stop, and on a CHANGE it is
+whichever half answered is the fabrication the unknown-verdict rule was written at the
+dual-backend firewall read to stop, and on a CHANGE it is
 worse: "released and allowed" on a box whose blocking backend was never re-read.
 
 **The operator's reason is written onto the entry, and cut back out of the READ**.
 csf's allow entry takes a comment and Imunify's takes `--comment`, and the only honest content
-for either is why the address was allowed — V43 permits the one field to leave NOA for exactly
-this. What V96 requires is that it cannot come back, and the path back is T24, which reads csf's
+for either is why the address was allowed — the one operator-typed reason field permits it to
+leave NOA for exactly
+this. What the no-path-back rule requires is that it cannot come back, and the path back is the
+dual-backend firewall read, which reads csf's
 own lines into a transcript. So the comment is written behind NOA's marker
-(`noa:<action_request_id> <reason>`) and T24 cuts from that marker to the end of the line. Two
+(`noa:<action_request_id> <reason>`) and the dual-backend firewall read cuts from that marker to
+the end of the line. Two
 consequences worth stating: the runner's own payload never repeats the reason, because
-`result_summary` is derived from it and `noa_get_action_result` hands that to a model (V96b); and
+`result_summary` is derived from it and `noa_get_action_result` hands that to a model (the
+no-path-back rule's clause on a derived summary); and
 a backend's failure message is cut too, because it can quote the command it failed to run.
 """
 
@@ -130,9 +142,9 @@ from noa_api.mcp_tools.whm_firewall import (
     noa_firewall_comment,
 )
 from noa_api.mcp_tools.whm_firewall_change_common import (
-    # Hoisted to `whm_firewall_change_common` at T26, when the allowlist removal became the
-    # second caller of the same before-state, the same backend-answer shape and the same
-    # evidence resolution. Re-exported below, so every name this module already published
+    # Hoisted to `whm_firewall_change_common` with the allowlist-remove tool, when the allowlist
+    # removal became the second caller of the same before-state, the same backend-answer shape and
+    # the same evidence resolution. Re-exported below, so every name this module already published
     # keeps working from here.
     ERROR_EVIDENCE_UNUSABLE,
     ERROR_SERVER_UNAVAILABLE,
@@ -158,9 +170,9 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
 
 TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW = "whm_firewall_release_and_allow"
 
-# V77's bound, verbatim: one minute to one year, and no server-side default. An operator states
+# Duration required, never a server default, verbatim: one minute to one year. An operator states
 # the duration in chat and the model converts it to minutes as an ordinary tool argument — a
-# duration is not a reason, so C8 is untouched by it carrying one.
+# duration is not a reason, so the one operator-typed reason field is untouched by it carrying one.
 MIN_DURATION_MINUTES: Final = 1
 MAX_DURATION_MINUTES: Final = 525_600
 
@@ -255,25 +267,28 @@ async def whm_firewall_release_and_allow(
     - a blank or whitespace-only `target` is refused — the schema cannot express it,
       because `min_length` counts whitespace;
     - anything that is not a single IPv4 address is refused. This is the CHANGE side of the
-      rule T24 reads the other way: reporting what CSF says about an IPv6 address is useful, and
-      writing a rule for one is not something these backends are being asked to do here;
+      rule the dual-backend firewall read reads the other way: reporting what CSF says about an IPv6
+      address is useful, and writing a rule for one is not something these backends are being asked
+      to do here;
     - `duration_minutes` outside 1-525600 is refused. The schema declares the same bound,
       and this is the same bound where a caller reaching the function directly meets it.
 
-    Then one database session — resolve the operator's word to a server (V18: a tie is `choices`,
+    Then one database session — resolve the operator's word to a server (ambiguous identifier ->
+    candidates, never guess: a tie is `choices`,
     never a pick) and turn that row into a connection — and the session closes before the SSH
-    hops, which is T21's rule and matters here because four handshakes follow.
+    hops, which is the account search's rule and matters here because four handshakes follow.
 
     `resolve_whm_ssh_config` is allowed to raise: its three refusals are `NoaError`s, so
     `sanitize_tool_errors` hands the model the code that names the fix. Reaching the probe
     with an unpinned row would instead report "no firewall backends", which is a different
     problem and the wrong thing to go fix.
 
-    What comes back from the firewall is the before-state, and it goes on the row verbatim (V33,
-    V35): the verdict, the evidence lines it was read from, and the backends that did not answer
-    (V86). No `reason` parameter and nowhere to add one — the word is typed by an operator on the
-    card, after this result has been rendered and forgotten, and the gate refuses
-    a reason-shaped argument even for a caller that reaches this function directly.
+    What comes back from the firewall is the before-state, and it goes on the row verbatim (context
+    persisted at gate time; provenance the card shows): the verdict, the evidence lines it was read
+    from, and the backends that did not answer — never folded into the benign value. No `reason`
+    parameter and nowhere to add one — the word is typed by an operator on the card, after this
+    result has been rendered and forgotten, and the gate refuses a reason-shaped argument even for a
+    caller that reaches this function directly.
     """
     normalized_target = target.strip()
     if not normalized_target:
@@ -328,15 +343,16 @@ async def whm_firewall_release_and_allow(
     )
 
 
-# --- The runner: reachable only after an operator approved (V22's far side) ---
+# --- The runner: reachable only after an operator approved (the far side of the cookie/CSRF
+# boundary) ---
 
 
 def build_whm_firewall_release_runner(*, context: McpToolContext) -> ChangeRunner:
     """The half that releases and allows, once an operator approved.
 
-    A closure over the tool context rather than a class, for T22's reason: what it needs is the
-    same session factory, cipher and repositories the tool used, so the change goes through the
-    production decrypt site rather than a second one.
+    A closure over the tool context rather than a class, for the suspend tool's reason: what it
+    needs is the same session factory, cipher and repositories the tool used, so the change goes
+    through the production decrypt site rather than a second one.
     """
 
     async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
@@ -397,7 +413,7 @@ def build_whm_firewall_release_runner(*, context: McpToolContext) -> ChangeRunne
 def build_whm_firewall_change_runners(*, context: McpToolContext) -> dict[str, ChangeRunner]:
     """Tool name → runner for this module's CHANGE tool.
 
-    One entry, and it stays one: T26's removal contributes its own map from
+    One entry, and it stays one: the allowlist-remove tool's removal contributes its own map from
     `whm_firewall_allowlist`, the way each system's registrar does. Collecting it here instead
     would make this module import the one that imports its shared machinery.
     """
@@ -409,11 +425,12 @@ def build_whm_firewall_change_runners(*, context: McpToolContext) -> dict[str, C
 def register_whm_firewall_change_tools(
     server: FastMCP, *, context: McpToolContext
 ) -> dict[str, ToolRisk]:
-    """Register the WHM firewall release tool; return its name with its risk (I.mcp, V20).
+    """Register the WHM firewall release tool; return its name with its risk (the MCP `tools/call`
+    contract, risk and status kept as separate columns).
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
-    call — it opens an approval request and executes nothing, and V46's row belongs to the
-    executor that runs after a decision. It is also what makes
+    call — it opens an approval request and executes nothing, and the run-plus-receipt row belongs
+    to the executor that runs after a decision. It is also what makes
     `registry.assert_change_runners_cover` demand a runner for the name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
     """
@@ -421,10 +438,10 @@ def register_whm_firewall_change_tools(
     @server.tool(
         name=TOOL_WHM_FIREWALL_RELEASE_AND_ALLOW,
         description=DESCRIPTION_WHM_FIREWALL_RELEASE_AND_ALLOW,
-        # Standard MCP hints, and nothing NOA relies on — a client may ignore them. The split
-        # that matters is the approval gate; the classification that matters is the risk
-        # returned below. `destructiveHint` is False because this restores access rather than
-        # removing it, the same reading that keeps T23 a separate name from T22.
+        # Standard MCP hints, and nothing NOA relies on — a client may ignore them. The split that
+        # matters is the approval gate; the classification that matters is the risk returned below.
+        # `destructiveHint` is False because this restores access rather than removing it, the same
+        # reading that keeps the unsuspend tool a separate name from the suspend tool.
         annotations={"readOnlyHint": False, "destructiveHint": False, "idempotentHint": False},
     )
     async def whm_firewall_release_and_allow_tool(
@@ -466,7 +483,7 @@ def register_whm_firewall_change_tools(
 
 
 def _duration_in_bounds(duration_minutes: object) -> bool:
-    """V77's bound, and a type check with it.
+    """The duration-required bound, and a type check with it.
 
     `bool` is excluded explicitly: it is an `int` in Python, and `True` would otherwise pass as
     one minute. The evidence round-trips through JSONB, so the runner asks this question of a
@@ -480,7 +497,7 @@ def _duration_in_bounds(duration_minutes: object) -> bool:
 async def _csf_release_and_allow(
     config: SSHConnectionConfig, *, target: str, duration_seconds: int, comment: str
 ) -> BackendChange:
-    """Release from CSF's deny lists, then allow with a TTL. Internal — ⊥ an MCP tool.
+    """Release from CSF's deny lists, then allow with a TTL. Internal — never an MCP tool.
 
     Four commands in `noa-old`'s order: `-tr` drops a temporary block, `-dr` drops the
     permanent `csf.deny` entry, and `-ta` writes the temporary allow with its own TTL and comment.
@@ -515,7 +532,7 @@ async def _tolerated_csf(config: SSHConnectionConfig, *, args: list[str], target
 async def _imunify_release_and_allow(
     config: SSHConnectionConfig, *, target: str, expiration_epoch: int, comment: str
 ) -> BackendChange:
-    """Drop the blacklist entry, then whitelist with an expiry. Internal — ⊥ an MCP tool.
+    """Drop the blacklist entry, then whitelist with an expiry. Internal — never an MCP tool.
 
     `noa-old`'s two calls and its argument order, unchanged. The delete is tolerated
     for csf's reason one backend over: Imunify refuses a delete for an entry it does not hold, and
@@ -562,16 +579,17 @@ async def _resolve_release_target(
     state the operator actually saw on the card. Re-resolving here would be a second resolution
     that can disagree with the one the decision rests on.
 
-    Three refusals, all before anything is changed and each naming what an administrator should
-    do: the address or the duration did not survive their JSONB round trip as usable values, the
-    evidence carries no usable server id, or the server row is gone. The first two of those are
-    the firewall pair's shared resolution (`resolve_firewall_change_target`); the duration is this
-    tool's own and is checked **first**, against V77's bound rather than merely against its type,
-    because a value outside it would write an allow entry nobody approved the length of — and
-    because refusing it before the database round trip keeps a malformed request off the pool.
+    Three refusals, all before anything is changed and each naming what an administrator should do:
+    the address or the duration did not survive their JSONB round trip as usable values, the
+    evidence carries no usable server id, or the server row is gone. The first two of those are the
+    firewall pair's shared resolution (`resolve_firewall_change_target`); the duration is this
+    tool's own and is checked **first**, against the duration-required bound rather than merely
+    against its type, because a value outside it would write an allow entry nobody approved the
+    length of — and because refusing it before the database round trip keeps a malformed request off
+    the pool.
 
-    The database session closes before the SSH hops, T21's rule, and here it matters twice over:
-    the executor's own session is open for the whole of the call.
+    The database session closes before the SSH hops, the account search's rule, and here it matters
+    twice over: the executor's own session is open for the whole of the call.
     """
     duration_minutes = request.evidence.get(EVIDENCE_DURATION_MINUTES)
     if not _duration_in_bounds(duration_minutes):
@@ -611,7 +629,7 @@ def _release_delta(
       carries no usable one. Either way `changed_fields` is **absent**, not empty: absent says
       NOA did not compare, and an empty tuple would say NOA compared and the reading did not
       move. Substituting the second for the first is the benign value in place of "unknown",
-      which is what V86 refuses.
+      which is folding a non-answer into the benign value.
     - both sides present and equal yields an empty `changed_fields`: the reading did not move,
       measured. That is the honest answer for a release of an address that was already allowed,
       where the window moved and the verdict did not — `new_values` is what carries that.
@@ -684,7 +702,8 @@ def _release_outcome(
     changes: Mapping[str, BackendChange],
     lookups: Mapping[str, BackendLookup],
 ) -> ChangeOutcome:
-    """What the change did, read off a fresh dual-backend read (DECISIONS §6.5, V62, V86).
+    """What the change did, read off a fresh dual-backend read (DECISIONS section 6.5, the
+    password-reset verdict-on-verify rule, folding a non-answer into the benign value).
 
     Five answers, in the order they are decided, and the order is the argument:
 
@@ -692,8 +711,10 @@ def _release_outcome(
        first because it is a fact about the commands rather than an inference from the state.
     2. **a usable backend did not answer the confirming read** — the change happened and is
        *unverified*, with the silent backend named. Reporting it as done would be the
-       fabrication T24 was written to stop, one side worse; reporting it as failed would send an
-       operator to repeat a release that may already have taken (V62's rule).
+       fabrication the dual-backend firewall read was written to stop, one side worse; reporting
+       it as failed would send an
+       operator to repeat a release that may already have taken (the password-reset
+       verdict-on-verify rule).
     3. **still blocked** — the deny entry outlived the release, so the release failed.
     4. **neither blocked nor allowed** — the release took and the allow did not.
     5. **allowed** — both halves took, and both say so separately.
@@ -711,7 +732,8 @@ def _release_outcome(
         "server": target.server_name,
         "target": target.target,
         "duration_minutes": target.duration_minutes,
-        # V77: the after-state shows the resolved expiry, not the window that was asked for.
+        # Duration required, never a server default: the after-state shows the resolved expiry, not
+        # the window that was asked for.
         "expires_at": expires_at.isoformat(),
         "backends": {name: change.as_payload() for name, change in changes.items()},
     }

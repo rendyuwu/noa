@@ -14,7 +14,7 @@ import {
 } from './frame-size'
 
 /**
- * The number this app asks its host for (§T.41, §T.56 — V67).
+ * The number this app asks its host for (the approval card and the table surface).
  *
  * Every claim here is arithmetic, which is why it is here: jsdom computes no layout, so a rule that
  * lived inside the component could only be asserted in a browser. What the browser lane owns is the

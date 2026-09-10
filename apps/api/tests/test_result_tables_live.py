@@ -128,7 +128,8 @@ async def test_a_parked_table_reads_back_for_its_requester(session: AsyncSession
 
 
 async def test_a_capped_table_stores_the_count_before_the_cut(session: AsyncSession) -> None:
-    """V85, through Postgres: the total is a column, not the length of what came back."""
+    """The cap's own bound, through Postgres: the total is a column, not the length of what
+    came back."""
     operator = await insert_user(session, OPERATOR_EMAIL)
     token = await park(session, requester=operator, row_count=40, max_rows=25)
 
@@ -141,11 +142,12 @@ async def test_a_capped_table_stores_the_count_before_the_cut(session: AsyncSess
 
 
 async def test_a_credential_never_reaches_the_column(session: AsyncSession) -> None:
-    """V8: redaction happens on the way in, so the stored row is the redacted one.
+    """The envelope shape's discipline reaches the table too: redaction happens on the way in, so
+    the stored row is the redacted one.
 
     Read straight off the table rather than through the view — what matters is what the
     database holds, because that row outlives the call and is what a later reader, a logger or
-    a backup sees (B8's argument, one writer over).
+    a backup sees (a per-writer exemption from one redaction rule, one writer over).
     """
     operator = await insert_user(session, OPERATOR_EMAIL)
     token = await park(
@@ -160,7 +162,7 @@ async def test_a_credential_never_reaches_the_column(session: AsyncSession) -> N
 
 
 async def test_another_operators_table_is_not_fetched(session: AsyncSession) -> None:
-    """V27: the requester-match, as Postgres evaluates it."""
+    """The requester-match, as Postgres evaluates it."""
     operator = await insert_user(session, OPERATOR_EMAIL)
     stranger = await insert_user(session, OTHER_EMAIL)
     token = await park(session, requester=stranger)

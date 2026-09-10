@@ -4,12 +4,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT } from './route'
 
 /**
- * The one door (§T.50, §I.admin-web).
+ * The one door — the admin auth/session plumbing, and the admin panel's own contract.
  *
  * Ported from `noa-old` with its tests. What is asserted here is the hop itself: the
  * method, the upstream path, the query, the body, and the response coming back unaltered — plus
  * the two properties that make a pass-through proxy safe on this origin, which is where the shape
- * differs from the embed's allowlist (§T.44).
+ * differs from the embed's proxy route.
  */
 
 const ctx = (path: string[]) => ({ params: Promise.resolve({ path }) })
@@ -43,7 +43,7 @@ describe('/api/[...path] — the admin panel’s same-origin proxy', () => {
     expect(calls[0]?.url).toBe('http://backend.test/admin/audit/tool-runs?status=FAILED&limit=25')
   })
 
-  it('carries every method §I.admin-api uses', async () => {
+  it('carries every method the admin API\'s contract uses', async () => {
     // PATCH, PUT and DELETE are the ones the embed's proxy never needed. Omitting one here would
     // answer Next's own 405, which the panel would surface as "the API refused" rather than "this
     // origin does not carry that method".

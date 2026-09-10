@@ -256,7 +256,8 @@ async def test_a_backend_that_could_not_be_driven_states_no_verdict(
 async def test_a_silent_backend_is_named_in_the_delta_and_not_counted(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V86's own sentence: the source that could not answer gets named beside the verdict.
+    """The partial-verdict rule's own sentence: the source that could not answer gets named
+    beside the verdict.
 
     Names and not a count, because "one backend was silent" does not say which server to look
     at. No cause rides with it either — which source said nothing *is* the cause, and a code
@@ -265,7 +266,8 @@ async def test_a_silent_backend_is_named_in_the_delta_and_not_counted(
     **The rows are asserted here and nowhere else**, because this is the only lane in the suite
     where one of them is `answered: false`. `backend_outcomes` hardcoding `answered=True` would
     otherwise leave the whole delta lane green while claiming every backend confirmed every
-    change — the per-backend half of V86, and the pair `driven` and `answered` exist to keep
+    change — the per-backend half of the partial-verdict rule, and the pair `driven` and
+    `answered` exist to keep
     apart: csf ran the commands and answered, imunify ran them and then said nothing.
     """
     fixture, _ = release_context(
@@ -296,7 +298,8 @@ async def test_a_silent_backend_is_named_in_the_delta_and_not_counted(
 async def test_a_capped_before_state_ships_its_bound_into_the_delta(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V85 one surface over: the delta rests on a capped reading, so it carries the cap.
+    """The row-cap rule one surface over: the delta rests on a capped reading, so it carries
+    the cap.
 
     Without it, "this address was blocked and is now allowed" reads as a statement about every
     line the firewall holds for the address, when the evidence behind it stopped at twenty.
@@ -315,7 +318,7 @@ async def test_a_capped_before_state_ships_its_bound_into_the_delta(
 async def test_an_evidence_row_with_no_bound_states_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control, and V86's rule: a bound nobody recorded is not a bound of
+    """The negative control, and the partial-verdict rule: a bound nobody recorded is not a bound of
     nothing. A row opened before those keys existed answers an absent facet, not `0`."""
     fixture, _ = release_context(monkeypatch, box=released_box())
     runner = build_whm_firewall_release_runner(context=fixture.context)
@@ -392,7 +395,7 @@ async def test_a_before_state_with_no_usable_verdict_states_no_field_change(
 async def test_the_release_delta_never_carries_the_operators_reason(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """C8, V15, V43 on the delta, asserted on the bytes of the whole receipt.
+    """The reason rule on the delta, asserted on the bytes of the whole receipt.
 
     This runner writes the reason onto the csf allow entry, so it is the one of the seven where
     the words genuinely leave NOA — and the entry it wrote carries them behind NOA's marker,
@@ -421,7 +424,7 @@ async def test_the_release_delta_never_carries_the_operators_reason(
 async def test_the_removal_delta_states_a_list_move_and_not_a_verdict(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V97 is why this facet is `list_delta` and not a field change.
+    """Asking the CHANGE's own question is why this facet is `list_delta` and not a field change.
 
     Both backends resolve a conflict block-first, so an address on a deny list *and* an allow
     list reads `blocked` before the removal and `blocked` after it — a delta computed from the
@@ -621,7 +624,7 @@ async def test_every_nic_branch_that_knows_nothing_moved_says_so(
     nothing. Unlike the tool table in `test_change_receipt_halves.py`, which is bound against
     `build_change_runners`, a branch list is not something a test can read off the code. Stated
     rather than papered over, because a docstring claiming a mechanism it does not have is the
-    defect this file's own subject is about (V84c).
+    defect this file's own subject is about.
     """
     vm, verification = NIC_MEASURED_EMPTY[case]
     no_polling_delay(monkeypatch)
@@ -691,7 +694,7 @@ async def test_a_reset_proxmox_refused_delivers_no_credential(
 async def test_a_reset_that_may_be_live_delivers_the_credential_with_its_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above, and V62's own decision.
+    """The negative control for the case above, and the verdict-on-verify rule's own decision.
 
     Proxmox accepted the write and the task never finished, so the password may be on the VM —
     and withholding the only copy of a live credential is a lockout NOA created. Without this
@@ -743,7 +746,8 @@ async def test_a_confirmed_add_states_the_line_it_wrote(
 async def test_a_write_that_landed_out_of_force_is_its_own_verification_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V99's outcome, and the fourth verification state exists for it.
+    """The write-and-apply-reported-separately rule's outcome, and the fourth verification
+    state exists for it.
 
     `pmgsh` accepted the line and `pmgconfig sync` did not run: the config moved and Postfix did
     not, which is neither a change nor a refusal. The list move rides **beside** it rather than

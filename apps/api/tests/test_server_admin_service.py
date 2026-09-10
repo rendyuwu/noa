@@ -1,4 +1,5 @@
-"""The three validation services' branch structure (T54, V14, V82, V86-adjacent).
+"""The three validation services' branch structure — the admin validate route, audit on
+every attempt, the host-key pin, and the verdict-can't-be-invented discipline.
 
 `test_admin_server_routes.py` owns the HTTP surface, `test_server_host_key_validation.py` owns
 the trust-on-first-use rule against a real `asyncssh` server, and
@@ -13,7 +14,7 @@ its three pre-socket refusals — and the real `probe_with_trust_on_first_use` a
 
 **The session discipline is asserted, not assumed.** `RecordingSessionFactory.opened` counts
 transactions: one when nothing was pinned, two when a pin was stored. That is how "no pooled
-connection is held across a hop" (T21's rule) is observable at all — a service holding the
+connection is held across a hop" is observable at all — a service holding the
 request's session would open zero.
 """
 
@@ -66,7 +67,8 @@ def cipher() -> SecretCipher:
 
 
 def whm_api_ok() -> FakeWHMApi:
-    """A WHM endpoint whose `myprivs` succeeds with a token that may suspend (§V111).
+    """A WHM endpoint whose `myprivs` succeeds with a token that may suspend — the validate
+    route's ACL report.
 
     The ACL gate itself lives in `test_whm_validate_acl_gate.py`; here the API probe is a step
     the SSH branches have to get past, so it answers the measured reseller set.
@@ -256,13 +258,14 @@ async def test_an_ssh_failure_after_a_capture_stores_nothing(cipher: SecretCiphe
     assert factory.opened == 1
     assert row.ssh_host_key_fingerprint is None
     # The failure is still in the trail: "somebody tried and it did not answer" is a fact worth
-    # recording, and V14 does not distinguish successes.
+    # recording, and audit does not distinguish successes.
     assert audit.events[0].metadata["ok"] is False
     assert audit.events[0].metadata["fingerprint_captured"] is False
 
 
 async def test_an_existing_pin_is_used_and_not_rewritten(cipher: SecretCipher) -> None:
-    """V82's rule as a branch: a stored pin is what the probe runs under, and it stays.
+    """The host-key pin's rule as a branch: a stored pin is what the probe runs under, and
+    it stays.
 
     The capture must not run at all — a service that captured "just to compare" would have made
     an unpinned connection to the host, which is the thing the pin exists to avoid.
@@ -572,7 +575,7 @@ async def test_a_pmg_validate_on_an_absent_row_raises(cipher: SecretCipher) -> N
         await service.validate(uuid4())
 
 
-# --- V8: nothing in a validate event is a credential ---
+# --- Nothing in a validate event is a credential ---
 
 
 async def test_a_validate_event_carries_no_credential(cipher: SecretCipher) -> None:

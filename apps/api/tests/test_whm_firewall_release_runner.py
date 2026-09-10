@@ -1,4 +1,5 @@
-"""The half that runs after an operator approved — T25's runner (V22's far side).
+"""The half that runs after an operator approved — the release-and-allow tool's runner (the
+cookie/CSRF boundary's far side).
 
 `test_whm_tools_firewall_release_and_allow.py` covers the tool, which changes nothing. This
 covers the thing that does, and the two are separate files because the boundary between them is
@@ -8,7 +9,8 @@ path, and it is driven here with a `ChangeExecutionRequest` built the way the ex
 
 Four claims carry the weight.
 
-**The two outcomes stay apart** (DECISIONS §6.5). "Released" and "allowlisted" are separate
+**The two outcomes stay apart** (DECISIONS.md section 6.5). "Released" and "allowlisted" are
+separate
 booleans and separate failure codes, so a receipt cannot say "done" over a half-finished change —
 and one instant feeds both backends, because csf takes a TTL in seconds and Imunify an absolute
 epoch.
@@ -17,12 +19,13 @@ epoch.
 an allow written before the deny entry is removed buys nothing and reads as success. Asserted as
 a sequence, which is what a reordering breaks and what a membership test would not.
 
-**A postflight that did not answer is not a verified change** (§V.86, §V.62's rule). §V.57 bounds
-the zero-backend case; a *partial* answer is where the fabrication lives, and on an approved
-CHANGE it is worse than on a READ. Its negative control is here too: one backend *installed* is
-not one backend silent.
+**A postflight that did not answer is not a verified change** (the no-full-answer-no-verdict
+rule, and the verify-before-declaring-done rule). The zero-backend error bounds the zero-backend
+case; a *partial* answer is where the fabrication lives, and on an approved CHANGE it is worse
+than on a READ. Its negative control is here too: one backend *installed* is not one backend
+silent.
 
-**The operator's reason goes out and does not come back** (C8, §V.43, §V.96). The write is
+**The operator's reason goes out and does not come back.** The write is
 asserted here — on both backends, because a comment written on one and not the other is a bound
 held on one side only — along with the two doors back: the runner's payload, and a backend
 failure message that quotes the command it could not run. The READ that would otherwise echo it
@@ -97,7 +100,8 @@ from support.whm_firewall_change import (
 async def test_the_runner_releases_then_allows_on_both_backends(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The order is the invariant, not the command list (T25, `core.integrations.whm.csf`).
+    """The order is the invariant, not the command list (the release-and-allow tool,
+    `core.integrations.whm.csf`).
 
     CSF resolves a conflict block-first, so an allow written before the deny entry is removed
     buys nothing and reads as success. Asserted as a sequence per backend, which is what a
@@ -120,7 +124,7 @@ async def test_the_runner_releases_then_allows_on_both_backends(
 
 
 async def test_the_two_outcomes_are_reported_apart(monkeypatch: pytest.MonkeyPatch) -> None:
-    """DECISIONS §6.5: one approval, a two-part receipt, and never a single "done".
+    """DECISIONS.md section 6.5: one approval, a two-part receipt, and never a single "done".
 
     Two booleans rather than one status word, because "we let it through the deny list" and "we
     put it on the allow list" are two claims and an operator reading a receipt has to be able to
@@ -143,7 +147,7 @@ async def test_the_two_outcomes_are_reported_apart(monkeypatch: pytest.MonkeyPat
 async def test_the_after_state_carries_the_resolved_expiry_timestamp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V77: the after-state shows *when*, not merely how long was asked for.
+    """The after-state shows *when*, not merely how long was asked for.
 
     Asserted as a property rather than against a literal, because the value is clock-stamped and
     an equality on it would either be impossible or would have to freeze the clock and stop
@@ -188,7 +192,7 @@ async def test_both_backends_are_given_the_same_expiry(
 async def test_the_runner_acts_on_the_server_the_card_named(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V33: inventory can change between a request and its approval, and `server_ref` is a string
+    """Inventory can change between a request and its approval, and `server_ref` is a string
     the model supplied. The evidence carries the id of the machine the preflight read and the
     operator saw, so that is what the change reaches — asserted on the host the transport was
     handed, which is the only way "it ran somewhere else" would show."""
@@ -227,7 +231,8 @@ async def test_an_allow_that_did_not_take_is_a_different_failure(
 ) -> None:
     """Nothing blocks it and nothing allows it either: the release took and the allow did not.
 
-    The distinction is the whole of DECISIONS §6.5's "do not collapse the two outcomes" — one
+    The distinction is the whole of DECISIONS.md section 6.5's "do not collapse the two
+    outcomes" — one
     code sends an operator to the deny lists and the other to the allow lists.
     """
     fixture, _ = release_context(
@@ -246,12 +251,14 @@ async def test_an_allow_that_did_not_take_is_a_different_failure(
 async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V86 on a CHANGE, which is where V57's zero-case bound runs out.
+    """The no-full-answer-no-verdict rule on a CHANGE, which is where the zero-backend error's
+    zero-case bound runs out.
 
     CSF says the address is allowed; Imunify's confirming read is unreadable. Answering "released
     and allowed" from the half that spoke is exactly `noa-old`'s fabrication, one side worse —
-    and answering "failed" would send an operator to repeat a release that already took (V62's
-    rule). So: it happened, it is not verified, and the silent backend is named.
+    and answering "failed" would send an operator to repeat a release that already took (the
+    verify-before-declaring-done rule). So: it happened, it is not verified, and the silent
+    backend is named.
     """
     fixture, _ = release_context(
         monkeypatch,
@@ -277,7 +284,8 @@ async def test_a_backend_that_did_not_answer_leaves_the_change_unverified(
 async def test_a_backend_that_answered_alone_is_still_verified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The negative control for the case above, and V86's own bound.
+    """The negative control for the case above, and the no-full-answer-no-verdict rule's own
+    bound.
 
     One backend *installed* is not one backend silent: a box without Imunify is answered in full
     by CSF, and refusing to verify there would make the unverified branch fire for every
@@ -371,7 +379,7 @@ async def test_a_server_that_vanished_after_approval_is_refused_before_the_chang
 async def test_evidence_with_an_unusable_duration_is_refused(
     monkeypatch: pytest.MonkeyPatch, duration: Any
 ) -> None:
-    """V77 again, on the far side of the JSONB round trip.
+    """The duration-bound rule again, on the far side of the JSONB round trip.
 
     A window outside the bound — or one that came back as a string, or as `True`, which is an
     `int` in Python and would otherwise pass as one minute — is a request NOA refuses rather than
@@ -406,7 +414,8 @@ async def test_evidence_without_a_usable_target_is_refused(
 async def test_zero_usable_backends_after_approval_raises_for_the_executor(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V57 on the runner side, where the silent no-op would be an approved change.
+    """The zero-backend error on the runner side, where the silent no-op would be an approved
+    change.
 
     A runner is not decorated with `sanitize_tool_errors` — the executor catches `NoaError` and
     keeps its code (`core.approvals.execution`), so the receipt names `no_firewall_backend`
@@ -425,7 +434,7 @@ async def test_zero_usable_backends_after_approval_raises_for_the_executor(
 async def test_a_non_root_user_escalates_every_firewall_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V55 is a biconditional, and the runner is where it has the most to lose.
+    """The sudo-prefix rule is a biconditional, and the runner is where it has the most to lose.
 
     Every command the change sends — probes, releases, the allow and the confirming read — runs
     under `sudo -n` when the resolved SSH user is not root. One unescalated write is a change
@@ -452,17 +461,18 @@ async def test_a_root_user_escalates_nothing(monkeypatch: pytest.MonkeyPatch) ->
 
 
 # --------------------------------------------------------------------------------------
-# C8, V43, V96: the reason goes out, and it does not come back
+# The reason rule: the reason goes out, and it does not come back
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_written_comment_carries_the_operators_reason_behind_noas_marker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V43: the one field may leave NOA, and a firewall allow entry is somewhere it belongs.
+    """The one reason field may leave NOA, and a firewall allow entry is somewhere it belongs.
 
     The alternative is a NOA-authored placeholder in a record a human reads on the box. What
-    rides with it is the marker, and the marker is what makes V96's cut possible at all — asserted
+    rides with it is the marker, and the marker is what makes the never-crosses-back rule's cut
+    possible at all — asserted
     on both backends, because a comment written on one and not the other is a bound held on one
     side only.
     """
@@ -483,13 +493,13 @@ async def test_the_written_comment_carries_the_operators_reason_behind_noas_mark
 async def test_the_runner_payload_never_carries_the_reason_back(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V96b: `result_summary` is derived from this payload, and `noa_get_action_result` returns
+    """`result_summary` is derived from this payload, and `noa_get_action_result` returns
     the summary to a model.
 
     The reason is on the `ChangeExecutionRequest` — the executor reads it off the row for every
     approved change — so it is in front of this runner throughout. Asserted on the derived
     summary as well as on the payload, because the summary is the thing a model actually reads
-    (V96's own "on the serialized result ∧ on the derived summary").
+    (the never-crosses-back rule's own "on the serialized result and on the derived summary").
     """
     fixture, _ = release_context(monkeypatch, box=released_box())
     runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))
@@ -505,7 +515,7 @@ async def test_the_runner_payload_never_carries_the_reason_back(
 async def test_a_backend_failure_message_is_cut_before_it_reaches_the_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V96b again, through the door a failure opens.
+    """The never-crosses-back rule again, through the door a failure opens.
 
     A backend that refuses a command frequently quotes the command back — and the command NOA
     just ran carries the operator's reason in its comment. That message becomes
@@ -544,12 +554,12 @@ async def test_a_backend_failure_message_is_cut_before_it_reaches_the_payload(
 
 
 # --------------------------------------------------------------------------------------
-# V46, DECISIONS §6.5: the receipt an operator reads
+# The audit-artifact rule, DECISIONS.md section 6.5: the receipt an operator reads
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_receipt_keeps_the_two_halves_apart(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V46 and DECISIONS §6.5, through the real `build_receipt`.
+    """The audit-artifact rule and DECISIONS.md section 6.5, through the real `build_receipt`.
 
     `before` is the gate's own preflight — why the address was blocked and the log line it was
     read from — and `after` is what the change answered, with its two outcomes named separately.
@@ -572,7 +582,7 @@ async def test_the_receipt_keeps_the_two_halves_apart(monkeypatch: pytest.Monkey
 
 
 async def test_a_failed_change_keeps_its_before_state(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V46: a receipt with a before-state and no working after-state IS the record of a change
+    """A receipt with a before-state and no working after-state IS the record of a change
     that did not complete — so the half the operator authorised against survives the failure."""
     fixture, _ = release_context(monkeypatch, box=released_box(csf_after=CSF_DENY_LINE))
     runner = payload_runner(build_whm_firewall_release_runner(context=fixture.context))

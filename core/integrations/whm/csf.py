@@ -5,7 +5,8 @@ zero NOA imports, no I/O. Everything here exists because CSF has no machine-read
 `csf -g` prints iptables tables for humans, and the WHM web addon wraps the same text in HTML.
 The parsers are the accumulated answer to what that text actually looks like on a live box.
 
-**`parse_csf_target` is what V54 is enforced with.** It classifies a target as
+**`parse_csf_target` is what the CHANGE-takes-IPv4-only rule is enforced with.** It classifies
+a target as
 `ip` (IPv4) / `cidr` (IPv4) / `ipv6` / `ipv6_cidr` / `hostname` / `unknown` without deciding
 policy. The CHANGE tools reject anything but `ip`; the preflight READ accepts
 all kinds, because "you asked about an IPv6 address and here is what CSF says" is a useful
@@ -14,8 +15,9 @@ answer even where changing it is not permitted.
 **One entry point, not two.** `noa-old` also carried `parse_csf_grep_html` for WHM's
 `cgi/addon_csf.cgi?action=grepip` HTTP path, plus the `WHMClient.csf_grep` /
 `csf_request_action` methods that fed it. Nothing on that branch called any of the three —
-`whm/tools/firewall_tools/csf_backend.py` goes over SSH — and I.ext pins WHM's firewall access
-to SSH, so the HTTP addon path is not ported (T16 deviation (e)). Entity unescaping stays,
+`whm/tools/firewall_tools/csf_backend.py` goes over SSH — and the external-system transports
+pin WHM's firewall access to SSH, so the HTTP addon path is not ported (a deviation from the
+ported WHM layer). Entity unescaping stays,
 because it costs nothing and csf's own output is not guaranteed clean. ANSI escapes are
 stripped because a TTY-ish csf still emits colour.
 
@@ -35,14 +37,16 @@ is clean" are different facts, and collapsing them would let a parse regression 
 clean host.
 
 Matches are bounded (`max_matches`, default 20). A busy server's grep can run to hundreds of
-log lines, and the tool result is headed for an LLM context (V64's concern, one layer down).
+log lines, and the tool result is headed for an LLM context (the out-of-context-large-output
+concern, one layer down).
 **`total_matches` is reported beside them**: a cap that drops rows silently lets the
 model report "there are twenty entries" at two hundred — a fabrication the tool handed it. The
 count is this module's to give, because this is where the cut happens.
 
-V85 also asks for a stable ordering before the cut, and the kept order is csf's own — not a
-sort. `csf -g` renders the current tables and files deterministically, so identical calls
-against unchanged state yield an identical prefix, which is the property V85 is protecting
+The stated-bound rule also asks for a stable ordering before the cut, and the kept order is
+csf's own — not a sort. `csf -g` renders the current tables and files deterministically, so
+identical calls against unchanged state yield an identical prefix, which is the property the
+stable-ordering rule is protecting
 (`listaccts`, the tool it was written at, has no such guarantee). Sorting log lines
 alphabetically would also scramble the deny/allow grouping that makes the evidence readable.
 """
@@ -90,7 +94,8 @@ class CSFGrepParsed:
     the verdict deliberately loses it: block beats allow, so an address in both `csf.deny` and
     `csf.allow` is `blocked` and the allow line it was also found on stops being visible. That
     is the right answer to "what is this box doing to this address" and the wrong one to "is
-    there still an allow entry here", which is what T26 asks after removing one. Reading the
+    there still an allow entry here", which is what the allowlist-remove tool asks after
+    removing one. Reading the
     removal's outcome off the verdict would report a still-present allow entry as removed
     whenever a deny entry happened to outrank it.
     """

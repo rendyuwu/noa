@@ -1,6 +1,7 @@
 """One asyncio task that runs a pass on an interval, forever.
 
-The loop T39 built for `PendingExpirySweeper`, hoisted so T38's reaper inherits it instead
+The loop the expiry sweep built for `PendingExpirySweeper`, hoisted so the stranded-run reaper
+inherits it instead
 of carrying a second copy. The package docstring lists the four properties; this
 module is where each of them lives.
 
@@ -67,7 +68,8 @@ class PeriodicTask:
         would then be running against a disposed pool.
 
         Dropping the `cancel()` while keeping the `await` makes this wait on an infinite
-        task, which hangs a suite instead of failing it — recorded at T39 because a mutation
+        task, which hangs a suite instead of failing it — recorded in the expiry sweep's tests
+        because a mutation
         that hangs proves nothing.
         """
         task, self._task = self._task, None
@@ -81,7 +83,8 @@ class PeriodicTask:
         """The loop itself.
 
         **Sleep first.** A pass at startup would make every boot touch the database, and
-        V51 says `/health` must answer with Postgres down; one interval against a deadline
+        the health-check rule says `/health` must answer with Postgres down; one interval
+        against a deadline
         measured in minutes or hours buys nothing worth that.
 
         `except Exception` and not `BaseException`: `CancelledError` is a `BaseException` in

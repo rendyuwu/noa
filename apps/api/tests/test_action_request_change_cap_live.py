@@ -1,4 +1,4 @@
-"""V31's per-user cap on in-flight changes, against a real Postgres.
+"""The per-user cap on in-flight changes, against a real Postgres.
 
 The cap counts `tool_runs` rows that are `CHANGE` and `STARTED` for one requester, and an
 advisory lock taken inside the counting transaction is what makes it hold. Neither half is
@@ -7,13 +7,15 @@ a lock is only what two real transactions do to each other.
 
 Split from `test_action_request_decisions_live.py` when that file passed the 900-line limit,
 and a clean seam because the two locks guard different things. Two decisions on **one
-request** contend on the row, which is V28's `SELECT ... FOR UPDATE`; two approvals of
+request** contend on the row, which is the row lock's `SELECT ... FOR UPDATE`; two approvals of
 **different requests by one operator** never touch each other's rows, so that lock serializes
-nothing between them and V31 needs an overlap test of its own rather than inheriting V28's.
+nothing between them and the per-user cap needs an overlap test of its own rather than
+inheriting the row lock's.
 
-Both races here are arranged rather than hoped for, and each ships the negative control V89
-requires: the window is held open on purpose, the assertion is on *order* rather than on a win
-count, and the control shows the forbidden order is reachable once the lock is gone.
+Both races here are arranged rather than hoped for, and each ships the negative control the
+concurrency-test rule requires: the window is held open on purpose, the assertion is on *order*
+rather than on a win count, and the control shows the forbidden order is reachable once the
+lock is gone.
 
 Row helpers come from `support.action_decisions` and the scratch-database fixtures from
 `support.database`.
@@ -70,17 +72,17 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
 
 
 # --------------------------------------------------------------------------------------
-# V31 — the per-user cap, and the lock that makes it hold
+# The per-user cap, and the lock that makes it hold
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_cap_counts_a_started_change_run(factory) -> None:
-    """V31, sequentially: one change in flight, a limit of one, and the second is refused.
+    """Sequentially: one change in flight, a limit of one, and the second is refused.
 
     The count is `tool_runs` rows that are `CHANGE` and `STARTED` — which is what "in flight"
     means when the executor has not written a terminal status yet. Two requests, because a
-    second approval of the *same* request is V28's 409 and would pass this test for the wrong
-    reason.
+    second approval of the *same* request is the row lock's 409 and would pass this test for
+    the wrong reason.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     first_request = await open_request(factory, requested_by_user_id=user_id)
@@ -150,7 +152,7 @@ async def test_another_operators_change_does_not_spend_this_ones_allowance(facto
     """The count is scoped by `requested_by_user_id` in the statement.
 
     Global instead of per-user, the cap would make one operator's slow change stop the team —
-    which is the outage V31's wording ("per-user") exists to avoid.
+    which is the outage the cap's own scoping — "per-user" — exists to avoid.
     """
     first_user = await insert_user(factory, OPERATOR_EMAIL)
     second_user = await insert_user(factory, OTHER_EMAIL)
@@ -170,13 +172,13 @@ async def test_another_operators_change_does_not_spend_this_ones_allowance(facto
 
 
 async def test_two_overlapping_approvals_by_one_operator_start_one_run(factory) -> None:
-    """V31 under concurrency, proven overlapped.
+    """The per-user cap under concurrency, proven overlapped.
 
-    **Why V28's row lock does not cover this.** Two approvals of *different* requests never
+    **Why the row lock does not cover this.** Two approvals of *different* requests never
     touch each other's rows, so `SELECT … FOR UPDATE` serializes nothing between them. Both read
     a count of zero under READ COMMITTED — neither can see the other's uncommitted `tool_runs`
-    insert — and both proceed. What serializes them is V31's per-user advisory lock, taken inside
-    the same transaction as the count it protects.
+    insert — and both proceed. What serializes them is the per-user cap's advisory lock, taken
+    inside the same transaction as the count it protects.
 
     **The window is held open on purpose.** The first transaction stops between taking the
     advisory lock and committing, and the second is started inside that window.
@@ -248,7 +250,8 @@ async def test_two_overlapping_approvals_by_one_operator_start_one_run(factory) 
 
 
 async def test_an_unlocked_count_does_not_wait_and_the_cap_is_breached(factory) -> None:
-    """The negative control for the ordering assertion above (V87, V89's obligation (b)).
+    """The negative control for the ordering assertion above (the concurrency-test rule's
+    negative-control obligation).
 
     A "the second count landed after the first commit" assertion is worthless if *every* count
     would land there — if, say, the harness never actually overlapped the two transactions. This

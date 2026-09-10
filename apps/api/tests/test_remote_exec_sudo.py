@@ -1,9 +1,10 @@
 """`sudo -n` escalation.
 
-V55 is a biconditional: the prefix appears **iff** the resolved SSH user is not root. So both
-directions are asserted, and the exact command strings are pinned — `noa-old`'s csf/imunify
-call sites produced `TERM=dumb sudo -n /usr/sbin/csf …`, and T16's firewall tools inherit that
-shape. Token order is not cosmetic: the environment assignment sits ahead of `sudo`.
+The sudo-prefix rule is a biconditional: the prefix appears **iff** the resolved SSH user is
+not root. So both directions are asserted, and the exact command strings are pinned —
+`noa-old`'s csf/imunify call sites produced `TERM=dumb sudo -n /usr/sbin/csf …`, and the WHM
+port's firewall tools inherit that shape. Token order is not cosmetic: the environment
+assignment sits ahead of `sudo`.
 
 `is_sudo_rights_failure` gets its own table because the interesting cases are the *negatives*
 — a missing binary and a benign `sudo:` warning must not be reported as a rights problem
@@ -45,7 +46,7 @@ def _result(*, exit_code: int, stderr: str = "", stdout: str = "") -> CommandRes
     )
 
 
-# --- V55: prefix iff non-root ---
+# --- Sudo-prefix rule: prefix iff non-root ---
 
 
 def test_root_user_gets_no_sudo_prefix() -> None:
@@ -62,7 +63,7 @@ def test_non_root_user_gets_sudo_n_after_env() -> None:
         [_CSF, "-g", "1.2.3.4"], config=_config("noa-ops"), env={"TERM": "dumb"}
     )
 
-    # Exact string from `noa-old`'s csf builder — T16's tools assert this shape too.
+    # Exact string from `noa-old`'s csf builder — the WHM port's tools assert this shape too.
     assert out == "TERM=dumb sudo -n /usr/sbin/csf -g 1.2.3.4"
 
 
@@ -128,7 +129,8 @@ def test_empty_argv_rejected() -> None:
         (1, "sudo: no valid sudoers sources found, quitting", True),
         (1, "sudo: sorry, you must have a tty to run sudo", True),
         (1, "sudo: pam_authenticate: Authentication failure", True),
-        # Missing binary — the exclusion that keeps this from swallowing V57's case.
+        # Missing binary — the exclusion that keeps this from swallowing the zero-backend
+        # error's case.
         (1, "sudo: /usr/sbin/csf: command not found", False),
         (127, "bash: csf: no such file or directory", False),
         # Benign warning carrying the `sudo:` prefix, with the real failure elsewhere.
@@ -141,5 +143,5 @@ def test_is_sudo_rights_failure(exit_code: int, stderr: str, expected: bool) -> 
 
 
 def test_sudo_required_code_is_the_stable_string() -> None:
-    """T16's firewall tools surface this verbatim; renaming it breaks their contract."""
+    """The WHM port's firewall tools surface this verbatim; renaming it breaks their contract."""
     assert SSH_SUDO_REQUIRED_CODE == "ssh_sudo_required"

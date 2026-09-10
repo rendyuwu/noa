@@ -1,4 +1,4 @@
-"""The three admin action-request routes, over the real service (§I.admin-api — V13, V15, V73).
+"""The three admin action-request routes, over the real service (the admin API's contract).
 
 `support/admin.py`'s harness mounts this router beside the rest of `/admin` with `require_admin`,
 `require_session_user`, the real `JWTService`, the real `ActionRequestAdminService` and the shared
@@ -7,7 +7,7 @@ error handler — only the SQL is doubled. So a 403 here is the shipped 403, the
 
 What this file owns, and what it deliberately does not:
 
-- **owns** the HTTP surface: the admin gate on every route the router mounts (V13, asserted
+- **owns** the HTTP surface: the admin gate on every route the router mounts (asserted
   against `router.routes` rather than against a hand-kept list), the query string → filter
   mapping, the payload key sets, the page bound, the cursor walk, the two 404s and the difference
   between them, which of the two reads the receipt route makes to tell them apart, and the
@@ -106,11 +106,11 @@ def only_item(harness: AdminHarness) -> Any:
     return harness.action_requests.items[0]
 
 
-# --- V13: every route is admin-only ---
+# --- Every route is admin-only ---
 
 
 def test_every_action_request_route_is_admin_only(harness: AdminHarness) -> None:
-    """V13: an operator holding no `admin` role reaches none of the routes this router mounts.
+    """An operator holding no `admin` role reaches none of the routes this router mounts.
 
     `ROUTE_TABLE` is compared against `router.routes` first, so the walk is over what is
     *registered* rather than over what someone listed. That is the difference between a fourth
@@ -131,7 +131,7 @@ def test_every_action_request_route_is_admin_only(harness: AdminHarness) -> None
 
 
 def test_a_demoted_admin_loses_the_trail_on_the_next_request(harness: AdminHarness) -> None:
-    """V6 through V13: the role is re-read per request, never taken from the cookie.
+    """The role is re-read live per request, never taken from the cookie.
 
     `require_admin` is a per-handler parameter here; a router that acquired a `dependencies=[…]`
     gate instead would pass the walk above and could stop re-reading the row.
@@ -199,7 +199,7 @@ def test_the_list_item_carries_its_field_set_and_no_more(harness: AdminHarness) 
     A fifty-row page carrying fifty reasons and fifty gate contexts would ship two JSONB payloads
     per row to draw six columns, and the detail route is one click away. Asserted as absence by
     name rather than by counting keys, because a count goes red for the right thing spelled wrongly
-    (V38's argument).
+    (the assert-by-name-not-by-count rule).
     """
     body = harness.client.get(ACTION_REQUESTS_PATH).json()
     assert body["nextCursor"] is None
@@ -278,7 +278,7 @@ def test_an_unfiltered_list_hands_down_an_empty_filter_object(harness: AdminHarn
 
 
 def test_the_page_bound_is_enforced_at_the_query(harness: AdminHarness) -> None:
-    """422 above the ceiling and 422 below one, from the `Query` validator (V85's family)."""
+    """422 above the ceiling and 422 below one, from the `Query` validator (the row-cap family)."""
     assert (
         harness.client.get(ACTION_REQUESTS_PATH, params={"limit": MAX_PAGE_SIZE}).status_code == 200
     )
@@ -371,7 +371,7 @@ def test_a_malformed_cursor_is_a_four_hundred(harness: AdminHarness) -> None:
 
 
 def test_the_detail_carries_the_operators_reason(harness: AdminHarness) -> None:
-    """V15, C8: the operator's own words, readable by an administrator for the first time.
+    """The operator's own reason, readable by an administrator for the first time.
 
     The embed card carries no `reason` field at any status by construction and `tool_runs` has no
     column for it, so before this route the field the whole approval design turns on was writable
@@ -389,7 +389,7 @@ def test_a_pending_request_reports_a_null_reason_not_an_empty_one(harness: Admin
 
     An empty string would read as "the operator wrote nothing", which the gate refuses with a 409
     and the DB CHECK refuses against any other writer. The two spellings must not be interchangeable
-    on the wire (V117's family: an empty value is a claim, absence is not).
+    on the wire — an empty value is a claim, absence is not.
     """
     item = build_list_item(
         status=ActionRequestStatus.PENDING, decided_after_seconds=None, has_receipt=False
@@ -408,7 +408,7 @@ def test_an_unknown_or_malformed_request_id_is_one_refusal(harness: AdminHarness
     """404 `action_request_not_found` for both, on the detail and on the receipt.
 
     A 422 for the malformed one would describe what the path validator accepts rather than what
-    exists (T63(e), admin side).
+    exists (the action-result tool's own rule, admin side).
     """
     for suffix in ("", "/receipt"):
         for identifier in (str(uuid4()), "not-a-uuid"):
@@ -421,7 +421,8 @@ def test_an_unknown_or_malformed_request_id_is_one_refusal(harness: AdminHarness
 
 
 def test_the_receipt_carries_both_halves_and_the_delta(harness: AdminHarness) -> None:
-    """V46, V34: `before` and `after` uncollapsed, with the runner's delta beside them."""
+    """Run-plus-receipt and one URL through the receipt: `before` and `after` uncollapsed, with
+    the runner's delta beside them."""
     item = only_item(harness)
     body = harness.client.get(f"{ACTION_REQUESTS_PATH}/{item.action_request_id}/receipt").json()
 
@@ -542,11 +543,13 @@ def test_every_field_the_card_stops_rendering_is_reachable_here(harness: AdminHa
     **This is the present-by-name half only, and it is the only half that exists yet.** Nothing
     in this file reads the card, so deleting a row from the embed card leaves this green; what
     reddens is the *admin* surface ceasing to serve a field. The absent-by-name half — the card no
-    longer rendering what moved — belongs to the commit that performs the removal, and V120 is
-    what requires the receiving surface to ship first. Relocation rather than deletion is proven
-    by the pair, so read this as the receiving end being ready, not as the move being checked.
+    longer rendering what moved — belongs to the commit that performs the removal, and the
+    field-relocation rule is what requires the receiving surface to ship first. Relocation
+    rather than deletion is proven by the pair, so read this as the receiving end being ready,
+    not as the move being checked.
 
-    Asserted **by name**, never by counting keys, for the reason V38 already records: a count
+    Asserted **by name**, never by counting keys, for the reason the assert-by-name-not-by-count
+    rule already records: a count
     assertion goes red for the right thing spelled wrongly and green for the wrong thing spelled
     right. `librechat_user_id`, `server_id` and `api_username` live inside the gate context under
     the gate's own spelling, so they are read through the same nesting the writer used.
@@ -577,7 +580,7 @@ def test_every_field_the_card_stops_rendering_is_reachable_here(harness: AdminHa
 
 
 def test_the_gate_context_is_served_as_stored_and_not_reprojected(harness: AdminHarness) -> None:
-    """The same object T33 persisted, whole.
+    """The same object the gate persisted, whole.
 
     Not re-redacted and not flattened into named fields: it was redacted at gate time, and a
     second policy means the day the two disagree is the day one of them is wrong. Asserted as
@@ -591,11 +594,11 @@ def test_the_gate_context_is_served_as_stored_and_not_reprojected(harness: Admin
     assert detail["approvalContext"] == GATE_CONTEXT
 
 
-# --- V73: the shared envelope ---
+# --- The shared envelope ---
 
 
 def test_every_refusal_carries_the_request_id(harness: AdminHarness) -> None:
-    """V73: `request_id` in the body and `x-request-id` on the response, from the shared handler."""
+    """`request_id` in the body and `x-request-id` on the response, from the shared handler."""
     response = harness.client.get(f"{ACTION_REQUESTS_PATH}/{uuid4()}")
 
     assert response.status_code == 404

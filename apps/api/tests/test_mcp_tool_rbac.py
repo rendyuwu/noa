@@ -1,6 +1,6 @@
-"""RBAC on the MCP path, over the real mount (T19 — V1, V10, V11, V14, V74, I.mcp).
+"""RBAC on the MCP path, over the real mount.
 
-V1's two clauses are two different failures, so they get two sets of tests:
+The permission check has two clauses — two different failures — so they get two sets of tests:
 
     `tools/list` RBAC-filtered per user. `tools/call` re-checks permission.
 
@@ -63,8 +63,9 @@ from support.servers import build_tool_context, whm_server
 # What this build registers, in the order `tools/list` sorts them. A literal rather than a set
 # derived from `register_mcp_tools`: an `admin` sees exactly this, so a tool added without
 # anyone noticing it became visible to every admin should fail here rather than be asserted
-# against itself. Grew with each of §T.20-31 and §T.63, and §T.29 closed it: this is now the
-# whole of `TOOL_CATALOG`, which is asserted below rather than left as a coincidence.
+# against itself. Grew with each tool registered since, and the pmg-whitelist tool closed it:
+# this is now the whole of `TOOL_CATALOG`, which is asserted below rather than left as a
+# coincidence.
 REGISTERED_TOOLS = sorted(
     [
         TOOL_WHM_LIST_SERVERS,
@@ -84,14 +85,16 @@ REGISTERED_TOOLS = sorted(
     ]
 )
 
-# **There is no catalogued-but-unregistered name left.** T29 registered `pmg_whitelist`, the
-# last one, so the stand-in this file carried through T20, T27, T28 and T30 has nothing to point
-# at any more. Its assertions are not simply deleted, which would leave V83(c) — the gate carries
-# the *registered* set and intersects with it — covered by nothing: they move to a probe that
+# **There is no catalogued-but-unregistered name left.** The pmg-whitelist tool registered
+# `pmg_whitelist`, the last one, so the stand-in this file carried through `whm_list_accounts`,
+# `proxmox_reset_vm_password`, `proxmox_vm_nic` and `pmg_whitelist_list` has nothing to point
+# at any more. Its assertions are not simply deleted, which would leave the gate's own
+# registered-set intersection covered by nothing: they move to a probe that
 # builds the middleware with a registered set of its own
 # (`test_a_catalogued_tool_this_server_did_not_register_is_refused_in_noas_shape`). A predicate
 # that no longer separates against production is one to keep separating against a fixture, not
-# one to drop (V87, and `test_change_runner_registry`'s probe one guard over).
+# one to drop (the compare-must-still-separate rule, and `test_change_runner_registry`'s probe
+# one guard over).
 
 # Never in the catalog at all.
 UNKNOWN_TOOL = "whm_delete_everything"
@@ -140,7 +143,7 @@ def scenario(monkeypatch: pytest.MonkeyPatch):
         yield sign_in, authorization
 
 
-# --- V1, first clause: `tools/list` is filtered ---
+# --- Permission check, first clause: `tools/list` is filtered ---
 
 
 def test_a_granted_tool_is_listed_and_callable(scenario) -> None:
@@ -161,7 +164,7 @@ def test_a_granted_tool_is_listed_and_callable(scenario) -> None:
 
 
 def test_a_grant_names_one_tool_and_not_the_toolset(scenario) -> None:
-    """V1 is per tool, and with two registered tools that is finally observable.
+    """The permission check is per tool, and with two registered tools that is finally observable.
 
     A role granted `whm_search_accounts` sees only it, and calling the other one is refused —
     a gate keyed on "has any WHM grant" would pass both and no earlier test could tell.
@@ -174,7 +177,7 @@ def test_a_grant_names_one_tool_and_not_the_toolset(scenario) -> None:
 
 
 def test_tools_list_hides_a_tool_the_caller_may_not_call(scenario) -> None:
-    """V1: a role with no grant sees an empty catalog, not the server's registry.
+    """A role with no grant sees an empty catalog, not the server's registry.
 
     This is the failure that has no symptom without a test. Drop the middleware and the tool
     still works, the handshake still succeeds, and every other test in the suite passes —
@@ -187,7 +190,7 @@ def test_tools_list_hides_a_tool_the_caller_may_not_call(scenario) -> None:
 
 
 def test_a_revoked_grant_disappears_from_the_next_list(scenario) -> None:
-    """V14: permission updates take effect immediately, with no cache to wait out."""
+    """Permission updates take effect immediately, with no cache to wait out."""
     sign_in, authorization = scenario
     session = sign_in(roles=(ROLE_SUPPORT,), grants=(TOOL_WHM_LIST_SERVERS,))
     assert session.tool_names() == [TOOL_WHM_LIST_SERVERS]
@@ -197,15 +200,15 @@ def test_a_revoked_grant_disappears_from_the_next_list(scenario) -> None:
     assert session.tool_names() == []
 
 
-# --- V1, second clause: `tools/call` re-checks ---
+# --- Permission check, second clause: `tools/call` re-checks ---
 
 
 def test_calling_an_unpermitted_tool_is_refused_even_when_the_client_cached_it(
     scenario,
 ) -> None:
-    """V74's backstop: a stale catalog is not a permission.
+    """A stale catalog is not a permission — the execution-time RBAC re-check backstops it.
 
-    The handshake era C23 pins has no `ttlMs`/`cacheScope`, so NOA cannot bound how long a
+    The negotiated handshake era has no `ttlMs`/`cacheScope`, so NOA cannot bound how long a
     client displays a revoked tool. What it can do — and this is the whole reason the
     execution check exists separately from the filter — is refuse the call.
     """
@@ -240,18 +243,19 @@ def test_the_refused_call_never_reaches_the_tool(scenario) -> None:
 
 
 def test_a_disabled_user_sees_no_tools_and_may_call_none(scenario) -> None:
-    """V11: `is_active=False` means zero permissions, whatever the roles say.
+    """`is_active=False` means zero permissions, whatever the roles say.
 
     Disabled *after* the session opened, and disabled only in the `users` row the RBAC
     engine reads. In production one write flips one row and both readers see it, so a
     disabled operator is stopped twice over — the identity resolver refuses the request with
     `mcp_user_inactive` before this gate is reached. That is why the two are
-    separated here: V11 is a claim about *permission resolution*, and it has to hold on its
-    own rather than because authentication happened to get there first. An operator disabled
-    while holding an open MCP session is exactly the case where it matters.
+    separated here: a disabled account having zero permissions is a claim about *permission
+    resolution*, and it has to hold on its own rather than because authentication happened to
+    get there first. An operator disabled while holding an open MCP session is exactly the
+    case where it matters.
 
-    `admin` is the role on purpose: V11 is checked before V10's bypass, so the caller who
-    would otherwise get every tool gets none.
+    `admin` is the role on purpose: the disabled-zeroes-permissions rule is checked before the
+    admin bypass, so the caller who would otherwise get every tool gets none.
     """
     sign_in, authorization = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,), grants=(TOOL_WHM_LIST_SERVERS,))
@@ -264,11 +268,11 @@ def test_a_disabled_user_sees_no_tools_and_may_call_none(scenario) -> None:
     assert session.call_tool(TOOL_WHM_LIST_SERVERS)["isError"] is True
 
 
-# --- V10: the admin bypass, and its bound ---
+# --- The admin bypass, and its bound ---
 
 
 def test_an_admin_sees_every_registered_tool(scenario) -> None:
-    """V10: `admin` skips the grant table.
+    """`admin` skips the grant table.
 
     The list is the *intersection* of the catalog and what is registered, which is why this
     asserts against the registered set rather than against `TOOL_CATALOG` — the remaining
@@ -281,11 +285,11 @@ def test_an_admin_sees_every_registered_tool(scenario) -> None:
 
 
 def test_an_admin_cannot_call_a_tool_the_catalog_does_not_know(scenario) -> None:
-    """V10's second half: an admin bypasses the grant table, not existence.
+    """The admin bypass's second half: an admin bypasses the grant table, not existence.
 
     `whm_delete_everything` is in no catalog and no registry, and it comes back as
     `tool_not_permitted` — the same code a missing grant gets, so the refusal is not an oracle
-    over which names exist (V83(d)).
+    over which names exist.
     """
     sign_in, _ = scenario
     session = sign_in(roles=(ADMIN_ROLE_NAME,))
@@ -297,18 +301,20 @@ def test_an_admin_cannot_call_a_tool_the_catalog_does_not_know(scenario) -> None
 
 
 async def test_a_catalogued_tool_this_server_did_not_register_is_refused_in_noas_shape() -> None:
-    """V83(c)'s probe: the gate carries the registered set and intersects with it.
+    """The gate's registered-set probe: the gate carries the registered set and intersects
+    with it.
 
     An `admin`'s grant set is the whole *catalog*, so a catalogued name this build did not
     register would sail past the permission check and reach fastmcp's own `Unknown tool` — a
     different shape, and one that answers which catalogued tools are built yet. The intersection
     in `RbacToolMiddleware._permitted_tools` is what stops that.
 
-    Driven against the middleware directly rather than the mount, because as of T29 the registry
-    and the catalog are the same fourteen names and production has no such gap left. Handing this
-    one an empty registered set is how the branch keeps separating — the same argument
-    `test_change_runner_registry`'s no-runner probe makes for a guard that now always passes
-    (V87). The identity still comes from `get_access_token()`'s own scope key, so what is
+    Driven against the middleware directly rather than the mount, because as of the pmg-whitelist
+    tool the registry and the catalog are the same fourteen names and production has no such gap
+    left. Handing this one an empty registered set is how the branch keeps separating — the same
+    argument `test_change_runner_registry`'s no-runner probe makes for a guard that now always
+    passes (the compare-must-still-separate rule). The identity still comes from
+    `get_access_token()`'s own scope key, so what is
     doubled here is the registered set and nothing about how the caller was resolved.
 
     `call_next` raises: the point is that the tool is never dispatched, not that its answer was
@@ -346,8 +352,8 @@ async def test_the_registry_reports_exactly_what_it_registered() -> None:
     It validates the names each registrar *returns*, because fastmcp 3.4.5 exposes its
     registry only through an async accessor and `build_mcp_server` is synchronous. This is
     the test that makes that reporting trustworthy: a registrar that under-reported would
-    let an uncatalogued name through the check — and, since T73, would also leave that tool
-    unaudited, because the audit middleware is handed the same mapping.
+    let an uncatalogued name through the check — and, since the tool-run writer wired in, would
+    also leave that tool unaudited, because the audit middleware is handed the same mapping.
     """
     context = build_tool_context().context
     server = build_mcp_server(tool_context=context)
@@ -359,7 +365,7 @@ async def test_the_registry_reports_exactly_what_it_registered() -> None:
 
 
 def test_the_registered_surface_is_the_whole_catalog() -> None:
-    """I.mcp's fourteen tools, and the reason this file no longer carries a stand-in.
+    """The MCP server's fourteen tools, and the reason this file no longer carries a stand-in.
 
     An equality, and it is meant to be brittle in one direction: a catalogued name added
     without a registrar puts the gap back, and the thing that goes with a gap is the
@@ -373,7 +379,7 @@ def test_the_registered_surface_is_the_whole_catalog() -> None:
 
 
 def test_every_registered_tool_name_is_in_the_catalog() -> None:
-    """V10, C22: a name outside `TOOL_CATALOG` is a capability no role can be granted."""
+    """A name outside `TOOL_CATALOG` is a capability no role can be granted."""
     context = build_tool_context().context
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
 
@@ -381,7 +387,7 @@ def test_every_registered_tool_name_is_in_the_catalog() -> None:
 
 
 def test_every_registered_tool_declares_a_risk() -> None:
-    """V20, T73: `risk` on the audit row comes from registration, never from a default.
+    """`risk` on the audit row comes from registration, never from a default.
 
     A registrar that returned a bare name would make the tool unclassifiable, and the audit
     middleware's answer to "is this a READ?" would have to be a guess. Asserted over the
@@ -400,7 +406,7 @@ def test_an_uncatalogued_name_fails_at_construction() -> None:
         assert_names_in_catalog(frozenset({TOOL_WHM_LIST_SERVERS, UNKNOWN_TOOL}))
 
 
-# --- V19: the backstop on the server itself ---
+# --- Sanitizing exceptions: the backstop on the server itself ---
 
 
 def test_the_server_masks_error_details_by_configuration() -> None:

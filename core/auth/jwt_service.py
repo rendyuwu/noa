@@ -1,15 +1,16 @@
 """Admin-session JWT + session cookie.
 
-Ported from `noa-old` branch `MCP` (`core/auth/jwt_service.py`, C13). Three
+Ported, never imported, from `noa-old` branch `MCP` (`core/auth/jwt_service.py`). Three
 deliberate departures from the original:
 
 - **Cookie set/clear live here, next to mint/verify.** `noa-old` spread them across
   its auth routes, so the attributes on the clear path could drift from the set
-  path and leave a cookie behind. V6 demands logout actually clears, so both calls
-  read one attribute source: `Settings.session_cookie_kwargs()`.
+  path and leave a cookie behind. Logout has to actually clear the cookie — the
+  token itself is not revocable pre-`exp` — so both calls read one attribute
+  source: `Settings.session_cookie_kwargs()`.
 - **Stale sessions get their own errors.** `noa-old` raised
   `AuthInvalidCredentialsError` for a bad token, which tells an operator "Email or
-  password is incorrect" when the truth is "your session ended". T8 maps
+  password is incorrect" when the truth is "your session ended". The login flow maps
   `AuthSessionExpiredError` / `AuthSessionInvalidError` to 401 and the browser
   re-authenticates instead of the operator doubting their password.
 - **Algorithm allowlisted at construction, key length checked with it.**
@@ -18,8 +19,9 @@ deliberate departures from the original:
   HS256/384/512 pass, each against its RFC 7518 minimum key length, and a bad
   combination fails at construction rather than warning on every mint. "At
   construction", not "at startup": the guards fire wherever the service is first
-  built, so T8 must build it once during app startup. A request-scoped dependency
-  would turn a config error into a 500 on the first login instead of a boot failure.
+  built, so the login flow must build it once during app startup. A request-scoped
+  dependency would turn a config error into a 500 on the first login instead of a
+  boot failure.
 
 This is the *admin/embed session* credential — cookie-borne, LDAP-backed,
 short-lived. MCP bearer tokens are a different mechanism entirely: opaque, hashed
@@ -31,7 +33,7 @@ change after minting, so callers re-read the row. Claims stay minimal for
 that reason: no roles, no permissions, nothing that goes stale in an attacker's
 favour.
 
-V8: no token, and no fragment of one, reaches a log or an exception message. Errors
+No token, and no fragment of one, reaches a log or an exception message. Errors
 name the failure class only, and PyJWT's own text (which can quote the token) is
 dropped with `from None` rather than chained into a traceback.
 """
@@ -56,7 +58,7 @@ from core.config import Settings
 
 # HMAC only: the signing key is a shared secret. An `RS*`/`ES*` value would
 # hand that secret to a public-key verifier, and `none` would accept unsigned
-# tokens outright. Each maps to its RFC 7518 §3.2 minimum key length — a key
+# tokens outright. Each maps to its RFC 7518 section 3.2 minimum key length — a key
 # shorter than the hash output weakens the MAC, and PyJWT warns on every single
 # mint rather than failing, so the check belongs here where it fails once.
 MIN_KEY_BYTES_BY_ALGORITHM: Final = {"HS256": 32, "HS384": 48, "HS512": 64}
@@ -77,7 +79,7 @@ REQUIRED_CLAIMS: Final = (CLAIM_EMAIL, CLAIM_USER_ID, CLAIM_ISSUED_AT, CLAIM_EXP
 
 # Internal diagnostics for the `detail` slot: logs only, never a response body, and
 # never carrying token bytes.
-DETAIL_BLANK_INPUT = "empty session token; ⊥ verification attempted"
+DETAIL_BLANK_INPUT = "empty session token; no verification attempted"
 DETAIL_EXPIRED = "session token past its `exp`"
 DETAIL_MALFORMED = "session token failed signature or claim verification"
 DETAIL_BAD_USER_ID = f"`{CLAIM_USER_ID}` claim is not a UUID"
@@ -169,7 +171,7 @@ class JWTService:
     def set_session_cookie(self, response: Response, issued: IssuedToken) -> None:
         """Attach the httpOnly session cookie.
 
-        Attributes come from `Settings.session_cookie_kwargs()`: httpOnly (⊥ JS
+        Attributes come from `Settings.session_cookie_kwargs()`: httpOnly (never JS
         reach), SameSite=Lax, `Domain=.noa.internal` so the cookie rides to the
         embed origin where the approval POST happens, `Path=/`.
         """
@@ -201,7 +203,7 @@ class JWTService:
 
     @staticmethod
     def _resolve_algorithm(configured: str) -> str:
-        """Allowlist the configured algorithm at construction (⊥ `none`)."""
+        """Allowlist the configured algorithm at construction (never `none`)."""
         algorithm = configured.strip().upper()
         if algorithm not in ALLOWED_ALGORITHMS:
             allowed = ", ".join(sorted(ALLOWED_ALGORITHMS))
@@ -211,12 +213,12 @@ class JWTService:
         return algorithm
 
     def _verify_key_length(self) -> None:
-        """Reject a secret too short for the chosen algorithm (RFC 7518 §3.2).
+        """Reject a secret too short for the chosen algorithm (RFC 7518 section 3.2).
 
-        V53's floor is 32 characters, which suits HS256 but not HS384/HS512. Caught
+        The minimum floor is 32 characters, which suits HS256 but not HS384/HS512. Caught
         at construction so the operator sees one config error instead of a warning
-        buried in every request's logs — at boot, provided T8 builds the service
-        once at startup.
+        buried in every request's logs — at boot, provided the login flow builds the
+        service once at startup.
         """
         minimum = MIN_KEY_BYTES_BY_ALGORITHM[self._algorithm]
         actual = len(self._secret.encode())
@@ -228,7 +230,7 @@ class JWTService:
 
     @property
     def _secret(self) -> str:
-        """The HMAC signing secret (V53 guarantees it exists outside dev)."""
+        """The HMAC signing secret — required in production, auto-generated in dev."""
         try:
             secret = self._settings.jwt_secret
         except RuntimeError as exc:  # pragma: no cover - config validator guarantees

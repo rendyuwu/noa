@@ -12,14 +12,14 @@ Copied from `noa-old` branch `MCP`. The part worth copying is the
 - **Plaintext survivors are detectable.** `is_encrypted_text` / `maybe_decrypt_text` let a
   migration walk a column that holds both encrypted and legacy plaintext rows and convert
   only what needs it. `noa-old`'s `20260424_encrypt_server_secrets` migration is exactly that
-  case; T54 inherits it.
+  case; the admin server routes inherit it.
 
 `decrypt_text` refuses an unprefixed value rather than returning it. A silent passthrough
 there would turn "this row never got encrypted" into a successful read, which is how a column
 quietly stays in cleartext.
 
-What encrypts: server credentials — SSH passwords and private keys, WHM/Proxmox API tokens
-(C7, V52). ⊥ the database, ⊥ MCP tokens, which are SHA-256 hashed because NOA only ever
+What encrypts: server credentials — SSH passwords and private keys, WHM/Proxmox API tokens.
+Never the database, never MCP tokens, which are SHA-256 hashed because NOA only ever
 verifies those.
 
 Settings are injected, not imported. `noa-old` reached for a module-global `settings` inside
@@ -28,7 +28,7 @@ their constructor (`LDAPService`, `JWTService`) and `noa_api.main.build_runtime`
 caller of `get_settings()`. So the classmethod takes the argument, and `noa-old`'s
 `@lru_cache get_secret_cipher()` plus its module-level `encrypt_text`/`decrypt_text` wrappers
 are gone: they existed only to hide that global. `noa_api.main.build_runtime` builds the one
-cipher on `AppRuntime` (T21 — the tool path needed it before T54's admin routes did), and every
+cipher on `AppRuntime` (the tool path needed it before the admin routes did), and every
 decrypt site takes it as an argument.
 """
 
@@ -79,7 +79,7 @@ class SecretCipher:
         return f"{ENCRYPTED_PREFIX}{token}"
 
     def decrypt_text(self, ciphertext: str) -> str:
-        """Unwrap a prefixed token. Unprefixed input is an error, ⊥ a passthrough."""
+        """Unwrap a prefixed token. Unprefixed input is an error, never a passthrough."""
         if not ciphertext.startswith(ENCRYPTED_PREFIX):
             raise SecretDecryptError("value is not encrypted")
         token = ciphertext[len(ENCRYPTED_PREFIX) :].encode("utf-8")

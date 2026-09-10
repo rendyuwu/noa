@@ -30,8 +30,8 @@ const form = (over: Partial<WhmServerFormState> = {}): WhmServerFormState => ({
   ...over,
 })
 
-// A stored row already marked reseller (§V.109), name == api_username so it is also a valid
-// one under (b). Exists to prove the flag round-trips through the edit dialog untouched — the
+// A stored row already marked reseller — name == api_username, so it already satisfies the
+// rule that a reseller row must be named its api_username. Exists to prove the flag round-trips through the edit dialog untouched — the
 // failure mode a fixture stuck at `false` cannot expose.
 const resellerServer: WhmServer = {
   ...server,
@@ -115,7 +115,7 @@ describe('validateWhmServerForm', () => {
   })
 })
 
-// §V.109(b): a reseller-credential row must resolve back to itself through
+// A reseller-credential row must resolve back to itself through
 // resolve_whm_server_ref's name match. The server enforces this regardless of
 // what the client sends; this is the legible early refusal, mirrored with the
 // same trim+lowercase normalization as the backend's compare.

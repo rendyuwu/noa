@@ -4,15 +4,15 @@ Revision ID: 0007_result_tables
 Revises: 0006_action_receipts
 Create Date: 2026-08-09
 
-T56. A large READ answers with a summary and a URL; the rows land here and an
+A large READ answers with a summary and a URL; the rows land here and an
 operator reads them on the table surface behind that URL. `tool_runs.result_summary` is
 bounded at 2000 characters on purpose (0003) — this is the body that bound refers to.
 
 Two properties the DDL carries rather than the application:
 
 - `requested_by_user_id` is `SET NULL`, like every user FK since 0003. The reader matches on
-  it, so a deleted operator's parked table matches nobody instead of everybody (V27's
-  fail-closed direction).
+  it, so a deleted operator's parked table matches nobody instead of everybody (the
+  requester-match rule's fail-closed direction).
 - Neither payload column takes a server default, exactly like `approval_context` (0004) and
   `receipt_data` (0006): an insert that omits the columns or the rows must fail rather than
   park an empty page.
@@ -30,7 +30,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # Under 32 characters: `alembic_version.version_num` is `VARCHAR(32)`, and a longer id fails
-# after the DDL, on the bookkeeping UPDATE (T37's recorded gotcha).
+# after the DDL, on the bookkeeping UPDATE (the approve/deny migration's recorded gotcha).
 revision: str = "0007_result_tables"
 down_revision: str | None = "0006_action_receipts"
 branch_labels: str | Sequence[str] | None = None

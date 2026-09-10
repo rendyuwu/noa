@@ -1,26 +1,26 @@
 """Secret-handling errors.
 
-`noa-old` declared these inline in `crypto.py` and `yopass.py` as bare `Exception`
-subclasses, with yopass carrying a hand-rolled `error_code` class attribute. Here they
-collect into one module and derive from `core.errors.NoaError`, for the reason
-`core/remote_exec/errors.py` already states: both trees reach an HTTP response — T54's
-`POST /admin/{whm,proxmox,pmg}/servers/{id}/validate` decrypts stored credentials before it
-connects — and V73 requires one handler shaping every body. `error_code` was already the
+`noa-old` declared these inline in `crypto.py` and `yopass.py` as bare `Exception` subclasses, with
+yopass carrying a hand-rolled `error_code` class attribute. Here they collect into one module and
+derive from `core.errors.NoaError`, for the reason `core/remote_exec/errors.py` already states: both
+trees reach an HTTP response — the admin validate route's `POST
+/admin/{whm,proxmox,pmg}/servers/{id}/validate` decrypts stored credentials before it connects — and
+the shared error-handling seam requires one handler shaping every body. `error_code` was already the
 field yopass exposed, so the base class formalizes what the source improvised.
 
 The split between the two trees is what a caller acts on:
 
 - `SecretCryptoError` — NOA cannot read or write its own ciphertext. Configuration or key
   rotation, never the operator's input. Nothing to retry.
-- `YopassError` — the delivery hop failed. C15 makes this recoverable by design: the reset
-  tool stores the secret *before* it touches the VM, so a yopass failure aborts with nothing
-  changed and no operator locked out.
+- `YopassError` — the delivery hop failed. Server-side password generation, kept off the LLM
+  path, makes this recoverable by design: the reset tool stores the secret *before* it touches
+  the VM, so a yopass failure aborts with nothing changed and no operator locked out.
 
 Codes raised by this package, all stable strings clients and tests branch on:
 
 - `secret_key_unavailable` — key absent or not a valid Fernet key.
 - `secret_decrypt_failed`  — value is not encrypted, or will not decrypt under this key.
-- `yopass_not_configured`  — `YOPASS_BASE_URL` unset; a tool error, ⊥ a crash.
+- `yopass_not_configured`  — `YOPASS_BASE_URL` unset; a tool error, never a crash.
 - `yopass_store_failed`    — the yopass POST failed or returned something unusable.
 
 Messages stay credential-free: they name which step failed, never the key, the
@@ -72,7 +72,7 @@ class YopassError(NoaError):
 
 
 class YopassNotConfiguredError(YopassError):
-    """`yopass_base_url` is absent (C15: a tool error, never a crash)."""
+    """`yopass_base_url` is absent (a tool error, never a crash)."""
 
     error_code: str = "yopass_not_configured"
     message: str = "Secret delivery is not configured. Contact an administrator."

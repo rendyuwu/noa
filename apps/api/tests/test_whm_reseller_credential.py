@@ -9,7 +9,8 @@ Two things a double cannot tell you, so both are here rather than in
    `DEFAULT false` is what makes "existing rows keep working at zero configuration change"
    true rather than intended.
 
-2. **The V109(b) rule holds on the row the write produces**, not on the request body. A patch
+2. **The name == `api_username` rule holds on the row the write produces**, not on the
+   request body. A patch
    that flips the flag on carries neither `name` nor `api_username`, and a patch renaming an
    already-marked row carries only one of the two, so every refusal here is checked against
    the stored row — which means it needs a stored row.
@@ -17,7 +18,7 @@ Two things a double cannot tell you, so both are here rather than in
 Every refusal ships its accepting twin beside it: the same call with the flag off, or with the
 name the rule asks for. A test that only shows a refusal passes just as well against a service
 that refuses every reseller write, and `false` rows must stay unbound (sixteen root credentials
-cannot all be named `root`, V109).
+cannot all be named `root`).
 
 Scratch database, migrated with `alembic upgrade head`, dropped after — skipped rather than
 failed when Postgres is unreachable, unless `NOA_REQUIRE_POSTGRES` says otherwise.
@@ -52,8 +53,8 @@ SCRATCH_DB = "noa_whm_reseller_credential_test"
 ACTOR = "admin@example.com"
 API_TOKEN = "whm-api-token-plaintext"
 
-# The reseller credential from the live inventory (§R.33): five of the seven owners on that
-# host are `web08cpnpool0*`, and a reseller row is named after the one it holds.
+# The reseller credential from the live inventory, measured on a live host: five of the seven owners
+# on that host are `web08cpnpool0*`, and a reseller row is named after the one it holds.
 RESELLER = "web08cpnpool01"
 
 
@@ -124,7 +125,7 @@ async def _observed(
     Three readers over one statement rather than three copies of it, and it takes the
     mapped attribute rather than a column name so nothing interpolates a caller's string into
     SQL. The second connection is the point: a value read back through the session that wrote
-    it cannot tell a commit from a flush (V100(c)).
+    it cannot tell a commit from a flush — the live `commit()` a double cannot witness.
     """
     async with session_factory() as observer:
         return await observer.scalar(sa.select(column).where(WHMServer.id == server_id))
@@ -148,7 +149,7 @@ async def observed_api_username(
     return await _observed(session_factory, server_id, WHMServer.api_username)
 
 
-# --- C12: the migration is additive ---
+# --- Additive — one shared schema: the migration ---
 
 
 async def test_a_row_inserted_without_the_column_reads_false(
@@ -179,8 +180,8 @@ async def test_the_column_refuses_null(session: AsyncSession) -> None:
     """NOT NULL, so "unknown credential class" is not a state a writer can park a row in.
 
     The negative control for the test above: a nullable column with a default would satisfy
-    it while letting an explicit `NULL` through, and a `NULL` flag would make V109(a)'s filter
-    and V109(b)'s rule disagree about the same row.
+    it while letting an explicit `NULL` through, and a `NULL` flag would make the reseller
+    filter and the name == `api_username` rule disagree about the same row.
     """
     with pytest.raises(sa.exc.IntegrityError):
         await session.execute(
@@ -193,13 +194,14 @@ async def test_the_column_refuses_null(session: AsyncSession) -> None:
         )
 
 
-# --- V109(b) on create ---
+# --- The name == `api_username` rule, on create ---
 
 
 async def test_a_reseller_create_not_named_after_its_api_username_is_refused(
     service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
-    """The row an account CHANGE could never address, refused at the write (V109(b), V106)."""
+    """The row an account CHANGE could never address, refused at the write — the name ==
+    `api_username` rule, owner-as-`server_ref`."""
     with pytest.raises(WHMResellerCredentialNameMismatchError) as refusal:
         await service.create(
             whm_spec("web08", api_username=RESELLER, is_reseller_credential=True),
@@ -242,7 +244,7 @@ async def test_a_root_row_may_be_named_anything(
 async def test_the_compare_ignores_case_and_surrounding_whitespace(
     service: WHMServerAdminService,
 ) -> None:
-    """`strip().lower()` on both sides — the normalisation V106's owner compare uses.
+    """`strip().lower()` on both sides — the normalisation the owner-as-`server_ref` compare uses.
 
     An operator reads `Web08CpnPool01` off a WHM page and pastes it with a trailing space; the
     same credential either way. The third case is the separation control: a value that differs
@@ -268,7 +270,7 @@ async def test_the_compare_ignores_case_and_surrounding_whitespace(
         )
 
 
-# --- V109(b) on update: the operands may both be stored columns ---
+# --- The name == `api_username` rule, on update: the operands may both be stored columns ---
 
 
 async def test_flipping_the_flag_on_alone_is_refused(
@@ -318,7 +320,8 @@ async def test_moving_only_the_api_username_of_a_reseller_row_is_refused(
 ) -> None:
     """The mirror image: the row keeps its name and the credential moves out from under it.
 
-    The stored value is read back for the reason B10 records one table over: an error answered
+    The stored value is read back for the reason the flush-only-rollback lesson records one
+    table over: an error answered
     over a write that landed is a green `pytest.raises` and a wrong row, so raising is half the
     assertion and "the column did not move" is the other half.
     """
@@ -357,7 +360,7 @@ async def test_unmarking_a_row_frees_its_name(
     service: WHMServerAdminService, session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Clearing the checkbox and renaming in one save is accepted, because the resulting row is
-    a root credential and the rule is about the result (V109(b))."""
+    a root credential and the rule is about the result — the name == `api_username` rule."""
     created = await service.create(
         whm_spec(RESELLER, api_username=RESELLER, is_reseller_credential=True), actor_email=ACTOR
     )

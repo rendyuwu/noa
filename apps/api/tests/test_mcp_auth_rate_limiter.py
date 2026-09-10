@@ -5,7 +5,7 @@ rollover, the block boundary, the count restarting at 1. This file covers only w
 specific to the MCP surface, because that is where the decisions were made:
 
 - **which keys a bucket lands under.** No source-IP bucket: NOA runs in-cluster behind many
-  workers, and C24 makes LibreChat the sole client, so the address a request appears to come
+  workers, and LibreChat being the sole MCP client makes the address a request appears to come
   from identifies neither the operator nor even the pod for long. A block on it would take
   out every operator at once.
 - **which denials count.** Five of the seven `McpAuthError` classes, and
@@ -97,7 +97,8 @@ async def test_a_failure_lands_in_both_buckets() -> None:
 
 
 async def test_no_source_address_bucket_exists() -> None:
-    """In-cluster the client address identifies nothing, and C24 makes it fleet-shared.
+    """In-cluster the client address identifies nothing, and being the sole MCP client makes
+    it fleet-shared.
 
     Asserted as "no third bucket" rather than by name: the failure this guards against is
     someone adding an IP key back, and that would show up here as an extra row.
@@ -110,7 +111,8 @@ async def test_no_source_address_bucket_exists() -> None:
 
 
 async def test_an_absent_header_writes_no_client_bucket() -> None:
-    """A missing header is refused by V3 uncounted, so a shared "unknown" bucket would
+    """A missing header is refused uncounted (the named-401-body rule), so a shared "unknown"
+    bucket would
     only ever collect misconfigured clients and block them against each other."""
     limiter, store = build_limiter()
 
@@ -172,7 +174,8 @@ async def test_a_rotated_header_still_blocks_on_the_token_key() -> None:
 
 
 async def test_an_unrelated_client_with_its_own_token_is_unaffected() -> None:
-    """Blocks are scoped: one operator's bad token ⊥ deny everybody (the C24 hazard)."""
+    """Blocks are scoped: one operator's bad token must never deny everybody (the
+    sole-MCP-client hazard)."""
     limiter, _ = build_limiter()
     await fail(limiter, times=MAX_ATTEMPTS)
 
@@ -221,7 +224,7 @@ async def test_max_attempts_of_one_blocks_on_the_first_failure() -> None:
 
 
 async def test_the_block_detail_names_the_scope_not_the_credential() -> None:
-    """V8: `detail` reaches the logs, so it may name a bucket but never a token."""
+    """`detail` reaches the logs, so it may name a bucket but never a token."""
     limiter, _ = build_limiter()
     await fail(limiter, times=MAX_ATTEMPTS)
 
@@ -265,7 +268,7 @@ def test_non_credential_denials_do_not_count(error: McpAuthError) -> None:
 
 
 def test_a_directory_outage_does_not_count() -> None:
-    """T8's lesson: counting an LDAP outage locks every operator out for the block."""
+    """The login flow's lesson: counting an LDAP outage locks every operator out for the block."""
     assert counts_against_limit(LdapUnavailableError("directory unreachable")) is False
 
 

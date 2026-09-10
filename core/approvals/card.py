@@ -2,30 +2,31 @@
 
 This is what an **operator** is shown before authorising a CHANGE. `core.approvals.results` is
 what a **model** is told about the same row, and the two are separate classes for one reason:
-the card exists to show the in-process preflight evidence and the model must never see it
-(V17), so the difference has to be structural rather than a filter somebody remembers to apply.
+the card exists to show the in-process preflight evidence and the model must never see it,
+so the difference has to be structural rather than a filter somebody remembers to apply.
 `ActionResultView` has no `evidence` field; `ApprovalCardView` has no `reason` one.
 
-**The guard is shared, the projection is not** (`core.approvals.reads`, V66). Both readers use
+**The guard is shared, the projection is not** (`core.approvals.reads`). Both readers use
 `select_requester_matched` — the requester-match in the `WHERE`, so a row that is not the
-caller's is never fetched and a NULL requester (T34's `SET NULL`) matches nobody — and both run
-V32's check-on-read *after* that matched read via `apply_due_expiry`. What each does with the
-row it got is its own business, and that is the only part duplicated here.
+caller's is never fetched and a NULL requester (the table's `SET NULL`) matches nobody — and
+both run the check-on-read rule *after* that matched read via `apply_due_expiry`. What each does
+with the row it got is its own business, and that is the only part duplicated here.
 
 **Provenance comes off the row, not off a join at render time**. Created-at,
 conversation ref, tool name and deadline are columns; the requesting identity and the LibreChat
 account behind the call are on `approval_context`, persisted at gate time precisely because the
 requester FK is `SET NULL` — a deleted operator would otherwise erase the identity from a
-decision that was made (T33's `build_approval_context`). Every key is read through
+decision that was made (the gate's `build_approval_context`). Every key is read through
 `core.approvals.context`'s constants: this is JSONB, so a misspelt key reads as an absent one
 and answers empty.
 
-**The receipt joins here and nowhere else yet** (T42(b) — V34, V46). T38's executor writes what
-an approved change did, in two halves DECISIONS §6.5 refuses to let collapse: the before-state
-the operator authorised against, and what the change answered. This is where those render, and
-`select_requester_matched` is asked for them by this repository only — the model-facing reader
-next door leaves the join off, because a receipt's `before` half *is* V17's preflight evidence
-and the point of that separation is that it is never loaded on the transcript's path.
+**The receipt joins here and nowhere else yet.** The approved-change executor writes what
+an approved change did, in two halves DECISIONS.md section 6.5 refuses to let collapse: the
+before-state the operator authorised against, and what the change answered. This is where those
+render, and `select_requester_matched` is asked for them by this repository only — the
+model-facing reader next door leaves the join off, because a receipt's `before` half *is* the
+in-process preflight's evidence and the point of that separation is that it is never loaded on
+the transcript's path.
 
 That this one is a join at render time while the provenance above is not is the difference
 between the two FKs, not an inconsistency: `requested_by_user_id` is `SET NULL`, so the identity
@@ -56,13 +57,14 @@ from core.approvals.clock import as_utc
 from core.approvals.context import (
     CONTEXT_REQUESTER_KEY,
     arguments_from_context,
-    # Lived here until T38, when the executor became its second reader and it moved beside
-    # `arguments_from_context`. Re-exported below so this module stays the name T41's
-    # card and its tests reach for.
+    # Lived here until the approved-change executor became its second reader and it moved
+    # beside `arguments_from_context`. Re-exported below so this module stays the name the card
+    # and its tests reach for.
     evidence_from_context,
 )
 from core.approvals.execution import (
-    # The keys T38's writer puts in `receipt_data`, read here rather than respelled: a misspelt
+    # The keys the approved-change executor's writer puts in `receipt_data`, read here rather
+    # than respelled: a misspelt
     # key in JSONB reads as an absent one, and the constants' own comment names this card as one
     # of the three readers they exist for. The import is of five strings — nothing on this
     # read path executes anything.
@@ -87,8 +89,8 @@ class ApprovalCardRequester:
     """Who asked for the change: the operator, and the LibreChat account behind them.
 
     Both strings, both possibly empty, and neither is an id the card resolves anything with —
-    `requested_by_user_id` is the column V27 matches against and it never reaches the browser
-    (V26: the URL carries the request id and nothing else).
+    `requested_by_user_id` is the column the requester-match rule matches against and it never
+    reaches the browser (the URL carries the request id and nothing else).
     """
 
     email: str
@@ -103,7 +105,8 @@ class ApprovalCardRequester:
 class ApprovalCardReceipt:
     """What the change actually did, in the two halves it was written as.
 
-    DECISIONS §6.5 is the requirement this shape serves: an operator reads back the state they
+    DECISIONS.md section 6.5 is the requirement this shape serves: an operator reads back the
+    state they
     authorised against **and** what the change did to it, each on its own, never collapsed into
     a single "done". So `before` and `after` are two fields here and two sections on the card —
     a single "outcome" string would be exactly the collapse that was refused.
@@ -133,7 +136,7 @@ class ApprovalCardReceipt:
 
     No timestamp. `action_receipts.created_at` exists on the row and is deliberately not carried:
     `tool_runs` already reports when the run started and finished, and a third stamp for
-    one moment is the third truth T34 refused when it dropped its own duplicate columns.
+    one moment is the third truth the table refused when it dropped its own duplicate columns.
     """
 
     ok: bool
@@ -166,7 +169,7 @@ class ApprovalCardView:
 
     Wider than `ActionResultView` by exactly three fields — `requester`, `evidence` and
     `receipt` — plus the `conversation_ref` column. The first two are the provenance and the
-    before-state V35 names; the third is what the change did, and all three are the reason this
+    before-state fields; the third is what the change did, and all three are the reason this
     class exists rather than reusing the model-facing one.
 
     `run` is the execution an approval started, or `None`. `receipt` is what that execution
@@ -248,7 +251,7 @@ def receipt_from_data(receipt_data: Any) -> ApprovalCardReceipt:
     means — so this never answers `None`. What it is permissive about is the payload's shape:
     `receipt_data` is unversioned JSONB, and a half that is not an object renders as
     "nothing recorded" rather than raising, because a `KeyError` in front of an operator is a
-    blank iframe and V38 says that is not an acceptable state.
+    blank iframe and the never-a-blank-card rule says that is not an acceptable state.
 
     Every key goes through the writer's own constants, so a rename there fails the import rather
     than quietly reading as an absent key.
@@ -278,7 +281,8 @@ def receipt_from_data(receipt_data: Any) -> ApprovalCardReceipt:
 
 def _receipt_half(value: Any) -> dict[str, Any]:
     """One half of a receipt, or an empty mapping — `arguments_from_context`'s rule, one table
-    over: a payload written by something other than T38's two writers cannot put a list where
+    over: a payload written by something other than the approved-change executor's two writers
+    cannot put a list where
     an object belongs and make the card raise for it."""
     return dict(value) if isinstance(value, dict) else {}
 
@@ -317,7 +321,8 @@ class SQLApprovalCardRepository:
 
         `include_receipt=True` is this surface's half of the split `core.approvals.reads`
         describes: the card is where a receipt renders, and the model-facing reader next
-        door leaves it off so V17's before-state is never loaded on that path.
+        door leaves it off so the in-process preflight's before-state is never loaded on that
+        path.
         """
         row = await select_requester_matched(
             self._session,
@@ -350,10 +355,11 @@ class ApprovalCardService:
     """Read one request for its card, and never serve a stale PENDING.
 
     Sibling of `ActionResultService`, and the same two steps in the same order: the
-    requester-matched read, then V32's check-on-read (`core.approvals.reads.apply_due_expiry`,
+    requester-matched read, then the check-on-read rule (`core.approvals.reads.apply_due_expiry`,
     which holds the argument for that ordering).
 
-    V32 says a surface that resolves the row itself *may* run the expiry first. This one
+    The check-on-read rule says a surface that resolves the row itself *may* run the expiry
+    first. This one
     declines: `expire_if_due` takes an id and no requester, and the id in this URL reaches the
     operator through a tool result that persists in LibreChat's MongoDB — so an
     expiry-first card would let an id its reader cannot see be written to. Reading first makes a

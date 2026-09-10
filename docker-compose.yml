@@ -1,4 +1,4 @@
-# NOA local development stack (§T.60, C12).
+# NOA local development stack.
 #
 #   docker compose up -d postgres          # Postgres only — what README and AGENTS.md tell you
 #   docker compose --profile apps up -d    # the whole stack: Postgres, migrations, all three apps
@@ -90,10 +90,11 @@ services:
       migrate:
         condition: service_completed_successfully
 
-  # One replica, no `deploy.replicas`, no `--workers` in the image. V79 pins session-JWT
-  # verification to zero clock leeway because mint and verify share a clock; T38's executor and
-  # reaper, T39's expiry sweep and T66's notification register are all in-process. Scaling out
-  # is a deliberate change with V79's revisit trigger attached — see `docs/deployment.md`.
+  # One replica, no `deploy.replicas`, no `--workers` in the image. The zero-clock-leeway rule
+  # pins session-JWT verification to zero clock leeway because mint and verify share a clock; the
+  # approved-change executor and reaper, the expiry sweep and the list-changed notification
+  # register are all in-process. Scaling out is a deliberate change with that rule's revisit
+  # trigger attached — see `docs/deployment.md`.
 
   admin-web:
     profiles: ["apps"]
@@ -118,7 +119,8 @@ services:
     build:
       context: apps/web-embed
       args:
-        # BUILD time, not runtime, and this is the only place the value can enter (V41, §T.45):
+        # BUILD time, not runtime, and this is the only place the value can enter (the
+        # frame-ancestors rule):
         # `output: 'standalone'` bakes `frame-ancestors` into the compiled output, so the same
         # key under `environment:` below would be a setting that looks like it moves this and
         # does not. Unset or blank leaves the pinned `https://chat.noa.internal` in place, so
@@ -126,7 +128,7 @@ services:
         NOA_LIBRECHAT_ORIGIN: ${NOA_LIBRECHAT_ORIGIN:-}
     environment:
       NOA_API_URL: http://api:8000
-      # Where the 401 card sends an operator (§T.43). Read at request time, so unlike the
+      # Where the 401 card sends an operator. Read at request time, so unlike the
       # framing origin it belongs here. Blank is a valid answer: the card then names the state
       # and offers no link, which beats a door to a host nobody deployed.
       NOA_SIGN_IN_URL: ${NOA_SIGN_IN_URL:-}

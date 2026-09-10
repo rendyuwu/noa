@@ -1,6 +1,7 @@
 """Driving the real mounted MCP endpoint from a test.
 
-`create_app()` with T12's doubles behind the verifier and T19's doubles behind the tools.
+`create_app()` with the MCP identity resolver's doubles behind the verifier and the
+server-list tool's doubles behind the tools.
 Two patches, both narrow: settings, so the lifespan reads explicit values rather than a
 developer's `.env`, and the two context builders, so identity resolution and the tool path
 run over in-memory repositories. Everything else — the verifier, the auth middleware, the
@@ -8,13 +9,13 @@ RBAC middleware, the session manager, the combined lifespan, the tool registry �
 production code. The seams are the same two functions `create_app` calls in production, so
 the wiring under test is not a copy of it.
 
-Shared between `test_mcp_mount.py` (the mount itself) and `test_mcp_tool_rbac.py` (V1 over
-that mount) rather than duplicated, because the harness *is* the thing both are asserting
-against and two copies would drift.
+Shared between `test_mcp_mount.py` (the mount itself) and `test_mcp_tool_rbac.py` (the
+execution-time permission re-check over that mount) rather than duplicated, because the
+harness *is* the thing both are asserting against and two copies would drift.
 
 `McpSession` exists because a Streamable HTTP tool call is not one request: `initialize`,
-then `notifications/initialized`, then the call, with `Mcp-Session-Id` carried between them
-(R8). Replies come back as SSE by default, so `json_rpc_payload` unwraps the `data:` frame —
+then `notifications/initialized`, then the call, with `Mcp-Session-Id` carried between them.
+Replies come back as SSE by default, so `json_rpc_payload` unwraps the `data:` frame —
 asserting on raw text is fine for a handshake but not for a tool result.
 """
 
@@ -54,7 +55,7 @@ SESSION_HEADER = "mcp-session-id"
 CLIENT_LATEST_PROTOCOL_VERSION = "2025-11-25"
 
 # An older v1.x client's era. Still in both SDKs' `SUPPORTED_PROTOCOL_VERSIONS`, so it has to
-# keep negotiating — C23's correction is that NOA serves a *set*, not one digit.
+# keep negotiating — the era-negotiation correction is that NOA serves a *set*, not one digit.
 LEGACY_PROTOCOL_VERSION = "2025-06-18"
 
 # The harness speaks as the real client does; tests wanting another era pass it explicitly.
@@ -125,7 +126,7 @@ def mounted_app(
     repository: FakeMcpIdentityRepository | None = None,
     tool_context: McpToolContext | None = None,
 ) -> Iterator[MountFixture]:
-    """`create_app()` with T12's and T19's doubles behind it.
+    """`create_app()` with the MCP identity resolver's and the server-list tool's doubles behind it.
 
     The kwargs production would have passed to each context builder are captured, so a test
     can assert what the real wiring hands the verifier and the tool path — rather than that
@@ -174,8 +175,8 @@ class McpSession:
     """An initialized MCP session over the mounted endpoint.
 
     Holds the negotiated `Mcp-Session-Id` and stamps it on every later request, which every
-    handshake era C23 admits requires — without it the transport answers 400 and a test
-    would be asserting against a protocol error rather than a permission decision.
+    handshake era the negotiated-set rule admits requires — without it the transport answers
+    400 and a test would be asserting against a protocol error rather than a permission decision.
     """
 
     client: TestClient

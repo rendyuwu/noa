@@ -1,15 +1,17 @@
 """Deciding a pending CHANGE request.
 
-T33 opens the question and T34's row *is* the authorization. This is the only thing that
-answers it, and it is deliberately a different module from `core.approvals.repository`.
+The gate that opens the request opens the question and the `action_requests` row *is* the
+authorization. This is the only thing that answers it, and it is deliberately a different module
+from `core.approvals.repository`.
 
 **Why not one repository.** `SQLActionRequestRepository` writes `PENDING` and exposes no way
 to write anything else, because it is reached from the MCP tool path — the path an LLM can
 reach. A single class that could write `APPROVED` would be a second door on the
-authorization, on the side V22 exists to close. So the decision writer lives here, nothing
-puts it on `McpToolContext`, and a test asserts that absence rather than trusting it.
+authorization, on the side the cookie/CSRF boundary exists to close. So the decision writer
+lives here, nothing puts it on `McpToolContext`, and a test asserts that absence rather than
+trusting it.
 
-**The lock is the invariant, not a precaution.** V28 permits exactly one
+**The lock is the invariant, not a precaution.** The row lock permits exactly one
 `pending → decided` transition. `lock_for_decision` is `SELECT … FOR UPDATE`, and every
 guard — requester-match, status, deadline — is evaluated *after* it, inside the same
 transaction. `noa-old` read the row first, checked its status, and only then took the lock
@@ -24,18 +26,19 @@ collaborator precisely so "same session" is a fact of construction and not an ob
 caller can get wrong. What that buys: `APPROVED` with no run, and a run with no approval,
 are both unrepresentable.
 
-**The executor is handed the run after the commit** (V29: the state lives in the database,
-not in a connection). A process that dies in that gap leaves a committed `APPROVED` row and
-a `STARTED` run, which is exactly the pair T38's reaper is specified to sweep — whereas
-handing off first could start a change whose authorization then rolled back.
+**The executor is handed the run after the commit** (the state lives in the database, not in
+a connection). A process that dies in that gap leaves a committed `APPROVED` row and a
+`STARTED` run, which is exactly the pair the reaper is specified to sweep — whereas handing
+off first could start a change whose authorization then rolled back.
 
-`ApprovedChangeExecutor` is the seam T38 filled: `AsyncioApprovedChangeExecutor`
-(`core.approvals.execution_host`) schedules an in-process task per approved change. The
-`DeferredApprovedChangeExecutor` placeholder this module carried between T37 and T38 is gone —
-production no longer wires it, and a placeholder nothing uses is dead code that reads as a
-supported mode.
+`ApprovedChangeExecutor` is the seam the executor-and-reaper work filled:
+`AsyncioApprovedChangeExecutor` (`core.approvals.execution_host`) schedules an in-process task per
+approved change. The `DeferredApprovedChangeExecutor` placeholder this module carried between the
+decision endpoints landing and the executor landing is gone — production no longer wires it, and a
+placeholder nothing uses is dead code that reads as a supported mode.
 
-**V31's cap lives here too, and it is the reason this file grew a second lock.** An approval
+**The per-user in-flight cap lives here too, and it is the reason this file grew a second lock.**
+An approval
 starts a change, so the bound on how many changes one operator may have in flight belongs at
 the moment one starts and nowhere else: over the limit is a 409, never a queue. Counting alone
 would not hold it — two approvals in flight for the same operator both read a count of zero
@@ -81,7 +84,7 @@ from core.db.models import ActionRequest, ToolRun
 
 # One structured event per terminal transition. Identifiers only — the reason is the
 # operator's own words about a production change and belongs in the row that authorises it,
-# not duplicated into a log store (V8's spirit, one field over).
+# not duplicated into a log store (the envelope-shape spirit, one field over).
 LOG_REQUEST_APPROVED: Final = "action_request_approved"
 LOG_REQUEST_DENIED: Final = "action_request_denied"
 LOG_REQUEST_EXPIRED_ON_READ: Final = "action_request_expired_on_read"
@@ -95,9 +98,9 @@ LOG_EXECUTION_HANDOFF_FAILED: Final = "approved_change_execution_handoff_failed"
 # operator, from a request that expired.
 LOG_INFLIGHT_LIMIT_REACHED: Final = "approved_change_inflight_limit_reached"
 
-# The advisory-lock key space V31's count is serialized in. Prefixed rather than bare so the
-# hash is drawn from a namespace nothing else in NOA shares: two features hashing raw user ids
-# would serialize against each other for no reason.
+# The advisory-lock key space the per-user cap's count is serialized in. Prefixed rather than bare
+# so the hash is drawn from a namespace nothing else in NOA shares: two features hashing raw user
+# ids would serialize against each other for no reason.
 INFLIGHT_LOCK_NAMESPACE: Final = "noa:approvals:inflight-changes"
 
 logger = structlog.get_logger(__name__)
@@ -126,19 +129,19 @@ class LockedActionRequest:
     def redacted_arguments(self) -> dict[str, Any]:
         """The tool arguments as the gate redacted them at request time.
 
-        `core.approvals.context` owns the key and the extraction rule, because T63 reads the
-        same payload for `noa_get_action_result` and two readers of one JSONB column with two
-        spellings of its key is one spelling too many.
+        `core.approvals.context` owns the key and the extraction rule, because the action-result
+        tool reads the same payload for `noa_get_action_result` and two readers of one JSONB
+        column with two spellings of its key is one spelling too many.
 
-        Unchanged by §V108, deliberately: this is the value a **model** can reach, through
-        `ActionResultView.arguments`, so the credential the change acts as is added to the
-        audit row next door rather than merged in here.
+        Unchanged by the four-recorded-fields rule, deliberately: this is the value a **model**
+        can reach, through `ActionResultView.arguments`, so the credential the change acts as is
+        added to the audit row next door rather than merged in here.
         """
         return arguments_from_context(self.approval_context)
 
     @property
     def audit_arguments(self) -> dict[str, Any]:
-        """What `tool_runs.args` records for an approved change (V47, §V108).
+        """What `tool_runs.args` records for an approved change.
 
         The gate's redacted arguments, plus — under one nested key, so nothing here reads as a
         tool parameter — which credential the change will act as. A privileged write whose
@@ -173,7 +176,7 @@ class DenialOutcome:
 
 @runtime_checkable
 class ApprovedChangeExecutor(Protocol):
-    """Starts the execution an approval authorised (T38's seam, V29, V30).
+    """Starts the execution an approval authorised.
 
     `runtime_checkable` so `noa_api.api.deps` can type-check the instance it reads off
     `app.state` the way it does every other long-lived object.
@@ -302,9 +305,9 @@ class SQLActionDecisionRepository:
         audit trail has one writer per table — and constructed on *this* session, which is
         what makes the run and the decision one transaction.
 
-        `risk` is fixed to `CHANGE` rather than taken as a parameter: V16 means every row in
-        `action_requests` is a change by construction, and a parameter would be somewhere for
-        a caller to write `READ` into an approved change's audit row.
+        `risk` is fixed to `CHANGE` rather than taken as a parameter: the READ/CHANGE split means
+        every row in `action_requests` is a change by construction, and a parameter would be
+        somewhere for a caller to write `READ` into an approved change's audit row.
         """
         return await SQLToolRunRepository(self._session).start_run(
             tool_name=tool_name,
@@ -366,8 +369,8 @@ class ActionDecisionService:
     ) -> None:
         self._repository = repository
         self._executor = executor
-        # `APPROVAL_MAX_INFLIGHT_PER_USER`. Required rather than defaulted, for T33(e)'s reason one
-        # setting over: a default here would be a second answer to "how many changes may one
+        # `APPROVAL_MAX_INFLIGHT_PER_USER`. Required rather than defaulted, for the gate's reason
+        # one setting over: a default here would be a second answer to "how many changes may one
         # operator have running", and the copy that drifts is always the one nobody edits.
         self._max_inflight_per_user = max_inflight_per_user
 
@@ -392,11 +395,13 @@ class ActionDecisionService:
             tool_name=locked.tool_name,
             # The caller, not `locked.requested_by_user_id` — they are the same value, and
             # `_locked_pending` 404s unless they are. Written this way because it is
-            # also the narrower type, and because it says the thing T34 says by *dropping*
-            # `decided_by_user_id`: the decider is the requester, one identity, not two.
+            # also the narrower type, and because it says the thing the `action_requests` table
+            # says by *dropping* `decided_by_user_id`: the decider is the requester, one
+            # identity, not two.
             requested_by_user_id=caller_user_id,
             conversation_ref=locked.conversation_ref,
-            # The arguments, plus which credential this change acts as (§V108). See
+            # The arguments, plus which credential this change acts as (the four-recorded-fields
+            # rule). See
             # `LockedActionRequest.audit_arguments`: `redacted_arguments` is what a model can
             # reach and is left alone.
             args=locked.audit_arguments,
@@ -476,10 +481,10 @@ class ActionDecisionService:
            does not queue behind someone else's transaction.
         2. **Lock, then read**. Everything below is evaluated through the lock.
         3. **Absent or not the caller's → 404**, one refusal for both, so the response
-           is not an oracle for which requests exist. A NULL requester (the FK is `SET NULL`,
-           T34) matches nobody and lands here too, which is the fail-closed direction.
+           is not an oracle for which requests exist. A NULL requester (the FK is `SET NULL`)
+           matches nobody and lands here too, which is the fail-closed direction.
         4. **Not PENDING → 409**. The one permitted transition already happened.
-        5. **Past its deadline → terminal EXPIRED, then 409**. This is V32's
+        5. **Past its deadline → terminal EXPIRED, then 409**. This is the TTL rule's
            check-on-read, and it *writes*: refusing without the write would leave a row that
            still reads PENDING, so the next reader would have to make the same discovery
            again. The write happens under the lock already held, and the reason stays NULL —
@@ -519,7 +524,7 @@ class ActionDecisionService:
         insert writes is the thing being counted: after it, the cap could only ever be checked
         against a number this call already changed.
 
-        409, never a queue: V31 says so, and the reason is that a queued approval is an
+        409, never a queue: the per-user cap says so, and the reason is that a queued approval is an
         authorisation whose moment has passed by the time it runs. The operator's remedy is to
         wait for their running change to finish and approve again — the request stays PENDING
         until its TTL, so nothing is lost by refusing.
@@ -563,8 +568,8 @@ class ActionDecisionService:
 
         The decision is committed by the time this runs. Raising here would answer 500 for a
         change that *is* approved and recorded, and the operator's only move would be to
-        click again — which lands on V28's 409 and tells them nothing. So a handoff failure
-        is logged and swallowed: the row is `APPROVED`, the run is `STARTED`, and T38's
+        click again — which lands on the row lock's 409 and tells them nothing. So a handoff
+        failure is logged and swallowed: the row is `APPROVED`, the run is `STARTED`, and the
         reaper is specified for exactly that pair.
         """
         try:

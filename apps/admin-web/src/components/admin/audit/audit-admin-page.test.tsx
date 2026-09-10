@@ -172,7 +172,7 @@ describe('AuditAdminPage filters, pagination, and detail', () => {
 })
 
 // The four fields the API had been returning and the table had not been drawing
-// (§I.admin-api). No new endpoint and no new field: `AuditToolRunListItemResponse`
+// (already part of the admin API's contract). No new endpoint and no new field: `AuditToolRunListItemResponse`
 // has carried all four since the route shipped, so this is the cheapest half of
 // making the trail legible — and the half that would be easiest to leave undone
 // while calling the vertical finished.

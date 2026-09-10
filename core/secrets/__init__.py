@@ -2,7 +2,7 @@
 
 Copied from `noa-old` branch `MCP` rather than rewritten — that branch is where
 `yopass.py` and `password.py` exist at all; `staging` has neither, and an agent porting from
-the branch DECISIONS §2 measured would find nothing to copy.
+the branch DECISIONS section 2 measured would find nothing to copy.
 
 Six modules, one job each:
 
@@ -21,9 +21,9 @@ Six modules, one job each:
 
 Three boundaries this package exists to hold:
 
-- The generated plaintext lives only in the caller's `execute()` frame. ⊥ persisted,
-  ⊥ logged, ⊥ returned across the LLM boundary — the tool returns a `yopass_url`.
-- Fernet encrypts **server credentials**, ⊥ the database and ⊥ MCP tokens, which are
+- The generated plaintext lives only in the caller's `execute()` frame. Never persisted,
+  never logged, never returned across the LLM boundary — the tool returns a `yopass_url`.
+- Fernet encrypts **server credentials**, never the database and never MCP tokens, which are
   SHA-256 hashed because NOA only verifies those.
 - These are internal helpers. Neither is registered as an MCP tool, and neither takes a
   secret as an argument.
@@ -32,11 +32,12 @@ Consumers: `proxmox_reset_vm_password` for the generate → deliver → apply fl
 the admin server CRUD + validate routes for credentials at rest. Reference doc:
 `docs/integrations/yopass.md`.
 
-`redaction.py` landed at T73 rather than T15, with the `tool_runs` writer that calls it: a
-redactor with no caller is a control no test can exercise, which is how B2 shipped.
+`redaction.py` landed with the tool-run writer, not with the earlier secrets port — together
+with the `tool_runs` writer that calls it: a redactor with no caller is a control no test can
+exercise, which is how the inert host-key pin shipped.
 It departs from `noa-old` on one point — that repo *encrypted* sensitive audit args so they
-could be read back, and §V45/V47 say **redacted**, so here the replacement is one-way (see
-the module docstring).
+could be read back, and the run-row rules say **redacted**, so here the replacement is one-way
+(see the module docstring).
 """
 
 from core.secrets.crypto import ENCRYPTED_PREFIX, SecretCipher

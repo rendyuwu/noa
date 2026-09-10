@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 
 /**
- * Repo-root `.env` loading for local dev (§T.44, C11).
+ * Repo-root `.env` loading for local dev.
  *
  * Next only auto-loads env files from the app directory, and this package deliberately has no
  * `.env.local`: two env files for one deployment is two places for `NOA_API_URL` to disagree, and

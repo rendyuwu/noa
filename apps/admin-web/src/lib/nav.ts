@@ -6,8 +6,8 @@ import type { NavItem } from '@gio/bigsu-app-shell'
 // nav item never grants or denies access.
 //
 // The old repo's first entry was the chat assistant; that surface left NOA, so
-// administration was once the whole of this app (§I.admin-web) and a non-admin
-// saw an empty sidebar. That is no longer true: §T76 added `/me/tokens`, where
+// administration was once the whole of this app (the admin panel's contract) and a non-admin
+// saw an empty sidebar. That is no longer true: the MCP token UI added `/me/tokens`, where
 // any verified operator mints the MCP token LibreChat asks them to paste into
 // `customUserVars`. It carries no `roles` — the API reads the operator's id off
 // their session, so there is nothing here to gate — and it is this deployable's

@@ -5,7 +5,8 @@
 **whether the predicate is in the statement or applied after the rows arrive.**
 
 That distinction is not cosmetic here. A filter applied in Python after the fetch would leave every
-payload assertion green (V93, measured at T42(b) one reader over) *and* would quietly break paging:
+payload assertion green (the fetch-bound-separation rule, measured one reader over at the
+receipt-join flag) *and* would quietly break paging:
 `LIMIT` runs in the database, so it would have already cut rows the filter was about to remove, and
 a page could come back short — or empty — while `nextCursor` insisted there was more. Same for the
 cursor: a keyset predicate applied outside the statement is a `LIMIT` over the wrong window.
@@ -73,7 +74,7 @@ def where_clause(sql: str) -> str:
 
 
 def test_every_filter_lands_in_the_where() -> None:
-    """V93: seven filters, seven predicates, all inside the statement.
+    """The fetch-bound-separation rule: seven filters, seven predicates, all inside the statement.
 
     The count is asserted as well, so a filter added to `ToolRunAuditFilters` without a predicate —
     the shape that reads as "filtering" and does nothing — fails here rather than answering the
@@ -119,7 +120,8 @@ def test_the_cursor_predicate_is_in_the_statement() -> None:
 
 
 def test_the_page_is_ordered_by_created_at_then_id() -> None:
-    """The cut is ordered by a uniqueness-completing key before it happens (V85, V92(c)).
+    """The cut is ordered by a uniqueness-completing key before it happens (the capped-read
+    ordering rule and the background-limit rule).
 
     `created_at` alone is not unique on the MCP path — two calls in one millisecond are ordinary —
     and paging by a non-unique key splits a tied group differently per call, so a run can be served

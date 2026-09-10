@@ -42,7 +42,7 @@ describe('what it must see', () => {
 
   it('finds one in an Error message or stack, which JSON.stringify alone would miss', () => {
     // `message` is non-enumerable: `JSON.stringify(new Error(x))` is `{}`. This
-    // is the realistic route into console.error, which §V103 names among the
+    // is the realistic route into console.error, which the write-once display rule names among the
     // sinks the plaintext must never reach, so it is the case that matters most.
     expect(JSON.stringify(new Error(PLAINTEXT))).toBe('{}')
     expect(looksLikeTokenPlaintext(new Error(PLAINTEXT))).toBe(true)

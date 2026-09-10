@@ -16,7 +16,7 @@ import type {
 import { AuditStatusCell } from './audit-status-cell'
 import { AuditIdRow, DetailRow, JsonBlock } from './audit-detail-rows'
 
-// Contextual detail for one CHANGE authorisation (§I.admin-api). A Drawer, like
+// Contextual detail for one CHANGE authorisation, per the admin API's contract. A Drawer, like
 // the tool-run one beside it, and for the same reason: the trail is append-only
 // and its writers are the approval gate, the decision path and the executor, so
 // there is no edit or delete affordance anywhere here.

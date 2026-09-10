@@ -1,5 +1,5 @@
 /**
- * A parked large-READ table, as this app models it (§T.56, §I.embed).
+ * A parked large-READ table, as this app models it (the table surface, the embed app's contract).
  *
  * One shape, parsed once, at the edge of the app. The API's body is snake_case because it is an
  * HTTP contract shared with the spec; everything inside this package reads the camelCase view
@@ -7,12 +7,13 @@
  * happened to read it. The same split `lib/approvals/card.ts` makes one surface over.
  *
  * **Parsing is permissive; the counts are not invented.** A body missing a label renders the key
- * instead, because a table that throws is a blank iframe and V38 says that is not an acceptable
- * state. But `totalRows` is never derived from the rows that arrived: V85's whole point is that the
+ * instead, because a table that throws is a blank iframe and the 401-card rule says that is not an
+ * acceptable
+ * state. But `totalRows` is never derived from the rows that arrived: the cap's own bound's whole point is that the
  * number of matches and the number of rows on the page are two facts, and a page that recomputed
  * the first from the second would report a capped table as a complete one.
  *
- * **There is nothing to decide here** (§I.embed). No CSRF token, no reason, no approve or deny —
+ * **There is nothing to decide here** (the embed app's contract). No CSRF token, no reason, no approve or deny —
  * this is a listing a READ already produced, and the API sends no field for any of it.
  */
 
@@ -38,10 +39,10 @@ export type ResultTable = {
 }
 
 /**
- * One read of one table, however it turned out (§T.56).
+ * One read of one table, however it turned out (the table surface).
  *
  * Four kinds because four of them render differently, exactly as `ApprovalCardLoad` has: a 401 is
- * V38's "cannot authenticate here", a 404 is the API's single answer for unknown / another
+ * the 401-card rule's "cannot authenticate here", a 404 is the API's single answer for unknown / another
  * operator's / a deleted requester's / expired, and anything else is "could not load" — which is
  * neither, and must never be shown as an empty table.
  */
@@ -123,7 +124,7 @@ export function parseResultTable(value: unknown): ResultTable | null {
  *
  * Both numbers either way, so "1,240 of 1,240" and "25 of 900" are the same sentence with
  * different numbers rather than two shapes a reader has to tell apart — and so a capped page can
- * never be mistaken for a complete one at a glance, which is the failure V85 names.
+ * never be mistaken for a complete one at a glance, which is the failure the cap's own bound names.
  */
 export function describeBound(table: ResultTable): string {
   const total = table.totalRows.toLocaleString('en-US')

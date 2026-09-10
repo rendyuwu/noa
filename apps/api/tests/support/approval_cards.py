@@ -10,7 +10,7 @@ handler, the real `JWTService`, the real `AuthService` behind `require_session_u
 `SQLApprovalCardRepository` is not doubled away entirely: `test_approval_cards_live.py` runs it
 against a scratch Postgres, because "the service called a repository" and "a row belonging to
 another operator is never fetched, and one whose requester was deleted matches nobody" are
-different claims and only the second is V27.
+different claims and only the second is the requester-match rule.
 
 **The journal is the point.** The card repository appends `"read"` and the expiry double appends
 `"expire"`/`"commit"` to one shared list, so a test can assert that a request which is not the
@@ -72,7 +72,7 @@ CHANGE_TOOL = "whm_suspend_account"
 # What LibreChat fills from `{{LIBRECHAT_BODY_CONVERSATIONID}}`.
 CONVERSATION_ID = "1f0c2e5a-7b41-4d2e-9a3c-0b5d8e6f4a12"
 
-# The gate's redacted arguments (T33's `build_approval_context`).
+# The gate's redacted arguments (its own `build_approval_context`).
 ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 
 # The in-process preflight the CHANGE tool ran. The card shows this; the model never
@@ -80,15 +80,16 @@ ARGUMENTS: dict[str, Any] = {"server_ref": "alpha", "account": "acmeco"}
 # assertion about absence needs something present to be absent.
 EVIDENCE: dict[str, Any] = {"account": "acmeco", "suspended": False, "domain": "acme.example"}
 
-# The after-state half of a receipt: what the runner answered, already redacted by the writer
-# (T38's `build_receipt`). Deliberately shares no *value* with `EVIDENCE` above — the claim these
-# files make is that the card carries *both* halves, and a fixture whose halves held the same
-# values could not tell a card showing two from one showing the same one twice. It does
-# share the key `suspended`, and reads `False` on one side and `True` on the other.
+# The after-state half of a receipt: what the runner answered, already redacted by the writer (the
+# executor's `build_receipt`). Deliberately shares no *value* with `EVIDENCE` above — the claim
+# these files make is that the card carries *both* halves, and a fixture whose halves held the same
+# values could not tell a card showing two from one showing the same one twice. It does share the
+# key `suspended`, and reads `False` on one side and `True` on the other.
 RECEIPT_AFTER: dict[str, Any] = {"suspended": True, "suspended_at": "2026-08-08T09:31:00+00:00"}
 
-# The delta the runner published beside that envelope, as T38's writer stored it. A third value
-# with its own keys, because the claim the card makes is that all three travel: a body carrying
+# The delta the runner published beside that envelope, as the executor's writer stored it. A
+# third value with its own keys, because the claim the card makes is that all three travel: a
+# body carrying
 # `before` and `after` alone would satisfy "the receipt renders" and none of what the delta is
 # for. Shaped as `core.approvals.delta.ChangeDelta.as_payload` writes it, absent facets omitted.
 #
@@ -137,11 +138,11 @@ def receipt_view(
     error_code: str | None = None,
     delta: dict[str, Any] | None = None,
 ) -> ApprovalCardReceipt:
-    """What T38's writer recorded, as the card reader returns it.
+    """What the executor's writer recorded, as the card reader returns it.
 
     `before` defaults to the same `EVIDENCE` the gate persisted, because that is what the
     production writer copies onto the receipt — a fixture with a different before-state would
-    describe a receipt neither of T38's two writers can produce.
+    describe a receipt neither of the executor's two writers can produce.
 
     `delta` defaults to **absent**, and that is the writer's own default rather than a shortcut:
     the receipt key is omitted when the runner stated nothing, so a fixture that supplied one
@@ -212,8 +213,8 @@ class FakeApprovalCardRepository:
     """In-memory `ApprovalCardRepository`, with the read breakable.
 
     `fail` exists because the read is the one place on this route's path that can raise for
-    reasons nobody predicted, and V73 says what an operator gets then is the shared envelope
-    rather than a stack trace.
+    reasons nobody predicted, and what an operator gets then is the shared envelope rather than
+    a stack trace.
     """
 
     def __init__(self, journal: list[str] | None = None) -> None:
@@ -295,10 +296,11 @@ class CardHarness:
         requester_user_id: UUID | None,
         **overrides: Any,
     ) -> ApprovalCardView:
-        """Seed one card for a given requester. `None` = a deleted one (T34's `SET NULL`).
+        """Seed one card for a given requester. `None` = a deleted one (the table's `SET NULL`).
 
         `None` is spelled as an argument rather than as a default, because "owned by nobody"
-        and "owned by whoever is signed in" are the two cases V27 has to tell apart, and one
+        and "owned by whoever is signed in" are the two cases the requester-match rule has to
+        tell apart, and one
         default standing for both is how a test ends up asserting the wrong one.
 
         The expiry double is seeded from the same view, so a deadline in the past reaches
@@ -343,8 +345,8 @@ def card_harness(*, settings: Settings | None = None) -> Iterator[CardHarness]:
     `support.auth`'s own factory over a *real* `AuthService`, so the `users.is_active` re-read
     behind `require_session_user` is production code here and the route's 401 path is real.
 
-    The real `ApprovalCardService` sits over the doubles, so the ordering V32 depends on — the
-    requester-matched read first, the expiry second — is the shipped ordering.
+    The real `ApprovalCardService` sits over the doubles, so the ordering the expiry check depends
+    on — the requester-matched read first, the expiry second — is the shipped ordering.
     """
     resolved_settings = settings or build_settings()
     jwt_service = JWTService(resolved_settings)

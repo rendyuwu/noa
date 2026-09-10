@@ -3,10 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadApprovalCard } from './detail'
 
 /**
- * The server-side card read (§T.41), with `fetch` stubbed so every assertion is about what this
+ * The server-side card read, with `fetch` stubbed so every assertion is about what this
  * app sends upstream and what it makes of the answer.
  *
- * Two of these are the same claims §T.44 makes about the proxy, re-proven against this loader
+ * Two of these are claims already made about the proxy, re-proven against this loader
  * rather than cited from it: the cookie is forwarded, and `Authorization` is not. They are
  * separate code paths — the proxy filters a browser's headers, this one builds its own — so a
  * guarantee held in one place says nothing about the other.
@@ -83,7 +83,7 @@ describe('loadApprovalCard', () => {
     expect(new Headers(seen[0]?.init?.headers).get('cookie')).toBe('noa_session=abc.def.ghi')
   })
 
-  it('sends no Authorization header (C5, §T.44(d))', async () => {
+  it('sends no Authorization header', async () => {
     // MCP bearer tokens are LibreChat's to send. This origin must not be a relay for one, and
     // that includes the server-side read — not only the browser-facing proxy.
     const seen = stubFetch(Response.json(BODY))
@@ -112,7 +112,7 @@ describe('loadApprovalCard', () => {
   })
 
   it('encodes the id rather than letting it shape the path', async () => {
-    // The id is not shape-checked (V27 owns that, and answers absent/malformed/foreign alike), so
+    // The id is not shape-checked (the requester-match rule owns that, and answers absent/malformed/foreign alike), so
     // what matters is that it cannot become extra path segments.
     const seen = stubFetch(Response.json(BODY))
 
@@ -123,8 +123,8 @@ describe('loadApprovalCard', () => {
 
   it('maps 401 to the “cannot authenticate here” state, and asks upstream first', async () => {
     // The `toHaveLength(1)` is the part worth keeping: this loader does not shortcut a missing
-    // cookie into a 401 of its own. Whether a session is valid is the API's judgement — V6's row
-    // re-read lives there — and a client-side guess would answer "not signed in" for reasons that
+    // cookie into a 401 of its own. Whether a session is valid is the API's judgement — the
+    // `is_active` row re-read lives there — and a client-side guess would answer "not signed in" for reasons that
     // have nothing to do with the session.
     const seen = stubFetch(Response.json({ error_code: 'session_invalid' }, { status: 401 }))
 
@@ -164,7 +164,7 @@ describe('loadApprovalCard', () => {
 
   it('refuses a 200 whose body is not a card', async () => {
     // A broken deployment, not an empty card: rendering blank fields would put an Approve button
-    // on top of nothing (V38's family).
+    // on top of nothing (the no-blank-card family).
     stubFetch(Response.json({ unexpected: true }))
 
     expect(await loadApprovalCard(ID, { cookie: 'noa_session=abc' })).toEqual({

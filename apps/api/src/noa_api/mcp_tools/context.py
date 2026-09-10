@@ -83,7 +83,7 @@ class McpToolContext:
     # One cipher per app, held rather than built per call: `Fernet` is stateless after
     # construction, and a per-call build would re-validate the key on every tool call and
     # turn a misconfigured key into an intermittent tool failure instead of a boot failure
-    # (T15 — settings are injected here, there is no cipher singleton to reach for).
+    # (the secrets port — settings are injected here, there is no cipher singleton to reach for).
     secret_cipher: SecretCipher
     # `APPROVAL_PENDING_TTL_SECONDS`. Required rather than defaulted: a default here
     # would be a second answer to "how long may a request stay pending", and the one that
@@ -106,8 +106,8 @@ class McpToolContext:
     result_table_max_rows: int
     # How a generated credential reaches the operator. Required rather than
     # defaulted, and it is the one field here that could not be a scalar: `_yopass_store` needs
-    # three settings, `McpToolContext` holds no `Settings` (T15 deleted the singleton
-    # `noa-old` imported), and `noa_api.main.build_runtime` is the single `get_settings()`
+    # three settings, `McpToolContext` holds no `Settings` (the secrets port deleted the
+    # singleton `noa-old` imported), and `noa_api.main.build_runtime` is the single `get_settings()`
     # caller. So the configuration is bound into a callable once, at startup, and a tool
     # asks for delivery rather than for a URL. `core.secrets.delivery` carries the argument.
     secret_delivery: SecretDelivery
@@ -147,10 +147,10 @@ class McpToolContext:
     action_request_repository_factory: Callable[[AsyncSession], ActionRequestRepository] = (
         SQLActionRequestRepository
     )
-    # T63's reader, and it is only a reader: `SQLActionResultRepository` holds no statement
-    # that is not a `SELECT`. Beside the writer above rather than folded into it for the
-    # reason `core.approvals` splits its classes by who can reach which write — a reader that
-    # shared a class with the PENDING writer would be a reason to hand the read path one.
+    # The action-result tool's reader, and it is only a reader: `SQLActionResultRepository` holds no
+    # statement that is not a `SELECT`. Beside the writer above rather than folded into it for the
+    # reason `core.approvals` splits its classes by who can reach which write — a reader that shared
+    # a class with the PENDING writer would be a reason to hand the read path one.
     action_result_repository_factory: Callable[[AsyncSession], ActionResultRepository] = (
         SQLActionResultRepository
     )
@@ -160,9 +160,10 @@ class McpToolContext:
     action_request_expiry_repository_factory: Callable[
         [AsyncSession], ActionRequestExpiryRepository
     ] = SQLActionRequestExpiryRepository
-    # T56's writer: where a large READ parks its rows so the answer costs no tokens.
-    # A writer and nothing else — `SQLToolResultTableWriter` has no read method, and the
-    # surface that reads a table back hangs off a cookie on the far side of V22's boundary.
+    # The large-READ table's writer: where a large READ parks its rows so the answer costs no
+    # tokens. A writer and nothing else — `SQLToolResultTableWriter` has no read method, and the
+    # surface that reads a table back hangs off a cookie on the far side of the cookie/CSRF
+    # boundary.
     result_table_writer_factory: Callable[[AsyncSession], ToolResultTableWriter] = (
         SQLToolResultTableWriter
     )
@@ -191,7 +192,7 @@ def build_mcp_tool_context(
     secret_delivery: SecretDelivery,
     secret_password_length: int,
 ) -> McpToolContext:
-    """Production wiring (T13's `create_app` calls this beside `build_mcp_auth_context`)."""
+    """Production wiring (`create_app`, beside `build_mcp_auth_context`, at the FastMCP mount)."""
     return McpToolContext(
         session_factory=session_factory,
         secret_cipher=secret_cipher,
@@ -217,8 +218,8 @@ def build_authorization_service(
     **No `tool_list_notifier`**, so this instance takes the null one. The MCP path asks
     this service questions and writes no permission — a notification is something a *write*
     emits, and there is no write here to emit one. Handing the real notifier in anyway would
-    put the emit within reach of the bearer-token side of the app, which is the boundary V22
-    draws for the decision path and worth respecting here for free.
+    put the emit within reach of the bearer-token side of the app, which is the boundary the
+    cookie/CSRF design draws for the decision path and worth respecting here for free.
     """
     return AuthorizationService(
         repository=context.authorization_repository_factory(session),

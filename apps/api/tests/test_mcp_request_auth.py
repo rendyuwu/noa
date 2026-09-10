@@ -5,13 +5,14 @@ Division of labour across the three MCP auth test files:
 - `test_mcp_identity_resolver.py` — the gates and their order, over doubles.
 - `test_mcp_token_verifier.py` — the fastmcp adapter: `AccessToken` shape, `None` on refusal.
 - this file — how a *request* reaches the gates and how a refusal reaches the client: the
-  header reads R5 warns about, the rate limiter, the named response body, and the
+  header-exclusion caveat, the rate limiter, the named response body, and the
   identity a tool sees.
 
 Two levels, and both are needed. Direct calls to `resolve_mcp_identity` under the request
-contextvar assert which writes happened and which did not — the V4/V9 rules are about
-*whether* a counter moved, which no status code can show. A mounted probe app asserts the
-bytes on the wire, because the claim T12 actually makes is that a client can tell "you
+contextvar assert which writes happened and which did not — the staleness-check and
+rate-limiter rules are about *whether* a counter moved, which no status code can show. A
+mounted probe app asserts the bytes on the wire, because the claim the identity resolver
+actually makes is that a client can tell "you
 forgot the header" from "this token is someone else's", and only a real response proves that.
 
 Everything on the path is production code except the session, the two repositories and the
@@ -81,7 +82,7 @@ MCP_PATH = "/mcp"
 
 MCP_ACCEPT = "application/json, text/event-stream"
 
-# `initialize` at an era C23 admits (an older v1.x client's) — the smallest body that gets
+# `initialize` at an era the handshake admits (an older v1.x client's) — the smallest body that gets
 # past auth. Which era negotiates is `test_mcp_mount.py`'s subject, not this file's.
 INITIALIZE_BODY: dict[str, Any] = {
     "jsonrpc": "2.0",
@@ -105,7 +106,7 @@ def headers_for(token: str | None, librechat_user: str | None = LIBRECHAT_USER) 
     return built
 
 
-# --- R5: reading the two headers ---
+# --- Reading the two headers ---
 
 
 @pytest.mark.parametrize(
@@ -132,7 +133,7 @@ def test_parse_bearer(header_value: str | None, expected: str | None) -> None:
 
 
 def test_the_bearer_needs_the_authorization_include() -> None:
-    """R5, asserted rather than trusted: the default exclusion list drops `authorization`.
+    """Asserted rather than trusted: the default exclusion list drops `authorization`.
 
     Both halves matter. Without the first, nothing shows that the obvious spelling is wrong;
     without the second, nothing shows the workaround works. Together they mean a fastmcp bump
@@ -147,7 +148,7 @@ def test_the_bearer_needs_the_authorization_include() -> None:
 
 
 def test_the_librechat_header_is_read_case_insensitively() -> None:
-    """R5: custom headers come back lowercased, which is why the constant is lowercase."""
+    """Custom headers come back lowercased, which is why the constant is lowercase."""
     with http_request_context({"X-NOA-LIBRECHAT-USER": LIBRECHAT_USER}):
         assert read_librechat_user() == LIBRECHAT_USER
 
@@ -223,7 +224,7 @@ async def test_a_request_with_no_bearer_touches_nothing() -> None:
 
 
 async def test_an_unknown_token_is_counted_and_committed() -> None:
-    """V9: a counter that rolls back with the refusal is a counter that never counted."""
+    """A counter that rolls back with the refusal is a counter that never counted."""
     repository = FakeMcpIdentityRepository()
     rate_limits = FakeRateLimitRepository()
     context = build_auth_context(repository=repository, rate_limits=rate_limits)
@@ -291,7 +292,7 @@ async def test_a_missing_header_is_not_counted() -> None:
 
 
 async def test_an_inactive_operator_is_refused_and_not_counted() -> None:
-    """V1: `users.is_active` is re-read per request. Authenticated, then refused."""
+    """`users.is_active` is re-read per request. Authenticated, then refused."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(is_active=False, librechat_user_id=LIBRECHAT_USER)
     rate_limits = FakeRateLimitRepository()
@@ -304,7 +305,7 @@ async def test_an_inactive_operator_is_refused_and_not_counted() -> None:
 
 
 async def test_a_departed_operator_is_refused_and_not_counted() -> None:
-    """V4: the cascade revoke already happened; a counter would punish them for it too."""
+    """The cascade revoke already happened; a counter would punish them for it too."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(
         librechat_user_id=LIBRECHAT_USER, last_ldap_check_at=stale_check()
@@ -324,7 +325,8 @@ async def test_a_departed_operator_is_refused_and_not_counted() -> None:
 
 
 async def test_a_directory_outage_denies_without_counting_or_revoking() -> None:
-    """V4 fails closed. T8's lesson: counting an outage locks every operator out."""
+    """The staleness check fails closed. The login flow's lesson: counting an outage locks
+    every operator out."""
     repository = FakeMcpIdentityRepository()
     plaintext, stored = repository.add_token(
         librechat_user_id=LIBRECHAT_USER, last_ldap_check_at=None
@@ -344,7 +346,7 @@ async def test_a_directory_outage_denies_without_counting_or_revoking() -> None:
 
 
 async def test_the_limiter_gate_runs_before_the_token_lookup() -> None:
-    """V9: a blocked client is refused whatever it presents, including a valid token.
+    """A blocked client is refused whatever it presents, including a valid token.
 
     `max_attempts=1`, so the first unknown token blocks. The second call presents a
     perfectly good credential and must still be refused, which is only true if the gate
@@ -366,7 +368,7 @@ async def test_the_limiter_gate_runs_before_the_token_lookup() -> None:
 
 
 async def test_every_refusal_is_logged_once_with_its_code_and_no_credential() -> None:
-    """V8: one denial event per refusal, carrying `error_code` and the internal `detail`.
+    """One denial event per refusal, carrying `error_code` and the internal `detail`.
 
     Logged here rather than in `verify_token`: this is where the cause is known, and a
     second line there would double every entry in the denial stream.
@@ -392,13 +394,13 @@ async def test_every_refusal_is_logged_once_with_its_code_and_no_credential() ->
     assert OTHER_LIBRECHAT_USER not in rendered
 
 
-# --- V5: one resolution path ---
+# --- One resolution path ---
 
 
 async def test_verify_token_resolves_through_the_one_function(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V5: the verifier does not resolve, it delegates — and stashes what came back.
+    """The verifier does not resolve, it delegates — and stashes what came back.
 
     Patched rather than inferred from behaviour because the invariant is about *which*
     function runs: a verifier that grew its own copy of the gates would pass every
@@ -421,7 +423,7 @@ async def test_verify_token_resolves_through_the_one_function(
     assert isinstance(stashed, McpTokenInvalidError)
 
 
-# --- V3/V73: the named response body ---
+# --- The named response body ---
 
 
 @contextmanager
@@ -434,7 +436,8 @@ def probe_app(
 ) -> Iterator[TestClient]:
     """A throwaway FastMCP app behind the real verifier and the real middleware.
 
-    T12 mounts nothing (T13 does), but "a refusal names its cause" is a property of the
+    The identity resolver mounts nothing (the FastMCP mount does), but "a refusal names its
+    cause" is a property of the
     middleware stack, and this is the smallest thing that exercises it end to end.
     """
     verifier = NoaTokenVerifier(
@@ -476,7 +479,7 @@ def test_an_authenticated_request_passes_through_untouched() -> None:
 
 
 def test_the_bare_sdk_401_is_replaced() -> None:
-    """The body T12 exists to remove: `{"error": …, "error_description": …}`."""
+    """The body the identity resolver exists to remove: `{"error": …, "error_description": …}`."""
     repository = FakeMcpIdentityRepository()
     plaintext, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)
 
@@ -485,7 +488,8 @@ def test_the_bare_sdk_401_is_replaced() -> None:
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     body = response.json()
-    # `request_id` joined the envelope with T64; the SDK's two keys are still gone.
+    # `request_id` joined the envelope with the shared error handler; the SDK's two keys are
+    # still gone.
     assert set(body) == {"error_code", "message", "request_id"}
     assert "error_description" not in body
 
@@ -507,7 +511,8 @@ def test_the_bare_sdk_401_is_replaced() -> None:
 def test_each_denial_renders_its_own_error_code(
     case: str, expected_code: str, expected_status: int
 ) -> None:
-    """V3: a client can tell these apart. The two spellings V3 fixes are in here by name."""
+    """A client can tell these apart. The two spellings the named 401 bodies separate are in
+    here by name."""
     repository = FakeMcpIdentityRepository()
     directory = FakeDirectory()
     headers: dict[str, str] = {}
@@ -567,7 +572,7 @@ def test_a_401_carries_a_challenge() -> None:
 
 
 def test_a_blocked_client_gets_429_with_retry_after() -> None:
-    """V9: a 429 without `Retry-After` leaves the client guessing when to retry."""
+    """A 429 without `Retry-After` leaves the client guessing when to retry."""
     repository = FakeMcpIdentityRepository()
     good, _ = repository.add_token(librechat_user_id=LIBRECHAT_USER)
 
@@ -582,7 +587,7 @@ def test_a_blocked_client_gets_429_with_retry_after() -> None:
 
 
 def test_a_denial_body_carries_no_detail_and_no_token_material() -> None:
-    """V8/V2: `detail` names token ids and directory state. Logs only, never a body."""
+    """`detail` names token ids and directory state. Logs only, never a body."""
     repository = FakeMcpIdentityRepository()
     plaintext, stored = repository.add_token(librechat_user_id=LIBRECHAT_USER)
 
@@ -637,7 +642,7 @@ async def test_the_middleware_leaves_other_paths_alone() -> None:
 async def test_the_path_guard_is_mount_relative(
     root_path: str, path: str, intercepted: bool
 ) -> None:
-    """T13 mounts this app; Starlette's Mount rewrites `root_path`, ⊥ `scope["path"]`.
+    """This app mounts under Starlette's Mount, which rewrites `root_path`, never `scope["path"]`.
 
     Guarding on the raw path passes every test that runs the sub-app standalone and then
     lets every refusal through once it is mounted — the SDK's bare `invalid_token` comes
@@ -675,11 +680,11 @@ async def test_the_path_guard_is_mount_relative(
         assert json.loads(sent[1]["body"])["error_code"] == "mcp_token_missing"
 
 
-# --- R5: the identity a tool sees ---
+# --- The identity a tool sees ---
 
 
 async def test_a_tool_reads_its_caller_from_the_access_token() -> None:
-    """R5: `get_access_token()`, never a second parse of the bearer.
+    """`get_access_token()`, never a second parse of the bearer.
 
     Round trip through the real verifier, so the claim keys the verifier writes and the ones
     `current_mcp_identity` reads are proved to be the same constants.
@@ -721,7 +726,7 @@ def test_claims_that_are_not_ours_are_refused() -> None:
 
 
 def test_identity_claims_carry_no_token_material() -> None:
-    """V2/V8: `claims` renders in tracebacks and structlog values."""
+    """`claims` renders in tracebacks and structlog values."""
     repository = FakeMcpIdentityRepository()
     plaintext, stored = repository.add_token(librechat_user_id=LIBRECHAT_USER)
 

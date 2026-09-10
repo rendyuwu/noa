@@ -1,28 +1,28 @@
 """`pmg_whitelist`'s runner — the half that edits `mynetworks`.
 
-Reachable only after an operator approved (§V.22's far side), so nothing here goes through the
-tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`, and that is what these
-tests build.
+Reachable only after an operator approved (the far side of the cookie/CSRF boundary), so nothing
+here goes through the tool. `core.approvals.execution` hands a runner a `ChangeExecutionRequest`,
+and that is what these tests build.
 
 **Four properties carry this file**, and each is a claim a plausible implementation gets wrong:
 
-1. **The runner re-reads before it decides.** PMG has no compare-and-set token, so §V.98's first
-   half has no instance — but its second does: what the approval window is checked against is the
-   *fact* the operator approved, re-measured now. An address whitelisted by somebody else while
-   the card sat pending is a `no_op`, not a second add and not a failure.
-2. **A removal takes every matching line, by PMG's own spelling** — T29's departure from
-   `noa-old`, which deleted the normalised form once. Asserted on the **bytes written**: a runner
-   sending `/config/mynetworks/203.0.113.10/32` for a line PMG printed as `203.0.113.10` answers
-   identically and removes nothing, so the return value cannot catch it.
-3. **The postflight asks the change's own question** (§V.97). It re-reads the list, not the
+1. **The runner re-reads before it decides.** PMG has no compare-and-set token, so the
+   CAS-token-rule's first half has no instance — but its second does: what the approval window is
+   checked against is the *fact* the operator approved, re-measured now. An address whitelisted by
+   somebody else while the card sat pending is a `no_op`, not a second add and not a failure.
+2. **A removal takes every matching line, by PMG's own spelling** — the pmg-whitelist tool's
+   departure from `noa-old`, which deleted the normalised form once. Asserted on the **bytes
+   written**: a runner sending `/config/mynetworks/203.0.113.10/32` for a line PMG printed as
+   `203.0.113.10` answers identically and removes nothing, so the return value cannot catch it.
+3. **The postflight asks the change's own question**. It re-reads the list, not the
    `200 OK` the mutation printed. `ignore_writes` is exactly that case: `pmgsh` says yes and the
    whitelist says no.
-4. **Unavailable is not refuted** (§V.62's rule one system over, §V.86). A postflight read that
-   could not answer is `changed` + `verified: false` + `verification: unavailable`, never a bare
-   `false` an operator reads as a measurement. A failed `pmgconfig sync` is its own third thing:
-   the config moved and mail flow did not.
+4. **Unavailable is not refuted** (one system over, and a non-answer never becomes a verdict). A
+   postflight read that could not answer is `changed` + `verified: false` +
+   `verification: unavailable`, never a bare `false` an operator reads as a measurement. A failed
+   `pmgconfig sync` is its own third thing: the config moved and mail flow did not.
 
-The fifth thread is **§V.96 having no instance here**, which is asserted rather than assumed: a
+The fifth thread is **no reason value reaching this path**, which is asserted rather than assumed: a
 `mynetworks` entry is a CIDR and nothing else, so a sentinel reason driven through the approval
 must not appear in the serialized payload, the derived summary, the built receipt — or in any
 command.
@@ -149,7 +149,7 @@ async def test_an_approved_removal_deletes_the_entry_syncs_and_confirms_it(
     assert box.entries == [BYSTANDER]
 
 
-# --- §V.60, §V.61: the commands, in order, and the sync that applies them ---
+# --- Add and remove: the commands, in order, and the sync that applies them ---
 
 
 async def test_an_add_reads_creates_syncs_then_reads_again(
@@ -158,7 +158,7 @@ async def test_an_add_reads_creates_syncs_then_reads_again(
     """`pmgsh create` then `pmgconfig sync --restart 1`, and the order is the property.
 
     A mutation that skipped the sync looks applied and is not: `pmgsh` writes PMG's config and
-    Postfix does not pick it up until the sync runs. The trailing read is the postflight (§V.97),
+    Postfix does not pick it up until the sync runs. The trailing read is the postflight,
     and asserting on the sequence is what separates "it synced" from "it synced *after* writing".
     """
     fixture, box = whitelist_change_context(monkeypatch)
@@ -189,13 +189,13 @@ async def test_a_removal_reads_deletes_syncs_then_reads_again(
     assert [command_step(command) for command in box.commands] == ["ls", "delete", "sync", "ls"]
 
 
-# --- T29's departure from `noa-old`: which spelling a removal names ---
+# --- The pmg-whitelist tool's departure from `noa-old`: which spelling a removal names ---
 
 
 async def test_a_removal_deletes_by_pmgs_own_spelling_and_not_the_normalised_form(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The bytes, not the verdict (§V.59, and `noa-old`'s defect).
+    """The bytes, not the verdict (exact membership, and `noa-old`'s defect).
 
     `mynetworks` here holds `203.0.113.10`; its normalised form is `203.0.113.10/32`. `noa-old`
     sent `pmgsh delete /config/mynetworks/203.0.113.10/32` — a path PMG never printed for a line
@@ -267,7 +267,8 @@ async def test_every_spelling_of_one_address_is_removed(
 async def test_an_add_writes_the_masked_network_and_not_the_typed_address(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """§V.59 on the side that writes: `203.0.113.10/24` is a request about `203.0.113.0/24`.
+    """Exact membership on the side that writes: `203.0.113.10/24` is a request about
+    `203.0.113.0/24`.
 
     The card showed the operator the normalised form, so that is what goes in the file. Writing
     the typed spelling back would put a line in `mynetworks` that NOA's own reader then normalises
@@ -286,7 +287,7 @@ async def test_an_add_writes_the_masked_network_and_not_the_typed_address(
     assert box.created == ["203.0.113.0/24"]
 
 
-# --- §V.98's fact-check half: the approval window is checked on the fact ---
+# --- The CAS-token rule's fact-check half: the approval window is checked on the fact ---
 
 
 async def test_an_address_whitelisted_while_the_card_was_pending_is_a_no_op(
@@ -345,7 +346,7 @@ async def test_a_whitelist_still_in_the_approved_state_is_changed(
 async def test_a_read_that_cannot_answer_refuses_rather_than_deciding(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """One source, so silence is not a state (§V.86). A change decided against a read that did not
+    """One source, so silence is not a state. A change decided against a read that did not
     answer is a change decided against nothing — and here it would be an unauthorised write."""
     fixture, box = whitelist_change_context(
         monkeypatch,
@@ -362,7 +363,7 @@ async def test_a_read_that_cannot_answer_refuses_rather_than_deciding(
 
 
 async def test_a_denied_sudo_keeps_its_own_code(monkeypatch: pytest.MonkeyPatch) -> None:
-    """§V.55: two causes, two remedies — a sudoers entry is not a broken `pmgsh` install.
+    """Two causes, two remedies — a sudoers entry is not a broken `pmgsh` install.
 
     Collapsing them sends an operator hunting a problem that is not there (`noa-old` GH #82), and
     the code is what an approved change's receipt will carry.
@@ -378,7 +379,7 @@ async def test_a_denied_sudo_keeps_its_own_code(monkeypatch: pytest.MonkeyPatch)
     assert payload["error_code"] == "ssh_sudo_required"
 
 
-# --- §V.33: the evidence, never the arguments ---
+# --- Context persisted at gate time: the evidence, never the arguments ---
 
 
 async def test_the_target_comes_from_the_evidence_and_not_from_the_arguments(
@@ -416,7 +417,8 @@ async def test_evidence_that_did_not_survive_its_round_trip_is_declined(
     monkeypatch: pytest.MonkeyPatch,
     evidence_override: dict[str, Any],
 ) -> None:
-    """The third place the enum is bounded, and the CIDR with it (T25's discipline).
+    """The third place the enum is bounded, and the CIDR with it (the release-and-allow tool's
+    three-place discipline).
 
     By the time a runner reads this, an operator has typed a reason and pressed Approve, so a
     value NOA cannot act on is declined rather than guessed at. The normalised target is re-parsed
@@ -449,13 +451,13 @@ async def test_a_server_row_deleted_after_approval_names_the_pmg_inventory(
     assert box.commands == []
 
 
-# --- §V.97, §V.86, §V.62: the postflight ---
+# --- The postflight ---
 
 
 async def test_a_mutation_that_answered_200_ok_while_the_list_did_not_move_is_a_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """§V.97: the verdict is read off `mynetworks`, not off what `pmgsh` printed.
+    """The verdict is read off `mynetworks`, not off what `pmgsh` printed.
 
     `pmgsh create` reports the HTTP status of the underlying API call, and NOA already tolerates a
     non-zero exit when stdout carries `200 OK` (`require_pmg_mutation_success`). That makes the
@@ -497,7 +499,8 @@ async def test_a_removal_the_list_still_shows_is_a_failure(
 async def test_a_postflight_that_cannot_be_read_is_unavailable_and_not_unverified(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """§V.62's rule one system over: verification-unavailable is not verified, and not refuted.
+    """The crypt-verify rule one system over: verification-unavailable is not verified, and not
+    refuted.
 
     The write and the sync were both accepted, so a bare `verified: false` would read as a
     measurement and send an operator to repeat a change that has probably already happened. The
@@ -607,16 +610,16 @@ async def test_a_refused_delete_stops_and_leaves_the_remaining_lines(
     assert box.synced == 0
 
 
-# --- §V.96 has no instance here, and that is asserted ---
+# --- No reason value has an instance here, and that is asserted ---
 
 
 async def test_the_operator_reason_reaches_neither_a_command_nor_the_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A `mynetworks` entry is a CIDR, so nothing C8 keeps from the LLM leaves NOA here.
+    """A `mynetworks` entry is a CIDR, so nothing kept from the LLM leaves NOA here.
 
     Asserted on the serialized payload, the derived summary and the built receipt rather than on a
-    key set — a value dropped in one place and kept in another passes a key compare (§V.87) — and
+    key set — a value dropped in one place and kept in another passes a key compare — and
     on every command, because the only thing that can carry it out is a write.
     """
     sentinel = "customer-said-the-relay-is-theirs"
@@ -637,7 +640,7 @@ async def test_the_sentinel_would_have_been_found_if_it_had_leaked() -> None:
     """The negative control for the assertion above: `payload_text` really does look.
 
     Without it, "the reason is not in the payload" passes against a helper that serializes
-    nothing, which is exactly the compare that stops separating (§V.87).
+    nothing, which is exactly the compare that stops separating.
     """
     sentinel = "customer-said-the-relay-is-theirs"
 
@@ -664,8 +667,8 @@ async def test_the_payload_carries_both_spellings_and_not_the_rest_of_the_whitel
     """This becomes `tool_runs.result_summary`, and `noa_get_action_result` hands it to a model.
 
     Both spellings, because a model told only that `203.0.113.10/24` was whitelisted would report
-    a host where a network changed (§V.59). Not the other entries: what a model needs is which
-    address on which node moved which way, not a mail gateway's whole allow list (§V.26, §V.76).
+    a host where a network changed. Not the other entries: what a model needs is which
+    address on which node moved which way, not a mail gateway's whole allow list.
     """
     fixture, _ = whitelist_change_context(
         monkeypatch, box=FakePMGWhitelist(entries=[BYSTANDER, "192.0.2.0/24"])

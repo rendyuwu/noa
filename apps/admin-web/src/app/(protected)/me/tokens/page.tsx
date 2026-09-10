@@ -5,7 +5,7 @@ import { PageHeader } from '@gio/bigsu-app-shell'
 import { TokensPanel } from '@/components/admin/tokens/tokens-panel'
 import { useAuthUser } from '@/lib/auth/auth-context'
 
-// /me/tokens (§T76) — this deployable's only non-admin surface. It calls no auth
+// /me/tokens — this deployable's only non-admin surface. It calls no auth
 // hook: the protected layout already ran the single `/auth/me` revalidation and
 // shares the verdict through AuthUserProvider, so a second round trip here would
 // re-ask a question already answered.

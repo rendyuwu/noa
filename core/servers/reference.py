@@ -1,12 +1,13 @@
 """Operator word → one server of any system, or a structured refusal.
 
-**This module is the answer to a question T19 parked and T31 restated.** `noa-old` had one
+**This module is the answer to a question the server-list tool parked and the whitelist search
+restated.** `noa-old` had one
 `server_ref.py` per system; this repo ported two of them and left a note in the package
 docstring saying the third would show whether a shared resolver was worth having, "or whether
-that difference is two parameters or a third shape". Proxmox arrived at T27 and it is WHM's
-shape *exactly* — a hostname parsed out of `base_url`, a `choices` entry of id/name/base_url —
-so the answer is two parameters, and a third verbatim copy of ~130 lines is what V66 exists to
-refuse.
+that difference is two parameters or a third shape". Proxmox arrived with the password-reset
+tool and it is WHM's shape *exactly* — a hostname parsed out of `base_url`, a `choices` entry
+of id/name/base_url — so the answer is two parameters, and a third verbatim copy of ~130 lines
+is what reuse over duplication exists to refuse.
 
 What varies between the three is small enough to name:
 
@@ -78,7 +79,7 @@ RowT_co = TypeVar("RowT_co", bound=ServerRowLike, covariant=True)
 
 # How many candidates a refusal carries. Verbatim from `noa-old`: enough to recognise the one you
 # meant, few enough that a tie between forty servers does not paste forty rows into the
-# transcript (V64 is the answer for genuinely large results, not this).
+# transcript (summary-plus-URL is the answer for genuinely large results, not this).
 MAX_CHOICES = 10
 
 ERROR_REQUIRED = "host_required"
@@ -159,7 +160,7 @@ async def resolve_server_ref(
     """
     reference = server_ref.strip()
     if not reference:
-        # V21: a whitespace-only required string is a bad call, not an empty search.
+        # a whitespace-only required string is a bad call, not an empty search.
         return ServerRefResolution(
             ok=False, error_code=ERROR_REQUIRED, message=required_message(subject)
         )

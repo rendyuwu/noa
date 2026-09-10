@@ -1,10 +1,12 @@
-"""Mint the MCP bearer token LibreChat authenticates with (harness support for T59).
+"""Mint the MCP bearer token LibreChat authenticates with (harness support for re-verifying the
+render path).
 
 Direct service call rather than an HTTP request because the routes that will do this —
-`/admin/users/{id}/tokens` and `/me/mcp-tokens` (I.admin-api) — are T51-T55 and not built
+`/admin/users/{id}/tokens` and `/me/mcp-tokens` (the admin API's contract) — are the admin
+user, role, token, validate and audit management routes and not built
 yet. The token itself is the real thing: `McpTokenService.mint`, hashed at rest,
 plaintext returned once, `librechat_user_id` NULL so LibreChat's first call binds it
-(V3 TOFU).
+(TOFU binding).
 
 The operator row is created the way a first login creates it: through `AuthService` with
 `AUTH_DEV_BYPASS_LDAP=true`, so bootstrap activation is what activates it rather than

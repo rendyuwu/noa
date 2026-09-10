@@ -450,8 +450,8 @@ The result:
 
 Three deliberate departures from `noa-old`'s version:
 
-- **No raw output.** It returned csf's whole `-g` dump and Imunify's whole JSON document. Old
-  V75 (DECISIONS section 6.5) says the before-state shows the `csf.deny` / `csf.allow` log line and
+- **No raw output.** It returned csf's whole `-g` dump and Imunify's whole JSON document.
+  DECISIONS section 6.5 says the before-state shows the `csf.deny` / `csf.allow` log line and
   never a raw iptables table, and the result persists in LibreChat's MongoDB.
 - **A verdict read from a subset says so.** It computed the combined verdict from
   whichever backend succeeded and otherwise fell through to `not_found` — so a broken CSF plus a

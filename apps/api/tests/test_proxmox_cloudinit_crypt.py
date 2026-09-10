@@ -1,10 +1,11 @@
-"""The crypt-verify guard: three answers, never two (§T.69 — V62, V87).
+"""The crypt-verify guard: three answers, never two — verdict on verify, and a compare that still
+separates.
 
-This is the file §T.69 exists for. `noa-old`'s `cloudinit_dump_matches_password` answered a
-`bool`, and `False` meant three unrelated things: the password does not match, there was no hash
-to compare, and **libcrypt would not load**. The third is not a verdict — a host that cannot
-compare has refuted nothing — and reporting it as a mismatch turns a change that succeeded into
-one an operator is told to repeat.
+This is the file the crypt verdict exists for. `noa-old`'s `cloudinit_dump_matches_password`
+answered a `bool`, and `False` meant three unrelated things: the password does not match, there was
+no hash to compare, and **libcrypt would not load**. The third is not a verdict — a host that cannot
+compare has refuted nothing — and reporting it as a mismatch turns a change that succeeded into one
+an operator is told to repeat.
 
 So every test here is about keeping *unavailable* separate from *mismatch*, and the pair that
 matters most is:
@@ -45,7 +46,7 @@ SALT = "$6$noatestsalt$"
 
 
 def no_crypt_library() -> CDLL | None:
-    """A host with no libcrypt — §T.69's subject."""
+    """A host with no libcrypt — the crypt verdict's subject."""
     return None
 
 
@@ -56,11 +57,11 @@ def dump_for(password: str) -> str:
     return f"#cloud-config\nuser: ubuntu\npassword: {computed}\nchpasswd:\n  expire: False\n"
 
 
-# --- The guard (§T.69, V62) ---
+# --- The guard (crypt verdict, verdict on verify) ---
 
 
 def test_a_host_without_libcrypt_reports_unavailable() -> None:
-    """§T.69, stated as directly as it can be.
+    """The crypt verdict, stated as directly as it can be.
 
     The dump carries the *right* password, so a function that fell back to comparing anything at
     all would answer `MATCH` and fail here. The only correct answer is that no comparison
@@ -75,7 +76,7 @@ def test_a_host_without_libcrypt_reports_unavailable() -> None:
 
 
 def test_a_host_without_libcrypt_does_not_report_a_mismatch() -> None:
-    """The half of §T.69 that is about what the answer must *not* be.
+    """The half of the crypt verdict that is about what the answer must *not* be.
 
     `noa-old` answered `False` here, and a `False` is read as "this password is not on the VM".
     Asserted separately from the test above because a future refactor could keep `verified` false
@@ -119,10 +120,10 @@ def test_verification_confirms_the_password_that_is_actually_set() -> None:
 def test_verification_still_separates_a_wrong_password() -> None:
     """**The control this file would be worthless without**.
 
-    Every other assertion here is satisfied by a function that answers `UNAVAILABLE` for
-    everything. This is the one that is not: a document carrying somebody else's password has to
-    come back `MISMATCH`, measured, with `answered` true — because "we compared and it differed"
-    and "we could not compare" are the two states §T.69 exists to keep apart, and a guard that
+    Every other assertion here is satisfied by a function that answers `UNAVAILABLE` for everything.
+    This is the one that is not: a document carrying somebody else's password has to come back
+    `MISMATCH`, measured, with `answered` true — because "we compared and it differed" and "we could
+    not compare" are the two states the crypt verdict exists to keep apart, and a guard that
     swallowed both would look identical to a correct one from the outside.
     """
     verification = verify_cloudinit_password(dump_for(OTHER_PASSWORD), PASSWORD)
@@ -137,7 +138,8 @@ def test_verification_still_separates_a_wrong_password() -> None:
 
 
 def test_a_dump_with_no_password_line_is_unavailable_not_a_mismatch() -> None:
-    """Nothing to compare against is not evidence of a wrong password (V62's rule again).
+    """Nothing to compare against is not evidence of a wrong password (the verdict-on-verify rule
+    again).
 
     It is the state a VM is in between the config write and the drive regeneration, so reading it
     as a mismatch would fail a reset that had simply not finished.

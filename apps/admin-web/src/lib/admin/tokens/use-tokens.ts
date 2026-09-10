@@ -13,7 +13,7 @@ import {
 } from './tokens-api'
 import type { McpToken, MintedToken, TokenScope } from './types'
 
-// The MCP token data controller (§T76). It owns the same two race guards the
+// The MCP token data controller. It owns the same two race guards the
 // Users controller documents at `use-users.ts:16-31` — stale load by sequence,
 // mutation-beats-refresh by epoch — plus a third this vertical needs:
 //
@@ -27,8 +27,8 @@ import type { McpToken, MintedToken, TokenScope } from './types'
 //
 // The stamp is also what makes a mutation dispatched BEFORE the scope on screen
 // settled a dead end, so every mutation ends by re-reading a scope that still
-// has no stamp — see `settleCurrentScope`, and §V104 for why half a guard is
-// worse than none.
+// has no stamp — see `settleCurrentScope`, and the cancel-must-reissue rule for why half a guard
+// is worse than none.
 //
 // The redirect (401) case is swallowed: fetchWithAuth has already cleared
 // identity and started the session-expiry navigation.
@@ -44,7 +44,7 @@ const REDIRECTING = { redirecting: true } as const
 
 // The backend answers 404 `mcp_token_not_found` for an id that never existed,
 // for one already revoked, and for one belonging to a colleague — deliberately
-// the same answer (mcp_tokens.py:191-197, V2). So this wording resolves none of
+// the same answer (mcp_tokens.py:191-197). So this wording resolves none of
 // them: it reports what the response supports and nothing more. "Already
 // revoked" would be the UI inventing a history it did not witness.
 export const TOKEN_ABSENT_MESSAGE = 'This token is no longer present'
@@ -151,7 +151,8 @@ export function useTokens(scope: TokenScope): TokensController {
     await reloadScope(scopeRef.current)
   }, [reloadScope])
 
-  // Recovery every mutation owes, and the whole of §V104: a guard that CANCELS
+  // Recovery every mutation owes, and the whole of the cancel-must-reissue rule: a guard that
+  // CANCELS
   // in-flight work has to guarantee that work is re-issued. A mutation
   // dispatched before the scope on screen ever settled leaves the panel with
   // nothing describing it — the load it invalidated by epoch declines to write
@@ -197,7 +198,7 @@ export function useTokens(scope: TokenScope): TokensController {
         const minted = await apiMintToken(target, label)
         mutationEpoch.current += 1
         // The ROW joins the list. The plaintext does not, and this is the whole
-        // of §V103 in one line: a secret written into controller state is
+        // of the write-once-display rule in one line: a secret written into controller state is
         // re-readable for as long as the controller lives, so it is only ever
         // this function's return value, owned by the one component that shows it.
         //
@@ -249,7 +250,7 @@ export function useTokens(scope: TokenScope): TokensController {
         if (isAuthRedirectError(error)) return REDIRECTING
         if (error instanceof ApiError && error.status === 404) {
           // Do not drop the row on inference. Re-read, and let the server's list
-          // be the reason it is or is not there (§V104: the re-read is
+          // be the reason it is or is not there (the cancel-must-reissue rule: the re-read is
           // authoritative, not a local patch). Skipped when the scope
           // moved: those rows are already invalidated by the stamp, so the
           // recovery re-reads whatever replaced them instead.

@@ -10,10 +10,10 @@ lets a single exception handler shape every response:
 - `detail` — optional internal cause, for logs only. Defaults to `message`, and
   `str(exc)` yields it, so tracebacks stay useful while response bodies stay clean.
 
-Introduced with T9 because RBAC failures needed the same treatment as sign-in failures
-and the alternative was a second parallel taxonomy plus a second handler. V73 requires
-one shared handler rather than per-route shaping, and two bases would have made "one"
-a lie the moment `request_id` lands in T64.
+Introduced with the RBAC engine because RBAC failures needed the same treatment as sign-in failures
+and the alternative was a second parallel taxonomy plus a second handler. The request-id contract
+requires one shared handler rather than per-route shaping, and two bases would have made "one"
+a lie the moment `request_id` lands in that handler.
 
 Subclass this, not `Exception`, for anything a route may raise. The handler in
 `noa_api.api.errors` maps class → status, so an unmapped subclass is a visible test
@@ -42,8 +42,8 @@ class RetryAfterMixin:
     """Marker for a refusal that owes the client a `Retry-After` header.
 
     A mixin rather than a `NoaError` subclass because the two errors that carry it live in
-    different taxonomies — `AuthRateLimitedError` under `AuthError` (login, T8) and
-    `McpAuthRateLimitedError` under `McpAuthError` (the MCP request path, T12) — and neither
+    different taxonomies — `AuthRateLimitedError` under `AuthError` (login) and
+    `McpAuthRateLimitedError` under `McpAuthError` (the MCP request path) — and neither
     tree may absorb the other (see `core.auth.mcp_auth_errors`).
 
     It exists so the shared handler branches on a declared property instead of listing

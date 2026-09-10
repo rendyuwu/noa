@@ -101,7 +101,7 @@ def test_upgrade_head_offline_emits_all_tables() -> None:
 
 
 def test_single_head() -> None:
-    """One linear history — a branched head breaks `upgrade head` (C12: one Alembic)."""
+    """One linear history — a branched head breaks `upgrade head` (one Alembic)."""
     result = _alembic("heads", url=DEV_URL)
 
     assert result.returncode == 0, result.stderr
@@ -140,7 +140,7 @@ def test_upgrade_then_downgrade_round_trip(scratch_database: str) -> None:
 
     live = asyncio.run(_reflect(scratch_database))
 
-    # Migration DDL and ORM metadata must not drift (V67 keeps them honest).
+    # Migration DDL and ORM metadata must not drift.
     assert set(live) == set(Base.metadata.tables)
     for table_name, table in Base.metadata.tables.items():
         assert live[table_name] == set(table.c.keys()), table_name
@@ -152,7 +152,7 @@ def test_upgrade_then_downgrade_round_trip(scratch_database: str) -> None:
 
 
 def test_gen_random_uuid_available_without_pgcrypto(scratch_database: str) -> None:
-    """C3 pins Postgres 16, where `gen_random_uuid()` is core.
+    """Schema v1 runs on Postgres 16, where `gen_random_uuid()` is core.
 
     If this ever fails, the migration needs `CREATE EXTENSION pgcrypto`.
     """

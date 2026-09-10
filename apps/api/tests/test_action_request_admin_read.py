@@ -1,4 +1,4 @@
-"""The statements the admin authorisation trail is read with (§I.admin-api — V85, V92, V93).
+"""The statements the admin authorisation trail is read with (the admin API's contract).
 
 Three claims live here because they are claims about **SQL**, and a check made after the rows
 arrive would leave every payload test green while being no check at all:
@@ -6,7 +6,7 @@ arrive would leave every payload test green while being no check at all:
 - every filter lands in the `WHERE`. One applied after the fetch also breaks paging, because
   the `LIMIT` would have cut rows the filter was about to remove and the page would come back
   short while `nextCursor` insisted there was more;
-- the order carries its tie-break, `created_at DESC, id DESC` (V92(c));
+- the order carries its tie-break, `created_at DESC, id DESC`;
 - both joins are outer, so a decision that outlived its operator and a decision that produced no
   receipt both stay visible.
 
@@ -119,7 +119,7 @@ def predicate_for(where: str, fragment: str) -> str:
     return matches[0]
 
 
-# --- V93: every filter is in the WHERE, on its own column, with its own operator ---
+# --- Every filter is in the WHERE, on its own column, with its own operator ---
 
 
 def test_every_filter_lands_in_the_where() -> None:
@@ -189,7 +189,7 @@ def test_the_email_filter_escapes_its_like_metacharacters() -> None:
     assert "%%a%%b%%" not in sql
 
 
-# --- V92(c): one order, and the tie-break is part of it ---
+# --- One order, and the tie-break is part of it ---
 
 
 def test_the_page_orders_by_created_at_then_id() -> None:
@@ -225,7 +225,7 @@ def test_the_cursor_predicate_is_in_the_statement() -> None:
 
 
 def test_both_joins_are_outer_on_every_statement() -> None:
-    """A decision outliving its operator (`SET NULL`, T34) and a decision with no receipt must
+    """A decision outliving its operator (`SET NULL`) and a decision with no receipt must
     both stay visible. An inner join to `users` would hide exactly the rows an audit trail is kept
     for; an inner join to `action_receipts` would hide every deny and every expiry."""
     for sql in (page_sql(), compiled(select_action_request(action_request_id=uuid4()))):

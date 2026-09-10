@@ -1,8 +1,8 @@
 """Strip login/PAM/LVE banners from SSH command output.
 
-Ported from `noa-old` branch `MCP` (`core/remote_exec/banner_strip.py`, C13/V69) unchanged
-except for these cites — it was hardened against real hosts and the false-positive guard is
-the expensive part.
+Ported from `noa-old` branch `MCP` (`core/remote_exec/banner_strip.py`), copied not imported,
+unchanged except for these notes — it was hardened against real hosts and the false-positive
+guard is the expensive part.
 
 Some hosts (notably CloudLinux servers reached over the non-root ``sudo`` path,
 `noa-old` GH #82/#83) inject a boxed ``*`` PAM/LVE banner onto **stdout** before the real

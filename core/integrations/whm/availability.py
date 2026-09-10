@@ -1,20 +1,21 @@
 """Is CSF usable here? Is Imunify?
 
 Copied from `noa-old` branch `MCP`, where all of it — including the CSF probe and the
-`asyncio.gather` — sat inside `whm/integrations/imunify_cli.py`. Its own module here (T16
-deviation (d)): the probe is about *both* backends, and the split keeps `csf_cli`/`imunify_cli`
-symmetric with a one-directional import graph (`availability` → the two CLI modules, never
-back).
+`asyncio.gather` — sat inside `whm/integrations/imunify_cli.py`. Its own module here (a
+deviation from the WHM port): the probe is about *both* backends, and the split keeps
+`csf_cli`/`imunify_cli` symmetric with a one-directional import graph (`availability` → the two
+CLI modules, never back).
 
-**This is what V57 is built on.** Every firewall tool asks this first and then acts on whatever
-came back true, both backends in parallel. The invariant — zero backends available → error
-`no_firewall_backend`, ⊥ a success that changed nothing — is enforced one module over, in
-`firewall_gate.run_on_usable_backends`, which is the single door from this answer to acting on
-it. What this module owes that door is an *honest* answer, because a false positive here
-becomes exactly the silent no-op V57 forbids, and no gate downstream can catch it.
+**This is what the zero-backend rule is built on.** Every firewall tool asks this first and
+then acts on whatever came back true, both backends in parallel. The invariant — zero backends
+available → error `no_firewall_backend`, never a success that changed nothing — is enforced one
+module over, in `firewall_gate.run_on_usable_backends`, which is the single door from this
+answer to acting on it. What this module owes that door is an *honest* answer, because a false
+positive here becomes exactly the silent no-op the zero-backend rule forbids, and no gate
+downstream can catch it.
 
 **Two probe strategies, chosen by the resolved SSH user.** This is the part that took an
-incident to get right (`noa-old` GH #82, V55):
+incident to get right (`noa-old` GH #82):
 
 - **root** — `command -v <binary>`. Presence is usability; there is nothing to escalate.
 - **non-root** — run the *real* binary under `sudo -n` with a benign read-only flag
@@ -33,7 +34,8 @@ there. The flag lets the tool layer raise `ssh_sudo_required` instead.
 
 A **transport** failure resolves to "not usable", never an exception: an unreachable host is a
 legitimate answer to "can I run csf here?", and a probe that raises cannot report on the other
-backend. A **row** failure no longer reaches here at all — as of T24 the caller resolves the
+backend. A **row** failure no longer reaches here at all — as of the firewall-preflight tool the
+caller resolves the
 `SSHConnectionConfig` itself, so an unpinned server or one with no stored credentials refuses
 with `ssh_host_key_not_validated` / `ssh_not_configured` before either probe starts. That is the
 better answer and it costs nothing: those failures were never per-backend anyway, since both

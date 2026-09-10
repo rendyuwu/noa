@@ -4,7 +4,7 @@ import { redirect } from 'next/navigation'
 // protected layout is what decides whether the visitor may see anything.
 //
 // It stays a SERVER redirect. Where it points is now `/home` — the role-aware
-// dispatcher (§T76) — because administration is no longer the whole of this app:
+// dispatcher — because administration is no longer the whole of this app:
 // `/me/tokens` is a surface any verified operator may use, and sending them to
 // the first admin vertical answered their first request with a 403. The dispatch
 // itself has to be a client decision (it needs the verified session), which is

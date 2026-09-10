@@ -4,17 +4,17 @@ Two classes, and the split is the same one `core.approvals.errors` makes: what t
 can do about it.
 
 `ResultTableNotFoundError` is the only one an operator sees, and it answers **four** causes
-with one body — no such token, another operator's token, one whose requester was deleted,
-and one past its deadline. That is V27's rule stated one table over: a code that varied by
-cause would be a 403 spelled differently, and would make this origin an oracle for which
-tokens exist.
+with one body — no such token, another operator's token, one whose requester was deleted, and
+one past its deadline. That is the requester-match rule stated one table over: a code that
+varied by cause would be a 403 spelled differently, and would make this origin an oracle for
+which tokens exist.
 
 `ResultTableUnavailableError` is the write side. Parking a table is what makes a large READ's
 answer readable at all, so a failure there is refused rather than papered over — the
 alternative is a tool result carrying a URL to a table that was never stored, which is a dead
 link in a transcript that persists.
 
-`NoaError` subclasses for V73's two reasons: `sanitize_tool_errors` passes a `NoaError`'s own
+`NoaError` subclasses for two reasons: `sanitize_tool_errors` passes a `NoaError`'s own
 `error_code` through to the model instead of collapsing it, and `noa_api.api.errors`
 maps each class to a status, so the route raises rather than building a response.
 """

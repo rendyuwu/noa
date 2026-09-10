@@ -1,13 +1,13 @@
 """Server-side password generation.
 
-V49's first half — the password is generated here, never supplied as a tool argument — is
-structural: `_generate_password` takes a length and nothing else, so there is no argument a
-model could fill. What is testable is the alphabet, and it is the part that broke in
+The password-generation rule's first half — the password is generated here, never supplied as a tool
+argument — is structural: `_generate_password` takes a length and nothing else, so there is no
+argument a model could fill. What is testable is the alphabet, and it is the part that broke in
 production: the generated value is embedded in a cloud-init payload and passed through a
 shell-quoted remote command, so a space, quote, backtick or backslash silently corrupts the
 credential that was just set on a customer VM.
 
-The delivery half of V49 (plaintext never logged) is asserted against the real helper in
+The delivery half of that rule (plaintext never logged) is asserted against the real helper in
 `test_yopass_store.py::test_logs_carry_no_plaintext_or_passphrase`.
 """
 
@@ -52,7 +52,7 @@ def test_default_length_matches_the_configured_default() -> None:
 
 
 def test_length_comes_from_settings_when_the_caller_passes_it() -> None:
-    """T27 reads the operator-configurable length rather than hardcoding one."""
+    """The password-reset runner reads the configured length, never a hardcoded one."""
     settings = build_settings(secret_password_length=40)
 
     assert len(_generate_password(settings.secret_password_length)) == 40
@@ -65,6 +65,6 @@ def test_two_passwords_differ() -> None:
 
 @pytest.mark.parametrize("length", [0, -1])
 def test_zero_length_rejected(length: int) -> None:
-    """An empty password must be a caller bug, ⊥ a silently accepted empty string."""
+    """An empty password must be a caller bug, never a silently accepted empty string."""
     with pytest.raises(ValueError, match="password length"):
         _generate_password(length)

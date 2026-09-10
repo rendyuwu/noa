@@ -4,7 +4,9 @@ import { decisionPath, submitDecision } from './decide'
 import { describeDecision } from './outcome'
 
 /**
- * The decision POST (§T.41, §T.42 — V15, V22, V39, V80).
+ * The decision POST — JS `fetch` from the card page, no `<form>`, cookie + CSRF only, CSRF bound
+ * to session and request, reason required on both approve and deny, `allow-forms` absent at
+ * every render site.
  *
  * What a browser actually does with this — a `fetch` from inside a frame whose sandbox omits
  * `allow-forms` — is `e2e/approvals.browser.e2e.ts`'s claim, because jsdom cannot make it. What
@@ -28,7 +30,7 @@ function stubFetch(response: Response): SeenRequest[] {
 
 describe('decisionPath', () => {
   it('is a same-origin path on this app, never the API origin', () => {
-    // `NOA_API_URL` is server-only and a browser cannot reach it (AGENTS.md, §T.44). The hop is
+    // `NOA_API_URL` is server-only and a browser cannot reach it (AGENTS.md, the proxy route). The hop is
     // the proxy's, and both of these paths are on its allowlist.
     expect(decisionPath(ID, 'approve')).toBe(`/api/action-requests/${ID}/approve`)
     expect(decisionPath(ID, 'deny')).toBe(`/api/action-requests/${ID}/deny`)

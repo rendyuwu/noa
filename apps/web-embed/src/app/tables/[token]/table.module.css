@@ -1,8 +1,9 @@
 /*
- * The large-READ table surface's own styles (§T.56, §I.embed).
+ * The large-READ table surface's own styles (the table surface itself, the embed app's
+ * contract).
  *
  * Hand-written, reading the tokens `src/app/globals.css` defines — no design system here, the
- * eslint firewall refuses `@gio/*` (§T.40 as built).
+ * eslint firewall refuses `@gio/*` (the embed scaffold as built).
  *
  * Self-scrolling in both directions, unlike the card: a listing is wide as well as long, and a
  * table that clipped its own columns would be a page an operator cannot read the right-hand side

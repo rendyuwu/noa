@@ -1,6 +1,6 @@
-"""LDAP directory access (T6, C4, I.ext).
+"""LDAP directory access.
 
-Ported from `noa-old` branch `MCP` (`core/auth/ldap_service.py`, C13) with two
+Ported from `noa-old` branch `MCP` (`core/auth/ldap_service.py`) with two
 additions this repo needs:
 
 - `user_exists_and_enabled(email)` — service-account bind + search, no operator
@@ -17,7 +17,7 @@ owns exactly one of the two gates that deny a login:
   present but flagged disabled → `AuthAccountDisabledError`. No NOA admin action
   overrides either.
 - NOA activation, not here: `users.is_active` starts False for every new LDAP user
-  and an admin enables it. T8 owns that check and raises
+  and an admin enables it. The login flow owns that check and raises
   `AuthPendingApprovalError`. `LDAPService` has no access to the row and no
   opinion about it.
 
@@ -30,9 +30,9 @@ leave a service-account connection in an unknown bind state.
 The disabled check runs *after* the user bind, never before: answering "that
 account is disabled" to an unauthenticated caller would leak directory state to
 anyone who can guess an address. AD normally refuses to bind a disabled account on
-its own, so this check is usually redundant — it exists because C4 puts the
-employment decision in NOA's code rather than in a directory behaviour NOA does
-not control.
+its own, so this check is usually redundant — it exists because LDAP-as-source-of-truth
+puts the employment decision in NOA's code rather than in a directory behaviour NOA
+does not control.
 
 `python-ldap` is synchronous C, so every call runs in `asyncio.to_thread`. Filter
 inputs pass through `ldap.filter.escape_filter_chars` — an operator-supplied email
@@ -95,7 +95,7 @@ SEARCH_ATTRIBUTES = [DISPLAY_NAME_ATTRIBUTE, ACCOUNT_CONTROL_ATTRIBUTE]
 # Internal diagnostics for the `detail` slot: logs only, never a response body.
 # Operator-facing text lives on the exception classes in `core.auth.errors`, so a
 # handler renders `err.message` and these strings stay out of the browser.
-DETAIL_BLANK_INPUT = "blank email or password; ⊥ bind attempted"
+DETAIL_BLANK_INPUT = "blank email or password; no bind attempted"
 DETAIL_NO_ENTRY = "no directory entry matched the configured filter"
 DETAIL_BIND_REJECTED = "directory rejected the user bind"
 DETAIL_SERVICE_BIND_REJECTED = "directory rejected the service-account bind (check LDAP_BIND_DN)"
@@ -358,7 +358,7 @@ class LDAPService:
     def _classify(exc: Exception) -> AuthError:
         """Map a raw `ldap` exception onto NOA's taxonomy.
 
-        Unreachable/timed-out directory becomes `LdapUnavailableError` (V4 fail
+        Unreachable/timed-out directory becomes `LdapUnavailableError` (fail
         closed, no cascade revoke). Anything else is a configuration or protocol
         fault. Either way the raw exception never reaches a caller's message.
         """

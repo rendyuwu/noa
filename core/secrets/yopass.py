@@ -2,7 +2,7 @@
 
 Copied from `noa-old` branch `MCP`. Reference doc: `docs/integrations/yopass.md`.
 
-`_yopass_store` is a code-level helper, ⊥ an MCP tool. It exists so a generated credential can
+`_yopass_store` is a code-level helper, never an MCP tool. It exists so a generated credential can
 reach the operator without ever crossing the LLM boundary: the tool returns a URL, the
 operator opens it, and the plaintext is never in a prompt, a transcript, or a log.
 
@@ -22,7 +22,7 @@ asserts the passphrase is absent from the serialized request body.
 failure here raises with nothing changed and nobody locked out; a failure after this point
 leaves the old credentials working and must not relay the now-unapplied URL.
 
-Config is injected, ⊥ read from a module global: `noa-old` imported a `settings` singleton
+Config is injected, never read from a module global: `noa-old` imported a `settings` singleton
 this repo does not have (see `core.secrets.crypto` for the same note). `transport` and
 `timeout_seconds` stay as keyword arguments so a test can drive the HTTP boundary without a
 server. Absent `yopass_base_url` raises `YopassNotConfiguredError` — a tool error the caller

@@ -1,10 +1,11 @@
-"""`myprivs`: the ACL unwrap and the granted-value truth table (§T80, §V111, §V113).
+"""`myprivs`: the ACL unwrap and the granted-value truth table — the validate route's ACL
+report, and the granted value's type differing per credential.
 
-The truth table is the substance here, so it is tested as a table. The reason it needs one at
-all is measured (§R.33): asked the *same* function on the *same* host, a root token answers the
-integer `1` where a reseller token answers the string `"1"`, and not-granted arrives as the
-integer `0`, as the empty string, or as no key at all. A parser that reads only one of those
-spellings reports a capability the credential does not have.
+The truth table is the substance here, so it is tested as a table. The reason it needs one at all is
+measured on a live host: asked the *same* function on the *same* host, a root token answers the
+integer `1` where a reseller token answers the string `"1"`, and not-granted arrives as the integer
+`0`, as the empty string, or as no key at all. A parser that reads only one of those spellings
+reports a capability the credential does not have.
 
 Every case runs through the real `WHMClient` over `httpx.MockTransport`, because the shape being
 parsed is a WHM response body and a doubled client would let the `[0]` unwrap go missing.
@@ -47,7 +48,7 @@ def _client(body: object, *, status_code: int = 200) -> WHMClient:
     )
 
 
-# --- §V113: the granted set, and nothing else ---
+# --- The granted set, and nothing else ---
 
 GRANTED_VALUES: list[object] = [1, "1", "true", "yes", "y", 2, -1, True, "TRUE", " 1 "]
 NOT_GRANTED_VALUES: list[object] = [
@@ -90,7 +91,7 @@ def test_everything_else_reads_as_not_granted(value: object) -> None:
 
 
 def test_the_empty_string_is_false_here_and_none_in_the_account_normaliser() -> None:
-    """Why `_optional_bool` (`core.integrations.whm.accounts`) is not reused (§V113).
+    """Why `_optional_bool` (`core.integrations.whm.accounts`) is not reused.
 
     `""` is not among its false tokens, so it answers `None` — a third state. On an account
     listing that is right: an absent `suspended` field is not a claim either way. On a
@@ -105,7 +106,8 @@ def test_the_empty_string_is_false_here_and_none_in_the_account_normaliser() -> 
 
 
 async def test_privileges_unwraps_the_one_element_list_and_keeps_only_grants() -> None:
-    """The measured reseller answer (§R.33), granted names sorted, everything else dropped."""
+    """The reseller answer measured on a live host, granted names sorted, everything else
+    dropped."""
     result = await _client(
         myprivs_body(
             {
@@ -124,7 +126,7 @@ async def test_privileges_unwraps_the_one_element_list_and_keeps_only_grants() -
 
 
 async def test_a_root_credentials_integer_grants_parse_the_same() -> None:
-    """Same host, same function, different credential, different type (§R.33)."""
+    """Same host, same function, different credential, different type — measured on a live host."""
     result = await _client(
         myprivs_body({"suspend-acct": 1, "list-accts": 1, "all": 0})
     ).privileges()
@@ -171,7 +173,8 @@ async def test_a_shape_that_will_not_unwrap_fails_closed_with_a_named_code(data:
 
     An empty set would be indistinguishable from a token that holds nothing, and the two have
     different remedies: one is a credential to re-issue, the other is a WHM answering something
-    this client does not understand (§V86). Raising instead would reach the admin route as a
+    this client does not understand — folding it into an empty ACL would be folding a
+    non-answer into the benign value. Raising instead would reach the admin route as a
     500, for a remote's response shape.
     """
     result = await _client({"metadata": {"result": 1}, "data": data}).privileges()
@@ -193,7 +196,7 @@ async def test_a_whm_refusal_of_myprivs_keeps_its_own_error_code() -> None:
     assert "acls" not in result
 
 
-# --- V8: the credential is presented, never reported ---
+# --- The credential is presented, never reported ---
 
 
 async def test_the_call_is_authenticated_and_the_token_stays_out_of_the_answer() -> None:

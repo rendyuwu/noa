@@ -20,22 +20,23 @@ Five rules, and each is here rather than in a route:
    asserts the stored columns rather than trusting this sentence.
 3. **One audit event per mutation**, carrying ids, names, hosts, ports and presence
    booleans. Never a token, never an SSH credential.
-4. **`commit()` is the last statement, after every guard** (V100(a)). `noa_api.api.deps`'s
+4. **`commit()` is the last statement, after every guard**. `noa_api.api.deps`'s
    session dependency does not commit, so a service that only reached `flush()` would answer
-   200 over a rollback — B10 on T9's engine and B11 on T10's tokens, and V100(d) makes finding
-   one an obligation to sweep the rest. This is the third service on that dependency and it
+   200 over a rollback — the same flush-only rollback hole found on the RBAC engine and again
+   on the token service, and the found-one-owes-a-sweep rule makes finding one an obligation to
+   sweep the rest. This is the third service on that dependency and it
    lands with the boundary rather than acquiring it later.
-5. **A WHM row marked `is_reseller_credential` is named after its `api_username`** (V109(b)),
+5. **A WHM row marked `is_reseller_credential` is named after its `api_username`**,
    checked on the row the write *results in* rather than on the request body, so a PATCH that
    only flips the flag is refused too. `false` rows are not bound — the sixteen root rows
    cannot all be named `root`. It is the first cross-field rule on this surface, and it is here
    for the reason the name check is: it is a property of the row, so a fixture or a bootstrap
    script that inserts a reseller credential owes it as well.
 
-Deliberately NOT here: the reachability probe. `POST …/validate` opens a socket to somebody
-else's host, and holding a pooled connection across that hop is how a slow server becomes a
-database outage (T21's rule). `core.servers.validation` owns it, draws its own short sessions
-from the session factory, and can write exactly one column.
+Deliberately NOT here: the reachability probe. `POST …/validate` opens a socket to somebody else's
+host, and holding a pooled connection across that hop is how a slow server becomes a database outage
+(the session-before-hop rule). `core.servers.validation` owns it, draws its own short sessions from
+the session factory, and can write exactly one column.
 """
 
 from __future__ import annotations
@@ -117,7 +118,7 @@ def _maybe_encrypt(plaintext: str | None, *, cipher: SecretCipher) -> str | None
 
 
 def _require_reseller_name_matches(*, name: str, api_username: str) -> None:
-    """Raise unless a reseller row's `name` is its `api_username`, normalised (V109(b)).
+    """Raise unless a reseller row's `name` is its `api_username`, normalised.
 
     Called with the values the row will *hold*, never with the patch: an update that flips the
     flag on and touches nothing else is exactly the write this rule exists to stop, and reading
@@ -189,9 +190,9 @@ class WHMServerAdminService:
         if current is None:
             raise WHMServerNotFoundError(f"no `whm_servers` row `{server_id}`")
 
-        # V109(b) against the row the patch *produces*, which is why the stored values are read
-        # here: a patch flipping the flag on carries neither field, and a patch renaming an
-        # already-reseller row carries only one of the two.
+        # The owner-name-match rule against the row the patch *produces*, which is why the stored
+        # values are read here: a patch flipping the flag on carries neither field, and a patch
+        # renaming an already-reseller row carries only one of the two.
         is_reseller = (
             current.is_reseller_credential
             if patch.is_reseller_credential is None
@@ -264,7 +265,7 @@ class WHMServerAdminService:
 class ProxmoxServerAdminService:
     """List / create / update / delete for `proxmox_servers`.
 
-    No SSH block anywhere: Proxmox is an HTTP API and nothing else (I.ext), so there is one
+    No SSH block anywhere: Proxmox is an HTTP API and nothing else, so there is one
     secret column and no host key to pin.
     """
 
@@ -355,7 +356,7 @@ class PMGServerAdminService:
     """List / create / update / delete for `pmg_servers`.
 
     SSH is not optional here, unlike WHM: PMG is reached over `pmgsh` over SSH and nothing
-    else (V58, I.ext), so a row with no credentials is a row no tool can use. It is still
+    else, so a row with no credentials is a row no tool can use. It is still
     *creatable* — an admin filling in a host before the key arrives is a legitimate order of
     operations, and `resolve_pmg_ssh_config` answers `ssh_not_configured` in the meantime,
     which names the remedy. Refusing here would add a rule no invariant asks for; the same

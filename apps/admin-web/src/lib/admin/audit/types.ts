@@ -7,7 +7,7 @@
 // three fields NOA's `tool_runs` table does not have — `threadId` (NOA dropped
 // threads), `error` (a sanitised error code lands in `resultSummary` instead)
 // and `actionRequestId` (an approved change's run links the other way). All of
-// them are gone: T55 ships the two routes §I.admin-api names, and a control
+// them are gone: the audit reader ships the two routes the admin API's contract names, and a control
 // bound to a column that does not exist renders an em dash forever.
 //
 // `conversationRef` replaces `threadId`. It is a *label*, never a scope: the MCP
@@ -59,7 +59,7 @@ export const DEFAULT_TOOL_FILTERS: ToolRunFilters = {
 
 export const AUDIT_PAGE_SIZE = 50
 
-// --- The CHANGE authorisation trail (§I.admin-api) ---
+// --- The CHANGE authorisation trail (the admin API's contract) ---
 //
 // The other half of the audit surface: `tool_runs` above says what ran, these
 // say who authorised it and why. `reason` is the field that made this vertical

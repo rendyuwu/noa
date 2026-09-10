@@ -1,8 +1,9 @@
 """In-process background tasks the app lifespan owns.
 
 One module, one shape: `periodic` holds the interval loop that both of NOA's background
-components run on — T39's `PendingExpirySweeper` (V32's terminality without traffic) and
-T38's `StrandedRunReaper` (the runs a died-mid-call process left `STARTED`).
+components run on — the expiry loop's `PendingExpirySweeper` (terminality without traffic,
+off the TTL) and the stuck-run reaper's `StrandedRunReaper` (the runs a died-mid-call process
+left `STARTED`).
 
 Extracted at the second instance rather than the third, unlike `core.servers`' per-system
 ref resolvers: those differ at both ends (the row shapes are not the same), while these two

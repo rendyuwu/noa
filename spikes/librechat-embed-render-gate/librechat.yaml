@@ -1,13 +1,14 @@
 # LibreChat config for the embed render gate run.
 #
-# `mcpServers.noa` is the shape T57 will ship, minus one deviation noted below: the bearer
-# token is written literally here instead of coming from `customUserVars.NOA_MCP_TOKEN`,
-# because per-user vars are entered through LibreChat's UI and this run drives the API. The
-# header set is otherwise the production one — `X-Noa-LibreChat-User` is required on every
-# request per C24, and LibreChat resolves `{{LIBRECHAT_USER_ID}}` per call.
+# `mcpServers.noa` is the shape the LibreChat config doc will ship, minus one deviation noted
+# below: the bearer token is written literally here instead of coming from
+# `customUserVars.NOA_MCP_TOKEN`, because per-user vars are entered through LibreChat's UI and
+# this run drives the API. The header set is otherwise the production one —
+# `X-Noa-LibreChat-User` is required on every request because LibreChat is the sole client, and
+# LibreChat resolves `{{LIBRECHAT_USER_ID}}` per call.
 #
 # The URL points at `/mcp-embed-probe/`, the harness server, not NOA's real `/mcp/`. The
-# probe tools are uncatalogued on purpose (V10, V83a); see `noa_embed_probe_server.py`.
+# probe tools are uncatalogued on purpose; see `noa_embed_probe_server.py`.
 #
 # Trailing slash is deliberate: Starlette answers the mounted app at `/mcp-embed-probe/` and
 # 307s the bare path, so the slash saves a redirect on every call.
@@ -44,10 +45,11 @@ mcpServers:
     timeout: 60000
     # Measured, not preference. LibreChat inspects every startup server with no user in
     # context, so `{{LIBRECHAT_USER_ID}}` has nothing to resolve to and NOA answers 401 —
-    # correctly, per C24/V3. LibreChat reads that 401 as "this server wants OAuth", marks it
+    # correctly, because LibreChat is the sole client and an absent header is a 401 in every
+    # token state. LibreChat reads that 401 as "this server wants OAuth", marks it
     # `needs_authorization`, and never connects again. `startup: false` defers the connection
     # to the first per-user call, where the headers do resolve; `requiresOAuth: false` stops
-    # the inference. Both belong in T57's real config for the same reason.
+    # the inference. Both belong in the LibreChat config doc's real config for the same reason.
     startup: false
     requiresOAuth: false
     headers:

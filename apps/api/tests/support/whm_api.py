@@ -29,7 +29,7 @@ LISTACCTS_PATH = "/json-api/listaccts"
 SUSPENDACCT_PATH = "/json-api/suspendacct"
 UNSUSPENDACCT_PATH = "/json-api/unsuspendacct"
 
-# The validate probe (§V111). `myprivs` reports what the token may do, which is why it replaced
+# The validate probe. `myprivs` reports what the token may do, which is why it replaced
 # `applist` — a test asserting "validate asked about capability" counts requests to this path.
 MYPRIVS_PATH = "/json-api/myprivs"
 
@@ -64,7 +64,7 @@ def listaccts_body(accounts: list[dict[str, Any]]) -> dict[str, Any]:
 def myprivs_body(privileges: dict[str, Any]) -> dict[str, Any]:
     """A successful `myprivs` payload — `data.privileges` is a list holding ONE object.
 
-    The list wrapper is WHM's, measured on a live host (§R.33), and it is the whole reason the
+    The list wrapper is WHM's, measured on a live host, and it is the whole reason the
     client has an unwrap: a fixture that handed the object over bare would let a client that
     forgot the `[0]` pass here and fail against WHM.
     """
@@ -72,10 +72,10 @@ def myprivs_body(privileges: dict[str, Any]) -> dict[str, Any]:
 
 
 def reseller_privileges(**overrides: Any) -> dict[str, Any]:
-    """The measured reseller ACL set (§R.33): the suspend flag granted, and nothing else that
+    """The measured reseller ACL set: the suspend flag granted, and nothing else that
     writes. Values are WHM's own spellings — granted is the *string* `"1"` from a reseller
     token where root sends the integer `1`, and not-granted is `0` or `""` depending on the
-    key. Both spellings are in here on purpose (§V113)."""
+    key. Both spellings are in here on purpose."""
     privileges: dict[str, Any] = {
         "basic-whm-functions": "1",
         "list-accts": "1",

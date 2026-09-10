@@ -1,8 +1,9 @@
 """The async host an approval hands its run to.
 
-`ApprovedChangeExecutor` is the seam T37 wired and left filled with a placeholder. This is the
-real implementation, and V30 fixes its shape: an **in-process asyncio task** with its **own
-session**, not a worker process, not a queue, not a cron entry.
+`ApprovedChangeExecutor` is the seam the decision endpoints wired and left filled with a
+placeholder. This is the real implementation, and the reaper-backed asyncio host rule fixes
+its shape: an **in-process asyncio task** with its **own session**, not a worker process, not
+a queue, not a cron entry.
 
 **Why in-process.** The alternative is a second deployable, and everything it would need is
 already here: the session factory, the integration layer, the settings. What NOA gains from a
@@ -77,7 +78,8 @@ class AsyncioApprovedChangeExecutor:
     outstanding tasks, and nothing would be left to cancel them at shutdown.
 
     `runners` is the tool-name → `ChangeRunner` map (`noa_api.mcp_tools.change_runners`). It
-    covers the CHANGE tools that exist and grows with T25-T29; an unknown name is a
+    covers the CHANGE tools that exist and grows with the WHM firewall and PMG whitelist
+    tools; an unknown name is a
     named terminal failure rather than a silent one — see `core.approvals.execution`.
     """
 

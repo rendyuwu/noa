@@ -10,14 +10,14 @@ password nobody stores anyway.
 
 **No raw exception reaches the caller**. `sanitize_tool_errors` is exercised by making
 the repository raise, because that is where a real failure comes from: a dropped connection,
-a timeout, a bug. The two mappings V19 names are asserted by code, and a `NoaError` is
+a timeout, a bug. The two mappings the sanitizer names are asserted by code, and a `NoaError` is
 asserted to keep its own code — collapsing `ssh_host_key_mismatch` into
 `tool_execution_failed` would strip the one string that says what to fix.
 
 **The listing answers `describe()`, never `to_safe_dict()`**, and a
-`is_reseller_credential = true` row is left out of it — visibility only, not authorization
-(V109(a)): the same row still resolves through `resolve_whm_server_ref`, which is what keeps
-the account CHANGE path V106 depends on reachable.
+`is_reseller_credential = true` row is left out of it — visibility only, not authorization:
+the same row still resolves through `resolve_whm_server_ref`, which is what keeps
+the account CHANGE path's owner compare depends on reachable.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ def context_that_raises(error: BaseException) -> McpToolContext:
 
 
 async def test_it_lists_every_configured_server_ordered_by_name() -> None:
-    """DECISIONS §6.6: the model needs to know which servers exist."""
+    """DECISIONS section 6.6: the model needs to know which servers exist."""
     fixture = build_tool_context(servers=[whm_server("beta"), whm_server("alpha")])
 
     result = await whm_list_servers(context=fixture.context)
@@ -86,7 +86,7 @@ async def test_an_empty_inventory_is_a_success_with_no_servers() -> None:
     assert result["servers"] == []
 
 
-# --- V2, V8: what leaves the process ---
+# --- What leaves the process ---
 
 
 async def test_the_server_list_carries_no_api_token_and_no_ssh_credential() -> None:
@@ -106,7 +106,7 @@ async def test_the_server_list_carries_no_api_token_and_no_ssh_credential() -> N
 
 
 async def test_the_server_list_answers_describe_not_the_admin_view() -> None:
-    """V110: the payload is `describe()`'s 3 fields, none of `to_safe_dict`'s admin extras.
+    """The payload is `describe()`'s 3 fields, none of `to_safe_dict`'s admin extras.
 
     Named individually rather than only diffed against an allowlist: a later change that
     routes `to_safe_dict()` back into this tool should fail on the specific field it
@@ -136,7 +136,7 @@ async def test_the_server_list_answers_describe_not_the_admin_view() -> None:
 
 async def test_inventory_is_read_on_every_call() -> None:
     """No memoization: a server added through `/admin` shows up on the next call, not the
-    next process (V14 in spirit — the same no-cache rule the RBAC engine follows)."""
+    next process (the same no-cache rule the RBAC engine follows, in spirit)."""
     fixture = build_tool_context(servers=[whm_server("alpha")])
 
     await whm_list_servers(context=fixture.context)
@@ -145,16 +145,16 @@ async def test_inventory_is_read_on_every_call() -> None:
     assert fixture.servers.reads == 2
 
 
-# --- V109(a): a reseller-credential row is hidden here, not everywhere ---
+# --- A reseller-credential row is hidden here, not everywhere ---
 
 
 async def test_a_reseller_credential_row_is_absent_from_the_listing() -> None:
     """`is_reseller_credential = true` hides a row from `whm_list_servers`' output.
 
-    The listing problem V109(a) exists for: 16 clusters x ~7 rows is 112 candidates in a
-    transcript, and only the root row per cluster is a useful name for the model to read.
+    The listing problem the visibility filter exists for: 16 clusters x ~7 rows is 112 candidates in
+    a transcript, and only the root row per cluster is a useful name for the model to read.
 
-    Named `name == api_username` (V109(b)) — the admin write refuses a `true` row any other
+    Named `name == api_username` — the admin write refuses a `true` row any other
     way, so a fixture that skipped the pairing would test a shape production cannot hold.
     """
     reseller_row = whm_server(
@@ -169,8 +169,8 @@ async def test_a_reseller_credential_row_is_absent_from_the_listing() -> None:
 
 async def test_a_non_reseller_row_is_listed() -> None:
     """Negative control for the filter above: without it, filtering everything out would
-    also pass a naive `is not True` check (V87 — a listing with nothing hidden proves
-    nothing about the filter itself)."""
+    also pass a naive `is not True` check (the negative-control rule — a listing with nothing
+    hidden proves nothing about the filter itself)."""
     fixture = build_tool_context(servers=[whm_server("root1")])
 
     result = await whm_list_servers(context=fixture.context)
@@ -179,11 +179,11 @@ async def test_a_non_reseller_row_is_listed() -> None:
 
 
 async def test_a_reseller_credential_row_still_resolves_by_id_name_and_hostname() -> None:
-    """V106's compare needs this row reachable — hiding it from the *listing* must not hide
+    """The owner compare needs this row reachable — hiding it from the *listing* must not hide
     it from *resolution*, or the account CHANGE path becomes unreachable for every account
     such a row owns.
 
-    Named `name == api_username` (V109(b)), same as the sibling test above: the row this
+    Named `name == api_username`, same as the sibling test above: the row this
     proves reachable is a row the admin write can actually create, not a shape that is only
     ever hidden and never held. `server_ref = owner` resolves by exactly this pairing.
     """
@@ -205,7 +205,7 @@ async def test_a_reseller_credential_row_still_resolves_by_id_name_and_hostname(
         assert resolution.server.id == reseller_row.id
 
 
-# --- V19: the error boundary ---
+# --- The error boundary ---
 
 
 @pytest.mark.parametrize(
@@ -228,7 +228,7 @@ async def test_a_reseller_credential_row_still_resolves_by_id_name_and_hostname(
 async def test_an_exception_reaches_the_caller_as_a_named_failure(
     error: BaseException, expected_code: str, expected_message: str
 ) -> None:
-    """V19's two named mappings, and the text of the original never travels.
+    """The sanitizer's two named mappings, and the text of the original never travels.
 
     The exception messages carry an internal host and a port on purpose: those are exactly
     the strings that must not end up in a transcript.

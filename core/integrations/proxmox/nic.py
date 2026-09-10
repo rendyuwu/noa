@@ -1,11 +1,11 @@
 """What a Proxmox `netN` config line says, and how to flip its link state.
 
-Ported from `noa-old` branch `MCP` (`proxmox/tools/nic_tools.py`, C13, V69), where these were
-private helpers inside the tool module. They live in the integration layer here for two reasons
-that both point the same way: the `netN` grammar is a **Proxmox** fact rather than a workflow's,
-and `proxmox_vm_nic`'s two halves — the tool that reads the before-state and the runner that
-writes after an approval — each need it, so a copy in either module is the duplication V66 is
-about.
+Ported — copied, not rewritten — from `noa-old` branch `MCP` (`proxmox/tools/nic_tools.py`), where
+these were private helpers inside the tool module. They live in the integration layer here for two
+reasons that both point the same way: the `netN` grammar is a **Proxmox** fact rather than a
+workflow's, and `proxmox_vm_nic`'s two halves — the tool that reads the before-state and the runner
+that writes after an approval — each need it, so a copy in either module is duplication — one
+helper, not two.
 
 **The format.** One `netN` value is a comma-separated list of `key=value` segments, with the
 model and MAC address fused into the first one:
@@ -77,12 +77,12 @@ class NetworkInterface:
         return self.link_state == LINK_STATE_DOWN
 
     def as_evidence(self) -> dict[str, Any]:
-        """JSON-native, for `approval_context` JSONB (T33's rule).
+        """JSON-native, for `approval_context` JSONB, written by the gate that opens the request.
 
         The raw `value` is **not** here. It is the one field that grows without bound as Proxmox
         gains options, it means nothing to an operator reading a card, and the runner re-reads the
-        line it is about to edit anyway (T28's digest decision) — so carrying it would be a stale
-        copy of a value nothing consults.
+        line it is about to edit anyway (the NIC tool's digest decision) — so carrying it would be
+        a stale copy of a value nothing consults.
         """
         return {
             "net": self.key,
@@ -185,7 +185,8 @@ def read_nic(key: str, value: str) -> NetworkInterface:
     card. A MAC address is recognisable and an option value is not, so there is no need to guess.
 
     A line with no MAC-shaped segment yields `model=None`, which the card and the `choices` list
-    both render as an absence rather than as a value (V86's shape, one field down).
+    both render as an absence rather than as a value — never folding a non-answer into a benign
+    default, one field down.
     """
     segments = parse_net_segments(value)
     model: str | None = None
@@ -217,7 +218,8 @@ def list_nics(config: Mapping[str, Any]) -> list[NetworkInterface]:
 
     Sorted numerically rather than lexically, so a VM with ten NICs lists `net2` before `net10` —
     an operator reading a `choices` list sees Proxmox's own order, and the order is reproducible
-    across identical calls (V85's ordering rule, on a list too small to cap).
+    across identical calls — the same stable-order rule capped reads use, here on a list too small
+    to cap.
 
     Non-string and blank values are skipped rather than stringified: a config key that is not a
     line NOA can parse is not a NIC it can offer to change.

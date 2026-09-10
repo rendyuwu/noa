@@ -1,18 +1,20 @@
 /**
- * E2-E6 — the live run for T59 items (d) and (f), plus three properties of the rendered frame.
+ * E2-E6 — the live run for the render-path gate's items (d) and (f), plus three properties of
+ * the rendered frame.
  *
  * Drives a real browser against a real LibreChat at pin 45cc53c4, talking to a real NOA
  * process over MCP, and answers one question with a measurement rather than a source read:
  * when NOA returns a `text/uri-list` UI resource, does the frame LibreChat renders sit on
  * NOA's origin with the `noa_session` cookie riding into it, so the decision POST
- * V22 requires is possible from inside it?
+ * the cookie/CSRF boundary requires is possible from inside it?
  *
  * What each stage proves is written next to it. Two design points worth stating here:
  *
  * - **The negative control is not optional.** `embed_probe_html` returns the same page over
  *   the `srcDoc` path, where the origin is opaque and the cookie cannot ride. If that run
  *   also came back 200, this probe would be measuring something other than what it claims —
- *   the tautology V87 describes one axis over. Both runs must happen, and they must differ.
+ *   the tautology the compare-must-still-separate rule describes one axis over. Both runs must
+ *   happen, and they must differ.
  * - **The verdicts come from inside the frame**, not from a screenshot. The page writes them
  *   into `data-*` attributes; this reads those. Screenshots are kept as evidence for a human,
  *   not as the oracle.
@@ -116,7 +118,7 @@ async function createAgent(request, token) {
     headers: { Authorization: `Bearer ${token}` },
     data: {
       name: 'NOA embed render gate',
-      description: 'T59 harness agent',
+      description: 'the render-path gate harness agent',
       provider: 'anthropic',
       model: 'claude-sonnet-5',
       instructions:
@@ -492,7 +494,7 @@ async function main() {
       uriProbe?.me,
     );
     check(
-      'POST /embed-probe/decide from inside the frame is authenticated (V22 path)',
+      'POST /embed-probe/decide from inside the frame is authenticated (cookie/CSRF path)',
       (uriProbe?.decide ?? '').startsWith('200'),
       uriProbe?.decide,
     );

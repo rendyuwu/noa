@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { formatRelativeTime } from './relative-time'
 
-// Moved with the implementation out of `users/user-status.test.ts` (§T76). The
+// Moved with the implementation out of `users/user-status.test.ts`. The
 // two original cases are kept verbatim so the move demonstrably preserves
 // coverage rather than quietly re-specifying it; the rest pin the boundaries the
 // token tables now depend on.

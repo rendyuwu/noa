@@ -1,24 +1,24 @@
 /**
- * Who may frame this app, and nobody else (§T.45, V41).
+ * Who may frame this app, and nobody else.
  *
  * The embed is the one NOA origin LibreChat is allowed to put in an iframe, and the card it will
  * host carries the Approve button and the operator-typed reason. The decision POST is a
  * same-origin `fetch` riding the `noa_session` cookie, so a page that can frame this app
  * and land a click on it is the reachability this header exists to deny. The admin app answers
- * `frame-ancestors 'none'` for the same reason from the other side (V41, §T.49).
+ * `frame-ancestors 'none'` for the same reason from the other side.
  *
  * No `X-Frame-Options`: CSP `frame-ancestors` supersedes it in every browser that supports both,
  * and `ALLOW-FROM` — the only XFO form that could name one origin — is dead. Its absence is
  * asserted rather than assumed, because adding it back would break framing in any client that
  * honours XFO over CSP.
  *
- * Lives beside `root-env.ts` rather than inside `next.config.ts` for the reason §T.44 put that one
- * here: the part that can be got wrong is the rule, and a rule inside the config cannot be tested
+ * Lives beside `root-env.ts` rather than inside `next.config.ts` for the same reason:
+ * the part that can be got wrong is the rule, and a rule inside the config cannot be tested
  * without importing the config's side effects.
  */
 
 /**
- * The LibreChat origin as deployed (§I.embed, V41). Also the value `.env.example` and
+ * The LibreChat origin as deployed (the embed app's contract). Also the value `.env.example` and
  * `core/config.py::noa_librechat_origin` carry, so the three do not disagree.
  */
 export const DEFAULT_LIBRECHAT_ORIGIN = 'https://chat.noa.internal'
@@ -33,7 +33,8 @@ export const FRAMING_HEADER = 'Content-Security-Policy'
  *
  * Deliberately not a page-shaped pattern: config headers are applied during route resolution
  * without terminating the match, so this one entry covers the pages, the `/api/*` proxy, `/healthz`
- * and the 404 alike. A guard the next route has to remember is one it forgets (V83b's shape).
+ * and the 404 alike. A guard the next route has to remember is one it forgets — same shape as a
+ * gate that lives anywhere but one place.
  */
 export const FRAMING_SOURCE = '/(.*)'
 
@@ -56,7 +57,7 @@ export type FramingHeaderEntry = {
  *
  * Absent or blank falls back to the pinned default: the header is never omitted and never widened
  * by a variable nobody set. An unusable value throws instead, which under `next build`/`next dev`
- * is a build or boot failure — the same rule §T.8 applies to the API's key guards, for the same
+ * is a build or boot failure — the same rule applies to the API's key guards, for the same
  * reason: a config error should stop the deploy, not surface later as a header that says something
  * nobody meant.
  */

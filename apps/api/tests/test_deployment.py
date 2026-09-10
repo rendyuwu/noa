@@ -633,7 +633,8 @@ def test_deployment_doc_records_the_single_replica_trigger() -> None:
     """The constraint is only useful if the reason travels with it — doc prose bound by test."""
     doc = DEPLOYMENT_DOC.read_text(encoding="utf-8")
 
-    assert "V79" in doc
+    assert "zero clock leeway" in doc
+    assert "one clock" in doc
     assert "--workers" in doc
     assert "--forwarded-allow-ips" in doc
 
@@ -647,7 +648,9 @@ def test_readiness_decision_is_recorded_and_no_longer_deferred() -> None:
     """`docs/admin-web.md` deferred `/readyz` to the deployment artifacts. They answered it: no.
 
     Both halves are asserted, because recording the decision while leaving the deferral in
-    place is how two truths end up live.
+    place is how two truths end up live. The deferral used to be a registry pointer, so the
+    negative half is now asserted on the DECISION's own words instead — a pointer that no
+    longer exists anywhere cannot fail a test.
     """
     deployment = DEPLOYMENT_DOC.read_text(encoding="utf-8")
     admin_web = (REPO_ROOT / "docs" / "admin-web.md").read_text(encoding="utf-8")
@@ -655,7 +658,9 @@ def test_readiness_decision_is_recorded_and_no_longer_deferred() -> None:
     assert "/readyz" in deployment
     assert "no readiness probe" in deployment.lower()
 
-    assert "§T.60's" not in admin_web, "the deferral to this row is still in place"
+    assert "no readiness probe, and there will not be one" in admin_web, (
+        "the decision is not stated where the deferral used to sit"
+    )
     assert "docs/deployment.md" in admin_web, "the answer is not pointed at from where it was asked"
 
 

@@ -4,24 +4,24 @@
 repository, which proves the ordering and every refusal but cannot prove the claim that is
 *about the database*:
 
-- **V28's row lock.** "Exactly one `pending -> decided` transition" is a statement about what
+- **The row lock.** "Exactly one `pending -> decided` transition" is a statement about what
   happens when two transactions race. A double cannot lose that race, so a double cannot
   demonstrate the invariant — only `SELECT ... FOR UPDATE` on real rows can.
 
 The refusals sit beside it because they are the same question asked without contention: who
 may answer this request, and until when. They are asserted against real rows for their own
-reason — V27's requester match has to survive a `SET NULL` foreign key the metadata only
-describes, and V32's check-on-read has to *commit* the terminal status it discovers.
+reason — the requester-match has to survive a `SET NULL` foreign key the metadata only
+describes, and the TTL rule's check-on-read has to *commit* the terminal status it discovers.
 
 What an accepted decision then records is `test_action_request_decision_records_live.py`, and
-V31's per-user cap is `test_action_request_change_cap_live.py`. Both were split out of this
-file when it passed the 900-line limit; all three share the row helpers in
+the per-user in-flight cap is `test_action_request_change_cap_live.py`. Both were split out of
+this file when it passed the 900-line limit; all three share the row helpers in
 `support.action_decisions` and the scratch-database fixtures in `support.database`.
 
 Skipped, never failed, when Postgres is unreachable — like every other DB-backed test here.
 
 `SQLActionDecisionRepository` runs for real throughout; only the executor is a recorder,
-because T38 is what makes it do anything.
+because the approved-change executor is what makes it do anything.
 """
 
 from __future__ import annotations
@@ -80,27 +80,27 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
 
 
 # The row helpers — `insert_user`, `open_request`, `read_request`, `read_runs` — moved to
-# `support.action_decisions` at T39, when the expiry sweep's live file needed the same four
-# . They still write through the gate's own repository; see their docstrings.
+# `support.action_decisions` when the expiry sweep's live file needed the same four. They
+# still write through the gate's own repository; see their docstrings.
 
 
 # --------------------------------------------------------------------------------------
-# V28 — the row lock, which only two real transactions can demonstrate
+# The row lock, which only two real transactions can demonstrate
 # --------------------------------------------------------------------------------------
 
 
 # `ObservedDecisionRepository` and `HANDOVER_GRACE_SECONDS` moved to
-# `support.action_decisions` at T39: the expiry sweep races the same window and must hold it
+# `support.action_decisions`: the expiry sweep races the same window and must hold it
 # open the same way.
 
 
 async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> None:
-    """V28: a second decision cannot pass a row another transaction is deciding.
+    """A second decision cannot pass a row another transaction is deciding.
 
     **The race is arranged, and the arrangement is the point.** An `asyncio.gather` of two
     approvals looks like a race and is not one — the first completes before the second
     reaches its read, so that version passes with `FOR UPDATE` *deleted*. A test that cannot
-    fail is a tautology in the passing direction, which is V69's shape: a control asserted by
+    fail is a tautology in the passing direction, which is the shape of a control asserted by
     prose and held by nothing. Here the first transaction is held open between its locked
     read and its commit, and the second is started inside that window.
 
@@ -111,8 +111,9 @@ async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> 
 
     **Which transaction reads first is arranged, not raced.** `second` waits for `first`'s lock
     before it reads, and `first` holds until `second` has queued — see `hold_the_lock`. Gating
-    only the second half, as this test did until §T78's review, left `asyncio.gather` to decide
-    who locked first, and the losing order made the assertion raise instead of fail.
+    only the second half, as this test did until the owner-vs-credential guard's review, left
+    `asyncio.gather` to decide who locked first, and the losing order made the assertion raise
+    instead of fail.
 
     The `tool_runs` count is the harm this prevents: two rows would mean the same production
     change was authorised, and handed to the executor, twice.
@@ -127,13 +128,14 @@ async def test_concurrent_approves_produce_one_decision_and_one_run(factory) -> 
     async def hold_the_lock() -> None:
         """Announce the lock, then stay inside the first transaction until the second queues.
 
-        Two handshakes, and the first one is what B5 was missing. `asyncio.gather` starts both
-        coroutines and orders nothing: each one's first await is a pool checkout, so if `first`
-        needed a new connection while `second`'s was already pooled, `second` took the row lock
-        first, committed unopposed, and `first` raised `AlreadyDecided` and never journalled
-        `first:committed` — at which point the ordering assertion below raised `ValueError` from
-        `list.index` rather than failing. A test whose arrangement is a race cannot assert an
-        order (V89, and the reason a §B row exists for it).
+        Two handshakes, and the first one is what the no-race-without-a-lock defect was missing.
+        `asyncio.gather` starts both coroutines and orders nothing: each one's first await is a
+        pool checkout, so if `first` needed a new connection while `second`'s was already pooled,
+        `second` took the row lock first, committed unopposed, and `first` raised
+        `AlreadyDecided` and never journalled `first:committed` — at which point the ordering
+        assertion below raised `ValueError` from `list.index` rather than failing. A test whose
+        arrangement is a race cannot assert an order (the concurrency-test rule, and the reason
+        this became a known defect).
         """
         first_locked.set()
         await second_reading.wait()
@@ -302,7 +304,8 @@ async def test_concurrent_approve_and_deny_leave_one_answer(factory) -> None:
 
 
 async def test_a_second_decision_after_the_first_committed_is_refused(factory) -> None:
-    """The sequential half of V28. Not redundant with the race: this is the common case."""
+    """The sequential half of the row lock's guarantee. Not redundant with the race: this is
+    the common case."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
@@ -327,12 +330,13 @@ async def test_a_second_decision_after_the_first_committed_is_refused(factory) -
 
 
 # --------------------------------------------------------------------------------------
-# V27, V32, V15 against real rows
+# The requester-match, the TTL rule, and the reason rule, against real rows
 # --------------------------------------------------------------------------------------
 
 
 async def test_another_operators_request_is_not_found(factory) -> None:
-    """V27, against a row that genuinely exists — the case a double cannot make convincing."""
+    """The requester-match, against a row that genuinely exists — the case a double cannot
+    make convincing."""
     owner_id = await insert_user(factory, OPERATOR_EMAIL)
     intruder_id = await insert_user(factory, OTHER_EMAIL)
     action_request_id = await open_request(factory, requested_by_user_id=owner_id)
@@ -392,7 +396,7 @@ async def test_a_request_whose_requester_was_deleted_is_not_found(factory) -> No
 
 
 async def test_an_expired_request_becomes_terminal_on_read(factory) -> None:
-    """V32's check-on-read, committed: the row is EXPIRED afterwards, not still PENDING.
+    """The TTL rule's check-on-read, committed: the row is EXPIRED afterwards, not still PENDING.
 
     Refusing without the write would leave the next reader to make the same discovery again,
     and would leave a request nobody answered still looking answerable.
@@ -424,7 +428,8 @@ async def test_an_expired_request_becomes_terminal_on_read(factory) -> None:
 
 
 async def test_deciding_an_expired_request_twice_reports_it_as_decided(factory) -> None:
-    """The second attempt hits V28's guard, not V32's — the row is already terminal.
+    """The second attempt hits the row lock's guard, not the TTL rule's — the row is already
+    terminal.
 
     Worth pinning because the two refusals carry different remedies: "ask for the change
     again" versus "reload and read the outcome".
@@ -450,7 +455,7 @@ async def test_deciding_an_expired_request_twice_reports_it_as_decided(factory) 
 
 
 async def test_a_blank_reason_touches_no_row(factory) -> None:
-    """V15, and the ordering that goes with it: refused before the lock is taken."""
+    """The reason rule, and the ordering that goes with it: refused before the lock is taken."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
 
@@ -467,7 +472,7 @@ async def test_a_blank_reason_touches_no_row(factory) -> None:
 
 
 async def test_the_gates_repository_still_cannot_decide(factory) -> None:
-    """V22, asserted against the class the MCP path actually holds.
+    """The cookie/CSRF boundary, asserted against the class the MCP path actually holds.
 
     `SQLActionRequestRepository` is what `McpToolContext` carries. If it ever grew a way to
     write a terminal status, the bearer-token path would hold the key to the authorization —

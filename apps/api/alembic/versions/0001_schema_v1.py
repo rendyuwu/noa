@@ -4,12 +4,12 @@ Revision ID: 0001_schema_v1
 Revises: None
 Create Date: 2026-08-04
 
-T4. Covers identity + RBAC, MCP token auth with TOFU binding
-(V2, V3), and the three managed-server tables whose credential columns hold
+This migration covers identity + RBAC, MCP token auth with TOFU binding,
+and the three managed-server tables whose credential columns hold
 Fernet ciphertext.
 
 `gen_random_uuid()` is core in Postgres 13+, so no `pgcrypto` extension is
-created here (C3 pins Postgres 16).
+created here.
 """
 
 from __future__ import annotations
@@ -70,7 +70,7 @@ def upgrade() -> None:
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("ldap_dn", sa.Text(), nullable=True),
         sa.Column("display_name", sa.String(length=255), nullable=True),
-        # V7: new LDAP users land inactive; an admin activates them.
+        # New LDAP users land inactive; an admin activates them.
         sa.Column("is_active", sa.Boolean(), nullable=False, server_default="false"),
         sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
         _created_at(),

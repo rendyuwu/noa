@@ -1,14 +1,14 @@
-"""The one place a tool name becomes callable over MCP (T19, T73 — I.mcp, V10, V20).
+"""The one place a tool name becomes callable over MCP.
 
 `build_mcp_server` calls this and nothing else registers tools. That single entry point is
 what makes three properties checkable instead of hoped for:
 
-- **Every exposed name is in `TOOL_CATALOG`.** RBAC grants are written against that catalog
-  (T9), so a tool registered under a name outside it is a capability no role can be granted
+- **Every exposed name is in `TOOL_CATALOG`.** RBAC grants are written against that catalog,
+  so a tool registered under a name outside it is a capability no role can be granted
   — and one the `admin` bypass would still reach, because the bypass hands out "every known
   tool" and the execution check only rejects names the catalog does not know. The
   check below turns that into a startup failure rather than a permission surprise.
-- **C22's never-implement names cannot appear.** They are absent from `TOOL_CATALOG`
+- **The never-implement names cannot appear.** They are absent from `TOOL_CATALOG`
   (`core.auth.tool_catalog`), so the same check refuses them. That is a management-policy
   boundary, not a technical one: re-adding one is an owner decision, and it should not be
   possible to do it by accident while wiring a tool.
@@ -68,7 +68,7 @@ class RegistryError(RuntimeError):
 
 
 def register_mcp_tools(server: FastMCP, *, context: McpToolContext) -> dict[str, ToolRisk]:
-    """Register every exposed tool on `server`; return name → risk (I.mcp, V20)."""
+    """Register every exposed tool on `server`; return name → risk."""
     registered: dict[str, ToolRisk] = {
         **register_whm_read_tools(server, context=context),
         **register_whm_account_change_tools(server, context=context),
@@ -106,11 +106,11 @@ def assert_change_runners_cover(
     Approve, and it lands as a change that will not run.
 
     Written before its first instance existed, on the argument that a rule discovered by its
-    first instance is a rule that shipped late (V85's discipline, T33(d)'s vacuous registry
-    sweep). T22 is that first instance: `whm_suspend_account` is registered CHANGE and covered
-    by `build_whm_account_change_runners`. The probe test that registers a CHANGE tool with no
-    runner stays, because a predicate that now happens to be satisfied still has to separate
-    (V87).
+    first instance is a rule that shipped late (the row-cap discipline, the gate's vacuous
+    registry sweep). The suspend tool is that first instance: `whm_suspend_account` is registered
+    CHANGE and covered by `build_whm_account_change_runners`. The probe test that registers a
+    CHANGE tool with no runner stays, because a predicate that now happens to be satisfied still
+    has to separate.
     """
     uncovered = sorted(
         name for name, risk in registered.items() if risk is ToolRisk.CHANGE and name not in runners

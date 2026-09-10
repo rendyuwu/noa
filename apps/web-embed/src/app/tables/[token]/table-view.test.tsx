@@ -6,21 +6,21 @@ import type { ResultTable, ResultTableLoad } from '@/lib/tables/table'
 import { TableView } from './table-view'
 
 /**
- * What the table surface renders, and what it must never render (§T.56 — V27, V38, V64, V85).
+ * What the table surface renders, and what it must never render.
  *
- * **The absences are the point, and they are asserted by name.** §I.embed says this surface is
- * read-only with no decision controls: no Approve, no Deny, no reason box, no `<form>`, no `input`.
- * By name rather than by counting controls, for §T.43's reason — the 401 state adds two controls of
- * its own that are *not* decisions, so a `getByRole('button')` count would go red for the right
- * rule spelled wrongly.
+ * **The absences are the point, and they are asserted by name.** The embed app's contract says
+ * this surface is read-only with no decision controls: no Approve, no Deny, no reason box, no
+ * `<form>`, no `input`. By name rather than by counting controls, for the escape hatch's reason —
+ * the 401 state adds two controls of its own that are *not* decisions, so a `getByRole('button')`
+ * count would go red for the right rule spelled wrongly.
  *
  * **The bound is rendered on every table**, not only on a capped one. A sentence that appeared
  * only when rows were dropped is one a reader learns to skip, and the failure this guards is a
  * capped page read as a complete one.
  *
  * The 401 state is `SignInNotice`, shared with the approval card since this row — its own
- * lane (`src/components/sign-in-notice.test.tsx`) owns the link-plus-address rule V94 names; what
- * is asserted here is that this surface reaches it at all.
+ * lane (`src/components/sign-in-notice.test.tsx`) owns the link-plus-address rule the escape
+ * hatch requires; what is asserted here is that this surface reaches it at all.
  */
 
 const TABLE: ResultTable = {
@@ -67,7 +67,8 @@ describe('the table', () => {
     expect(screen.getByRole('columnheader', { name: 'Primary domain' })).toBeDefined()
     expect(screen.getByRole('cell', { name: 'acmeco' })).toBeDefined()
     expect(screen.getByRole('cell', { name: 'beta.example' })).toBeDefined()
-    // Header row plus one per record: the listing is whole, which is what V64 offloads it for.
+    // Header row plus one per record: the listing is whole, which is what the summary-plus-URL
+    // split offloads it for.
     expect(screen.getAllByRole('row')).toHaveLength(3)
   })
 
@@ -119,7 +120,7 @@ describe('the table', () => {
 })
 
 describe('what a table surface never carries', () => {
-  it('offers no decision control of any kind (§I.embed)', () => {
+  it('offers no decision control of any kind, per the embed contract', () => {
     renderView(tableLoad())
 
     // By name, not by count. A table has nothing to authorise; the approval card is the surface
@@ -129,7 +130,7 @@ describe('what a table surface never carries', () => {
     expect(screen.queryByRole('textbox')).toBeNull()
   })
 
-  it('contains no form and no input (V80, §I.embed)', () => {
+  it('contains no form and no input — allow-forms is absent, per the embed contract', () => {
     const { container } = renderView(tableLoad())
 
     expect(container.querySelector('form')).toBeNull()
@@ -139,7 +140,7 @@ describe('what a table surface never carries', () => {
 
   it('renders no link into the frame beyond the sign-in state', () => {
     // Nothing on a rendered table navigates: the frame stays on the URL it was given, and the one
-    // anchor this app renders belongs to the 401 state (§T.43, V42).
+    // anchor this app renders belongs to the 401 state.
     const { container } = renderView(tableLoad())
 
     expect(container.querySelector('a')).toBeNull()
@@ -158,7 +159,7 @@ describe('the states that are not a table', () => {
   })
 
   it('renders no link at all when no sign-in address is configured', () => {
-    // A door to a host nobody deployed reads as an action that was refused (§T.43(b)).
+    // A door to a host nobody deployed reads as an action that was refused.
     renderView({ kind: 'unauthenticated' }, null)
 
     expect(screen.queryByRole('link')).toBeNull()

@@ -6,7 +6,7 @@ NOA generates and the model must never see.
 **Two halves, and only the first is here.** This module runs the in-process preflight
 and opens an `action_requests` row; it executes nothing, and the LLM can reach it. The half that
 performs the reset is `proxmox_password_runner.py`, reachable only from
-`core.approvals.execution` after an operator approved. They are two files for C14 — a
+`core.approvals.execution` after an operator approved. They are two files for the file-size cap — a
 CHANGE tool with a delivery hop, a task poll and a crypt compare runs past 900 lines — and the
 split falls on the boundary the design already draws. The dependency runs one way: the runner
 imports this module's evidence keys and tool name, and nothing here imports the runner, so
@@ -22,9 +22,9 @@ was `noa-old`'s bug (GH #91): its reset tool took the password from the model an
 putting the plaintext in the prompt, the model context and the stored transcript. NOA generates it
 in the runner's frame, and the schema gives a model nowhere to put one.
 
-**There is no no-op branch**, unlike T22, T23 and T26. A password reset has no
-already-in-that-state reading — the new password is new every time — so every well-formed call
-opens a card.
+**There is no no-op branch**, unlike the suspend, unsuspend and allowlist-remove tools. A password
+reset has no already-in-that-state reading — the new password is new every time — so every
+well-formed call opens a card.
 """
 
 from __future__ import annotations
@@ -52,13 +52,12 @@ from noa_api.mcp_tools.results import (
 
 TOOL_PROXMOX_RESET_VM_PASSWORD = "proxmox_reset_vm_password"  # noqa: S105 — a tool name
 
-# --- Evidence keys ---
-#
-# This tool's own, not shared with the WHM sets. Two of them spell the same word as a firewall
-# key by coincidence, and T25's note is the reason that matters: a key meaning two things in two
-# contracts is how a JSONB read silently returns the wrong field. They cross a boundary in time
-# as well as in code — the tool writes them into `approval_context`, the runner reads them back
-# minutes later — so a misspelling reads as an absent value rather than as an error.
+# --- Evidence keys --- This tool's own, not shared with the WHM sets. Two of them spell the same
+# word as a firewall key by coincidence, and the release-and-allow tool's note is the reason that
+# matters: a key meaning two things in two contracts is how a JSONB read silently returns the wrong
+# field. They cross a boundary in time as well as in code — the tool writes them into
+# `approval_context`, the runner reads them back minutes later — so a misspelling reads as an absent
+# value rather than as an error.
 EVIDENCE_SERVER_ID: Final = "server_id"
 EVIDENCE_SERVER_NAME: Final = "server"
 EVIDENCE_NODE: Final = "node"
@@ -82,16 +81,15 @@ MESSAGE_USERNAME_REQUIRED: Final = (
 ERROR_INVALID_VMID: Final = "invalid_vmid"
 MESSAGE_INVALID_VMID: Final = "A VM id must be a positive whole number."
 
-# An approved change names a Proxmox endpoint that is no longer resolvable. Its own code rather
-# than `change_target`'s `whm_server_unavailable`: the code names the inventory an administrator
-# has to fix, and those are two different rows in two different tables. Distinct from the
-# tool-time resolution failures, which the model can fix by asking again — by the time this fires
-# an operator has already typed a reason and pressed Approve.
-#
-# Here rather than in `proxmox_password_runner`, where T27 first wrote it, because T28 made a
-# second Proxmox runner and this is the module both already import — and it is where
-# `change_target`'s docstring says the Proxmox pair lives. `proxmox_password_runner` re-exports
-# both names, so callers that reach for them there keep one import path.
+# An approved change names a Proxmox endpoint that is no longer resolvable. Its own code rather than
+# `change_target`'s `whm_server_unavailable`: the code names the inventory an administrator has to
+# fix, and those are two different rows in two different tables. Distinct from the tool-time
+# resolution failures, which the model can fix by asking again — by the time this fires an operator
+# has already typed a reason and pressed Approve. Here rather than in `proxmox_password_runner`,
+# where this tool first wrote it, because the NIC tool made a second Proxmox runner and this is the
+# module both already import — and it is where `change_target`'s docstring says the Proxmox pair
+# lives. `proxmox_password_runner` re-exports both names, so callers that reach for them there keep
+# one import path.
 ERROR_SERVER_UNAVAILABLE: Final = "proxmox_server_unavailable"
 MESSAGE_SERVER_UNAVAILABLE: Final = (
     "The Proxmox server this change was approved for is no longer available. Contact an "
@@ -142,9 +140,9 @@ async def proxmox_reset_vm_password(
     here as well as by the schema, because a caller reaching this function directly bypasses
     pydantic and this is a value that goes into a URL path.
 
-    Then one database session — resolve the operator's word to a server (V18: a tie is `choices`,
+    Then one database session — resolve the operator's word to a server (a tie is `choices`,
     never a pick) and turn that row into a client — and the session closes before the HTTP hops,
-    which is T21's rule.
+    which is the account search's rule.
 
     The preflight is this call's own and runs in-process: the VM's config, its
     cloud-init values and its run state, born here, milliseconds old, same user, reaching the
@@ -157,7 +155,8 @@ async def proxmox_reset_vm_password(
     which is a real and ordinary configuration, and the card shows `ciuser` as absent so the
     operator sees exactly that.
 
-    There is no no-op branch, unlike T22/T23/T26. A password reset has no already-in-that-state
+    There is no no-op branch, unlike the suspend, unsuspend and allowlist-remove tools. A password
+    reset has no already-in-that-state
     reading: the new password is new every time, and there is nothing to compare a request
     against.
     """
@@ -232,11 +231,11 @@ class VMCloudInitState:
     """The before-state an operator authorises a password reset against.
 
     **A fixed set of fields, and that is the point.** It is built by naming what goes in rather
-    than by sanitizing what came out of Proxmox — the same structural argument V26 makes about
-    the gate's URL and V76 makes about `ActionResultView`. A VM config carries `cipassword`
+    than by sanitizing what came out of Proxmox — the same structural argument the gate's URL
+    makes, and `ActionResultView` makes too. A VM config carries `cipassword`
     among a hundred other keys, and a redaction pass over the whole document is a rule that has
     to keep being right as Proxmox adds keys; a structure with nowhere to put one cannot leak by
-    an omission nobody noticed (V93's shape).
+    an omission nobody noticed.
 
     `unavailable_reads` names any preflight read that could not answer, rather than letting an
     absent field read as a measured absence. Only the run state is allowed to be missing:
@@ -251,7 +250,7 @@ class VMCloudInitState:
     unavailable_reads: list[str]
 
     def as_evidence(self) -> dict[str, Any]:
-        """JSON-native, for `approval_context` JSONB (T33's rule)."""
+        """JSON-native, for `approval_context` JSONB (the gate's rule)."""
         return {
             "name": self.name,
             "ciuser": self.ciuser,
@@ -264,13 +263,13 @@ class VMCloudInitState:
 async def collect_vm_state(
     client: ProxmoxClient, *, node: str, vmid: int
 ) -> VMCloudInitState | ToolPayload:
-    """Read one VM's cloud-init before-state, or refuse. Internal — ⊥ an MCP tool.
+    """Read one VM's cloud-init before-state, or refuse. Internal — never an MCP tool.
 
     Two required reads and one tolerated. The config says who the cloud-init user is and whether
     a password is set at all; the cloud-init endpoint is the second opinion on the password,
     because Proxmox reports a *pending* value there that the config may not show yet. A failure
-    of either is a refusal — a card that cannot describe what it is asking about is the state V35
-    exists to prevent.
+    of either is a refusal — a card that cannot describe what it is asking about is the state the
+    provenance rule exists to prevent.
 
     The run state is tolerated because it changes nothing about what the reset *does*: it tells
     an operator when the new password will take effect (a running VM reads its cloud-init drive
@@ -315,11 +314,11 @@ async def collect_vm_state(
 def register_proxmox_password_tools(
     server: FastMCP, *, context: McpToolContext
 ) -> dict[str, ToolRisk]:
-    """Register the Proxmox password CHANGE tool; return its name and risk (I.mcp, V20).
+    """Register the Proxmox password CHANGE tool; return its name and risk.
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
-    call — it opens an approval request and executes nothing, and V46's row belongs to the
-    executor that runs after a decision. It is also what makes
+    call — it opens an approval request and executes nothing, and the run-plus-receipt row belongs
+    to the executor that runs after a decision. It is also what makes
     `registry.assert_change_runners_cover` demand a runner for the name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
     """
@@ -381,8 +380,8 @@ def upstream_failure(result: Mapping[str, Any], *, fallback: str) -> ToolPayload
 
     The client's strings are stable and split by operator action — `permission_denied` sends
     somebody to Proxmox's ACLs, `auth_failed` to NOA's server row — so collapsing them would
-    throw away the only part of the answer that is actionable (V19's argument for passing a
-    `NoaError`'s own code through).
+    throw away the only part of the answer that is actionable (the sanitize-to-a-code argument
+    for passing a `NoaError`'s own code through).
     """
     return tool_failure(
         str(result.get("error_code") or ERROR_UNKNOWN),
@@ -391,7 +390,7 @@ def upstream_failure(result: Mapping[str, Any], *, fallback: str) -> ToolPayload
 
 
 def text_or_none(value: Any) -> str | None:
-    """A stripped non-empty string, or `None`. Non-strings are `None`, ⊥ stringified.
+    """A stripped non-empty string, or `None`. Non-strings are `None`, never stringified.
 
     Public because the runner half reads the same Proxmox payloads back and "absent" has to mean
     the same thing on both sides of the approval.

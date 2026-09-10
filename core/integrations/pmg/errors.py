@@ -4,9 +4,9 @@
 subclass with hand-rolled `code`/`message` attributes. It lands in its own module here and
 derives from `core.errors.NoaError`, for the reason `core/remote_exec/errors.py`,
 `core/secrets/errors.py` and `core/integrations/whm/errors.py` already state: this reaches an
-HTTP response — T54's `POST /admin/pmg/servers/{id}/validate` probes `pmgsh` over SSH — and V73
-requires one handler shaping every body. A second parallel taxonomy would make "one handler" a
-lie.
+HTTP response — the admin validate route's `POST /admin/pmg/servers/{id}/validate` probes
+`pmgsh` over SSH — and the shared-error-handler rule requires one handler shaping every body.
+A second parallel taxonomy would make "one handler" a lie.
 
 The keyword-only `code=` / `message=` constructor is kept verbatim from `noa-old` so the copied
 raise sites read identically to the source they were hardened in. `code` maps onto
@@ -27,7 +27,7 @@ Codes raised by this package, all stable strings tests and tools branch on:
                            `pmgsh` command dies on `sudo -n` rights. Distinct from a missing
                            binary on purpose: the remedy is a sudoers entry, and reporting a
                            generic command failure would send an operator hunting an install that
-                           is already there (`noa-old` GH #82, V55).
+                           is already there (`noa-old` GH #82).
 - every `SSHExecutionError` code — `_run_ssh_command` converts the transport failure rather than
   letting two exception trees escape one call (`ssh_timeout`, `ssh_auth_failed`,
   `ssh_host_key_mismatch`, `ssh_host_key_not_validated`, `ssh_not_configured`,
@@ -47,7 +47,7 @@ class PMGSHCLIError(NoaError):
 
     Instance-level `error_code` / `message`, matching `SSHExecutionError` and
     `WHMFirewallCLIError`: one class covers the whole surface, and splitting it into a subclass
-    per code would be the rewrite C13/V69 forbid.
+    per code would be the rewrite the port-not-rewrite rule forbids.
     """
 
     error_code: str = "pmgsh_command_failed"

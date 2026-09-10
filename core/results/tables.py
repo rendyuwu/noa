@@ -2,8 +2,8 @@
 
 A READ that answers with a listing does three things here: it hands its rows over, gets a
 token, and puts the URL that token names into its tool result (`noa_api.mcp_tools`). Nothing
-about the rows reaches the model — that is the whole of V64, and the reason the summary the
-model *is* given has to carry the counts this module computes.
+about the rows reaches the model — that is the whole of summary-plus-URL, and the reason the
+summary the model *is* given has to carry the counts this module computes.
 
 **Two classes, split by what they can do**, the discipline `core.approvals` established: the
 writer inserts and commits, the reader has no `commit` and no statement that is not a
@@ -14,25 +14,26 @@ second, and neither is reachable from the other's side.
 and deadline sit in the same `WHERE`, so a table that is not the caller's — or is past its
 lifetime — is never fetched into the process. A guard applied after the read is a projection
 away from being no guard at all: the row would be loaded, in front of the logger and the next
-edit, and every existing test would stay green (V93, measured at T42(b)).
+edit, and every existing test would stay green (the bound-at-fetch rule, measured against the
+approval card).
 
-`requested_by_user_id` is `SET NULL` (T56's migration), so a deleted operator's table matches
-nobody under SQL's NULL semantics — the fail-closed direction, the same one V27 names for
-approval requests.
+`requested_by_user_id` is `SET NULL` (the table-surface migration), so a deleted operator's
+table matches nobody under SQL's NULL semantics — the fail-closed direction, the same one the
+requester-match rule names for approval requests.
 
 **The cap is applied where the row is written, and it reports itself**. `cap_rows`
 returns the rows that survive, the count before the cut and whether there was one; all three
 are stored, so no reader has to infer a total from the rows it can see. A surface that
-rendered `len(rows)` as the total would be exactly the fabrication V85 exists to stop, and
-NOA rather than the model would be its author.
+rendered `len(rows)` as the total would be exactly the fabrication the row-cap rule exists to
+stop, and NOA rather than the model would be its author.
 
 **Order belongs to the producer.** The cut keeps the order it was handed, and the tool that
-hands it over is the one that knows which order is reproducible for its source — V85's
-amended ordering clause, which T24 already had to bend for `csf -g`. What this module
-guarantees is that the cut is a prefix and never a re-sort.
+hands it over is the one that knows which order is reproducible for its source — the row-cap
+rule's amended ordering clause, which the preflight read already had to bend for `csf -g`. What
+this module guarantees is that the cut is a prefix and never a re-sort.
 
 **Rows are redacted on the way in**. The same one-way `redact_sensitive_data` the
-audit path uses, at any depth (B7's lesson: a guard that reads only the top level is not a
+audit path uses, at any depth (a guard that reads only the top level is not a
 guard). A parked table outlives the call, sits behind a URL in a persisted transcript,
 and is read by a browser — three reasons it must not be the one writer exempt from the rule.
 """
@@ -101,7 +102,8 @@ class CappedRows:
 class ParkedTable:
     """What the tool needs after parking: the address's token, and the bound to state.
 
-    Deliberately not the rows. The whole point of V64 is that the tool's answer does not
+    Deliberately not the rows. The whole point of summary-plus-URL is that the tool's answer
+    does not
     carry them, and a value object that could would be one a future edit could serialise into
     a tool result by accident.
     """
@@ -123,7 +125,7 @@ class ResultTableView:
 
     `total_rows` and `truncated` ride beside the rows all the way to the browser: the bound
     has to be rendered, not merely stored, or a capped table reads on screen like a complete
-    one (V85, and V92's "a limit gets a voice" one surface over).
+    one (the row-cap rule, and the bounded-write rule's "a limit gets a voice" one surface over).
     """
 
     token: str
@@ -164,9 +166,9 @@ def cap_rows(rows: Sequence[Mapping[str, Any]], *, max_rows: int) -> CappedRows:
     """The first `max_rows` rows, the count before the cut, and whether one happened.
 
     A prefix, never a re-sort: the caller ordered these, and only the caller knows which
-    order is reproducible for its source (V85's amended ordering clause). Re-sorting here
-    would scramble a grouping the evidence is read by, which is the deviation T24 had to make
-    for `csf -g`.
+    order is reproducible for its source (the row-cap rule's amended ordering clause).
+    Re-sorting here would scramble a grouping the evidence is read by, which is the deviation
+    the preflight read had to make for `csf -g`.
 
     Redaction runs over the rows that survive. One-way, recursive, and the same function
     the audit path uses — a per-writer exemption from one redaction rule is how one of them
@@ -332,7 +334,8 @@ class SQLToolResultTableReader:
 
     No `commit`, and nothing to commit: every statement here is a `SELECT`. A read past the
     deadline writes nothing either — unlike an approval, where a stale PENDING has to become
-    terminal because V23 answers "may this run?" from that column. Nothing reads a
+    terminal because the verdict-from-status rule answers "may this run?" from that column.
+    Nothing reads a
     parked table's status, so there is none to correct: the row simply stops matching.
     """
 
@@ -403,7 +406,7 @@ class ResultTableService:
 
 
 def _columns_from_payload(value: Any) -> list[TableColumn]:
-    """The stored column list, defensively (V38's family).
+    """The stored column list, defensively (the never-a-blank-surface family).
 
     `column_labels` is unversioned JSONB, so an entry that is not an object, or is missing
     its key, is skipped rather than raised on: a `KeyError` reaching the surface is a blank

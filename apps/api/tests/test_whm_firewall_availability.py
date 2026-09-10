@@ -1,28 +1,31 @@
 """Firewall backend availability probing.
 
-This is the module V57 stands on: every firewall tool asks "which backends work here?" and then
-acts on whatever came back true, through the one gate that refuses an empty answer
-(`firewall_gate`, T68 — `test_whm_firewall_gate.py`). A false positive here is the one failure
-that gate cannot catch: it becomes the silent no-op V57 forbids, a CHANGE that reports success
+This is the module the zero-backend rule stands on: every firewall tool asks "which backends
+work here?" and then acts on whatever came back true, through the one gate that refuses an
+empty answer (`firewall_gate`, the no-backend rule — `test_whm_firewall_gate.py`). A false
+positive here is the one failure that gate cannot catch: it becomes the silent no-op the
+zero-backend rule forbids, a CHANGE that reports success
 having changed nothing. So the probe's honesty is the thing under test.
 
 Four behaviours, each an assertion of its own:
 
 - both backends are probed, and **in parallel** (`asyncio.gather`, not two sequential awaits);
-- each backend's verdict is independent — one missing must ⊥ drag the other down;
+- each backend's verdict is independent — one missing must never drag the other down;
 - **present-but-denied ≠ absent.** `sudo_required` is what lets the tool layer answer
   `ssh_sudo_required` instead of "no firewall tools on this server" (`noa-old` GH #82);
 - an unreachable host resolves to "not usable" rather than raising, because a probe that raises
   cannot report on the other backend.
 
-A **row** that cannot become a connection no longer reaches this module: as of T24 the caller
+A **row** that cannot become a connection no longer reaches this module: as of the
+firewall-preflight tool the caller
 resolves the `SSHConnectionConfig` and an unpinned or credential-less server is refused there,
 by name (`test_whm_ssh_config.py` for the refusals, `test_whm_tools_firewall_preflight.py` for
 the tool's answer). Those two cases used to live here and reported "no firewall tools", which
 is the same misdiagnosis `sudo_required` exists to prevent.
 
-The root/non-root split is asserted through the probe *commands*, since that is where V55
-lands here: root gets `command -v`, non-root gets the real binary under `sudo -n` — never
+The root/non-root split is asserted through the probe *commands*, since that is where the
+sudo-escalation rule lands here: root gets `command -v`, non-root gets the real binary under
+`sudo -n` — never
 `command -v` as the unprivileged user, which lies about a root-owned `0700` binary.
 """
 
@@ -52,7 +55,7 @@ def _present(command: str):  # type: ignore[no-untyped-def]
     return command_result(command=command, exit_code=0, stdout="ok")
 
 
-# --- V57: both backends, in parallel ---
+# --- Both backends, in parallel ---
 
 
 async def test_check_firewall_binaries_probes_both_backends(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -70,7 +73,7 @@ async def test_check_firewall_binaries_probes_both_backends(monkeypatch) -> None
 
 
 async def test_both_probes_are_in_flight_at_once(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """`asyncio.gather`, ⊥ two sequential awaits: each probe is a full SSH handshake and an
+    """`asyncio.gather`, never two sequential awaits: each probe is a full SSH handshake and an
     operator is waiting on a chat turn. A barrier here would double the wait."""
     started = asyncio.Event()
     both_started = asyncio.Event()
@@ -112,7 +115,8 @@ async def test_availability_reports_each_backend_independently(monkeypatch) -> N
 
 
 async def test_zero_backends_available_is_reported_honestly(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """The input to V57's `no_firewall_backend` refusal. This layer must ⊥ round it up."""
+    """The input to the zero-backend rule's `no_firewall_backend` refusal. This layer must
+    never round it up."""
     install_fake_ssh_exec(
         monkeypatch,
         availability_mod,
@@ -138,7 +142,7 @@ async def test_availability_sets_sudo_required_when_escalation_denied(monkeypatc
 
     assert availability.csf is False
     assert availability.imunify is False
-    # …but the operator is told to fix sudoers, ⊥ to install csf.
+    # …but the operator is told to fix sudoers, never to install csf.
     assert availability.sudo_required is True
 
 
@@ -171,7 +175,7 @@ async def test_missing_binary_under_sudo_is_not_a_sudo_problem(monkeypatch) -> N
     assert availability.sudo_required is False
 
 
-# --- V55: which probe runs depends on the resolved user ---
+# --- Sudo escalation: which probe runs depends on the resolved user ---
 
 
 async def test_root_probes_presence_with_command_v(monkeypatch) -> None:  # type: ignore[no-untyped-def]
@@ -183,8 +187,8 @@ async def test_root_probes_presence_with_command_v(monkeypatch) -> None:  # type
 
 
 async def test_non_root_probes_the_real_binary_under_sudo(monkeypatch) -> None:  # type: ignore[no-untyped-def]
-    """⊥ `command -v` as the unprivileged user: it reports "not installed" for a root-owned
-    `0700` binary that `sudo -n` runs perfectly well. ⊥ `sudo -l` either — that needs a
+    """Never `command -v` as the unprivileged user: it reports "not installed" for a root-owned
+    `0700` binary that `sudo -n` runs perfectly well. Never `sudo -l` either — that needs a
     permissive `listpw`, a second configuration dependency for a question the direct probe
     already answers."""
     fake = install_fake_ssh_exec(monkeypatch, availability_mod, _present)

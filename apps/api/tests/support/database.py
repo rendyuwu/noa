@@ -30,16 +30,17 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from core.config import get_settings
 
-# Alembic's runner lives with the API app (C12: one history for the monorepo).
+# Alembic's runner lives with the API app — one Alembic history for the monorepo.
 API_DIR = Path(__file__).resolve().parents[2]
 
 # Same URL resolution the app and Alembic use.
 DEV_URL = get_settings().postgres_url_str
 
-# V102: the skip below is what lets a laptop without Docker still run 92 of the 115 test files,
-# and it is also what lets a pipeline exit 0 over the 23 that carry every live auth, RBAC,
-# approval-decision, audit, migration and repository behaviour. A suite reporting its own absence
-# as success is V86's shape landing in the harness. So the skip is *opt-out*: CI sets this variable
+# The CI-must-prove-it-was-reached rule: the skip below is what lets a laptop without Docker
+# still run 92 of the 115 test files, and it is also what lets a pipeline exit 0 over the 23
+# that carry every live auth, RBAC, approval-decision, audit, migration and repository
+# behaviour. A suite reporting its own absence as success is the fold-a-non-answer-into-benign
+# shape landing in the harness. So the skip is *opt-out*: CI sets this variable
 # beside its `services:` entry, and an unreachable server then fails instead of vanishing.
 #
 # Both halves or neither. The service alone is unverifiable — one that fails to start returns the
@@ -73,23 +74,23 @@ def unreachable_postgres(exc: BaseException) -> NoReturn:
 # Tables the auth, RBAC and MCP-token tests write to, truncated between tests. `CASCADE`
 # reaches `user_roles`, which has a foreign key into both `users` and `roles`.
 # `role_tool_permissions` is named explicitly rather than left to the cascade from `roles`:
-# a T9 test that grants tools without creating a user must still start empty. `mcp_tokens`
-# for the same reason at T10 — the cascade from `users` would clear it only when a test
-# happened to create one.
-# `whm_servers` joins the list at T19: `whm_list_servers` and `resolve_whm_server_ref` read
-# it, and nothing cascades to it from `users` or `roles`, so a repository test that inserts
-# servers has to start from an empty table of its own.
-# `tool_runs` joins at T35. `TRUNCATE users CASCADE` would reach it anyway, but only when a
-# test happens to create a user — and its `requested_by_user_id` is `SET NULL`, so a run
-# left behind by an earlier test survives its requester and would still be counted.
-# `action_requests` joins at T34 for both of those reasons, and CASCADE from `tool_runs`
-# is no help either: its `tool_run_id` is `SET NULL` as well, so a decision row outlives
-# every other row a test created.
-# `action_receipts` joins at T36. This one *is* reached by the truncate above — its FK to
-# `action_requests` cascades — and is named anyway, because that is a property of today's
-# schema rather than of this list: a later change to that FK would silently start leaving
-# receipts behind, and the failure would land in whichever test happened to count rows.
-# `tool_result_tables` joins at T56, for `tool_runs`' reason exactly: its
+# an RBAC-engine test that grants tools without creating a user must still start empty.
+# `mcp_tokens` for the same reason, at the token service — the cascade from `users` would
+# clear it only when a test happened to create one.
+# `whm_servers` joins the list at the server-list tool: `whm_list_servers` and
+# `resolve_whm_server_ref` read it, and nothing cascades to it from `users` or `roles`, so a
+# repository test that inserts servers has to start from an empty table of its own.
+# `tool_runs` joins when its table was created. `TRUNCATE users CASCADE` would reach it anyway,
+# but only when a test happens to create a user — and its `requested_by_user_id` is `SET NULL`,
+# so a run left behind by an earlier test survives its requester and would still be counted.
+# `action_requests` joins when its table was created, for both of those reasons, and CASCADE
+# from `tool_runs` is no help either: its `tool_run_id` is `SET NULL` as well, so a decision row
+# outlives every other row a test created.
+# `action_receipts` joins when its table was created. This one *is* reached by the truncate
+# above — its FK to `action_requests` cascades — and is named anyway, because that is a property
+# of today's schema rather than of this list: a later change to that FK would silently start
+# leaving receipts behind, and the failure would land in whichever test happened to count rows.
+# `tool_result_tables` joins when its table was created, for `tool_runs`' reason exactly: its
 # `requested_by_user_id` is `SET NULL`, so a parked table left by an earlier test outlives its
 # requester and would still be found by a token lookup — or counted by a test that counts rows.
 MUTATED_TABLES = (
@@ -100,7 +101,8 @@ MUTATED_TABLES = (
     "mcp_tokens",
     "whm_servers",
     "pmg_servers",
-    # Added at T54, which is the first task that writes it. Missing until then was harmless
+    # Added at the admin CRUD build, which is the first task that writes it. Missing until then
+    # was harmless
     # only because nothing inserted a Proxmox row; a table absent from this tuple leaks state
     # between tests in the same module.
     "proxmox_servers",
@@ -143,8 +145,8 @@ def run_alembic(*args: str, url: str) -> subprocess.CompletedProcess[str]:
 def migrated_database(name: str) -> Iterator[str]:
     """Create `name`, migrate to `head`, yield its URL, then drop it.
 
-    Unreachable server → `unreachable_postgres` (skip, or fail under `NOA_REQUIRE_POSTGRES`,
-    V102). A *failed migration* is an assertion either way: that is a broken migration, not a
+    Unreachable server → `unreachable_postgres` (skip, or fail under `NOA_REQUIRE_POSTGRES`).
+    A *failed migration* is an assertion either way: that is a broken migration, not a
     missing environment, so it is never the environment's to excuse.
     """
     admin_url = swap_database(DEV_URL, "postgres")

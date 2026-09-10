@@ -1,10 +1,10 @@
 """Running a change an operator approved.
 
-T33 opens the question, T34's row *is* the authorization, T37 answers it under a row lock and
-opens the `STARTED` `tool_runs` row inside the decision's own transaction. This is the only
-thing that **executes** the change, and it runs after that transaction committed
-(`core.approvals.decisions._hand_off`, V29: the state lives in the database, not in a
-connection).
+The gate that opens the request opens the question, the table's row *is* the authorization, the
+decision endpoint answers it under a row lock and opens the `STARTED` `tool_runs` row inside the
+decision's own transaction. This is the only thing that **executes** the change, and it runs
+after that transaction committed (`core.approvals.decisions._hand_off` — the state lives in the
+database, not in a connection).
 
 **The authorization is re-read here, not trusted from the handoff.** `start` is called with
 two identifiers, and identifiers are not permission. So the first thing an execution
@@ -12,46 +12,47 @@ does is load the row and refuse unless it is `APPROVED` **and** its `tool_run_id
 it was handed. Two reasons that is not belt-and-braces: the handoff crosses a task boundary,
 so the row can have moved by the time the task is scheduled; and a future caller — an
 operator tool, a retry — would otherwise be a second door onto "run this change", on the far
-side of the one V22 closes.
+side of the one the cookie/CSRF boundary closes.
 
-**One transaction for the terminal write and the receipt.** V46 names three artifacts for an
-approved change: the run (what ran), the receipt (what it did), and the audit log. The run's
+**One transaction for the terminal write and the receipt.** An approved change owes three
+artifacts: the run (what ran), the receipt (what it did), and the audit log. The run's
 terminal status and the receipt land in one commit, because a `COMPLETED` run whose receipt
-rolled back is V46 asserted by prose and held by nothing (V69's shape). The audit log is the
-structured events below, the way T9 satisfies V14's "produce audit events".
+rolled back is run-plus-receipt asserted by prose and held by nothing (prose is not evidence a
+control works). The audit log is the structured events below, the way the RBAC engine satisfies
+the audit rule's "produce audit events".
 
-**The receipt is two-part.** DECISIONS §6.5 requires an operator to be able to read back
-before-state and after-state separately rather than a single "done" — `§T.25`'s two-part
-receipt. The before-state is the gate's own in-process preflight evidence, already
+**The receipt is two-part.** DECISIONS.md section 6.5 requires an operator to be able to read
+back before-state and after-state separately rather than a single "done" — the release-and-allow
+tool's two-part receipt. The before-state is the gate's own in-process preflight evidence, already
 persisted on `approval_context` at gate time, so it is the state the operator authorised
 against and not a second reading taken later. The after-state is what the runner answered, or
 the named reason there is none. A failure gets a receipt too: a receipt with a before-state
 and no after-state is the truthful record of a change that did not complete.
 
-**What actually performs the change is a runner.** T22 registered the first
-(`whm_suspend_account`) and T23 the second (`whm_unsuspend_account`); T25-T29 are still unbuilt,
-so an unknown tool name remains reachable and it fails closed: the run goes `FAILED` with
-`change_runner_unavailable`, which is a named outcome an operator can act on rather than a run
-that sits `STARTED` until the reaper takes it.
+**What actually performs the change is a runner.** The suspend tool registered the first
+(`whm_suspend_account`) and the unsuspend tool the second (`whm_unsuspend_account`); the CHANGE
+tools after these two are still unbuilt, so an unknown tool name remains reachable and it fails
+closed: the run goes `FAILED` with `change_runner_unavailable`, which is a named outcome an
+operator can act on rather than a run that sits `STARTED` until the reaper takes it.
 
-**The operator's reason is carried to the runner, and it is a value rather than a permission**
-(T22). C8 bars the *LLM* from authoring, relaying or seeing a reason; it does not bar NOA from
-writing the operator's own words onto the system being changed, and WHM's `suspendacct` has a
-suspension-note field that would otherwise hold a NOA-authored placeholder. So `load_authorized`
-reads `action_requests.reason` and `ChangeExecutionRequest` carries it. Two bounds travel with
-it: nothing here branches on the string (the authorization was decided by `status = APPROVED`
-before it was read), and it must not come back in a runner's payload — `result_summary` is
-derived from that payload and `noa_get_action_result` returns it to a model (V96b).
+**The operator's reason is carried to the runner, and it is a value rather than a permission.**
+The reason rule bars the *LLM* from authoring, relaying or seeing a reason; it does not bar NOA
+from writing the operator's own words onto the system being changed, and WHM's `suspendacct` has
+a suspension-note field that would otherwise hold a NOA-authored placeholder. So
+`load_authorized` reads `action_requests.reason` and `ChangeExecutionRequest` carries it. Two
+bounds travel with it: nothing here branches on the string (the authorization was decided by
+`status = APPROVED` before it was read), and it must not come back in a runner's payload —
+`result_summary` is derived from that payload and `noa_get_action_result` returns it to a model.
 
 It is carried for *every* approved change and read by the runners that have somewhere to put it.
-T23's `unsuspendacct` has no note field, so that runner never touches the value — which is what
-"a value, not a permission" looks like from the other side.
+The unsuspend tool's `unsuspendacct` has no note field, so that runner never touches the value —
+which is what "a value, not a permission" looks like from the other side.
 
 Not through the receipt, which is the door it is tempting to name: `core.approvals.results`
-leaves `include_receipt` at its default, so T63's reader never joins `action_receipts` (V76,
-T42's flag). The receipt is read by the approval card and the admin audit surface, both of which
-are the operator's own. Naming the wrong door here would send the next runner's author to guard
-the wrong field.
+leaves `include_receipt` at its default, so the action-result tool's reader never joins
+`action_receipts`. The receipt is read by the approval card and the admin audit surface, both of
+which are the operator's own. Naming the wrong door here would send the next runner's author to
+guard the wrong field.
 
 **Redacted arguments are refused, not executed.** `approval_context.arguments` is redacted at
 gate time (`noa_api.mcp_tools.change_gate.build_approval_context`), and redaction is by key
@@ -104,7 +105,8 @@ from core.errors import NoaError
 from core.secrets.redaction import redact_mapping, sensitive_key_paths
 
 # The execution began. One event per authorised change actually starting to run, so "why did
-# this account get suspended at 03:00" is answerable from the logs (V46's audit-log third).
+# this account get suspended at 03:00" is answerable from the logs (the audit log, third of the
+# three required artifacts).
 LOG_EXECUTION_STARTED: Final = "approved_change_execution_started"
 
 # It finished, either way. `status` says which; the summary is on the row, not in the log.
@@ -135,8 +137,9 @@ MESSAGE_ARGUMENTS_REDACTED: Final = (
     "runnable form. Ask for the change again; contact an administrator if this continues."
 )
 
-# A runner raised instead of answering. Its own code when it is a `NoaError` (V19's rule, one
-# boundary over); otherwise this, which names a NOA bug rather than blaming the operator.
+# A runner raised instead of answering. Its own code when it is a `NoaError` (the
+# sanitize-to-a-code rule, one boundary over); otherwise this, which names a NOA bug rather than
+# blaming the operator.
 ERROR_EXECUTION_FAILED: Final = "change_execution_failed"
 
 MESSAGE_EXECUTION_FAILED: Final = (
@@ -144,9 +147,10 @@ MESSAGE_EXECUTION_FAILED: Final = (
     "administrator if this continues."
 )
 
-# Receipt keys. Constants because three readers are coming — T42's card, T63's result tool and
-# the admin audit surface — and a misspelt key in JSONB reads as an absent one (V66, the
-# argument `core.approvals.context` makes for `approval_context`).
+# Receipt keys. Constants because three readers are coming — the approval card, the
+# action-result tool and the admin audit surface — and a misspelt key in JSONB reads as an
+# absent one (one helper, not two — the same argument `core.approvals.context` makes for
+# `approval_context`).
 RECEIPT_OK_KEY: Final = "ok"
 RECEIPT_BEFORE_KEY: Final = "before"
 RECEIPT_AFTER_KEY: Final = "after"
@@ -168,7 +172,7 @@ class AuthorizedChange:
     *is* the authorization — there is no field here for a caller to check afterwards and
     forget to.
 
-    **`reason` is the operator's own words, and it is here on purpose**. C8's boundary
+    **`reason` is the operator's own words, and it is here on purpose**. The reason boundary
     is that the LLM never authors, relays or sees a reason; it does not say the reason may
     not reach the system being changed. WHM's `suspendacct` takes a suspension note, and the
     note an operator would want there is the one they typed on the card — so the field is
@@ -205,11 +209,11 @@ class ChangeExecutionRequest:
     # against. A runner reads it rather than re-gathering, so the receipt's two halves describe
     # one decision.
     evidence: dict[str, Any]
-    # What the operator typed on the approval card (C8's single field, V15, V43). A runner uses
-    # it where the target system has a place for it — WHM's suspension note — and nowhere
-    # else. Two rules a runner carries with it: it is not an authorization (that was decided
-    # before this value was read), and it must not come back in the runner's payload, which
-    # `result_summary` is derived from and `noa_get_action_result` hands to a model (V96b).
+    # What the operator typed on the approval card, the one reason field the LLM never sees. A
+    # runner uses it where the target system has a place for it — WHM's suspension note — and
+    # nowhere else. Two rules a runner carries with it: it is not an authorization (that was
+    # decided before this value was read), and it must not come back in the runner's payload,
+    # which `result_summary` is derived from and `noa_get_action_result` hands to a model.
     reason: str
 
 
@@ -227,10 +231,10 @@ class ChangeRunner(Protocol):
 
     **A runner must not echo `request.reason` back in its payload.** `result_summary` is derived
     from that payload (`core.audit.summaries`) and `noa_get_action_result` returns the summary to
-    a model, so an answer repeating the note it just wrote would hand the LLM the one field C8
-    keeps from it — through V45's audit row rather than through any tool schema (V96b). The same
-    fence holds on a delta and is checked there (`core.approvals.delta`), because a receipt key
-    is that door one step over.
+    a model, so an answer repeating the note it just wrote would hand the LLM the one field it
+    never sees — through the tool-run trail's audit row rather than through any tool schema. The
+    same fence holds on a delta and is checked there (`core.approvals.delta`), because a receipt
+    key is that door one step over.
 
     **A runner may answer a `ChangeOutcome` instead of a bare envelope**, which is how it states
     a before→after delta beside the payload rather than inside it. The bare envelope is still a
@@ -279,7 +283,7 @@ class SQLApprovedChangeExecutionRepository:
 
     Neither write is issued here directly. `SQLToolRunRepository` owns `tool_runs` and
     `SQLActionReceiptRepository` owns `action_receipts`, both constructed on *this* session,
-    which is what makes the terminal status and the receipt one transaction (V66: one writer
+    which is what makes the terminal status and the receipt one transaction (one writer
     per table, and the composition is what makes "same session" construction rather than an
     obligation).
     """
@@ -307,10 +311,11 @@ class SQLApprovedChangeExecutionRepository:
         `status = APPROVED` and `tool_run_id = :run`. A row that is `DENIED`, `EXPIRED`, still
         `PENDING`, or linked to a different run is never fetched, so there is no later branch
         that could forget to drop it — the argument `core.approvals.reads` makes for putting
-        V27's requester-match in the `WHERE`.
+        the requester-match rule in the `WHERE`.
 
-        No lock. The decision that produced this row is committed and V28 permits no second
-        transition, so there is nothing left to serialize against; the terminal write below
+        No lock. The decision that produced this row is committed and the one-decision rule
+        permits no second transition, so there is nothing left to serialize against; the
+        terminal write below
         touches `tool_runs`, which only this execution and the reaper reach.
         """
         result = await self._session.execute(
@@ -334,7 +339,7 @@ class SQLApprovedChangeExecutionRepository:
             # Fetched deliberately, not incidentally: a runner that has to write the
             # operator's note onto the target system needs the value, and a projection that
             # merely happened to load it would be a separation held by nothing. `or ""` is a
-            # type coercion and not a fallback — the row is `APPROVED`, so T34's
+            # type coercion and not a fallback — the row is `APPROVED`, so the table's
             # `ck_action_requests_decided_reason` has already refused a blank one.
             reason=row.reason or "",
             conversation_ref=row.conversation_ref,
@@ -347,7 +352,7 @@ class SQLApprovedChangeExecutionRepository:
         status: ToolRunStatus,
         result_summary: str | None,
     ) -> None:
-        """Move the run T37 opened to its terminal state."""
+        """Move the run the decision endpoint opened to its terminal state."""
         await self._runs.finish_run(
             tool_run_id=tool_run_id,
             status=status,
@@ -361,7 +366,8 @@ class SQLApprovedChangeExecutionRepository:
         tool_run_id: UUID | None,
         receipt_data: dict[str, Any],
     ) -> UUID | None:
-        """Write the receipt, unless one is already there (V46, T36's UNIQUE)."""
+        """Write the receipt, unless one is already there (the receipt table's UNIQUE
+        constraint)."""
         return await self._receipts.create_if_missing(
             action_request_id=action_request_id,
             tool_run_id=tool_run_id,
@@ -397,8 +403,9 @@ class ApprovedChangeExecutionService:
     ) -> ToolRunStatus | None:
         """Run the change this pair authorises; return the run's terminal status.
 
-        `None` means nothing was authorised and nothing was written — the refusal V23 makes
-        this method's first act. Every other path ends in a terminal `tool_runs` row and a
+        `None` means nothing was authorised and nothing was written — the refusal reading the
+        verdict from `status` every time makes this method's first act. Every other path ends
+        in a terminal `tool_runs` row and a
         receipt, so a caller polling the run always reaches an answer.
         """
         authorized = await self._repository.load_authorized(
@@ -434,9 +441,11 @@ class ApprovedChangeExecutionService:
 
         1. **arguments that were redacted** — see the module docstring. Refused before dispatch
            because the runner is what would act on the wrong values.
-        2. **no runner for this tool** — still reachable today, for the names T25-T29 own.
-        3. **a runner that raised** — `NoaError` keeps its own `error_code`, the way V19's
-           boundary passes one through, so an integration refusal such as
+        2. **no runner for this tool** — still reachable today, for the names the remaining
+           CHANGE tools own.
+        3. **a runner that raised** — `NoaError` keeps its own `error_code`, the way the
+           sanitize-to-a-code rule's boundary passes one through, so an integration refusal
+           such as
            `ssh_host_key_not_validated` still names the thing an admin has to fix. Anything
            else is a NOA bug and says so. `BaseException` is not caught: a cancelled execution
            (app shutdown) has no answer to record, and the row it leaves `STARTED` is exactly
@@ -549,7 +558,8 @@ def build_receipt(
     payload: Mapping[str, Any],
     delta: ChangeDelta | None = None,
 ) -> dict[str, Any]:
-    """The two-part receipt V46 stores and T42's card renders (DECISIONS §6.5, §T.25).
+    """The two-part receipt the run-plus-receipt-plus-audit rule stores and the approval card
+    renders (DECISIONS.md section 6.5, the release-and-allow tool).
 
     `before` is the gate-time preflight the operator authorised against; `after` is what the
     change answered. Both are present on a failure too, `after` carrying the refusal — the two
@@ -560,10 +570,11 @@ def build_receipt(
     absent field beats an empty one.
 
     `after` is redacted on the way in, the same rule `result_summary` applies to the same
-    payload: this row outlives the call and is read by T42's card, T63's tool and the
-    admin audit surface, so a runner that answers with a `password` field must not leave one
-    here. `before` is the gate's own `approval_context` evidence, copied rather than re-derived
-    — whatever redaction it carries is T33's, and re-deciding it here would be a second answer.
+    payload: this row outlives the call and is read by the approval card, the action-result tool
+    and the admin audit surface, so a runner that answers with a `password` field must not leave
+    one here. `before` is the gate's own `approval_context` evidence, copied rather than
+    re-derived — whatever redaction it carries is the gate's own, and re-deciding it here would
+    be a second answer.
 
     **`delta` is a fifth key and it is omitted entirely when there is none.** It arrives as its
     own parameter, so `before` and `after` are byte-for-byte what they were without it, and it

@@ -1,17 +1,17 @@
 """SQL behind the CHANGE approval gate.
 
-T34 built `action_requests` and wrote nothing to it. This is the writer, and
+The schema landed and wrote nothing to it. This is the writer, and
 `noa_api.mcp_tools.change_gate` is its only caller: one INSERT, one status, one moment.
 
-**Only PENDING is writable from here.** `status` is not a parameter and there is no update
-method. V23 answers "may this run?" from this column every time, and V28 permits exactly one
-`pending → decided` transition, under a row lock. That transition lives in a different class
-in a different module — `core.approvals.decisions.SQLActionDecisionRepository`, reached
-only by a cookie POST from a NOA-origin document. A repository that could write
-`APPROVED` would put a second door on the authorization next to the one V22 names, and the
-MCP path — the one an LLM can reach — would be holding the key to it. The split is asserted,
-not just described: `test_action_request_decisions_live.py` pins this class's public surface
-to `create_pending` and `commit`.
+**Only PENDING is writable from here.** `status` is not a parameter and there is no update method.
+The verdict is read from `status` every time, and the one-decision rule permits exactly one `pending
+→ decided` transition, under a row lock. That transition lives in a different class in a different
+module — `core.approvals.decisions.SQLActionDecisionRepository`, reached only by a cookie POST from
+a NOA-origin document. A repository that could write `APPROVED` would put a second door on the
+authorization next to the one the cookie/CSRF boundary names, and the MCP path — the one an LLM can
+reach — would be holding the key to it. The split is asserted, not just described:
+`test_action_request_decisions_live.py` pins this class's public surface to `create_pending` and
+`commit`.
 
 **This repository owns its session and commits**, unlike `SQLWHMServerRepository` and
 `SQLAuthorizationRepository`, which flush into a caller's transaction. Same split and the
@@ -23,13 +23,14 @@ silently not have one.
 
 Nothing here redacts and nothing here builds the context. `approval_context` arrives already
 assembled and already redacted from the gate, which is the layer that knows what a tool
-argument *is* (V33: built at gate time, persisted as one object) — the same division
+argument *is* (context persisted at gate time, never rebuilt from transcript) — the same division
 `core.audit.tool_runs` keeps with `noa_api.mcp_audit`.
 
 `expires_at` is a required parameter rather than a default computed here. The column is NOT
-NULL by T34's design, and the TTL is configuration (`APPROVAL_PENDING_TTL_SECONDS`); a
-repository that reached for settings on its own would be a second copy of the world (T15's
-rule) and would make the deadline unassertable from a test that did not also patch it.
+NULL by the table's design, and the TTL is configuration (`APPROVAL_PENDING_TTL_SECONDS`); a
+repository that reached for settings on its own would be a second copy of the world (the reason
+`redaction.py` was parked: a control with no caller is untested) and would make the deadline
+unassertable from a test that did not also patch it.
 """
 
 from __future__ import annotations

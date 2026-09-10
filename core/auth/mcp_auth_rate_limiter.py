@@ -8,7 +8,7 @@ in, and which denials count as attempts at all.
 **No source-IP bucket.** The login limiter keys one bucket on the client address; that key
 does not transfer here. NOA runs inside a Kubernetes cluster behind many workers, so the
 address a request appears to come from is neither stable across pod churn nor
-discriminating between operators — and C24 makes LibreChat the *sole* MCP client, so every
+discriminating between operators — and LibreChat being the *sole* MCP client means every
 legitimate request arrives from the same handful of addresses. A block on that key would
 be a fleet-wide outage triggered by one bad token, which is a worse failure than the abuse
 it prevents.
@@ -22,12 +22,14 @@ why both exist (the same reasoning as login's IP+email pair — one key alone le
 - `mcp_token` — the SHA-256 digest of the presented bearer, the same digest `mint()`
   stores. Catches replay of one stolen token while the header is rotated to dodge the
   bucket above. The digest, never the plaintext: this value is the class of thing
-  `mcp_tokens.token_hash` already holds at rest, and V2/V8 forbid the other one.
+  `mcp_tokens.token_hash` already holds at rest, and the token-scope and safe-payload rules
+  forbid the other one.
 
 Note what each key does *not* do, so neither is mistaken for more than it is: a caller who
 varies both keys gets a fresh bucket every request and is never blocked. Against a token
 guesser that is fine — the digest of each guess differs anyway, so no bucket could
-accumulate, and 256 bits of entropy is the actual defence. V9 asks for attempt limiting,
+accumulate, and 256 bits of entropy is the actual defence. The rate-limit rule asks for
+attempt limiting,
 not bot detection.
 
 **What counts.** `COUNTED_DENIALS` is the narrow set, and the exclusions are the
@@ -38,9 +40,9 @@ interesting part:
 - `librechat_user_header_missing` — a misconfigured client, not a guess.
 - `mcp_user_inactive`, `mcp_user_not_in_directory` — authenticated, then refused. The
   credential was real; rate limiting is the wrong answer.
-- `LdapUnavailableError` — an outage. This is T8's lesson written down: `noa-old` counted
-  every `AuthError` from LDAP, so a directory blip locked every operator out for the full
-  block duration.
+- `LdapUnavailableError` — an outage. This is the login flow's lesson written down:
+  `noa-old` counted every `AuthError` from LDAP, so a directory blip locked every operator out
+  for the full block duration.
 
 **No `record_success`.** The login limiter clears its buckets on a successful sign-in; this
 one does not. The window ages a bucket out on its own, and every authenticated MCP request
@@ -65,8 +67,8 @@ from core.auth.mcp_auth_errors import (
 
 # Bucket scopes. Values reach `login_rate_limits.scope` (String(20)) and are stable —
 # renaming one orphans every live bucket under the old name. The table is named for the
-# login path it was built for; it holds a generic (scope, key) counter and T12 reuses
-# it rather than duplicating the schema. See `core.db.models.LoginRateLimit`.
+# login path it was built for; it holds a generic (scope, key) counter and the MCP identity
+# resolver reuses it rather than duplicating the schema. See `core.db.models.LoginRateLimit`.
 SCOPE_MCP_CLIENT: Final = "mcp_client"
 # S105: a bucket scope name, not a credential — the `TOKEN` in the constant name trips it.
 SCOPE_MCP_TOKEN: Final = "mcp_token"  # noqa: S105
@@ -127,7 +129,8 @@ class McpAuthRateLimiter(AttemptLimiter):
 
         An absent or blank `librechat_user_id` yields no client key at all, rather than
         folding into a shared "unknown" bucket the way login's blank IP does. That request
-        is refused by V3 for the missing header — an uncounted denial — so a bucket for it
+        is refused by the named-401-body rule for the missing header — an uncounted denial — so
+        a bucket for it
         would only ever collect requests that never reached the token gates, and every such
         client would share one counter and block each other.
         """

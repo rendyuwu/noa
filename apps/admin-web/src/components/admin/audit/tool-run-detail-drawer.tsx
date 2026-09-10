@@ -32,8 +32,8 @@ import { AuditIdRow, DetailRow, JsonBlock } from './audit-detail-rows'
 //
 // Three ported rows are gone with the columns behind them: "Thread" (NOA has no
 // threads), "Action request" (an approved change's run links the other way) and
-// "Error" — a sanitised error code lands in `resultSummary`, which is why T35
-// left `tool_runs` without an `error` column. "Conversation ref" takes the first
+// "Error" — a sanitised error code lands in `resultSummary`, which is why the
+// `tool_runs` row carries no separate `error` column. "Conversation ref" takes the first
 // slot: a grouping label, null unless LibreChat supplies one.
 export function ToolRunDetailDrawer({
   row,

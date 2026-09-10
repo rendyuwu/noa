@@ -3,22 +3,22 @@
 Same split as `support.auth`: the in-memory repository covers policy, and
 `SQLAuthorizationRepository` gets its own coverage against a live scratch database in
 `test_rbac_repository.py`. The *real* `AuthorizationService` runs against these doubles, so
-the admin bypass, the disabled-user rule, the V12 guards and the internal-role
+the admin bypass, the disabled-user rule, the last-admin guards and the internal-role
 rules are all exercised for real — only the SQL is faked.
 
 `FakeAuthorizationRepository` counts reads. Two invariants are about *when* the database is
-consulted rather than what it answers: V6 (permission resolution reads the row, never the
-cookie's claims) and V14 (permission updates take effect immediately). A double that only
+consulted rather than what it answers: one (permission resolution reads the row, never the
+cookie's claims) and the other (permission updates take effect immediately). A double that only
 returned the right answer could not tell a fresh read from a cached one, so the counters are
 the assertion surface.
 
-`RecordingAuditSink` keeps every event, so V14's "admin changes produce audit events" is
+`RecordingAuditSink` keeps every event, so "admin changes produce audit events" is
 asserted per operation instead of inferred from a log line nobody parses.
 
-`admin_probe_app` mounts one throwaway route behind `require_admin`, because V13's "non-admin
+`admin_probe_app` mounts one throwaway route behind `require_admin`, because "non-admin
 users → 403 on admin endpoints" is a property of the *dependency* and this is the smallest
-thing that proves the dependency enforces it. It stays after T51 shipped the first real
-`/admin` routes: the property should hold for a route nobody has written yet. The harness for
+thing that proves the dependency enforces it. It stays after the user routes shipped the first
+real `/admin` routes: the property should hold for a route nobody has written yet. The harness for
 the shipped routes is `support.admin`, which puts this repository behind them.
 """
 
@@ -140,7 +140,7 @@ class FakeAuthorizationRepository:
         return sorted(self.users.values(), key=lambda user: user.email)
 
     async def list_user_ids_with_role(self, role_name: str) -> list[UUID]:
-        """T66's notification audience.
+        """The list-changed emitter's notification audience.
 
         Mirrors the SQL exactly, including what it does *not* filter: a disabled user still
         appears, because their catalog moved too and their session may still be open. Derived
@@ -212,7 +212,7 @@ class FakeAuthorizationRepository:
         return True
 
     async def delete_mcp_tokens_for_user(self, user_id: UUID) -> int:
-        """V4's cascade revoke. Token *count* per user, since that is all the
+        """The cascade revoke. Token *count* per user, since that is all the
         service asserts on — the SQL that proves rows really go is in
         `test_rbac_repository.py`."""
         return self.mcp_tokens.pop(user_id, 0)
@@ -222,7 +222,7 @@ class FakeAuthorizationRepository:
     async def commit(self) -> None:
         """Snapshot every row, so a test can separate "written" from "committed"."""
         self.commits += 1
-        # T66: the notification must follow the commit, never precede it — a client told to
+        # The notification must follow the commit, never precede it — a client told to
         # refetch before the transaction ends could read rows that then roll back. Recorded on a
         # shared log with `RecordingToolListNotifier` so the *order* is assertable, which a
         # counter on each side separately could not be.
@@ -249,7 +249,7 @@ class FakeAuthorizationRepository:
     ) -> FakeUserRecord:
         """Add a `users` row. `user_id` is passed when a caller needs it to match another
         double's id — `support.admin` mirrors the signed-in actor into both repositories so
-        V12's self-deactivate and self-delete guards are reachable from HTTP."""
+        the self-deactivate and self-delete guards are reachable from HTTP."""
         user = FakeUserRecord(
             id=user_id or uuid4(), email=email, display_name=email, is_active=is_active
         )
@@ -288,15 +288,15 @@ class RecordingAuditSink:
 class RecordingToolListNotifier:
     """`ToolListChangedNotifier` that keeps every audience for assertion.
 
-    Records the *audiences*, not a count, because T66's questions are about who: a role's grant
-    change reaches its holders, a disable reaches one account, a role creation reaches nobody. A
-    counter would pass against a broadcast.
+    Records the *audiences*, not a count, because the list-changed emitter's questions are about
+    who: a role's grant change reaches its holders, a disable reaches one account, a role creation
+    reaches nobody. A counter would pass against a broadcast.
 
     `calls` is the ordered log it shares with `FakeAuthorizationRepository`, so
     "the notification followed the commit" is assertable rather than assumed.
 
-    `fail_with` makes the failure path reachable: V74's emit is best-effort, and a notifier that
-    raises must not turn a committed permission change into a 500.
+    `fail_with` makes the failure path reachable: the list-changed emit is best-effort, and a
+    notifier that raises must not turn a committed permission change into a 500.
     """
 
     def __init__(
@@ -342,7 +342,7 @@ def build_service(
 
     The notifier shares the repository's `calls` log, so any test built here can assert
     that a notification followed the commit rather than preceded it — including the tests that
-    were written before T66 existed and now cover the ordering for free.
+    were written before the list-changed emitter existed and now cover the ordering for free.
     """
     resolved_repository = repository or FakeAuthorizationRepository()
     resolved_audit = audit or RecordingAuditSink()
@@ -382,7 +382,7 @@ def admin_probe_app() -> Iterator[AdminProbeHarness]:
 
     Everything on the path is production code — `require_session_user`, `AuthService`, the
     real `JWTService`, the shared error handler — so a 403 here is the same 403 the `/admin`
-    routes will return in T51.
+    routes will return.
     """
     settings = build_settings()
     repository = FakeAuthRepository()

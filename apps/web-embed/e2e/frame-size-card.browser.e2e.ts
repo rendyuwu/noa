@@ -14,7 +14,7 @@ import {
 } from './support/frame'
 
 /**
- * The frame the approval card and the notice states ask for (§T.41, §T.43 — V38, V94).
+ * The frame the approval card and the notice states ask for.
  *
  * Split from `frame-size.browser.e2e.ts`, which keeps the table surface: same harness, same parent,
  * two subjects whose measurements have nothing to say to each other. Everything the header of that
@@ -196,7 +196,8 @@ test('a width change that shortens the card does not shorten the frame', async (
  *
  * Both surfaces, because both render this state through the same component and the whole reason it
  * is one component is that the way out must not go missing from one of them. The 401 fixtures
- * answer 401 forever, which is the state V38 renders and a retry cannot escape.
+ * answer 401 forever, which is the state the never-a-blank-card rule renders and a retry
+ * cannot escape.
  *
  * `tables.browser.e2e.ts` already asserts that the address is *present* and that no form is; it runs
  * at the harness's default 640px frame, where the fold is nowhere near. These two are about the fold.

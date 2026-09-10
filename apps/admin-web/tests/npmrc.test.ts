@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 /**
- * Registry routing for the BIGSU scope (C2, §T.47).
+ * Registry routing for the BIGSU scope — the admin scaffold's internal registry `.npmrc`.
  *
  * `@gio/*` does not exist on the public registry. Without this mapping every
  * BIGSU install resolves to a 404 — or, worse, to whatever a future squatter
@@ -30,7 +30,7 @@ function packageNames(): string[] {
   return Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })
 }
 
-describe('C2 — the @gio scope resolves from the Biznet Gio registry', () => {
+describe('the @gio scope resolves from the Biznet Gio registry', () => {
   it('maps the scope to the internal registry', () => {
     expect(npmrc()).toContain(`@gio:registry=${REGISTRY}`)
   })
@@ -48,7 +48,7 @@ describe('C2 — the @gio scope resolves from the Biznet Gio registry', () => {
   })
 
   it('commits no credential — the network is the access boundary', () => {
-    // C11 keeps secrets out of git. The internal registry is reachable without a
+    // No secrets in git. The internal registry is reachable without a
     // token from inside the network, so an `_auth`/`_authToken` line here would
     // be both unnecessary and a leak.
     expect(npmrc()).not.toMatch(/_auth|_password|authToken/i)

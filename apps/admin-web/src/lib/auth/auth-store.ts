@@ -8,7 +8,7 @@ import { registerIdentityCleaner } from '@/lib/auth/session'
 // are never treated as authorization; they only keep AppShell chrome (name,
 // email, role-filtered nav) painted between verified `/auth/me` revalidations.
 //
-// Storage is namespaced per topology.md §6.3 — both frontends share the one
+// Storage is namespaced per topology.md section 6.3 — both frontends share the one
 // origin's localStorage, so the `web-bigsu:` prefix must never collide with the
 // legacy `noa.` keys.
 

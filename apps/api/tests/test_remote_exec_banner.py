@@ -80,7 +80,7 @@ def test_multiple_banners_all_stripped() -> None:
 
 
 def test_unterminated_banner_kept_verbatim() -> None:
-    """No closing border ⇒ the block is not a banner we recognise. Keep everything."""
+    """No closing border means the block is not a banner we recognise. Keep everything."""
     text = (
         "***************************************************************\n"
         "*   WARNING: YOU ARE INSIDE LVE   *\n"

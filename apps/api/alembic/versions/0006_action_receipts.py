@@ -4,29 +4,30 @@ Revision ID: 0006_action_receipts
 Revises: 0005_decided_reason_check
 Create Date: 2026-08-09
 
-T36. V46 names three artifacts for an approved change — the `tool_runs` row (what
+This is the receipt table. An approved change owes three artifacts — the `tool_runs` row (what
 ran), this receipt (what it did), and the audit log. The run says a change completed; the
-receipt is the two-part story DECISIONS §6.5 requires an operator to read back:
+receipt is the two-part story DECISIONS.md section 6.5 requires an operator to read back:
 before-state and after-state, each verified separately, never collapsed into one "done".
 
-Nothing writes this table yet. T38's executor does; T42's card and T63's
-`noa_get_action_result` read it beside the run.
+Nothing writes this table yet. The approved-change executor does; the approval card and the
+action-result tool's `noa_get_action_result` read it beside the run.
 
 Ported from `noa-old` `MCP:apps/api/alembic/versions/0006_action_receipts.py` with
 three departures, each named because a port carries the code and not the defect:
 
-- `receipt_data`, not `payload` — §T.36's name.
-- No `terminal_phase`. It carried the terminal state of a multi-phase workflow and C16
-  drops workflows; the terminal state lives on `tool_runs.status` and
+- `receipt_data`, not `payload` — this table's name.
+- No `terminal_phase`. It carried the terminal state of a multi-phase workflow and the
+  workflow simplification drops workflows; the terminal state lives on `tool_runs.status` and
   `action_requests.status`, and a third column saying it again is a third truth about one
   moment.
 - No `schema_version`. `approval_context` and `tool_runs.args` are both unversioned JSONB;
   versioning the third would make their bareness look deliberate when it is not.
 
 **One receipt per request, stated rather than inherited.** `noa-old` made
-`action_request_id` the primary key, so uniqueness came with the table. §T.36 names a
+`action_request_id` the primary key, so uniqueness came with the table. This table names a
 separate `id`, so the unique constraint below is what keeps the property — and it is
-load-bearing: T38's executor and its reaper can both reach a finished run, and a second
+load-bearing: the approved-change executor and its reaper can both reach a finished run, and a
+second
 receipt turns "the receipt" into "some receipt". It is also the index an idempotent
 `ON CONFLICT (action_request_id) DO NOTHING` writer needs in order to work at all.
 

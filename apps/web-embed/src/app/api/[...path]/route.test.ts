@@ -5,7 +5,7 @@ import { GET, POST, dynamic, runtime } from './route'
 
 /**
  * The proxy route end to end, with `fetch` stubbed so every assertion is about what this app
- * sends and re-emits (§T.44).
+ * sends and re-emits (the proxy route).
  */
 
 const ID = '9f1c2b7e-0000-4000-8000-000000000000'
@@ -51,7 +51,8 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
   })
 
   it('carries the browser’s session cookie upstream', async () => {
-    // V40. Without this the card authenticates as nobody and every decision POST
+    // The deployment's registrable parent scoping. Without this the card authenticates as
+    // nobody and every decision POST
     // answers 401 — the failure the whole proxy exists to prevent.
     let seen: Headers | undefined
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (_input, init) => {
@@ -94,7 +95,7 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
   })
 
   it('refuses to proxy the login route and never calls upstream', async () => {
-    // V42: no login page, no LDAP form, no credential handling on this origin. The
+    // No login page, no LDAP form, no credential handling on this origin. The
     // `fetch` spy is the assertion that matters — a 404 produced upstream would
     // look identical from the outside and mean the opposite.
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null))
@@ -113,7 +114,8 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
   })
 
   it('refuses the admin surface the frameable origin must not reach', async () => {
-    // V41: the admin app answers `frame-ancestors 'none'`. Proxying `/admin/*` here
+    // One `frame-ancestors` entry on every response: the admin app answers
+    // `frame-ancestors 'none'`. Proxying `/admin/*` here
     // would hand that surface back to anything inside the LibreChat frame.
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null))
 
@@ -128,7 +130,7 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
 
   it('separates — an allowed route does reach upstream', async () => {
     // Without this the two refusal cases above pass just as well against a proxy
-    // that forwards nothing at all (V87's shape).
+    // that forwards nothing at all — the case that proves the compare still separates.
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null))
 
     await POST(
@@ -180,7 +182,8 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
   })
 
   it('preserves x-request-id from the API response and strips hop-by-hop headers', async () => {
-    // V73: the id in the body names a log line, and it only does that if the hop
+    // The request id has to survive the hop: the id in the body names a log line, and it
+    // only does that if the hop
     // does not eat the header.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response('{"status":"pending"}', {
@@ -205,7 +208,7 @@ describe('/api/[...path] — the embed’s same-origin door', () => {
   })
 
   it('passes an upstream 401 through with its status and body', async () => {
-    // V38: the card renders "cannot authenticate here" off this status. A proxy
+    // The 401 card renders "cannot authenticate here" off this status. A proxy
     // that redirected to a login, or flattened the status, would leave a blank card
     // with a live Approve button.
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(

@@ -1,5 +1,6 @@
 /*
- * Styles shared by every state this app renders instead of its subject (§T.41, §T.43, §T.56).
+ * Styles shared by every state this app renders instead of its subject — the approval card, the
+ * 401 link-out, and the large-result table surface.
  *
  * Lived in `app/approvals/[id]/card.module.css` until the table surface became the second
  * document that has to say "cannot authenticate here" and offer the same way out.
@@ -10,7 +11,7 @@
  * decision buttons compose `.approve` / `.deny` on top from their own module.
  *
  * Hand-written, reading the tokens `src/app/globals.css` defines. No design system here — the
- * eslint firewall refuses `@gio/*` (§T.40 as built).
+ * eslint firewall refuses `@gio/*`, as built into the embed scaffold's own toolchain.
  */
 
 .notice {
@@ -48,7 +49,7 @@
 }
 
 /*
- * The 401 state's link-out (§T.43). Shares `.button` with the decision controls so the two doors on
+ * The 401 state's link-out. Shares `.button` with the decision controls so the two doors on
  * a card look like one thing; only what an anchor does not inherit is set here.
  */
 .noticeLink {

@@ -3,7 +3,8 @@ import type { BrowserContext, Frame, FrameLocator, Page } from '@playwright/test
 import { CHAT_ORIGIN, MEASURED_SANDBOX, UPSTREAM_ORIGIN } from '../../playwright.config'
 
 /**
- * Putting the approval card in the frame LibreChat actually gives it (§T.41, §T.42, §T.43).
+ * Putting the approval card in the frame LibreChat actually gives it — the card page, its
+ * receipt render, and the 401 state, all together.
  *
  * Shared by the browser lanes that need a framed card — the decision path (`approvals`) and the 401
  * state (`sign-in`) — because they need the *same* frame: the same parent origin, the same sandbox
@@ -13,15 +14,16 @@ import { CHAT_ORIGIN, MEASURED_SANDBOX, UPSTREAM_ORIGIN } from '../../playwright
  * Not a `*.e2e.ts` file, so Playwright's `testMatch` leaves it alone.
  */
 
-/** The embed's own origin during a browser run. Its port is part of the contract (§T.44). */
+/** The embed's own origin during a browser run. Its port is part of the proxy route's contract. */
 export const EMBED_ORIGIN = 'http://localhost:3001'
 
 /**
  * DNS only, for `test.use({ launchOptions: { args: HOST_RESOLVER_ARGS } })`.
  *
- * `chat.noa.internal` is the origin the dev server was told to allow framing from (§T.45), and
- * Chromium's Local Network Access checks are why the parent has to be a resolvable real server
- * rather than an intercepted response (V90's family).
+ * `chat.noa.internal` is the origin the dev server was told to allow framing from (the framing
+ * headers), and Chromium's Local Network Access checks are why the parent has to be a
+ * resolvable real server rather than an intercepted response — same family as: a test's setup
+ * gate must not be the thing under test.
  */
 export const HOST_RESOLVER_ARGS = [
   '--host-resolver-rules=MAP chat.noa.internal 127.0.0.1, MAP not-chat.noa.internal 127.0.0.1',
@@ -51,7 +53,7 @@ export const HOST_OPENING_HEIGHT = 150
 /**
  * How the parent opens the box, for the specs that are about the box (`framing-parent.mjs`).
  *
- * Both fields default to the frame §T.45 pinned, so a spec that does not mention them measures the
+ * Both fields default to the frame the framing headers pinned, so a spec that does not mention them measures the
  * same frame it always did: 640px tall, and resized when the document asks — which is what the
  * measured host does with a `ui-size-change`.
  */
@@ -87,11 +89,12 @@ export async function frameCard(
 }
 
 /**
- * The same frame, around the large-READ table surface (§T.56).
+ * The same frame, around the large-READ table surface.
  *
  * The table is served into the frame LibreChat gives *this* app — same parent origin, same sandbox
  * string, same session cookie as the card — because a surface measured in a frame LibreChat does
- * not serve is measured under a premise nothing holds (V66, the reason `frameCard` is shared).
+ * not serve is measured under a premise nothing holds (one helper, not two — the reason
+ * `frameCard` is shared).
  */
 export async function frameTable(
   page: Page,

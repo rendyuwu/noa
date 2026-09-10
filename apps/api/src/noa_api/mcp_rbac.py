@@ -1,21 +1,26 @@
 """RBAC on the MCP path: one gate for every tool.
 
-V1 has two clauses and they are two different checks:
+The execution-time permission re-check has two clauses and they are two different checks:
 
     `tools/list` RBAC-filtered per user. `tools/call` re-checks permission.
 
 Both are here, as a fastmcp `Middleware`, rather than inside each tool. A tool cannot forget
-a middleware; T20-T31 and T63 inherit this gate by existing. It also keeps the tools free of
+a middleware; every registered READ, CHANGE and result tool inherits this gate by existing. It
+also keeps the tools free of
 identity plumbing — a tool asks "what do I do", never "may this caller do it".
 
-**The re-check is not redundant with the filter.** V74 accepts that a client may hold a
-stale `tools/list` — the handshake era C23 pins has no `ttlMs`/`cacheScope` to bound it —
+**The re-check is not redundant with the filter.** The execution-time RBAC backstop accepts
+that a client may hold a
+stale `tools/list` — the handshake era the negotiated-per-client rule pins has no
+`ttlMs`/`cacheScope` to bound it —
 and leans on exactly this execution-time check as the backstop. So a tool revoked a second
 ago may still be *displayed*, and calling it still fails.
 
 **Nothing is cached, including within a request.** `AuthorizationService` re-reads the
-`users` row and the grant rows on every question, which is what makes V14's
-"immediately" and V11's "disabled → zero permissions" true against a live session. Two DB
+`users` row and the grant rows on every question, which is what makes the
+immediately-effective-permissions rule's
+"immediately" and the disabled-account rule's "disabled → zero permissions" true against a live
+session. Two DB
 reads per `tools/call` is the price of not having a revocation window.
 
 **Refusal shape.** A denial is a `ToolResult` with `is_error=True` carrying the same
@@ -24,12 +29,14 @@ reads per `tools/call` is the price of not having a revocation window.
 did. `is_error` is set because the tool did not run — that is what `isError` means — while a
 tool's own structured refusal is a result it computed.
 
-**One code, `tool_not_permitted`, for every refusal.** V10 asks for two rejections — no
+**One code, `tool_not_permitted`, for every refusal.** The admin-bypass rule asks for two
+rejections — no
 grant, and no such tool — and answering them differently would be an oracle: a caller could
-learn which of C22's never-implement names exist behind the scenes, or which catalogued
+learn which of the never-implement list's names exist behind the scenes, or which catalogued
 tools are built yet, by reading which refusal came back. So the gate also carries the set of
 names this server actually *registered* and refuses anything outside it. That set is not a
-second permission model; it is what stops a catalogued-but-unbuilt name (T20-T31 are still
+second permission model; it is what stops a catalogued-but-unbuilt name (the READ and CHANGE
+tools are still
 to come, and the `admin` bypass grants every *catalogued* tool) from falling through to
 fastmcp's own `Unknown tool` error, which would answer in a different shape and say more.
 
@@ -116,7 +123,8 @@ class RbacToolMiddleware(Middleware):
     async def _permitted_tools(self) -> set[str]:
         """The caller's effective tool set, read fresh from the database.
 
-        `get_permitted_tools` already applies V11 (disabled → empty) and V10 (admin → every
+        `get_permitted_tools` already applies the disabled-account rule (disabled → empty) and the
+        admin-bypass rule (admin → every
         catalogued tool), so no policy is re-decided here — asking "is this caller an admin?"
         in two places is how the two answers drift. The one thing added is the intersection
         with what this server registered, which is about existence rather than permission

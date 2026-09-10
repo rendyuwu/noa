@@ -1,10 +1,10 @@
 """The interval loop both background components run on.
 
-T39 proved these four properties against `PendingExpirySweeper`. T38 needed the same loop for
-its reaper, so the loop moved to `core.tasks.periodic` and the properties are pinned here,
-once, against `PeriodicTask` itself. The two owners keep their own tests — what those
-assert is that *their* pass does the right thing, and `test_action_request_expiry.py` remains
-the sweeper's regression proof that the delegation did not change its behaviour.
+The expiry sweeper proved these four properties against `PendingExpirySweeper`. The stuck-run reaper
+needed the same loop, so the loop moved to `core.tasks.periodic` and the properties are pinned here,
+once, against `PeriodicTask` itself. The two owners keep their own tests — what those assert is that
+*their* pass does the right thing, and `test_action_request_expiry.py` remains the sweeper's
+regression proof that the delegation did not change its behaviour.
 
 Each property below is a decision that cost something to get right:
 
@@ -182,7 +182,8 @@ async def test_a_cancelled_pass_ends_the_loop_instead_of_being_logged() -> None:
 
     **Asserted without calling `stop()`, on purpose.** `stop()` awaits the task it cancelled,
     so a loop that swallows its own cancellation makes *any* test that stops it hang, and a
-    hang names nothing (T39 recorded the same trap for a dropped `cancel()`). Raising the
+    hang names nothing (the expiry sweeper's tests recorded the same trap for a dropped
+    `cancel()`). Raising the
     cancellation from inside the pass reaches the same branch and comes back as a named red.
     """
     passes = Passes()

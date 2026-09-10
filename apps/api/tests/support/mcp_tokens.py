@@ -54,7 +54,7 @@ class FakeMcpTokenRepository:
         # Commit counter and snapshot. The same trick `FakeAuthorizationRepository`
         # uses: an in-memory double cannot roll back, so without recording *what was committed*
         # a test cannot tell a written row from a durable one — which is exactly the difference
-        # B10 turned out to hinge on.
+        # the flush-only-rollback bug hinged on.
         self.commits = 0
         self.committed: dict[UUID, StoredToken] = {}
 

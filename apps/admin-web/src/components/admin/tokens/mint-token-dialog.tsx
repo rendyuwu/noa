@@ -33,14 +33,14 @@ export type MintTokenDialogProps = {
   onMintAction: (label: string | null) => Promise<MintOutcome>
 }
 
-// Mint dialog (§T76): one controlled Dialog, two steps in the same body. BIGSU
+// Mint dialog: one controlled Dialog, two steps in the same body. BIGSU
 // forbids nesting dialogs, so the minted-token step REPLACES the form step
 // rather than opening on top of it.
 //
 // The plaintext lives in this component's `useState` and nowhere else. The
-// controller never receives it (`MintOutcome` hands it back as a return value,
-// V103), no toast carries it, no URL carries it, and no storage holds it. Two
-// independent things discard it:
+// controller never receives it (`MintOutcome` hands it back as a return
+// value — write-once display, one render site), no toast carries it, no URL
+// carries it, and no storage holds it. Two independent things discard it:
 //
 //  1. `handleOpenChange(false)` nulls the state before the parent is told, so
 //     Done, Cancel, Escape and an overlay click all take the same path.

@@ -2,11 +2,11 @@
 
 Canonical reference for how NOA delivers generated secrets to operators via
 [yopass](https://github.com/jhaals/yopass). Ported from `noa-old` branch `MCP` with the
-helpers themselves (§T.15, C13).
+helpers themselves.
 
 Today the only planned consumer is the Proxmox cloud-init password reset tool,
-`proxmox_reset_vm_password` (§T.27). The helpers are shared and internal, not welded to that
-tool — DECISIONS §8.5.
+`proxmox_reset_vm_password`. The helpers are shared and internal, not welded to that
+tool — DECISIONS section 8.5.
 
 Update this file whenever the secret-delivery pattern, config, or consumers change, in the
 same commit as the code.
@@ -20,7 +20,7 @@ the prompt, in the model context, in the stored transcript, and potentially in t
 The internal-delivery pattern removes the password from the LLM boundary entirely:
 
 - The password is **generated internally** inside the tool's `execute()` call stack
-  (`core/secrets/password.py`), not supplied by the model (C15, §V.49).
+  (`core/secrets/password.py`), not supplied by the model.
 - It is **delivered out-of-band** via a yopass share link. Only the link (`yopass_url`)
   crosses back across the LLM boundary.
 - The operator copies the link and emails it to the customer. **NOA never sends email.**
@@ -33,7 +33,7 @@ What crosses the LLM boundary:
 | out | `status`, `yopass_url`, verification metadata (no plaintext) |
 
 No `reason` in either column: the reason is typed by the operator in the approval card and
-never enters a tool schema (C8, §V.15, §V.43).
+never enters a tool schema.
 
 The generated plaintext lives only in the `execute()` stack for the duration of the set +
 verification window. Never persisted, never stored in a vault, never handed back as a
@@ -55,11 +55,11 @@ helper, **not** an MCP tool:
 
 The decryption passphrase rides in the **URL fragment** (after `#`). Browsers never send the
 fragment to the server, so the yopass instance can decrypt nothing — only whoever holds the
-full link can (§V.50).
+full link can.
 
 ### Deliver-first ordering
 
-The reset tool stores the secret **before** mutating the VM (§V.62):
+The reset tool stores the secret **before** mutating the VM:
 
 ```
 generate password → yopass store (encrypt + POST → URL)
@@ -71,7 +71,7 @@ generate password → yopass store (encrypt + POST → URL)
   tool returns failure **without** `yopass_url`, so the unapplied link is never relayed or
   emailed.
 - libcrypt unavailable at verify time → the receipt states `verification_unavailable`, never
-  a silent pass (§V.62).
+  a silent pass.
 
 ## Configuration
 
@@ -82,16 +82,16 @@ Set via environment (pydantic-settings, no prefix). See `.env.example`; fields l
 |---------|---------|---------|-------|
 | `YOPASS_BASE_URL` | `yopass_base_url` | _(unset)_ | Base URL of the yopass instance. Absent → tool error `yopass_not_configured`; the app still boots. |
 | `YOPASS_SECRET_EXPIRATION_SECONDS` | `yopass_secret_expiration_seconds` | `604800` (7 days) | How long the stored secret lives. |
-| `YOPASS_ONE_TIME` | `yopass_one_time` | `false` | `false` ⇒ the link is multi-fetch within the expiry window — chosen so real-customer email-open latency does not burn the secret on a preview fetch. |
+| `YOPASS_ONE_TIME` | `yopass_one_time` | `false` | `false` means the link is multi-fetch within the expiry window — chosen so real-customer email-open latency does not burn the secret on a preview fetch. |
 | `SECRET_PASSWORD_LENGTH` | `secret_password_length` | `24` | Generated password length. Charset = letters + digits + safe symbols; never space, quote, backtick, or backslash (they break shell / cloud-init quoting). |
 
 `NOA_SECRET_ENCRYPTION_KEY` is a different mechanism: Fernet encryption of stored server
-credentials at rest (C7, §V.48, §V.52). It has nothing to do with yopass delivery.
+credentials at rest. It has nothing to do with yopass delivery.
 
 ## Residual risk (accepted)
 
 The yopass URL contains the decryption key in its fragment, so the URL itself is a secret. The
-LLM relays it, so it lands in LibreChat's stored transcript (§V.26 — assume a LibreChat admin
+LLM relays it, so it lands in LibreChat's stored transcript (assume a LibreChat admin
 can read tool-result artifacts). Accepted because the deployment uses a local self-hosted
 model on owned hardware. With `one_time=false` the link is reusable until expiry, bounded by
 the 7-day expiration and mitigated by manual operator email delivery.
@@ -100,7 +100,7 @@ the 7-day expiration and mitigated by manual operator email delivery.
 
 | Tool | Risk | Delivery |
 |------|------|----------|
-| `proxmox_reset_vm_password` (§T.27) | CHANGE | yopass link for the reset cloud-init password |
+| `proxmox_reset_vm_password` | CHANGE | yopass link for the reset cloud-init password |
 
 Approval and receipt surfaces render the password field as
 `generated (hidden), delivered via yopass` — never the plaintext.

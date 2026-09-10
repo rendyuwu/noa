@@ -1,16 +1,17 @@
-"""Keyset continuation tokens for the audit list (T55 — §I.admin-api).
+"""Keyset continuation tokens for the audit list (the admin API's contract).
 
-Ported from `noa-old` branch `MCP` (`apps/api/src/noa_api/api/pagination.py`) per C13: the
-encode/decode/predicate trio and the UTC normalisation are upstream's, and both are the parts
-that are easy to get subtly wrong. Two deliberate deviations, both recorded here rather than
-left for a reader to notice:
+Ported from `noa-old` branch `MCP` (`apps/api/src/noa_api/api/pagination.py`) — port, never import:
+the encode/decode/predicate trio and the UTC normalisation are upstream's, and both are the parts
+that are easy to get subtly wrong. Two deliberate deviations, both recorded here rather than left
+for a reader to notice:
 
 - **A malformed cursor raises `InvalidAuditCursorError`, not `RequestValidationError`.** Upstream
-  reused FastAPI's own validation exception so a bad cursor and an out-of-range `limit` answered
-  the same 422 with a validation-error list. NOA's error envelope is one shape for every refusal
-  (V8, V73): `error_code` + `message` + `request_id`, with diagnostics in `detail` and out of the
-  body. `InvalidRoleNameError` already sets that precedent for a malformed *path* param, so this
-  follows it rather than introducing a second envelope on the admin surface.
+  reused FastAPI's own validation exception so a bad cursor and an out-of-range `limit` answered the
+  same 422 with a validation-error list. NOA's error envelope is one shape for every refusal (the
+  envelope shape, the shared request-id installer): `error_code` + `message` + `request_id`, with
+  diagnostics in `detail` and out of the body. `InvalidRoleNameError` already sets that precedent
+  for a malformed *path* param, so this follows it rather than introducing a second envelope on the
+  admin surface.
 - **The JSON field names are fixed, and `ID_FIELD` is `toolRunId` for every surface.** Upstream
   parameterised them per list (`actionRequestId`, `toolRunId`, …) because it paged four. Two lists
   page through this codec now — `/admin/audit/tool-runs` and `/admin/action-requests` — so the
@@ -60,8 +61,8 @@ class KeysetCursor:
     """Where the previous page stopped: its last row's ordering timestamp and id.
 
     Both halves are needed because `created_at` is not unique — two runs started in the same
-    millisecond are ordinary, and a cursor holding only the timestamp would either skip the rest
-    of a tied group or serve it twice (V92(c), one surface over).
+    millisecond are ordinary, and a cursor holding only the timestamp would either skip the rest of
+    a tied group or serve it twice (capped in the statement, remainder reported, one surface over).
     """
 
     timestamp: datetime

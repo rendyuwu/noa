@@ -13,7 +13,8 @@ live scratch database in `test_auth_repository.py`, skip-gated the way
 Two settings choices worth knowing:
 
 - `auth_session_cookie_domain=None`. Production scopes the cookie to `.noa.internal`
-  (V40), which `TestClient` will not store for its `testserver` host — the cookie would
+  (the deployment's registrable parent), which `TestClient` will not store for its `testserver`
+  host — the cookie would
   silently vanish and every `/auth/me` assertion would pass for the wrong reason. Domain
   attributes themselves are asserted directly off `Set-Cookie` in `test_jwt_service.py`.
 - `auth_dev_bypass_ldap=False`. The fake directory *is* the double here; the bypass would
@@ -91,9 +92,11 @@ class FakeAuthRepository:
     """In-memory `AuthRepository`.
 
     `commit()` snapshots every row so the test can distinguish "written" from
-    "committed". That distinction is the whole point of T8's explicit transaction
-    boundary: V7 requires a first login's user row to survive the pending-approval
-    raise, and V9 requires a recorded failure to survive the error path. Both are
+    "committed". That distinction is the whole point of the login flow's explicit transaction
+    boundary: the users-born-at-login-inactive rule requires a first login's user row to survive
+    the pending-approval
+    raise, and the rate-limiter-blocks-after-max-failures rule requires a recorded failure to
+    survive the error path. Both are
     invisible to a double that just mutates a dict.
     """
 
@@ -272,10 +275,10 @@ def override_auth_service_factory(
 ) -> Callable[[], AuthService]:
     """A `get_auth_service` override wired to the doubles passed in.
 
-    Extracted from `auth_harness` so T9's `support.rbac` probe app can put the same real
-    `AuthService` behind `require_admin` without a second copy of this wiring. The
-    limiter policy is read off `settings`, never hardcoded, so a test that narrows the
-    window still exercises the real thresholds.
+    Extracted from `auth_harness` so the RBAC engine's `support.rbac` probe app can put the same
+    real `AuthService` behind `require_admin` without a second copy of this wiring. The limiter
+    policy is read off `settings`, never hardcoded, so a test that narrows the window still
+    exercises the real thresholds.
     """
     resolved_directory = directory or FakeDirectory()
     resolved_rate_limits = rate_limits or FakeRateLimitRepository()
@@ -319,7 +322,7 @@ class AuthHarness:
         """Put a freshly minted cookie on the client without going through login.
 
         Lets a test hold a *valid* session and then change the world behind it — the
-        shape V6's re-read rule is about.
+        shape the re-read rule is about: the cookie's claims are not revocable.
         """
         issued = self.jwt_service.create_access_token(email=email, user_id=user_id)
         self.client.cookies.set(COOKIE_NAME, issued.token)

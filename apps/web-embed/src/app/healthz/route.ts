@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 export const dynamic = 'force-dynamic'
 
 /**
- * Liveness: this process is up (§I.embed).
+ * Liveness: this process is up — part of the embed app's contract.
  *
  * It deliberately touches nothing else — not the API, not a cookie, not the DB.
  * A liveness probe that calls a dependency reports the dependency's outage as

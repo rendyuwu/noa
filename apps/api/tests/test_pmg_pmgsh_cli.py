@@ -1,16 +1,19 @@
-"""`pmgsh` command composition, execution and failure classification
-(T18, V55, V56, V58, V66, V69, V73).
+"""`pmgsh` command composition, execution and failure classification — the PMG port, the
+sudo-prefix rule, banner-stripped parsing, the argv-safe target rule, the shared
+combined-stream helper, ported-not-rewritten provenance, and the mapped error taxonomy.
 
-V58 is the whole point of the module and most of this file: **argv-only, ⊥ shell string.** A
+The argv-safe target rule is the whole point of the module and most of this file:
+**argv-only, never shell string.** A
 whitelist target arrives from an LLM tool argument, so a `;` or `$(…)` in it must stay one
 argument to `pmgsh`. `shlex.split` round-trips are how that is asserted rather than eyeballing a
 string.
 
 Two things the source repo had no reason to test, and this port does:
 
-- **V55, as a biconditional.** `noa-old`'s PMG layer had no escalation path at all, so a non-root
-  `ssh_username` silently failed on permissions. Both builders now read the resolved config
-  (T18 deviation (1)), and both directions are asserted for both binaries.
+- **The sudo-prefix rule, as a biconditional.** `noa-old`'s PMG layer had no escalation path at
+  all, so a non-root `ssh_username` silently failed on permissions. Both builders now read the
+  resolved config (a deviation from the ported PMG layer), and both directions are asserted for
+  both binaries.
 - **`ssh_sudo_required` ≠ a generic command failure** (`noa-old` GH #82). Reachable only because
   escalation is now possible; a denied `sudo -n` and a missing binary produce different codes, so
   an operator is told to fix sudoers rather than hunting an install that is already there.
@@ -19,9 +22,11 @@ The mutation predicate gets its own attention. `pmgsh create`/`delete` report th
 status in their *output*, not their exit code, so `require_pmg_mutation_success` accepts a
 non-zero exit when stdout carries `200 OK` — and must keep rejecting the same text on stderr,
 which is a different shape entirely. Getting that backwards turns an approved CHANGE that failed
-into a receipt that says it worked (V57's reasoning, applied to PMG).
+into a receipt that says it worked — the same no-success-without-evidence reasoning firewall
+ops use, applied to PMG.
 
-**A resolved `SSHConnectionConfig` goes in, not a row** as of T31, so the row refusals that used
+**A resolved `SSHConnectionConfig` goes in, not a row** as of the whitelist search tool, so the
+row refusals that used
 to be asserted here now belong to `resolve_pmg_ssh_config` (`test_pmg_ssh_config.py`) and to the
 tool that calls it (`test_pmg_tools_whitelist_search.py::test_an_unpinned_server_is_refused…`).
 What is left in this file is what this module still decides: composition, success, parsing, and
@@ -82,7 +87,7 @@ def _pmg_ssh_config(*, username: str = "root"):  # type: ignore[no-untyped-def]
     return ssh_config(username=username, host="pmg.example.com")
 
 
-# --- V55: prefix ⟺ user ≠ root ---
+# --- Prefix ⟺ user ≠ root ---
 
 
 def test_pmgsh_command_escalates_only_for_non_root_user() -> None:
@@ -117,14 +122,15 @@ def test_term_dumb_stays_ahead_of_sudo() -> None:
 
 
 def test_root_composition_is_byte_identical_to_the_source_repo() -> None:
-    """C13/V69: the ported command string is unchanged for the case `noa-old` actually ran."""
+    """Ported, never imported: the command string is unchanged for the case `noa-old` actually
+    ran."""
     assert (
         build_pmgsh_command(["delete", f"{MYNETWORKS_PATH}/{_CIDR}"], config=_pmg_ssh_config())
         == f"TERM=dumb /usr/bin/pmgsh delete /config/mynetworks/{_CIDR}"
     )
 
 
-# --- V58: argv only, absolute binary, one config path ---
+# --- Argv only, absolute binary, one config path ---
 
 
 def test_pmgsh_binary_is_an_absolute_path() -> None:
@@ -168,14 +174,14 @@ def test_a_cidr_path_segment_survives_as_one_argv_token() -> None:
 
 
 def test_no_remote_shell_helpers_are_composed() -> None:
-    """V58 forbids remote `jq`/`awk`/`pmgdb`: NOA parses stdout locally."""
+    """The argv-safe target rule forbids remote `jq`/`awk`/`pmgdb`: NOA parses stdout locally."""
     command = build_pmgsh_command(["ls", MYNETWORKS_PATH], config=_pmg_ssh_config())
 
     for helper in ("jq", "awk", "pmgdb", "|", ">"):
         assert helper not in command
 
 
-# --- V55 / GH #82: denied sudo is not a missing binary ---
+# --- Sudo-prefix rule / GH #82: denied sudo is not a missing binary ---
 
 
 def test_sudo_rights_failure_reports_ssh_sudo_required() -> None:
@@ -211,7 +217,8 @@ def test_mutation_sudo_denial_also_reports_ssh_sudo_required() -> None:
 
 
 def test_require_pmgsh_success_returns_combined_output_on_exit_zero() -> None:
-    """V56: both streams, off the banner-stripped view — `pmgsh` splits status and payload."""
+    """Banners stripped before parsing: both streams, off the banner-stripped view — `pmgsh`
+    splits status and payload."""
     result = command_result(exit_code=0, stdout="200 OK", stderr="warning: noisy")
 
     assert require_pmgsh_success(result, default_message="x") == "200 OK\nwarning: noisy"
@@ -243,7 +250,7 @@ def test_require_pmg_mutation_success_accepts_200_ok_on_nonzero_exit() -> None:
 
 
 def test_require_pmg_mutation_success_rejects_200_ok_only_on_stderr() -> None:
-    """A different shape: the check reads `stdout`, ⊥ the combined text. Accepting this would
+    """A different shape: the check reads `stdout`, never the combined text. Accepting this would
     turn a failed CHANGE into a receipt that says it worked."""
     with pytest.raises(PMGSHCLIError) as exc:
         require_pmg_mutation_success(
@@ -253,7 +260,7 @@ def test_require_pmg_mutation_success_rejects_200_ok_only_on_stderr() -> None:
     assert exc.value.error_code == "pmgsh_command_failed"
 
 
-# --- JSON extraction: V56 / GH #83 ---
+# --- JSON extraction: banners stripped before parsing / GH #83 ---
 
 
 @pytest.mark.parametrize(
@@ -301,7 +308,8 @@ def test_parse_pmgsh_json_output_raises_when_a_document_fails_to_decode(output: 
 async def test_run_pmgsh_command_converts_an_ssh_failure_into_the_pmg_tree(monkeypatch) -> None:  # type: ignore[no-untyped-def]
     """One exception tree out of the module, so a caller does not catch two.
 
-    The transport raises here rather than a row being malformed: since T31 the row never
+    The transport raises here rather than a row being malformed: since the whitelist search
+    tool the row never
     reaches this module, and a mismatched host key is what the pin actually produces.
     """
 
@@ -410,16 +418,16 @@ async def test_run_pmgconfig_sync_restart_uses_exact_args(monkeypatch) -> None: 
     assert fake.commands == [f"TERM=dumb {PMGCONFIG_BINARY} sync --restart 1"]
 
 
-# --- V66: one home for the combined-stream helper ---
+# --- One home for the combined-stream helper ---
 
 
 def test_command_output_text_is_the_shared_helper() -> None:
-    """`noa-old` carried this function three times, and this module held the third copy. T16
-    moved it to `core.remote_exec.output` naming this port as the reason."""
+    """`noa-old` carried this function three times, and this module held the third copy. The WHM
+    port moved it to `core.remote_exec.output` naming this port as the reason."""
     assert pmgsh_cli_mod.command_output_text is command_output_text
 
 
-# --- V73: one taxonomy, one handler, mapped status ---
+# --- One taxonomy, one handler, mapped status ---
 
 
 def test_pmgsh_error_tree_is_mapped_in_status_by_error() -> None:

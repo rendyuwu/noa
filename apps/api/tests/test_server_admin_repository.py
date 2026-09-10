@@ -6,10 +6,10 @@ double cannot tell you:
 
 1. **The transaction boundary**. An in-memory repository cannot roll back, so "flushed"
    and "committed" read identically through it — and identically *inside* one session, too,
-   which is precisely what let B10 and B11 ship. Every case here observes from a **second**
-   session, and every case ships the flush-only negative control beside it, so a green result
-   cannot come from an observer that reads its own transaction or one that can see nothing
-   (V100(c), V87).
+   which is precisely what let the flush-only 200-over-rollback bug ship twice. Every case here
+   observes from a **second** session, and every case ships the flush-only negative control
+   beside it, so a green result cannot come from an observer that reads its own transaction or
+   one that can see nothing (the live-commit witness, the compare-must-still-separate rule).
 
 2. **What the columns actually hold**. The service encrypts; this asserts the stored
    bytes are `enc:v1:fernet:…` on all six secret columns across the three tables — and that the
@@ -181,13 +181,13 @@ async def observed_names(
     session_factory: async_sessionmaker[AsyncSession],
     model: type[WHMServer] | type[ProxmoxServer] | type[PMGServer],
 ) -> set[str]:
-    """Row names as a **separate** connection sees them. The V100(c) witness."""
+    """Row names as a **separate** connection sees them. The live-commit witness."""
     async with session_factory() as observer:
         result = await observer.execute(sa.select(model.name))
         return set(result.scalars().all())
 
 
-# --- V48, C7: what the columns hold ---
+# --- Secrets encrypted at rest: what the columns hold ---
 
 
 async def test_every_secret_column_is_written_as_ciphertext(
@@ -257,7 +257,7 @@ async def test_a_stored_secret_decrypts_back_to_what_was_submitted(
     assert cipher.decrypt_text(created.ssh_password) == SSH_PASSWORD
 
 
-# --- V100: the commit boundary, with a witness ---
+# --- The commit boundary, with a witness ---
 
 
 async def test_commit_makes_a_create_outlive_the_request(
@@ -265,14 +265,15 @@ async def test_commit_makes_a_create_outlive_the_request(
     session_factory: async_sessionmaker[AsyncSession],
     cipher: SecretCipher,
 ) -> None:
-    """V100: flushed is not persisted, and only a second connection can tell.
+    """Flushed is not persisted, and only a second connection can tell.
 
     Without the boundary the route answers 201 with a body describing a row that vanishes at
     teardown — an operator adds a server, sees it in the response, and it is not there on
     reload, with no error anywhere.
 
-    The direct `create` through the repository alone is the negative control (V87, B10's own
-    shape): the same write, checked before anything commits.
+    The direct `create` through the repository alone is the negative control (the
+    compare-must-still-separate rule, the flush-only-200 bug's own shape): the same write,
+    checked before anything commits.
     """
     # Negative control: flush only.
     flushed = await SQLWHMServerAdminRepository(session).create(whm_spec("control"))
@@ -293,7 +294,7 @@ async def test_commit_makes_an_update_outlive_the_request(
     session_factory: async_sessionmaker[AsyncSession],
     cipher: SecretCipher,
 ) -> None:
-    """V100(b): the same boundary on the write that *edits* a server.
+    """The commit-boundary rule: the same boundary on the write that *edits* a server.
 
     An uncommitted rename answers 200 with the new name and leaves the old one in place, so the
     panel and the database disagree until somebody reloads.
@@ -321,7 +322,7 @@ async def test_commit_makes_a_delete_outlive_the_request(
     session_factory: async_sessionmaker[AsyncSession],
     cipher: SecretCipher,
 ) -> None:
-    """V100(b) again, on the dangerous direction.
+    """The commit-boundary rule again, on the dangerous direction.
 
     An uncommitted delete answers `{ok: true}`, the panel stops listing the server, and the row
     — with the credentials on it — survives the request that removed it.
@@ -348,10 +349,11 @@ async def test_every_mutation_of_every_service_commits(
     cipher: SecretCipher,
     system: str,
 ) -> None:
-    """V100(b): the whole *class* of mutations, on all three services.
+    """The commit-boundary rule: the whole *class* of mutations, on all three services.
 
-    Parametrised rather than sampled, and B11 is why: `AuthorizationService` was fixed at B10
-    and `McpTokenService` carried the identical hole until T53, so "one of them commits" is not
+    Parametrised rather than sampled, and the sibling-service flush-only bug is why:
+    `AuthorizationService` was fixed at the first sighting and `McpTokenService` carried the
+    identical hole until token management landed, so "one of them commits" is not
     the claim — nine writes are, and each is observed from a second session.
 
     A mutation check confirms this separates: deleting the `commit()` from any one of the nine
@@ -382,7 +384,8 @@ async def test_a_refused_create_persists_nothing(
     session_factory: async_sessionmaker[AsyncSession],
     cipher: SecretCipher,
 ) -> None:
-    """V100(a): the guards raise before the commit, so the refusal leaves no row behind."""
+    """The commit-boundary rule: the guards raise before the commit, so the refusal leaves
+    no row behind."""
     service = whm_service(session, cipher)
     await service.create(whm_spec("taken"), actor_email=ACTOR)
 
@@ -397,7 +400,7 @@ async def test_validate_persists_the_captured_fingerprint(
     session_factory: async_sessionmaker[AsyncSession],
     cipher: SecretCipher,
 ) -> None:
-    """V100 on the one column the validate flow writes.
+    """The commit-boundary rule on the one column the validate flow writes.
 
     The pin repository is the object the validation service holds, and it commits its own
     transaction — a pin that only flushed would leave the row unvalidated while the operator
@@ -617,7 +620,7 @@ async def test_a_clear_flag_really_nulls_the_column(
 async def test_moving_the_host_drops_the_pin_in_sql(
     session: AsyncSession, cipher: SecretCipher
 ) -> None:
-    """V82's invalidation rule, through the real statement.
+    """The host-key pin's invalidation rule, through the real statement.
 
     With its negative control: an edit that touches neither the host nor the port keeps the pin,
     or "the pin was dropped" would pass against a repository that drops it on every save.

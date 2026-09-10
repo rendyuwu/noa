@@ -1,7 +1,7 @@
 """`whm_unsuspend_account` — the suspend tool's mirror, and its two extra states.
 
 Same three lanes as `test_whm_tools_suspend_account.py`, because the tool and the runner sit on
-opposite sides of V22's boundary and the mount is a third claim again:
+opposite sides of the cookie/CSRF boundary and the mount is a third claim again:
 
 - **the tool** — the preflight, the refusals, the two answers that open no request, and the gate
   response. Driven through the real `open_change_request` inside a real request context, so
@@ -11,14 +11,14 @@ opposite sides of V22's boundary and the mount is a third claim again:
   built the way `core.approvals.execution` builds one, because that is what the executor hands it.
 - **the mount** — `tools/call` over `create_app()`, with every middleware in the chain.
 
-Seams are T21's and T22's, unchanged: the real `WHMClient` over a doubled socket
-(`support.whm_api`), because WHM reports a refusal as **HTTP 200** with `metadata.result: 0` and
-a doubled client would let this pass against error shapes WHM never sends; a real `SecretCipher`,
-so the `Authorization` header proves a decrypt happened; the real resolver; the real
-`sanitize_tool_errors`. Only the socket, the SQL and the directory are doubles.
+Seams are the account search's and the suspend tool's, unchanged: the real `WHMClient` over a
+doubled socket (`support.whm_api`), because WHM reports a refusal as **HTTP 200** with
+`metadata.result: 0` and a doubled client would let this pass against error shapes WHM never sends;
+a real `SecretCipher`, so the `Authorization` header proves a decrypt happened; the real resolver;
+the real `sanitize_tool_errors`. Only the socket, the SQL and the directory are doubles.
 
-**What is genuinely new here, and therefore what this file is for.** The rest mirrors T22 and is
-asserted because a mirror can be built crooked, but three claims exist only on this side:
+**What is genuinely new here, and therefore what this file is for.** The rest mirrors the suspend
+tool and is asserted because a mirror can be built crooked, but three claims exist only here:
 
 1. **The no-op runs the other way.** An account that is *not* suspended has nothing to lift, so
    no request is opened. Flipping that predicate is a mutation, and the assertion is a request
@@ -29,9 +29,9 @@ asserted because a mirror can be built crooked, but three claims exist only on t
    version never sent the field is not refused either — without those two the refusal would pass
    against a tool that refuses everything.
 3. **The preflight summary carries `suspendreason` here.** An account being unsuspended is
-   suspended right now, so WHM's suspension note — which as of T22 is the operator's own reason —
-   is on the row this tool reads. T22 never met that: it reads *live* accounts. Both answers this
-   tool puts in a transcript are checked for it (C8, V26, V96a).
+   suspended right now, so WHM's suspension note — which as of the suspend tool is the operator's
+   own reason — is on the row this tool reads. The suspend tool never met that: it reads *live*
+   accounts. Both answers this tool puts in a transcript are checked: no path back to a model.
 
 And one absence: `unsuspendacct` takes no note, so the runner writes nothing out and the
 `unsuspendacct` query is asserted **exactly**, not by the absence of one key.
@@ -114,10 +114,10 @@ SERVER_NAME = "alpha"
 ACCOUNT = "acmeco"
 
 # Who WHM says owns the account, and it has to equal the row's `api_username` or the preflight
-# refuses before a card exists (§V106): cPanel gates an account write on ownership, so an
-# account with no owner is one NOA cannot prove this credential may change. `whm_server`'s
+# refuses before a card exists — owner, not machine: cPanel gates an account write on ownership,
+# so an account with no owner is one NOA cannot prove this credential may change. `whm_server`'s
 # credential is `root`, and root owning accounts directly is the measured case — 56 of the 451
-# rows on the host §R.33 was taken from. `test_whm_account_owner_gate.py` is where the mismatch
+# rows on the host this was measured live on. `test_whm_account_owner_gate.py` is where the mismatch
 # and the unreported-owner refusals are asserted; here the owner is fixture, not subject.
 OWNER = "root"
 
@@ -125,9 +125,9 @@ OWNER = "root"
 # proves a decrypt rather than a passthrough.
 WHM_API_TOKEN = "whm-api-token-plaintext"
 
-# WHM's `suspendreason` — the operator's own words from whatever suspended the account, echoed
-# back on every `listaccts` (V96a). It sits on the row this tool's preflight reads, which is the
-# case T22 could not have: an account being unsuspended is suspended right now.
+# WHM's `suspendreason` — the operator's own words, echoed back on every `listaccts`, unreadable
+# on every path back to a model. It sits on the row this tool's preflight reads, the case the
+# suspend tool could not have: an unsuspend target is suspended right now.
 SUSPEND_NOTE_ECHO = "operator words WHM would echo back"
 
 
@@ -229,8 +229,8 @@ def execution_request(
         evidence={
             EVIDENCE_SERVER_ID: str(server_id),
             EVIDENCE_SERVER_NAME: SERVER_NAME,
-            # The runner re-compares this against the row's live `api_username` (§V106, V33),
-            # so evidence without it is an approved change NOA refuses to run.
+            # The runner re-compares this against the row's live `api_username` — owner as
+            # `server_ref` — so evidence without it is an approved change NOA refuses to run.
             EVIDENCE_OWNER: OWNER,
             EVIDENCE_ACCOUNT: {
                 "user": username,
@@ -248,12 +248,12 @@ def query_of(request: Any) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------------------
-# V16, V23: the call opens a question and changes nothing
+# READ now, CHANGE through the gate: the call opens a question and changes nothing
 # --------------------------------------------------------------------------------------
 
 
 async def test_an_unsuspend_call_opens_a_pending_request_and_unsuspends_nothing() -> None:
-    """The whole of V16 in one assertion pair: a row exists, and WHM was never asked to act.
+    """One assertion pair: a row exists, and WHM was never asked to act.
 
     The second half is the one that matters and it is counted rather than inferred — the call
     *does* reach WHM, for its preflight, so "no HTTP happened" would be false and "the payload
@@ -273,11 +273,11 @@ async def test_an_unsuspend_call_opens_a_pending_request_and_unsuspends_nothing(
 
 
 async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row() -> None:
-    """C9, V17, V33, V35: one call, evidence born in it, persisted for the card.
+    """One workflow, one tool — evidence stays in-process, persisted at gate time for the card.
 
     One `listaccts` request, not two: the preflight is `fetch_whm_accounts` through
-    `collect_account_state`, shared with T20/T21/T22 rather than re-implemented, and a
-    second read here would mean the card describes a state the tool did not gather.
+    `collect_account_state`, shared with the list, search and suspend tools rather than
+    re-implemented; a second read would mean the card describes a state the tool did not gather.
     """
     fixture, api = unsuspend_context()
 
@@ -293,7 +293,7 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row() -> None
 
 
 async def test_the_recorded_arguments_are_the_two_the_schema_declares() -> None:
-    """C8, V15, V43: the row records what was asked for, and no reason is among it.
+    """One operator-typed reason field: the row records what was asked for, no reason among it.
 
     Asserted on the keys rather than on the absence of one name, so a future argument cannot
     arrive here unnoticed — and cross-checked against `FORBIDDEN_REASON_KEYS` so the claim is
@@ -309,16 +309,16 @@ async def test_the_recorded_arguments_are_the_two_the_schema_declares() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V24, V25: what the model is handed
+# What the model is handed: one result shape, link-out text beside the frame
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_result_carries_the_card_address_and_the_iframe() -> None:
-    """V24, V25: two blocks, text first, and the plain address inside the text.
+    """Two blocks, text first, and the plain address inside the text.
 
-    Asserted on the count and the order because that is what V24 claims — "both, never one" —
-    and a test that only looked for a resource would pass on a result with no address in it,
-    which is the case where the frame fails to load and the operator has no door.
+    Asserted on the count and the order because the result shape claims "both, never one" — and a
+    test that only looked for a resource would pass on a result with no address in it, the case
+    where the frame fails to load and the operator has no door.
     """
     fixture, _ = unsuspend_context()
 
@@ -337,10 +337,10 @@ async def test_the_result_carries_the_card_address_and_the_iframe() -> None:
 
 
 async def test_the_tool_schema_carries_no_reason_parameter() -> None:
-    """C8, V15: the boundary is on the schema, so the schema is where it is asserted.
+    """The boundary is on the schema, so the schema is where it is asserted.
 
-    Read off the registered server rather than off the function signature: what C8 bounds is
-    what the model is *told* it may send, and that is what `tools/list` publishes.
+    Read off the registered server rather than off the function signature: the reason field
+    bounds what the model is *told* it may send, and that is what `tools/list` publishes.
     """
     context = build_tool_context().context
     server = build_mcp_server(tool_context=context)
@@ -354,8 +354,9 @@ async def test_the_tool_schema_carries_no_reason_parameter() -> None:
 
 
 def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
-    """V10, V20: a name outside the catalog is a capability no role can be granted, and a
-    CHANGE that registered as a READ would have the audit middleware write a row for a change
+    """Admin bypass over known tools only, and risk and status kept as separate columns: a name
+    outside the catalog is a capability no role can be granted, and a CHANGE that registered as a
+    READ would have the audit middleware write a row for a change
     that has not happened."""
     context = build_tool_context().context
     registered = register_mcp_tools(build_mcp_server(tool_context=context), context=context)
@@ -365,7 +366,8 @@ def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
 
 
 def test_both_account_change_runners_come_from_one_builder() -> None:
-    """V66, and DECISIONS §9's split held at the same time: two names, one module, one builder.
+    """Reusable functions over duplication, and DECISIONS section 9's split held at the same time:
+    two names, one module, one builder.
 
     The pair is deliberately *not* merged into a tool with an `action` enum — opposite risk
     directions — so what stops that from becoming two implementations is that both runners are
@@ -384,7 +386,7 @@ def test_both_account_change_runners_come_from_one_builder() -> None:
 
 
 async def test_an_account_that_is_not_suspended_opens_no_request() -> None:
-    """T22's no-op, running the other way.
+    """The suspend tool's no-op, running the other way.
 
     The preflight is what discovers there is nothing to do, so it answers instead of gating: a
     card for a change that would do nothing costs an operator a decision and leaves a row
@@ -472,12 +474,13 @@ async def test_an_account_whose_whm_never_reported_a_lock_is_not_refused() -> No
 
 
 async def test_neither_answer_that_opens_no_request_carries_whms_suspension_note() -> None:
-    """C8, V26, V96a — and the case T22's file could not write.
+    """No path back for a value the operator typed and the LLM never sees — and the case the suspend
+    tool's file could not write.
 
     An account being unsuspended is suspended right now, so the summary the preflight built holds
-    `suspendreason`, which since T22 is the operator's own approval reason. Both answers below
-    are built from the username and the server name instead of from that summary, which is the
-    difference between an answer and a leak.
+    `suspendreason`, which since the suspend tool is the operator's own approval reason. Both
+    answers below are built from the username and the server name instead of from that summary,
+    which is the difference between an answer and a leak.
 
     The no-op path is included even though its account is *live*: the field survives an
     unsuspension in some cPanel versions, and a payload assembled from the summary would carry it
@@ -501,7 +504,8 @@ async def test_neither_answer_that_opens_no_request_carries_whms_suspension_note
 
 
 async def test_a_blank_username_is_refused_before_any_round_trip() -> None:
-    """V21, and the guard is placed where the schema cannot reach: `min_length` counts
+    """Whitespace-only strings are rejected, and the guard is placed where the schema cannot reach:
+    `min_length` counts
     whitespace, so `"  "` would otherwise be fetched for and matched against nothing."""
     fixture, api = unsuspend_context()
 
@@ -515,7 +519,8 @@ async def test_a_blank_username_is_refused_before_any_round_trip() -> None:
 
 
 async def test_an_ambiguous_server_ref_returns_choices_and_opens_no_request() -> None:
-    """V18, C10: a CHANGE that guessed which machine an operator meant is the whole hazard."""
+    """What refusing to guess requires: a CHANGE that guessed which machine an operator meant
+    is the whole hazard."""
     shared = "https://shared.example.net:2087"
     fixture, api = unsuspend_context(
         servers=[whm_server("one", base_url=shared), whm_server("two", base_url=shared)],
@@ -531,7 +536,8 @@ async def test_an_ambiguous_server_ref_returns_choices_and_opens_no_request() ->
 
 
 async def test_an_unknown_account_is_refused_and_opens_no_request() -> None:
-    """The other half of C10: an operator's typo must not become an approval card for a
+    """The other half of ambiguous identifier -> candidates, never guess: an operator's typo must
+    not become an approval card for a
     username nobody can act on."""
     fixture, _ = unsuspend_context()
 
@@ -543,7 +549,8 @@ async def test_an_unknown_account_is_refused_and_opens_no_request() -> None:
 
 
 async def test_a_whm_refusal_keeps_the_code_that_names_the_remedy() -> None:
-    """V19's passthrough: `whm_api_error` says WHM said no, which is a different fix from a
+    """The raw-exceptions-sanitised rule's passthrough: `whm_api_error` says WHM said no, which is a
+    different fix from a
     NOA failure — and the message is WHM's own `reason`."""
     fixture, _ = unsuspend_context(
         whm_endpoint(listaccts_bodies=[whm_api_failure_body("Access denied")])
@@ -560,7 +567,7 @@ async def test_a_whm_refusal_keeps_the_code_that_names_the_remedy() -> None:
 async def test_a_raising_preflight_reaches_the_model_as_a_named_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V19: a raw exception never reaches the LLM, and a timeout says so by name."""
+    """Raw exceptions never reach the LLM — sanitised to a code: a timeout says so by name."""
     from noa_api.mcp_tools import whm_account_change
 
     async def raises(**_kwargs: Any) -> dict[str, Any]:
@@ -578,7 +585,8 @@ async def test_a_raising_preflight_reaches_the_model_as_a_named_failure(
 
 
 async def test_a_gate_write_failure_refuses_the_change(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V23: no authorization row means no authorization, so the call fails rather than
+    """The verdict is read from `status` every time: no authorization row means no authorization, so
+    the call fails rather than
     answering with a card address that leads nowhere."""
     fixture, _ = unsuspend_context()
     fixture.action_requests.fail_create = RuntimeError("connection reset")
@@ -591,7 +599,8 @@ async def test_a_gate_write_failure_refuses_the_change(monkeypatch: pytest.Monke
 
 
 async def test_no_credential_reaches_the_result() -> None:
-    """V8, V26: the result persists in LibreChat's MongoDB, so it carries no credential
+    """The envelope shape and an id-only URL: the result persists in LibreChat's MongoDB, so it
+    carries no credential
     material — and the `Authorization` header proves the real decrypt ran."""
     fixture, api = unsuspend_context()
 
@@ -604,15 +613,16 @@ async def test_no_credential_reaches_the_result() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The runner: what happens after an operator approved (V22's far side)
+# The runner: what happens after an operator approved (the far side of the cookie/CSRF boundary)
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_runner_asks_whm_for_the_account_and_nothing_else() -> None:
-    """C8, V96: `unsuspendacct` has no note field, so nothing leaves NOA on this path.
+    """A value the operator types and the LLM never sees, and no path back for it once written:
+    `unsuspendacct` has no note field, so nothing leaves NOA on this path.
 
-    Asserted as an **exact** query rather than as the absence of one key name: what T22 had to
-    guard is a note field that exists, and what this guards is a runner that grows one later
+    Asserted as an **exact** query rather than as the absence of one key name: what the suspend tool
+    had to guard is a note field that exists, and what this guards is a runner that grows one later
     under whatever name WHM would call it. An equality goes red for any of them.
     """
     fixture, api = unsuspend_context(whm_endpoint(listings=[[live_account()]]))
@@ -649,9 +659,10 @@ async def test_the_runner_payload_never_carries_the_reason_back() -> None:
 
 
 async def test_the_runner_acts_on_the_server_the_card_named() -> None:
-    """V33: inventory can change between a request and its approval, and `server_ref` is a
-    string the model supplied. The evidence carries the id of the machine the preflight read and
-    the operator saw, so that is what the change reaches — asserted on the host WHM was called
+    """Context persisted at gate time: inventory can change between a request and its approval, and
+    `server_ref` is a string the model supplied. The evidence carries the id of the machine the
+    preflight read and the operator saw, so that is what the change reaches — asserted on the
+    host WHM was called
     at, which is the only way "it ran somewhere else" would show."""
     alpha = whm_server(SERVER_NAME)
     beta = whm_server("beta")
@@ -670,7 +681,7 @@ async def test_the_runner_acts_on_the_server_the_card_named() -> None:
 async def test_a_change_that_did_not_take_is_a_failure() -> None:
     """WHM accepted the call and the account is still suspended. Reporting that as done is the
     fabrication the postflight exists to stop — and the direction of the check is the mutation
-    that separates this file from T22's."""
+    that separates this file from the suspend tool's."""
     fixture, _ = unsuspend_context(whm_endpoint(listings=[[suspended_account()]]))
     runner = payload_runner(build_whm_unsuspend_runner(context=fixture.context))
 
@@ -681,7 +692,8 @@ async def test_a_change_that_did_not_take_is_a_failure() -> None:
 
 
 async def test_a_change_whm_accepted_but_could_not_confirm_says_unverified() -> None:
-    """V62's rule one system over, and the third answer `_verify_account_state` exists for.
+    """The password-reset verdict-on-verify rule one system over, and the third answer
+    `_verify_account_state` exists for.
 
     A failure here would send an operator to re-run a lift that may already have taken; a plain
     success would claim a confirmation nobody has.
@@ -752,7 +764,8 @@ async def test_evidence_without_a_usable_server_id_is_refused() -> None:
 async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V16, V20, V45, T73 — over `create_app()`, with every middleware in the chain.
+    """READ now CHANGE through the gate, risk and status as separate columns, the tool-run trail's
+    job, and the tool-run writer — over `create_app()`, with every middleware in the chain.
 
     The second CHANGE tool to make this claim, and it is re-made rather than inherited: the risk
     comes from `register_whm_account_change_tools`, and a tool registered CHANGE but classified
@@ -789,7 +802,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
     request = tools.action_requests.only
     assert request.status is ActionRequestStatus.PENDING
     assert request.requested_by_user_id == user.id
-    # V46's row belongs to the executor that runs after a decision, not to this call.
+    # The run-plus-receipt row belongs to the executor that runs after a decision, not to this call.
     assert tools.tool_runs.runs == []
     assert api.requests_to(UNSUSPENDACCT_PATH) == []
 
@@ -797,7 +810,7 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
 async def test_a_grant_for_one_direction_does_not_reach_the_other(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """DECISIONS §9's whole reason for two names rather than an `action` enum, asserted.
+    """DECISIONS section 9's whole reason for two names rather than an `action` enum, asserted.
 
     Suspend and unsuspend carry opposite risk, so a role granted one must not receive the other.
     The merged pairs (`proxmox_vm_nic`, `pmg_whitelist`) accepted exactly that coarsening and
@@ -826,7 +839,8 @@ async def test_a_grant_for_one_direction_does_not_reach_the_other(
 
 
 async def test_the_unsuspend_delta_moves_the_same_field_the_other_way() -> None:
-    """The mirror of T22's delta, and the only thing that differs is the direction's value.
+    """The mirror of the suspend tool's delta, and the only thing that differs is the direction's
+    value.
 
     One postflight serves both tools and `target_suspended` is the whole difference, so
     this is the assertion that a mutation flipping it turns the change's meaning over — in the
@@ -845,7 +859,8 @@ async def test_the_unsuspend_delta_moves_the_same_field_the_other_way() -> None:
 
 
 async def test_the_unsuspend_delta_never_carries_the_earlier_note() -> None:
-    """C8, V96a: this runner writes nothing out, and it still has a return path to close.
+    """A value the operator types and the LLM never sees, and no path back for it once written: this
+    runner writes nothing out, and it still has a return path to close.
 
     An account being unsuspended *is* suspended when the preflight reads it, so its summary
     carries `suspendreason` — an operator's words from the earlier suspension — and that summary
@@ -869,7 +884,7 @@ async def test_a_confirming_read_that_did_not_answer_claims_no_diff() -> None:
     Absent rather than empty. Reporting an empty diff would say the account was looked at and
     had not moved, which is the opposite of what a read that did not answer establishes — and
     reporting the change as failed would send an operator to lift a suspension that is already
-    lifted (V62's rule, one system over).
+    lifted (the password-reset verdict-on-verify rule, one system over).
     """
     fixture, _ = unsuspend_context(
         whm_endpoint(listaccts_bodies=[whm_api_failure_body("Access denied")])

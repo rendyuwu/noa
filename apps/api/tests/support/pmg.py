@@ -15,12 +15,12 @@ has no PMG counterpart.
 The SSH transport doubles are shared and sit in `support/remote_exec.py`; the cipher is in
 `support/secrets.py`.
 
-`FakePMGWhitelist` is T29's addition and the one double here that is not a constant answer.
-It holds `mynetworks` as **state**: a `create` appends and a `delete` removes, so the `ls` the
-runner takes afterwards returns what the runner actually wrote. That is what makes the postflight
-worth running — a fixture replaying a canned "it is there now" would pass with the whole
-write-then-verify path deleted — and it is what lets a removal's *bytes* be asserted rather
-than its return value.
+`FakePMGWhitelist` is the pmg-whitelist tool's addition and the one double here that is not a
+constant answer. It holds `mynetworks` as **state**: a `create` appends and a `delete` removes, so
+the `ls` the runner takes afterwards returns what the runner actually wrote. That is what makes the
+postflight worth running — a fixture replaying a canned "it is there now" would pass with the whole
+write-then-verify path deleted — and it is what lets a removal's *bytes* be asserted rather than its
+return value.
 
 No live host and no live PMG: everything under test is reference resolution, command
 composition, `mynetworks` parsing and refusal shaping.
@@ -142,8 +142,8 @@ def whitelist_context(
     with, or the fixture would hold a key those rows do not open under.
 
     `answer` is one canned reply to every command, which is all a READ needs — those tools send
-    exactly one. `handler` is T29's seam: a CHANGE sends `ls`, then a mutation, then
-    `pmgconfig sync`, then `ls` again, and each has to answer differently, so a
+    exactly one. `handler` is the pmg-whitelist tool's seam: a CHANGE sends `ls`, then a mutation,
+    then `pmgconfig sync`, then `ls` again, and each has to answer differently, so a
     `FakePMGWhitelist` dispatches on the command instead. One builder for both, because the
     resolution, the cipher and the row are the same either way.
 
@@ -170,11 +170,11 @@ def whitelist_context(
     return fixture, fake
 
 
-# --- T29: a whitelist a change can actually move ---
+# --- The pmg-whitelist tool: a whitelist a change can actually move ---
 
-# The address the CHANGE tests ask about, and what `normalize_cidr` makes of it. A bare host, so
-# the two spellings differ — which is the case §V.59 is about and the one a fixture storing only
-# `/32` would hide.
+# The address the CHANGE tests ask about, and what `normalize_cidr` makes of it. A bare host, so the
+# two spellings differ — which is the case the exact-membership rule is about and the one a fixture
+# storing only `/32` would hide.
 TARGET = "203.0.113.10"
 TARGET_NORMALIZED = "203.0.113.10/32"
 
@@ -209,7 +209,7 @@ class FakePMGWhitelist:
     # the preflight left readable so the change still happens.
     fail_reads_after_write: bool = False
     # Answer `200 OK` and change nothing: the box that accepted a write and did not move. This is
-    # the §V.97 case — the command says yes, the list says no.
+    # the asking-the-CHANGE's-own-question case — the command says yes, the list says no.
     ignore_writes: bool = False
 
     commands: list[str] = field(default_factory=list)
@@ -290,8 +290,9 @@ class FakePMGWhitelist:
 def pmg_argv(command: str) -> list[str]:
     """A composed command back as argv, with the environment and `sudo -n` stripped.
 
-    `shlex.split` rather than a substring match, because the whole point of §V.58 is that a CIDR
-    stays one token: a fixture matching on text would pass for a command that had split it.
+    `shlex.split` rather than a substring match, because the whole point of the argv-safe `pmgsh`
+    rule is that a CIDR stays one token: a fixture matching on text would pass for a command that
+    had split it.
     """
     tokens = shlex.split(command)
     while tokens and _ENV_ASSIGNMENT.match(tokens[0]):
@@ -310,9 +311,9 @@ def pmg_argv(command: str) -> list[str]:
 def command_step(command: str) -> str:
     """Which step of the flow one composed command is: `ls`, `create`, `delete` or `sync`.
 
-    Public because both of T29's lanes assert on the *sequence* — a mutation that skipped
-    `pmgconfig sync` looks applied and is not — and two spellings of "which step is
-    this" are two chances to read the same command list differently.
+    Public because both of the pmg-whitelist tool's lanes assert on the *sequence* — a mutation that
+    skipped `pmgconfig sync` looks applied and is not — and two spellings of "which step is this"
+    are two chances to read the same command list differently.
     """
     argv = pmg_argv(command)
     if argv[:1] == ["pmgconfig"]:
@@ -334,9 +335,9 @@ def whitelist_change_context(
 ) -> tuple[ToolFixture, FakePMGWhitelist]:
     """A tool context whose PMG node is a `FakePMGWhitelist`, and that node.
 
-    Shared by both of T29's lanes — the tool that opens the card and the runner that runs after
-    one is approved — because they need the same row, the same cipher and the same transport seam,
-    and two copies of this wiring are two things that can stop agreeing.
+    Shared by both of the pmg-whitelist tool's lanes — the tool that opens the card and the runner
+    that runs after one is approved — because they need the same row, the same cipher and the same
+    transport seam, and two copies of this wiring are two things that can stop agreeing.
     """
     resolved = box if box is not None else FakePMGWhitelist()
     fixture, _ = whitelist_context(
@@ -385,7 +386,7 @@ def execution_request(
 
     The evidence is what the gate wrote and what the operator saw; the arguments deliberately name
     a `server_ref` the runner must ignore, so every runner test that resolves a target is also a
-    §V.33 assertion.
+    context-persisted-at-gate-time assertion.
     """
     resolved = (
         normalized_target

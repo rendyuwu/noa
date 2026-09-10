@@ -1,8 +1,9 @@
-# NOA admin panel image — Next.js + BIGSU (§T.60, C2, C12).
+# NOA admin panel image — Next.js + BIGSU (the per-app Dockerfile and compose setup,
+# exact-pinned next/react, one shared schema).
 #
 # Build context is THIS directory, not the repo root. `apps/admin-web` and `apps/web-embed` are
-# independent packages with their own lockfiles and no shared source, deps or aliases (C12,
-# AGENTS.md), and a repo-root context would put each one's files inside the other's image.
+# independent packages with their own lockfiles and no shared source, deps or aliases (one shared
+# schema, AGENTS.md), and a repo-root context would put each one's files inside the other's image.
 #
 #   docker build -t noa-admin-web apps/admin-web
 #
@@ -17,8 +18,10 @@
 # It cannot BUILD it: `packageManager` pins pnpm 11.x, whose own `engines` demand `>=22.13`, and
 # on Node 20 `pnpm install` dies with `ERR_UNKNOWN_BUILTIN_MODULE: No such built-in module:
 # node:sqlite` before it resolves a single package. MEASURED on `node:20-bookworm-slim` at
-# §T.60, not inferred — and it is why `docs/admin-web.md`'s "Node 20 LTS" runner expectation was
-# corrected in the same change (V84a): the two clauses of that sentence contradicted each other.
+# the per-app Dockerfile's own measurement, not inferred — and it is why `docs/admin-web.md`'s
+# "Node 20 LTS" runner expectation was
+# corrected in the same change — doc prose restating a claim that had gone stale: the two clauses
+# of that sentence contradicted each other.
 #
 # `-bookworm-slim` is pinned rather than plain `-slim` so a Debian release bump is a deliberate
 # edit. `apps/api/tests/test_deployment.py` asserts this tag against `engines.node`, holds both
@@ -50,7 +53,8 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
 # Nothing is read from the environment at build time here, unlike `apps/web-embed`: this app's
-# framing header names no origin (`frame-ancestors 'none'`, V41/§T.49), so there is no build
+# framing header names no origin — `frame-ancestors 'none'`, the admin app's own refusal to be
+# framed — so there is no build
 # argument to pass and no way for a variable to widen it. `next.config.ts` calls `loadRootEnv`,
 # which looks for a `.git` above the package and finds none in this context — so the build reads
 # no `.env` and is deterministic.

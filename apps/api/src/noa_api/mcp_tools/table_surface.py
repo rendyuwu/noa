@@ -1,6 +1,7 @@
 """A large READ's answer: a summary, a URL, and the rows parked out of sight.
 
-V16 splits the tool surface by risk; V64 splits the READ half by *size*. A bounded question —
+The READ/CHANGE split splits the tool surface by risk; the summary-plus-URL split splits the
+READ half by *size*. A bounded question —
 `whm_search_accounts`, `pmg_whitelist_search` — answers in the transcript. A listing does
 not: `whm_list_accounts` on a dense server is thousands of rows, and putting them in front of
 the model costs tokens for a body no human reads there anyway. So the rows go to
@@ -9,14 +10,14 @@ address of the page that renders them.
 
 **Two producers, and nothing here is either of theirs**: `whm_list_accounts` over HTTP
 and `pmg_whitelist_list` over SSH hand rows to the same two calls, declare their own
-columns and their own order, and add no branch to this module. That is what V64 means by a
-shared capability rather than a per-tool special case, and the second producer is what turned
-it from a claim into something a test can fail.
+columns and their own order, and add no branch to this module. That is what the summary-plus-URL
+split means by a shared capability rather than a per-tool special case, and the second producer
+is what turned it from a claim into something a test can fail.
 
 **Two calls, like the CHANGE gate next door.** `park_table_result` writes the row and hands
 back the token and the counts; `build_table_result` turns those into the tool result. Split
-for the reason T32/T33 are: the first touches the database and the second is pure, so the
-shape of what a model sees is testable without one.
+for the reason the change gate's two calls are: the first touches the database and the second
+is pure, so the shape of what a model sees is testable without one.
 
 **Same mechanism as the approval card, not a second one**. The iframe fields come
 from `noa_api.mcp_tools.ui_resource` — `ui://` scheme, `text/uri-list`, URL as the body — so
@@ -29,16 +30,17 @@ a box with two hundred is a fabrication the *tool* authored. The counts come bac
 write rather than from a second read of the row that was just written.
 
 **And it is an address, not a link**. No markup: a `target="_blank"` inside
-LibreChat's frame opens nothing at all under one of the two render sites' sandboxes, silently
-(R32), so the door that always works is text a human can copy. The wording is one string for
+LibreChat's frame opens nothing at all under one of the two render sites' sandboxes, silently,
+so the door that always works is text a human can copy. The wording is one string for
 the whole surface, the way the CHANGE gate's is.
 
 **Nothing about the rows reaches here.** No sample, no first record, no column values — the
 tool result persists in LibreChat's MongoDB, and a "preview row" would be exactly the
-ops data V64 exists to keep out of it.
+ops data the summary-plus-URL split exists to keep out of it.
 
-**And a counts-only envelope beside them, unlike the CHANGE gate**. T32(b)
-returns content only, for two reasons: R29 measured a content-only result, and a CHANGE tool's
+**And a counts-only envelope beside them, unlike the CHANGE gate**. The change gate
+returns content only, for two reasons: the render-gate measurement measured a content-only
+result, and a CHANGE tool's
 call skips the audit middleware, so *no reader is owed an envelope*. The second reason is
 false here. This surface is a READ, `ToolRunAuditMiddleware` records every READ, and it reads
 the run's status and summary off `structured_content` — where `None` is FAILED, because a
@@ -47,8 +49,8 @@ content-only large READ would be a successful call written into the audit trail 
 with nothing in its summary, silently, for the one tool that answers with thousands of rows.
 
 What the envelope carries is the two counts and the flag, and nothing else: no rows, no
-token, and **no URL** — the half of T32(b)'s reason that does hold here is that an envelope must
-not become a third place the address lives.
+token, and **no URL** — the half of the change gate's reason that does hold here is that an
+envelope must not become a third place the address lives.
 """
 
 from __future__ import annotations
@@ -74,7 +76,7 @@ from noa_api.mcp_tools.ui_resource import build_ui_resource, embed_url
 TABLE_SURFACE_PATH: Final = "/tables"
 
 # The MCP resource identifier for a parked table. `ui://` is what LibreChat's parser
-# classifies on (R31c); a resource without it arrives as an ordinary attachment and never
+# classifies on; a resource without it arrives as an ordinary attachment and never
 # renders. Distinct from the approval card's prefix so the two surfaces are distinguishable
 # in a transcript, and so LibreChat's own resource id is not shared between them.
 UI_RESOURCE_URI_PREFIX: Final = "ui://noa/table/"
@@ -122,12 +124,12 @@ async def park_table_result(
 
     Its own session, opened and closed here. The tool has none open by this point — a pooled
     connection held across a WHM or PMG round trip is how a slow remote becomes a database
-    outage (T21's rule) — and the rows only exist once that round trip is done.
+    outage (the account search's rule) — and the rows only exist once that round trip is done.
 
     Fail-closed, like the CHANGE gate's write: a `ResultTableUnavailableError` rather than a
     result whose address leads nowhere. `Exception` rather than a driver class for the same
     reason — every way this fails ends in "there is no table", and a constraint name in front
-    of the model is what V8 closes.
+    of the model is what the no-internal-text-in-a-body rule closes.
     """
     identity = current_mcp_identity()
     try:

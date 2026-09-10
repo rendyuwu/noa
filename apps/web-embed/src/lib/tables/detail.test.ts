@@ -3,11 +3,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { loadResultTable } from './detail'
 
 /**
- * The server-side table read (§T.56), with `fetch` stubbed so every assertion is about what this
- * app sends upstream and what it makes of the answer.
+ * The server-side table read (the table surface), with `fetch` stubbed so every assertion is
+ * about what this app sends upstream and what it makes of the answer.
  *
- * Two of these are the same claims §T.44 makes about the proxy and §T.41 makes about the card's
- * loader, re-proven against *this* loader rather than cited from either: the cookie is
+ * Two of these are the same claims the proxy route makes about the proxy and the card page
+ * makes about the card's loader, re-proven against *this* loader rather than cited from
+ * either: the cookie is
  * forwarded, and `Authorization` is not. Three separate code paths, so a guarantee held in two of
  * them says nothing about the third.
  */
@@ -83,7 +84,7 @@ describe('loadResultTable', () => {
     expect(headersOf(seen).get('cookie')).toBe('noa_session=abc')
   })
 
-  it('never sends an Authorization header (C5, §T.44(d))', async () => {
+  it('never sends an Authorization header — cookie-authenticated only, per the proxy route’s contract', async () => {
     // Every surface this app reaches is cookie-authenticated. A bearer token is LibreChat's to
     // send, and a loader that relayed one would make this origin a relay for it.
     const seen = stubFetch(Response.json(BODY))

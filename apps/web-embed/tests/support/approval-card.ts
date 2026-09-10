@@ -1,7 +1,7 @@
 import { type ApprovalCard, parseApprovalCard } from '@/lib/approvals/card'
 
 /**
- * One approval card, in the shapes the specs need (§T.41, §T.42).
+ * One approval card, in the shapes the specs need.
  *
  * Two suites read a card now — the poll (`lib/approvals/poll.test.ts`) and the card that runs it
  * (`app/approvals/[id]/card-view.test.tsx`) — and a second copy of this body would be a second
@@ -9,7 +9,8 @@ import { type ApprovalCard, parseApprovalCard } from '@/lib/approvals/card'
  * (`e2e/support/upstream-stub.mjs`) holds the same shape for the browser lane; it is a separate
  * process and cannot import this, so the two are kept deliberately alike.
  *
- * Bodies are snake_case because that is the HTTP contract (§I.embed), and they go through the real
+ * Bodies are snake_case because that is the HTTP contract (the embed app's contract), and they
+ * go through the real
  * `parseApprovalCard` rather than being hand-built as `ApprovalCard` values — a fixture that
  * bypassed the parser could describe a card the API can never send.
  */
@@ -36,7 +37,7 @@ const PENDING_BODY: Record<string, unknown> = {
 }
 
 /**
- * The after-state half of a receipt (§T.38, §T.42(b)).
+ * The after-state half of a receipt.
  *
  * Shares no value with `evidence` above, deliberately: the claim these suites make is that the
  * card renders *both* halves, and a fixture whose halves overlapped could not tell that from one
@@ -53,7 +54,7 @@ export function receiptBody(overrides: Record<string, unknown> = {}): Record<str
   return {
     ok: true,
     // The gate-time preflight, the same payload the pending card carries as `evidence` — that is
-    // what T38's writer copies onto the receipt.
+    // what the approved-change executor's writer copies onto the receipt.
     before: { suspended: false, domain: 'acme.example' },
     after: RECEIPT_AFTER,
     error_code: null,

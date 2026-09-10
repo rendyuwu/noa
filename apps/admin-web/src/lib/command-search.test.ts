@@ -4,7 +4,7 @@ import { buildCommandGroups, permittedPageCommands } from '@/lib/command-search'
 
 describe('command-search source', () => {
   it('lists role-gated pages only when permitted', () => {
-    // Administration was once the whole of this app; §T76 added `/me/tokens`,
+    // Administration was once the whole of this app; the MCP token UI added `/me/tokens`,
     // which any verified operator may use. So a non-admin's palette is now the
     // ungated entry and nothing else — shorter, not empty.
     const asUser = permittedPageCommands(['user']).map((c) => c.href)

@@ -26,7 +26,7 @@ export type UsersAndRoles = {
 }
 
 // Load just the list. Split out of fetchUsersAndRoles for the admin MCP tokens
-// page (§T76), which needs one user's email for its breadcrumb and has no role
+// page, which needs one user's email for its breadcrumb and has no role
 // assignment control to feed — pulling `/admin/roles` for it would be a request
 // whose answer is discarded.
 export async function fetchUsers(): Promise<AdminUser[]> {

@@ -5,8 +5,9 @@ gets its own code because each has a different remedy. Asserting the code, not j
 something raised, is the point: `ssh_exec` would also refuse an unpinned connection, but by
 then the failure names a host rather than the WHM server row an admin has to go fix.
 
-The username default is tested against `requires_escalation` rather than in isolation. V55 is
-a biconditional — `sudo -n` ⟺ user ≠ `root` — and a blank `ssh_username` column resolving to
+The username default is tested against `requires_escalation` rather than in isolation. The
+sudo-prefix rule is a biconditional — `sudo -n` ⟺ user ≠ `root` — and a blank `ssh_username`
+column resolving to
 `root` is the half of it that lives in this module.
 """
 
@@ -34,7 +35,7 @@ def _resolve(server: FakeWHMServer, *, require_host_key_fingerprint: bool = True
     )
 
 
-# --- V69: refuse before connecting, with the code that names the remedy ---
+# --- Refuse before connecting, with the code that names the remedy ---
 
 
 def test_resolve_ssh_config_requires_pinned_fingerprint() -> None:
@@ -47,7 +48,7 @@ def test_resolve_ssh_config_requires_pinned_fingerprint() -> None:
 
 
 def test_blank_fingerprint_counts_as_absent() -> None:
-    """An admin who cleared the field left the server unvalidated, ⊥ pinned to `""`."""
+    """An admin who cleared the field left the server unvalidated, never pinned to `""`."""
     with pytest.raises(SSHExecutionError) as exc:
         _resolve(FakeWHMServer(ssh_host_key_fingerprint="   "))
 
@@ -55,7 +56,7 @@ def test_blank_fingerprint_counts_as_absent() -> None:
 
 
 def test_resolve_ssh_config_allows_an_unpinned_row_for_the_tofu_capture_path() -> None:
-    """T54's validate flow connects unpinned on purpose, to capture the value it will store."""
+    """The admin validate route connects unpinned on purpose, to capture the value it will store."""
     config = _resolve(
         FakeWHMServer(ssh_host_key_fingerprint=None), require_host_key_fingerprint=False
     )
@@ -91,7 +92,7 @@ def test_explicit_ssh_port_is_honoured() -> None:
     assert _resolve(FakeWHMServer(ssh_port=2222)).port == 2222
 
 
-# --- V55: the resolved username is what escalation reads ---
+# --- The sudo-prefix rule: the resolved username is what escalation reads ---
 
 
 @pytest.mark.parametrize("stored", [None, "", "   "])
@@ -109,7 +110,7 @@ def test_non_root_username_escalates() -> None:
     assert requires_escalation(config) is True
 
 
-# --- C7 / V48: credentials are decrypted here, and tolerate a pre-encryption row ---
+# --- Encrypted at rest: credentials are decrypted here, and tolerate a pre-encryption row ---
 
 
 def test_resolve_ssh_config_decrypts_stored_credentials() -> None:

@@ -39,11 +39,11 @@ from support.mcp_identity import (
     stale_check,
 )
 
-# --- V2: the digest is the lookup key ---
+# --- the digest is the lookup key ---
 
 
 async def test_lookup_is_by_sha256_digest() -> None:
-    """V2: what the row holds is `sha256(plaintext)`, and that is what resolves a caller."""
+    """What the row holds is `sha256(plaintext)`, and that is what resolves a caller."""
     fixture = build_resolver()
     plaintext, stored = fixture.repository.add_token()
 
@@ -79,7 +79,7 @@ async def test_absent_or_blank_bearer_is_missing_not_invalid(presented: str | No
 
 
 async def test_identity_carries_no_token_material() -> None:
-    """V2/V8: no plaintext and no digest field — absent, not redacted."""
+    """No plaintext and no digest field — absent, not redacted."""
     fixture = build_resolver()
     plaintext, _ = fixture.repository.add_token()
 
@@ -107,7 +107,7 @@ async def test_resolved_identity_carries_the_user_facts() -> None:
     assert identity.librechat_user_id == LIBRECHAT_USER
 
 
-# --- C5: expiry ---
+# --- expiry ---
 
 
 async def test_expired_token_is_denied() -> None:
@@ -160,11 +160,11 @@ async def test_an_expired_token_is_not_stamped_or_bound() -> None:
     assert fixture.repository.commits == 0
 
 
-# --- V1: is_active, re-read every request ---
+# --- is_active, re-read every request ---
 
 
 async def test_inactive_user_is_denied() -> None:
-    """V1/V11: the row decides, on every MCP request."""
+    """The row decides, on every MCP request."""
     fixture = build_resolver()
     plaintext, _ = fixture.repository.add_token(is_active=False)
 
@@ -204,11 +204,11 @@ async def test_a_disabled_operator_cannot_bind_a_token() -> None:
     assert fixture.repository.binds == 0
 
 
-# --- C20 / V3: TOFU binding ---
+# --- TOFU binding ---
 
 
 async def test_first_use_binds_the_librechat_user() -> None:
-    """C20: minted NULL, pinned by the first call that carries the header."""
+    """Minted NULL, pinned by the first call that carries the header."""
     fixture = build_resolver()
     plaintext, stored = fixture.repository.add_token(librechat_user_id=None)
 
@@ -234,7 +234,7 @@ async def test_a_bound_token_accepts_the_matching_header() -> None:
 
 
 async def test_bound_token_with_a_different_header_is_denied() -> None:
-    """V3: the copied-credential case. Code string is fixed by the spec."""
+    """The copied-credential case. Code string is fixed by the spec."""
     fixture = build_resolver()
     plaintext, stored = fixture.repository.add_token(librechat_user_id=LIBRECHAT_USER)
 
@@ -249,7 +249,7 @@ async def test_bound_token_with_a_different_header_is_denied() -> None:
 
 
 async def test_absent_header_is_denied_when_unbound() -> None:
-    """C24: LibreChat is the sole client, so a headerless call is unsupported, not new."""
+    """LibreChat is the sole client, so a headerless call is unsupported, not new."""
     fixture = build_resolver()
     plaintext, stored = fixture.repository.add_token(librechat_user_id=None)
 
@@ -261,7 +261,7 @@ async def test_absent_header_is_denied_when_unbound() -> None:
 
 
 async def test_absent_header_is_denied_when_bound() -> None:
-    """V3: absent counts against a bound token too — there is no unbound-client path."""
+    """Absent counts against a bound token too — there is no unbound-client path."""
     fixture = build_resolver()
     plaintext, _ = fixture.repository.add_token(librechat_user_id=LIBRECHAT_USER)
 
@@ -294,7 +294,7 @@ async def test_the_header_is_stripped_before_comparison() -> None:
 
 
 async def test_losing_the_bind_race_is_a_mismatch() -> None:
-    """C20: two first calls, one winner. The loser is refused, not silently rebound."""
+    """Two first calls, one winner. The loser is refused, not silently rebound."""
     fixture = build_resolver()
     plaintext, stored = fixture.repository.add_token(librechat_user_id=None)
     fixture.repository.bind_race_winner = OTHER_LIBRECHAT_USER
@@ -321,7 +321,7 @@ async def test_a_denied_binding_is_never_committed() -> None:
     assert fixture.repository.commits == 0
 
 
-# --- V4: LDAP revalidation on a staleness interval ---
+# --- LDAP revalidation on a staleness interval ---
 
 
 async def test_fresh_token_skips_the_directory() -> None:
@@ -398,11 +398,11 @@ async def test_one_second_inside_the_interval_does_not_revalidate() -> None:
     assert fixture.directory.call_count == 0
 
 
-# --- V4: the two directory failures, which must not be conflated ---
+# --- the two directory failures, which must not be conflated ---
 
 
 async def test_user_absent_from_directory_revokes_every_token() -> None:
-    """V4 cascade revoke: employment ended, so every credential goes, not just this one."""
+    """Cascade revoke: employment ended, so every credential goes, not just this one."""
     fixture = build_resolver(present=False)
     plaintext, stored = fixture.repository.add_token(last_ldap_check_at=None)
     # A second token for the same operator, and one for a colleague who must survive.
@@ -431,7 +431,7 @@ async def test_the_cascade_revoke_is_committed_before_the_refusal() -> None:
 
 
 async def test_directory_outage_denies_without_revoking() -> None:
-    """V4 fail closed: unreachable ≠ gone. Swallowing this would mass-revoke on a blip."""
+    """Fail closed: unreachable ≠ gone. Swallowing this would mass-revoke on a blip."""
     fixture = build_resolver(unavailable=True)
     plaintext, stored = fixture.repository.add_token(last_ldap_check_at=None)
 

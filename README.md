@@ -4,8 +4,8 @@ MCP server for hosting-infrastructure operations. Exposes 14 RBAC-gated tools (R
 CHANGE) to LibreChat over Streamable HTTP. Operators approve or deny CHANGE actions from an approval
 card served on the NOA origin — the reason is typed there, never supplied by the LLM.
 
-`SPEC.md` is the working artifact. Read it before changing code; every task, invariant, and
-constraint referenced below lives there.
+`AGENTS.md` carries the hard boundaries; every other rule lives inline where it is enforced.
+`DECISIONS.md` carries the why.
 
 ## Layout
 

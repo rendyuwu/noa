@@ -1,15 +1,15 @@
 """The one definition of "now, aware, UTC".
 
-Lived in `core.approvals.clock` until T56, when the table surface became a fourth reader
-that compares a stored deadline against the present moment and had no business importing
-the approval gate to do it. Moved rather than copied, for the reason the original module
-gives: a second copy of these three lines is exactly the drift that makes a deadline
+Lived in `core.approvals.clock` until the table surface arrived, when it became a fourth
+reader that compares a stored deadline against the present moment and had no business
+importing the approval gate to do it. Moved rather than copied, for the reason the original
+module gives: a second copy of these three lines is exactly the drift that makes a deadline
 boundary hold at one door and not the next. `core.approvals.clock` re-exports both names,
 so every caller written against it still reads correctly.
 
 Deadlines compared here: `ActionDecisionService` against `decided_at` when an operator
-reaches a stale card, T39's sweep against every pending row, and T56's table surface
-against `tool_result_tables.expires_at` on read.
+reaches a stale card, the expiry loop's sweep against every pending row, and the table
+surface against `tool_result_tables.expires_at` on read.
 
 `as_utc` exists because a *double* can hand back a naive datetime where the column cannot:
 `DateTime(timezone=True)` always returns aware values, so this is a guard on the seam with

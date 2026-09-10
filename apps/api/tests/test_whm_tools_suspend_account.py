@@ -1,12 +1,13 @@
 """`whm_suspend_account` — the first CHANGE tool, and the first end-to-end gate run.
 
 Every other tool test in this suite asserts what a call *answers*. This one has to assert what a
-call **does not do**: a CHANGE `tools/call` reads an account, writes a PENDING row and stops
-(V16, V23). So the load-bearing assertions here are counted requests to `/json-api/suspendacct`
-— zero at gate time, exactly one after an approval — rather than the shape of a payload.
+call **does not do**: a CHANGE `tools/call` reads an account, writes a PENDING row and stops —
+CHANGE goes through the gate, verdict read from `status` alone. So the load-bearing assertions here
+are counted requests to `/json-api/suspendacct` — zero at gate time, exactly one after an approval —
+rather than the shape of a payload.
 
-Three lanes, because the tool and the runner sit on opposite sides of V22's boundary and the
-mount is a third claim again:
+Three lanes, because the tool and the runner sit on opposite sides of the cookie/CSRF boundary and
+the mount is a third claim again:
 
 - **the tool** — the preflight, the refusals, the no-op, and the gate response. Driven through
   the real `open_change_request` inside a real request context, so `current_mcp_identity` and
@@ -18,16 +19,16 @@ mount is a third claim again:
   it is also where "a CHANGE writes no `tool_runs` row" stops being asserted against a synthetic
   risk map.
 
-Seams are T21's, unchanged: the real `WHMClient` over a doubled socket (`support.whm_api`),
-because WHM reports a refusal as **HTTP 200** with `metadata.result: 0` and a doubled client
-would let this pass against error shapes WHM never sends; a real `SecretCipher`, so the
-`Authorization` header proves a decrypt happened; the real resolver; the real
+Seams match the account-search tests, unchanged: the real `WHMClient` over a doubled socket
+(`support.whm_api`), because WHM reports a refusal as **HTTP 200** with `metadata.result: 0` and a
+doubled client would let this pass against error shapes WHM never sends; a real `SecretCipher`, so
+the `Authorization` header proves a decrypt happened; the real resolver; the real
 `sanitize_tool_errors`. Only the socket, the SQL and the directory are doubles.
 
-**The reason is the thing to watch.** C8 says the LLM never authors, relays or sees one, and T22
-is the first task where a reason leaves NOA at all: it becomes WHM's suspension note. Two
-assertions bound that — the note WHM receives *is* what the operator typed, and nothing the
-model can read carries it back (the no-op payload, the runner's payload, and — one file over —
+**The reason is the thing to watch.** The reason rule: the LLM never authors, relays or sees one,
+and this tool is the first place a reason leaves NOA at all: it becomes WHM's suspension note. Two
+assertions bound that — the note WHM receives *is* what the operator typed, and nothing the model
+can read carries it back (the no-op payload, the runner's payload, and — one file over —
 `whm_search_accounts`' rows).
 """
 
@@ -108,11 +109,12 @@ SERVER_NAME = "alpha"
 ACCOUNT = "acmeco"
 
 # Who WHM says owns the account, and it has to equal the row's `api_username` or the preflight
-# refuses before a card exists (§V106): cPanel gates an account write on ownership, so an
-# account with no owner is one NOA cannot prove this credential may change. `whm_server`'s
-# credential is `root`, and root owning accounts directly is the measured case — 56 of the 451
-# rows on the host §R.33 was taken from. `test_whm_account_owner_gate.py` is where the mismatch
-# and the unreported-owner refusals are asserted; here the owner is fixture, not subject.
+# refuses before a card exists — the owner-match check: cPanel gates an account write on ownership,
+# so an account with no owner is one NOA cannot prove this credential may change. `whm_server`'s
+# credential is `root`, and root owning accounts directly is the measured case — 56 of the 451 rows
+# on the live host that ownership finding was measured on. `test_whm_account_owner_gate.py` is where
+# the mismatch and the unreported-owner refusals are asserted; here the owner is fixture, not
+# subject.
 OWNER = "root"
 
 # The plaintext behind the row's `api_token`, encrypted into the column so a header assertion
@@ -217,8 +219,9 @@ def execution_request(
         evidence={
             EVIDENCE_SERVER_ID: str(server_id),
             EVIDENCE_SERVER_NAME: SERVER_NAME,
-            # The runner re-compares this against the row's live `api_username` (§V106, V33),
-            # so evidence without it is an approved change NOA refuses to run.
+            # The runner re-compares this against the row's live `api_username` — the owner
+            # check, held from gate time, not rebuilt — so evidence without it is an approved
+            # change NOA refuses to run.
             EVIDENCE_OWNER: OWNER,
             EVIDENCE_ACCOUNT: {"user": username, "suspended": False},
         },
@@ -232,12 +235,13 @@ def query_of(request: Any) -> dict[str, str]:
 
 
 # --------------------------------------------------------------------------------------
-# V16, V23: the call opens a question and changes nothing
+# CHANGE through the gate: the call opens a question and changes nothing
 # --------------------------------------------------------------------------------------
 
 
 async def test_a_suspend_call_opens_a_pending_request_and_suspends_nothing() -> None:
-    """The whole of V16 in one assertion pair: a row exists, and WHM was never asked to act.
+    """The whole of "CHANGE through the gate" in one assertion pair: a row exists, and WHM was never
+    asked to act.
 
     The second half is the one that matters and it is counted rather than inferred — the call
     *does* reach WHM, for its preflight, so "no HTTP happened" would be false and "the payload
@@ -257,11 +261,11 @@ async def test_a_suspend_call_opens_a_pending_request_and_suspends_nothing() -> 
 
 
 async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row() -> None:
-    """C9, V17, V33, V35: one call, evidence born in it, persisted for the card.
+    """One call, evidence born in it, persisted for the card.
 
-    One `listaccts` request, not two: the preflight is `fetch_whm_accounts`, shared with T20/T21
-    rather than re-implemented, and a second read here would mean the card describes a state the
-    tool did not gather.
+    One `listaccts` request, not two: the preflight is `fetch_whm_accounts`, shared with the list
+    and search tools rather than re-implemented, and a second read here would mean the card
+    describes a state the tool did not gather.
     """
     fixture, api = suspend_context()
 
@@ -277,7 +281,7 @@ async def test_the_preflight_runs_inside_the_call_and_lands_on_the_row() -> None
 
 
 async def test_the_recorded_arguments_are_the_two_the_schema_declares() -> None:
-    """C8, V15, V43: the row records what was asked for, and no reason is among it.
+    """The row records what was asked for, and no reason is among it.
 
     Asserted on the keys rather than on the absence of one name, so a future argument cannot
     arrive here unnoticed — and cross-checked against `FORBIDDEN_REASON_KEYS` so the claim is
@@ -293,14 +297,14 @@ async def test_the_recorded_arguments_are_the_two_the_schema_declares() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# V24, V25: what the model is handed
+# link-out text beside the frame: what the model is handed
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_result_carries_the_card_address_and_the_iframe() -> None:
-    """V24, V25: two blocks, text first, and the plain address inside the text.
+    """Two blocks, text first, and the plain address inside the text.
 
-    Asserted on the count and the order because that is what V24 claims — "both, never one" —
+    Asserted on the count and the order because that is what "both, never one" claims —
     and a test that only looked for a resource would pass on a result with no address in it,
     which is the case where the frame fails to load and the operator has no door.
     """
@@ -321,10 +325,10 @@ async def test_the_result_carries_the_card_address_and_the_iframe() -> None:
 
 
 async def test_the_tool_schema_carries_no_reason_parameter() -> None:
-    """C8, V15: the boundary is on the schema, so the schema is where it is asserted.
+    """The boundary is on the schema, so the schema is where it is asserted.
 
-    Read off the registered server rather than off the function signature: what C8 bounds is
-    what the model is *told* it may send, and that is what `tools/list` publishes.
+    Read off the registered server rather than off the function signature: what the reason rule
+    bounds is what the model is *told* it may send, and that is what `tools/list` publishes.
     """
     context = build_tool_context().context
     server = build_mcp_server(tool_context=context)
@@ -338,7 +342,7 @@ async def test_the_tool_schema_carries_no_reason_parameter() -> None:
 
 
 def test_the_tool_is_catalogued_and_classified_as_a_change() -> None:
-    """V10, V20: a name outside the catalog is a capability no role can be granted, and a
+    """A name outside the catalog is a capability no role can be granted, and a
     CHANGE that registered as a READ would have the audit middleware write a row for a change
     that has not happened."""
     context = build_tool_context().context
@@ -371,7 +375,7 @@ async def test_an_already_suspended_account_opens_no_request() -> None:
 
 
 async def test_the_no_op_answer_does_not_carry_whms_suspension_note() -> None:
-    """C8: the note is the operator's reason, and this payload is transcript.
+    """The note is the operator's reason, and this payload is transcript.
 
     The account summary the preflight built holds `suspendreason`; this answer is built from the
     username and the server instead of from that summary, which is the difference between an
@@ -390,7 +394,8 @@ async def test_the_no_op_answer_does_not_carry_whms_suspension_note() -> None:
 
 
 async def test_a_blank_username_is_refused_before_any_round_trip() -> None:
-    """V21, and the guard is placed where the schema cannot reach: `min_length` counts
+    """Whitespace-only input is refused, and the guard is placed where the schema cannot reach:
+    `min_length` counts
     whitespace, so `"  "` would otherwise be fetched for and matched against nothing."""
     fixture, api = suspend_context()
 
@@ -404,7 +409,10 @@ async def test_a_blank_username_is_refused_before_any_round_trip() -> None:
 
 
 async def test_an_ambiguous_server_ref_returns_choices_and_opens_no_request() -> None:
-    """V18, C10: a CHANGE that guessed which machine an operator meant is the whole hazard."""
+    """Ambiguous identifier: candidates, never a guess.
+
+    A CHANGE that guessed which machine an operator meant is the whole hazard.
+    """
     shared = "https://shared.example.net:2087"
     fixture, api = suspend_context(
         servers=[whm_server("one", base_url=shared), whm_server("two", base_url=shared)],
@@ -420,7 +428,7 @@ async def test_an_ambiguous_server_ref_returns_choices_and_opens_no_request() ->
 
 
 async def test_an_unknown_account_is_refused_and_opens_no_request() -> None:
-    """The other half of C10: an operator's typo must not become an approval card for a
+    """The other half of never guessing: an operator's typo must not become an approval card for a
     username nobody can act on."""
     fixture, _ = suspend_context()
 
@@ -432,7 +440,7 @@ async def test_an_unknown_account_is_refused_and_opens_no_request() -> None:
 
 
 async def test_a_whm_refusal_keeps_the_code_that_names_the_remedy() -> None:
-    """V19's passthrough: `whm_api_error` says WHM said no, which is a different fix from a
+    """The passthrough: `whm_api_error` says WHM said no, which is a different fix from a
     NOA failure — and the message is WHM's own `reason`."""
     fixture, _ = suspend_context(
         whm_endpoint(listaccts_bodies=[whm_api_failure_body("Access denied")])
@@ -449,7 +457,7 @@ async def test_a_whm_refusal_keeps_the_code_that_names_the_remedy() -> None:
 async def test_a_raising_preflight_reaches_the_model_as_a_named_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V19: a raw exception never reaches the LLM, and a timeout says so by name."""
+    """A raw exception never reaches the LLM, and a timeout says so by name."""
     from noa_api.mcp_tools import whm_account_change
 
     async def raises(**_kwargs: Any) -> dict[str, Any]:
@@ -467,7 +475,7 @@ async def test_a_raising_preflight_reaches_the_model_as_a_named_failure(
 
 
 async def test_a_gate_write_failure_refuses_the_change(monkeypatch: pytest.MonkeyPatch) -> None:
-    """V23: no authorization row means no authorization, so the call fails rather than
+    """No authorization row means no authorization, so the call fails rather than
     answering with a card address that leads nowhere."""
     fixture, _ = suspend_context()
     fixture.action_requests.fail_create = RuntimeError("connection reset")
@@ -480,7 +488,7 @@ async def test_a_gate_write_failure_refuses_the_change(monkeypatch: pytest.Monke
 
 
 async def test_no_credential_reaches_the_result() -> None:
-    """V8, V26: the result persists in LibreChat's MongoDB, so it carries no credential
+    """The result persists in LibreChat's MongoDB, so it carries no credential
     material — and the `Authorization` header proves the real decrypt ran."""
     fixture, api = suspend_context()
 
@@ -493,12 +501,12 @@ async def test_no_credential_reaches_the_result() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The runner: what happens after an operator approved (V22's far side)
+# The runner: what happens after an operator approved (the far side of the cookie/CSRF boundary)
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_runner_sends_the_operator_reason_as_whms_suspension_note() -> None:
-    """C8's single field, written where WHM keeps a suspension note.
+    """The reason field, written where WHM keeps a suspension note.
 
     The reason is the operator's own words, typed on the card after the model was done. This is
     the one place it leaves NOA, and it leaves as `suspendacct`'s `reason` parameter — asserted
@@ -519,17 +527,19 @@ async def test_the_runner_sends_the_operator_reason_as_whms_suspension_note() ->
 
 
 async def test_the_runner_payload_never_carries_the_reason_back() -> None:
-    """V96b: `result_summary` is derived from this payload, and `noa_get_action_result` returns
-    the summary to a model — so a runner echoing the note it just wrote would hand the LLM the
-    one field C8 keeps from it, through V45's audit row rather than through a tool schema.
+    """A value kept from the LLM must stay unreadable on every path back: `result_summary` is
+    derived from this payload, and `noa_get_action_result` returns the summary to a model — so a
+    runner echoing the note it just wrote would hand the LLM the one field the reason rule keeps
+    from it, through the audit row rather than through a tool schema.
 
     Asserted on the derived summary as well as on the payload, because the summary is the thing a
     model actually reads: a payload assertion alone would still pass if `result_summary` ever
     started composing its own text from fields this one happens not to carry.
 
     **Not through the receipt** — `core/approvals/results.py` leaves `include_receipt` at its
-    default, so T63's reader never joins `action_receipts` (V76, T42's flag). Naming that door
-    here would point a future runner's author at the wrong field.
+    default, so the action-result tool's reader never joins `action_receipts` — rendering the
+    receipt is the approval card's own job. Naming that door here would point a future runner's
+    author at the wrong field.
     """
     api = whm_endpoint(listings=[[suspended_account()]])
     fixture, _ = suspend_context(api)
@@ -543,7 +553,7 @@ async def test_the_runner_payload_never_carries_the_reason_back() -> None:
 
 
 async def test_the_runner_acts_on_the_server_the_card_named() -> None:
-    """V33: inventory can change between a request and its approval, and `server_ref` is a
+    """Inventory can change between a request and its approval, and `server_ref` is a
     string the model supplied. The evidence carries the id of the machine the preflight read and
     the operator saw, so that is what the change reaches — asserted on the host WHM was called
     at, which is the only way "it ran somewhere else" would show."""
@@ -575,7 +585,8 @@ async def test_a_change_that_did_not_take_is_a_failure() -> None:
 
 async def test_a_change_whm_accepted_but_could_not_confirm_says_unverified() -> None:
     """The third answer, and the reason `_verify_account_state` is a function rather than a bool
-    (V62's rule, one system over). A failure here would send an operator to re-suspend an account
+    (the verdict-on-verify rule, one system over). A failure here would send an operator to
+    re-suspend an account
     that may already be suspended; a plain success would claim a confirmation nobody has."""
     api = whm_endpoint(listaccts_bodies=[whm_api_failure_body("Access denied")])
     fixture, api = suspend_context(api)
@@ -630,20 +641,20 @@ async def test_evidence_without_a_usable_server_id_is_refused() -> None:
 
 
 # --------------------------------------------------------------------------------------
-# The mount: the gate's first run over `tools/call` (T33's owed lane)
+# The mount: the gate's first run over `tools/call` (the request-opening gate's owed lane)
 # --------------------------------------------------------------------------------------
 
 
 async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """V16, V20, V45, T73 — over `create_app()`, with every middleware in the chain.
+    """Over `create_app()`, with every middleware in the chain.
 
-    Until T22 there was no CHANGE tool to drive this with, so `test_mcp_tool_audit.py` asserted
-    the middleware's CHANGE branch against a synthetic risk map: a mapping the test supplied,
-    around a tool that did not exist. This is the same claim made by a real registration — the
-    risk comes from `register_whm_account_change_tools`, and the row that is *not* written is not
-    written by the production middleware.
+    Until this tool existed there was no CHANGE tool to drive this with, so `test_mcp_tool_audit.py`
+    asserted the middleware's CHANGE branch against a synthetic risk map: a mapping the test
+    supplied, around a tool that did not exist. This is the same claim made by a real registration —
+    the risk comes from `register_whm_account_change_tools`, and the row that is *not* written is
+    not written by the production middleware.
     """
     identities = FakeMcpIdentityRepository()
     authorization = FakeAuthorizationRepository()
@@ -675,7 +686,8 @@ async def test_the_mounted_call_opens_a_request_and_writes_no_tool_runs_row(
     request = tools.action_requests.only
     assert request.status is ActionRequestStatus.PENDING
     assert request.requested_by_user_id == user.id
-    # V46's row belongs to the executor that runs after a decision, not to this call.
+    # The run-plus-receipt write belongs to the executor that runs after a decision, not to this
+    # call.
     assert tools.tool_runs.runs == []
     assert api.requests_to(SUSPENDACCT_PATH) == []
 
@@ -761,7 +773,7 @@ async def test_a_before_value_that_already_matched_renders_a_measured_empty_diff
 
 
 async def test_the_suspend_delta_never_carries_the_note_it_wrote() -> None:
-    """C8, V15, V43 on the delta, and this runner is where the words genuinely leave NOA.
+    """The reason rule, on the delta: this runner is where the words genuinely leave NOA.
 
     WHM stores the operator's reason as the suspension note and echoes it back as
     `suspendreason` on every later `listaccts` row — including the postflight read this runner

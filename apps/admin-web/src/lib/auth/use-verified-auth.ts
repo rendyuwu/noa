@@ -79,7 +79,7 @@ export function useVerifiedAuth(options: UseVerifiedAuthOptions = {}): VerifiedA
 
         // Role-denied is distinct from pending/expired. The old repo redirected
         // here, to a chat landing every signed-in user could see. This app has no
-        // such page — administration is all of it (§I.admin-web) — so a redirect
+        // such page — administration is all of it, per the admin panel's contract — so a redirect
         // would send a non-admin to another admin-only route and loop. It
         // resolves to a state the page renders instead. FastAPI RBAC is still
         // authoritative; this only explains the refusal.

@@ -1,8 +1,10 @@
-"""Admin server management: WHM / Proxmox / PMG CRUD + validate (T54, I.admin-api).
+"""Admin server management: WHM / Proxmox / PMG CRUD + validate (the admin validate route, the
+admin API's contract).
 
 **Fifteen routes and no policy.** Every rule lives in `core.servers.admin_service` (the
-case-insensitive name check, the one encryption site, the audit event, the commit V100
-requires) or in `core.servers.validation` (the trust-on-first-use rule, V82). A handler here
+case-insensitive name check, the one encryption site, the audit event, the commit the
+own-commit-boundary rule
+requires) or in `core.servers.validation` (the trust-on-first-use rule). A handler here
 resolves the actor, calls one service method, and shapes the answer — the split
 `routes/admin_users.py` and `routes/mcp_tokens.py` both state, and for their reason: these are
 properties of a row, so a future CLI or fixture gets them too.
@@ -20,14 +22,15 @@ inherited rather than invented, and each is what its form sends:
   flag — the WHM form has no fingerprint input, it captures the pin by validating.
 - PMG's create and update both carry the value, because its form does expose the field: an
   operator who already knows a node's key may pin it before the first connection.
-- Proxmox has no SSH block at all (I.ext).
+- Proxmox has no SSH block at all (the external-system transports).
 
 **Secrets are write-only.** They appear in request bodies and in no response — the response
 models carry `has_api_token`, `has_ssh_password`, `has_ssh_private_key` instead, which is what
 drives the panel's "keep or replace" copy. The models are built field by field off
 `to_safe_dict()`, which is the row's one sanctioned outward serialization
 (`core.servers.whm_repository`): the dict cannot contain a credential, and the explicit mapping
-means a column added later is not published until somebody decides to publish it (V2, V8 —
+means a column added later is not published until somebody decides to publish it (the
+token-scope and envelope assertions —
 `routes/admin_users.py::_to_user_response`'s reason).
 
 **`POST …/validate` answers 200 even when the server is unreachable.** The operator asked
@@ -40,7 +43,7 @@ the shared handler owns status, body and `request_id`.
 
 **`admin` is checked per handler, not once on a router.** `AdminUserDep` is a parameter on all
 fifteen, so the actor whose email lands in the audit event and the gate that authorises the call
-are the same read, and V6's row re-read comes with it: a demoted admin loses these routes
+are the same read, and re-reading `is_active` comes with it: a demoted admin loses these routes
 on their next request.
 """
 
@@ -97,9 +100,9 @@ WHM_API_USERNAME_PATTERN: Final = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$
 def _stripped(value: object) -> object:
     """Trim a string; blank becomes `None`.
 
-    Blank-to-`None` is what makes V21 fall out of the type rather than out of a check: on a
-    create the field is required, so `None` is a 422; on a patch `None` already means "leave
-    the stored value alone", which is exactly what an emptied input should mean.
+    Blank-to-`None` is what makes the whitespace-only-rejected rule fall out of the type rather than
+    out of a check: on a create the field is required, so `None` is a 422; on a patch `None` already
+    means "leave the stored value alone", which is exactly what an emptied input should mean.
     """
     if isinstance(value, str):
         return value.strip() or None
@@ -187,9 +190,9 @@ PMGSshHostOpt = Annotated[
 # Free-text fields that only need trimming: secrets, the SSH username, the fingerprint. A
 # secret is not normalised beyond that — a password may legitimately contain anything.
 Trimmed = Annotated[str | None, BeforeValidator(_stripped)]
-# The required version, for a secret a create cannot do without. `_stripped` turns a
-# whitespace-only value into `None`, which a required field refuses — so V21's rule reaches the
-# secrets too, and `min_length=1` alone (which " " satisfies) is not the guard.
+# The required version, for a secret a create cannot do without. `_stripped` turns a whitespace-only
+# value into `None`, which a required field refuses — so the whitespace-only-rejected rule reaches
+# the secrets too, and `min_length=1` alone (which " " satisfies) is not the guard.
 TrimmedRequired = Annotated[str, BeforeValidator(_stripped)]
 # 1-65535, refused at the schema so a bad port never reaches `asyncssh`.
 SshPort = Annotated[int | None, Field(ge=1, le=65535)]
@@ -360,8 +363,9 @@ class WHMServerUpdateRequest(SSHClearFlags):
     api_token: Trimmed = None
     verify_ssl: bool | None = None
     # `None` means "leave alone", so a PATCH that renames a row cannot silently unmark it. The
-    # service checks V109(b) against the row the patch produces, which is why flipping this to
-    # `true` alone can be refused (409 `whm_reseller_credential_name_mismatch`).
+    # service checks the name == `api_username` rule against the row the patch produces, which is
+    # why flipping this to `true` alone can be refused (409
+    # `whm_reseller_credential_name_mismatch`).
     is_reseller_credential: bool | None = None
     ssh_username: Trimmed = None
     ssh_port: SshPort = None
@@ -633,9 +637,9 @@ async def validate_proxmox_server(
 ) -> ValidateServerResponse:
     """Probe a Proxmox server's API token.
 
-    One transport and no write: there is no SSH path here and therefore no host key to pin
-    (I.ext), which is why the service behind this route reads through a `SELECT`-only
-    repository.
+    One transport and no write: there is no SSH path here and therefore no host key to pin (the
+    external-system transports), which is why the service behind this route reads through a
+    `SELECT`-only repository.
     """
     return _validation_response(await validation.validate(server_id, actor_email=admin_user.email))
 
@@ -646,7 +650,8 @@ async def validate_proxmox_server(
 class PMGServerResponse(BaseModel):
     """One `pmg_servers` row.
 
-    No `base_url` and no `verify_ssl`: PMG is reached over SSH + `pmgsh` only (V58, I.ext), so
+    No `base_url` and no `verify_ssl`: PMG is reached over SSH + `pmgsh` only (the argv-safe
+    `pmgsh` rule, the external-system transports), so
     the pinned host key is its whole transport-security story.
     """
 

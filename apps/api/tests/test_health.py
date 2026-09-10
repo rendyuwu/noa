@@ -6,7 +6,7 @@ from noa_api.main import app, create_app
 
 
 def test_health_ok() -> None:
-    """V51: `/health` returns 200 with `{"status":"ok"}`."""
+    """`/health` returns 200 with `{"status":"ok"}`."""
     with TestClient(app) as client:
         response = client.get("/health")
 
@@ -20,7 +20,8 @@ def test_create_app_returns_independent_instances() -> None:
 
 
 def test_mcp_is_mounted_and_authenticated() -> None:
-    """V1: `/mcp` exists as of T13, and it refuses a caller with no credential.
+    """The execution-time permission re-check: `/mcp` exists since the FastMCP mount, and it refuses
+    a caller with no credential.
 
     On the process-wide `app` — the one uvicorn serves — rather than a test-built instance,
     because "the shipped app mounts an *authenticated* endpoint" is the claim. The refusal

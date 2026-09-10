@@ -1,5 +1,5 @@
 // Shared relative-time rendering for admin tables. Lifted out of
-// `users/user-status.ts` when the MCP token vertical (§T76) needed the same
+// `users/user-status.ts` when the MCP token vertical needed the same
 // contract for `last_used_at` as Users has for `last_login_at`: a never-used row
 // must read `Never` in both tables, not `Never` in one and `—` in the other.
 //

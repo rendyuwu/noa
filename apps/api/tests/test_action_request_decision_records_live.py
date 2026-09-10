@@ -9,18 +9,18 @@ repository, which proves the ordering but cannot prove the claim that is *about 
   constraint itself, not a service that happens to agree with it.
 
 So this file is about the rows an approval and a denial leave behind: the `action_requests`
-row that becomes the authorization, the `tool_runs` row that describes the change
-(V46, V47), and the four identity fields that row carries beside the arguments (V108).
+row that becomes the authorization, the `tool_runs` row that describes the change, and the four
+identity fields that row carries beside the arguments.
 
-The refusals and V28's row lock are `test_action_request_decisions_live.py`; V31's per-user
-cap is `test_action_request_change_cap_live.py`. Split out of the first when it passed the
-900-line limit; all three share the row helpers in `support.action_decisions` and the
+The refusals and the one-decision row lock are `test_action_request_decisions_live.py`; the
+in-flight cap is `test_action_request_change_cap_live.py`. Split out of the first when it passed
+the 900-line limit; all three share the row helpers in `support.action_decisions` and the
 scratch-database fixtures in `support.database`.
 
 Skipped, never failed, when Postgres is unreachable — like every other DB-backed test here.
 
 `SQLActionDecisionRepository` runs for real throughout; only the executor is a recorder,
-because T38 is what makes it do anything.
+because the approved-change executor is what makes it do anything.
 """
 
 from __future__ import annotations
@@ -55,9 +55,9 @@ SCRATCH_DB = "noa_action_decision_records_test"
 
 OPERATOR_EMAIL = "operator@example.com"
 
-# One reseller credential, standing in for §V108's four identity fields (the row's name, its
+# One reseller credential, standing in for the four recorded identity fields (the row's name, its
 # `api_username`, its host and the account's owner). Named after the credential because that is
-# what a reseller row is named after (V109(b)).
+# what a reseller row is named after.
 RESELLER = "web08cpnpool01"
 
 # Planted in the evidence under a key `SENSITIVE_KEYS` names, to prove the audit row's reader is
@@ -88,13 +88,14 @@ async def factory(database_url: str) -> AsyncIterator[async_sessionmaker[AsyncSe
 
 
 async def test_approval_writes_the_change_tool_run(factory) -> None:
-    """V46, V47: an approved CHANGE produces a `tool_runs` row that describes it.
+    """An approved CHANGE produces a `tool_runs` row that describes it.
 
     `risk=CHANGE` is fixed by the repository rather than passed in — every row in
     `action_requests` is a change by construction, and a parameter would be somewhere
     for `READ` to be written into an approved change's audit row.
 
-    The run is `STARTED`, not `COMPLETED`: nothing has executed. T38's executor moves it, and
+    The run is `STARTED`, not `COMPLETED`: nothing has executed. The approved-change executor
+    moves it, and
     its reaper is what covers a run that never gets there.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
@@ -126,7 +127,7 @@ async def test_approval_writes_the_change_tool_run(factory) -> None:
 async def test_an_approved_change_records_the_credential_it_acted_as_beside_its_arguments(
     factory,
 ) -> None:
-    """§V108: the audit row names the identity, not only the machine.
+    """The audit row names the identity, not only the machine.
 
     A privileged write whose credential is not recorded is not auditable, and `tool_runs` is
     the table the audit surface reads (`admin_audit.py`) — `action_receipts` carries the same
@@ -180,7 +181,7 @@ async def test_an_approved_change_records_the_credential_it_acted_as_beside_its_
         "owner": RESELLER,
     }
     # What was asked for is still exactly what was asked for: the identity is beside the
-    # arguments, never merged into them (`ActionResultView` reads that half, V76).
+    # arguments, never merged into them (`ActionResultView` reads that half).
     assert args["server_ref"] == RESELLER
     assert args["username"] == "acmeco"
     assert set(args) == {"server_ref", "username", "credential"}
@@ -191,7 +192,7 @@ async def test_an_approved_change_records_the_credential_it_acted_as_beside_its_
 async def test_a_change_that_names_a_machine_but_no_credential_records_only_its_arguments(
     factory,
 ) -> None:
-    """The additive half of §V108, against evidence a real tool actually writes.
+    """The additive half of the four-field record, against evidence a real tool actually writes.
 
     This is the test the review found wanting, and the reason it was wanting is worth keeping:
     `evidence["server"]` is not the WHM account pair's alone. `proxmox_nic`, `proxmox_password`,
@@ -203,7 +204,8 @@ async def test_a_change_that_names_a_machine_but_no_credential_records_only_its_
     produces: a control that cannot separate because its fixture does not represent the subject.
 
     So the evidence below is `proxmox_nic`'s, key for key (`mcp_tools/proxmox_nic.py`), and the
-    claim is that such an approval's audit row is byte-identical to what it was before §V108:
+    claim is that such an approval's audit row is byte-identical to what it was before the
+    four-field record:
     the arguments, and no `credential` key at all. `api_username` is what gates the block, and
     nothing but the account pair records one.
     """
@@ -241,7 +243,7 @@ async def test_a_change_that_names_a_machine_but_no_credential_records_only_its_
 
 
 async def test_the_decision_row_is_the_authorization_after_approval(factory) -> None:
-    """V23: what the row says is the answer, so this is what the row says."""
+    """What the row says is the answer, so this is what the row says."""
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     action_request_id = await open_request(factory, requested_by_user_id=user_id)
     before = datetime.now(UTC)
@@ -260,7 +262,7 @@ async def test_the_decision_row_is_the_authorization_after_approval(factory) -> 
     assert stored.reason == REASON
     assert stored.tool_run_id == outcome.tool_run_id
     # Asserted as a bound, not as an equality: `decided_at` is clock-stamped, and an equality
-    # compare against a second `now()` is the flake V87 is about.
+    # compare against a second `now()` is exactly the clock-stamp flake to avoid.
     assert stored.decided_at is not None
     assert before <= stored.decided_at <= datetime.now(UTC)
 
@@ -294,7 +296,7 @@ async def test_decision_and_run_commit_together(factory) -> None:
             await repository.write_decision(
                 action_request_id=action_request_id,
                 status=ActionRequestStatus.APPROVED,
-                reason="   ",  # what the CHECK refuses (T34(f))
+                reason="   ",  # what the CHECK refuses
                 decided_at=datetime.now(UTC),
                 tool_run_id=tool_run_id,
             )
@@ -306,10 +308,12 @@ async def test_decision_and_run_commit_together(factory) -> None:
 
 
 async def test_database_refuses_a_decided_row_without_a_reason(factory) -> None:
-    """T34(f) at the mechanism: the CHECK holds against a writer that is not the endpoint.
+    """The table's design, at the mechanism: the CHECK holds against a writer that is not the
+    endpoint.
 
     The endpoint's 409 is `test_action_request_decision_routes.py`'s. This is the guarantee
-    that survives T38's executor, T39's sweep and anything run by hand against the database.
+    that survives the approved-change executor, the expiry loop's sweep and anything run by hand
+    against the database.
     """
     user_id = await insert_user(factory, OPERATOR_EMAIL)
     action_request_id = await open_request(factory, requested_by_user_id=user_id)

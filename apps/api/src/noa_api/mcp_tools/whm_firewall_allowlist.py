@@ -1,29 +1,30 @@
 """`whm_firewall_allowlist_remove` — the undo path for a firewall allow entry.
 
-**Its own tool and its own approval, deliberately** (DECISIONS §6.5: "keep
-`whm_firewall_allowlist_remove` separate — it is the undo path, run on its own"). T25 merged
-steps 2 and 3 of the operator's working pattern because they are almost always run together;
-this one is not part of that pattern at all. It is what an operator reaches for when an allow
-entry should not have been written, or should stop existing before its window closes.
+**Its own tool and its own approval, deliberately** (DECISIONS section 6.5: "keep
+`whm_firewall_allowlist_remove` separate — it is the undo path, run on its own"). The
+release-and-allow tool merged steps 2 and 3 of the operator's working pattern because they are
+almost always run together; this one is not part of that pattern at all. It is what an operator
+reaches for when an allow entry should not have been written, or should stop existing before its
+window closes.
 
-Beside `whm_firewall_change.py` rather than inside it, for C14: that module is 700 lines and a
-CHANGE tool is two halves. What the two share lives in `whm_firewall_change_common.py`, which
-both import and neither owns — so the two tools are siblings rather than one depending on the
+Beside `whm_firewall_change.py` rather than inside it, for the file-size cap: that module is 700
+lines and a CHANGE tool is two halves. What the two share lives in `whm_firewall_change_common.py`,
+which both import and neither owns — so the two tools are siblings rather than one depending on the
 other, and the aggregate registrar is not a cycle.
 
-**The preflight is T24's, run in-process**, the same as T25's: the same availability
-probe, the same dual-backend lookup. The evidence is born inside this call, lives milliseconds,
-belongs to the same user, and reaches the operator through `approval_context` rather than through
-a transcript.
+**The preflight is the dual-backend firewall read's, run in-process**, the same as the
+release-and-allow tool's: the same availability probe, the same dual-backend lookup. The evidence
+is born inside this call, lives milliseconds, belongs to the same user, and reaches the operator
+through `approval_context` rather than through a transcript.
 
-**There is a no-op branch here, and T25's argument for not having one is exactly why.** T25 has
-none because its allow entry carries a TTL, so a repeat always moves the expiry and is a real
-change. A removal has no such property: an address with no allow entry anywhere is already in
-the state this change would produce, and asking an operator to authorise that is worse than
-saying so. What the no-op costs is a claim about absence, so it is **gated on a full
-answer** — every usable backend has to have answered the preflight. One silent backend and
-"there is nothing to remove" is a guess, so the card opens instead (V86: silence is not evidence
-of absence, and here the absence is the whole claim).
+**There is a no-op branch here, and the release-and-allow tool's argument for not having one is
+exactly why.** It has none because its allow entry carries a TTL, so a repeat always moves the
+expiry and is a real change. A removal has no such property: an address with no allow entry
+anywhere is already in the state this change would produce, and asking an operator to authorise
+that is worse than saying so. What the no-op costs is a claim about absence, so it is **gated on a
+full answer** — every usable backend has to have answered the preflight. One silent backend and
+"there is nothing to remove" is a guess, so the card opens instead — silence is not evidence of
+absence, and here the absence is the whole claim.
 
 **"Is there still an allow entry" is not the combined verdict, and that gap is a correctness
 bug waiting to happen.** Both backends resolve a conflict block-first, so an address on a deny
@@ -35,8 +36,9 @@ question is asked of `allow_entry`, a fact the parsers now carry beside the verd
 **Every step is tolerated, and the postflight is the only authority.** `csf -tra` drops a
 temporary allow and `csf -ar` a permanent one; an entry lives in one of those lists, not both,
 so one of the two commands always reports "not in that list". Imunify refuses a delete for an
-entry it does not hold. T25 could keep one required command — the allow entry the operator asked
-to *exist* — and this one has no equivalent: nothing here is required to succeed, so the fresh
+entry it does not hold. The release-and-allow tool could keep one required command — the allow
+entry the operator asked to *exist* — and this one has no equivalent: nothing here is required to
+succeed, so the fresh
 read afterwards is what decides whether the change took. A **sudo-rights** failure is the one
 exception and it is not tolerated anywhere: sudoers can permit `csf -v` and refuse
 `csf -ar`, and "the entry was not there" is never the right reading of "you may not run this".
@@ -44,10 +46,11 @@ exception and it is not tolerated anywhere: sudoers can permit `csf -v` and refu
 **Every backend operation goes through `run_on_usable_backends`** — the change and
 the postflight both. Zero usable backends is that door's refusal, not a check written here.
 
-**V96 bites on the way back, not on the way out**. This tool writes no comment: `csf
--tra`/`-ar` and Imunify's delete take none, so nothing new leaves NOA and V43's permission is
-not used. The bound still applies, because the entry being *removed* was written by T25 and
-carries `noa:<action_request_id> <reason>`. Three doors, all closed here:
+**The write-back redaction rule bites here, not on the way out**. This tool writes no comment:
+`csf -tra`/`-ar` and Imunify's delete take none, so nothing new leaves NOA and the reason field's
+permission is not used. The bound still applies, because the entry being *removed* was written by
+the release-and-allow tool and carries `noa:<action_request_id> <reason>`. Three doors, all closed
+here:
 
 - a backend that refuses the command frequently quotes the entry back, and that message becomes
   `tool_runs.result_summary`, which `noa_get_action_result` hands a model — cut
@@ -56,8 +59,8 @@ carries `noa:<action_request_id> <reason>`. Three doors, all closed here:
   the same reason;
 - the **no-op answer is a transcript surface** — it is a plain tool result, not a gate
   response — so it is built from the server name, the address and one boolean NOA measured,
-  never from the evidence lines it was decided from. That is T23's rule one system over, and it
-  is the door this tool opens that T25 did not have.
+  never from the evidence lines it was decided from. That is the unsuspend tool's rule one system
+  over, and it is the door this tool opens that the release-and-allow tool did not have.
 """
 
 from __future__ import annotations
@@ -127,9 +130,10 @@ from noa_api.mcp_tools.whm_firewall_change_common import (
 
 TOOL_WHM_FIREWALL_ALLOWLIST_REMOVE = "whm_firewall_allowlist_remove"
 
-# The postflight says an allow entry is still there. Its own code rather than T25's
-# `firewall_allow_failed`, which means the opposite thing (an entry that should exist and does
-# not) — one audit trail, and two codes that read alike would be worse than two that do not.
+# The postflight says an allow entry is still there. Its own code rather than the
+# release-and-allow tool's `firewall_allow_failed`, which means the opposite thing (an entry
+# that should exist and does not) — one audit trail, and two codes that read alike would be
+# worse than two that do not.
 ERROR_ALLOWLIST_REMOVE_FAILED = "firewall_allowlist_remove_failed"
 
 MESSAGE_CHANGE_TARGET_NOT_IPV4 = (
@@ -142,9 +146,9 @@ MESSAGE_ALLOWLIST_REMOVE_FAILED = (
 )
 
 # One structured event per tolerated step, so "the entry was already gone" and "the command
-# could not run" stay separable after the fact. Identifiers and codes only, never a comment
-# . Its own event name rather than T25's: a log event names the tool a reader is
-# looking for, and `tool=` rides beside it as a field.
+# could not run" stay separable after the fact. Identifiers and codes only, never a comment.
+# Its own event name rather than the release-and-allow tool's: a log event names the tool a
+# reader is looking for, and `tool=` rides beside it as a field.
 LOG_REMOVE_STEP_TOLERATED: Final = "whm_firewall_allowlist_remove_step_tolerated"
 
 # The preflight found nothing to remove, so no card was opened. Answers "why is there no
@@ -191,12 +195,13 @@ async def whm_firewall_allowlist_remove(
     - a blank or whitespace-only `target` is refused — the schema cannot express it,
       because `min_length` counts whitespace;
     - anything that is not a single IPv4 address is refused. This is the CHANGE side of the
-      rule T24 reads the other way: reporting what CSF says about an IPv6 address is useful, and
-      writing a rule for one is not something these backends are being asked to do here.
+      rule the dual-backend firewall read reads the other way: reporting what CSF says about an
+      IPv6 address is useful, and writing a rule for one is not something these backends are
+      being asked to do here.
 
-    Then one database session — resolve the operator's word to a server (V18: a tie is `choices`,
+    Then one database session — resolve the operator's word to a server (a tie is `choices`,
     never a pick) and turn that row into a connection — and the session closes before the SSH
-    hops, which is T21's rule.
+    hops, which is the pattern the account search set.
 
     `resolve_whm_ssh_config` is allowed to raise: its three refusals are `NoaError`s, so
     `sanitize_tool_errors` hands the model the code that names the fix.
@@ -209,7 +214,7 @@ async def whm_firewall_allowlist_remove(
 
     The no-op answer lands in a transcript and is built from the server name, the address
     and one measured boolean — never from the evidence lines, which carry the marker and reason
-    T25 wrote onto the very entry this call is about.
+    the release-and-allow tool wrote onto the very entry this call is about.
 
     No `reason` parameter and nowhere to add one — the word is typed by an operator on the card,
     after this result has been rendered and forgotten, and the gate refuses a
@@ -279,20 +284,22 @@ async def whm_firewall_allowlist_remove(
     )
 
 
-# --- The runner: reachable only after an operator approved (V22's far side) ---
+# --- The runner: reachable only after an operator approved (the cookie/CSRF boundary's far side)
+# ---
 
 
 def build_whm_firewall_allowlist_remove_runner(*, context: McpToolContext) -> ChangeRunner:
     """The half that removes the allow entries, once an operator approved.
 
-    A closure over the tool context rather than a class, for T22's reason: what it needs is the
-    same session factory, cipher and repositories the tool used, so the change goes through the
-    production decrypt site rather than a second one.
+    A closure over the tool context rather than a class, for the suspend tool's reason: what it
+    needs is the same session factory, cipher and repositories the tool used, so the change goes
+    through the production decrypt site rather than a second one.
 
     `request.reason` is on the request — the executor reads it off the row for every approved
     change — and this runner never touches it. There is no comment field on a removal to
     put it in, so nothing new leaves NOA here; what still applies is the bound on the way back,
-    because the entry being deleted carries the reason T25 wrote (V96, see the module docstring).
+    because the entry being deleted carries the reason the release-and-allow tool wrote (see the
+    module docstring).
     """
 
     async def run(request: ChangeExecutionRequest) -> ChangeOutcome:
@@ -335,11 +342,11 @@ def build_whm_firewall_allowlist_runners(*, context: McpToolContext) -> dict[str
 def register_whm_firewall_allowlist_tools(
     server: FastMCP, *, context: McpToolContext
 ) -> dict[str, ToolRisk]:
-    """Register the WHM firewall allowlist CHANGE tool; return its name and risk (I.mcp, V20).
+    """Register the WHM firewall allowlist CHANGE tool; return its name and risk.
 
     `ToolRisk.CHANGE` is what tells `ToolRunAuditMiddleware` to write no `tool_runs` row for this
-    call — it opens an approval request and executes nothing, and V46's row belongs to the
-    executor that runs after a decision. It is also what makes
+    call — it opens an approval request and executes nothing, and the run-plus-receipt row
+    belongs to the executor that runs after a decision. It is also what makes
     `registry.assert_change_runners_cover` demand a runner for the name at startup, rather than
     letting an operator discover the gap after typing a reason and pressing Approve.
     """
@@ -349,8 +356,9 @@ def register_whm_firewall_allowlist_tools(
         description=DESCRIPTION_WHM_FIREWALL_ALLOWLIST_REMOVE,
         # Standard MCP hints, and nothing NOA relies on — a client may ignore them. The split
         # that matters is the approval gate; the classification that matters is the risk
-        # returned below. `destructiveHint` is True and T25's is False, which is the pair read
-        # correctly: releasing an address restores its access, and this takes it away again.
+        # returned below. `destructiveHint` is True and the release-and-allow tool's is False,
+        # which is the pair read correctly: releasing an address restores its access, and this
+        # takes it away again.
         annotations={"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True},
     )
     async def whm_firewall_allowlist_remove_tool(
@@ -377,11 +385,12 @@ def register_whm_firewall_allowlist_tools(
 
 
 async def _csf_allowlist_remove(config: SSHConnectionConfig, *, target: str) -> BackendChange:
-    """Drop the temporary allow, then the permanent one. Internal — ⊥ an MCP tool.
+    """Drop the temporary allow, then the permanent one. Internal — never an MCP tool.
 
     `noa-old`'s two commands in its order: `-tra` removes a temporary allow, `-ar` the
     `csf.allow` entry. Both are sent because an address is held by one or the other and NOA does
-    not know which — T25 writes temporary entries, an operator's own hand-added ones are
+    not know which — the release-and-allow tool writes temporary entries, an operator's own
+    hand-added ones are
     permanent — and the one that finds nothing exits non-zero, which is the ordinary case rather
     than a failure.
 
@@ -409,10 +418,11 @@ async def _tolerated_csf(config: SSHConnectionConfig, *, args: list[str], target
 
 
 async def _imunify_allowlist_remove(config: SSHConnectionConfig, *, target: str) -> BackendChange:
-    """Delete the whitelist entry. Internal — ⊥ an MCP tool.
+    """Delete the whitelist entry. Internal — never an MCP tool.
 
     `noa-old`'s call and its argument order, unchanged. `--purpose white` is the whole
-    difference from the delete T25 sends, which targets `drop`: this removes the allow, that one
+    difference from the delete the release-and-allow tool sends, which targets `drop`: this
+    removes the allow, that one
     removes a block. Tolerated for the reason csf's steps are — Imunify refuses a delete for an
     entry it does not hold, and an address allowed only by CSF is the common shape of this call.
     """
@@ -442,7 +452,8 @@ def _removal_delta(
 ) -> ChangeDelta:
     """This removal's before→after, as the runner that ran it states it.
 
-    **The facet is `list_delta` and not a field change, and V97 is the reason.** Both backends
+    **The facet is `list_delta` and not a field change, and asking the CHANGE's own question is
+    the reason.** Both backends
     resolve a conflict block-first, so an address on a deny list *and* an allow list reads
     `blocked` before the removal and `blocked` after it — a delta computed from the combined
     verdict would render "nothing changed" for a removal that worked, on exactly the address
@@ -482,21 +493,23 @@ def _removal_outcome(
        first because it is a fact about the commands rather than an inference from the state.
     2. **a usable backend did not answer the confirming read** — the change happened and is
        *unverified*, with the silent backend named. Reporting it as done would be the
-       fabrication T24 was written to stop; reporting it as failed would send an operator to
-       repeat a removal that may already have taken (V62's rule).
+       fabrication the dual-backend firewall read was written to stop; reporting it as failed
+       would send an operator to repeat a removal that may already have taken (the same
+       abort-rather-than-repeat rule).
     3. **an allow entry is still there** — the removal did not take.
     4. **no allow entry anywhere** — it did.
 
     `removed` appears only where the postflight answered, because an absent field is more honest
-    than a `false` nobody measured — the same shape T25's `released` / `allowlisted` take.
+    than a `false` nobody measured — the same shape the release-and-allow tool's `released` /
+    `allowlisted` take.
 
     Read from `holds_allow_entry` rather than from the combined verdict, and that is the
     correctness point of this function: the verdict resolves block-over-allow, so on an address
     csf also denies it would report a surviving allow entry as removed.
 
     Nothing from `lookups` reaches the payload beyond those two facts. The lines behind them
-    carry the marker and reason T25 wrote onto this very entry, and `result_summary` is derived
-    from what is returned here (V96b).
+    carry the marker and reason the release-and-allow tool wrote onto this very entry, and
+    `result_summary` is derived from what is returned here.
     """
     common: ToolPayload = {
         "server": target.server_name,

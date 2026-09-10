@@ -8,26 +8,27 @@ Every exposed tool answers with the same envelope, ported from `noa-old`:
 `ok` is the only field a caller has to branch on, `error_code` is the stable machine string
 and `message` is what an operator reads. `choices` appears only on an ambiguity.
 
-**Why a decorator and not middleware.** V19 says a raw exception must not reach the LLM,
-with two named mappings. That cannot be enforced from a FastMCP middleware, and the reason
-is in the installed `fastmcp==3.4.5` rather than in any doc: `FastMCP.call_tool` runs the
-middleware chain *around* `call_tool(run_middleware=False)`, and the raw-exception handling
-lives inside that inner call (`fastmcp/server/server.py`). By the time a middleware sees the
-failure it is already a `ToolError` and the original type is gone, so `RuntimeError` and
-`TimeoutError` are no longer distinguishable. The mapping has to sit closer to the tool than
-fastmcp's own handler does, which means on the tool.
+**Why a decorator and not middleware.** The sanitize-to-a-code rule says a raw exception must not
+reach the LLM, with two named mappings. That cannot be enforced from a FastMCP middleware, and the
+reason is in the installed `fastmcp==3.4.5` rather than in any doc: `FastMCP.call_tool` runs the
+middleware chain *around* `call_tool(run_middleware=False)`, and the raw-exception handling lives
+inside that inner call (`fastmcp/server/server.py`). By the time a middleware sees the failure it is
+already a `ToolError` and the original type is gone, so `RuntimeError` and `TimeoutError` are no
+longer distinguishable. The mapping has to sit closer to the tool than fastmcp's own handler does,
+which means on the tool.
 
 Worse, that inner handler is not a safety net either: `mask_error_details` **defaults to
 `False`**, and the unmasked branch raises `ToolError(f"Error calling tool {name!r}: {e}")` —
 `str(e)` verbatim, in front of the model. `noa_api.mcp_server` therefore also sets
 `mask_error_details=True`, as a second line for anything raised outside a decorated tool
 (argument validation, a bug in the registry). The decorator is the first line and the one
-V19 actually names.
+the sanitize-to-a-code rule actually names.
 
-`except Exception` is deliberately broader than V19's two classes. V19 names the two
-mappings that must be exact; it does not license a third exception type reaching the model
-because nobody predicted it. `BaseException` — `CancelledError`, `KeyboardInterrupt` — is
-*not* caught: a cancelled request has no caller left to answer, and swallowing that would
+`except Exception` is deliberately broader than the sanitize-to-a-code rule's two classes. That
+rule names the two mappings that must be exact; it does not license a third exception type
+reaching the model because nobody predicted it. `BaseException` — `CancelledError`,
+`KeyboardInterrupt` — is *not* caught: a cancelled request has no caller left to answer, and
+swallowing that would
 turn a shutdown into a hang.
 """
 
@@ -46,7 +47,7 @@ from core.errors import NoaError
 # recoverable from the logs. `error_code` says which mapping fired.
 LOG_TOOL_FAILED = "mcp_tool_failed"
 
-# V19's two named mappings, verbatim.
+# The sanitize-to-a-code rule's two named mappings, verbatim.
 ERROR_TOOL_EXECUTION_FAILED = "tool_execution_failed"
 ERROR_TIMEOUT = "timeout"
 
@@ -109,15 +110,17 @@ def sanitize_tool_errors(
     """Turn any exception out of a tool into a named structured failure.
 
     **The failure is always the envelope, whatever the success was.** A tool that answers with
-    content blocks (T20's table surface) still fails as `{"ok": False, ...}`, which is what
-    keeps one refusal shape in front of the model however the tool succeeds — and what lets
+    content blocks (the account-list's table surface) still fails as `{"ok": False, ...}`, which
+    is what keeps one refusal shape in front of the model however the tool succeeds — and what
+    lets
     `status_for_payload` read a failure off any tool's result.
 
     Three branches, narrowest first:
 
     - `NoaError` — already a NOA failure with a stable `error_code` and an operator-safe
-      `message` (V73's contract). Passed through with its own code, so an integration-layer
-      refusal such as `ssh_host_key_mismatch` keeps naming the thing that has to be fixed
+      `message` (the shared request-id rule's contract). Passed through with its own code, so an
+      integration-layer refusal such as `ssh_host_key_mismatch` keeps naming the thing that has
+      to be fixed
       instead of collapsing into a generic failure.
     - `TimeoutError` — `timeout`. In 3.11 `asyncio.TimeoutError` *is* `TimeoutError`, so one
       branch covers both the socket and the `asyncio.timeout()` cases.
