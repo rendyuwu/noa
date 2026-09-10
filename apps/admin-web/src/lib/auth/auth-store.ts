@@ -8,9 +8,8 @@ import { registerIdentityCleaner } from '@/lib/auth/session'
 // are never treated as authorization; they only keep AppShell chrome (name,
 // email, role-filtered nav) painted between verified `/auth/me` revalidations.
 //
-// Storage is namespaced per topology.md section 6.3 — both frontends share the one
-// origin's localStorage, so the `web-bigsu:` prefix must never collide with the
-// legacy `noa.` keys.
+// Storage is namespaced: everything on this origin shares one localStorage, so the
+// `web-bigsu:` prefix must never collide with the legacy `noa.` keys.
 
 const USER_KEY = 'web-bigsu:auth-user'
 
